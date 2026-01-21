@@ -2,6 +2,10 @@ import { Logger } from '../../src/layers/l0-utilities/Logger';
 import fs from 'fs';
 import path from 'path';
 
+// Helper to wait for async file writes
+const waitForFileWrite = (ms: number = 100): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, ms));
+
 describe('Logger', () => {
   const TEST_LOG_DIR = 'logs-test';
   let logger: Logger;
@@ -26,17 +30,19 @@ describe('Logger', () => {
       expect(fs.existsSync(TEST_LOG_DIR)).toBe(true);
     });
 
-    it('should create log file', () => {
+    it('should create log file', async () => {
       logger.info('Test message');
+      await waitForFileWrite();
       const logFile = path.join(TEST_LOG_DIR, 'cid.log');
       expect(fs.existsSync(logFile)).toBe(true);
     });
   });
 
   describe('PII Redaction', () => {
-    it('should redact Bearer tokens', () => {
+    it('should redact Bearer tokens', async () => {
       const testMessage = 'Authorization: Bearer abc123def456';
       logger.info(testMessage);
+      await waitForFileWrite();
 
       const logFile = path.join(TEST_LOG_DIR, 'cid.log');
       const logContent = fs.readFileSync(logFile, 'utf-8');
@@ -45,9 +51,10 @@ describe('Logger', () => {
       expect(logContent).toContain('Bearer [REDACTED]');
     });
 
-    it('should redact email addresses', () => {
+    it('should redact email addresses', async () => {
       const testMessage = 'User: student@mail.utoronto.ca logged in';
       logger.info(testMessage);
+      await waitForFileWrite();
 
       const logFile = path.join(TEST_LOG_DIR, 'cid.log');
       const logContent = fs.readFileSync(logFile, 'utf-8');
@@ -56,9 +63,10 @@ describe('Logger', () => {
       expect(logContent).toContain('[EMAIL_REDACTED]');
     });
 
-    it('should redact long API keys', () => {
+    it('should redact long API keys', async () => {
       const testMessage = 'API Key: 1234567890abcdef1234567890abcdef12345678';
       logger.info(testMessage);
+      await waitForFileWrite();
 
       const logFile = path.join(TEST_LOG_DIR, 'cid.log');
       const logContent = fs.readFileSync(logFile, 'utf-8');
@@ -67,9 +75,10 @@ describe('Logger', () => {
       expect(logContent).toContain('[KEY_REDACTED]');
     });
 
-    it('should redact Canvas tokens', () => {
+    it('should redact Canvas tokens', async () => {
       const testMessage = 'canvas_token_abc123xyz789';
       logger.info(testMessage);
+      await waitForFileWrite();
 
       const logFile = path.join(TEST_LOG_DIR, 'cid.log');
       const logContent = fs.readFileSync(logFile, 'utf-8');
@@ -80,8 +89,9 @@ describe('Logger', () => {
   });
 
   describe('Log Levels', () => {
-    it('should log info messages', () => {
+    it('should log info messages', async () => {
       logger.info('Info message');
+      await waitForFileWrite();
 
       const logFile = path.join(TEST_LOG_DIR, 'cid.log');
       const logContent = fs.readFileSync(logFile, 'utf-8');
@@ -90,8 +100,9 @@ describe('Logger', () => {
       expect(logContent).toContain('Info message');
     });
 
-    it('should log warning messages', () => {
+    it('should log warning messages', async () => {
       logger.warn('Warning message');
+      await waitForFileWrite();
 
       const logFile = path.join(TEST_LOG_DIR, 'cid.log');
       const logContent = fs.readFileSync(logFile, 'utf-8');
@@ -100,8 +111,9 @@ describe('Logger', () => {
       expect(logContent).toContain('Warning message');
     });
 
-    it('should log error messages', () => {
+    it('should log error messages', async () => {
       logger.error('Error message');
+      await waitForFileWrite();
 
       const logFile = path.join(TEST_LOG_DIR, 'cid.log');
       const logContent = fs.readFileSync(logFile, 'utf-8');
@@ -110,9 +122,10 @@ describe('Logger', () => {
       expect(logContent).toContain('Error message');
     });
 
-    it('should log error with stack trace', () => {
+    it('should log error with stack trace', async () => {
       const testError = new Error('Test error');
       logger.error('Error occurred', testError);
+      await waitForFileWrite();
 
       const logFile = path.join(TEST_LOG_DIR, 'cid.log');
       const logContent = fs.readFileSync(logFile, 'utf-8');

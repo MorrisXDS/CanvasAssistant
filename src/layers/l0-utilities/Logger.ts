@@ -113,6 +113,32 @@ export class Logger {
   }
 
   /**
+   * Flush all pending log writes to disk
+   * Returns a promise that resolves when all transports have finished writing
+   */
+  flush(): Promise<void> {
+    return new Promise((resolve) => {
+      // Wait for all transports to finish
+      const fileTransport = this.logger.transports.find(
+        (t) => t instanceof winston.transports.File
+      );
+
+      if (fileTransport) {
+        // @ts-expect-error - accessing internal _stream property
+        const stream = fileTransport._stream;
+        if (stream && typeof stream.once === 'function') {
+          stream.once('finish', resolve);
+          stream.end();
+          return;
+        }
+      }
+
+      // Fallback: small delay for async writes
+      setTimeout(resolve, 50);
+    });
+  }
+
+  /**
    * Close logger and flush pending logs
    */
   close(): void {
