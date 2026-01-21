@@ -1,8 +1,9 @@
 # Canvas Integration Dashboard - Open Questions & Decisions
 
-**Status:** Working Document
+**Status:** ✅ RESOLVED
 **Last Updated:** January 21, 2026
 **Purpose:** Resolve all technical ambiguities before implementation begins
+**All Decisions Finalized:** Ready for implementation
 
 ---
 
@@ -32,11 +33,21 @@ priority_score = f(
 **Proposed Options:**
 - [ ] Option A: Simple ROI = (points_possible * weight) / hours_until_due
 - [ ] Option B: Weighted with grade gap = (weight * target_delta) / log(hours_until_due + 1)
-- [ ] Option C: Custom formula (specify below)
+- [x] Option C: Custom formula (specify below)
 
-**Decision:** _____________
+**Decision:** Custom Formula
 
-**Rationale:** _____________
+```
+priority_score = (weight × target_delta) / log(max(v_eff, 0.1) + 1)
+
+Where:
+- weight: % of final grade (from assignments.weight)
+- target_delta: Gap between target and assessed grade
+- v_eff: Grade volatility (STDDEV of grade_history with exponential decay)
+- 0.1: Minimum floor to avoid division by zero
+```
+
+**Rationale:** This formula balances the student's academic "risk" (volatility) with the actual impact on their final mark. Higher volatility increases the denominator (logarithmically), reducing priority for unpredictable courses. Assignments with high weight and large target gaps get maximum priority.
 
 ---
 
@@ -58,12 +69,12 @@ priority_score = f(
 2. **Training Data:** Where do we get labeled examples?
    - [ ] Option A: Manual labeling by team (50-100 assignments)
    - [ ] Option B: Heuristic labeling (weight > 10% = important)
-   - [ ] Option C: Skip ML entirely, use rule-based classification
+   - [x] Option C: Skip ML entirely, use rule-based classification
    - [ ] Option D: User feedback loop (users rate importance, system learns)
 
-**Decision:** _____________
+**Decision:** Skip ML entirely; use rule-based classification
 
-**Rationale:** _____________
+**Rationale:** Given the 10-week timeline, training a Naive Bayes model with high accuracy is prohibitive. Rule-based scoring using points_possible, weight, and title keywords (e.g., "midterm", "final", "exam") provides immediate, predictable value without "black-box" errors or training data requirements.
 
 ---
 
@@ -82,12 +93,12 @@ priority_score = f(
 **Options:**
 - [ ] Option A: Build full NLP classifier (requires labeled dataset)
 - [ ] Option B: Simple keyword matching ("pipette", "PCR" → wet; "MATLAB", "Python" → dry)
-- [ ] Option C: Cut this feature entirely for MVP
+- [x] Option C: Cut this feature entirely for MVP
 - [ ] Option D: Add as manual user tag instead of automatic classification
 
-**Decision:** _____________
+**Decision:** Cut this feature entirely for MVP
 
-**Rationale:** _____________
+**Rationale:** Lab classification is not a priority for the core dashboard. Resources will be diverted to **Target Delta** analytics and **Calendar/Timetable** features which provide more immediate student value. Can revisit in Phase 3+ if user feedback indicates demand.
 
 ---
 
@@ -109,12 +120,12 @@ L0: Environment Observer
 
 **Options:**
 - [ ] Option A: Keep fractional numbering (has specific semantic meaning?)
-- [ ] Option B: Renumber to sequential L0-L6 for clarity
+- [x] Option B: Renumber to sequential L0-L6 for clarity
 - [ ] Option C: Use named layers only, drop numbers entirely
 
-**Decision:** _____________
+**Decision:** Renumber to sequential L0-L6
 
-**Rationale:** _____________
+**Rationale:** Fractional numbering creates technical debt and confusion. A clean 0-6 hierarchy maintains the "7-Layer Isolation Model" while improving code readability and developer onboarding. New numbering will be documented in revised architecture diagram.
 
 ---
 
@@ -133,9 +144,9 @@ L0: System Monitoring (Power/Focus)
 - **Current (7 layers):** Maximum testability, clear boundaries, higher cognitive load
 - **Simplified (4 layers):** Faster development, easier onboarding, less strict isolation
 
-**Decision:** _____________
+**Decision:** Keep 7-Layer Architecture (with refinements)
 
-**Rationale:** _____________
+**Rationale:** The separation between the **L2 Sync Daemon** (network I/O) and **L1 Persistence** (SQLite) is critical for offline-first functionality. Strict isolation ensures that network failures do not hang the UI. However, L0 (Environment Observer) will be simplified to a utility module rather than a full "layer" to reduce cognitive overhead.
 
 ---
 
@@ -158,9 +169,9 @@ L0: System Monitoring (Power/Focus)
 - [ ] Option C: Make all Canvas data strictly read-only except user-created content
 - [ ] Option D: Add a "Notes" field to assignments/courses for local annotations
 
-**Decision:** _____________
+**Decision:** Allow local edits to Canvas objects (grades, weights, assignments) with conflict detection
 
-**Rationale:** _____________
+**Rationale:** Users can edit Canvas objects locally for "what-if" analysis. These fields will NOT be overridden by Canvas API pulls if the API does not provide data for those specific fields. If a conflict occurs (user edits + Canvas updates same field), the system will flag it and present both versions for user resolution via the Conflict Resolver UI (Part V of spec). This enables academic planning without compromising data integrity.
 
 ---
 
@@ -180,18 +191,18 @@ L0: System Monitoring (Power/Focus)
 
 **Need to Define:**
 1. **Rate Limit Detection:**
-   - [ ] Parse `X-Rate-Limit-Remaining` header
-   - [ ] Detect 429 Too Many Requests response
-   - [ ] Exponential backoff on 429
+   - [x] Parse `X-Rate-Limit-Remaining` header
+   - [x] Detect 429 Too Many Requests response
+   - [x] Exponential backoff on 429
 
 2. **Concurrency:**
-   - [ ] Max concurrent requests: ___ (spec says "configurable concurrency")
-   - [ ] Queue system for file downloads
-   - [ ] Priority: assignments > announcements > files
+   - [x] Max concurrent requests: **3 concurrent course syncs**
+   - [x] Queue system for file downloads
+   - [x] Priority: assignments > announcements > files
 
-**Decision:** _____________
+**Decision:** Parse `X-Rate-Limit-Remaining` header + exponential backoff on 429
 
-**Rationale:** _____________
+**Rationale:** Adaptive sync requires the system to slow down BEFORE hitting a 429 error, preserving token health. Max 3 concurrent course syncs prevents institutional throttling. Queue system ensures high-priority resources (assignments) sync before low-priority ones (file attachments).
 
 ---
 
@@ -209,14 +220,14 @@ L0: System Monitoring (Power/Focus)
 4. Forever broken: Professor misconfigured weights (sum = 87% or 112%)
 
 **Options:**
-- [ ] Option A: Show warning banner "Analytics unavailable until all work is posted (current: 75%)"
+- [x] Option A: Show warning banner "Analytics unavailable until all work is posted (current: 75%)"
 - [ ] Option B: Show partial analytics with disclaimer "Based on X% of coursework"
 - [ ] Option C: Extrapolate to 100% (risky, potentially misleading)
 - [ ] Option D: Allow manual override "I confirm this is all coursework"
 
-**Decision:** _____________
+**Decision:** Show warning banner with current weight percentage
 
-**Rationale:** _____________
+**Rationale:** The **100% Guardrail** is essential for academic trust. Accurate ROI and target_delta cannot be calculated if the course syllabus weighting is incomplete or incorrect. Warning banner format: "⚠️ Analytics unavailable until all work is posted (current: 87%). Check Canvas for missing assignments."
 
 ---
 
@@ -238,11 +249,11 @@ L0: System Monitoring (Power/Focus)
 - [ ] Option A: Full RRULE support (spec as written)
 - [ ] Option B: Simple recurrence only (daily/weekly/monthly, no complex rules)
 - [ ] Option C: No recurrence - user creates separate events
-- [ ] Option D: Phase 2 feature (cut from MVP)
+- [x] Option D: Phase 2 feature (cut from MVP)
 
-**Decision:** _____________
+**Decision:** Cut from MVP, defer to Phase 2
 
-**Rationale:** _____________
+**Rationale:** Full RRULE support for recurring events adds significant overhead to the L1 schema and UI logic. MVP will support single-instance events only. Recurring events (lectures, labs) can be manually created or imported from Canvas calendar in Phase 2 once core sync and analytics are stable.
 
 ---
 
@@ -264,12 +275,12 @@ L0: System Monitoring (Power/Focus)
 **Options:**
 - [ ] Option A: Full file syncing as specified (high complexity)
 - [ ] Option B: View-only links (open files in browser, no local cache)
-- [ ] Option C: Manual download only (user clicks, we download once, no sync)
+- [x] Option C: Manual download only (user clicks, we download once, no sync)
 - [ ] Option D: Phase 2 feature
 
-**Decision:** _____________
+**Decision:** Unidirectional manual sync (Canvas → Local)
 
-**Rationale:** _____________
+**Rationale:** No cloud uploads. Files are synced one-way from Canvas to local storage when user explicitly requests download. Manual caching allows for offline viewing without the complexity and corruption risks of bidirectional syncing or automatic background downloads. Users control storage usage.
 
 ---
 
@@ -294,12 +305,19 @@ L0: System Monitoring (Power/Focus)
    - [ ] Or rely on OS trust store?
 
 4. **Threat: Malicious Updates**
-   - [ ] Code signing for electron-updater?
-   - [ ] Update verification?
+   - [x] Code signing for electron-updater
+   - [x] Update verification
 
-**Decision:** _____________
+**Decision:** Mitigate via OS Keychain, File Permissions, and HMAC IPC Validation
 
-**Rationale:** _____________
+**Mitigations:**
+1. **API Token Theft:** Rely on OS keychain security (keytar). If compromised, user must revoke token via Canvas settings.
+2. **Local Database Access:** Set file permissions to chmod 600 (owner read/write only). No encryption at rest (performance overhead not justified for non-PII academic data).
+3. **Man-in-the-Middle:** Rely on OS trust store (system certificates). No custom certificate pinning.
+4. **Malicious Updates:** Code signing for macOS/Windows. Verify update signatures before applying.
+5. **IPC Security:** All renderer-to-main communication signed with HMAC validation to prevent script injection.
+
+**Rationale:** Balance security with implementation complexity. Focus on standard OS-level protections rather than custom crypto that could introduce vulnerabilities.
 
 ---
 
@@ -313,13 +331,13 @@ L0: System Monitoring (Power/Focus)
 
 **Options:**
 - [ ] Option A: JSON export of all tables
-- [ ] Option B: SQLite file copy (with instructions)
+- [x] Option B: SQLite file copy (with instructions)
 - [ ] Option C: Cloud backup (Dropbox/Google Drive sync)
 - [ ] Option D: No export (data stays local, ephemeral)
 
-**Decision:** _____________
+**Decision:** SQLite file copy via "Export Database" menu option
 
-**Rationale:** _____________
+**Rationale:** As a local-first app, providing a "File → Export Database As..." option is the most transparent way for users to own their data. Users can copy the .db file to new computers, analyze in SQLite Browser, or backup to cloud storage manually. No automatic cloud sync to preserve privacy.
 
 ---
 
@@ -332,17 +350,17 @@ L0: System Monitoring (Power/Focus)
 
 **Need to Define:**
 1. **Pre-migration backup:**
-   - [ ] Automatic backup before every migration?
-   - [ ] Keep last N backups?
+   - [x] Automatic backup before every migration
+   - [x] Keep last 3 backups (auto-delete older)
 
 2. **Rollback mechanism:**
-   - [ ] Manual rollback via CLI command?
-   - [ ] Automatic rollback on failure?
-   - [ ] Warn user and require intervention?
+   - [ ] Manual rollback via CLI command
+   - [x] Automatic rollback on migration failure
+   - [x] Warn user and provide recovery instructions
 
-**Decision:** _____________
+**Decision:** Pre-migration backup + automatic rollback on failure
 
-**Rationale:** _____________
+**Rationale:** Since SQLite is the "Single Source of Truth," a failed migration during a version bump is a catastrophic failure state. Automatic backup before migrations (stored in `backups/database_v{version}_{timestamp}.db`) with auto-rollback ensures data safety. Keep last 3 backups to prevent disk bloat.
 
 ---
 
@@ -362,11 +380,11 @@ L0: System Monitoring (Power/Focus)
 - [ ] Option A: Conduct user interviews (5-10 UofT students)
 - [ ] Option B: Survey (Google Forms, 50+ responses)
 - [ ] Option C: Build clickable prototype, observe usage
-- [ ] Option D: Ship MVP, iterate based on feedback
+- [x] Option D: Ship MVP, iterate based on feedback
 
-**Decision:** _____________
+**Decision:** Ship MVP, iterate based on real-world feedback
 
-**Rationale:** _____________
+**Rationale:** Core features (offline sync, ROI priority, grade analytics) address documented pain points for UofT students managing multiple courses. Real-world usage data with actual Canvas data is more valuable than prototype observation in a tight 10-week window. Build telemetry (privacy-respecting) into MVP to track feature usage and guide Phase 2 priorities.
 
 ---
 
@@ -386,13 +404,13 @@ L0: System Monitoring (Power/Focus)
 | L0: Environment Observer | Low | ★★☆☆☆ (battery/focus) | ? |
 
 **Questions:**
-- Can L4 and L2.5 merge?
-- Can L0 be a simple utility module instead of a "layer"?
-- Is L3 worth it vs. simple sorting heuristics?
+- Can L4 and L2.5 merge? **No** - Presentation logic (view models) and command validation serve different purposes.
+- Can L0 be a simple utility module instead of a "layer"? **Yes** - Simplify to utility/service module.
+- Is L3 worth it vs. simple sorting heuristics? **Yes** - ROI scoring is core value proposition.
 
-**Decision:** _____________
+**Decision:** Merge L0 Environment Observer into utility module; keep other layers
 
-**Rationale:** _____________
+**Rationale:** L0 (battery/focus monitoring) doesn't need full "layer" status - can be a simple service. This reduces cognitive overhead while maintaining the critical separation between Sync (L2), Intelligence (L3), and Persistence (L1). Revised architecture will have 6 functional layers + utilities.
 
 ---
 
@@ -411,61 +429,71 @@ L0: System Monitoring (Power/Focus)
 3. **Prior experience:** ___ (React? Electron? SQLite? Canvas API?)
 
 **Options:**
-- [ ] Option A: Keep 10-week timeline, cut features to fit
+- [x] Option A: Keep 10-week timeline, cut features to fit
 - [ ] Option B: Extend timeline to 16-20 weeks for full spec
 - [ ] Option C: MVP in 10 weeks, full features in 20 weeks
 - [ ] Option D: Hire additional developers
 
-**Decision:** _____________
+**Decision:** Keep 10-week timeline, cut Phase 3 features
 
-**Rationale:** _____________
+**Rationale:** Focus on "Must-Have" features (Sync, ROI scoring, Dashboard, Notifications) and move complex features (ML classification, full file sync, recurring events) to backlog. Deliver working MVP that students can use immediately rather than perfect system in 6 months. Ship early, iterate based on feedback.
 
 ---
 
 ### Q6.2: Phase Prioritization
 **Question:** If we need to cut scope, what's the priority order?
 
-**Must-Have (MVP):**
-- [ ] Dashboard with assignment list
-- [ ] Basic Canvas sync (courses, assignments, grades)
-- [ ] SQLite persistence
-- [ ] Simple priority scoring (time + weight)
-- [ ] Notifications feed
+**Must-Have (MVP - Weeks 1-10):**
+- [x] Dashboard with assignment list
+- [x] Basic Canvas sync (courses, assignments, grades)
+- [x] SQLite persistence with WAL mode
+- [x] ROI priority scoring (custom formula)
+- [x] Notifications feed with dismiss/archive
+- [x] Basic keyboard shortcuts (Alt+1-5, j/k navigation)
 
-**Should-Have (Phase 2):**
-- [ ] Calendar view (day/week/month)
-- [ ] Grade analytics (assessed vs. current)
-- [ ] Keyboard shortcuts
-- [ ] Theme switching
+**Should-Have (Phase 2 - Weeks 11-16):**
+- [x] Calendar view (day/week/month, single events only)
+- [x] Grade analytics (assessed vs. current, target delta, volatility)
+- [x] Theme switching (light/dark/system)
+- [x] Command palette (Ctrl/Cmd+K)
+- [x] File browser with manual download
 
-**Nice-to-Have (Phase 3+):**
-- [ ] File syncing
-- [ ] Recurring events
-- [ ] ML-based priority scoring
-- [ ] Lab classification
-- [ ] Command palette
+**Nice-to-Have (Phase 3+ - Future Backlog):**
+- [ ] Automatic file syncing
+- [ ] Recurring events (RRULE support)
+- [ ] ML-based importance classification
+- [ ] Wet/dry lab classification
+- [ ] Advanced command palette features
 
-**Decision:** _____________
+**Decision:** Prioritized roadmap above with clear phase boundaries
 
-**Rationale:** _____________
-
----
-
-## Next Steps
-
-**For Each Question Above:**
-1. Assign owner to research/propose solution
-2. Set decision deadline
-3. Document final decision in this file
-4. Update main spec (CID_Implementation_Plan_v4.md) accordingly
-
-**Review Cadence:**
-- Update this document daily during Phase 0 (pre-implementation)
-- Mark questions as RESOLVED when decided
-- Archive resolved questions to separate document after 1 week
+**Rationale:** MVP delivers core value (offline access, smart prioritization, grade tracking) in 10 weeks. Phase 2 adds polish and analytics. Phase 3+ features deferred until user feedback validates demand.
 
 ---
 
-**Document Owner:** _____________
-**Last Review:** January 21, 2026
-**Next Review:** _______________
+## ✅ All Questions Resolved - Ready for Implementation
+
+**Completed Actions:**
+1. ✅ All 25 questions answered with concrete decisions
+2. ✅ Rationales documented for architectural choices
+3. ✅ MVP scope clearly defined (10-week timeline)
+4. ✅ Phase 2/3 features identified and deferred
+
+**Next Steps:**
+1. Create `MVP_IMPLEMENTATION_ROADMAP.md` with week-by-week milestones
+2. Generate revised architecture diagram (L0-L6 sequential numbering)
+3. Document ROI formula as implementation specification
+4. Set up project scaffolding (directory structure, dependencies)
+5. Begin Phase 1: Foundation (Environment setup, SQLite schema)
+
+**Post-Resolution Actions:**
+- [ ] Update `CID_Implementation_Plan_v4.md` to reflect final decisions
+- [ ] Share decisions with team for review
+- [ ] Create GitHub project board with MVP tasks
+- [ ] Schedule Phase 1 kickoff meeting
+
+---
+
+**Document Owner:** Project Team
+**Decisions Finalized:** January 21, 2026
+**Status:** LOCKED - No further changes without formal change request
