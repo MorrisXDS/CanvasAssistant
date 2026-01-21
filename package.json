@@ -1,0 +1,69 @@
+{
+  "name": "canvas-integration-dashboard",
+  "version": "0.1.0",
+  "description": "Offline-first academic command center for Canvas LMS",
+  "main": "dist/main.js",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:main\" \"npm run dev:renderer\"",
+    "dev:main": "tsc -w",
+    "dev:renderer": "vite",
+    "build": "tsc && vite build",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "lint": "eslint src/**/*.ts src/**/*.tsx",
+    "format": "prettier --write src/**/*.{ts,tsx}",
+    "package": "electron-builder",
+    "package:mac": "electron-builder --mac",
+    "package:win": "electron-builder --win",
+    "package:linux": "electron-builder --linux"
+  },
+  "keywords": [
+    "canvas",
+    "lms",
+    "academic",
+    "offline-first",
+    "uoft",
+    "electron"
+  ],
+  "author": "UofT Students",
+  "license": "MIT",
+  "dependencies": {
+    "better-sqlite3": "^9.2.2",
+    "electron": "^28.1.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-window": "^1.8.10",
+    "zustand": "^4.4.7",
+    "winston": "^3.11.0",
+    "keytar": "^7.9.0",
+    "axios": "^1.6.2",
+    "react-hotkeys-hook": "^4.4.1"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.8",
+    "@types/react": "^18.2.45",
+    "@types/react-dom": "^18.2.18",
+    "@types/react-window": "^1.8.8",
+    "@types/node": "^20.10.5",
+    "typescript": "^5.3.3",
+    "vite": "^5.0.8",
+    "@vitejs/plugin-react": "^4.2.1",
+    "electron-builder": "^24.9.1",
+    "eslint": "^8.56.0",
+    "@typescript-eslint/eslint-plugin": "^6.15.0",
+    "@typescript-eslint/parser": "^6.15.0",
+    "prettier": "^3.1.1",
+    "jest": "^29.7.0",
+    "@testing-library/react": "^14.1.2",
+    "@testing-library/jest-dom": "^6.1.5",
+    "concurrently": "^8.2.2"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MorrisXDS/CanvasAssistant.git"
+  },
+  "bugs": {
+    "url": "https://github.com/MorrisXDS/CanvasAssistant/issues"
+  },
+  "homepage": "https://github.com/MorrisXDS/CanvasAssistant#readme"
+}
