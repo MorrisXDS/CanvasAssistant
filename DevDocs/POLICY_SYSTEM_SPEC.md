@@ -388,6 +388,93 @@ When viewing a task, show applicable policies:
 
 ---
 
+## Policy Announcement Detection
+
+Instructors often announce policy changes via Canvas announcements. The system tracks these automatically.
+
+### Schema
+
+```sql
+-- Added to notifications table
+ALTER TABLE notifications ADD COLUMN is_policy_related BOOLEAN;
+ALTER TABLE notifications ADD COLUMN policy_keywords TEXT;
+ALTER TABLE notifications ADD COLUMN linked_policy_id INTEGER;
+
+-- Junction table for detected policy announcements
+CREATE TABLE policy_announcements (
+  id INTEGER PRIMARY KEY,
+  notification_id INTEGER NOT NULL,
+  course_id INTEGER NOT NULL,
+  detected_policy_type TEXT,       -- 'late_penalty', 'grace_tokens', etc.
+  confidence_score REAL,           -- 0.0-1.0 detection confidence
+  extracted_rules TEXT,            -- JSON of detected rules
+  is_confirmed BOOLEAN,            -- User confirmed accuracy
+  FOREIGN KEY(notification_id) REFERENCES notifications(id),
+  FOREIGN KEY(course_id) REFERENCES courses(id)
+);
+```
+
+### Detection Keywords
+
+When syncing announcements, scan for these policy-related keywords:
+
+```typescript
+const POLICY_KEYWORDS = {
+  late_submission: ['late', 'deadline', 'extension', 'overdue'],
+  grace_period: ['grace', 'token', 'free pass', 'slip day'],
+  penalties: ['penalty', 'deduction', '-5%', 'penalize'],
+  weight_changes: ['weight', 'reweight', 'redistribute'],
+  drops: ['drop lowest', 'drop', 'forgive'],
+  bonus: ['bonus', 'extra credit', 'additional marks'],
+  resubmission: ['resubmit', 'redo', 'correction', 'revision'],
+};
+```
+
+### Workflow
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ L2: Sync Announcements from Canvas                          │
+│ - Fetch /courses/:id/discussion_topics?only_announcements   │
+│ - Store in notifications table                              │
+└─────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────┐
+│ L3: Policy Detection (on sync)                              │
+│ - Scan announcement text for policy keywords                │
+│ - If keywords found: set is_policy_related = TRUE           │
+│ - Create entry in policy_announcements table                │
+│ - Calculate confidence_score based on keyword density       │
+└─────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────┐
+│ L6: UI Notification Badge                                   │
+│ - Show "Policy Update" badge on relevant announcements      │
+│ - Prompt user: "Create policy from this announcement?"      │
+│ - Pre-fill policy form with extracted rules                 │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Example Detection
+
+**Announcement:** "Due to feedback, I'm extending the grace period for Assignment 3. You now have 48 hours after the deadline with no penalty."
+
+**Detection Result:**
+```json
+{
+  "is_policy_related": true,
+  "policy_keywords": ["grace period", "deadline", "no penalty"],
+  "detected_policy_type": "grace_period",
+  "confidence_score": 0.85,
+  "extracted_rules": {
+    "grace_period_hours": 48,
+    "applies_to": "Assignment 3"
+  }
+}
+```
+
+---
+
 ## Future Enhancements (Phase 2+)
 
 1. **NLP Policy Extraction:** Use LLM to parse syllabus and suggest policies
@@ -395,6 +482,7 @@ When viewing a task, show applicable policies:
 3. **Policy Sharing:** Export/import policies between users
 4. **Conflict Detection:** Warn if policies contradict each other
 5. **Historical Analysis:** Track policy effectiveness over semesters
+6. **Announcement Alerts:** Push notification when policy announcement detected
 
 ---
 
@@ -402,9 +490,12 @@ When viewing a task, show applicable policies:
 
 - [x] Database schema for course_policies
 - [x] Database schema for course_pages (syllabus storage)
+- [x] Database schema for policy_announcements
 - [x] Policy type definitions
 - [x] L3 priority adjustment algorithm
+- [x] Canvas API integration tested (real token)
 - [ ] L2 syllabus sync implementation
+- [ ] L2 announcement policy detection
 - [ ] L6 policy editor UI
 - [ ] Unit tests for policy scoring
 - [ ] Integration tests for policy flow

@@ -480,4 +480,42 @@ export const coreMigrations: Migration[] = [
       DROP INDEX IF EXISTS idx_module_items_module;
     `,
   },
+  {
+    version: 15,
+    description: 'Add policy tracking columns to notifications',
+    up: `
+      ALTER TABLE notifications ADD COLUMN is_policy_related BOOLEAN DEFAULT FALSE;
+      ALTER TABLE notifications ADD COLUMN policy_keywords TEXT;
+      ALTER TABLE notifications ADD COLUMN linked_policy_id INTEGER REFERENCES course_policies(id);
+    `,
+    down: `
+      -- SQLite doesn't support DROP COLUMN easily
+      SELECT 1;
+    `,
+  },
+  {
+    version: 16,
+    description: 'Create policy_announcements junction table',
+    up: `
+      CREATE TABLE policy_announcements (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        notification_id INTEGER NOT NULL,
+        course_id INTEGER NOT NULL,
+        detected_policy_type TEXT,
+        confidence_score REAL DEFAULT 0.0,
+        extracted_rules TEXT,
+        is_confirmed BOOLEAN DEFAULT FALSE,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(notification_id) REFERENCES notifications(id),
+        FOREIGN KEY(course_id) REFERENCES courses(id)
+      );
+      CREATE INDEX idx_policy_announcements_notification ON policy_announcements(notification_id);
+      CREATE INDEX idx_policy_announcements_course ON policy_announcements(course_id);
+    `,
+    down: `
+      DROP INDEX IF EXISTS idx_policy_announcements_notification;
+      DROP INDEX IF EXISTS idx_policy_announcements_course;
+      DROP TABLE policy_announcements;
+    `,
+  },
 ];
