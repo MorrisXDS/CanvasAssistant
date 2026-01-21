@@ -270,11 +270,13 @@ The CID is designed as an **academic command center** with high-density informat
 
 **Priority Heatmap Colors**
 
-| Priority Level | Score Range | Color |
+| Priority Level | Internal Score Range* | Display Color |
 | :--- | :--- | :--- |
 | Critical | >75 | Crimson Red (#DC2626) |
 | High | >50 | Amber (#D97706) |
 | Normal | ≤50 | Emerald (#059669) |
+
+*Score ranges are internal thresholds only. Users see color-coded visual indicators, **not numeric priority scores**.
 
 ### 3.2 The Five Main Sections
 

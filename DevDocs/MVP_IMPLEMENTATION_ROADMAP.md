@@ -336,8 +336,9 @@ This roadmap defines the **10-week MVP implementation** for the Canvas Integrati
 **Milestone 5.2: Dashboard View**
 - [ ] **ROI Priority List** component:
   - Virtual list rendering with `react-window` (handles 100+ assignments)
-  - Columns: Title, Course, Due Date, Weight, Priority Score
+  - Columns: Title, Course, Due Date, Weight, Priority (color indicator only)
   - Color coding: Critical (red), High (amber), Normal (green)
+  - **Note:** Numeric priority_score is internal only, never displayed to users
   - Click to expand assignment details
 - [ ] **Recent Notifications** widget:
   - Last 5 unread notifications

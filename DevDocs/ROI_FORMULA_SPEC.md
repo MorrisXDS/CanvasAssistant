@@ -580,23 +580,25 @@ this.db.transaction(() => {
 
 ### Dashboard Priority List
 
-Assignments sorted by `priority_score DESC`:
+Assignments sorted by `priority_score DESC` (score is **internal only**, not shown to users):
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│  Assignment                | Course    | Due   | Score | 🎯 │
-├─────────────────────────────────────────────────────────────┤
-│  Final Project Report      | ECE314   | 2d    | 1245  | 🔴 │
-│  Midterm Exam              | CSC373   | 5d    | 892   | 🟠 │
-│  Lab 3 - Circuit Analysis  | ECE212   | 1w    | 547   | 🟠 │
-│  Problem Set 4             | MAT237   | 2w    | 312   | 🟢 │
-└─────────────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────┐
+│  Assignment                | Course    | Due   | Priority │
+├───────────────────────────────────────────────────────────┤
+│  Final Project Report      | ECE314   | 2d    | 🔴       │
+│  Midterm Exam              | CSC373   | 5d    | 🟠       │
+│  Lab 3 - Circuit Analysis  | ECE212   | 1w    | 🟠       │
+│  Problem Set 4             | MAT237   | 2w    | 🟢       │
+└───────────────────────────────────────────────────────────┘
 ```
 
 **Color Coding:**
-- 🔴 Critical (score > 750): Crimson Red (#DC2626)
-- 🟠 High (score > 400): Amber (#D97706)
-- 🟢 Normal (score ≤ 400): Emerald (#059669)
+- 🔴 Critical: Crimson Red (#DC2626) - Highest priority assignments
+- 🟠 High: Amber (#D97706) - Important assignments
+- 🟢 Normal: Emerald (#059669) - Standard assignments
+
+**Implementation Note:** The numeric `priority_score` is calculated and stored in the database but **never exposed to users**. Only the color-coded visual indicator is displayed. Score thresholds for color coding are internal implementation details that can be tuned without affecting UX.
 
 ### Course Analytics
 
