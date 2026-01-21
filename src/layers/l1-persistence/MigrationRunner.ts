@@ -344,6 +344,106 @@ export const coreMigrations: Migration[] = [
   },
   {
     version: 9,
+    description: 'Create course_policies table',
+    up: `
+      CREATE TABLE course_policies (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        course_id INTEGER NOT NULL,
+        policy_type TEXT NOT NULL,
+        policy_name TEXT NOT NULL,
+        policy_config TEXT NOT NULL,
+        raw_text TEXT,
+        is_user_verified BOOLEAN DEFAULT FALSE,
+        is_active BOOLEAN DEFAULT TRUE,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(course_id) REFERENCES courses(id),
+        UNIQUE(course_id, policy_type, policy_name)
+      )
+    `,
+    down: 'DROP TABLE course_policies',
+  },
+  {
+    version: 10,
+    description: 'Create course_pages table for syllabus and content pages',
+    up: `
+      CREATE TABLE course_pages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        external_id TEXT UNIQUE,
+        course_id INTEGER NOT NULL,
+        page_type TEXT CHECK(page_type IN ('syllabus', 'landing', 'content', 'module_item')),
+        title TEXT NOT NULL,
+        url_slug TEXT,
+        body_html TEXT,
+        body_text TEXT,
+        is_front_page BOOLEAN DEFAULT FALSE,
+        published BOOLEAN DEFAULT TRUE,
+        last_synced_at DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(course_id) REFERENCES courses(id)
+      )
+    `,
+    down: 'DROP TABLE course_pages',
+  },
+  {
+    version: 11,
+    description: 'Create modules table for course structure',
+    up: `
+      CREATE TABLE modules (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        external_id TEXT UNIQUE NOT NULL,
+        course_id INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        position INTEGER,
+        unlock_at DATETIME,
+        require_sequential_progress BOOLEAN DEFAULT FALSE,
+        published BOOLEAN DEFAULT TRUE,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(course_id) REFERENCES courses(id)
+      )
+    `,
+    down: 'DROP TABLE modules',
+  },
+  {
+    version: 12,
+    description: 'Create module_items table',
+    up: `
+      CREATE TABLE module_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        external_id TEXT UNIQUE NOT NULL,
+        module_id INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        item_type TEXT CHECK(item_type IN ('File', 'Page', 'Discussion', 'Assignment', 'Quiz', 'SubHeader', 'ExternalUrl', 'ExternalTool')),
+        content_id TEXT,
+        position INTEGER,
+        indent INTEGER DEFAULT 0,
+        url TEXT,
+        external_url TEXT,
+        completion_requirement TEXT,
+        published BOOLEAN DEFAULT TRUE,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(module_id) REFERENCES modules(id)
+      )
+    `,
+    down: 'DROP TABLE module_items',
+  },
+  {
+    version: 13,
+    description: 'Add syllabus_body to courses table',
+    up: `
+      ALTER TABLE courses ADD COLUMN syllabus_body TEXT;
+      ALTER TABLE courses ADD COLUMN syllabus_updated_at DATETIME;
+    `,
+    down: `
+      -- SQLite doesn't support DROP COLUMN easily, would need table rebuild
+      SELECT 1;
+    `,
+  },
+  {
+    version: 14,
     description: 'Create performance indexes',
     up: `
       CREATE INDEX idx_tasks_priority ON tasks(priority_score DESC);
@@ -355,6 +455,12 @@ export const coreMigrations: Migration[] = [
       CREATE INDEX idx_calendar_events_start ON calendar_events(start_at);
       CREATE INDEX idx_resources_course ON resources(course_id);
       CREATE INDEX idx_grade_history_course ON grade_history(course_id);
+      CREATE INDEX idx_course_policies_course ON course_policies(course_id);
+      CREATE INDEX idx_course_policies_type ON course_policies(policy_type);
+      CREATE INDEX idx_course_pages_course ON course_pages(course_id);
+      CREATE INDEX idx_course_pages_type ON course_pages(page_type);
+      CREATE INDEX idx_modules_course ON modules(course_id);
+      CREATE INDEX idx_module_items_module ON module_items(module_id);
     `,
     down: `
       DROP INDEX IF EXISTS idx_tasks_priority;
@@ -366,6 +472,12 @@ export const coreMigrations: Migration[] = [
       DROP INDEX IF EXISTS idx_calendar_events_start;
       DROP INDEX IF EXISTS idx_resources_course;
       DROP INDEX IF EXISTS idx_grade_history_course;
+      DROP INDEX IF EXISTS idx_course_policies_course;
+      DROP INDEX IF EXISTS idx_course_policies_type;
+      DROP INDEX IF EXISTS idx_course_pages_course;
+      DROP INDEX IF EXISTS idx_course_pages_type;
+      DROP INDEX IF EXISTS idx_modules_course;
+      DROP INDEX IF EXISTS idx_module_items_module;
     `,
   },
 ];

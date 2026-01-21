@@ -302,6 +302,10 @@ describe('MigrationRunner', () => {
         'grade_history',
         'user_preferences',
         'sync_metadata',
+        'course_policies',
+        'course_pages',
+        'modules',
+        'module_items',
       ];
 
       for (const tableName of expectedTables) {
@@ -321,8 +325,8 @@ describe('MigrationRunner', () => {
         "SELECT name FROM sqlite_master WHERE type='index' AND name LIKE 'idx_%'"
       );
 
-      // Should have at least the indexes we defined
-      expect(indexes.length).toBeGreaterThanOrEqual(9);
+      // Should have at least the indexes we defined (15 indexes in migration 14)
+      expect(indexes.length).toBeGreaterThanOrEqual(15);
     });
   });
 });
