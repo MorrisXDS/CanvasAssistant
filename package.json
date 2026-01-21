@@ -34,7 +34,6 @@
     "react-window": "^1.8.10",
     "zustand": "^5.0.2",
     "winston": "^3.17.0",
-    "keyring-rs": "^0.3.3",
     "axios": "^1.7.9",
     "react-hotkeys-hook": "^4.6.1"
   },
@@ -48,7 +47,7 @@
     "typescript": "^5.7.3",
     "vite": "^6.0.7",
     "@vitejs/plugin-react": "^4.3.4",
-    "electron-builder": "^25.2.0",
+    "electron-builder": "^24.13.3",
     "eslint": "^9.18.0",
     "@typescript-eslint/eslint-plugin": "^8.21.0",
     "@typescript-eslint/parser": "^8.21.0",
