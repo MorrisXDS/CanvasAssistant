@@ -295,7 +295,7 @@ describe('MigrationRunner', () => {
 
       const expectedTables = [
         'courses',
-        'assignments',
+        'tasks',
         'calendar_events',
         'notifications',
         'resources',
@@ -322,7 +322,7 @@ describe('MigrationRunner', () => {
       );
 
       // Should have at least the indexes we defined
-      expect(indexes.length).toBeGreaterThanOrEqual(8);
+      expect(indexes.length).toBeGreaterThanOrEqual(9);
     });
   });
 });

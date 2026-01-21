@@ -204,12 +204,13 @@ export const coreMigrations: Migration[] = [
   },
   {
     version: 2,
-    description: 'Create assignments table',
+    description: 'Create tasks table',
     up: `
-      CREATE TABLE assignments (
+      CREATE TABLE tasks (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        external_id TEXT UNIQUE NOT NULL,
-        course_id INTEGER NOT NULL,
+        external_id TEXT UNIQUE,
+        source_type TEXT CHECK(source_type IN ('canvas', 'user')) DEFAULT 'canvas',
+        course_id INTEGER,
         title TEXT NOT NULL,
         description TEXT,
         due_at DATETIME,
@@ -227,7 +228,7 @@ export const coreMigrations: Migration[] = [
         FOREIGN KEY(course_id) REFERENCES courses(id)
       )
     `,
-    down: 'DROP TABLE assignments',
+    down: 'DROP TABLE tasks',
   },
   {
     version: 3,
@@ -345,9 +346,10 @@ export const coreMigrations: Migration[] = [
     version: 9,
     description: 'Create performance indexes',
     up: `
-      CREATE INDEX idx_assignments_priority ON assignments(priority_score DESC);
-      CREATE INDEX idx_assignments_due_date ON assignments(due_at);
-      CREATE INDEX idx_assignments_course ON assignments(course_id);
+      CREATE INDEX idx_tasks_priority ON tasks(priority_score DESC);
+      CREATE INDEX idx_tasks_due_date ON tasks(due_at);
+      CREATE INDEX idx_tasks_course ON tasks(course_id);
+      CREATE INDEX idx_tasks_source ON tasks(source_type);
       CREATE INDEX idx_notifications_dismissed ON notifications(dismissed_at);
       CREATE INDEX idx_notifications_course ON notifications(course_id);
       CREATE INDEX idx_calendar_events_start ON calendar_events(start_at);
@@ -355,9 +357,10 @@ export const coreMigrations: Migration[] = [
       CREATE INDEX idx_grade_history_course ON grade_history(course_id);
     `,
     down: `
-      DROP INDEX IF EXISTS idx_assignments_priority;
-      DROP INDEX IF EXISTS idx_assignments_due_date;
-      DROP INDEX IF EXISTS idx_assignments_course;
+      DROP INDEX IF EXISTS idx_tasks_priority;
+      DROP INDEX IF EXISTS idx_tasks_due_date;
+      DROP INDEX IF EXISTS idx_tasks_course;
+      DROP INDEX IF EXISTS idx_tasks_source;
       DROP INDEX IF EXISTS idx_notifications_dismissed;
       DROP INDEX IF EXISTS idx_notifications_course;
       DROP INDEX IF EXISTS idx_calendar_events_start;

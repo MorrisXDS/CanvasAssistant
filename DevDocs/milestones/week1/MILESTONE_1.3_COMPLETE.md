@@ -63,7 +63,7 @@ const result = runner.runAll();
 | Version | Table | Description |
 |---------|-------|-------------|
 | 1 | `courses` | Course info, grades, targets |
-| 2 | `assignments` | Work items with priority scores |
+| 2 | `tasks` | Work items with priority scores (Canvas + user-created) |
 | 3 | `calendar_events` | Canvas + user-created events |
 | 4 | `notifications` | Announcements and system alerts |
 | 5 | `resources` | Files and folders |
@@ -75,9 +75,10 @@ const result = runner.runAll();
 ### 4. Performance Indexes
 
 ```sql
-idx_assignments_priority    -- Priority-sorted queries
-idx_assignments_due_date    -- Due date filtering
-idx_assignments_course      -- Course lookups
+idx_tasks_priority          -- Priority-sorted queries
+idx_tasks_due_date          -- Due date filtering
+idx_tasks_course            -- Course lookups
+idx_tasks_source            -- Source type filtering (canvas/user)
 idx_notifications_dismissed -- Active notification queries
 idx_notifications_course    -- Course notification lists
 idx_calendar_events_start   -- Calendar date ranges
@@ -120,7 +121,7 @@ idx_grade_history_course    -- Grade trend lookups
 | WAL Mode | Enabled | ✅ |
 | Foreign Keys | Enforced | ✅ |
 | All Tables Created | 8 | ✅ |
-| Indexes Created | 8 | ✅ |
+| Indexes Created | 9 | ✅ |
 
 ---
 
@@ -159,8 +160,9 @@ db.on('commit', ({ table, operation, rowId }) => {
 All Canvas data is synced using external_id for conflict resolution:
 
 ```typescript
-db.upsert('assignments', {
+db.upsert('tasks', {
   external_id: 'canvas_assignment_456',
+  source_type: 'canvas',
   course_id: 1,
   title: 'Midterm Exam',
   due_at: '2026-02-15T23:59:00Z',
