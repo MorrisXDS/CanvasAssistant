@@ -207,6 +207,9 @@ Create `.vscode/settings.json`:
 
 ## Troubleshooting
 
+**📖 For comprehensive build error fixes and dependency issues, see:**
+`DevDocs/milestones/week1/MILESTONE_1.1_FIXES.md`
+
 ### `npm install` fails with "Permission denied"
 
 **macOS/Linux:**

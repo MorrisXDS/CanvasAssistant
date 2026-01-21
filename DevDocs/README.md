@@ -21,6 +21,16 @@ This folder contains comprehensive technical documentation for the Canvas Integr
 | **ROI_FORMULA_SPEC.md** | Priority scoring algorithm implementation | L3 Intelligence developers |
 | **PROJECT_SCAFFOLDING.md** | Directory structure and initial templates | All developers |
 
+### Milestone-Specific Documentation
+
+Week-by-week implementation guides with troubleshooting:
+
+| Milestone | Location | Contents |
+|-----------|----------|----------|
+| **Week 1 Milestone 1.1** | `milestones/week1/MILESTONE_1.1_FIXES.md` | Build error fixes, dependency updates, troubleshooting |
+
+*More milestone docs will be added as development progresses.*
+
 ---
 
 ## 🚀 Quick Start Guide
