@@ -499,7 +499,7 @@ export const coreMigrations: Migration[] = [
     up: `
       CREATE TABLE policy_announcements (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        notification_id INTEGER NOT NULL,
+        notification_id INTEGER NOT NULL UNIQUE,
         course_id INTEGER NOT NULL,
         detected_policy_type TEXT,
         confidence_score REAL DEFAULT 0.0,

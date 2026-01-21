@@ -477,12 +477,12 @@ const POLICY_KEYWORDS = {
 
 ## Future Enhancements (Phase 2+)
 
-1. **NLP Policy Extraction:** Use LLM to parse syllabus and suggest policies
-2. **Policy Templates:** Pre-built templates for common UofT courses
-3. **Policy Sharing:** Export/import policies between users
-4. **Conflict Detection:** Warn if policies contradict each other
-5. **Historical Analysis:** Track policy effectiveness over semesters
-6. **Announcement Alerts:** Push notification when policy announcement detected
+1. ~~**NLP Policy Extraction:** Use LLM to parse syllabus and suggest policies~~ (Not planned)
+2. **Policy Templates:** Pre-built templates for common UofT courses ✓ Planned
+3. **Policy Sharing:** Export/import policies between users ✓ Planned
+4. **Conflict Detection:** Warn if policies contradict each other ✓ Planned
+5. **Historical Analysis:** Track policy effectiveness over semesters ✓ Planned
+6. **Announcement Alerts:** Push notification when policy announcement detected ✓ Planned
 
 ---
 

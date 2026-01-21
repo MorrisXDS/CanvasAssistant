@@ -180,26 +180,37 @@ export class Database extends EventEmitter {
 
   /**
    * Upsert operation with conflict resolution
+   * @param conflictColumns - Single column name or array of column names for composite unique constraint
+   * @param updateTimestamp - Whether to automatically update updated_at column (default: true)
    */
   upsert(
     tableName: string,
     data: Record<string, unknown>,
-    conflictColumn: string = 'external_id'
+    conflictColumns: string | string[] = 'external_id',
+    updateTimestamp: boolean = true
   ): BetterSqlite3.RunResult {
     const columns = Object.keys(data);
     const values = Object.values(data);
     const placeholders = columns.map(() => '?').join(', ');
+
+    // Handle both single and composite conflict columns
+    const conflictColArray = Array.isArray(conflictColumns) ? conflictColumns : [conflictColumns];
+    const conflictClause = conflictColArray.join(', ');
+
     const updates = columns
-      .filter((col) => col !== conflictColumn && col !== 'id')
-      .map((col) => `${col} = excluded.${col}`)
-      .join(', ');
+      .filter((col) => !conflictColArray.includes(col) && col !== 'id')
+      .map((col) => `${col} = excluded.${col}`);
+
+    // Optionally add updated_at if the table has that column
+    if (updateTimestamp && !columns.includes('updated_at')) {
+      updates.push('updated_at = CURRENT_TIMESTAMP');
+    }
 
     const sql = `
       INSERT INTO ${tableName} (${columns.join(', ')})
       VALUES (${placeholders})
-      ON CONFLICT(${conflictColumn}) DO UPDATE SET
-        ${updates},
-        updated_at = CURRENT_TIMESTAMP
+      ON CONFLICT(${conflictClause}) DO UPDATE SET
+        ${updates.join(', ')}
     `;
 
     return this.executeWrite(sql, values, tableName);
