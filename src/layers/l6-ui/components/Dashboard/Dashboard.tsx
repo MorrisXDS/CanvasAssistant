@@ -33,7 +33,7 @@ export function Dashboard() {
       value: viewModel.stats.overdueTasks,
       icon: 'overdue',
       trend: viewModel.stats.overdueTasks > 0
-        ? { direction: 'up', value: `${viewModel.stats.overdueTasks}` }
+        ? { direction: 'warning', value: `${viewModel.stats.overdueTasks}` }
         : undefined,
     },
     {
@@ -54,8 +54,9 @@ export function Dashboard() {
     return undefined;
   };
 
-  // Find most recent sync time from courses
-  const lastSyncedAt = state.courses.reduce((latest: string | null, course) => {
+  // Get last sync time - prefer store's lastSyncedAt (includes scheduled syncs),
+  // fall back to most recent course sync time
+  const lastSyncedAt = state.lastSyncedAt || state.courses.reduce((latest: string | null, course) => {
     if (!course.lastSyncedAt) return latest;
     if (!latest) return course.lastSyncedAt;
     return new Date(course.lastSyncedAt) > new Date(latest)
@@ -121,6 +122,7 @@ export function Dashboard() {
           <div style={styles.priorityColumn}>
             <PriorityList
               items={viewModel.priorityQueue}
+              totalPendingTasks={viewModel.stats.upcomingTasks + viewModel.stats.overdueTasks}
               onTaskClick={handleTaskClick}
               maxItems={8}
             />

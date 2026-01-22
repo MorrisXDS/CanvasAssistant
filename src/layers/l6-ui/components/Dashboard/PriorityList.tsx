@@ -10,6 +10,7 @@ import type { PriorityItem } from '../../../l5-presentation/types';
 
 export interface PriorityListProps {
   items: PriorityItem[];
+  totalPendingTasks?: number;
   onTaskClick?: (taskId: number) => void;
   maxItems?: number;
 }
@@ -33,10 +34,13 @@ function formatDueDate(dueAt: string | null, daysUntilDue: number | null): strin
 
 export function PriorityList({
   items,
+  totalPendingTasks,
   onTaskClick,
   maxItems = 10,
 }: PriorityListProps) {
   const displayItems = items.slice(0, maxItems);
+  // Use totalPendingTasks if provided, otherwise fall back to items length
+  const hasPendingTasks = totalPendingTasks !== undefined ? totalPendingTasks > 0 : items.length > 0;
 
   return (
     <Card
@@ -48,11 +52,15 @@ export function PriorityList({
       }
       padding="md"
     >
-      {displayItems.length === 0 ? (
+      {!hasPendingTasks ? (
         <div style={styles.emptyState}>
           <PartyPopper size={32} color="var(--color-success)" style={{ marginBottom: 'var(--space-2)' }} />
           <span style={styles.emptyText}>All caught up!</span>
           <span style={styles.emptySubtext}>No pending tasks</span>
+        </div>
+      ) : displayItems.length === 0 ? (
+        <div style={styles.emptyState}>
+          <span style={styles.emptyText}>Loading tasks...</span>
         </div>
       ) : (
         <div style={styles.list}>

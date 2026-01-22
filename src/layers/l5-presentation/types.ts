@@ -209,6 +209,7 @@ export interface StoreState {
 
   // System
   syncStatus: SyncStatus;
+  lastSyncedAt: string | null;
   systemState: SystemState | null;
   healthStatus: HealthStatus | null;
 

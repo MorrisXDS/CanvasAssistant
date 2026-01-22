@@ -35,6 +35,7 @@ const initialState: StoreState = {
     grades: [],
   },
   syncStatus: 'idle',
+  lastSyncedAt: null,
   systemState: null,
   healthStatus: null,
   isAuthenticated: false,
@@ -306,7 +307,7 @@ export const useStore = create<Store>()(
           }
 
           if (result.success) {
-            set({ syncStatus: 'idle' });
+            set({ syncStatus: 'idle', lastSyncedAt: new Date().toISOString() });
             // Refresh data after sync
             await get().refreshAll();
           } else {
@@ -400,9 +401,20 @@ export function subscribeToIpcEvents(): () => void {
     useStore.getState().handleDbCommit(event);
   });
 
+  const unsubSyncStatus = api.onSyncStatus((status: 'idle' | 'syncing' | 'error') => {
+    useStore.setState({ syncStatus: status });
+    // Update lastSyncedAt when sync completes successfully
+    if (status === 'idle') {
+      useStore.setState({ lastSyncedAt: new Date().toISOString() });
+      // Refresh data after sync
+      useStore.getState().refreshAll();
+    }
+  });
+
   return () => {
     unsubSimulation();
     unsubDbCommit();
+    unsubSyncStatus();
   };
 }
 

@@ -51,7 +51,7 @@ export function Card({
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: `${paddingStyles[padding]} ${paddingStyles[padding]} var(--space-3)`,
+    padding: '24px 24px var(--space-3) 24px',
   };
 
   const titleStyle: React.CSSProperties = {

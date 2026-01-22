@@ -12,7 +12,7 @@ export interface StatItem {
   value: string | number;
   icon: 'courses' | 'tasks' | 'overdue' | 'grade';
   trend?: {
-    direction: 'up' | 'down' | 'neutral';
+    direction: 'up' | 'down' | 'neutral' | 'warning';
     value: string;
   };
 }
@@ -52,11 +52,14 @@ export function QuickStats({ stats }: QuickStatsProps) {
                       ? 'var(--color-success)'
                       : stat.trend.direction === 'down'
                       ? 'var(--color-error)'
+                      : stat.trend.direction === 'warning'
+                      ? 'var(--color-error)'
                       : 'var(--text-muted)',
                 }}
               >
                 {stat.trend.direction === 'up' && '↑'}
                 {stat.trend.direction === 'down' && '↓'}
+                {stat.trend.direction === 'warning' && '⚠'}
                 {stat.trend.value}
               </div>
             )}
