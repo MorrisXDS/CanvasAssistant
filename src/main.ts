@@ -674,22 +674,28 @@ app.whenReady().then(async () => {
     }
     metricsCollector.increment('database.initialized');
 
-    // Clean HTML from any notification messages that still contain tags
-    // This ensures proper layer isolation - L5/L6 receive clean text
-    const notificationsWithHtml = database.executeRead<{ id: number; message: string }>(
-      "SELECT id, message FROM notifications WHERE message LIKE '%<%>%'"
+    // Clean HTML from all notification messages to ensure layer isolation
+    // htmlToPlainText is safe on already-plain text
+    const allNotifications = database.executeRead<{ id: number; message: string }>(
+      'SELECT id, message FROM notifications'
     );
-    if (notificationsWithHtml.length > 0) {
-      logger.info(`Cleaning HTML from ${notificationsWithHtml.length} notification messages`);
+    if (allNotifications.length > 0) {
+      let cleaned = 0;
       database.transaction(() => {
-        for (const row of notificationsWithHtml) {
+        for (const row of allNotifications) {
           const cleanMessage = htmlToPlainText(row.message);
-          database.executeWrite(
-            'UPDATE notifications SET message = ? WHERE id = ?',
-            [cleanMessage, row.id]
-          );
+          if (cleanMessage !== row.message) {
+            database.executeWrite(
+              'UPDATE notifications SET message = ? WHERE id = ?',
+              [cleanMessage, row.id]
+            );
+            cleaned++;
+          }
         }
       });
+      if (cleaned > 0) {
+        logger.info(`Cleaned HTML from ${cleaned} notification messages`);
+      }
     }
 
     // Initialize L4 CommandDispatcher now that database is ready
