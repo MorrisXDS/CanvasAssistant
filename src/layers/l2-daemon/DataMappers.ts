@@ -6,6 +6,8 @@
  * and testable.
  */
 
+import { convert } from 'html-to-text';
+
 // Canvas API response types
 export interface CanvasCourse {
   id: number;
@@ -309,58 +311,21 @@ export function mapAssignment(canvas: CanvasAssignment, localCourseId: number): 
 }
 
 /**
- * Strip HTML and convert to clean plain text
+ * Strip HTML and convert to clean plain text using html-to-text library
  * Exported for use in migration and reprocessing
  */
 export function htmlToPlainText(html: string): string {
   if (!html) return '';
 
-  return html
-    // Remove script and style tags with content
-    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
-    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-    // Replace block elements with newlines
-    .replace(/<\/(p|div|h[1-6]|li|tr|br|blockquote)>/gi, '\n')
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<hr\s*\/?>/gi, '\n---\n')
-    // Replace list items with bullet points
-    .replace(/<li[^>]*>/gi, '• ')
-    // Add newline before headings
-    .replace(/<h[1-6][^>]*>/gi, '\n')
-    // Remove all remaining HTML tags
-    .replace(/<[^>]*>/g, '')
-    // Decode common HTML entities
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&apos;/g, "'")
-    .replace(/&rsquo;/g, "'")
-    .replace(/&lsquo;/g, "'")
-    .replace(/&rdquo;/g, '"')
-    .replace(/&ldquo;/g, '"')
-    .replace(/&mdash;/g, '—')
-    .replace(/&ndash;/g, '–')
-    .replace(/&hellip;/g, '…')
-    .replace(/&bull;/g, '•')
-    .replace(/&copy;/g, '©')
-    .replace(/&reg;/g, '®')
-    .replace(/&trade;/g, '™')
-    .replace(/&deg;/g, '°')
-    .replace(/&plusmn;/g, '±')
-    .replace(/&frac12;/g, '½')
-    .replace(/&frac14;/g, '¼')
-    .replace(/&frac34;/g, '¾')
-    // Decode numeric entities
-    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(parseInt(code, 10)))
-    .replace(/&#x([0-9a-f]+);/gi, (_, code) => String.fromCharCode(parseInt(code, 16)))
-    // Normalize whitespace
-    .replace(/\n{3,}/g, '\n\n')
-    .replace(/[ \t]+/g, ' ')
-    .replace(/^\s+|\s+$/gm, '') // Trim each line
-    .trim();
+  return convert(html, {
+    wordwrap: false,
+    preserveNewlines: true,
+    selectors: [
+      { selector: 'a', options: { ignoreHref: true } },
+      { selector: 'img', format: 'skip' },
+      { selector: 'table', format: 'dataTable' },
+    ],
+  }).trim();
 }
 
 export interface MappedAnnouncement {
