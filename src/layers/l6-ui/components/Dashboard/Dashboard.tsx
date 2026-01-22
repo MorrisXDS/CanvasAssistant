@@ -3,7 +3,7 @@
  * Main executive overview with bento grid layout
  */
 
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { RefreshCw, FlaskConical } from 'lucide-react';
 import { useStore } from '../../../l5-presentation/store';
 import { useDashboardViewModel } from '../../../l5-presentation/viewModels/DashboardViewModel';
@@ -12,7 +12,61 @@ import { HealthIndicator, HealthState } from './HealthIndicator';
 import { PriorityList } from './PriorityList';
 import { NotificationsFeed } from './NotificationsFeed';
 
+// Debug flag - set to false in production
+const DEBUG_LAYOUT = true;
+
 export function Dashboard() {
+  const pageRef = useRef<HTMLDivElement>(null);
+  const mainRowRef = useRef<HTMLElement>(null);
+  const [windowSize, setWindowSize] = useState({ width: window.innerWidth, height: window.innerHeight });
+
+  // Debug: Log window and container dimensions
+  useEffect(() => {
+    if (!DEBUG_LAYOUT) return;
+
+    const logDimensions = () => {
+      const newSize = { width: window.innerWidth, height: window.innerHeight };
+      setWindowSize(newSize);
+
+      console.debug('[Dashboard] Window:', newSize);
+
+      if (pageRef.current) {
+        const pageRect = pageRef.current.getBoundingClientRect();
+        console.debug('[Dashboard] Page container:', {
+          width: pageRect.width,
+          height: pageRect.height,
+          maxWidth: getComputedStyle(pageRef.current).maxWidth,
+        });
+      }
+
+      if (mainRowRef.current) {
+        const mainRowRect = mainRowRef.current.getBoundingClientRect();
+        const children = mainRowRef.current.children;
+        console.debug('[Dashboard] Main row:', {
+          width: mainRowRect.width,
+          flexWrap: getComputedStyle(mainRowRef.current).flexWrap,
+          childCount: children.length,
+        });
+
+        Array.from(children).forEach((child, i) => {
+          const rect = child.getBoundingClientRect();
+          const style = getComputedStyle(child);
+          console.debug(`[Dashboard] Child ${i}:`, {
+            width: rect.width,
+            flex: style.flex,
+            minWidth: style.minWidth,
+          });
+        });
+      }
+    };
+
+    // Log on mount
+    logDimensions();
+
+    // Log on resize
+    window.addEventListener('resize', logDimensions);
+    return () => window.removeEventListener('resize', logDimensions);
+  }, []);
   const state = useStore();
   const viewModel = useDashboardViewModel(state);
 
@@ -74,7 +128,7 @@ export function Dashboard() {
   };
 
   return (
-    <div style={styles.page}>
+    <div ref={pageRef} style={styles.page}>
       {/* Page Header */}
       <header style={styles.header}>
         <div style={styles.headerLeft}>
@@ -118,7 +172,7 @@ export function Dashboard() {
         </section>
 
         {/* Main Row: Priority List + Right Column (Health + Notifications) */}
-        <section style={styles.mainRow}>
+        <section ref={mainRowRef} style={styles.mainRow}>
           <div style={styles.priorityColumn}>
             <PriorityList
               items={viewModel.priorityQueue}

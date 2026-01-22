@@ -3,7 +3,7 @@
  * Application shell with sidebar navigation
  */
 
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 import {
   LayoutDashboard,
@@ -17,6 +17,9 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { useStore } from '../../l5-presentation/store';
+
+// Debug flag - set to false in production
+const DEBUG_LAYOUT = true;
 
 /** Navigation item configuration */
 interface NavItem {
@@ -34,6 +37,37 @@ const navItems: NavItem[] = [
 
 export function Layout() {
   const { syncStatus, courses } = useStore();
+  const containerRef = useRef<HTMLDivElement>(null);
+  const mainRef = useRef<HTMLElement>(null);
+
+  // Debug: Log layout dimensions
+  useEffect(() => {
+    if (!DEBUG_LAYOUT) return;
+
+    const logDimensions = () => {
+      console.debug('[Layout] Window:', { width: window.innerWidth, height: window.innerHeight });
+
+      if (containerRef.current) {
+        const rect = containerRef.current.getBoundingClientRect();
+        console.debug('[Layout] Container:', { width: rect.width, height: rect.height });
+      }
+
+      if (mainRef.current) {
+        const rect = mainRef.current.getBoundingClientRect();
+        const style = getComputedStyle(mainRef.current);
+        console.debug('[Layout] Main:', {
+          width: rect.width,
+          height: rect.height,
+          marginLeft: style.marginLeft,
+          padding: style.padding,
+        });
+      }
+    };
+
+    logDimensions();
+    window.addEventListener('resize', logDimensions);
+    return () => window.removeEventListener('resize', logDimensions);
+  }, []);
 
   // Determine sync display based on actual state
   const getSyncDisplay = () => {
@@ -66,7 +100,7 @@ export function Layout() {
   const syncDisplay = getSyncDisplay();
 
   return (
-    <div style={styles.container}>
+    <div ref={containerRef} style={styles.container}>
       {/* Sidebar */}
       <aside style={styles.sidebar}>
         {/* Drag Region - allows window dragging */}
@@ -109,7 +143,7 @@ export function Layout() {
       </aside>
 
       {/* Main Content Area */}
-      <main style={styles.main}>
+      <main ref={mainRef} style={styles.main}>
         <Outlet />
       </main>
     </div>
