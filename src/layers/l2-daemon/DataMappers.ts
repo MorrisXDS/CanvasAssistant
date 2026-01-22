@@ -312,6 +312,7 @@ export function mapAssignment(canvas: CanvasAssignment, localCourseId: number): 
 
 /**
  * Strip HTML and convert to clean plain text using html-to-text library
+ * Preserves paragraph structure and formatting
  * Exported for use in migration and reprocessing
  */
 export function htmlToPlainText(html: string): string {
@@ -321,9 +322,32 @@ export function htmlToPlainText(html: string): string {
     wordwrap: false,
     preserveNewlines: true,
     selectors: [
+      // Preserve paragraph breaks
+      { selector: 'p', options: { leadingLineBreaks: 2, trailingLineBreaks: 2 } },
+      { selector: 'div', options: { leadingLineBreaks: 1, trailingLineBreaks: 1 } },
+      // Headings with proper spacing
+      { selector: 'h1', options: { leadingLineBreaks: 2, trailingLineBreaks: 1, uppercase: false } },
+      { selector: 'h2', options: { leadingLineBreaks: 2, trailingLineBreaks: 1, uppercase: false } },
+      { selector: 'h3', options: { leadingLineBreaks: 2, trailingLineBreaks: 1, uppercase: false } },
+      { selector: 'h4', options: { leadingLineBreaks: 2, trailingLineBreaks: 1, uppercase: false } },
+      { selector: 'h5', options: { leadingLineBreaks: 1, trailingLineBreaks: 1, uppercase: false } },
+      { selector: 'h6', options: { leadingLineBreaks: 1, trailingLineBreaks: 1, uppercase: false } },
+      // Lists with proper formatting
+      { selector: 'ul', options: { leadingLineBreaks: 2, trailingLineBreaks: 2, itemPrefix: '• ' } },
+      { selector: 'ol', options: { leadingLineBreaks: 2, trailingLineBreaks: 2 } },
+      { selector: 'li', options: { leadingLineBreaks: 1, trailingLineBreaks: 1 } },
+      // Block quotes
+      { selector: 'blockquote', options: { leadingLineBreaks: 2, trailingLineBreaks: 2 } },
+      // Links - keep text, ignore href
       { selector: 'a', options: { ignoreHref: true } },
+      // Skip images
       { selector: 'img', format: 'skip' },
+      // Tables
       { selector: 'table', format: 'dataTable' },
+      // Line breaks
+      { selector: 'br', options: { leadingLineBreaks: 1, trailingLineBreaks: 1 } },
+      // Horizontal rules
+      { selector: 'hr', options: { leadingLineBreaks: 2, trailingLineBreaks: 2 } },
     ],
   }).trim();
 }
