@@ -575,4 +575,49 @@ export const coreMigrations: Migration[] = [
       SELECT 1;
     `,
   },
+  {
+    version: 20,
+    description: 'Clean HTML from notification messages',
+    up: `
+      -- Strip HTML tags from notification messages
+      -- This handles data synced before HTML stripping was added
+      UPDATE notifications SET message =
+        REPLACE(
+          REPLACE(
+            REPLACE(
+              REPLACE(
+                REPLACE(
+                  REPLACE(
+                    REPLACE(
+                      REPLACE(
+                        REPLACE(
+                          REPLACE(message, '<br>', char(10)),
+                          '<br/>', char(10)),
+                        '<br />', char(10)),
+                      '</p>', char(10)),
+                    '</div>', char(10)),
+                  '</li>', char(10)),
+                '<li>', '• '),
+              '&nbsp;', ' '),
+            '&amp;', '&'),
+          '&quot;', '"')
+      WHERE message LIKE '%<%>%';
+
+      -- Remove remaining HTML tags using recursive replacement
+      -- SQLite doesn't have regex, so we use a simple approach
+      UPDATE notifications SET message =
+        TRIM(
+          REPLACE(
+            REPLACE(
+              REPLACE(message, '  ', ' '),
+              char(10) || char(10) || char(10), char(10) || char(10)),
+            char(10) || ' ', char(10))
+        )
+      WHERE 1=1;
+    `,
+    down: `
+      -- Cannot restore original HTML
+      SELECT 1;
+    `,
+  },
 ];

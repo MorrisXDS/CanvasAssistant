@@ -66,7 +66,7 @@ export function NotificationsFeed({
           <span style={styles.viewAll}>View all</span>
         )
       }
-      padding="none"
+      padding="md"
     >
       {activeNotifications.length === 0 ? (
         <div style={styles.emptyState}>
@@ -136,12 +136,14 @@ const styles: Record<string, React.CSSProperties> = {
   list: {
     display: 'flex',
     flexDirection: 'column',
+    margin: '0 calc(-1 * var(--space-5))',
+    marginBottom: 'calc(-1 * var(--space-5))',
   },
 
   item: {
     display: 'flex',
     alignItems: 'flex-start',
-    padding: 'var(--space-3) var(--space-4)',
+    padding: 'var(--space-3) var(--space-5)',
     position: 'relative',
   },
 
@@ -211,7 +213,7 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 'var(--space-4)',
+    padding: 'var(--space-2)',
     textAlign: 'center',
   },
 

@@ -185,9 +185,12 @@ export class PriorityEngine extends EventEmitter {
       return this.createDeadlinesExplanation(task, course, now);
     }
 
-    const hoursUntilDue = task.dueAt
-      ? (task.dueAt.getTime() - now.getTime()) / (1000 * 60 * 60)
-      : Infinity;
+    // Tasks without due dates have zero importance
+    if (!task.dueAt) {
+      return this.createNoDueDateExplanation(task, course, now);
+    }
+
+    const hoursUntilDue = (task.dueAt.getTime() - now.getTime()) / (1000 * 60 * 60);
     const isPastDue = hoursUntilDue < 0;
 
     // Calculate urgency factor
@@ -430,6 +433,7 @@ export class PriorityEngine extends EventEmitter {
       return 'deadlines';
     }
 
+    // Tasks without due dates go to active queue with zero priority
     if (!task.dueAt) {
       return 'active';
     }
@@ -583,6 +587,43 @@ export class PriorityEngine extends EventEmitter {
       summary: task.dueAt ? this.formatTimeRemaining(hoursUntilDue) : 'No deadline',
       calculatedAt: now,
       expiresAt: new Date(now.getTime() + 6 * 60 * 60 * 1000), // Refresh every 6 hours
+    };
+  }
+
+  /**
+   * Create explanation for task with no due date (zero importance)
+   */
+  private createNoDueDateExplanation(
+    task: TaskForPriority,
+    course: CourseForPriority,
+    now: Date
+  ): PriorityExplanation {
+    return {
+      taskId: task.id,
+      finalScore: 0, // Zero importance
+      queue: 'active',
+      factors: [
+        {
+          id: 'no_due_date',
+          name: 'No Due Date',
+          icon: '📅',
+          impact: 0,
+          description: 'No deadline set - complete at your discretion',
+        },
+      ],
+      submissionWindows: [],
+      gradeImpact: {
+        currentGrade: course.currentGrade || 0,
+        targetGrade: course.targetGrade,
+        gapToTarget: course.targetGrade - (course.currentGrade || 0),
+        gradeIfSkipped: course.currentGrade || 0,
+        gradeIfAverage: course.currentGrade || 0,
+        minScoreForTarget: null,
+        riskLevel: 'low',
+      },
+      summary: 'No due date - zero priority',
+      calculatedAt: now,
+      expiresAt: new Date(now.getTime() + 24 * 60 * 60 * 1000), // Refresh daily
     };
   }
 

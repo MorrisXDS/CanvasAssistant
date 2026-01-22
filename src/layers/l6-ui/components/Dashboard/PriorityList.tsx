@@ -46,7 +46,7 @@ export function PriorityList({
           <span style={styles.viewAll}>View all ({items.length})</span>
         )
       }
-      padding="none"
+      padding="md"
     >
       {displayItems.length === 0 ? (
         <div style={styles.emptyState}>
@@ -118,11 +118,13 @@ const styles: Record<string, React.CSSProperties> = {
   list: {
     display: 'flex',
     flexDirection: 'column',
+    margin: '0 calc(-1 * var(--space-5))',
+    marginBottom: 'calc(-1 * var(--space-5))',
   },
 
   listItem: {
     display: 'flex',
-    padding: 'var(--space-4)',
+    padding: 'var(--space-3) var(--space-5)',
     cursor: 'pointer',
     transition: 'background-color var(--transition-fast)',
     position: 'relative',
@@ -192,7 +194,7 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 'var(--space-6) var(--space-4)',
+    padding: 'var(--space-4)',
     textAlign: 'center',
   },
 

@@ -14,7 +14,7 @@ import { FileDownloadManager } from './layers/l0-utilities/FileDownloadManager';
 import { Database, MigrationRunner, coreMigrations } from './layers/l1-persistence';
 
 // L2 - Daemon
-import { CanvasClient, SyncEngine, RateLimiter, CircuitBreaker } from './layers/l2-daemon';
+import { CanvasClient, SyncEngine, RateLimiter, CircuitBreaker, htmlToPlainText } from './layers/l2-daemon';
 
 // L4 - Controller
 import { CommandDispatcher } from './layers/l4-controller';
@@ -673,6 +673,24 @@ app.whenReady().then(async () => {
       logger.warn(`Migration errors: ${migrationResult.errors.join(', ')}`);
     }
     metricsCollector.increment('database.initialized');
+
+    // Clean HTML from any notification messages that still contain tags
+    // This ensures proper layer isolation - L5/L6 receive clean text
+    const notificationsWithHtml = database.executeRead<{ id: number; message: string }>(
+      "SELECT id, message FROM notifications WHERE message LIKE '%<%>%'"
+    );
+    if (notificationsWithHtml.length > 0) {
+      logger.info(`Cleaning HTML from ${notificationsWithHtml.length} notification messages`);
+      database.transaction(() => {
+        for (const row of notificationsWithHtml) {
+          const cleanMessage = htmlToPlainText(row.message);
+          database.executeWrite(
+            'UPDATE notifications SET message = ? WHERE id = ?',
+            [cleanMessage, row.id]
+          );
+        }
+      });
+    }
 
     // Initialize L4 CommandDispatcher now that database is ready
     commandDispatcher = new CommandDispatcher({ db: database });
