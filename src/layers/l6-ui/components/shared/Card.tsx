@@ -64,7 +64,7 @@ export function Card({
 
   const bodyStyle: React.CSSProperties = {
     padding: title || headerAction
-      ? `0 ${paddingStyles[padding]} ${paddingStyles[padding]}`
+      ? '0 24px 24px 24px'
       : paddingStyles[padding],
   };
 

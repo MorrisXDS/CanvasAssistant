@@ -156,12 +156,15 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'flex-start',
     justifyContent: 'space-between',
     marginBottom: 'var(--space-6)',
+    flexWrap: 'wrap',
+    gap: 'var(--space-4)',
   },
 
   headerLeft: {
     display: 'flex',
     alignItems: 'flex-start',
     gap: 'var(--space-4)',
+    flexWrap: 'wrap',
   },
 
   title: {
@@ -217,16 +220,17 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     gap: 'var(--space-4)',
     alignItems: 'flex-start',
+    flexWrap: 'wrap',
   },
 
   priorityColumn: {
-    flex: 1,
+    flex: '1 1 400px',
     minWidth: 0,
   },
 
   rightColumn: {
-    width: '320px',
-    flexShrink: 0,
+    flex: '0 1 320px',
+    minWidth: '280px',
     display: 'flex',
     flexDirection: 'column',
     gap: 'var(--space-4)',
