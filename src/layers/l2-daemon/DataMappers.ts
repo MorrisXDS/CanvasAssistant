@@ -333,9 +333,8 @@ export function htmlToPlainText(html: string): string {
       { selector: 'h5', options: { leadingLineBreaks: 1, trailingLineBreaks: 1, uppercase: false } },
       { selector: 'h6', options: { leadingLineBreaks: 1, trailingLineBreaks: 1, uppercase: false } },
       // Lists with proper formatting
-      { selector: 'ul', options: { leadingLineBreaks: 2, trailingLineBreaks: 2, itemPrefix: '• ' } },
-      { selector: 'ol', options: { leadingLineBreaks: 2, trailingLineBreaks: 2 } },
-      { selector: 'li', options: { leadingLineBreaks: 1, trailingLineBreaks: 1 } },
+      { selector: 'ul', format: 'unorderedList', options: { leadingLineBreaks: 2, trailingLineBreaks: 2, itemPrefix: '• ' } },
+      { selector: 'ol', format: 'orderedList', options: { leadingLineBreaks: 2, trailingLineBreaks: 2 } },
       // Block quotes
       { selector: 'blockquote', options: { leadingLineBreaks: 2, trailingLineBreaks: 2 } },
       // Links - keep text, ignore href
@@ -345,7 +344,7 @@ export function htmlToPlainText(html: string): string {
       // Tables
       { selector: 'table', format: 'dataTable' },
       // Line breaks
-      { selector: 'br', options: { leadingLineBreaks: 1, trailingLineBreaks: 1 } },
+      { selector: 'br', format: 'lineBreak' },
       // Horizontal rules
       { selector: 'hr', options: { leadingLineBreaks: 2, trailingLineBreaks: 2 } },
     ],
