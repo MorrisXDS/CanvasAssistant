@@ -318,30 +318,25 @@ export function mapAssignment(canvas: CanvasAssignment, localCourseId: number): 
 export function htmlToPlainText(html: string): string {
   if (!html) return '';
 
-  const hasHtmlTags = /<[^>]+>/.test(html);
-  if (hasHtmlTags) {
-    console.debug(`[htmlToPlainText] Converting HTML (${html.length} chars): "${html.substring(0, 100)}..."`);
-  }
-
-  const result = convert(html, {
+  return convert(html, {
     wordwrap: false,
     preserveNewlines: true,
     selectors: [
-      // Preserve paragraph breaks
-      { selector: 'p', options: { leadingLineBreaks: 2, trailingLineBreaks: 2 } },
+      // Single line break between paragraphs
+      { selector: 'p', options: { leadingLineBreaks: 1, trailingLineBreaks: 1 } },
       { selector: 'div', options: { leadingLineBreaks: 1, trailingLineBreaks: 1 } },
-      // Headings with proper spacing
-      { selector: 'h1', options: { leadingLineBreaks: 2, trailingLineBreaks: 1, uppercase: false } },
-      { selector: 'h2', options: { leadingLineBreaks: 2, trailingLineBreaks: 1, uppercase: false } },
-      { selector: 'h3', options: { leadingLineBreaks: 2, trailingLineBreaks: 1, uppercase: false } },
-      { selector: 'h4', options: { leadingLineBreaks: 2, trailingLineBreaks: 1, uppercase: false } },
+      // Headings with single line break
+      { selector: 'h1', options: { leadingLineBreaks: 1, trailingLineBreaks: 1, uppercase: false } },
+      { selector: 'h2', options: { leadingLineBreaks: 1, trailingLineBreaks: 1, uppercase: false } },
+      { selector: 'h3', options: { leadingLineBreaks: 1, trailingLineBreaks: 1, uppercase: false } },
+      { selector: 'h4', options: { leadingLineBreaks: 1, trailingLineBreaks: 1, uppercase: false } },
       { selector: 'h5', options: { leadingLineBreaks: 1, trailingLineBreaks: 1, uppercase: false } },
       { selector: 'h6', options: { leadingLineBreaks: 1, trailingLineBreaks: 1, uppercase: false } },
-      // Lists with proper formatting
-      { selector: 'ul', format: 'unorderedList', options: { leadingLineBreaks: 2, trailingLineBreaks: 2, itemPrefix: '• ' } },
-      { selector: 'ol', format: 'orderedList', options: { leadingLineBreaks: 2, trailingLineBreaks: 2 } },
+      // Lists
+      { selector: 'ul', format: 'unorderedList', options: { leadingLineBreaks: 1, trailingLineBreaks: 1, itemPrefix: '• ' } },
+      { selector: 'ol', format: 'orderedList', options: { leadingLineBreaks: 1, trailingLineBreaks: 1 } },
       // Block quotes
-      { selector: 'blockquote', options: { leadingLineBreaks: 2, trailingLineBreaks: 2 } },
+      { selector: 'blockquote', options: { leadingLineBreaks: 1, trailingLineBreaks: 1 } },
       // Links - keep text, ignore href
       { selector: 'a', options: { ignoreHref: true } },
       // Skip images
@@ -351,15 +346,9 @@ export function htmlToPlainText(html: string): string {
       // Line breaks
       { selector: 'br', format: 'lineBreak' },
       // Horizontal rules
-      { selector: 'hr', options: { leadingLineBreaks: 2, trailingLineBreaks: 2 } },
+      { selector: 'hr', options: { leadingLineBreaks: 1, trailingLineBreaks: 1 } },
     ],
   }).trim();
-
-  if (hasHtmlTags) {
-    console.debug(`[htmlToPlainText] Result (${result.length} chars): "${result.substring(0, 100)}..."`);
-  }
-
-  return result;
 }
 
 export interface MappedAnnouncement {

@@ -679,14 +679,12 @@ app.whenReady().then(async () => {
     const allNotifications = database.executeRead<{ id: number; message: string }>(
       'SELECT id, message FROM notifications'
     );
-    logger.debug(`[html-cleanup] Found ${allNotifications.length} notifications to check`);
     if (allNotifications.length > 0) {
       let cleaned = 0;
       database.transaction(() => {
         for (const row of allNotifications) {
           const cleanMessage = htmlToPlainText(row.message);
           if (cleanMessage !== row.message) {
-            logger.debug(`[html-cleanup] Cleaning notification ${row.id}: "${row.message.substring(0, 50)}..." -> "${cleanMessage.substring(0, 50)}..."`);
             database.executeWrite(
               'UPDATE notifications SET message = ? WHERE id = ?',
               [cleanMessage, row.id]
@@ -695,7 +693,9 @@ app.whenReady().then(async () => {
           }
         }
       });
-      logger.info(`[html-cleanup] Cleaned ${cleaned}/${allNotifications.length} notification messages`);
+      if (cleaned > 0) {
+        logger.info(`Cleaned HTML from ${cleaned} notification messages`);
+      }
     }
 
     // Initialize L4 CommandDispatcher now that database is ready
