@@ -518,4 +518,48 @@ export const coreMigrations: Migration[] = [
       DROP TABLE policy_announcements;
     `,
   },
+  {
+    version: 17,
+    description: 'Add url column to notifications for linking back to Canvas',
+    up: `
+      ALTER TABLE notifications ADD COLUMN url TEXT;
+    `,
+    down: `
+      -- SQLite doesn't support DROP COLUMN easily
+      SELECT 1;
+    `,
+  },
+  {
+    version: 18,
+    description: 'Create notification_attachments table for file attachments',
+    up: `
+      CREATE TABLE notification_attachments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        notification_id INTEGER NOT NULL,
+        course_id INTEGER NOT NULL,
+        external_id TEXT NOT NULL,
+        display_name TEXT NOT NULL,
+        filename TEXT NOT NULL,
+        url TEXT NOT NULL,
+        size_bytes INTEGER,
+        content_type TEXT,
+        local_path TEXT,
+        download_status TEXT CHECK(download_status IN ('pending', 'downloading', 'completed', 'failed')) DEFAULT 'pending',
+        downloaded_at DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(notification_id) REFERENCES notifications(id) ON DELETE CASCADE,
+        FOREIGN KEY(course_id) REFERENCES courses(id),
+        UNIQUE(notification_id, external_id)
+      );
+      CREATE INDEX idx_notification_attachments_notification ON notification_attachments(notification_id);
+      CREATE INDEX idx_notification_attachments_course ON notification_attachments(course_id);
+      CREATE INDEX idx_notification_attachments_status ON notification_attachments(download_status);
+    `,
+    down: `
+      DROP INDEX IF EXISTS idx_notification_attachments_notification;
+      DROP INDEX IF EXISTS idx_notification_attachments_course;
+      DROP INDEX IF EXISTS idx_notification_attachments_status;
+      DROP TABLE notification_attachments;
+    `,
+  },
 ];

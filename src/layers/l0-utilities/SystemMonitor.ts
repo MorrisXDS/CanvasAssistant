@@ -1,5 +1,10 @@
 import { EventEmitter } from 'events';
 import { powerMonitor } from 'electron';
+import { SystemMonitorConfig } from './AppConfig';
+
+export interface SystemMonitorOptions {
+  pollIntervalMs?: number;
+}
 
 export interface SystemState {
   powerSource: 'battery' | 'ac' | 'unknown';
@@ -10,14 +15,23 @@ export interface SystemState {
   canSync: boolean; // Derived from power/focus state
 }
 
+// Default values
+const DEFAULT_POLL_INTERVAL_MS = 5000;
+
 export class SystemMonitor extends EventEmitter {
   private state: SystemState;
   private pollInterval: NodeJS.Timeout | null = null;
   private lastEmittedState: string = '';
-  private readonly POLL_INTERVAL_MS = 5000; // 5 seconds
+  private readonly pollIntervalMs: number;
 
-  constructor() {
+  /**
+   * Create a new SystemMonitor instance
+   * @param config - SystemMonitorConfig from AppConfig, or SystemMonitorOptions
+   */
+  constructor(config?: SystemMonitorConfig | SystemMonitorOptions) {
     super();
+
+    this.pollIntervalMs = config?.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
 
     // Initialize with default state
     this.state = {
@@ -32,7 +46,7 @@ export class SystemMonitor extends EventEmitter {
 
   /**
    * Start monitoring system state
-   * Polls max once per 5 seconds, emits events only on state changes
+   * Polls at configured interval, emits events only on state changes
    */
   start(): void {
     if (this.pollInterval) {
@@ -42,10 +56,10 @@ export class SystemMonitor extends EventEmitter {
     // Initial state check
     this.updateState();
 
-    // Poll every 5 seconds
+    // Poll at configured interval
     this.pollInterval = setInterval(() => {
       this.updateState();
-    }, this.POLL_INTERVAL_MS);
+    }, this.pollIntervalMs);
   }
 
   /**

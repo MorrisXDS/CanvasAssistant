@@ -1,0 +1,234 @@
+/**
+ * Dashboard Page
+ * Main executive overview with bento grid layout
+ */
+
+import React from 'react';
+import { RefreshCw, FlaskConical } from 'lucide-react';
+import { useStore } from '../../../l5-presentation/store';
+import { useDashboardViewModel } from '../../../l5-presentation/viewModels/DashboardViewModel';
+import { QuickStats, StatItem } from './QuickStats';
+import { HealthIndicator, HealthState } from './HealthIndicator';
+import { PriorityList } from './PriorityList';
+import { NotificationsFeed } from './NotificationsFeed';
+
+export function Dashboard() {
+  const state = useStore();
+  const viewModel = useDashboardViewModel(state);
+
+  // Build stats from view model
+  const stats: StatItem[] = [
+    {
+      label: 'Active Courses',
+      value: viewModel.stats.totalCourses,
+      icon: 'courses',
+    },
+    {
+      label: 'Pending Tasks',
+      value: viewModel.stats.upcomingTasks,
+      icon: 'tasks',
+    },
+    {
+      label: 'Overdue Tasks',
+      value: viewModel.stats.overdueTasks,
+      icon: 'overdue',
+      trend: viewModel.stats.overdueTasks > 0
+        ? { direction: 'up', value: `${viewModel.stats.overdueTasks}` }
+        : undefined,
+    },
+    {
+      label: 'Avg. Grade',
+      value: viewModel.stats.averageGrade
+        ? `${viewModel.stats.averageGrade.toFixed(1)}%`
+        : 'N/A',
+      icon: 'grade',
+    },
+  ];
+
+  // Derive health status
+  const healthStatus: HealthState = state.healthStatus?.overall ?? 'healthy';
+
+  // Format database size
+  const formatDbSize = (): string | undefined => {
+    // This would come from health check in real implementation
+    return undefined;
+  };
+
+  // Find most recent sync time from courses
+  const lastSyncedAt = state.courses.reduce((latest: string | null, course) => {
+    if (!course.lastSyncedAt) return latest;
+    if (!latest) return course.lastSyncedAt;
+    return new Date(course.lastSyncedAt) > new Date(latest)
+      ? course.lastSyncedAt
+      : latest;
+  }, null);
+
+  const handleTaskClick = (taskId: number) => {
+    // TODO: Navigate to task detail or course view
+    console.log('Task clicked:', taskId);
+  };
+
+  const handleDismissNotification = async (notificationId: number) => {
+    await state.dismissNotification(notificationId);
+  };
+
+  return (
+    <div style={styles.page}>
+      {/* Page Header */}
+      <header style={styles.header}>
+        <div style={styles.headerLeft}>
+          <button
+            style={{
+              ...styles.syncButton,
+              opacity: state.syncStatus === 'syncing' ? 0.7 : 1,
+            }}
+            onClick={() => state.triggerSync('full')}
+            disabled={state.syncStatus === 'syncing'}
+          >
+            <RefreshCw
+              size={16}
+              style={{
+                marginRight: 'var(--space-2)',
+                animation: state.syncStatus === 'syncing' ? 'spin 1s linear infinite' : 'none',
+              }}
+            />
+            {state.syncStatus === 'syncing' ? 'Syncing...' : 'Sync Now'}
+          </button>
+          <div>
+            <h1 style={styles.title}>Dashboard</h1>
+            <p style={styles.subtitle}>
+              {viewModel.simulationActive && (
+                <span style={styles.simulationBadge}>
+                  <FlaskConical size={14} />
+                  Simulation Active ({viewModel.simulationCount} grades)
+                </span>
+              )}
+              {!viewModel.simulationActive && 'Your academic overview at a glance'}
+            </p>
+          </div>
+        </div>
+      </header>
+
+      {/* Bento Grid Layout */}
+      <div style={styles.grid}>
+        {/* Top Row: Stats (full width) */}
+        <section style={styles.statsRow}>
+          <QuickStats stats={stats} />
+        </section>
+
+        {/* Main Row: Priority List + Right Column (Health + Notifications) */}
+        <section style={styles.mainRow}>
+          <div style={styles.priorityColumn}>
+            <PriorityList
+              items={viewModel.priorityQueue}
+              onTaskClick={handleTaskClick}
+              maxItems={8}
+            />
+          </div>
+          <div style={styles.rightColumn}>
+            <HealthIndicator
+              status={healthStatus}
+              lastSyncedAt={lastSyncedAt}
+              dbSize={formatDbSize()}
+            />
+            <NotificationsFeed
+              notifications={state.notifications}
+              onDismiss={handleDismissNotification}
+              maxItems={5}
+            />
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+}
+
+const styles: Record<string, React.CSSProperties> = {
+  page: {
+    maxWidth: '1400px',
+    margin: '0 auto',
+  },
+
+  header: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    marginBottom: 'var(--space-6)',
+  },
+
+  headerLeft: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: 'var(--space-4)',
+  },
+
+  title: {
+    fontSize: 'var(--text-3xl)',
+    fontWeight: 'var(--font-bold)',
+    color: 'var(--text-primary)',
+    marginBottom: 'var(--space-1)',
+  },
+
+  subtitle: {
+    fontSize: 'var(--text-sm)',
+    color: 'var(--color-gray-600)',
+  },
+
+  simulationBadge: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 'var(--space-1)',
+    padding: 'var(--space-1) var(--space-2)',
+    backgroundColor: 'var(--color-info-bg)',
+    color: 'var(--color-info)',
+    borderRadius: 'var(--radius-md)',
+    fontSize: 'var(--text-xs)',
+    fontWeight: 'var(--font-medium)',
+  },
+
+  syncButton: {
+    display: 'flex',
+    alignItems: 'center',
+    padding: 'var(--space-2) var(--space-4)',
+    backgroundColor: 'var(--color-navy)',
+    color: 'var(--text-inverse)',
+    border: 'none',
+    borderRadius: 'var(--radius-md)',
+    fontSize: 'var(--text-sm)',
+    fontWeight: 'var(--font-medium)',
+    cursor: 'pointer',
+    transition: 'all var(--transition-fast)',
+    flexShrink: 0,
+  },
+
+  grid: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 'var(--space-6)',
+  },
+
+  statsRow: {
+    width: '100%',
+  },
+
+  mainRow: {
+    display: 'flex',
+    gap: 'var(--space-4)',
+    alignItems: 'flex-start',
+  },
+
+  priorityColumn: {
+    flex: 1,
+    minWidth: 0,
+  },
+
+  rightColumn: {
+    width: '320px',
+    flexShrink: 0,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 'var(--space-4)',
+  },
+};
+
+export default Dashboard;

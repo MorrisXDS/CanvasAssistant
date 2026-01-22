@@ -1,0 +1,146 @@
+/**
+ * Canvas Integration Dashboard - Design System
+ * University of Toronto Branding + Priority System
+ */
+
+:root {
+  /* ============ UofT Brand Colors ============ */
+  --color-navy: #002A5C;
+  --color-navy-light: #003d7a;
+  --color-navy-dark: #001d40;
+  --color-blue: #007FA3;
+  --color-blue-light: #00a3d1;
+
+  /* ============ Priority / Status Colors ============ */
+  --color-critical: #DC2626;
+  --color-critical-bg: #FEF2F2;
+  --color-critical-border: #FECACA;
+
+  --color-high: #D97706;
+  --color-high-bg: #FFFBEB;
+  --color-high-border: #FDE68A;
+
+  --color-medium: #059669;
+  --color-medium-bg: #ECFDF5;
+  --color-medium-border: #A7F3D0;
+
+  --color-low: #6B7280;
+  --color-low-bg: #F9FAFB;
+  --color-low-border: #E5E7EB;
+
+  /* ============ Semantic Colors ============ */
+  --color-success: #059669;
+  --color-success-bg: #ECFDF5;
+  --color-warning: #D97706;
+  --color-warning-bg: #FFFBEB;
+  --color-error: #DC2626;
+  --color-error-bg: #FEF2F2;
+  --color-info: #007FA3;
+  --color-info-bg: #EFF6FF;
+
+  /* ============ Neutral Colors ============ */
+  --color-white: #FFFFFF;
+  --color-gray-50: #F9FAFB;
+  --color-gray-100: #F3F4F6;
+  --color-gray-200: #E5E7EB;
+  --color-gray-300: #D1D5DB;
+  --color-gray-400: #9CA3AF;
+  --color-gray-500: #6B7280;
+  --color-gray-600: #4B5563;
+  --color-gray-700: #374151;
+  --color-gray-800: #1F2937;
+  --color-gray-900: #111827;
+
+  /* ============ Background Colors ============ */
+  --bg-app: #F5F7FA;
+  --bg-sidebar: var(--color-navy);
+  --bg-card: var(--color-white);
+  --bg-card-hover: var(--color-gray-50);
+
+  /* ============ Text Colors ============ */
+  --text-primary: var(--color-gray-900);
+  --text-secondary: var(--color-gray-600);
+  --text-muted: var(--color-gray-400);
+  --text-inverse: var(--color-white);
+  --text-link: var(--color-blue);
+
+  /* ============ Border Colors ============ */
+  --border-default: var(--color-gray-200);
+  --border-light: var(--color-gray-100);
+  --border-focus: var(--color-blue);
+
+  /* ============ Shadows ============ */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.06);
+
+  /* ============ Spacing Scale ============ */
+  --space-1: 0.25rem;  /* 4px */
+  --space-2: 0.5rem;   /* 8px */
+  --space-3: 0.75rem;  /* 12px */
+  --space-4: 1rem;     /* 16px */
+  --space-5: 1.25rem;  /* 20px */
+  --space-6: 1.5rem;   /* 24px */
+  --space-8: 2rem;     /* 32px */
+  --space-10: 2.5rem;  /* 40px */
+  --space-12: 3rem;    /* 48px */
+
+  /* ============ Typography ============ */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'SF Pro Display',
+    'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', sans-serif;
+  --font-mono: 'SF Mono', 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', monospace;
+
+  --text-xs: 0.75rem;    /* 12px */
+  --text-sm: 0.875rem;   /* 14px */
+  --text-base: 1rem;     /* 16px */
+  --text-lg: 1.125rem;   /* 18px */
+  --text-xl: 1.25rem;    /* 20px */
+  --text-2xl: 1.5rem;    /* 24px */
+  --text-3xl: 1.875rem;  /* 30px */
+
+  --leading-tight: 1.25;
+  --leading-normal: 1.5;
+  --leading-relaxed: 1.625;
+
+  --font-normal: 400;
+  --font-medium: 500;
+  --font-semibold: 600;
+  --font-bold: 700;
+
+  /* ============ Border Radius ============ */
+  --radius-sm: 0.25rem;  /* 4px */
+  --radius-md: 0.375rem; /* 6px */
+  --radius-lg: 0.5rem;   /* 8px */
+  --radius-xl: 0.75rem;  /* 12px */
+  --radius-full: 9999px;
+
+  /* ============ Layout ============ */
+  --sidebar-width: 240px;
+  --header-height: 64px;
+
+  /* ============ Transitions ============ */
+  --transition-fast: 150ms ease;
+  --transition-base: 200ms ease;
+  --transition-slow: 300ms ease;
+
+  /* ============ Z-Index Scale ============ */
+  --z-dropdown: 10;
+  --z-sticky: 20;
+  --z-modal-backdrop: 40;
+  --z-modal: 50;
+  --z-tooltip: 60;
+}
+
+/* ============ Dark Mode (Future) ============ */
+/*
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg-app: #0f172a;
+    --bg-card: #1e293b;
+    --text-primary: #f1f5f9;
+    --text-secondary: #94a3b8;
+    --border-default: #334155;
+  }
+}
+*/

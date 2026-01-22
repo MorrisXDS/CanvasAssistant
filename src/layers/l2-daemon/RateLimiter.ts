@@ -1,4 +1,5 @@
 import { EventEmitter } from 'events';
+import { RateLimiterConfig as AppRateLimiterConfig } from '../l0-utilities/AppConfig';
 
 export interface RateLimiterConfig {
   maxConcurrent?: number; // Max concurrent requests (default: 3)
@@ -6,7 +7,12 @@ export interface RateLimiterConfig {
   maxRetries?: number; // Max retries on failure (default: 3)
   baseBackoffMs?: number; // Base backoff for retries (default: 2000ms)
   maxBackoffMs?: number; // Max backoff cap (default: 16000ms)
+  warningThreshold?: number; // Rate limit warning threshold (default: 10)
+  autoResumeDelayMs?: number; // Auto-resume delay after warning (default: 5000ms)
 }
+
+// Type alias for AppConfig compatibility
+export type { AppRateLimiterConfig };
 
 export interface QueuedRequest<T> {
   id: string;
@@ -42,20 +48,29 @@ export class RateLimiter extends EventEmitter {
   private rateLimitRemaining: number = 700; // Canvas default
   private requestIdCounter: number = 0;
   private processingInterval: NodeJS.Timeout | null = null;
+  private autoResumeTimeout: NodeJS.Timeout | null = null;
 
   private readonly maxConcurrent: number;
   private readonly minDelayMs: number;
   private readonly maxRetries: number;
   private readonly baseBackoffMs: number;
   private readonly maxBackoffMs: number;
+  private readonly warningThreshold: number;
+  private readonly autoResumeDelayMs: number;
 
-  constructor(config: RateLimiterConfig = {}) {
+  /**
+   * Create a new RateLimiter instance
+   * @param config - RateLimiterConfig or AppRateLimiterConfig from AppConfig
+   */
+  constructor(config: RateLimiterConfig | AppRateLimiterConfig = {}) {
     super();
     this.maxConcurrent = config.maxConcurrent ?? 3;
     this.minDelayMs = config.minDelayMs ?? 100;
     this.maxRetries = config.maxRetries ?? 3;
     this.baseBackoffMs = config.baseBackoffMs ?? 2000;
     this.maxBackoffMs = config.maxBackoffMs ?? 16000;
+    this.warningThreshold = config.warningThreshold ?? 10;
+    this.autoResumeDelayMs = config.autoResumeDelayMs ?? 5000;
   }
 
   /**
@@ -227,13 +242,21 @@ export class RateLimiter extends EventEmitter {
     this.rateLimitRemaining = remaining;
     this.emit('rate-limit-updated', { remaining });
 
-    // Auto-pause if very low
-    if (remaining < 10) {
+    // Auto-pause if below warning threshold
+    if (remaining < this.warningThreshold) {
       this.pause();
       this.emit('rate-limit-warning', { remaining });
 
-      // Auto-resume after a delay
-      setTimeout(() => this.resume(), 5000);
+      // Clear any existing auto-resume timeout
+      if (this.autoResumeTimeout) {
+        clearTimeout(this.autoResumeTimeout);
+      }
+
+      // Auto-resume after configured delay
+      this.autoResumeTimeout = setTimeout(() => {
+        this.autoResumeTimeout = null;
+        this.resume();
+      }, this.autoResumeDelayMs);
     }
   }
 
@@ -279,6 +302,10 @@ export class RateLimiter extends EventEmitter {
     if (this.processingInterval) {
       clearInterval(this.processingInterval);
       this.processingInterval = null;
+    }
+    if (this.autoResumeTimeout) {
+      clearTimeout(this.autoResumeTimeout);
+      this.autoResumeTimeout = null;
     }
   }
 }

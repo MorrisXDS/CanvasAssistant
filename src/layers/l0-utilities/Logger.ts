@@ -1,45 +1,163 @@
 import winston from 'winston';
+import DailyRotateFile from 'winston-daily-rotate-file';
 import path from 'path';
 import fs from 'fs';
+import { LoggerConfig } from './AppConfig';
 
+export type LogLevel = 'error' | 'warn' | 'info' | 'debug';
+
+export interface ComponentLogLevels {
+  healthCheck?: LogLevel;
+  circuitBreaker?: LogLevel;
+  credentialManager?: LogLevel;
+  metricsCollector?: LogLevel;
+  housekeeping?: LogLevel;
+  rateLimiter?: LogLevel;
+  syncEngine?: LogLevel;
+  canvasClient?: LogLevel;
+  priorityEngine?: LogLevel;
+  database?: LogLevel;
+  [key: string]: LogLevel | undefined;
+}
+
+export interface RotationConfig {
+  frequency: 'daily' | 'hourly';
+  compress: boolean;
+  maxFiles: string; // e.g., '30d' for 30 days
+  maxSize?: string; // e.g., '20m' for 20MB
+}
+
+export interface LoggerOptions {
+  logDir?: string;
+  logFilename?: string;
+  logLevel?: LogLevel;
+  maxFileSize?: number;
+  maxFiles?: number;
+  apiKeyMinLength?: number;
+  componentLevels?: ComponentLogLevels;
+  rotation?: RotationConfig;
+  enableConsole?: boolean;
+}
+
+// Default values (used when no config provided)
+const DEFAULT_LOGGER_OPTIONS: Required<Omit<LoggerOptions, 'componentLevels' | 'rotation'>> & {
+  componentLevels: ComponentLogLevels;
+  rotation: RotationConfig;
+} = {
+  logDir: 'logs',
+  logFilename: 'cid',
+  logLevel: 'info',
+  maxFileSize: 10 * 1024 * 1024, // 10MB
+  maxFiles: 5,
+  apiKeyMinLength: 32,
+  enableConsole: true,
+  componentLevels: {},
+  rotation: {
+    frequency: 'daily',
+    compress: true,
+    maxFiles: '30d',
+    maxSize: '20m',
+  },
+};
+
+/**
+ * Enhanced Logger with daily rotation, compression, and per-component log levels
+ */
 export class Logger {
   private logger: winston.Logger;
+  private readonly apiKeyMinLength: number;
+  private readonly componentLevels: ComponentLogLevels;
+  private readonly defaultLevel: LogLevel;
+  private childLoggers: Map<string, winston.Logger> = new Map();
 
-  constructor(logDir: string = 'logs') {
+  /**
+   * Create a new Logger instance
+   * @param config - LoggerConfig from AppConfig, or LoggerOptions for custom config
+   */
+  constructor(config?: LoggerConfig | LoggerOptions) {
+    const options = { ...DEFAULT_LOGGER_OPTIONS, ...config };
+
+    const logDir = options.logDir;
+    const logFilename = options.logFilename;
+    this.defaultLevel = options.logLevel as LogLevel;
+    this.apiKeyMinLength = options.apiKeyMinLength;
+    this.componentLevels = options.componentLevels || {};
+
     // Ensure log directory exists
     if (!fs.existsSync(logDir)) {
       fs.mkdirSync(logDir, { recursive: true });
     }
 
-    this.logger = winston.createLogger({
-      level: process.env.LOG_LEVEL || 'info',
-      format: winston.format.combine(
-        winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
-        winston.format.errors({ stack: true }),
-        winston.format.printf(({ timestamp, level, message, stack }) => {
-          const logMessage = `${timestamp} [${level.toUpperCase()}]: ${message}`;
-          return stack ? `${logMessage}\n${stack}` : logMessage;
-        })
-      ),
-      transports: [
-        // File transport with rotation
-        new winston.transports.File({
-          filename: path.join(logDir, 'cid.log'),
-          maxsize: 10 * 1024 * 1024, // 10MB
-          maxFiles: 5,
-          tailable: true,
-        }),
-        // Console transport for development
+    const rotation = options.rotation || DEFAULT_LOGGER_OPTIONS.rotation;
+
+    // Common format for all transports
+    const logFormat = winston.format.combine(
+      winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
+      winston.format.errors({ stack: true }),
+      winston.format.printf(({ timestamp, level, message, stack, component }) => {
+        const componentTag = component ? `[${component}]` : '';
+        const logMessage = `${timestamp} [${level.toUpperCase()}]${componentTag}: ${message}`;
+        return stack ? `${logMessage}\n${stack}` : logMessage;
+      })
+    );
+
+    const transports: winston.transport[] = [];
+
+    // Daily rotating file transport with compression
+    const dailyRotateTransport = new DailyRotateFile({
+      filename: path.join(logDir, `${logFilename}-%DATE%.log`),
+      datePattern: rotation.frequency === 'hourly' ? 'YYYY-MM-DD-HH' : 'YYYY-MM-DD',
+      zippedArchive: rotation.compress,
+      maxSize: rotation.maxSize,
+      maxFiles: rotation.maxFiles,
+      format: logFormat,
+    });
+
+    // Handle rotation events
+    dailyRotateTransport.on('rotate', (oldFilename, newFilename) => {
+      this.info(`Log rotated: ${path.basename(oldFilename)} -> ${path.basename(newFilename)}`);
+    });
+
+    dailyRotateTransport.on('archive', (zipFilename) => {
+      this.debug(`Log archived: ${path.basename(zipFilename)}`);
+    });
+
+    transports.push(dailyRotateTransport);
+
+    // Console transport for development
+    if (options.enableConsole) {
+      transports.push(
         new winston.transports.Console({
           format: winston.format.combine(
             winston.format.colorize(),
-            winston.format.printf(({ timestamp, level, message }) => {
-              return `${timestamp} [${level}]: ${message}`;
+            winston.format.printf(({ timestamp, level, message, component }) => {
+              const componentTag = component ? `[${component}]` : '';
+              return `${timestamp} [${level}]${componentTag}: ${message}`;
             })
           ),
-        }),
-      ],
+        })
+      );
+    }
+
+    this.logger = winston.createLogger({
+      level: this.defaultLevel,
+      format: logFormat,
+      transports,
     });
+  }
+
+  /**
+   * Create a child logger for a specific component
+   * Component loggers respect per-component log level configuration
+   */
+  child(component: string): ComponentLogger {
+    if (!this.childLoggers.has(component)) {
+      const componentLevel = this.componentLevels[component] || this.defaultLevel;
+      const childLogger = this.logger.child({ component });
+      childLogger.level = componentLevel;
+      this.childLoggers.set(component, childLogger);
+    }
+    return new ComponentLogger(this.childLoggers.get(component)!, component, this.apiKeyMinLength);
   }
 
   /**
@@ -69,7 +187,7 @@ export class Logger {
   }
 
   /**
-   * Log debug message with PII redaction (only in development)
+   * Log debug message with PII redaction
    */
   debug(message: string): void {
     this.logger.debug(this.redactPII(message));
@@ -77,10 +195,6 @@ export class Logger {
 
   /**
    * Redact personally identifiable information (PII) from log messages
-   * Removes:
-   * - API tokens (Bearer tokens)
-   * - Email addresses
-   * - Potential API keys (long alphanumeric strings)
    */
   private redactPII(message: string): string {
     let redacted = message;
@@ -97,13 +211,11 @@ export class Logger {
       '[EMAIL_REDACTED]'
     );
 
-    // Redact potential API keys (strings longer than 20 chars with mixed case/numbers)
-    redacted = redacted.replace(
-      /\b[A-Za-z0-9]{32,}\b/g,
-      '[KEY_REDACTED]'
-    );
+    // Redact potential API keys (strings longer than configured length)
+    const keyPattern = new RegExp(`\\b[A-Za-z0-9]{${this.apiKeyMinLength},}\\b`, 'g');
+    redacted = redacted.replace(keyPattern, '[KEY_REDACTED]');
 
-    // Redact Canvas API tokens (typically start with specific patterns)
+    // Redact Canvas API tokens
     redacted = redacted.replace(
       /\bcanvas[_-]?token[_-]?[A-Za-z0-9]+/gi,
       '[CANVAS_TOKEN_REDACTED]'
@@ -114,18 +226,15 @@ export class Logger {
 
   /**
    * Flush all pending log writes to disk
-   * Returns a promise that resolves when all transports have finished writing
    */
   flush(): Promise<void> {
     return new Promise((resolve) => {
-      // Wait for all transports to finish
-      const fileTransport = this.logger.transports.find(
-        (t) => t instanceof winston.transports.File
+      const transport = this.logger.transports.find(
+        (t) => t instanceof DailyRotateFile
       );
 
-      if (fileTransport) {
-        // @ts-expect-error - accessing internal _stream property
-        const stream = fileTransport._stream;
+      if (transport) {
+        const stream = (transport as unknown as { logStream?: NodeJS.WritableStream }).logStream;
         if (stream && typeof stream.once === 'function') {
           stream.once('finish', resolve);
           stream.end();
@@ -143,5 +252,82 @@ export class Logger {
    */
   close(): void {
     this.logger.close();
+  }
+
+  /**
+   * Get the log directory path
+   */
+  getLogDir(): string {
+    const transport = this.logger.transports.find(
+      (t) => t instanceof DailyRotateFile
+    ) as DailyRotateFile | undefined;
+
+    if (transport) {
+      const options = transport.options as { filename?: string };
+      if (options.filename) {
+        return path.dirname(options.filename);
+      }
+    }
+    return DEFAULT_LOGGER_OPTIONS.logDir;
+  }
+}
+
+/**
+ * Component-scoped logger with automatic component tagging
+ */
+export class ComponentLogger {
+  private logger: winston.Logger;
+  private readonly _component: string; // Stored for potential future use (debugging)
+  private apiKeyMinLength: number;
+
+  constructor(logger: winston.Logger, component: string, apiKeyMinLength: number) {
+    this.logger = logger;
+    this._component = component;
+    this.apiKeyMinLength = apiKeyMinLength;
+  }
+
+  info(message: string): void {
+    this.logger.info(this.redactPII(message));
+  }
+
+  warn(message: string): void {
+    this.logger.warn(this.redactPII(message));
+  }
+
+  error(message: string, error?: Error): void {
+    const redactedMessage = this.redactPII(message);
+    if (error) {
+      this.logger.error(redactedMessage, { stack: error.stack });
+    } else {
+      this.logger.error(redactedMessage);
+    }
+  }
+
+  debug(message: string): void {
+    this.logger.debug(this.redactPII(message));
+  }
+
+  private redactPII(message: string): string {
+    let redacted = message;
+
+    redacted = redacted.replace(
+      /Bearer\s+[A-Za-z0-9_\-\.~+/]+=*/g,
+      'Bearer [REDACTED]'
+    );
+
+    redacted = redacted.replace(
+      /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g,
+      '[EMAIL_REDACTED]'
+    );
+
+    const keyPattern = new RegExp(`\\b[A-Za-z0-9]{${this.apiKeyMinLength},}\\b`, 'g');
+    redacted = redacted.replace(keyPattern, '[KEY_REDACTED]');
+
+    redacted = redacted.replace(
+      /\bcanvas[_-]?token[_-]?[A-Za-z0-9]+/gi,
+      '[CANVAS_TOKEN_REDACTED]'
+    );
+
+    return redacted;
   }
 }

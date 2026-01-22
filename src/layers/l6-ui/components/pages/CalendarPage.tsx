@@ -1,0 +1,90 @@
+/**
+ * Calendar Page
+ * Placeholder for calendar implementation
+ */
+
+import React from 'react';
+import { Calendar } from 'lucide-react';
+import { Card } from '../shared';
+
+export function CalendarPage() {
+  return (
+    <div style={styles.page}>
+      <header style={styles.header}>
+        <h1 style={styles.title}>Calendar</h1>
+        <p style={styles.subtitle}>Your academic schedule at a glance</p>
+      </header>
+
+      <Card padding="lg">
+        <div style={styles.placeholder}>
+          <Calendar size={64} color="var(--color-navy)" style={{ marginBottom: 'var(--space-4)' }} />
+          <h2 style={styles.placeholderTitle}>Coming Soon</h2>
+          <p style={styles.placeholderText}>
+            The calendar view is under development. It will include:
+          </p>
+          <ul style={styles.featureList}>
+            <li>Day, Week, and Month views</li>
+            <li>Canvas assignment deadlines</li>
+            <li>User-created events</li>
+            <li>Recurring event support (iCal RRULE)</li>
+          </ul>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+const styles: Record<string, React.CSSProperties> = {
+  page: {
+    maxWidth: '1200px',
+    margin: '0 auto',
+  },
+
+  header: {
+    marginBottom: 'var(--space-6)',
+  },
+
+  title: {
+    fontSize: 'var(--text-3xl)',
+    fontWeight: 'var(--font-bold)',
+    color: 'var(--text-primary)',
+    marginBottom: 'var(--space-1)',
+  },
+
+  subtitle: {
+    fontSize: 'var(--text-sm)',
+    color: 'var(--text-secondary)',
+  },
+
+  placeholder: {
+    textAlign: 'center',
+    padding: 'var(--space-10)',
+  },
+
+  icon: {
+    fontSize: '4rem',
+    display: 'block',
+    marginBottom: 'var(--space-4)',
+  },
+
+  placeholderTitle: {
+    fontSize: 'var(--text-xl)',
+    fontWeight: 'var(--font-semibold)',
+    color: 'var(--text-primary)',
+    marginBottom: 'var(--space-2)',
+  },
+
+  placeholderText: {
+    color: 'var(--text-secondary)',
+    marginBottom: 'var(--space-4)',
+  },
+
+  featureList: {
+    display: 'inline-block',
+    textAlign: 'left',
+    color: 'var(--text-secondary)',
+    lineHeight: '2',
+  },
+};
+
+export default CalendarPage;

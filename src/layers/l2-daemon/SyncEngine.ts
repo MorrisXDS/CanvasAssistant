@@ -341,30 +341,73 @@ export class SyncEngine extends EventEmitter {
         3 // Lower priority
       );
 
+      const baseUrl = this.client.getBaseUrl();
+
       this.db.transaction(() => {
         for (const announcement of announcements) {
           try {
-            const localNotification = mapAnnouncement(announcement, localCourseId);
+            const mapped = mapAnnouncement(
+              announcement,
+              localCourseId,
+              baseUrl,
+              String(canvasCourseId)
+            );
 
             // Insert notification
-            this.db.upsert('notifications', localNotification, ['source_type', 'source_id'], false);
+            this.db.upsert('notifications', mapped.notification, ['source_type', 'source_id'], false);
             count++;
 
-            // If policy-related, create policy_announcement record
-            if (localNotification.is_policy_related) {
-              const detection = detectPolicyKeywords(announcement.title + ' ' + announcement.message);
-              const confidence = calculatePolicyConfidence(
-                announcement.title + ' ' + announcement.message,
-                detection.keywords
-              );
+            // Get the notification ID for attachments and policy tracking
+            const notificationRow = this.db.executeReadOne<{ id: number }>(
+              'SELECT id FROM notifications WHERE source_id = ?',
+              [String(announcement.id)]
+            );
 
-              // Get the notification ID (need to query it since upsert may update)
-              const notification = this.db.executeReadOne<{ id: number }>(
-                'SELECT id FROM notifications WHERE source_id = ?',
-                [String(announcement.id)]
-              );
+            if (notificationRow) {
+              // Insert attachments
+              for (const attachment of mapped.attachments) {
+                this.db.executeWrite(
+                  `INSERT INTO notification_attachments
+                   (notification_id, course_id, external_id, display_name, filename, url, size_bytes, content_type, download_status)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(notification_id, external_id) DO UPDATE SET
+                     display_name = excluded.display_name,
+                     filename = excluded.filename,
+                     url = excluded.url,
+                     size_bytes = excluded.size_bytes,
+                     content_type = excluded.content_type`,
+                  [
+                    notificationRow.id,
+                    attachment.course_id,
+                    attachment.external_id,
+                    attachment.display_name,
+                    attachment.filename,
+                    attachment.url,
+                    attachment.size_bytes,
+                    attachment.content_type,
+                    'pending',
+                  ],
+                  'notification_attachments'
+                );
+              }
 
-              if (notification) {
+              // Emit event for pending downloads
+              if (mapped.attachments.length > 0) {
+                this.emit('attachments-pending', {
+                  notificationId: notificationRow.id,
+                  courseId: localCourseId,
+                  attachmentCount: mapped.attachments.length,
+                });
+              }
+
+              // If policy-related, create policy_announcement record
+              if (mapped.notification.is_policy_related) {
+                const detection = detectPolicyKeywords(announcement.title + ' ' + announcement.message);
+                const confidence = calculatePolicyConfidence(
+                  announcement.title + ' ' + announcement.message,
+                  detection.keywords
+                );
+
                 this.db.executeWrite(
                   `INSERT INTO policy_announcements
                    (notification_id, course_id, detected_policy_type, confidence_score, extracted_rules, is_confirmed)
@@ -374,7 +417,7 @@ export class SyncEngine extends EventEmitter {
                      confidence_score = excluded.confidence_score,
                      extracted_rules = excluded.extracted_rules`,
                   [
-                    notification.id,
+                    notificationRow.id,
                     localCourseId,
                     detection.categories[0] || null,
                     confidence,
@@ -388,7 +431,7 @@ export class SyncEngine extends EventEmitter {
                 );
 
                 this.emit('policy-detected', {
-                  notificationId: notification.id,
+                  notificationId: notificationRow.id,
                   courseId: localCourseId,
                   title: announcement.title,
                   keywords: detection.keywords,

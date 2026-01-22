@@ -2,11 +2,14 @@ import BetterSqlite3, { Database as SQLiteDatabase } from 'better-sqlite3';
 import { EventEmitter } from 'events';
 import path from 'path';
 import fs from 'fs';
+import { DatabaseConfig as AppDatabaseConfig } from '../l0-utilities/AppConfig';
 
 export interface DatabaseConfig {
   dbPath: string;
   migrationsPath?: string;
   verbose?: boolean;
+  /** Performance settings from AppConfig */
+  performance?: Partial<AppDatabaseConfig>;
 }
 
 export interface CommitEvent {
@@ -25,14 +28,26 @@ export interface CommitEvent {
  * - Event emission on data changes
  * - Migration tracking via schema_version table
  */
+// Default performance settings
+const DEFAULT_CACHE_SIZE_KB = 64000; // 64MB
+const DEFAULT_MMAP_SIZE_BYTES = 268435456; // 256MB
+
 export class Database extends EventEmitter {
   private db: SQLiteDatabase;
   private dbPath: string;
   private isInitialized: boolean = false;
+  private readonly cacheSizeKb: number;
+  private readonly mmapSizeBytes: number;
+  private readonly walMode: boolean;
 
   constructor(config: DatabaseConfig) {
     super();
     this.dbPath = config.dbPath;
+
+    // Performance settings from config or defaults
+    this.cacheSizeKb = config.performance?.cacheSizeKb ?? DEFAULT_CACHE_SIZE_KB;
+    this.mmapSizeBytes = config.performance?.mmapSizeBytes ?? DEFAULT_MMAP_SIZE_BYTES;
+    this.walMode = config.performance?.walMode ?? true;
 
     // Ensure directory exists
     const dbDir = path.dirname(this.dbPath);
@@ -53,8 +68,10 @@ export class Database extends EventEmitter {
    * Configure SQLite PRAGMAs for optimal performance
    */
   private configurePragmas(): void {
-    // WAL mode for better concurrency
-    this.db.pragma('journal_mode = WAL');
+    // WAL mode for better concurrency (if enabled)
+    if (this.walMode) {
+      this.db.pragma('journal_mode = WAL');
+    }
 
     // NORMAL sync for <1ms writes (safe with WAL)
     this.db.pragma('synchronous = NORMAL');
@@ -62,11 +79,11 @@ export class Database extends EventEmitter {
     // Enable foreign key constraints
     this.db.pragma('foreign_keys = ON');
 
-    // Increase cache size for better read performance (64MB)
-    this.db.pragma('cache_size = -64000');
+    // Configurable cache size for read performance (negative value = KB)
+    this.db.pragma(`cache_size = -${this.cacheSizeKb}`);
 
-    // Memory-mapped I/O for faster reads (256MB)
-    this.db.pragma('mmap_size = 268435456');
+    // Configurable memory-mapped I/O for faster reads
+    this.db.pragma(`mmap_size = ${this.mmapSizeBytes}`);
 
     // Temp store in memory
     this.db.pragma('temp_store = MEMORY');

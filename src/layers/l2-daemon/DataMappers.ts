@@ -36,6 +36,17 @@ export interface CanvasAssignment {
   assignment_group_id: number;
 }
 
+export interface CanvasAttachment {
+  id: number;
+  uuid: string;
+  display_name: string;
+  filename: string;
+  url: string;
+  size: number;
+  content_type: string;
+  created_at: string;
+}
+
 export interface CanvasAnnouncement {
   id: number;
   title: string;
@@ -44,6 +55,7 @@ export interface CanvasAnnouncement {
   context_code: string;
   user_name?: string;
   author?: { display_name: string };
+  attachments?: CanvasAttachment[];
 }
 
 export interface CanvasModule {
@@ -153,10 +165,44 @@ export interface LocalNotification {
   course_id: number;
   title: string;
   message: string;
+  url: string | null;
   priority_level: 'critical' | 'high' | 'medium' | 'low';
   published_at: string;
   is_policy_related: number; // SQLite boolean: 0 or 1
   policy_keywords: string | null;
+}
+
+export interface LocalNotificationAttachment {
+  [key: string]: unknown;
+  course_id: number;
+  external_id: string;
+  display_name: string;
+  filename: string;
+  url: string;
+  size_bytes: number | null;
+  content_type: string | null;
+  local_path: string | null;
+  download_status: 'pending' | 'downloading' | 'completed' | 'failed';
+}
+
+/**
+ * Map Canvas attachment to local attachment record
+ */
+export function mapAttachment(
+  canvas: CanvasAttachment,
+  courseId: number
+): LocalNotificationAttachment {
+  return {
+    course_id: courseId,
+    external_id: String(canvas.id),
+    display_name: canvas.display_name,
+    filename: canvas.filename,
+    url: canvas.url,
+    size_bytes: canvas.size || null,
+    content_type: canvas.content_type || null,
+    local_path: null,
+    download_status: 'pending',
+  };
 }
 
 export interface LocalModule {
@@ -263,16 +309,55 @@ export function mapAssignment(canvas: CanvasAssignment, localCourseId: number): 
 }
 
 /**
- * Map Canvas announcement to local notification record
+ * Strip HTML and convert to clean plain text
+ */
+function htmlToPlainText(html: string): string {
+  return html
+    // Replace block elements with newlines
+    .replace(/<\/(p|div|h[1-6]|li|tr|br)>/gi, '\n')
+    .replace(/<br\s*\/?>/gi, '\n')
+    // Replace list items with bullet points
+    .replace(/<li[^>]*>/gi, '• ')
+    // Remove all remaining HTML tags
+    .replace(/<[^>]*>/g, '')
+    // Decode common HTML entities
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&rsquo;/g, "'")
+    .replace(/&lsquo;/g, "'")
+    .replace(/&rdquo;/g, '"')
+    .replace(/&ldquo;/g, '"')
+    .replace(/&mdash;/g, '—')
+    .replace(/&ndash;/g, '–')
+    // Normalize whitespace
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/[ \t]+/g, ' ')
+    .trim();
+}
+
+export interface MappedAnnouncement {
+  notification: LocalNotification;
+  attachments: LocalNotificationAttachment[];
+}
+
+/**
+ * Map Canvas announcement to local notification record with attachments
  */
 export function mapAnnouncement(
   canvas: CanvasAnnouncement,
-  localCourseId: number
-): LocalNotification {
-  // Strip HTML tags for text analysis
-  const plainText = (canvas.title + ' ' + canvas.message)
-    .replace(/<[^>]*>/g, ' ')
-    .toLowerCase();
+  localCourseId: number,
+  baseUrl: string,
+  externalCourseId: string
+): MappedAnnouncement {
+  // Convert HTML to clean plain text for storage
+  const cleanMessage = htmlToPlainText(canvas.message);
+
+  // Strip HTML tags for policy analysis
+  const plainText = (canvas.title + ' ' + cleanMessage).toLowerCase();
 
   // Detect policy-related keywords
   const foundKeywords: string[] = [];
@@ -286,16 +371,28 @@ export function mapAnnouncement(
 
   const isPolicyRelated = foundKeywords.length > 0;
 
+  // Build Canvas URL for the original announcement
+  const canvasUrl = `${baseUrl}/courses/${externalCourseId}/discussion_topics/${canvas.id}`;
+
+  // Map attachments
+  const attachments: LocalNotificationAttachment[] = (canvas.attachments || []).map(
+    (att) => mapAttachment(att, localCourseId)
+  );
+
   return {
-    source_type: 'canvas',
-    source_id: String(canvas.id),
-    course_id: localCourseId,
-    title: canvas.title,
-    message: canvas.message,
-    priority_level: isPolicyRelated ? 'high' : 'medium',
-    published_at: canvas.posted_at,
-    is_policy_related: isPolicyRelated ? 1 : 0, // SQLite boolean
-    policy_keywords: foundKeywords.length > 0 ? JSON.stringify(foundKeywords) : null,
+    notification: {
+      source_type: 'canvas',
+      source_id: String(canvas.id),
+      course_id: localCourseId,
+      title: canvas.title,
+      message: cleanMessage,
+      url: canvasUrl,
+      priority_level: isPolicyRelated ? 'high' : 'medium',
+      published_at: canvas.posted_at,
+      is_policy_related: isPolicyRelated ? 1 : 0, // SQLite boolean
+      policy_keywords: foundKeywords.length > 0 ? JSON.stringify(foundKeywords) : null,
+    },
+    attachments,
   };
 }
 

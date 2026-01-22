@@ -112,6 +112,9 @@ describe('DataMappers', () => {
   });
 
   describe('mapAnnouncement', () => {
+    const baseUrl = 'https://utoronto.instructure.com';
+    const externalCourseId = '12345';
+
     it('should map a regular announcement', () => {
       const canvasAnnouncement: CanvasAnnouncement = {
         id: 55555,
@@ -121,15 +124,68 @@ describe('DataMappers', () => {
         context_code: 'course_12345',
       };
 
-      const result = mapAnnouncement(canvasAnnouncement, 1);
+      const result = mapAnnouncement(canvasAnnouncement, 1, baseUrl, externalCourseId);
 
-      expect(result.source_type).toBe('canvas');
-      expect(result.source_id).toBe('55555');
-      expect(result.course_id).toBe(1);
-      expect(result.title).toBe('Class Cancelled');
-      expect(result.is_policy_related).toBe(0);
-      expect(result.policy_keywords).toBeNull();
-      expect(result.priority_level).toBe('medium');
+      expect(result.notification.source_type).toBe('canvas');
+      expect(result.notification.source_id).toBe('55555');
+      expect(result.notification.course_id).toBe(1);
+      expect(result.notification.title).toBe('Class Cancelled');
+      expect(result.notification.message).toBe('No class next Monday due to holiday.');
+      expect(result.notification.url).toBe('https://utoronto.instructure.com/courses/12345/discussion_topics/55555');
+      expect(result.notification.is_policy_related).toBe(0);
+      expect(result.notification.policy_keywords).toBeNull();
+      expect(result.notification.priority_level).toBe('medium');
+      expect(result.attachments).toHaveLength(0);
+    });
+
+    it('should strip HTML from message', () => {
+      const canvasAnnouncement: CanvasAnnouncement = {
+        id: 88888,
+        title: 'HTML Test',
+        message: '<h1>Title</h1><p>First paragraph.</p><ul><li>Item 1</li><li>Item 2</li></ul><p>Final text.</p>',
+        posted_at: '2024-02-10T12:00:00Z',
+        context_code: 'course_12345',
+      };
+
+      const result = mapAnnouncement(canvasAnnouncement, 1, baseUrl, externalCourseId);
+
+      expect(result.notification.message).not.toContain('<');
+      expect(result.notification.message).not.toContain('>');
+      expect(result.notification.message).toContain('First paragraph.');
+      expect(result.notification.message).toContain('Item 1');
+    });
+
+    it('should map attachments', () => {
+      const canvasAnnouncement: CanvasAnnouncement = {
+        id: 99999,
+        title: 'Announcement with File',
+        message: '<p>Please see the attached syllabus.</p>',
+        posted_at: '2024-02-10T12:00:00Z',
+        context_code: 'course_12345',
+        attachments: [
+          {
+            id: 111,
+            uuid: 'abc-123',
+            display_name: 'Syllabus.pdf',
+            filename: 'syllabus_2024.pdf',
+            url: 'https://canvas.instructure.com/files/111/download',
+            size: 102400,
+            content_type: 'application/pdf',
+            created_at: '2024-02-10T10:00:00Z',
+          },
+        ],
+      };
+
+      const result = mapAnnouncement(canvasAnnouncement, 1, baseUrl, externalCourseId);
+
+      expect(result.attachments).toHaveLength(1);
+      expect(result.attachments[0].external_id).toBe('111');
+      expect(result.attachments[0].display_name).toBe('Syllabus.pdf');
+      expect(result.attachments[0].filename).toBe('syllabus_2024.pdf');
+      expect(result.attachments[0].size_bytes).toBe(102400);
+      expect(result.attachments[0].content_type).toBe('application/pdf');
+      expect(result.attachments[0].download_status).toBe('pending');
+      expect(result.attachments[0].course_id).toBe(1);
     });
 
     it('should detect policy-related announcements', () => {
@@ -141,13 +197,13 @@ describe('DataMappers', () => {
         context_code: 'course_12345',
       };
 
-      const result = mapAnnouncement(canvasAnnouncement, 1);
+      const result = mapAnnouncement(canvasAnnouncement, 1, baseUrl, externalCourseId);
 
-      expect(result.is_policy_related).toBe(1);
-      expect(result.policy_keywords).not.toBeNull();
-      expect(result.priority_level).toBe('high');
+      expect(result.notification.is_policy_related).toBe(1);
+      expect(result.notification.policy_keywords).not.toBeNull();
+      expect(result.notification.priority_level).toBe('high');
 
-      const keywords = JSON.parse(result.policy_keywords!);
+      const keywords = JSON.parse(result.notification.policy_keywords!);
       expect(keywords).toContain('late_submission:late');
       expect(keywords).toContain('grace_period:grace');
       expect(keywords).toContain('penalties:penalty');
@@ -162,10 +218,10 @@ describe('DataMappers', () => {
         context_code: 'course_12345',
       };
 
-      const result = mapAnnouncement(canvasAnnouncement, 1);
+      const result = mapAnnouncement(canvasAnnouncement, 1, baseUrl, externalCourseId);
 
-      expect(result.is_policy_related).toBe(1);
-      const keywords = JSON.parse(result.policy_keywords!);
+      expect(result.notification.is_policy_related).toBe(1);
+      const keywords = JSON.parse(result.notification.policy_keywords!);
       expect(keywords.some((k: string) => k.includes('drops'))).toBe(true);
       expect(keywords.some((k: string) => k.includes('bonus'))).toBe(true);
     });
