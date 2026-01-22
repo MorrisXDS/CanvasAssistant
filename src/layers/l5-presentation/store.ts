@@ -402,10 +402,13 @@ export function subscribeToIpcEvents(): () => void {
   });
 
   const unsubSyncStatus = api.onSyncStatus((status: 'idle' | 'syncing' | 'error') => {
+    console.debug(`[store] Sync status changed: ${status}`);
     useStore.setState({ syncStatus: status });
     // Update lastSyncedAt when sync completes successfully
     if (status === 'idle') {
-      useStore.setState({ lastSyncedAt: new Date().toISOString() });
+      const now = new Date().toISOString();
+      console.debug(`[store] Updating lastSyncedAt: ${now}`);
+      useStore.setState({ lastSyncedAt: now });
       // Refresh data after sync
       useStore.getState().refreshAll();
     }

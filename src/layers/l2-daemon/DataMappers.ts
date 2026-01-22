@@ -318,7 +318,12 @@ export function mapAssignment(canvas: CanvasAssignment, localCourseId: number): 
 export function htmlToPlainText(html: string): string {
   if (!html) return '';
 
-  return convert(html, {
+  const hasHtmlTags = /<[^>]+>/.test(html);
+  if (hasHtmlTags) {
+    console.debug(`[htmlToPlainText] Converting HTML (${html.length} chars): "${html.substring(0, 100)}..."`);
+  }
+
+  const result = convert(html, {
     wordwrap: false,
     preserveNewlines: true,
     selectors: [
@@ -349,6 +354,12 @@ export function htmlToPlainText(html: string): string {
       { selector: 'hr', options: { leadingLineBreaks: 2, trailingLineBreaks: 2 } },
     ],
   }).trim();
+
+  if (hasHtmlTags) {
+    console.debug(`[htmlToPlainText] Result (${result.length} chars): "${result.substring(0, 100)}..."`);
+  }
+
+  return result;
 }
 
 export interface MappedAnnouncement {
