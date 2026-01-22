@@ -562,4 +562,17 @@ export const coreMigrations: Migration[] = [
       DROP TABLE notification_attachments;
     `,
   },
+  {
+    version: 19,
+    description: 'Add color, nickname, and is_hidden columns to courses table',
+    up: `
+      ALTER TABLE courses ADD COLUMN color TEXT;
+      ALTER TABLE courses ADD COLUMN nickname TEXT;
+      ALTER TABLE courses ADD COLUMN is_hidden BOOLEAN DEFAULT FALSE;
+    `,
+    down: `
+      -- SQLite doesn't support DROP COLUMN easily
+      SELECT 1;
+    `,
+  },
 ];
