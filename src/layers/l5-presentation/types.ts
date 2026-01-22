@@ -25,6 +25,18 @@ export interface Course {
   nickname: string | null;
   isHidden: boolean;
   lastSyncedAt: string | null;
+  enrollmentTermId: number | null;
+}
+
+/**
+ * Enrollment term (semester) data
+ */
+export interface EnrollmentTerm {
+  id: number;
+  externalId: string;
+  name: string;
+  startAt: string | null;
+  endAt: string | null;
 }
 
 /**
@@ -44,6 +56,8 @@ export interface Task {
   isCompleted: boolean;
   completedAt: string | null;
   submissionStatus: string | null;
+  taskType: string | null;
+  taskGroupId: number | null;
 }
 
 /**
@@ -77,6 +91,22 @@ export interface NotificationAttachment {
   localPath: string | null;
   downloadStatus: 'pending' | 'downloading' | 'completed' | 'failed';
   downloadedAt: string | null;
+}
+
+/**
+ * File reference detected in announcement message
+ * Links text positions to attachments for clickable file links
+ */
+export interface AnnouncementFileReference {
+  id: number;
+  notificationId: number;
+  attachmentId: number | null;
+  startPosition: number;
+  endPosition: number;
+  matchedText: string;
+  originalUrl: string | null;
+  // Joined from attachment table when attachment exists
+  attachment?: NotificationAttachment;
 }
 
 /**
@@ -122,6 +152,81 @@ export interface SystemState {
 }
 
 /**
+ * Imported calendar metadata
+ */
+export interface ImportedCalendar {
+  id: number;
+  name: string;
+  filename: string;
+  fileHash: string | null;
+  color: string;
+  eventCount: number;
+  isVisible: boolean;
+  importedAt: string;
+  updatedAt: string;
+}
+
+/**
+ * Calendar event from imported ICS or Canvas
+ */
+export interface ExternalCalendarEvent {
+  id: number;
+  externalId: string | null;
+  sourceType: 'canvas' | 'user' | 'imported';
+  courseId: number | null;
+  importedCalendarId: number | null;
+  title: string;
+  description: string | null;
+  startAt: string;
+  endAt: string | null;
+  allDay: boolean;
+  location: string | null;
+  uid: string | null;
+  recurrenceRule: string | null;
+  recurrenceExceptionDates: string | null;
+  parentEventId: number | null;
+}
+
+/**
+ * Expanded calendar event for display (includes recurrence instances)
+ */
+export interface DisplayCalendarEvent extends ExternalCalendarEvent {
+  isRecurrenceInstance: boolean;
+  recurrenceDate?: string;
+  originalEventId?: number;
+  color: string;
+  calendarName?: string;
+}
+
+/**
+ * Parsed ICS event before import
+ */
+export interface ParsedICSEvent {
+  uid: string;
+  summary: string;
+  description: string | null;
+  dtstart: Date | null;
+  dtend: Date | null;
+  allDay: boolean;
+  location: string | null;
+  rrule: string | null;
+  exdates: string[] | null;
+  sequence: number;
+}
+
+/**
+ * ICS import preview for confirmation modal
+ */
+export interface ICSImportPreview {
+  calendarName: string;
+  filename: string;
+  events: ParsedICSEvent[];
+  hasRecurringEvents: boolean;
+  dateRange: { start: Date; end: Date } | null;
+  warnings: string[];
+}
+
+/**
  * Dashboard priority item for the main view
  */
 export interface PriorityItem {
@@ -153,6 +258,15 @@ export interface IpcApi {
   getCourses: () => Promise<Course[]>;
   getTasks: (courseId?: number) => Promise<Task[]>;
   getNotifications: () => Promise<Notification[]>;
+
+  // Imported Calendars
+  getImportedCalendars: () => Promise<ImportedCalendar[]>;
+  getCalendarEventsForRange: (params: { startDate: string; endDate: string; includeHidden?: boolean }) => Promise<DisplayCalendarEvent[]>;
+  parseICSPreview: (content: string, filename: string) => Promise<ICSImportPreview>;
+  importICS: (params: { content: string; filename: string; name?: string; color?: string }) => Promise<{ success: boolean; data?: { calendarId: number; eventCount: number }; error?: string }>;
+  deleteImportedCalendar: (calendarId: number) => Promise<{ success: boolean; error?: string }>;
+  toggleCalendarVisibility: (calendarId: number, isVisible: boolean) => Promise<{ success: boolean; error?: string }>;
+  updateImportedCalendar: (calendarId: number, updates: { name?: string; color?: string }) => Promise<{ success: boolean; error?: string }>;
 
   // Commands
   dispatch: (command: string, params: unknown) => Promise<{ success: boolean; data?: unknown; error?: string }>;
@@ -196,6 +310,18 @@ export interface DbCommitEvent {
 }
 
 /**
+ * Sync result summary for UI display
+ */
+export interface SyncResultSummary {
+  courses?: { synced: number; new: number };
+  tasks?: { synced: number; new: number };
+  announcements?: { synced: number; new: number };
+  files?: { synced: number; new: number };
+  errors?: string[];
+  timestamp: string;
+}
+
+/**
  * Store state shape
  */
 export interface StoreState {
@@ -204,12 +330,17 @@ export interface StoreState {
   tasks: Task[];
   notifications: Notification[];
 
+  // Imported Calendars
+  importedCalendars: ImportedCalendar[];
+  calendarEvents: DisplayCalendarEvent[];
+
   // Simulation
   simulation: SimulationState;
 
   // System
   syncStatus: SyncStatus;
   lastSyncedAt: string | null;
+  lastSyncResult: SyncResultSummary | null;
   systemState: SystemState | null;
   healthStatus: HealthStatus | null;
 
@@ -234,6 +365,14 @@ export interface StoreActions {
   fetchNotifications: () => Promise<void>;
   refreshAll: () => Promise<void>;
 
+  // Imported Calendars
+  fetchImportedCalendars: () => Promise<void>;
+  fetchCalendarEventsForRange: (startDate: Date, endDate: Date) => Promise<void>;
+  importICSFile: (content: string, filename: string, options?: { name?: string; color?: string }) => Promise<{ success: boolean; calendarId?: number; eventCount?: number }>;
+  deleteImportedCalendar: (calendarId: number) => Promise<boolean>;
+  toggleCalendarVisibility: (calendarId: number, isVisible: boolean) => Promise<boolean>;
+  updateImportedCalendar: (calendarId: number, updates: { name?: string; color?: string }) => Promise<boolean>;
+
   // Commands
   updateTargetGrade: (courseId: number, targetGrade: number) => Promise<boolean>;
   markTaskComplete: (taskId: number, isComplete: boolean) => Promise<boolean>;
@@ -242,7 +381,15 @@ export interface StoreActions {
   clearSimulation: (taskId?: number) => Promise<boolean>;
 
   // Sync
-  triggerSync: (type: 'full' | 'courses' | 'tasks' | 'notifications') => Promise<boolean>;
+  triggerSync: (
+    type: 'full' | 'courses' | 'tasks' | 'notifications',
+    options?: {
+      courseIds?: number[];
+      syncCanvasFiles?: boolean;
+      syncAnnouncements?: boolean;
+    }
+  ) => Promise<{ success: boolean; result?: unknown; summary?: SyncResultSummary; error?: string }>;
+  clearSyncResult: () => void;
 
   // Auth
   setAuthenticated: (authenticated: boolean) => void;

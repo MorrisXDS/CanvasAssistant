@@ -11,7 +11,12 @@ import {
   CommandResult,
 } from '../types';
 
-export type PolicyType = 'grace_tokens' | 'late_penalty' | 'drop_lowest' | 'weight_transfer';
+export type PolicyType =
+  | 'grace_tokens'
+  | 'late_penalty'
+  | 'drop_lowest'
+  | 'weight_transfer'
+  | 'grade_replacement';
 
 export interface AddPolicyParams {
   courseId: number;
@@ -35,6 +40,7 @@ export class AddPolicyCommand
     'late_penalty',
     'drop_lowest',
     'weight_transfer',
+    'grade_replacement',
   ];
 
   validate(params: AddPolicyParams): { valid: boolean; error?: string } {
@@ -97,11 +103,28 @@ export class AddPolicyCommand
         break;
 
       case 'weight_transfer':
-        if (typeof config.from_task !== 'string') {
-          return { valid: false, error: 'weight_transfer requires from_task (string)' };
+        // Accept either old format (from_task/to_task) or new format (source_task_id/target_task_id)
+        const hasSource = config.source_task_id || config.source_group_id || config.from_task;
+        const hasTarget = config.target_task_id || config.target_group_id || config.to_task;
+
+        if (!hasSource) {
+          return { valid: false, error: 'weight_transfer requires a source (source_task_id, source_group_id, or from_task)' };
         }
-        if (typeof config.to_task !== 'string') {
-          return { valid: false, error: 'weight_transfer requires to_task (string)' };
+        if (!hasTarget) {
+          return { valid: false, error: 'weight_transfer requires a target (target_task_id, target_group_id, or to_task)' };
+        }
+        break;
+
+      case 'grade_replacement':
+        // Similar to weight_transfer but for grade replacement
+        const hasReplacementSource = config.source_task_id || config.source_group_id;
+        const hasReplacementTarget = config.target_task_id || config.target_group_id;
+
+        if (!hasReplacementSource) {
+          return { valid: false, error: 'grade_replacement requires a source (source_task_id or source_group_id)' };
+        }
+        if (!hasReplacementTarget) {
+          return { valid: false, error: 'grade_replacement requires a target (target_task_id or target_group_id)' };
         }
         break;
     }
@@ -204,9 +227,16 @@ export class AddPolicyCommand
       case 'weight_transfer':
         return {
           ...result,
-          condition: config.condition ?? 'if_higher',
-          max_transfer_percent: config.max_transfer_percent ?? 100,
-          transfer_ratio: config.transfer_ratio ?? 1.0,
+          transfer_type: config.transfer_type ?? 'full',
+          transfer_percent: config.transfer_percent ?? 100,
+          condition_type: config.condition_type ?? 'always',
+        };
+
+      case 'grade_replacement':
+        return {
+          ...result,
+          replacement_type: config.replacement_type ?? 'if_higher',
+          replacement_ratio: config.replacement_ratio ?? 1.0,
         };
 
       default:

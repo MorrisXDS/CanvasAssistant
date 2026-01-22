@@ -118,6 +118,37 @@ export interface ClearSimulationParams {
   taskId?: number;
 }
 
+export interface CreateTaskParams {
+  courseId: number;
+  title: string;
+  description?: string;
+  dueAt?: string;
+  weight?: number;
+  pointsPossible?: number;
+}
+
+export interface DuplicateTaskParams {
+  taskId: number;
+  /** Optional: override properties for the new task */
+  overrides?: Partial<CreateTaskParams>;
+}
+
+export interface UpdateTaskParams {
+  taskId: number;
+  title?: string;
+  description?: string | null;
+  dueAt?: string | null;
+  weight?: number;
+  grade?: number | null;
+  pointsPossible?: number | null;
+}
+
+export interface DeleteTaskParams {
+  taskId: number;
+  /** Force delete even if it's a Canvas-synced task */
+  force?: boolean;
+}
+
 /**
  * Recalculated priority data after simulation
  */

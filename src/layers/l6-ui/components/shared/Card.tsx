@@ -18,6 +18,8 @@ export interface CardProps {
   padding?: 'none' | 'sm' | 'md' | 'lg';
   /** Click handler for interactive cards */
   onClick?: () => void;
+  /** Custom styles */
+  style?: React.CSSProperties;
 }
 
 const paddingStyles: Record<string, string> = {
@@ -34,6 +36,7 @@ export function Card({
   className = '',
   padding = 'md',
   onClick,
+  style,
 }: CardProps) {
   const isInteractive = !!onClick;
 
@@ -45,6 +48,7 @@ export function Card({
     overflow: 'hidden',
     transition: 'box-shadow var(--transition-fast), transform var(--transition-fast)',
     cursor: isInteractive ? 'pointer' : 'default',
+    ...style,
   };
 
   const headerStyle: React.CSSProperties = {
@@ -66,6 +70,8 @@ export function Card({
     padding: title || headerAction
       ? '0 24px 24px 24px'
       : paddingStyles[padding],
+    flex: 1,
+    overflow: 'auto',
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {

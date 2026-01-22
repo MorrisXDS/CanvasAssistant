@@ -9,6 +9,13 @@
 import { convert } from 'html-to-text';
 
 // Canvas API response types
+export interface CanvasTerm {
+  id: number;
+  name: string;
+  start_at: string | null;
+  end_at: string | null;
+}
+
 export interface CanvasCourse {
   id: number;
   name: string;
@@ -16,6 +23,7 @@ export interface CanvasCourse {
   enrollment_term_id: number;
   default_view: string;
   syllabus_body?: string;
+  term?: CanvasTerm;
   enrollments?: Array<{
     type: string;
     computed_current_score?: number;
@@ -143,6 +151,7 @@ export interface LocalCourse {
   landing_page_url: string | null;
   syllabus_body: string | null;
   last_synced_at: string;
+  enrollment_term_id: number | null;
 }
 
 export interface LocalTask {
@@ -251,6 +260,7 @@ export interface LocalResource {
   external_id: string;
   course_id: number;
   parent_folder_id: number | null;
+  folder_path: string | null;
   type: 'file' | 'folder' | 'external_url' | 'page';
   title: string;
   url: string | null;
@@ -288,6 +298,7 @@ export function mapCourse(canvas: CanvasCourse, baseUrl: string): LocalCourse {
     landing_page_url: `${baseUrl}/courses/${canvas.id}`,
     syllabus_body: canvas.syllabus_body ?? null,
     last_synced_at: new Date().toISOString(),
+    enrollment_term_id: canvas.enrollment_term_id ?? null,
   };
 }
 
@@ -318,25 +329,25 @@ export function mapAssignment(canvas: CanvasAssignment, localCourseId: number): 
 export function htmlToPlainText(html: string): string {
   if (!html) return '';
 
-  return convert(html, {
+  const text = convert(html, {
     wordwrap: false,
     preserveNewlines: true,
     selectors: [
-      // Single line break between paragraphs
-      { selector: 'p', options: { leadingLineBreaks: 1, trailingLineBreaks: 1 } },
-      { selector: 'div', options: { leadingLineBreaks: 1, trailingLineBreaks: 1 } },
-      // Headings with single line break
-      { selector: 'h1', options: { leadingLineBreaks: 1, trailingLineBreaks: 1, uppercase: false } },
-      { selector: 'h2', options: { leadingLineBreaks: 1, trailingLineBreaks: 1, uppercase: false } },
-      { selector: 'h3', options: { leadingLineBreaks: 1, trailingLineBreaks: 1, uppercase: false } },
+      // Paragraphs get double line break for visual separation
+      { selector: 'p', options: { leadingLineBreaks: 0, trailingLineBreaks: 2 } },
+      { selector: 'div', options: { leadingLineBreaks: 0, trailingLineBreaks: 1 } },
+      // Headings
+      { selector: 'h1', options: { leadingLineBreaks: 1, trailingLineBreaks: 2, uppercase: false } },
+      { selector: 'h2', options: { leadingLineBreaks: 1, trailingLineBreaks: 2, uppercase: false } },
+      { selector: 'h3', options: { leadingLineBreaks: 1, trailingLineBreaks: 2, uppercase: false } },
       { selector: 'h4', options: { leadingLineBreaks: 1, trailingLineBreaks: 1, uppercase: false } },
       { selector: 'h5', options: { leadingLineBreaks: 1, trailingLineBreaks: 1, uppercase: false } },
       { selector: 'h6', options: { leadingLineBreaks: 1, trailingLineBreaks: 1, uppercase: false } },
       // Lists
-      { selector: 'ul', format: 'unorderedList', options: { leadingLineBreaks: 1, trailingLineBreaks: 1, itemPrefix: '• ' } },
-      { selector: 'ol', format: 'orderedList', options: { leadingLineBreaks: 1, trailingLineBreaks: 1 } },
+      { selector: 'ul', format: 'unorderedList', options: { leadingLineBreaks: 1, trailingLineBreaks: 2, itemPrefix: '• ' } },
+      { selector: 'ol', format: 'orderedList', options: { leadingLineBreaks: 1, trailingLineBreaks: 2 } },
       // Block quotes
-      { selector: 'blockquote', options: { leadingLineBreaks: 1, trailingLineBreaks: 1 } },
+      { selector: 'blockquote', options: { leadingLineBreaks: 1, trailingLineBreaks: 2 } },
       // Links - keep text, ignore href
       { selector: 'a', options: { ignoreHref: true } },
       // Skip images
@@ -346,14 +357,109 @@ export function htmlToPlainText(html: string): string {
       // Line breaks
       { selector: 'br', format: 'lineBreak' },
       // Horizontal rules
-      { selector: 'hr', options: { leadingLineBreaks: 1, trailingLineBreaks: 1 } },
+      { selector: 'hr', options: { leadingLineBreaks: 1, trailingLineBreaks: 2 } },
     ],
-  }).trim();
+  });
+
+  // Collapse excessive newlines (3+) to double newline, preserve paragraph breaks
+  return text.replace(/\n{3,}/g, '\n\n').trim();
 }
 
 export interface MappedAnnouncement {
   notification: LocalNotification;
   attachments: LocalNotificationAttachment[];
+  fileReferences: FileReference[];
+}
+
+/**
+ * Represents a file reference detected in announcement message
+ */
+export interface FileReference {
+  startPosition: number;
+  endPosition: number;
+  matchedText: string;
+  originalUrl: string | null;
+  attachmentExternalId: string | null; // To link to attachment after insert
+}
+
+/**
+ * Common file extensions to detect in text
+ */
+const FILE_EXTENSIONS = [
+  'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx',
+  'txt', 'rtf', 'odt', 'ods', 'odp',
+  'zip', 'tar', 'gz', 'rar', '7z', 'tgz',
+  'py', 'java', 'c', 'cpp', 'h', 'hpp', 'js', 'ts', 'html', 'css', 'rb', 'go', 'rs',
+  'png', 'jpg', 'jpeg', 'gif', 'svg', 'bmp', 'webp',
+  'mp4', 'mp3', 'wav', 'avi', 'mov', 'mkv',
+  'csv', 'json', 'xml', 'yaml', 'yml', 'md',
+];
+
+/**
+ * Extract links from HTML before conversion to plain text
+ * Returns map of link text -> original URL
+ */
+function extractHtmlLinks(html: string): Map<string, string> {
+  const linkMap = new Map<string, string>();
+  if (!html) return linkMap;
+
+  // Match <a> tags with href and extract text content
+  const linkRegex = /<a\s+[^>]*href=["']([^"']+)["'][^>]*>(.*?)<\/a>/gi;
+  let match;
+
+  while ((match = linkRegex.exec(html)) !== null) {
+    const url = match[1];
+    // Strip any inner HTML tags from link text
+    const text = match[2].replace(/<[^>]*>/g, '').trim();
+    if (text && url) {
+      linkMap.set(text.toLowerCase(), url);
+    }
+  }
+
+  return linkMap;
+}
+
+/**
+ * Detect file references in plain text message
+ * Matches against attachments and extracts positions
+ */
+export function detectFileReferences(
+  plainText: string,
+  attachments: LocalNotificationAttachment[],
+  htmlLinkMap: Map<string, string>
+): FileReference[] {
+  const references: FileReference[] = [];
+  if (!plainText) return references;
+
+  // Build regex for file extensions
+  const extensionPattern = FILE_EXTENSIONS.map(ext => ext.replace('.', '\\.')).join('|');
+  // Match filenames - word chars, spaces, dashes, parens, dots followed by extension
+  const fileRegex = new RegExp(`[\\w\\s\\-\\(\\)\\[\\]\\.,]+\\.(${extensionPattern})`, 'gi');
+
+  let match;
+  while ((match = fileRegex.exec(plainText)) !== null) {
+    const filename = match[0].trim();
+    const filenameLower = filename.toLowerCase();
+
+    // Try to find matching attachment
+    const attachment = attachments.find(
+      a => a.display_name.toLowerCase() === filenameLower ||
+           a.filename.toLowerCase() === filenameLower
+    );
+
+    // Try to find original URL from HTML links
+    const originalUrl = htmlLinkMap.get(filenameLower) || null;
+
+    references.push({
+      startPosition: match.index,
+      endPosition: match.index + match[0].length,
+      matchedText: filename,
+      originalUrl,
+      attachmentExternalId: attachment?.external_id || null,
+    });
+  }
+
+  return references;
 }
 
 /**
@@ -365,6 +471,9 @@ export function mapAnnouncement(
   baseUrl: string,
   externalCourseId: string
 ): MappedAnnouncement {
+  // Extract links from HTML before converting (to preserve original URLs)
+  const htmlLinkMap = extractHtmlLinks(canvas.message);
+
   // Convert HTML to clean plain text for storage
   const cleanMessage = htmlToPlainText(canvas.message);
 
@@ -391,6 +500,9 @@ export function mapAnnouncement(
     (att) => mapAttachment(att, localCourseId)
   );
 
+  // Detect file references in the clean message
+  const fileReferences = detectFileReferences(cleanMessage, attachments, htmlLinkMap);
+
   return {
     notification: {
       source_type: 'canvas',
@@ -400,11 +512,12 @@ export function mapAnnouncement(
       message: cleanMessage,
       url: canvasUrl,
       priority_level: isPolicyRelated ? 'high' : 'medium',
-      published_at: canvas.posted_at,
+      published_at: canvas.posted_at || new Date().toISOString(),
       is_policy_related: isPolicyRelated ? 1 : 0, // SQLite boolean
       policy_keywords: foundKeywords.length > 0 ? JSON.stringify(foundKeywords) : null,
     },
     attachments,
+    fileReferences,
   };
 }
 
@@ -482,12 +595,14 @@ export function mapPage(
 export function mapFile(
   canvas: CanvasFile,
   localCourseId: number,
-  localFolderId: number | null = null
+  localFolderId: number | null = null,
+  folderPath: string | null = null
 ): LocalResource {
   return {
     external_id: String(canvas.id),
     course_id: localCourseId,
     parent_folder_id: localFolderId,
+    folder_path: folderPath,
     type: 'file',
     title: canvas.display_name,
     url: canvas.url,
@@ -506,10 +621,20 @@ export function mapFolder(
   localCourseId: number,
   localParentFolderId: number | null = null
 ): LocalResource {
+  // Canvas full_name is like "course files/Week 1/Lectures"
+  // Remove the "course files" prefix for cleaner display
+  let folderPath = canvas.full_name || canvas.name;
+  if (folderPath.startsWith('course files/')) {
+    folderPath = folderPath.substring('course files/'.length);
+  } else if (folderPath === 'course files') {
+    folderPath = '';
+  }
+
   return {
     external_id: String(canvas.id),
     course_id: localCourseId,
     parent_folder_id: localParentFolderId,
+    folder_path: folderPath || null,
     type: 'folder',
     title: canvas.name,
     url: null,

@@ -31,6 +31,11 @@ import { ClearSimulationCommand } from './commands/ClearSimulationCommand';
 import { UseGraceTokenCommand } from './commands/UseGraceTokenCommand';
 import { UpdatePolicyCommand } from './commands/UpdatePolicyCommand';
 import { AddPolicyCommand } from './commands/AddPolicyCommand';
+import { CreateTaskCommand } from './commands/CreateTaskCommand';
+import { DuplicateTaskCommand } from './commands/DuplicateTaskCommand';
+import { UpdateTaskCommand } from './commands/UpdateTaskCommand';
+import { DeleteTaskCommand } from './commands/DeleteTaskCommand';
+import { DeletePolicyCommand } from './commands/DeletePolicyCommand';
 
 export interface CommandDispatcherOptions {
   db: Database;
@@ -50,7 +55,12 @@ export type CommandName =
   | 'ClearSimulation'
   | 'UseGraceToken'
   | 'UpdatePolicy'
-  | 'AddPolicy';
+  | 'AddPolicy'
+  | 'CreateTask'
+  | 'DuplicateTask'
+  | 'UpdateTask'
+  | 'DeleteTask'
+  | 'DeletePolicy';
 
 /**
  * CommandDispatcher manages command execution
@@ -120,6 +130,11 @@ export class CommandDispatcher extends EventEmitter {
     this.register(new UseGraceTokenCommand());
     this.register(new UpdatePolicyCommand());
     this.register(new AddPolicyCommand());
+    this.register(new CreateTaskCommand());
+    this.register(new DuplicateTaskCommand());
+    this.register(new UpdateTaskCommand());
+    this.register(new DeleteTaskCommand());
+    this.register(new DeletePolicyCommand());
   }
 
   /**

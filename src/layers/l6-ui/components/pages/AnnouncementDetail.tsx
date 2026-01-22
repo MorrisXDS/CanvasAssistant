@@ -1,6 +1,7 @@
 /**
  * AnnouncementDetail Page
  * Full-page view for reading announcements with attachments
+ * File references are detected at L2 (sync) and stored in database
  */
 
 import React, { useEffect, useState } from 'react';
@@ -8,7 +9,6 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
   ArrowLeft,
   ExternalLink,
-  Calendar,
   Megaphone,
   Bell,
   FileText,
@@ -19,8 +19,7 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { useStore } from '../../../l5-presentation/store';
-import { Card } from '../shared';
-import type { NotificationAttachment } from '../../../l5-presentation/types';
+import type { NotificationAttachment, AnnouncementFileReference } from '../../../l5-presentation/types';
 
 /**
  * Format date for display
@@ -28,9 +27,8 @@ import type { NotificationAttachment } from '../../../l5-presentation/types';
 function formatDate(dateStr: string): string {
   const date = new Date(dateStr);
   return date.toLocaleDateString('en-US', {
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
+    weekday: 'short',
+    month: 'short',
     day: 'numeric',
     hour: 'numeric',
     minute: '2-digit',
@@ -48,86 +46,243 @@ function formatFileSize(bytes: number | null): string {
 }
 
 /**
- * Get file icon based on content type
+ * Extract short course code (e.g., "ECE568H1 LEC0101" -> "ECE568")
  */
-function getFileIcon(contentType: string | null): string {
-  if (!contentType) return 'file';
-  if (contentType.includes('pdf')) return 'pdf';
-  if (contentType.includes('image')) return 'image';
-  if (contentType.includes('video')) return 'video';
-  if (contentType.includes('audio')) return 'audio';
-  if (contentType.includes('zip') || contentType.includes('archive')) return 'archive';
-  if (contentType.includes('word') || contentType.includes('document')) return 'doc';
-  if (contentType.includes('excel') || contentType.includes('spreadsheet')) return 'spreadsheet';
-  if (contentType.includes('powerpoint') || contentType.includes('presentation')) return 'presentation';
-  return 'file';
+function getShortCode(code: string): string {
+  return code.split(/[HY]\d|\s/)[0];
 }
+
+/**
+ * Component to render message with clickable file links
+ * Uses pre-computed file references from L2 (stored in database)
+ */
+interface MessageWithFileLinksProps {
+  message: string;
+  fileReferences: AnnouncementFileReference[];
+  onFileClick: (ref: AnnouncementFileReference) => void;
+  loadingAttachment: number | null;
+}
+
+function MessageWithFileLinks({ message, fileReferences, onFileClick, loadingAttachment }: MessageWithFileLinksProps) {
+  if (fileReferences.length === 0) {
+    return <>{message}</>;
+  }
+
+  // Build segments with file links based on positions from database
+  const segments: React.ReactNode[] = [];
+  let lastIndex = 0;
+
+  // Sort by start position
+  const sortedRefs = [...fileReferences].sort((a, b) => a.startPosition - b.startPosition);
+
+  sortedRefs.forEach((ref, i) => {
+    // Add text before this reference
+    if (ref.startPosition > lastIndex) {
+      segments.push(
+        <span key={`text-${i}`}>{message.slice(lastIndex, ref.startPosition)}</span>
+      );
+    }
+
+    // Add the file link
+    const hasAttachment = ref.attachment != null;
+    const isDownloaded = ref.attachment?.downloadStatus === 'completed';
+    const isLoading = loadingAttachment === ref.attachment?.id;
+
+    segments.push(
+      <span
+        key={`file-${i}`}
+        style={{
+          ...inlineStyles.fileLink,
+          ...(hasAttachment
+            ? (isDownloaded ? inlineStyles.fileLinkDownloaded : inlineStyles.fileLinkPending)
+            : inlineStyles.fileLinkExternal),
+          cursor: isLoading ? 'wait' : 'pointer',
+        }}
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onFileClick(ref);
+        }}
+        title={
+          hasAttachment
+            ? (isDownloaded
+                ? `Open ${ref.matchedText} (downloaded locally)`
+                : `Download ${ref.matchedText}`)
+            : (ref.originalUrl
+                ? `Open ${ref.matchedText} on Canvas`
+                : ref.matchedText)
+        }
+      >
+        {isLoading ? (
+          <Loader2 size={12} style={{ animation: 'spin 1s linear infinite', marginRight: 4 }} />
+        ) : hasAttachment ? (
+          isDownloaded ? (
+            <CheckCircle size={12} style={{ marginRight: 4 }} />
+          ) : (
+            <Download size={12} style={{ marginRight: 4 }} />
+          )
+        ) : ref.originalUrl ? (
+          <ExternalLink size={12} style={{ marginRight: 4 }} />
+        ) : null}
+        {ref.matchedText}
+      </span>
+    );
+
+    lastIndex = ref.endPosition;
+  });
+
+  // Add remaining text
+  if (lastIndex < message.length) {
+    segments.push(<span key="text-end">{message.slice(lastIndex)}</span>);
+  }
+
+  return <>{segments}</>;
+}
+
+const inlineStyles: Record<string, React.CSSProperties> = {
+  fileLink: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    padding: '2px 8px',
+    borderRadius: '4px',
+    fontSize: 'inherit',
+    fontWeight: 500,
+    textDecoration: 'none',
+    transition: 'all 0.15s ease',
+    verticalAlign: 'baseline',
+  },
+  fileLinkDownloaded: {
+    backgroundColor: 'var(--color-success-bg)',
+    color: 'var(--color-success)',
+    border: '1px solid var(--color-success)',
+  },
+  fileLinkPending: {
+    backgroundColor: 'var(--color-info-bg)',
+    color: 'var(--color-info)',
+    border: '1px solid var(--color-info)',
+  },
+  fileLinkExternal: {
+    backgroundColor: 'var(--bg-app)',
+    color: 'var(--text-secondary)',
+    border: '1px solid var(--border-default)',
+  },
+};
 
 export function AnnouncementDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { notifications, courses } = useStore();
   const [attachments, setAttachments] = useState<NotificationAttachment[]>([]);
+  const [fileReferences, setFileReferences] = useState<AnnouncementFileReference[]>([]);
   const [loadingAttachment, setLoadingAttachment] = useState<number | null>(null);
+  const [fetchedNotification, setFetchedNotification] = useState<typeof notifications[0] | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  // Find the notification
-  const notification = notifications.find((n) => n.id === Number(id));
+  // Try to find notification in store first, otherwise fetch it
+  const storeNotification = notifications.find((n) => n.id === Number(id));
+  const notification = storeNotification || fetchedNotification;
 
-  // Fetch attachments when component mounts
+  // Fetch notification if not in store
   useEffect(() => {
-    const fetchAttachments = async () => {
-      if (!notification) return;
+    const fetchNotification = async () => {
+      const notificationId = Number(id);
+      if (storeNotification) {
+        setLoading(false);
+        return;
+      }
 
-      const api = (window as Window & { api?: { getAttachments: (id: number) => Promise<NotificationAttachment[]> } }).api;
+      const api = window.api;
+      if (!api?.getNotification) {
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const result = await api.getNotification(notificationId);
+        if (result) {
+          setFetchedNotification(result);
+        }
+      } catch (error) {
+        console.error('Failed to fetch notification:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchNotification();
+  }, [id, storeNotification]);
+
+  // Fetch attachments and file references
+  useEffect(() => {
+    const fetchData = async () => {
+      if (!notification) return;
+      const api = window.api;
       if (!api) return;
 
       try {
-        const result = await api.getAttachments(notification.id);
-        setAttachments(result);
+        // Fetch both attachments and file references
+        const [attachmentsResult, refsResult] = await Promise.all([
+          api.getAttachments(notification.id),
+          api.getFileReferences?.(notification.id) || Promise.resolve([]),
+        ]);
+
+        setAttachments(attachmentsResult);
+        setFileReferences(refsResult);
       } catch (error) {
-        console.error('Failed to fetch attachments:', error);
+        console.error('Failed to fetch data:', error);
       }
     };
-
-    fetchAttachments();
+    fetchData();
   }, [notification]);
 
-  if (!notification) {
+  if (loading) {
     return (
-      <div style={styles.page}>
-        <div style={styles.notFound}>
-          <h2 style={styles.notFoundTitle}>Announcement Not Found</h2>
-          <p style={styles.notFoundText}>
-            This announcement may have been removed or doesn't exist.
-          </p>
-          <Link to="/" style={styles.backLink}>
-            <ArrowLeft size={16} />
-            Back to Dashboard
-          </Link>
+      <div style={styles.pageWrapper}>
+        <div style={styles.page}>
+          <div style={styles.notFound}>
+            <p style={styles.notFoundText}>Loading announcement...</p>
+          </div>
         </div>
       </div>
     );
   }
 
-  // Find related course if any
+  if (!notification) {
+    return (
+      <div style={styles.pageWrapper}>
+        <div style={styles.page}>
+          <div style={styles.notFound}>
+            <h2 style={styles.notFoundTitle}>Announcement Not Found</h2>
+            <p style={styles.notFoundText}>
+              This announcement may have been removed or doesn't exist.
+            </p>
+            <Link to="/" style={styles.backLinkNotFound}>
+              <ArrowLeft size={16} />
+              Back to Dashboard
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const course = notification.courseId
     ? courses.find((c) => c.id === notification.courseId)
     : null;
 
-  // Handle attachment download
   const handleDownload = async (attachment: NotificationAttachment) => {
-    const api = (window as Window & { api?: { downloadAttachment: (id: number) => Promise<{ success: boolean; localPath?: string; error?: string }> } }).api;
+    const api = window.api;
     if (!api) return;
-
     setLoadingAttachment(attachment.id);
     try {
       const result = await api.downloadAttachment(attachment.id);
       if (result.success) {
-        // Refresh attachments to get updated status
-        const updatedAttachments = await (window as Window & { api?: { getAttachments: (id: number) => Promise<NotificationAttachment[]> } }).api?.getAttachments(notification.id);
-        if (updatedAttachments) {
-          setAttachments(updatedAttachments);
-        }
+        // Refresh attachments and file references to get updated download status
+        const [updatedAttachments, updatedRefs] = await Promise.all([
+          api.getAttachments(notification.id),
+          api.getFileReferences?.(notification.id) || Promise.resolve([]),
+        ]);
+        setAttachments(updatedAttachments);
+        setFileReferences(updatedRefs);
       }
     } catch (error) {
       console.error('Download failed:', error);
@@ -136,23 +291,22 @@ export function AnnouncementDetail() {
     }
   };
 
-  // Handle open attachment
   const handleOpen = async (attachment: NotificationAttachment) => {
-    const api = (window as Window & { api?: { openAttachment: (id: number) => Promise<{ success: boolean }> } }).api;
+    const api = window.api;
     if (!api) return;
-
     try {
-      await api.openAttachment(attachment.id);
+      const result = await api.openAttachment(attachment.id);
+      if (!result.success) {
+        console.error('Failed to open:', result.error);
+      }
     } catch (error) {
       console.error('Failed to open file:', error);
     }
   };
 
-  // Handle show in folder
   const handleShowInFolder = async (attachment: NotificationAttachment) => {
-    const api = (window as Window & { api?: { showAttachmentInFolder: (id: number) => Promise<{ success: boolean }> } }).api;
+    const api = window.api;
     if (!api) return;
-
     try {
       await api.showAttachmentInFolder(attachment.id);
     } catch (error) {
@@ -160,139 +314,177 @@ export function AnnouncementDetail() {
     }
   };
 
-  return (
-    <div style={styles.page}>
-      {/* Back Navigation */}
-      <button onClick={() => navigate(-1)} style={styles.backButton}>
-        <ArrowLeft size={18} />
-        <span>Back</span>
-      </button>
+  // Handle clicking on inline file links (from file references)
+  const handleFileReferenceClick = async (ref: AnnouncementFileReference) => {
+    if (ref.attachment) {
+      // Has linked attachment
+      if (ref.attachment.downloadStatus === 'completed') {
+        // Open the downloaded file
+        await handleOpen(ref.attachment);
+      } else {
+        // Download the file
+        await handleDownload(ref.attachment);
+      }
+    } else if (ref.originalUrl) {
+      // No local attachment, open original URL in browser
+      window.api?.openExternal(ref.originalUrl);
+    }
+  };
 
-      {/* Header */}
-      <header style={styles.header}>
-        <div style={styles.sourceIcon}>
-          {notification.sourceType === 'canvas' ? (
-            <Megaphone size={24} />
-          ) : (
-            <Bell size={24} />
+  return (
+    <div style={styles.pageWrapper}>
+      <div style={styles.page}>
+        {/* Back Navigation */}
+        <button onClick={() => navigate(-1)} style={styles.backButton}>
+          <ArrowLeft size={16} />
+          <span>Back</span>
+        </button>
+
+        {/* Main Content Card */}
+        <div style={styles.mainCard}>
+          {/* Header */}
+          <header style={styles.header}>
+            <div style={styles.sourceIcon}>
+              {notification.sourceType === 'canvas' ? (
+                <Megaphone size={24} />
+              ) : (
+                <Bell size={24} />
+              )}
+            </div>
+            <div style={styles.headerContent}>
+              <h1 style={styles.title}>{notification.title}</h1>
+              <div style={styles.meta}>
+                {course && (
+                  <>
+                    <span style={styles.courseCode}>{getShortCode(course.code)}</span>
+                    <span style={styles.metaDot}>•</span>
+                  </>
+                )}
+                <span style={styles.dateText}>{formatDate(notification.publishedAt)}</span>
+              </div>
+            </div>
+          </header>
+
+          {/* Divider */}
+          <div style={styles.divider} />
+
+          {/* Message Content with inline file links */}
+          <div style={styles.content}>
+            <MessageWithFileLinks
+              message={notification.message}
+              fileReferences={fileReferences}
+              onFileClick={handleFileReferenceClick}
+              loadingAttachment={loadingAttachment}
+            />
+          </div>
+
+          {/* Attachments */}
+          {attachments.length > 0 && (
+            <div style={styles.attachmentsSection}>
+              <h3 style={styles.attachmentsTitle}>Attachments</h3>
+              <div style={styles.attachmentsList}>
+                {attachments.map((attachment) => (
+                  <div key={attachment.id} style={styles.attachmentItem}>
+                    <div style={styles.attachmentIcon}>
+                      <FileText size={18} />
+                    </div>
+                    <div style={styles.attachmentInfo}>
+                      <div style={styles.attachmentName}>{attachment.displayName}</div>
+                      <div style={styles.attachmentMeta}>
+                        {formatFileSize(attachment.sizeBytes)}
+                        {attachment.contentType && ` • ${attachment.contentType.split('/')[1]?.toUpperCase()}`}
+                      </div>
+                    </div>
+                    <div style={styles.attachmentActions}>
+                      {attachment.downloadStatus === 'completed' ? (
+                        <>
+                          <button
+                            onClick={() => handleOpen(attachment)}
+                            style={styles.attachmentButton}
+                            title="Open file"
+                          >
+                            <CheckCircle size={16} color="var(--color-success)" />
+                          </button>
+                          <button
+                            onClick={() => handleShowInFolder(attachment)}
+                            style={styles.attachmentButton}
+                            title="Show in folder"
+                          >
+                            <FolderOpen size={16} />
+                          </button>
+                        </>
+                      ) : attachment.downloadStatus === 'failed' ? (
+                        <button
+                          onClick={() => handleDownload(attachment)}
+                          style={styles.attachmentButton}
+                          title="Retry download"
+                        >
+                          <AlertCircle size={16} color="var(--color-error)" />
+                        </button>
+                      ) : loadingAttachment === attachment.id ? (
+                        <Loader2
+                          size={16}
+                          style={{ animation: 'spin 1s linear infinite' }}
+                        />
+                      ) : (
+                        <button
+                          onClick={() => handleDownload(attachment)}
+                          style={styles.attachmentButton}
+                          title="Download"
+                        >
+                          <Download size={16} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Footer with CTA */}
+          {notification.url && (
+            <div style={styles.footer}>
+              <button
+                onClick={() => window.api?.openExternal(notification.url!)}
+                style={styles.primaryButton}
+              >
+                <ExternalLink size={16} />
+                View on Canvas
+              </button>
+            </div>
           )}
         </div>
-        <div style={styles.headerContent}>
-          <h1 style={styles.title}>{notification.title}</h1>
-          <div style={styles.meta}>
-            <div style={styles.metaItem}>
-              <Calendar size={14} />
-              <span>{formatDate(notification.publishedAt)}</span>
-            </div>
-            {course && (
-              <div style={styles.metaItem}>
-                <span style={styles.courseTag}>{course.code}</span>
-              </div>
-            )}
-          </div>
-        </div>
-      </header>
-
-      {/* Content Card */}
-      <Card padding="lg">
-        <div style={styles.content}>
-          {notification.message}
-        </div>
-      </Card>
-
-      {/* Attachments */}
-      {attachments.length > 0 && (
-        <Card padding="md" title="Attachments">
-          <div style={styles.attachmentsList}>
-            {attachments.map((attachment) => (
-              <div key={attachment.id} style={styles.attachmentItem}>
-                <div style={styles.attachmentIcon}>
-                  <FileText size={20} />
-                </div>
-                <div style={styles.attachmentInfo}>
-                  <div style={styles.attachmentName}>{attachment.displayName}</div>
-                  <div style={styles.attachmentMeta}>
-                    {formatFileSize(attachment.sizeBytes)}
-                    {attachment.contentType && ` • ${attachment.contentType.split('/')[1]?.toUpperCase()}`}
-                  </div>
-                </div>
-                <div style={styles.attachmentActions}>
-                  {attachment.downloadStatus === 'completed' ? (
-                    <>
-                      <button
-                        onClick={() => handleOpen(attachment)}
-                        style={styles.attachmentButton}
-                        title="Open file"
-                      >
-                        <CheckCircle size={16} color="var(--color-success)" />
-                      </button>
-                      <button
-                        onClick={() => handleShowInFolder(attachment)}
-                        style={styles.attachmentButton}
-                        title="Show in folder"
-                      >
-                        <FolderOpen size={16} />
-                      </button>
-                    </>
-                  ) : attachment.downloadStatus === 'failed' ? (
-                    <button
-                      onClick={() => handleDownload(attachment)}
-                      style={styles.attachmentButton}
-                      title="Retry download"
-                    >
-                      <AlertCircle size={16} color="var(--color-error)" />
-                    </button>
-                  ) : loadingAttachment === attachment.id ? (
-                    <Loader2
-                      size={16}
-                      style={{ animation: 'spin 1s linear infinite' }}
-                    />
-                  ) : (
-                    <button
-                      onClick={() => handleDownload(attachment)}
-                      style={styles.attachmentButton}
-                      title="Download"
-                    >
-                      <Download size={16} />
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        </Card>
-      )}
-
-      {/* External Link */}
-      {notification.url && (
-        <a
-          href={notification.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          style={styles.externalLink}
-        >
-          <ExternalLink size={16} />
-          View on Canvas
-        </a>
-      )}
+      </div>
     </div>
   );
 }
 
 const styles: Record<string, React.CSSProperties> = {
+  pageWrapper: {
+    display: 'flex',
+    justifyContent: 'center',
+    width: '100%',
+    minHeight: '100%',
+  },
+
   page: {
-    maxWidth: '800px',
-    margin: '0 auto',
+    width: '100%',
+    maxWidth: 'min(720px, calc(100vw - var(--sidebar-width) - var(--space-8)))',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 'var(--space-4)',
+    paddingBottom: 'var(--space-8)',
   },
 
   backButton: {
     display: 'inline-flex',
     alignItems: 'center',
+    alignSelf: 'flex-start',
     gap: 'var(--space-2)',
     padding: 'var(--space-2) var(--space-3)',
-    marginBottom: 'var(--space-4)',
     background: 'none',
-    border: 'none',
+    border: '1px solid var(--border-default)',
     color: 'var(--text-secondary)',
     fontSize: 'var(--text-sm)',
     fontWeight: 'var(--font-medium)',
@@ -301,15 +493,23 @@ const styles: Record<string, React.CSSProperties> = {
     transition: 'all var(--transition-fast)',
   },
 
+  mainCard: {
+    backgroundColor: 'var(--bg-card)',
+    borderRadius: 'var(--radius-lg)',
+    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+    overflow: 'hidden',
+  },
+
   header: {
     display: 'flex',
+    alignItems: 'flex-start',
     gap: 'var(--space-4)',
-    marginBottom: 'var(--space-6)',
+    padding: 'var(--space-6)',
   },
 
   sourceIcon: {
-    width: '48px',
-    height: '48px',
+    width: '44px',
+    height: '44px',
     borderRadius: 'var(--radius-lg)',
     backgroundColor: 'var(--color-navy)',
     color: 'var(--text-inverse)',
@@ -325,44 +525,61 @@ const styles: Record<string, React.CSSProperties> = {
   },
 
   title: {
-    fontSize: 'var(--text-2xl)',
+    fontSize: 'var(--text-lg)',
     fontWeight: 'var(--font-bold)',
     color: 'var(--text-primary)',
     marginBottom: 'var(--space-2)',
-    lineHeight: 'var(--leading-tight)',
+    lineHeight: 'var(--leading-snug)',
   },
 
   meta: {
     display: 'flex',
     alignItems: 'center',
-    gap: 'var(--space-4)',
+    gap: 'var(--space-2)',
     flexWrap: 'wrap',
   },
 
-  metaItem: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 'var(--space-1)',
+  courseCode: {
+    fontSize: 'var(--text-sm)',
+    fontWeight: 'var(--font-medium)',
+    color: 'var(--text-secondary)',
+  },
+
+  metaDot: {
+    color: 'var(--text-muted)',
+  },
+
+  dateText: {
     fontSize: 'var(--text-sm)',
     color: 'var(--text-secondary)',
   },
 
-  courseTag: {
-    padding: 'var(--space-1) var(--space-2)',
-    backgroundColor: 'var(--color-navy)',
-    color: 'var(--text-inverse)',
-    borderRadius: 'var(--radius-sm)',
-    fontSize: 'var(--text-xs)',
-    fontWeight: 'var(--font-semibold)',
-    textTransform: 'uppercase',
-    letterSpacing: '0.025em',
+  divider: {
+    height: '1px',
+    backgroundColor: 'var(--border-light)',
+    margin: '0 var(--space-6)',
   },
 
   content: {
+    padding: 'var(--space-8) var(--space-6)',
     fontSize: 'var(--text-base)',
-    lineHeight: 'var(--leading-relaxed)',
+    lineHeight: '1.75',
     color: 'var(--text-primary)',
     whiteSpace: 'pre-wrap',
+  },
+
+  attachmentsSection: {
+    padding: 'var(--space-5) var(--space-6)',
+    borderTop: '1px solid var(--border-light)',
+  },
+
+  attachmentsTitle: {
+    fontSize: 'var(--text-xs)',
+    fontWeight: 'var(--font-bold)',
+    color: 'var(--text-muted)',
+    textTransform: 'uppercase',
+    letterSpacing: '0.05em',
+    marginBottom: 'var(--space-3)',
   },
 
   attachmentsList: {
@@ -376,15 +593,17 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     gap: 'var(--space-3)',
     padding: 'var(--space-3)',
-    backgroundColor: 'var(--color-gray-50)',
+    backgroundColor: 'var(--bg-app)',
     borderRadius: 'var(--radius-md)',
+    border: '1px solid var(--border-light)',
   },
 
   attachmentIcon: {
-    width: '40px',
-    height: '40px',
+    width: '36px',
+    height: '36px',
     borderRadius: 'var(--radius-md)',
-    backgroundColor: 'var(--color-gray-200)',
+    backgroundColor: 'var(--bg-card)',
+    border: '1px solid var(--border-light)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
@@ -415,7 +634,7 @@ const styles: Record<string, React.CSSProperties> = {
   attachmentActions: {
     display: 'flex',
     alignItems: 'center',
-    gap: 'var(--space-2)',
+    gap: 'var(--space-1)',
   },
 
   attachmentButton: {
@@ -432,24 +651,34 @@ const styles: Record<string, React.CSSProperties> = {
     transition: 'all var(--transition-fast)',
   },
 
-  externalLink: {
+  footer: {
+    display: 'flex',
+    justifyContent: 'flex-end',
+    padding: 'var(--space-4) var(--space-6)',
+    borderTop: '1px solid var(--border-light)',
+  },
+
+  primaryButton: {
     display: 'inline-flex',
     alignItems: 'center',
     gap: 'var(--space-2)',
-    marginTop: 'var(--space-4)',
-    padding: 'var(--space-3) var(--space-4)',
-    backgroundColor: 'var(--color-gray-100)',
-    color: 'var(--color-navy)',
+    padding: 'var(--space-2) var(--space-4)',
+    backgroundColor: 'var(--color-navy)',
+    color: 'white',
+    border: 'none',
     borderRadius: 'var(--radius-md)',
     fontSize: 'var(--text-sm)',
     fontWeight: 'var(--font-medium)',
-    textDecoration: 'none',
+    cursor: 'pointer',
     transition: 'all var(--transition-fast)',
   },
 
   notFound: {
     textAlign: 'center',
     padding: 'var(--space-12)',
+    backgroundColor: 'var(--bg-card)',
+    borderRadius: 'var(--radius-lg)',
+    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
   },
 
   notFoundTitle: {
@@ -465,11 +694,11 @@ const styles: Record<string, React.CSSProperties> = {
     marginBottom: 'var(--space-4)',
   },
 
-  backLink: {
+  backLinkNotFound: {
     display: 'inline-flex',
     alignItems: 'center',
     gap: 'var(--space-2)',
-    color: 'var(--color-blue)',
+    color: 'var(--color-navy)',
     fontSize: 'var(--text-sm)',
     fontWeight: 'var(--font-medium)',
     textDecoration: 'none',

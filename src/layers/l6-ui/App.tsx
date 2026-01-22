@@ -15,7 +15,7 @@ import { useStore, subscribeToIpcEvents } from '../l5-presentation/store';
 import { Layout } from './components/Layout';
 import { Dashboard } from './components/Dashboard';
 import { Onboarding } from './components/Onboarding';
-import { AnnouncementDetail, CalendarPage, CoursesPage, FilesPage } from './components/pages';
+import { AnnouncementDetail, AnnouncementsPage, CalendarPage, CourseDetail, CoursesPage, FilesPage, TasksPage } from './components/pages';
 
 import './styles/global.css';
 
@@ -76,9 +76,12 @@ function AppContent() {
       <Route element={<Layout />}>
         <Route path="/" element={<Dashboard />} />
         <Route path="/announcement/:id" element={<AnnouncementDetail />} />
+        <Route path="/announcements" element={<AnnouncementsPage />} />
         <Route path="/calendar" element={<CalendarPage />} />
         <Route path="/courses" element={<CoursesPage />} />
+        <Route path="/course/:id" element={<CourseDetail />} />
         <Route path="/files" element={<FilesPage />} />
+        <Route path="/tasks" element={<TasksPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

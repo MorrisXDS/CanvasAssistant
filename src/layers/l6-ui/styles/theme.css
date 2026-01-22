@@ -118,6 +118,11 @@
   /* ============ Layout ============ */
   --sidebar-width: 240px;
   --header-height: 64px;
+  --content-max-width: 1400px;
+  --sidebar-collapsed-width: 64px;
+
+  /* ============ Breakpoints (for reference) ============ */
+  /* sm: 640px, md: 768px, lg: 1024px, xl: 1280px, 2xl: 1536px */
 
   /* ============ Transitions ============ */
   --transition-fast: 150ms ease;
@@ -132,15 +137,73 @@
   --z-tooltip: 60;
 }
 
-/* ============ Dark Mode (Future) ============ */
-/*
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg-app: #0f172a;
-    --bg-card: #1e293b;
-    --text-primary: #f1f5f9;
-    --text-secondary: #94a3b8;
-    --border-default: #334155;
-  }
+/* ============ Dark Mode ============ */
+[data-theme="dark"] {
+  --bg-app: #0f172a;
+  --bg-card: #1e293b;
+  --bg-card-hover: #334155;
+  --bg-sidebar: #0c1929;
+
+  --text-primary: #f1f5f9;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  --text-inverse: #f1f5f9;
+
+  --border-default: #475569;
+  --border-light: #334155;
+
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.3), 0 1px 2px rgba(0, 0, 0, 0.2);
+
+  /* Brand colors adapted for dark mode */
+  --color-navy: #60a5fa;
+  --color-navy-light: #93c5fd;
+  --color-blue: #38bdf8;
+  --color-blue-light: #7dd3fc;
+
+  /* Priority colors - slightly brighter for dark backgrounds */
+  --color-critical: #f87171;
+  --color-critical-bg: rgba(248, 113, 113, 0.15);
+  --color-high: #fbbf24;
+  --color-high-bg: rgba(251, 191, 36, 0.15);
+  --color-medium: #34d399;
+  --color-medium-bg: rgba(52, 211, 153, 0.15);
+  --color-low: #94a3b8;
+  --color-low-bg: rgba(148, 163, 184, 0.15);
+
+  /* Semantic colors for dark mode */
+  --color-success: #34d399;
+  --color-success-bg: rgba(52, 211, 153, 0.15);
+  --color-warning: #fbbf24;
+  --color-warning-bg: rgba(251, 191, 36, 0.15);
+  --color-error: #f87171;
+  --color-error-bg: rgba(248, 113, 113, 0.15);
+  --color-info: #38bdf8;
+  --color-info-bg: rgba(56, 189, 248, 0.15);
+
+  /* Scrollbar for dark mode */
+  --scrollbar-track: #1e293b;
+  --scrollbar-thumb: #475569;
+  --scrollbar-thumb-hover: #64748b;
+
+  /* Gray scale overrides for dark mode */
+  --color-gray-50: #1e293b;
+  --color-gray-100: #334155;
+  --color-gray-200: #475569;
+  --color-gray-300: #64748b;
 }
-*/
+
+/* Light mode explicit (for system preference switching) */
+[data-theme="light"] {
+  --bg-app: #F5F7FA;
+  --bg-card: var(--color-white);
+  --bg-card-hover: var(--color-gray-50);
+  --bg-sidebar: var(--color-navy);
+
+  --text-primary: var(--color-gray-900);
+  --text-secondary: var(--color-gray-600);
+  --text-muted: var(--color-gray-400);
+  --text-inverse: var(--color-white);
+
+  --border-default: var(--color-gray-200);
+  --border-light: var(--color-gray-100);
+}

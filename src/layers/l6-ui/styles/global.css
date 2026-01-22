@@ -63,6 +63,31 @@ code {
   border-radius: var(--radius-sm);
 }
 
+/* ============ Form Elements ============ */
+input,
+select,
+textarea {
+  color: var(--text-primary);
+  background-color: var(--bg-card);
+  border-color: var(--border-default);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-muted);
+}
+
+/* Ensure autofill respects theme colors */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+textarea:-webkit-autofill,
+select:-webkit-autofill {
+  -webkit-text-fill-color: var(--text-primary);
+  -webkit-box-shadow: 0 0 0 1000px var(--bg-card) inset;
+  transition: background-color 5000s ease-in-out 0s;
+}
+
 /* ============ Focus States ============ */
 :focus-visible {
   outline: 2px solid var(--color-navy);
@@ -85,16 +110,16 @@ textarea:focus-visible {
 }
 
 ::-webkit-scrollbar-track {
-  background: var(--color-gray-100);
+  background: var(--scrollbar-track, var(--color-gray-100));
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--color-gray-300);
+  background: var(--scrollbar-thumb, var(--color-gray-300));
   border-radius: var(--radius-full);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--color-gray-400);
+  background: var(--scrollbar-thumb-hover, var(--color-gray-400));
 }
 
 /* ============ Utility Classes ============ */
@@ -266,4 +291,129 @@ textarea:focus-visible {
   border: none;
   border-top: 1px solid var(--border-default);
   margin: var(--space-6) 0;
+}
+
+/* ============ Responsive Layout System ============ */
+
+/* Page wrapper - centers content with max width */
+.page-wrapper {
+  width: 100%;
+  max-width: var(--content-max-width, 1200px);
+  margin: 0 auto;
+  padding: 0 var(--space-4);
+}
+
+/* Two-column layout that stacks on narrow screens */
+.two-column {
+  display: grid;
+  grid-template-columns: 1fr 340px;
+  gap: var(--space-4);
+}
+
+/* Three-column layout */
+.three-column {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-4);
+}
+
+/* Responsive form rows */
+.form-row {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.form-row-3 {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-4);
+  align-items: start;
+}
+
+/* Small screens (< 768px) */
+@media (max-width: 767px) {
+  :root {
+    --sidebar-width: 0px;
+  }
+
+  .two-column,
+  .three-column,
+  .form-row,
+  .form-row-3 {
+    grid-template-columns: 1fr;
+  }
+
+  .page-wrapper {
+    padding: 0 var(--space-3);
+  }
+}
+
+/* Medium screens (768px - 1023px) */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .two-column {
+    grid-template-columns: 1fr 280px;
+  }
+
+  .three-column {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .form-row-3 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  /* Third item spans full width */
+  .form-row-3 > *:nth-child(3) {
+    grid-column: 1 / -1;
+  }
+}
+
+/* Large screens (1024px - 1279px) */
+@media (min-width: 1024px) and (max-width: 1279px) {
+  .two-column {
+    grid-template-columns: 1fr 300px;
+  }
+}
+
+/* Extra large screens (>= 1280px) */
+@media (min-width: 1280px) {
+  .two-column {
+    grid-template-columns: 1fr 380px;
+  }
+
+  .page-wrapper {
+    max-width: 1400px;
+  }
+}
+
+/* Fluid containers - fill available space */
+.fluid-container {
+  width: 100%;
+  min-width: 0;
+}
+
+/* Card grid - auto-fit columns */
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: var(--space-4);
+}
+
+/* Sidebar collapse on small screens */
+@media (max-width: 767px) {
+  [data-sidebar] {
+    position: fixed;
+    transform: translateX(-100%);
+    transition: transform var(--transition-base);
+  }
+
+  [data-sidebar].open {
+    transform: translateX(0);
+  }
+
+  [data-main-content] {
+    margin-left: 0 !important;
+  }
 }

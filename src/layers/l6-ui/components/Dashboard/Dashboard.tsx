@@ -3,7 +3,8 @@
  * Main executive overview with bento grid layout
  */
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { RefreshCw, FlaskConical } from 'lucide-react';
 import { useStore } from '../../../l5-presentation/store';
 import { useDashboardViewModel } from '../../../l5-presentation/viewModels/DashboardViewModel';
@@ -11,6 +12,8 @@ import { QuickStats, StatItem } from './QuickStats';
 import { HealthIndicator, HealthState } from './HealthIndicator';
 import { PriorityList } from './PriorityList';
 import { NotificationsFeed } from './NotificationsFeed';
+import { TaskListModal, TaskWithCourse } from './TaskListModal';
+import { GradeBreakdownModal } from './GradeBreakdownModal';
 
 // Debug flag - set to false in production
 const DEBUG_LAYOUT = true;
@@ -20,7 +23,7 @@ export function Dashboard() {
   const mainRowRef = useRef<HTMLElement>(null);
   const [windowSize, setWindowSize] = useState({ width: window.innerWidth, height: window.innerHeight });
 
-  // Debug: Log window and container dimensions
+  // Debug: Log window and container dimensions using ResizeObserver
   useEffect(() => {
     if (!DEBUG_LAYOUT) return;
 
@@ -60,15 +63,91 @@ export function Dashboard() {
       }
     };
 
-    // Log on mount
+    // Initial log
     logDimensions();
 
-    // Log on resize
+    // Use ResizeObserver for reliable resize detection (including maximize)
+    const resizeObserver = new ResizeObserver(() => {
+      logDimensions();
+    });
+
+    if (pageRef.current) {
+      resizeObserver.observe(pageRef.current);
+    }
+
+    // Also listen to window resize as backup
     window.addEventListener('resize', logDimensions);
-    return () => window.removeEventListener('resize', logDimensions);
+
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener('resize', logDimensions);
+    };
   }, []);
+  const navigate = useNavigate();
   const state = useStore();
   const viewModel = useDashboardViewModel(state);
+
+  // Modal states
+  const [showPendingTasksModal, setShowPendingTasksModal] = useState(false);
+  const [showOverdueTasksModal, setShowOverdueTasksModal] = useState(false);
+  const [showGradeModal, setShowGradeModal] = useState(false);
+
+  // Compute task lists with course info for modals
+  const courseMap = useMemo(() => new Map(state.courses.map(c => [c.id, c])), [state.courses]);
+
+  const { pendingTasks, overdueTasks } = useMemo(() => {
+    const now = new Date();
+    const pending: TaskWithCourse[] = [];
+    const overdue: TaskWithCourse[] = [];
+
+    for (const task of state.tasks) {
+      if (task.isCompleted) continue;
+      const course = courseMap.get(task.courseId);
+      if (!course) continue;
+
+      const daysUntilDue = task.dueAt
+        ? Math.ceil((new Date(task.dueAt).getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+        : null;
+
+      const taskWithCourse: TaskWithCourse = { task, course, daysUntilDue };
+
+      if (task.dueAt && new Date(task.dueAt) < now) {
+        overdue.push(taskWithCourse);
+      } else if (task.dueAt) {
+        pending.push(taskWithCourse);
+      }
+    }
+
+    // Sort by due date
+    pending.sort((a, b) => {
+      if (!a.task.dueAt) return 1;
+      if (!b.task.dueAt) return -1;
+      return new Date(a.task.dueAt).getTime() - new Date(b.task.dueAt).getTime();
+    });
+
+    overdue.sort((a, b) => {
+      if (!a.task.dueAt) return 1;
+      if (!b.task.dueAt) return -1;
+      return new Date(a.task.dueAt).getTime() - new Date(b.task.dueAt).getTime();
+    });
+
+    return { pendingTasks: pending, overdueTasks: overdue };
+  }, [state.tasks, courseMap]);
+
+  // Handle stat card actions
+  const handleStatAction = (action: string) => {
+    switch (action) {
+      case 'pending':
+        setShowPendingTasksModal(true);
+        break;
+      case 'overdue':
+        setShowOverdueTasksModal(true);
+        break;
+      case 'grade':
+        setShowGradeModal(true);
+        break;
+    }
+  };
 
   // Build stats from view model
   const stats: StatItem[] = [
@@ -76,11 +155,13 @@ export function Dashboard() {
       label: 'Active Courses',
       value: viewModel.stats.totalCourses,
       icon: 'courses',
+      link: '/courses',
     },
     {
       label: 'Pending Tasks',
       value: viewModel.stats.upcomingTasks,
       icon: 'tasks',
+      action: 'pending',
     },
     {
       label: 'Overdue Tasks',
@@ -89,6 +170,7 @@ export function Dashboard() {
       trend: viewModel.stats.overdueTasks > 0
         ? { direction: 'warning', value: `${viewModel.stats.overdueTasks}` }
         : undefined,
+      action: 'overdue',
     },
     {
       label: 'Avg. Grade',
@@ -96,6 +178,7 @@ export function Dashboard() {
         ? `${viewModel.stats.averageGrade.toFixed(1)}%`
         : 'N/A',
       icon: 'grade',
+      action: 'grade',
     },
   ];
 
@@ -119,8 +202,11 @@ export function Dashboard() {
   }, null);
 
   const handleTaskClick = (taskId: number) => {
-    // TODO: Navigate to task detail or course view
-    console.log('Task clicked:', taskId);
+    // Find the task to get its course ID
+    const task = state.tasks.find(t => t.id === taskId);
+    if (task) {
+      navigate(`/course/${task.courseId}?highlightTask=${taskId}`);
+    }
   };
 
   const handleDismissNotification = async (notificationId: number) => {
@@ -132,43 +218,41 @@ export function Dashboard() {
       {/* Page Header */}
       <header style={styles.header}>
         <div style={styles.headerLeft}>
-          <button
-            style={{
-              ...styles.syncButton,
-              opacity: state.syncStatus === 'syncing' ? 0.7 : 1,
-            }}
-            onClick={() => state.triggerSync('full')}
-            disabled={state.syncStatus === 'syncing'}
-          >
-            <RefreshCw
-              size={16}
-              style={{
-                marginRight: 'var(--space-2)',
-                animation: state.syncStatus === 'syncing' ? 'spin 1s linear infinite' : 'none',
-              }}
-            />
-            {state.syncStatus === 'syncing' ? 'Syncing...' : 'Sync Now'}
-          </button>
-          <div>
-            <h1 style={styles.title}>Dashboard</h1>
-            <p style={styles.subtitle}>
-              {viewModel.simulationActive && (
-                <span style={styles.simulationBadge}>
-                  <FlaskConical size={14} />
-                  Simulation Active ({viewModel.simulationCount} grades)
-                </span>
-              )}
-              {!viewModel.simulationActive && 'Your academic overview at a glance'}
-            </p>
-          </div>
+          <h1 style={styles.title}>Dashboard</h1>
+          <p style={styles.subtitle}>
+            {viewModel.simulationActive && (
+              <span style={styles.simulationBadge}>
+                <FlaskConical size={14} />
+                Simulation Active ({viewModel.simulationCount} grades)
+              </span>
+            )}
+            {!viewModel.simulationActive && 'Your academic overview at a glance'}
+          </p>
         </div>
+        <button
+          style={{
+            ...styles.syncButton,
+            opacity: state.syncStatus === 'syncing' ? 0.7 : 1,
+          }}
+          onClick={() => state.triggerSync('full')}
+          disabled={state.syncStatus === 'syncing'}
+        >
+          <RefreshCw
+            size={16}
+            style={{
+              marginRight: 'var(--space-2)',
+              animation: state.syncStatus === 'syncing' ? 'spin 1s linear infinite' : 'none',
+            }}
+          />
+          {state.syncStatus === 'syncing' ? 'Syncing...' : 'Sync Now'}
+        </button>
       </header>
 
       {/* Bento Grid Layout */}
       <div style={styles.grid}>
         {/* Top Row: Stats (full width) */}
         <section style={styles.statsRow}>
-          <QuickStats stats={stats} />
+          <QuickStats stats={stats} onAction={handleStatAction} />
         </section>
 
         {/* Main Row: Priority List + Right Column (Health + Notifications) */}
@@ -187,22 +271,45 @@ export function Dashboard() {
               lastSyncedAt={lastSyncedAt}
               dbSize={formatDbSize()}
             />
-            <NotificationsFeed
-              notifications={state.notifications}
-              onDismiss={handleDismissNotification}
-              maxItems={5}
-            />
+            <div style={styles.notificationsWrapper}>
+              <NotificationsFeed
+                notifications={state.notifications}
+                onDismiss={handleDismissNotification}
+                maxItems={5}
+              />
+            </div>
           </div>
         </section>
       </div>
+
+      {/* Modals */}
+      <TaskListModal
+        isOpen={showPendingTasksModal}
+        onClose={() => setShowPendingTasksModal(false)}
+        title="Pending Tasks"
+        tasks={pendingTasks}
+        type="pending"
+      />
+      <TaskListModal
+        isOpen={showOverdueTasksModal}
+        onClose={() => setShowOverdueTasksModal(false)}
+        title="Overdue Tasks"
+        tasks={overdueTasks}
+        type="overdue"
+      />
+      <GradeBreakdownModal
+        isOpen={showGradeModal}
+        onClose={() => setShowGradeModal(false)}
+        courseSummaries={viewModel.courseSummaries}
+        averageGrade={viewModel.stats.averageGrade}
+      />
     </div>
   );
 }
 
 const styles: Record<string, React.CSSProperties> = {
   page: {
-    maxWidth: '1400px',
-    margin: '0 auto',
+    width: '100%',
   },
 
   header: {
@@ -216,9 +323,7 @@ const styles: Record<string, React.CSSProperties> = {
 
   headerLeft: {
     display: 'flex',
-    alignItems: 'flex-start',
-    gap: 'var(--space-4)',
-    flexWrap: 'wrap',
+    flexDirection: 'column',
   },
 
   title: {
@@ -273,21 +378,29 @@ const styles: Record<string, React.CSSProperties> = {
   mainRow: {
     display: 'flex',
     gap: 'var(--space-4)',
-    alignItems: 'flex-start',
+    alignItems: 'stretch',
     flexWrap: 'wrap',
   },
 
   priorityColumn: {
-    flex: '1 1 400px',
+    flex: '2 1 400px',
     minWidth: 0,
+    display: 'flex',
+    flexDirection: 'column',
   },
 
   rightColumn: {
-    flex: '0 1 320px',
+    flex: '1 1 320px',
     minWidth: '280px',
     display: 'flex',
     flexDirection: 'column',
     gap: 'var(--space-4)',
+  },
+
+  notificationsWrapper: {
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
   },
 };
 

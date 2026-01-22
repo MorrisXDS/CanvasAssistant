@@ -4,6 +4,7 @@
  */
 
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { PartyPopper } from 'lucide-react';
 import { Card, Badge, BadgeVariant } from '../shared';
 import type { PriorityItem } from '../../../l5-presentation/types';
@@ -38,19 +39,26 @@ export function PriorityList({
   onTaskClick,
   maxItems = 10,
 }: PriorityListProps) {
+  const navigate = useNavigate();
   const displayItems = items.slice(0, maxItems);
   // Use totalPendingTasks if provided, otherwise fall back to items length
   const hasPendingTasks = totalPendingTasks !== undefined ? totalPendingTasks > 0 : items.length > 0;
 
   return (
     <Card
-      title="Priority Queue"
+      padding="none"
+      title="Upcoming Tasks"
       headerAction={
-        items.length > maxItems && (
-          <span style={styles.viewAll}>View all ({items.length})</span>
+        items.length > 0 && (
+          <button
+            style={styles.viewAll}
+            onClick={() => navigate('/tasks')}
+          >
+            View all ({items.length})
+          </button>
         )
       }
-      padding="md"
+      style={{ flex: 1, display: 'flex', flexDirection: 'column' }}
     >
       {!hasPendingTasks ? (
         <div style={styles.emptyState}>
@@ -89,10 +97,10 @@ export function PriorityList({
                     item.urgencyLevel === 'critical'
                       ? 'var(--color-critical)'
                       : item.urgencyLevel === 'high'
-                      ? 'var(--color-high)'
-                      : item.urgencyLevel === 'medium'
-                      ? 'var(--color-medium)'
-                      : 'var(--color-low)',
+                        ? 'var(--color-high)'
+                        : item.urgencyLevel === 'medium'
+                          ? 'var(--color-medium)'
+                          : 'var(--color-low)',
                 }}
               />
 
@@ -126,16 +134,16 @@ const styles: Record<string, React.CSSProperties> = {
   list: {
     display: 'flex',
     flexDirection: 'column',
-    margin: '0 calc(-1 * var(--space-5))',
-    marginBottom: 'calc(-1 * var(--space-5))',
+    // FIX 1: Removed 'gap' to prevent floating borders
   },
 
   listItem: {
     display: 'flex',
-    padding: 'var(--space-3) var(--space-5)',
+    padding: 'var(--space-3) 24px',
     cursor: 'pointer',
     transition: 'background-color var(--transition-fast)',
     position: 'relative',
+    alignItems: 'stretch', // Ensures priority bar spans full height
   },
 
   priorityBar: {
@@ -143,18 +151,21 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: '2px',
     marginRight: 'var(--space-3)',
     flexShrink: 0,
+    // FIX 2: Removed explicit height so it stretches automatically via flexbox
   },
 
   content: {
     flex: 1,
     minWidth: 0,
+    paddingTop: 'var(--space-1)', // Visual optical adjustment
+    paddingBottom: 'var(--space-1)',
   },
 
   topRow: {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 'var(--space-1)',
+    marginBottom: 'var(--space-2)', // Reduced slightly for tighter grouping
   },
 
   courseCode: {
@@ -169,7 +180,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 'var(--text-sm)',
     fontWeight: 'var(--font-medium)',
     color: 'var(--text-primary)',
-    marginBottom: 'var(--space-1)',
+    marginBottom: 'var(--space-2)',
     overflow: 'hidden',
     textOverflow: 'ellipsis',
     whiteSpace: 'nowrap',
@@ -195,6 +206,10 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 'var(--text-xs)',
     color: 'var(--color-blue)',
     cursor: 'pointer',
+    background: 'none',
+    border: 'none',
+    padding: 0,
+    fontFamily: 'inherit',
   },
 
   emptyState: {
@@ -204,11 +219,7 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: 'center',
     padding: 'var(--space-4)',
     textAlign: 'center',
-  },
-
-  emptyIcon: {
-    fontSize: '2.5rem',
-    marginBottom: 'var(--space-3)',
+    minHeight: '200px', // Added minHeight for better empty state presence
   },
 
   emptyText: {

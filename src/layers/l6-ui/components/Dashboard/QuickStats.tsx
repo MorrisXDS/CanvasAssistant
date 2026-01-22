@@ -4,6 +4,7 @@
  */
 
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { BookOpen, FileText, AlertTriangle, BarChart3, type LucideIcon } from 'lucide-react';
 import { Card } from '../shared';
 
@@ -15,6 +16,9 @@ export interface StatItem {
     direction: 'up' | 'down' | 'neutral' | 'warning';
     value: string;
   };
+  link?: string;
+  /** Action key for modal/popup actions instead of navigation */
+  action?: string;
 }
 
 const iconMap: Record<string, LucideIcon> = {
@@ -26,18 +30,37 @@ const iconMap: Record<string, LucideIcon> = {
 
 export interface QuickStatsProps {
   stats: StatItem[];
+  /** Callback for action-based stats (modals/popups) */
+  onAction?: (action: string) => void;
 }
 
-export function QuickStats({ stats }: QuickStatsProps) {
+export function QuickStats({ stats, onAction }: QuickStatsProps) {
+  const navigate = useNavigate();
+
+  const handleCardClick = (stat: StatItem) => {
+    if (stat.action && onAction) {
+      onAction(stat.action);
+    } else if (stat.link) {
+      navigate(stat.link);
+    }
+  };
+
   return (
     <div style={styles.container}>
       {stats.map((stat, index) => {
         const Icon = iconMap[stat.icon] || BarChart3;
+        const isClickable = Boolean(stat.link) || Boolean(stat.action);
         return (
-          <Card key={index} padding="md" className="stat-card">
+          <Card
+            key={index}
+            padding="md"
+            className="stat-card"
+            style={isClickable ? styles.clickableCard : undefined}
+            onClick={isClickable ? () => handleCardClick(stat) : undefined}
+          >
             <div style={styles.statContent}>
               <div style={styles.iconWrapper}>
-                <Icon size={24} color="var(--color-navy)" />
+                <Icon size={24} color="var(--color-blue)" />
               </div>
             <div style={styles.textContent}>
               <div style={styles.value}>{stat.value}</div>
@@ -78,6 +101,11 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 'var(--space-4)',
   },
 
+  clickableCard: {
+    cursor: 'pointer',
+    transition: 'transform var(--transition-fast), box-shadow var(--transition-fast)',
+  },
+
   statContent: {
     display: 'flex',
     alignItems: 'center',
@@ -88,7 +116,7 @@ const styles: Record<string, React.CSSProperties> = {
     width: '48px',
     height: '48px',
     borderRadius: 'var(--radius-lg)',
-    backgroundColor: 'var(--color-gray-100)',
+    backgroundColor: 'var(--color-info-bg)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',

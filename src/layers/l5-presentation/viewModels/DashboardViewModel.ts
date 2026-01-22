@@ -99,7 +99,7 @@ function createPriorityItems(state: StoreState): PriorityItem[] {
   const courseMap = new Map(courses.map((c) => [c.id, c]));
 
   return tasks
-    .filter((task) => !task.isCompleted)
+    .filter((task) => !task.isCompleted && !!task.dueAt)
     .map((task) => {
       const course = courseMap.get(task.courseId);
       if (!course) return null;

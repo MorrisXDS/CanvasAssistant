@@ -7,7 +7,24 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Megaphone, Bell, Inbox, X } from 'lucide-react';
 import { Card } from '../shared';
+import { useStore } from '../../../l5-presentation/store';
 import type { Notification } from '../../../l5-presentation/types';
+
+// Course color palette (same as Calendar)
+const COURSE_COLORS = [
+  '#007FA3', '#E53935', '#43A047', '#FB8C00', '#8E24AA',
+  '#1E88E5', '#D81B60', '#00ACC1', '#7CB342', '#6D4C41',
+];
+
+function getCourseColor(courseId: number, existingColor: string | null): string {
+  if (existingColor) return existingColor;
+  return COURSE_COLORS[courseId % COURSE_COLORS.length];
+}
+
+function getShortCode(code: string): string {
+  // Split on course level suffix (H1, H5, Y1, etc.) or whitespace
+  return code.split(/[HY]\d|\s/)[0];
+}
 
 export interface NotificationsFeedProps {
   notifications: Notification[];
@@ -43,6 +60,12 @@ export function NotificationsFeed({
   maxItems = 5,
 }: NotificationsFeedProps) {
   const navigate = useNavigate();
+  const { courses } = useStore();
+
+  // Build course map for quick lookup
+  const courseMap = React.useMemo(() => {
+    return new Map(courses.map((c) => [c.id, c]));
+  }, [courses]);
 
   // Filter to show only non-dismissed notifications
   const activeNotifications = notifications
@@ -63,10 +86,16 @@ export function NotificationsFeed({
       title="Recent Updates"
       headerAction={
         notifications.length > maxItems && (
-          <span style={styles.viewAll}>View all</span>
+          <button
+            style={styles.viewAll}
+            onClick={() => navigate('/announcements')}
+          >
+            View all
+          </button>
         )
       }
       padding="md"
+      style={{ flex: 1, display: 'flex', flexDirection: 'column' }}
     >
       {activeNotifications.length === 0 ? (
         <div style={styles.emptyState}>
@@ -96,13 +125,33 @@ export function NotificationsFeed({
                 tabIndex={0}
               >
                 <div style={styles.itemHeader}>
-                  <span style={styles.itemSource}>
-                    {notification.sourceType === 'canvas' ? (
-                      <Megaphone size={14} />
-                    ) : (
-                      <Bell size={14} />
+                  <div style={styles.itemSourceRow}>
+                    <span style={styles.itemSource}>
+                      {notification.sourceType === 'canvas' ? (
+                        <Megaphone size={14} />
+                      ) : (
+                        <Bell size={14} />
+                      )}
+                    </span>
+                    {notification.courseId && courseMap.get(notification.courseId) && (
+                      <button
+                        style={{
+                          ...styles.courseCode,
+                          backgroundColor: getCourseColor(
+                            notification.courseId,
+                            courseMap.get(notification.courseId)!.color
+                          ),
+                        }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigate(`/announcements?course=${notification.courseId}`);
+                        }}
+                        title={`View all ${courseMap.get(notification.courseId)!.code} announcements`}
+                      >
+                        {getShortCode(courseMap.get(notification.courseId)!.code)}
+                      </button>
                     )}
-                  </span>
+                  </div>
                   <span style={styles.itemTime}>
                     {formatTimeAgo(notification.publishedAt)}
                   </span>
@@ -160,8 +209,30 @@ const styles: Record<string, React.CSSProperties> = {
     marginBottom: 'var(--space-1)',
   },
 
+  itemSourceRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-2)',
+  },
+
   itemSource: {
     fontSize: 'var(--text-sm)',
+    color: 'var(--text-secondary)',
+    display: 'flex',
+    alignItems: 'center',
+  },
+
+  courseCode: {
+    fontSize: '10px',
+    fontWeight: 'var(--font-bold)',
+    color: 'white',
+    padding: '2px 6px',
+    borderRadius: '4px',
+    textTransform: 'uppercase',
+    letterSpacing: '0.025em',
+    border: 'none',
+    cursor: 'pointer',
+    transition: 'opacity var(--transition-fast)',
   },
 
   itemTime: {
@@ -206,6 +277,10 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 'var(--text-xs)',
     color: 'var(--color-blue)',
     cursor: 'pointer',
+    background: 'none',
+    border: 'none',
+    padding: 0,
+    fontFamily: 'inherit',
   },
 
   emptyState: {

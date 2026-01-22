@@ -21,12 +21,16 @@ import {
   CanvasModule,
   CanvasModuleItem,
   CanvasPage,
+  CanvasFile,
+  CanvasFolder,
   mapCourse,
   mapAssignment,
   mapAnnouncement,
   mapModule,
   mapModuleItem,
   mapPage,
+  mapFile,
+  mapFolder,
   detectPolicyKeywords,
   calculatePolicyConfidence,
 } from './DataMappers';
@@ -51,8 +55,19 @@ export interface FullSyncResult {
   announcements: SyncResult;
   modules: SyncResult;
   pages: SyncResult;
+  folders: SyncResult;
+  files: SyncResult;
   totalDuration: number;
   errors: string[];
+}
+
+export interface SyncOptions {
+  /** Course IDs to sync (null = all courses) */
+  courseIds?: number[] | null;
+  /** Whether to sync Canvas files */
+  syncCanvasFiles?: boolean;
+  /** Whether to sync announcement attachments */
+  syncAnnouncements?: boolean;
 }
 
 export interface SyncMetadata {
@@ -84,8 +99,9 @@ export class SyncEngine extends EventEmitter {
 
   /**
    * Perform a full sync of all data
+   * @param options Optional sync options to filter courses and content types
    */
-  async syncAll(): Promise<FullSyncResult> {
+  async syncAll(options?: SyncOptions): Promise<FullSyncResult> {
     if (this.isSyncing) {
       throw new Error('Sync already in progress');
     }
@@ -93,6 +109,11 @@ export class SyncEngine extends EventEmitter {
     this.isSyncing = true;
     const startTime = Date.now();
     const errors: string[] = [];
+
+    // Default options
+    const syncCanvasFiles = options?.syncCanvasFiles ?? true;
+    const syncAnnouncements = options?.syncAnnouncements ?? true;
+    const filterCourseIds = options?.courseIds ?? null;
 
     this.emit('sync-start', { type: 'full' });
 
@@ -104,41 +125,74 @@ export class SyncEngine extends EventEmitter {
       }
 
       // Get local course IDs for subsequent syncs
-      const courses = this.db.executeRead<{ id: number; external_id: string }>(
+      let courses = this.db.executeRead<{ id: number; external_id: string }>(
         'SELECT id, external_id FROM courses WHERE deleted_at IS NULL'
       );
 
-      // Sync tasks, announcements, modules in parallel for each course
+      // Filter courses if specified
+      if (filterCourseIds && filterCourseIds.length > 0) {
+        const filterSet = new Set(filterCourseIds);
+        courses = courses.filter((c) => filterSet.has(c.id));
+      }
+
+      // Sync tasks, announcements, modules, folders, files in parallel for each course
       const taskResults: SyncResult[] = [];
       const announcementResults: SyncResult[] = [];
       const moduleResults: SyncResult[] = [];
       const pageResults: SyncResult[] = [];
+      const folderResults: SyncResult[] = [];
+      const fileResults: SyncResult[] = [];
 
       for (const course of courses) {
         const canvasCourseId = parseInt(course.external_id, 10);
 
-        // Run syncs for this course
-        const [taskResult, announcementResult, moduleResult, pageResult] = await Promise.all([
+        // Build parallel sync promises based on options
+        const syncPromises: Promise<SyncResult>[] = [
           this.syncTasks(canvasCourseId, course.id),
-          this.syncAnnouncements(canvasCourseId, course.id),
           this.syncModules(canvasCourseId, course.id),
           this.syncPages(canvasCourseId, course.id),
-        ]);
+        ];
 
-        taskResults.push(taskResult);
-        announcementResults.push(announcementResult);
-        moduleResults.push(moduleResult);
-        pageResults.push(pageResult);
+        if (syncAnnouncements) {
+          syncPromises.push(this.syncAnnouncements(canvasCourseId, course.id));
+        }
+
+        if (syncCanvasFiles) {
+          // Sync folders first to get folder paths, then files
+          syncPromises.push(this.syncFolders(canvasCourseId, course.id));
+        }
+
+        const results = await Promise.all(syncPromises);
+
+        // Extract results based on what was synced
+        let idx = 0;
+        taskResults.push(results[idx++]);
+        moduleResults.push(results[idx++]);
+        pageResults.push(results[idx++]);
+
+        if (syncAnnouncements) {
+          announcementResults.push(results[idx++]);
+        }
+
+        if (syncCanvasFiles) {
+          folderResults.push(results[idx++]);
+          // Now sync files with folder path lookup
+          const fileResult = await this.syncFiles(canvasCourseId, course.id);
+          fileResults.push(fileResult);
+        }
       }
 
-      // Aggregate results
-      const aggregateResults = (results: SyncResult[], entity: string): SyncResult => ({
-        success: results.every((r) => r.success),
-        entity,
-        count: results.reduce((sum, r) => sum + r.count, 0),
-        errors: results.flatMap((r) => r.errors),
-        duration: results.reduce((sum, r) => sum + r.duration, 0),
-      });
+      // Aggregate results (with defensive handling for undefined)
+      const aggregateResults = (results: SyncResult[], entity: string): SyncResult => {
+        const validResults = results.filter((r): r is SyncResult => r !== undefined && r !== null);
+        return {
+          success: validResults.every((r) => r.success),
+          entity,
+          count: validResults.reduce((sum, r) => sum + (r.count ?? 0), 0),
+          errors: validResults.flatMap((r) => r.errors ?? []),
+          duration: validResults.reduce((sum, r) => sum + (r.duration ?? 0), 0),
+        };
+      };
 
       const result: FullSyncResult = {
         courses: coursesResult,
@@ -146,6 +200,8 @@ export class SyncEngine extends EventEmitter {
         announcements: aggregateResults(announcementResults, 'announcements'),
         modules: aggregateResults(moduleResults, 'modules'),
         pages: aggregateResults(pageResults, 'pages'),
+        folders: aggregateResults(folderResults, 'folders'),
+        files: aggregateResults(fileResults, 'files'),
         totalDuration: Date.now() - startTime,
         errors,
       };
@@ -172,7 +228,7 @@ export class SyncEngine extends EventEmitter {
         () =>
           this.client.getAll<CanvasCourse>('/courses', {
             enrollment_state: 'active',
-            include: ['total_scores', 'current_grading_period_scores', 'syllabus_body'],
+            include: ['total_scores', 'current_grading_period_scores', 'syllabus_body', 'term'],
           }),
         10 // High priority
       );
@@ -180,6 +236,49 @@ export class SyncEngine extends EventEmitter {
       const baseUrl = this.client.getBaseUrl();
 
       this.db.transaction(() => {
+        // Extract enrollment terms from courses (Canvas includes term data with include[]=term)
+        const termsMap = new Map<number, { id: number; name: string; start_at: string | null; end_at: string | null }>();
+
+        console.debug('[SyncEngine] Processing courses for term extraction...');
+        for (const course of courses) {
+          console.debug(`[SyncEngine] Course ${course.course_code}: term=${JSON.stringify(course.term)}, enrollment_term_id=${course.enrollment_term_id}`);
+
+          if (course.term) {
+            if (!termsMap.has(course.term.id)) {
+              termsMap.set(course.term.id, {
+                id: course.term.id,
+                name: course.term.name,
+                start_at: course.term.start_at,
+                end_at: course.term.end_at,
+              });
+              console.debug(`[SyncEngine] Added term: ${course.term.name} (${course.term.id}), end_at=${course.term.end_at}`);
+            }
+          } else if (course.enrollment_term_id) {
+            // Fallback if term object not included
+            if (!termsMap.has(course.enrollment_term_id)) {
+              termsMap.set(course.enrollment_term_id, {
+                id: course.enrollment_term_id,
+                name: `Semester ${course.enrollment_term_id}`,
+                start_at: null,
+                end_at: null,
+              });
+              console.debug(`[SyncEngine] Added fallback term: Semester ${course.enrollment_term_id} (no term object)`);
+            }
+          }
+        }
+
+        console.debug('[SyncEngine] Terms extracted:', Array.from(termsMap.values()));
+
+        // Upsert enrollment terms with full data
+        for (const [termId, term] of termsMap) {
+          this.db.executeWrite(
+            `INSERT INTO enrollment_terms (external_id, name, start_at, end_at) VALUES (?, ?, ?, ?)
+             ON CONFLICT(external_id) DO UPDATE SET name = excluded.name, start_at = excluded.start_at, end_at = excluded.end_at`,
+            [String(termId), term.name, term.start_at, term.end_at],
+            'enrollment_terms'
+          );
+        }
+
         for (const course of courses) {
           try {
             const localCourse = mapCourse(course, baseUrl);
@@ -189,6 +288,11 @@ export class SyncEngine extends EventEmitter {
             errors.push(`Course ${course.id}: ${error instanceof Error ? error.message : String(error)}`);
           }
         }
+      });
+
+      // Try to fetch actual term names from Canvas API (may fail for non-admin users)
+      this.fetchAndUpdateTermNames().catch(err => {
+        console.debug('[SyncEngine] Could not fetch term names:', err);
       });
 
       // Update sync metadata
@@ -213,6 +317,35 @@ export class SyncEngine extends EventEmitter {
         errors,
         duration: Date.now() - startTime,
       };
+    }
+  }
+
+  /**
+   * Fetch enrollment term names from Canvas API and update the local database
+   * This may fail for non-admin users, which is OK - we'll use placeholder names
+   */
+  private async fetchAndUpdateTermNames(): Promise<void> {
+    try {
+      const terms = await this.rateLimiter.enqueue(
+        () => this.client.getEnrollmentTerms(),
+        1 // Low priority
+      );
+
+      if (terms.length > 0) {
+        this.db.transaction(() => {
+          for (const term of terms) {
+            this.db.executeWrite(
+              `UPDATE enrollment_terms SET name = ?, start_at = ?, end_at = ? WHERE external_id = ?`,
+              [term.name, term.start_at, term.end_at, String(term.id)],
+              'enrollment_terms'
+            );
+          }
+        });
+        console.debug(`[SyncEngine] Updated ${terms.length} enrollment term names`);
+      }
+    } catch (error) {
+      // Expected to fail for non-admin users, silent fail
+      console.debug('[SyncEngine] Could not fetch enrollment terms (expected for students)');
     }
   }
 
@@ -398,6 +531,43 @@ export class SyncEngine extends EventEmitter {
                   courseId: localCourseId,
                   attachmentCount: mapped.attachments.length,
                 });
+              }
+
+              // Insert file references (linking to attachments by external_id)
+              if (mapped.fileReferences.length > 0) {
+                // First, clear existing file references for this notification
+                this.db.executeWrite(
+                  'DELETE FROM announcement_file_references WHERE notification_id = ?',
+                  [notificationRow.id],
+                  'announcement_file_references'
+                );
+
+                for (const fileRef of mapped.fileReferences) {
+                  // Find attachment_id by external_id if we have a match
+                  let attachmentId: number | null = null;
+                  if (fileRef.attachmentExternalId) {
+                    const attRow = this.db.executeReadOne<{ id: number }>(
+                      'SELECT id FROM notification_attachments WHERE notification_id = ? AND external_id = ?',
+                      [notificationRow.id, fileRef.attachmentExternalId]
+                    );
+                    attachmentId = attRow?.id || null;
+                  }
+
+                  this.db.executeWrite(
+                    `INSERT INTO announcement_file_references
+                     (notification_id, attachment_id, start_position, end_position, matched_text, original_url)
+                     VALUES (?, ?, ?, ?, ?, ?)`,
+                    [
+                      notificationRow.id,
+                      attachmentId,
+                      fileRef.startPosition,
+                      fileRef.endPosition,
+                      fileRef.matchedText,
+                      fileRef.originalUrl,
+                    ],
+                    'announcement_file_references'
+                  );
+                }
               }
 
               // If policy-related, create policy_announcement record
@@ -595,7 +765,7 @@ export class SyncEngine extends EventEmitter {
         duration: Date.now() - startTime,
       };
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = error instanceof Error ? error.message : JSON.stringify(error);
       // Pages endpoint might not be available for all courses
       if (message.includes('401') || message.includes('403')) {
         return {
@@ -610,6 +780,139 @@ export class SyncEngine extends EventEmitter {
       return {
         success: false,
         entity: 'pages',
+        count,
+        errors,
+        duration: Date.now() - startTime,
+      };
+    }
+  }
+
+  /**
+   * Sync folders for a specific course
+   * This should be called before syncFiles to establish folder paths
+   */
+  async syncFolders(canvasCourseId: number, localCourseId: number): Promise<SyncResult> {
+    const startTime = Date.now();
+    const errors: string[] = [];
+    let count = 0;
+
+    try {
+      // Fetch all folders for the course
+      const folders = await this.rateLimiter.enqueue(
+        () => this.client.getAll<CanvasFolder>(`/courses/${canvasCourseId}/folders`),
+        2 // Lower priority
+      );
+
+      this.db.transaction(() => {
+        for (const folder of folders) {
+          try {
+            const localFolder = mapFolder(folder, localCourseId);
+            this.db.upsert('resources', localFolder);
+            count++;
+          } catch (error) {
+            errors.push(`Folder ${folder.name}: ${error instanceof Error ? error.message : String(error)}`);
+          }
+        }
+      });
+
+      this.updateSyncMetadata(`/courses/${canvasCourseId}/folders`);
+
+      return {
+        success: errors.length === 0,
+        entity: 'folders',
+        count,
+        errors,
+        duration: Date.now() - startTime,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : JSON.stringify(error);
+      // Folders endpoint might not be available for all courses (403/404)
+      if (message.includes('401') || message.includes('403') || message.includes('404')) {
+        return {
+          success: true,
+          entity: 'folders',
+          count: 0,
+          errors: [],
+          duration: Date.now() - startTime,
+        };
+      }
+      errors.push(`Failed to sync folders for course ${canvasCourseId}: ${message}`);
+      return {
+        success: false,
+        entity: 'folders',
+        count,
+        errors,
+        duration: Date.now() - startTime,
+      };
+    }
+  }
+
+  /**
+   * Sync files for a specific course
+   * Requires syncFolders to be called first to establish folder paths
+   */
+  async syncFiles(canvasCourseId: number, localCourseId: number): Promise<SyncResult> {
+    const startTime = Date.now();
+    const errors: string[] = [];
+    let count = 0;
+
+    try {
+      // Fetch all files for the course
+      const files = await this.rateLimiter.enqueue(
+        () => this.client.getAll<CanvasFile>(`/courses/${canvasCourseId}/files`),
+        2 // Lower priority
+      );
+
+      // Build a lookup map from Canvas folder_id to folder_path
+      // Folders should be synced before files
+      const folderPathMap = new Map<number, string>();
+      const folders = this.db.executeRead<{ external_id: string; folder_path: string | null }>(
+        'SELECT external_id, folder_path FROM resources WHERE course_id = ? AND type = ?',
+        [localCourseId, 'folder']
+      );
+      for (const folder of folders) {
+        folderPathMap.set(parseInt(folder.external_id, 10), folder.folder_path || '');
+      }
+
+      this.db.transaction(() => {
+        for (const file of files) {
+          try {
+            // Look up folder path from the folder_id
+            const folderPath = folderPathMap.get(file.folder_id) ?? null;
+            const localFile = mapFile(file, localCourseId, null, folderPath);
+            this.db.upsert('resources', localFile);
+            count++;
+          } catch (error) {
+            errors.push(`File ${file.display_name}: ${error instanceof Error ? error.message : String(error)}`);
+          }
+        }
+      });
+
+      this.updateSyncMetadata(`/courses/${canvasCourseId}/files`);
+
+      return {
+        success: errors.length === 0,
+        entity: 'files',
+        count,
+        errors,
+        duration: Date.now() - startTime,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : JSON.stringify(error);
+      // Files endpoint might not be available for all courses (403/404)
+      if (message.includes('401') || message.includes('403') || message.includes('404')) {
+        return {
+          success: true,
+          entity: 'files',
+          count: 0,
+          errors: [],
+          duration: Date.now() - startTime,
+        };
+      }
+      errors.push(`Failed to sync files for course ${canvasCourseId}: ${message}`);
+      return {
+        success: false,
+        entity: 'files',
         count,
         errors,
         duration: Date.now() - startTime,

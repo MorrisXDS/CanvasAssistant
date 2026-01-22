@@ -31,6 +31,16 @@ export interface PaginationLinks {
   last?: string;
 }
 
+export interface CanvasEnrollmentTerm {
+  id: number;
+  name: string;
+  start_at: string | null;
+  end_at: string | null;
+  created_at: string;
+  workflow_state: string;
+  grading_period_group_id: number | null;
+}
+
 /**
  * Canvas LMS API Client
  *
@@ -82,6 +92,14 @@ export class CanvasClient extends EventEmitter {
    */
   async getCurrentUser(): Promise<CanvasUser> {
     const response = await this.get<CanvasUser>('/users/self');
+    return response.data;
+  }
+
+  /**
+   * Get the user's profile (alias for getCurrentUser with profile data)
+   */
+  async getUserProfile(): Promise<CanvasUser> {
+    const response = await this.get<CanvasUser>('/users/self/profile');
     return response.data;
   }
 
@@ -257,6 +275,28 @@ export class CanvasClient extends EventEmitter {
       status: 0,
       message: error.message || 'Unknown error',
     });
+  }
+
+  /**
+   * Get enrollment terms for the account
+   * Note: This requires the user to have account-level access
+   * Falls back to extracting terms from courses if account access is denied
+   */
+  async getEnrollmentTerms(): Promise<CanvasEnrollmentTerm[]> {
+    try {
+      // Try to get terms from account (requires admin access usually)
+      // Canvas uses 'self' as account ID for the user's primary account
+      const response = await this.get<{ enrollment_terms: CanvasEnrollmentTerm[] }>(
+        '/accounts/self/terms',
+        { per_page: 100 }
+      );
+      return response.data.enrollment_terms || [];
+    } catch (error) {
+      // Account-level access may be denied for students
+      // Return empty and let caller handle extracting from courses
+      console.debug('[CanvasClient] Could not fetch enrollment terms from account:', error);
+      return [];
+    }
   }
 
   /**

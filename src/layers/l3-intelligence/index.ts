@@ -21,6 +21,21 @@ export { PriorityEngine } from './PriorityEngine';
 export { PolicyEvaluator } from './PolicyEvaluator';
 export type { PolicyEvaluationResult } from './PolicyEvaluator';
 
+export { PolicyEngine } from './PolicyEngine';
+export type {
+  PolicyType,
+  ScopeType,
+  LatePenaltyConfig,
+  GraceTokenConfig,
+  DropLowestConfig,
+  WeightTransferConfig,
+  GradeReplacementConfig,
+  Policy,
+  TaskWithPolicy,
+  PenaltyResult,
+  PainIndexFactors,
+} from './PolicyEngine';
+
 export { DependencyResolver } from './DependencyResolver';
 export type { DependencyResult } from './DependencyResolver';
 

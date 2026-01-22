@@ -20,7 +20,14 @@ import {
   SyncStatus,
   SystemState,
   HealthStatus,
+  ImportedCalendar,
+  DisplayCalendarEvent,
+  EnrollmentTerm,
+  SyncResultSummary,
 } from './types';
+
+// Re-export SyncResultSummary for consumers
+export type { SyncResultSummary } from './types';
 
 /**
  * Initial state
@@ -29,6 +36,8 @@ const initialState: StoreState = {
   courses: [],
   tasks: [],
   notifications: [],
+  importedCalendars: [],
+  calendarEvents: [],
   simulation: {
     isActive: false,
     startedAt: null,
@@ -36,6 +45,7 @@ const initialState: StoreState = {
   },
   syncStatus: 'idle',
   lastSyncedAt: null,
+  lastSyncResult: null,
   systemState: null,
   healthStatus: null,
   isAuthenticated: false,
@@ -114,7 +124,97 @@ export const useStore = create<Store>()(
         if (!api) return;
 
         try {
-          const courses = await api.getCourses();
+          let courses = await api.getCourses();
+
+          // Debug: Log all courses with their term info
+          console.debug('[Store] All courses fetched:', courses.map((c: Course) => ({
+            id: c.id,
+            code: c.code,
+            name: c.name,
+            enrollmentTermId: c.enrollmentTermId,
+          })));
+
+          // Apply semester filtering based on academic settings
+          const academicSettings = localStorage.getItem('academicSettings');
+          if (academicSettings) {
+            try {
+              const settings = JSON.parse(academicSettings);
+              const semesterSelection = settings.termSelection || 'auto';
+
+              console.debug('[Store] Semester selection:', semesterSelection, 'Courses before filter:', courses.length);
+
+              if (semesterSelection !== 'all') {
+                if (semesterSelection === 'auto') {
+                  // Auto-detect: show courses where semester is currently active
+                  // Canvas end_at is usually ~1 month after actual course end, so we subtract 30 days
+                  const terms = await api.getEnrollmentTerms();
+                  const now = new Date();
+                  const DAYS_BUFFER = 30; // Canvas end_at is ~1 month after actual course end
+
+                  console.debug('[Store] All terms from DB:', terms.map((t: EnrollmentTerm) => ({
+                    id: t.id,
+                    externalId: t.externalId,
+                    name: t.name,
+                    startAt: t.startAt,
+                    endAt: t.endAt,
+                  })));
+                  console.debug('[Store] Current date:', now.toISOString());
+
+                  // Find terms that are currently active
+                  const currentTermIds = new Set<number>();
+                  for (const term of terms) {
+                    const termIdNum = parseInt(term.externalId, 10);
+
+                    // Skip "Default Term" - these are non-academic courses
+                    if (term.name === 'Default Term' || termIdNum === 1) {
+                      console.debug(`[Store] Term "${term.name}" (${termIdNum}): skipping Default Term`);
+                      continue;
+                    }
+
+                    if (!term.endAt) {
+                      // No end date and not Default Term - skip (shouldn't happen for real terms)
+                      console.debug(`[Store] Term "${term.name}" (${termIdNum}): no end_at, skipping`);
+                      continue;
+                    }
+
+                    // Subtract buffer days from end_at to get actual course end
+                    const endDate = new Date(term.endAt);
+                    const adjustedEndDate = new Date(endDate.getTime() - DAYS_BUFFER * 24 * 60 * 60 * 1000);
+                    const isCurrent = adjustedEndDate > now;
+
+                    console.debug(`[Store] Term "${term.name}" (${termIdNum}): end_at=${term.endAt}, adjusted=${adjustedEndDate.toISOString()}, isCurrent=${isCurrent}`);
+
+                    if (isCurrent) {
+                      currentTermIds.add(termIdNum);
+                    }
+                  }
+
+                  console.debug('[Store] Current semester IDs:', Array.from(currentTermIds));
+
+                  if (currentTermIds.size > 0) {
+                    const beforeCount = courses.length;
+                    courses = courses.filter((c: Course) =>
+                      c.enrollmentTermId !== null && currentTermIds.has(c.enrollmentTermId)
+                    );
+                    console.debug(`[Store] Filtered ${beforeCount} -> ${courses.length} courses`);
+                  } else {
+                    console.debug('[Store] No current semesters found, showing all courses');
+                  }
+                  console.debug('[Store] Courses after auto-filter:', courses.map((c: Course) => c.code));
+                } else {
+                  // Specific semester selected - filter by term external_id
+                  const selectedTermId = parseInt(semesterSelection, 10);
+                  if (!isNaN(selectedTermId)) {
+                    courses = courses.filter((c: Course) => c.enrollmentTermId === selectedTermId);
+                    console.debug('[Store] Filtering by semester:', selectedTermId, 'Courses after filter:', courses.length);
+                  }
+                }
+              }
+            } catch (e) {
+              console.error('[Store] Failed to parse academic settings:', e);
+            }
+          }
+
           set({ courses });
         } catch (error) {
           console.error('Failed to fetch courses:', error);
@@ -130,7 +230,18 @@ export const useStore = create<Store>()(
         if (!api) return;
 
         try {
-          const tasks = await api.getTasks(courseId);
+          let tasks = await api.getTasks(courseId);
+
+          if (!courseId) {
+            // Filter tasks to only include those from visible (non-hidden) courses filtered by semester
+            const visibleCourseIds = new Set(
+              get().courses.filter((c: Course) => !c.isHidden).map((c: Course) => c.id)
+            );
+            const beforeCount = tasks.length;
+            tasks = tasks.filter((t: Task) => visibleCourseIds.has(t.courseId));
+            console.debug(`[Store] Filtered tasks: ${beforeCount} -> ${tasks.length} (only from ${visibleCourseIds.size} visible courses)`);
+          }
+
           if (courseId) {
             // Update only tasks for this course
             set((state) => ({
@@ -168,12 +279,170 @@ export const useStore = create<Store>()(
        * Refresh all data
        */
       refreshAll: async () => {
-        const { fetchCourses, fetchTasks, fetchNotifications } = get();
+        const { fetchCourses, fetchTasks, fetchNotifications, fetchImportedCalendars } = get();
+        // Fetch courses FIRST since tasks filtering depends on courses being loaded
+        await fetchCourses();
+        // Then fetch everything else in parallel
         await Promise.all([
-          fetchCourses(),
           fetchTasks(),
           fetchNotifications(),
+          fetchImportedCalendars(),
         ]);
+      },
+
+      // ============ Imported Calendar Actions ============
+
+      /**
+       * Fetch all imported calendars
+       */
+      fetchImportedCalendars: async () => {
+        const api = getApi();
+        if (!api) {
+          console.warn('[Store] No API available for fetchImportedCalendars');
+          return;
+        }
+
+        try {
+          console.log('[Store] Fetching imported calendars...');
+          const calendars = await api.getImportedCalendars();
+          console.log('[Store] Fetched imported calendars:', calendars.length, calendars);
+          set({ importedCalendars: calendars });
+        } catch (error) {
+          console.error('Failed to fetch imported calendars:', error);
+        }
+      },
+
+      /**
+       * Fetch calendar events for a date range
+       */
+      fetchCalendarEventsForRange: async (startDate: Date, endDate: Date) => {
+        const api = getApi();
+        if (!api) {
+          console.warn('[Store] No API available for fetchCalendarEventsForRange');
+          return;
+        }
+
+        try {
+          console.log('[Store] Fetching calendar events for range:', {
+            start: startDate.toISOString(),
+            end: endDate.toISOString(),
+          });
+          const events = await api.getCalendarEventsForRange({
+            startDate: startDate.toISOString(),
+            endDate: endDate.toISOString(),
+            includeHidden: false,
+          });
+          console.log('[Store] Fetched calendar events:', events.length, events);
+          set({ calendarEvents: events });
+        } catch (error) {
+          console.error('Failed to fetch calendar events:', error);
+        }
+      },
+
+      /**
+       * Import an ICS file
+       */
+      importICSFile: async (content: string, filename: string, options?: { name?: string; color?: string }) => {
+        const api = getApi();
+        if (!api) {
+          console.warn('[Store] No API available for importICSFile');
+          return { success: false };
+        }
+
+        try {
+          console.log('[Store] Importing ICS file:', { filename, options, contentLength: content.length });
+          const result = await api.importICS({
+            content,
+            filename,
+            name: options?.name,
+            color: options?.color,
+          });
+
+          console.log('[Store] Import ICS result:', result);
+
+          if (result.success) {
+            // Refresh calendars
+            console.log('[Store] Refreshing calendars after import...');
+            await get().fetchImportedCalendars();
+          }
+
+          return {
+            success: result.success,
+            calendarId: result.data?.calendarId,
+            eventCount: result.data?.eventCount,
+          };
+        } catch (error) {
+          console.error('Failed to import ICS:', error);
+          return { success: false };
+        }
+      },
+
+      /**
+       * Delete an imported calendar
+       */
+      deleteImportedCalendar: async (calendarId: number) => {
+        const api = getApi();
+        if (!api) return false;
+
+        try {
+          const result = await api.deleteImportedCalendar(calendarId);
+          if (result.success) {
+            set((state) => ({
+              importedCalendars: state.importedCalendars.filter((c) => c.id !== calendarId),
+              calendarEvents: state.calendarEvents.filter((e) => e.importedCalendarId !== calendarId),
+            }));
+          }
+          return result.success;
+        } catch (error) {
+          console.error('Failed to delete calendar:', error);
+          return false;
+        }
+      },
+
+      /**
+       * Toggle calendar visibility
+       */
+      toggleCalendarVisibility: async (calendarId: number, isVisible: boolean) => {
+        const api = getApi();
+        if (!api) return false;
+
+        try {
+          const result = await api.toggleCalendarVisibility(calendarId, isVisible);
+          if (result.success) {
+            set((state) => ({
+              importedCalendars: state.importedCalendars.map((c) =>
+                c.id === calendarId ? { ...c, isVisible } : c
+              ),
+            }));
+          }
+          return result.success;
+        } catch (error) {
+          console.error('Failed to toggle calendar visibility:', error);
+          return false;
+        }
+      },
+
+      /**
+       * Update calendar metadata
+       */
+      updateImportedCalendar: async (calendarId: number, updates: { name?: string; color?: string }) => {
+        const api = getApi();
+        if (!api) return false;
+
+        try {
+          const result = await api.updateImportedCalendar(calendarId, updates);
+          if (result.success) {
+            set((state) => ({
+              importedCalendars: state.importedCalendars.map((c) =>
+                c.id === calendarId ? { ...c, ...updates } : c
+              ),
+            }));
+          }
+          return result.success;
+        } catch (error) {
+          console.error('Failed to update calendar:', error);
+          return false;
+        }
       },
 
       /**
@@ -289,17 +558,27 @@ export const useStore = create<Store>()(
 
       /**
        * Trigger a sync operation
+       * @param type Sync type: 'full', 'courses', 'tasks', or 'notifications'
+       * @param options Optional sync options for full sync (courseIds, syncCanvasFiles, syncAnnouncements)
+       * @returns Sync result with success status and summary data
        */
-      triggerSync: async (type: 'full' | 'courses' | 'tasks' | 'notifications') => {
+      triggerSync: async (
+        type: 'full' | 'courses' | 'tasks' | 'notifications',
+        options?: {
+          courseIds?: number[];
+          syncCanvasFiles?: boolean;
+          syncAnnouncements?: boolean;
+        }
+      ) => {
         const api = getApi();
-        if (!api) return false;
+        if (!api) return { success: false };
 
         set({ syncStatus: 'syncing' });
 
         try {
           let result;
           if (type === 'full') {
-            result = await api.syncFull();
+            result = await api.syncFull(options);
           } else if (type === 'courses') {
             result = await api.syncCourses();
           } else {
@@ -307,20 +586,46 @@ export const useStore = create<Store>()(
           }
 
           if (result.success) {
-            set({ syncStatus: 'idle', lastSyncedAt: new Date().toISOString() });
+            const timestamp = new Date().toISOString();
+            // Parse the sync result into a summary for display
+            const syncResult = result.result;
+            const summary: SyncResultSummary = {
+              courses: syncResult?.courses ? {
+                synced: syncResult.courses.synced || 0,
+                new: syncResult.courses.inserted || 0,
+              } : undefined,
+              tasks: syncResult?.tasks ? {
+                synced: syncResult.tasks.synced || 0,
+                new: syncResult.tasks.inserted || 0,
+              } : undefined,
+              announcements: syncResult?.notifications ? {
+                synced: syncResult.notifications.synced || 0,
+                new: syncResult.notifications.inserted || 0,
+              } : undefined,
+              files: syncResult?.files ? {
+                synced: syncResult.files.synced || 0,
+                new: syncResult.files.inserted || 0,
+              } : undefined,
+              errors: syncResult?.errors || [],
+              timestamp,
+            };
+            set({ syncStatus: 'idle', lastSyncedAt: timestamp, lastSyncResult: summary });
             // Refresh data after sync
             await get().refreshAll();
+            // Return the full result including sync summary
+            return { success: true, result: result.result, summary };
           } else {
             set({ syncStatus: 'error', lastError: result.error });
+            return { success: false, error: result.error };
           }
-          return result.success;
         } catch (error) {
           console.error('Failed to trigger sync:', error);
+          const errorMsg = error instanceof Error ? error.message : String(error);
           set({
             syncStatus: 'error',
-            lastError: error instanceof Error ? error.message : String(error),
+            lastError: errorMsg,
           });
-          return false;
+          return { success: false, error: errorMsg };
         }
       },
 
@@ -353,7 +658,7 @@ export const useStore = create<Store>()(
        */
       handleDbCommit: (event: DbCommitEvent) => {
         // Refresh data based on which table changed
-        const { fetchCourses, fetchTasks, fetchNotifications } = get();
+        const { fetchCourses, fetchTasks, fetchNotifications, fetchImportedCalendars } = get();
 
         switch (event.table) {
           case 'courses':
@@ -364,6 +669,10 @@ export const useStore = create<Store>()(
             break;
           case 'notifications':
             fetchNotifications();
+            break;
+          case 'imported_calendars':
+          case 'calendar_events':
+            fetchImportedCalendars();
             break;
           default:
             // For unknown tables, refresh all
@@ -376,6 +685,13 @@ export const useStore = create<Store>()(
        */
       setError: (error: string | null) => {
         set({ lastError: error });
+      },
+
+      /**
+       * Clear last sync result (to dismiss the toast)
+       */
+      clearSyncResult: () => {
+        set({ lastSyncResult: null });
       },
     })),
     { name: 'canvas-store' }
@@ -463,4 +779,28 @@ export const selectors = {
     const task = state.tasks.find((t) => t.id === taskId);
     return task?.grade ?? null;
   },
+
+  /**
+   * Get visible imported calendars
+   */
+  visibleCalendars: (state: StoreState) =>
+    state.importedCalendars.filter((c) => c.isVisible),
+
+  /**
+   * Get calendar events for visible calendars
+   */
+  visibleCalendarEvents: (state: StoreState) => {
+    const visibleIds = new Set(
+      state.importedCalendars.filter((c) => c.isVisible).map((c) => c.id)
+    );
+    return state.calendarEvents.filter(
+      (e) => e.importedCalendarId && visibleIds.has(e.importedCalendarId)
+    );
+  },
+
+  /**
+   * Get events for a specific calendar
+   */
+  calendarEvents: (calendarId: number) => (state: StoreState) =>
+    state.calendarEvents.filter((e) => e.importedCalendarId === calendarId),
 };
