@@ -161,3 +161,89 @@ PRAGMA mmap_size = 268435456; -- 256MB
 - **Credential storage:** Use `keytar` via `CredentialManager` (OS keychain)
 - **Context isolation:** Electron `contextIsolation: true` enforced
 - **No `nodeIntegration`:** All IPC through `preload.ts` context bridge
+
+## 7. Mandatory Testing Protocol (ENFORCED)
+
+> **CRITICAL**: All agents modifying code MUST follow this protocol. Failure to run tests is a blocking error.
+
+### Before ANY Code Change
+```bash
+# 1. Run baseline tests for affected layer
+npm test -- --testPathPattern=l{N}-{layer}
+
+# 2. Record baseline: "X passing, Y failing, Z skipped"
+```
+
+### After Code Changes
+```bash
+# 1. Build must succeed
+npm run build
+
+# 2. Run tests - failures MUST NOT increase
+npm test -- --testPathPattern=l{N}-{layer}
+
+# 3. Run full test suite before committing
+npm test
+```
+
+### Test Requirements by Change Type
+
+| Change Type | Test Requirement |
+|-------------|------------------|
+| New public method | MUST write unit test |
+| Bug fix | MUST write regression test |
+| Behavior change | MUST update existing tests |
+| New file | MUST create corresponding test file |
+| Refactor | Tests MUST still pass |
+
+### Test File Locations
+```
+tests/
+  l0-utilities/       # ServiceRegistry.test.ts, Logger.test.ts, etc.
+  l1-persistence/     # Database.test.ts, MigrationRunner.test.ts
+  l2-daemon/          # SyncEngine.test.ts, RateLimiter.test.ts
+  l3-intelligence/    # PriorityEngine.test.ts, PolicyEvaluator.test.ts
+    domain/           # PriorityCalculator.test.ts (pure function tests)
+  l4-controller/      # CommandDispatcher.test.ts, commands/*.test.ts
+  l5-presentation/    # store.test.ts
+  integration/        # Cross-layer integration tests
+```
+
+### Coverage Targets
+| Component Type | Target |
+|----------------|--------|
+| Domain services (pure functions) | 90% branch coverage |
+| Orchestrators / Controllers | 70% branch coverage |
+| UI Components | 50% branch coverage |
+
+### L3 Intelligence Layer Specific Rules
+
+Due to critical priority calculation bugs, L3 has additional requirements:
+
+1. **NEVER** modify L3 without reading existing tests first
+2. **ALWAYS** run `npm test -- --testPathPattern=l3-intelligence` before AND after changes
+3. **VERIFY** ServiceRegistry initializes L3 services correctly
+4. **CHECK** IPC contract if adding/removing L3 exports
+
+### Missing Tests (Must Create)
+- [ ] `tests/l0-utilities/ServiceRegistry.test.ts`
+- [ ] `tests/l3-intelligence/domain/GradeCalculationService.test.ts`
+- [ ] `tests/l3-intelligence/domain/GraceTokenService.test.ts`
+- [ ] `tests/l3-intelligence/domain/PriorityCalculator.test.ts`
+- [ ] `tests/l3-intelligence/orchestration/PriorityOrchestrator.test.ts`
+
+### Agent Workflow Summary
+
+```
+1. Read existing tests for affected files
+2. Run baseline: npm test -- --testPathPattern={layer}
+3. Make code changes
+4. Write/update tests for changes
+5. Run: npm run build
+6. Run: npm test -- --testPathPattern={layer}
+7. Verify: failures did not increase
+8. Run: npm test (full suite)
+9. Only then: commit changes
+```
+
+**If tests fail after your changes**: FIX THE CODE OR TESTS. Do not commit failing tests.
