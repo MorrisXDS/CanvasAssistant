@@ -8,8 +8,6 @@ import {
   X,
   Link,
   RefreshCw,
-  Palette,
-  Bell,
   Check,
   AlertCircle,
   Loader2,
@@ -22,12 +20,17 @@ import {
   Eye,
   EyeOff,
   Calendar,
+  Home,
+  LayoutDashboard,
+  Paintbrush,
+  Bell,
 } from 'lucide-react';
 import { useStore } from '../../l5-presentation/store';
 import type { Course } from '../../l5-presentation/types';
+import { ConfirmDialog } from './shared/ConfirmDialog';
 
 // Settings sections
-type SettingsSection = 'canvas' | 'sync' | 'academic' | 'courses' | 'calendar' | 'files' | 'appearance' | 'notifications';
+type SettingsSection = 'general' | 'canvas' | 'sync' | 'academic' | 'courses' | 'calendar' | 'files' | 'appearance' | 'notifications';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -88,6 +91,17 @@ interface CalendarSettings {
   defaultViewMode: 'month' | 'week';
 }
 
+interface GeneralSettings {
+  landingPage: string;
+}
+
+const LANDING_PAGE_OPTIONS = [
+  { value: '/', label: 'Dashboard', icon: LayoutDashboard },
+  { value: '/calendar', label: 'Calendar', icon: Calendar },
+  { value: '/courses', label: 'Courses', icon: BookOpen },
+  { value: '/files', label: 'Files', icon: FolderOpen },
+];
+
 const STORAGE_KEYS = {
   SYNC_PREFS: 'syncPreferences',
   APPEARANCE: 'appearanceSettings',
@@ -97,6 +111,7 @@ const STORAGE_KEYS = {
   COURSES: 'courseSettings',
   CALENDAR: 'calendarSettings',
   CANVAS_URL: 'canvasUrl',
+  LANDING_PAGE: 'landingPage',
 };
 
 function loadSettings<T>(key: string, defaults: T): T {
@@ -133,7 +148,7 @@ function applyTheme(theme: 'light' | 'dark' | 'system') {
 
 export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const { courses, fetchCourses } = useStore();
-  const [activeSection, setActiveSection] = useState<SettingsSection>('canvas');
+  const [activeSection, setActiveSection] = useState<SettingsSection>('general');
 
   // Canvas connection state
   const [canvasUrl, setCanvasUrl] = useState('');
@@ -208,6 +223,18 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
       defaultViewMode: 'month',
     })
   );
+
+  // Landing page setting
+  const [landingPage, setLandingPage] = useState<string>(() => {
+    try {
+      return localStorage.getItem(STORAGE_KEYS.LANDING_PAGE) || '/';
+    } catch {
+      return '/';
+    }
+  });
+
+  // Clear data confirmation dialog
+  const [showClearDataConfirm, setShowClearDataConfirm] = useState(false);
 
   // Apply theme on mount and listen for system preference changes
   useEffect(() => {
@@ -335,6 +362,15 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     console.log('[SettingsModal] Verified calendarSettings in localStorage:', verify);
   };
 
+  const updateLandingPage = (path: string) => {
+    setLandingPage(path);
+    try {
+      localStorage.setItem(STORAGE_KEYS.LANDING_PAGE, path);
+    } catch (e) {
+      console.error('Failed to save landing page:', e);
+    }
+  };
+
   const handleToggleCourseVisibility = async (courseId: number, currentlyHidden: boolean) => {
     await window.api.dispatch('UpdateCoursePreferences', {
       courseId,
@@ -357,13 +393,14 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   if (!isOpen) return null;
 
   const sections = [
+    { id: 'general' as const, label: 'General', icon: Home },
     { id: 'canvas' as const, label: 'Canvas', icon: Link },
     { id: 'sync' as const, label: 'Sync', icon: RefreshCw },
     { id: 'academic' as const, label: 'Academic', icon: GraduationCap },
     { id: 'courses' as const, label: 'Courses', icon: BookOpen },
     { id: 'calendar' as const, label: 'Calendar', icon: Calendar },
     { id: 'files' as const, label: 'Files', icon: FolderOpen },
-    { id: 'appearance' as const, label: 'Appearance', icon: Palette },
+    { id: 'appearance' as const, label: 'Appearance', icon: Paintbrush },
     { id: 'notifications' as const, label: 'Notifications', icon: Bell },
   ];
 
@@ -399,7 +436,9 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                   }}
                   onClick={() => setActiveSection(section.id)}
                 >
-                  <Icon size={18} />
+                  <span style={styles.sidebarIcon}>
+                    <Icon size={18} />
+                  </span>
                   <span>{section.label}</span>
                 </button>
               );
@@ -408,6 +447,103 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
           {/* Main content - fixed height */}
           <div style={styles.main}>
+            {activeSection === 'general' && (
+              <div style={styles.section}>
+                <h3 style={styles.sectionTitle}>General Settings</h3>
+                <p style={styles.sectionDesc}>
+                  Configure general application behavior.
+                </p>
+
+                <div style={styles.field}>
+                  <label style={styles.label}>Landing page</label>
+                  <p style={styles.fieldDesc}>
+                    The page shown when the app launches.
+                  </p>
+                  <div style={styles.landingPageOptions}>
+                    {LANDING_PAGE_OPTIONS.map((option) => {
+                      const Icon = option.icon;
+                      const isActive = landingPage === option.value;
+                      return (
+                        <button
+                          key={option.value}
+                          style={{
+                            ...styles.landingPageOption,
+                            ...(isActive ? styles.landingPageOptionActive : {}),
+                          }}
+                          onClick={() => updateLandingPage(option.value)}
+                        >
+                          <Icon size={18} />
+                          <span>{option.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div style={styles.divider} />
+
+                <div style={styles.field}>
+                  <label style={styles.label}>Sidebar order</label>
+                  <p style={styles.fieldDesc}>
+                    Drag navigation items in the sidebar to reorder them. Your order is saved automatically.
+                  </p>
+                  <button
+                    style={styles.resetButton}
+                    onClick={() => {
+                      localStorage.removeItem('navItemOrder');
+                      // Trigger a reload to apply the change
+                      window.location.reload();
+                    }}
+                  >
+                    Reset to Default Order
+                  </button>
+                </div>
+
+                <div style={styles.divider} />
+
+                <div style={styles.field}>
+                  <label style={styles.label}>Clear app data</label>
+                  <p style={styles.fieldDesc}>
+                    Delete all synced data (courses, tasks, files, announcements) and reset settings.
+                    Your Canvas connection will be preserved.
+                  </p>
+                  <button
+                    style={styles.dangerButton}
+                    onClick={() => setShowClearDataConfirm(true)}
+                  >
+                    Clear All Data
+                  </button>
+                </div>
+
+                <ConfirmDialog
+                  isOpen={showClearDataConfirm}
+                  type="danger"
+                  title="Clear All App Data"
+                  message="This will delete all synced data including courses, tasks, files, and announcements. This action cannot be undone. Your Canvas connection will be preserved."
+                  confirmText="Clear All Data"
+                  cancelText="Cancel"
+                  onCancel={() => setShowClearDataConfirm(false)}
+                  onConfirm={async () => {
+                    setShowClearDataConfirm(false);
+                    try {
+                      // Clear database via IPC
+                      await window.api.clearAllData();
+                      // Clear localStorage (except Canvas URL)
+                      const savedCanvasUrl = localStorage.getItem('canvasUrl');
+                      localStorage.clear();
+                      if (savedCanvasUrl) {
+                        localStorage.setItem('canvasUrl', savedCanvasUrl);
+                      }
+                      // Reload the app
+                      window.location.reload();
+                    } catch (error) {
+                      console.error('Failed to clear data:', error);
+                    }
+                  }}
+                />
+              </div>
+            )}
+
             {activeSection === 'canvas' && (
               <div style={styles.section}>
                 <h3 style={styles.sectionTitle}>Canvas Connection</h3>
@@ -965,10 +1101,8 @@ const styles: Record<string, React.CSSProperties> = {
   modal: {
     backgroundColor: 'var(--bg-card)',
     borderRadius: 'var(--radius-xl)',
-    width: '600px',
-    height: '500px', // Fixed height
-    maxWidth: '90vw',
-    maxHeight: '80vh',
+    width: 'min(700px, 90vw)',
+    height: 'min(600px, 80vh)',
     display: 'flex',
     flexDirection: 'column',
     boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
@@ -1010,7 +1144,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
 
   sidebar: {
-    width: '140px',
+    width: '160px',
     flexShrink: 0,
     borderRight: '1px solid var(--border-default)',
     padding: 'var(--space-3)',
@@ -1024,20 +1158,30 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     gap: 'var(--space-2)',
     padding: 'var(--space-2) var(--space-3)',
-    background: 'transparent',
+    backgroundColor: 'var(--bg-card)',
     border: 'none',
     borderRadius: 'var(--radius-md)',
     cursor: 'pointer',
     color: 'var(--text-secondary)',
     fontSize: 'var(--text-sm)',
-    textAlign: 'left',
+    textAlign: 'left' as const,
     width: '100%',
-    transition: 'all var(--transition-fast)',
+    transition: 'background-color var(--transition-fast), color var(--transition-fast)',
+    outline: 'none',
   },
 
   sidebarItemActive: {
     backgroundColor: 'var(--color-blue)',
     color: 'white',
+  },
+
+  sidebarIcon: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '20px',
+    height: '20px',
+    flexShrink: 0,
   },
 
   main: {
@@ -1413,6 +1557,45 @@ const styles: Record<string, React.CSSProperties> = {
     color: 'var(--text-muted)',
     textAlign: 'center',
     padding: 'var(--space-4)',
+  },
+
+  // Landing page options
+  landingPageOptions: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(2, 1fr)',
+    gap: 'var(--space-2)',
+  },
+
+  landingPageOption: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-2)',
+    padding: 'var(--space-3)',
+    border: '2px solid var(--border-default)',
+    borderRadius: 'var(--radius-md)',
+    backgroundColor: 'transparent',
+    color: 'var(--text-secondary)',
+    fontSize: 'var(--text-sm)',
+    cursor: 'pointer',
+    transition: 'all var(--transition-fast)',
+  },
+
+  landingPageOptionActive: {
+    borderColor: 'var(--color-blue)',
+    backgroundColor: 'rgba(0, 127, 163, 0.1)',
+    color: 'var(--color-blue)',
+  },
+
+  resetButton: {
+    padding: 'var(--space-2) var(--space-3)',
+    backgroundColor: 'transparent',
+    border: '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-md)',
+    fontSize: 'var(--text-sm)',
+    color: 'var(--text-secondary)',
+    cursor: 'pointer',
+    transition: 'all var(--transition-fast)',
+    marginTop: 'var(--space-2)',
   },
 };
 

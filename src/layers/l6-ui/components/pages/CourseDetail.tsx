@@ -32,6 +32,8 @@ import {
   Copy,
   Trash2,
   ChevronDown,
+  Download,
+  FileCode,
 } from 'lucide-react';
 import { Card, PolicyForm, ConfirmDialog } from '../shared';
 import type { PolicyFormData } from '../shared';
@@ -42,6 +44,25 @@ import type { Task, Notification } from '../../../l5-presentation/types';
 const COURSE_COLORS = [
   '#007FA3', '#E53935', '#43A047', '#FB8C00', '#8E24AA',
   '#1E88E5', '#D81B60', '#00ACC1', '#7CB342', '#6D4C41',
+];
+
+// Task types for coursework
+const TASK_TYPES = [
+  { value: 'assignment', label: 'Assignment' },
+  { value: 'problem_set', label: 'Problem Set' },
+  { value: 'quiz', label: 'Quiz' },
+  { value: 'homework', label: 'Homework' },
+  { value: 'lab', label: 'Lab' },
+  { value: 'essay', label: 'Essay' },
+  { value: 'attendance', label: 'Attendance' },
+  { value: 'participation', label: 'Participation' },
+  { value: 'project', label: 'Project' },
+  { value: 'midterm', label: 'Midterm' },
+  { value: 'termtest', label: 'Term Test' },
+  { value: 'final_exam', label: 'Final Exam' },
+  { value: 'tutorial', label: 'Tutorial' },
+  { value: 'lab_report', label: 'Lab Report' },
+  { value: 'reading_response', label: 'Reading Response' },
 ];
 
 function getCourseColor(courseId: number, existingColor: string | null): string {
@@ -68,6 +89,20 @@ interface CourseDetailData {
   nickname: string | null;
   isHidden: boolean;
   syllabusBody: string | null;
+  lastSyncedAt: string | null;
+}
+
+interface CoursePage {
+  id: number;
+  externalId: string | null;
+  courseId: number;
+  pageType: string;
+  title: string;
+  urlSlug: string | null;
+  bodyHtml: string | null;
+  bodyText: string | null;
+  isFrontPage: boolean;
+  published: boolean;
   lastSyncedAt: string | null;
 }
 
@@ -167,7 +202,9 @@ export function CourseDetail() {
   const [policies, setPolicies] = useState<Policy[]>([]);
   const [gradeHistory, setGradeHistory] = useState<GradeHistoryEntry[]>([]);
   const [announcements, setAnnouncements] = useState<Notification[]>([]);
+  const [coursePages, setCoursePages] = useState<CoursePage[]>([]);
   const [loading, setLoading] = useState(true);
+  const [downloadingPageId, setDownloadingPageId] = useState<number | null>(null);
 
   // Editing state
   const [editingTarget, setEditingTarget] = useState(false);
@@ -182,6 +219,7 @@ export function CourseDetail() {
   const [newTaskDescription, setNewTaskDescription] = useState('');
   const [newTaskDueDate, setNewTaskDueDate] = useState('');
   const [newTaskWeight, setNewTaskWeight] = useState('');
+  const [newTaskType, setNewTaskType] = useState('');
 
   // Task detail/edit state
   const [expandedTaskId, setExpandedTaskId] = useState<number | null>(null);
@@ -191,6 +229,7 @@ export function CourseDetail() {
   const [editTaskDueDate, setEditTaskDueDate] = useState('');
   const [editTaskWeight, setEditTaskWeight] = useState('');
   const [editTaskGrade, setEditTaskGrade] = useState('');
+  const [editTaskType, setEditTaskType] = useState('');
 
   // Policy management state
   const [showAddPolicy, setShowAddPolicy] = useState(false);
@@ -210,6 +249,20 @@ export function CourseDetail() {
     type: 'warning',
     onConfirm: () => {},
   });
+
+  // Task list modal state
+  const [taskListModal, setTaskListModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    tasks: Task[];
+  }>({
+    isOpen: false,
+    title: '',
+    tasks: [],
+  });
+
+  // Maximum items to show in each list before "View all"
+  const MAX_VISIBLE_ITEMS = 5;
 
   const courseId = Number(id);
 
@@ -293,12 +346,14 @@ export function CourseDetail() {
         description: newTaskDescription.trim() || undefined,
         dueAt: newTaskDueDate || undefined,
         weight: newTaskWeight ? parseFloat(newTaskWeight) : undefined,
+        taskType: newTaskType || undefined,
       });
       // Reset form
       setNewTaskTitle('');
       setNewTaskDescription('');
       setNewTaskDueDate('');
       setNewTaskWeight('');
+      setNewTaskType('');
       setShowAddTask(false);
     } catch (error) {
       console.error('Failed to create task:', error);
@@ -340,6 +395,7 @@ export function CourseDetail() {
     setEditTaskDueDate(task.dueAt ? task.dueAt.slice(0, 16) : '');
     setEditTaskWeight(task.weight?.toString() || '');
     setEditTaskGrade(task.grade?.toString() || '');
+    setEditTaskType(task.taskType || '');
   };
 
   // Save task edits
@@ -355,6 +411,7 @@ export function CourseDetail() {
         dueAt: editTaskDueDate || null,
         weight: editTaskWeight ? parseFloat(editTaskWeight) : undefined,
         grade: editTaskGrade ? parseFloat(editTaskGrade) : null,
+        taskType: editTaskType || null,
       });
       setEditingTaskId(null);
     } catch (error) {
@@ -478,6 +535,28 @@ export function CourseDetail() {
     setEditingPolicyId(policy.id);
   };
 
+  // Handle page HTML download
+  const handleDownloadPage = async (page: CoursePage) => {
+    if (!page.bodyHtml || !course) return;
+
+    setDownloadingPageId(page.id);
+    try {
+      const api = window.api;
+      if (api?.exportPageHtml) {
+        await api.exportPageHtml({
+          courseId: course.id,
+          pageId: page.id,
+          title: page.title,
+          bodyHtml: page.bodyHtml,
+        });
+      }
+    } catch (error) {
+      console.error('Failed to download page:', error);
+    } finally {
+      setDownloadingPageId(null);
+    }
+  };
+
   // Fetch course data
   useEffect(() => {
     const fetchData = async () => {
@@ -492,17 +571,19 @@ export function CourseDetail() {
 
       try {
         // Fetch all data in parallel
-        const [courseData, policiesData, historyData, announcementsData] = await Promise.all([
+        const [courseData, policiesData, historyData, announcementsData, pagesData] = await Promise.all([
           api.getCourse(courseId),
           api.getPolicies(courseId),
           api.getGradeHistory(courseId),
           api.getCourseNotifications(courseId),
+          api.getPagesByCourse(courseId),
         ]);
 
         setCourse(courseData);
         setPolicies(policiesData || []);
         setGradeHistory(historyData || []);
         setAnnouncements(announcementsData || []);
+        setCoursePages(pagesData || []);
       } catch (error) {
         console.error('Failed to fetch course data:', error);
       } finally {
@@ -549,38 +630,70 @@ export function CourseDetail() {
     return tasks.filter((t) => t.courseId === courseId);
   }, [tasks, courseId]);
 
-  // Separate tasks by status
-  const { upcomingTasks, completedTasks, overdueTasks } = useMemo(() => {
-    const now = new Date();
-    const upcoming: Task[] = [];
-    const completed: Task[] = [];
-    const overdue: Task[] = [];
+  // Separate tasks by status: pending, submitted, graded
+  const { pendingTasks, submittedTasks, gradedTasks } = useMemo(() => {
+    const pending: Task[] = [];
+    const submitted: Task[] = [];
+    const graded: Task[] = [];
 
     for (const task of courseTasks) {
-      if (task.isCompleted) {
-        completed.push(task);
-      } else if (task.dueAt && new Date(task.dueAt) < now) {
-        overdue.push(task);
+      if (task.grade !== null) {
+        // Has a grade - graded
+        graded.push(task);
+      } else if (task.isCompleted || task.submissionStatus === 'submitted') {
+        // Submitted but not yet graded
+        submitted.push(task);
       } else {
-        upcoming.push(task);
+        // Not submitted yet - pending
+        pending.push(task);
       }
     }
 
-    // Sort upcoming by due date
-    upcoming.sort((a, b) => {
+    // Sort pending by due date (earliest first)
+    pending.sort((a, b) => {
       if (!a.dueAt) return 1;
       if (!b.dueAt) return -1;
       return new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime();
     });
 
-    // Sort completed by completion date (most recent first)
-    completed.sort((a, b) => {
-      if (!a.completedAt) return 1;
-      if (!b.completedAt) return -1;
-      return new Date(b.completedAt).getTime() - new Date(a.completedAt).getTime();
+    // Sort submitted by due date (earliest first)
+    submitted.sort((a, b) => {
+      if (!a.dueAt) return 1;
+      if (!b.dueAt) return -1;
+      return new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime();
     });
 
-    return { upcomingTasks: upcoming, completedTasks: completed, overdueTasks: overdue };
+    // Sort graded by due date (most recent first)
+    graded.sort((a, b) => {
+      if (!a.dueAt) return 1;
+      if (!b.dueAt) return -1;
+      return new Date(b.dueAt).getTime() - new Date(a.dueAt).getTime();
+    });
+
+    return { pendingTasks: pending, submittedTasks: submitted, gradedTasks: graded };
+  }, [courseTasks]);
+
+  // Calculate progress from tasks that have BOTH weight AND grade
+  // Must be before early returns to follow React hooks rules
+  const { completedWeight, earnedContribution } = useMemo(() => {
+    let totalWeight = 0;
+    let totalContribution = 0;
+
+    for (const task of courseTasks) {
+      // Only count tasks that have both weight > 0 AND grade is not null
+      if (task.weight > 0 && task.grade !== null) {
+        totalWeight += task.weight;
+        // Contribution = (score/100) * weight
+        // e.g., 100% score on 5% weight = 5% contribution
+        // e.g., 50% score on 10% weight = 5% contribution
+        totalContribution += (task.grade / 100) * task.weight;
+      }
+    }
+
+    return {
+      completedWeight: totalWeight,
+      earnedContribution: totalContribution,
+    };
   }, [courseTasks]);
 
   if (loading) {
@@ -616,14 +729,34 @@ export function CourseDetail() {
   }
 
   const courseColor = getCourseColor(course.id, course.color);
-  const gradePercent = course.currentGrade ?? 0;
   const targetPercent = course.targetGrade;
+
+  // Determine grade status based on how well earned contribution compares to target
+  // Compare (earnedContribution / completedWeight) to target
+  const effectiveGrade = completedWeight > 0 ? (earnedContribution / completedWeight) * 100 : 0;
   const gradeStatus =
-    gradePercent >= targetPercent
+    effectiveGrade >= targetPercent
       ? 'on-track'
-      : gradePercent >= targetPercent - 10
+      : effectiveGrade >= targetPercent - 10
       ? 'warning'
       : 'behind';
+
+  // Debug: Log progress bar values
+  console.log('[CourseDetail] Progress bar debug:', {
+    courseId: course.id,
+    courseName: course.name,
+    tasksWithBothWeightAndGrade: courseTasks.filter(t => t.weight > 0 && t.grade !== null).map(t => ({
+      title: t.title,
+      weight: t.weight,
+      grade: t.grade,
+      contribution: (t.grade! / 100) * t.weight,
+    })),
+    completedWeight,
+    earnedContribution,
+    effectiveGrade,
+    targetPercent,
+    gradeStatus,
+  });
 
   return (
     <div style={styles.pageWrapper}>
@@ -689,26 +822,63 @@ export function CourseDetail() {
                       <Edit3 size={12} color="var(--text-muted)" style={{ marginLeft: '4px' }} />
                     </div>
                   )}
+                  <div style={styles.gradeSubtext}>
+                    final goal
+                  </div>
                 </div>
                 <div style={styles.gradeDivider} />
                 <div style={styles.gradeItem}>
                   <div style={styles.gradeLabel}>
                     <TrendingUp size={14} />
-                    Current
+                    Earned
                   </div>
                   <div
                     style={{
                       ...styles.gradeValue,
                       color:
-                        gradeStatus === 'on-track'
-                          ? 'var(--color-success)'
-                          : gradeStatus === 'warning'
-                          ? 'var(--color-medium)'
-                          : 'var(--color-high)',
+                        completedWeight > 0
+                          ? gradeStatus === 'on-track'
+                            ? 'var(--color-success)'
+                            : gradeStatus === 'warning'
+                            ? 'var(--color-medium)'
+                            : 'var(--color-high)'
+                          : 'var(--text-muted)',
                     }}
                   >
-                    {course.currentGrade !== null ? `${course.currentGrade.toFixed(1)}%` : '—'}
+                    {completedWeight > 0 ? `${earnedContribution.toFixed(2)}%` : '—'}
                   </div>
+                  {completedWeight > 0 && (
+                    <div style={styles.gradeSubtext}>
+                      of {completedWeight.toFixed(0)}% assessed
+                    </div>
+                  )}
+                </div>
+                <div style={styles.gradeDivider} />
+                <div style={styles.gradeItem}>
+                  <div style={styles.gradeLabel}>
+                    <TrendingUp size={14} />
+                    Trend
+                  </div>
+                  <div
+                    style={{
+                      ...styles.gradeValue,
+                      color:
+                        completedWeight > 0
+                          ? gradeStatus === 'on-track'
+                            ? 'var(--color-success)'
+                            : gradeStatus === 'warning'
+                            ? 'var(--color-medium)'
+                            : 'var(--color-high)'
+                          : 'var(--text-muted)',
+                    }}
+                  >
+                    {completedWeight > 0 ? `${effectiveGrade.toFixed(1)}%` : '—'}
+                  </div>
+                  {completedWeight > 0 && (
+                    <div style={styles.gradeSubtext}>
+                      avg on graded work
+                    </div>
+                  )}
                 </div>
                 {/* Settings Button */}
                 <div style={styles.gradeDivider} />
@@ -798,34 +968,64 @@ export function CourseDetail() {
               </div>
             )}
 
-            {/* Grade Progress Bar */}
-            <div style={styles.progressSection}>
-              <div style={styles.progressBar}>
-                <div
-                  style={{
-                    ...styles.progressFill,
-                    width: `${Math.min(gradePercent, 100)}%`,
-                    backgroundColor:
-                      gradeStatus === 'on-track'
-                        ? 'var(--color-success)'
-                        : gradeStatus === 'warning'
-                        ? 'var(--color-medium)'
-                        : 'var(--color-high)',
-                  }}
-                />
-                <div
-                  style={{
-                    ...styles.targetMarker,
-                    left: `${targetPercent}%`,
-                  }}
-                />
+            {/* Grade Progress Bar - Two layers: assessed weight (background) and earned contribution (foreground) */}
+            {completedWeight > 0 ? (
+              <div style={styles.progressSection}>
+                <div style={styles.progressBar}>
+                  {/* Background layer: total assessed weight */}
+                  <div
+                    style={{
+                      ...styles.progressFillBackground,
+                      width: `${Math.min(completedWeight, 100)}%`,
+                    }}
+                  />
+                  {/* Foreground layer: earned contribution */}
+                  <div
+                    style={{
+                      ...styles.progressFill,
+                      width: `${Math.min(earnedContribution, 100)}%`,
+                      backgroundColor:
+                        gradeStatus === 'on-track'
+                          ? 'var(--color-success)'
+                          : gradeStatus === 'warning'
+                          ? 'var(--color-medium)'
+                          : 'var(--color-high)',
+                    }}
+                  />
+                  {/* Target marker: where you need to be */}
+                  <div
+                    style={{
+                      ...styles.targetMarker,
+                      left: `${targetPercent}%`,
+                    }}
+                  />
+                </div>
+                <div style={styles.progressLabels}>
+                  <span>0%</span>
+                  <span style={styles.progressLegend}>
+                    <span style={styles.legendItem}>
+                      <span style={{ ...styles.legendDot, backgroundColor: 'var(--color-gray-300)' }} />
+                      Assessed: {completedWeight.toFixed(0)}%
+                    </span>
+                    <span style={styles.legendItem}>
+                      <span style={{ ...styles.legendDot, backgroundColor: gradeStatus === 'on-track' ? 'var(--color-success)' : gradeStatus === 'warning' ? 'var(--color-medium)' : 'var(--color-high)' }} />
+                      Earned: {earnedContribution.toFixed(2)}%
+                    </span>
+                    <span style={styles.legendItem}>
+                      <span style={{ ...styles.legendDot, backgroundColor: 'var(--color-navy)' }} />
+                      Target: {targetPercent.toFixed(2)}%
+                    </span>
+                  </span>
+                  <span>100%</span>
+                </div>
               </div>
-              <div style={styles.progressLabels}>
-                <span>0%</span>
-                <span style={styles.targetLabel}>Target: {targetPercent}%</span>
-                <span>100%</span>
+            ) : (
+              <div style={styles.noProgressSection}>
+                <span style={styles.noProgressText}>
+                  No graded coursework with weight yet
+                </span>
               </div>
-            </div>
+            )}
 
             {/* Last Synced */}
             {course.lastSyncedAt && (
@@ -840,46 +1040,10 @@ export function CourseDetail() {
         <div style={styles.twoColumn}>
           {/* Left Column - Assignments */}
           <div style={styles.mainColumn}>
-            {/* Overdue Tasks */}
-            {overdueTasks.length > 0 && (
-              <Card title={`Overdue (${overdueTasks.length})`} padding="none">
-                <div style={styles.taskList}>
-                  {overdueTasks.map((task, index) => (
-                    <TaskItem
-                      key={task.id}
-                      task={task}
-                      isFirst={index === 0}
-                      isExpanded={expandedTaskId === task.id}
-                      isEditing={editingTaskId === task.id}
-                      isHighlighted={highlightedTaskId === task.id}
-                      editTitle={editTaskTitle}
-                      editDescription={editTaskDescription}
-                      editDueDate={editTaskDueDate}
-                      editWeight={editTaskWeight}
-                      editGrade={editTaskGrade}
-                      onToggleExpand={() => setExpandedTaskId(expandedTaskId === task.id ? null : task.id)}
-                      onToggleComplete={() => handleToggleComplete(task)}
-                      onDuplicate={() => handleDuplicateTask(task.id)}
-                      onStartEdit={() => startEditingTask(task)}
-                      onCancelEdit={() => setEditingTaskId(null)}
-                      onSaveEdit={handleSaveTask}
-                      onDelete={() => handleDeleteTask(task.id, task.title)}
-                      onEditTitleChange={setEditTaskTitle}
-                      onEditDescriptionChange={setEditTaskDescription}
-                      onEditDueDateChange={setEditTaskDueDate}
-                      onEditWeightChange={setEditTaskWeight}
-                      onEditGradeChange={setEditTaskGrade}
-                      taskRef={(el) => { if (el) taskRefs.current.set(task.id, el); }}
-                    />
-                  ))}
-                </div>
-              </Card>
-            )}
-
-            {/* Upcoming Tasks */}
+            {/* Pending Tasks */}
             <Card padding="none">
               <div style={styles.cardHeader}>
-                <h3 style={styles.cardTitle}>Upcoming Assignments ({upcomingTasks.length})</h3>
+                <h3 style={styles.cardTitle}>Pending ({pendingTasks.length})</h3>
                 <button
                   style={styles.addTaskButton}
                   onClick={() => setShowAddTask(!showAddTask)}
@@ -908,6 +1072,18 @@ export function CourseDetail() {
                     rows={2}
                   />
                   <div style={styles.addTaskRow}>
+                    <select
+                      value={newTaskType}
+                      onChange={(e) => setNewTaskType(e.target.value)}
+                      style={styles.addTaskSelect}
+                    >
+                      <option value="">Select type...</option>
+                      {TASK_TYPES.map((type) => (
+                        <option key={type.value} value={type.value}>
+                          {type.label}
+                        </option>
+                      ))}
+                    </select>
                     <input
                       type="datetime-local"
                       value={newTaskDueDate}
@@ -940,18 +1116,19 @@ export function CourseDetail() {
                 </div>
               )}
 
-              {upcomingTasks.length === 0 && !showAddTask ? (
+              {pendingTasks.length === 0 && !showAddTask ? (
                 <div style={styles.emptySection}>
                   <CheckCircle size={24} color="var(--color-success)" />
-                  <span>No upcoming assignments</span>
+                  <span>No pending coursework</span>
                 </div>
               ) : (
                 <div style={styles.taskList}>
-                  {upcomingTasks.map((task, index) => (
+                  {pendingTasks.map((task, index) => (
                     <TaskItem
                       key={task.id}
                       task={task}
                       isFirst={index === 0 && !showAddTask}
+                      isCompleted={task.isCompleted}
                       isExpanded={expandedTaskId === task.id}
                       isEditing={editingTaskId === task.id}
                       isHighlighted={highlightedTaskId === task.id}
@@ -972,6 +1149,8 @@ export function CourseDetail() {
                       onEditDueDateChange={setEditTaskDueDate}
                       onEditWeightChange={setEditTaskWeight}
                       onEditGradeChange={setEditTaskGrade}
+                      editTaskType={editTaskType}
+                      onEditTaskTypeChange={setEditTaskType}
                       taskRef={(el) => { if (el) taskRefs.current.set(task.id, el); }}
                     />
                   ))}
@@ -979,16 +1158,38 @@ export function CourseDetail() {
               )}
             </Card>
 
-            {/* Completed Tasks */}
-            {completedTasks.length > 0 && (
-              <Card title={`Completed (${completedTasks.length})`} padding="none">
+            {/* Submitted Tasks */}
+            <Card padding="none">
+              <div style={styles.cardHeader}>
+                <h3 style={styles.cardTitle}>Submitted ({submittedTasks.length})</h3>
+                {submittedTasks.length > MAX_VISIBLE_ITEMS && (
+                  <button
+                    style={styles.viewAllButton}
+                    onClick={() => setTaskListModal({
+                      isOpen: true,
+                      title: 'All Submitted Tasks',
+                      tasks: submittedTasks,
+                    })}
+                  >
+                    View all {submittedTasks.length}
+                    <ChevronRight size={14} />
+                  </button>
+                )}
+              </div>
+
+              {submittedTasks.length === 0 ? (
+                <div style={styles.emptySection}>
+                  <Clock size={24} color="var(--text-muted)" />
+                  <span>No submitted coursework awaiting grades</span>
+                </div>
+              ) : (
                 <div style={styles.taskList}>
-                  {completedTasks.slice(0, 5).map((task, index) => (
+                  {submittedTasks.slice(0, MAX_VISIBLE_ITEMS).map((task, index) => (
                     <TaskItem
                       key={task.id}
                       task={task}
                       isFirst={index === 0}
-                      isCompleted
+                      isCompleted={task.isCompleted}
                       isExpanded={expandedTaskId === task.id}
                       isEditing={editingTaskId === task.id}
                       isHighlighted={highlightedTaskId === task.id}
@@ -1009,17 +1210,75 @@ export function CourseDetail() {
                       onEditDueDateChange={setEditTaskDueDate}
                       onEditWeightChange={setEditTaskWeight}
                       onEditGradeChange={setEditTaskGrade}
+                      editTaskType={editTaskType}
+                      onEditTaskTypeChange={setEditTaskType}
                       taskRef={(el) => { if (el) taskRefs.current.set(task.id, el); }}
                     />
                   ))}
-                  {completedTasks.length > 5 && (
-                    <div style={styles.showMore}>
-                      +{completedTasks.length - 5} more completed
-                    </div>
-                  )}
                 </div>
-              </Card>
-            )}
+              )}
+            </Card>
+
+            {/* Graded Tasks */}
+            <Card padding="none">
+              <div style={styles.cardHeader}>
+                <h3 style={styles.cardTitle}>Graded ({gradedTasks.length})</h3>
+                {gradedTasks.length > MAX_VISIBLE_ITEMS && (
+                  <button
+                    style={styles.viewAllButton}
+                    onClick={() => setTaskListModal({
+                      isOpen: true,
+                      title: 'All Graded Tasks',
+                      tasks: gradedTasks,
+                    })}
+                  >
+                    View all {gradedTasks.length}
+                    <ChevronRight size={14} />
+                  </button>
+                )}
+              </div>
+
+              {gradedTasks.length === 0 ? (
+                <div style={styles.emptySection}>
+                  <CheckCircle size={24} color="var(--text-muted)" />
+                  <span>No graded coursework yet</span>
+                </div>
+              ) : (
+                <div style={styles.taskList}>
+                  {gradedTasks.slice(0, MAX_VISIBLE_ITEMS).map((task, index) => (
+                    <TaskItem
+                      key={task.id}
+                      task={task}
+                      isFirst={index === 0}
+                      isCompleted={task.isCompleted || task.grade !== null}
+                      isExpanded={expandedTaskId === task.id}
+                      isEditing={editingTaskId === task.id}
+                      isHighlighted={highlightedTaskId === task.id}
+                      editTitle={editTaskTitle}
+                      editDescription={editTaskDescription}
+                      editDueDate={editTaskDueDate}
+                      editWeight={editTaskWeight}
+                      editGrade={editTaskGrade}
+                      onToggleExpand={() => setExpandedTaskId(expandedTaskId === task.id ? null : task.id)}
+                      onToggleComplete={() => handleToggleComplete(task)}
+                      onDuplicate={() => handleDuplicateTask(task.id)}
+                      onStartEdit={() => startEditingTask(task)}
+                      onCancelEdit={() => setEditingTaskId(null)}
+                      onSaveEdit={handleSaveTask}
+                      onDelete={() => handleDeleteTask(task.id, task.title)}
+                      onEditTitleChange={setEditTaskTitle}
+                      onEditDescriptionChange={setEditTaskDescription}
+                      onEditDueDateChange={setEditTaskDueDate}
+                      onEditWeightChange={setEditTaskWeight}
+                      onEditGradeChange={setEditTaskGrade}
+                      editTaskType={editTaskType}
+                      onEditTaskTypeChange={setEditTaskType}
+                      taskRef={(el) => { if (el) taskRefs.current.set(task.id, el); }}
+                    />
+                  ))}
+                </div>
+              )}
+            </Card>
           </div>
 
           {/* Right Column - Sidebar */}
@@ -1112,7 +1371,10 @@ export function CourseDetail() {
             </Card>
 
             {/* Recent Announcements */}
-            <Card title="Recent Announcements" padding="md">
+            <Card padding="none">
+              <div style={styles.cardHeader}>
+                <h3 style={styles.cardTitle}>Recent Announcements</h3>
+              </div>
               {announcements.length === 0 ? (
                 <div style={styles.emptySideSection}>
                   <Megaphone size={20} color="var(--text-muted)" />
@@ -1145,9 +1407,51 @@ export function CourseDetail() {
               )}
             </Card>
 
+            {/* Course Pages (Syllabus & Wiki) */}
+            {coursePages.length > 0 && (
+              <Card padding="none">
+                <div style={styles.cardHeader}>
+                  <h3 style={styles.cardTitle}>Course Pages</h3>
+                </div>
+                <div style={styles.pagesList}>
+                  {coursePages.map((page) => (
+                    <div key={page.id} style={styles.pageItem}>
+                      <div style={styles.pageInfo}>
+                        <FileCode size={16} color="var(--text-muted)" />
+                        <div style={styles.pageDetails}>
+                          <div style={styles.pageTitle}>{page.title}</div>
+                          <div style={styles.pageType}>
+                            {page.pageType === 'syllabus' ? 'Syllabus' :
+                             page.isFrontPage ? 'Front Page' : 'Wiki Page'}
+                          </div>
+                        </div>
+                      </div>
+                      {page.bodyHtml && (
+                        <button
+                          style={styles.downloadButton}
+                          onClick={() => handleDownloadPage(page)}
+                          disabled={downloadingPageId === page.id}
+                          title="Download as HTML"
+                        >
+                          {downloadingPageId === page.id ? (
+                            <Clock size={14} />
+                          ) : (
+                            <Download size={14} />
+                          )}
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            )}
+
             {/* Grade History */}
             {gradeHistory.length > 0 && (
-              <Card title="Grade History" padding="md">
+              <Card padding="none">
+                <div style={styles.cardHeader}>
+                  <h3 style={styles.cardTitle}>Grade History</h3>
+                </div>
                 <div style={styles.historyList}>
                   {gradeHistory.slice(0, 10).map((entry) => (
                     <div key={entry.id} style={styles.historyItem}>
@@ -1175,6 +1479,38 @@ export function CourseDetail() {
         onConfirm={confirmDialog.onConfirm}
         onCancel={() => setConfirmDialog(prev => ({ ...prev, isOpen: false }))}
       />
+
+      {/* Task List Modal */}
+      {taskListModal.isOpen && (
+        <TaskListModal
+          isOpen={taskListModal.isOpen}
+          title={taskListModal.title}
+          tasks={taskListModal.tasks}
+          onClose={() => setTaskListModal(prev => ({ ...prev, isOpen: false }))}
+          expandedTaskId={expandedTaskId}
+          editingTaskId={editingTaskId}
+          highlightedTaskId={highlightedTaskId}
+          editTitle={editTaskTitle}
+          editDescription={editTaskDescription}
+          editDueDate={editTaskDueDate}
+          editWeight={editTaskWeight}
+          editGrade={editTaskGrade}
+          editTaskType={editTaskType}
+          onToggleExpand={(taskId) => setExpandedTaskId(expandedTaskId === taskId ? null : taskId)}
+          onToggleComplete={handleToggleComplete}
+          onDuplicate={handleDuplicateTask}
+          onStartEdit={startEditingTask}
+          onCancelEdit={() => setEditingTaskId(null)}
+          onSaveEdit={handleSaveTask}
+          onDelete={(taskId, taskTitle) => handleDeleteTask(taskId, taskTitle)}
+          onEditTitleChange={setEditTaskTitle}
+          onEditDescriptionChange={setEditTaskDescription}
+          onEditDueDateChange={setEditTaskDueDate}
+          onEditWeightChange={setEditTaskWeight}
+          onEditGradeChange={setEditTaskGrade}
+          onEditTaskTypeChange={setEditTaskType}
+        />
+      )}
     </div>
   );
 }
@@ -1192,6 +1528,7 @@ interface TaskItemProps {
   editDueDate: string;
   editWeight: string;
   editGrade: string;
+  editTaskType: string;
   onToggleExpand: () => void;
   onToggleComplete: () => void;
   onDuplicate: () => void;
@@ -1204,6 +1541,7 @@ interface TaskItemProps {
   onEditDueDateChange: (value: string) => void;
   onEditWeightChange: (value: string) => void;
   onEditGradeChange: (value: string) => void;
+  onEditTaskTypeChange: (value: string) => void;
   taskRef?: (el: HTMLDivElement | null) => void;
 }
 
@@ -1219,6 +1557,7 @@ function TaskItem({
   editDueDate,
   editWeight,
   editGrade,
+  editTaskType,
   onToggleExpand,
   onToggleComplete,
   onDuplicate,
@@ -1231,8 +1570,15 @@ function TaskItem({
   onEditDueDateChange,
   onEditWeightChange,
   onEditGradeChange,
+  onEditTaskTypeChange,
   taskRef,
 }: TaskItemProps) {
+  // Get display label for task type
+  const getTaskTypeLabel = (typeValue: string | null): string => {
+    if (!typeValue) return '';
+    const found = TASK_TYPES.find((t) => t.value === typeValue);
+    return found ? found.label : typeValue;
+  };
   return (
     <div
       ref={taskRef}
@@ -1253,7 +1599,7 @@ function TaskItem({
         }}
       >
         <button
-          style={styles.taskCheckbox}
+          className="task-checkbox"
           onClick={(e) => {
             e.stopPropagation();
             onToggleComplete();
@@ -1261,9 +1607,9 @@ function TaskItem({
           title={isCompleted ? 'Mark incomplete' : 'Mark complete'}
         >
           {isCompleted ? (
-            <CheckCircle size={20} color="var(--color-success)" />
+            <CheckCircle size={20} color="var(--color-success)" style={{ transition: 'transform 0.2s ease' }} />
           ) : (
-            <Circle size={20} color="var(--text-muted)" />
+            <Circle size={20} color="var(--text-muted)" style={{ transition: 'transform 0.2s ease' }} />
           )}
         </button>
         <div style={styles.taskInfo} onClick={onToggleExpand}>
@@ -1283,13 +1629,13 @@ function TaskItem({
               </span>
             )}
             {task.weight > 0 && (
-              <span style={styles.taskWeight}>
-                {task.weight}%
+              <span style={styles.taskWeight} title="Weight towards final grade">
+                Weight: {task.weight}%
               </span>
             )}
             {task.grade !== null && (
-              <span style={styles.taskGrade}>
-                {task.grade.toFixed(1)}%
+              <span style={styles.taskScore} title="Score on this coursework">
+                Score: {task.grade.toFixed(1)}%
               </span>
             )}
           </div>
@@ -1342,6 +1688,21 @@ function TaskItem({
                   rows={2}
                 />
               </div>
+              <div style={styles.taskEditRow}>
+                <label style={styles.taskEditLabel}>Type</label>
+                <select
+                  value={editTaskType}
+                  onChange={(e) => onEditTaskTypeChange(e.target.value)}
+                  style={styles.taskEditSelect}
+                >
+                  <option value="">Select type...</option>
+                  {TASK_TYPES.map((type) => (
+                    <option key={type.value} value={type.value}>
+                      {type.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
               <div style={styles.taskEditRowGroup}>
                 <div style={styles.taskEditRowHalf}>
                   <label style={styles.taskEditLabel}>Due Date</label>
@@ -1353,7 +1714,9 @@ function TaskItem({
                   />
                 </div>
                 <div style={styles.taskEditRowHalf}>
-                  <label style={styles.taskEditLabel}>Weight (%)</label>
+                  <label style={styles.taskEditLabel} title="How much this counts towards your final grade">
+                    Weight (%)
+                  </label>
                   <input
                     type="number"
                     value={editWeight}
@@ -1361,10 +1724,13 @@ function TaskItem({
                     style={styles.taskEditInput}
                     min="0"
                     max="100"
+                    placeholder="e.g. 10"
                   />
                 </div>
                 <div style={styles.taskEditRowHalf}>
-                  <label style={styles.taskEditLabel}>Grade (%)</label>
+                  <label style={styles.taskEditLabel} title="Your score on this coursework (0-100%)">
+                    Score (%)
+                  </label>
                   <input
                     type="number"
                     value={editGrade}
@@ -1372,6 +1738,7 @@ function TaskItem({
                     style={styles.taskEditInput}
                     min="0"
                     max="100"
+                    placeholder="e.g. 85"
                   />
                 </div>
               </div>
@@ -1394,27 +1761,6 @@ function TaskItem({
           ) : (
             /* View Mode */
             <div style={styles.taskDetailView}>
-              {task.description && (
-                <div style={styles.taskDescription}>{stripHtml(task.description)}</div>
-              )}
-              <div style={styles.taskDetailMeta}>
-                <div style={styles.taskDetailItem}>
-                  <span style={styles.taskDetailLabel}>Status:</span>
-                  <span style={styles.taskDetailValue}>
-                    {task.isCompleted ? 'Completed' : task.submissionStatus || 'Pending'}
-                  </span>
-                </div>
-                {task.pointsPossible !== null && (
-                  <div style={styles.taskDetailItem}>
-                    <span style={styles.taskDetailLabel}>Points:</span>
-                    <span style={styles.taskDetailValue}>{task.pointsPossible}</span>
-                  </div>
-                )}
-                <div style={styles.taskDetailItem}>
-                  <span style={styles.taskDetailLabel}>Priority:</span>
-                  <span style={styles.taskDetailValue}>{task.priorityScore}</span>
-                </div>
-              </div>
               <div style={styles.taskDetailActions}>
                 <button style={styles.editButton} onClick={onStartEdit}>
                   <Edit3 size={14} />
@@ -1432,12 +1778,182 @@ function TaskItem({
   );
 }
 
+// Task List Modal Component
+interface TaskListModalProps {
+  isOpen: boolean;
+  title: string;
+  tasks: Task[];
+  onClose: () => void;
+  expandedTaskId: number | null;
+  editingTaskId: number | null;
+  highlightedTaskId: number | null;
+  editTitle: string;
+  editDescription: string;
+  editDueDate: string;
+  editWeight: string;
+  editGrade: string;
+  editTaskType: string;
+  onToggleExpand: (taskId: number) => void;
+  onToggleComplete: (task: Task) => void;
+  onDuplicate: (taskId: number) => void;
+  onStartEdit: (task: Task) => void;
+  onCancelEdit: () => void;
+  onSaveEdit: () => void;
+  onDelete: (taskId: number, taskTitle: string) => void;
+  onEditTitleChange: (value: string) => void;
+  onEditDescriptionChange: (value: string) => void;
+  onEditDueDateChange: (value: string) => void;
+  onEditWeightChange: (value: string) => void;
+  onEditGradeChange: (value: string) => void;
+  onEditTaskTypeChange: (value: string) => void;
+}
+
+function TaskListModal({
+  isOpen,
+  title,
+  tasks,
+  onClose,
+  expandedTaskId,
+  editingTaskId,
+  highlightedTaskId,
+  editTitle,
+  editDescription,
+  editDueDate,
+  editWeight,
+  editGrade,
+  editTaskType,
+  onToggleExpand,
+  onToggleComplete,
+  onDuplicate,
+  onStartEdit,
+  onCancelEdit,
+  onSaveEdit,
+  onDelete,
+  onEditTitleChange,
+  onEditDescriptionChange,
+  onEditDueDateChange,
+  onEditWeightChange,
+  onEditGradeChange,
+  onEditTaskTypeChange,
+}: TaskListModalProps) {
+  if (!isOpen) return null;
+
+  return (
+    <div style={modalStyles.overlay} onClick={onClose}>
+      <div style={modalStyles.modal} onClick={(e) => e.stopPropagation()}>
+        <div style={modalStyles.header}>
+          <h2 style={modalStyles.title}>{title}</h2>
+          <button style={modalStyles.closeButton} onClick={onClose}>
+            <X size={20} />
+          </button>
+        </div>
+        <div style={modalStyles.content}>
+          {tasks.length === 0 ? (
+            <div style={styles.emptySection}>
+              <span>No tasks</span>
+            </div>
+          ) : (
+            <div style={styles.taskList}>
+              {tasks.map((task, index) => (
+                <TaskItem
+                  key={task.id}
+                  task={task}
+                  isFirst={index === 0}
+                  isCompleted={task.isCompleted || task.grade !== null}
+                  isExpanded={expandedTaskId === task.id}
+                  isEditing={editingTaskId === task.id}
+                  isHighlighted={highlightedTaskId === task.id}
+                  editTitle={editTitle}
+                  editDescription={editDescription}
+                  editDueDate={editDueDate}
+                  editWeight={editWeight}
+                  editGrade={editGrade}
+                  onToggleExpand={() => onToggleExpand(task.id)}
+                  onToggleComplete={() => onToggleComplete(task)}
+                  onDuplicate={() => onDuplicate(task.id)}
+                  onStartEdit={() => onStartEdit(task)}
+                  onCancelEdit={onCancelEdit}
+                  onSaveEdit={onSaveEdit}
+                  onDelete={() => onDelete(task.id, task.title)}
+                  onEditTitleChange={onEditTitleChange}
+                  onEditDescriptionChange={onEditDescriptionChange}
+                  onEditDueDateChange={onEditDueDateChange}
+                  onEditWeightChange={onEditWeightChange}
+                  onEditGradeChange={onEditGradeChange}
+                  editTaskType={editTaskType}
+                  onEditTaskTypeChange={onEditTaskTypeChange}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const modalStyles: Record<string, React.CSSProperties> = {
+  overlay: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1000,
+  },
+  modal: {
+    backgroundColor: 'var(--bg-card)',
+    borderRadius: 'var(--radius-lg)',
+    boxShadow: 'var(--shadow-lg)',
+    width: '90%',
+    maxWidth: '700px',
+    maxHeight: '80vh',
+    display: 'flex',
+    flexDirection: 'column',
+    overflow: 'hidden',
+  },
+  header: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 'var(--space-4) var(--space-5)',
+    borderBottom: '1px solid var(--border-light)',
+  },
+  title: {
+    fontSize: 'var(--text-lg)',
+    fontWeight: 'var(--font-semibold)',
+    color: 'var(--text-primary)',
+    margin: 0,
+  },
+  closeButton: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '32px',
+    height: '32px',
+    padding: 0,
+    background: 'none',
+    border: 'none',
+    cursor: 'pointer',
+    color: 'var(--text-muted)',
+    borderRadius: 'var(--radius-md)',
+  },
+  content: {
+    flex: 1,
+    overflowY: 'auto',
+  },
+};
+
 const styles: Record<string, React.CSSProperties> = {
   pageWrapper: {
     display: 'flex',
     justifyContent: 'center',
     width: '100%',
-    minHeight: '100%',
+    flex: 1,
   },
 
   page: {
@@ -1447,6 +1963,7 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: 'column',
     gap: 'var(--space-4)',
     paddingBottom: 'var(--space-8)',
+    flex: 1,
   },
 
   backButton: {
@@ -1548,6 +2065,12 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 'var(--text-xl)',
     fontWeight: 'var(--font-bold)',
     color: 'var(--text-primary)',
+  },
+
+  gradeSubtext: {
+    fontSize: 'var(--text-xs)',
+    color: 'var(--text-muted)',
+    marginTop: '2px',
   },
 
   gradeDivider: {
@@ -1713,6 +2236,19 @@ const styles: Record<string, React.CSSProperties> = {
     marginBottom: 'var(--space-3)',
   },
 
+  noProgressSection: {
+    padding: 'var(--space-3)',
+    backgroundColor: 'var(--bg-app)',
+    borderRadius: 'var(--radius-md)',
+    marginBottom: 'var(--space-3)',
+    textAlign: 'center',
+  },
+
+  noProgressText: {
+    fontSize: 'var(--text-sm)',
+    color: 'var(--text-muted)',
+  },
+
   progressBar: {
     position: 'relative',
     height: '8px',
@@ -1720,6 +2256,16 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: '4px',
     overflow: 'visible',
     marginBottom: 'var(--space-2)',
+  },
+
+  progressFillBackground: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    height: '100%',
+    borderRadius: '4px',
+    backgroundColor: 'var(--color-gray-300)',
+    transition: 'width 0.3s ease',
   },
 
   progressFill: {
@@ -1750,6 +2296,23 @@ const styles: Record<string, React.CSSProperties> = {
   targetLabel: {
     color: 'var(--color-navy)',
     fontWeight: 'var(--font-medium)',
+  },
+
+  progressLegend: {
+    display: 'flex',
+    gap: 'var(--space-4)',
+  },
+
+  legendItem: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-1)',
+  },
+
+  legendDot: {
+    width: '8px',
+    height: '8px',
+    borderRadius: '50%',
   },
 
   syncInfo: {
@@ -1807,6 +2370,21 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
   },
 
+  viewAllButton: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-1)',
+    padding: 'var(--space-2) var(--space-3)',
+    backgroundColor: 'transparent',
+    color: 'var(--color-blue)',
+    border: '1px solid var(--color-blue)',
+    borderRadius: 'var(--radius-md)',
+    fontSize: 'var(--text-xs)',
+    fontWeight: 'var(--font-medium)',
+    cursor: 'pointer',
+    transition: 'all var(--transition-fast)',
+  },
+
   addTaskForm: {
     padding: 'var(--space-4)',
     backgroundColor: 'var(--bg-app)',
@@ -1846,6 +2424,16 @@ const styles: Record<string, React.CSSProperties> = {
     border: '1px solid var(--border-default)',
     borderRadius: 'var(--radius-md)',
     backgroundColor: 'var(--bg-card)',
+  },
+
+  addTaskSelect: {
+    flex: 1,
+    padding: 'var(--space-2) var(--space-3)',
+    fontSize: 'var(--text-sm)',
+    border: '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-md)',
+    backgroundColor: 'var(--bg-card)',
+    cursor: 'pointer',
   },
 
   addTaskActions: {
@@ -1898,9 +2486,10 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 'var(--radius-sm)',
   },
 
-  taskGrade: {
+  taskScore: {
     fontWeight: 'var(--font-medium)',
     color: 'var(--color-success)',
+    cursor: 'help',
   },
 
   taskActions: {
@@ -1933,11 +2522,13 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 0,
+    padding: '4px',
     background: 'none',
     border: 'none',
     cursor: 'pointer',
     flexShrink: 0,
+    borderRadius: '50%',
+    transition: 'transform 0.15s ease, background-color 0.15s ease',
   },
 
   taskActionBtn: {
@@ -2074,6 +2665,16 @@ const styles: Record<string, React.CSSProperties> = {
     backgroundColor: 'var(--bg-card)',
     resize: 'vertical',
     fontFamily: 'inherit',
+  },
+
+  taskEditSelect: {
+    padding: 'var(--space-2) var(--space-3)',
+    fontSize: 'var(--text-sm)',
+    border: '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-md)',
+    backgroundColor: 'var(--bg-card)',
+    cursor: 'pointer',
+    width: '100%',
   },
 
   taskEditActions: {
@@ -2271,6 +2872,7 @@ const styles: Record<string, React.CSSProperties> = {
   announcementList: {
     display: 'flex',
     flexDirection: 'column',
+    padding: '0 var(--space-4) var(--space-4) var(--space-4)',
   },
 
   announcementItem: {
@@ -2297,6 +2899,63 @@ const styles: Record<string, React.CSSProperties> = {
   announcementDate: {
     fontSize: 'var(--text-xs)',
     color: 'var(--text-muted)',
+    flexShrink: 0,
+  },
+
+  pagesList: {
+    display: 'flex',
+    flexDirection: 'column',
+    padding: '0 var(--space-4) var(--space-4) var(--space-4)',
+  },
+
+  pageItem: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 'var(--space-2) 0',
+    borderBottom: '1px solid var(--border-light)',
+  },
+
+  pageInfo: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-2)',
+    flex: 1,
+    minWidth: 0,
+  },
+
+  pageDetails: {
+    display: 'flex',
+    flexDirection: 'column',
+    minWidth: 0,
+  },
+
+  pageTitle: {
+    fontSize: 'var(--text-sm)',
+    color: 'var(--text-primary)',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  },
+
+  pageType: {
+    fontSize: 'var(--text-xs)',
+    color: 'var(--text-muted)',
+  },
+
+  downloadButton: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '28px',
+    height: '28px',
+    padding: 0,
+    background: 'var(--bg-hover)',
+    border: '1px solid var(--border-light)',
+    borderRadius: 'var(--radius-sm)',
+    cursor: 'pointer',
+    color: 'var(--text-secondary)',
+    transition: 'all var(--transition-fast)',
     flexShrink: 0,
   },
 

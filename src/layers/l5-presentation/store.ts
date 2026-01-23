@@ -4,6 +4,9 @@
  * Global state management for the renderer process.
  * Communicates with main process exclusively through IPC.
  * Subscribes to push events for real-time updates.
+ *
+ * Uses direct store patching for command results to avoid
+ * unnecessary re-fetches and re-renders.
  */
 
 import { create } from 'zustand';
@@ -24,10 +27,87 @@ import {
   DisplayCalendarEvent,
   EnrollmentTerm,
   SyncResultSummary,
+  SyncConflictItem,
 } from './types';
 
 // Re-export SyncResultSummary for consumers
 export type { SyncResultSummary } from './types';
+
+/**
+ * Track recent optimistic updates to skip unnecessary db:commit refreshes.
+ * When a command succeeds, we add its table to this set with a timestamp.
+ * When db:commit arrives, we skip refresh if we recently updated that table.
+ */
+const recentOptimisticUpdates = new Map<string, number>();
+const OPTIMISTIC_UPDATE_WINDOW_MS = 1000; // Skip refresh within 1 second of optimistic update
+
+function markOptimisticUpdate(table: string): void {
+  recentOptimisticUpdates.set(table, Date.now());
+}
+
+function shouldSkipRefresh(table: string): boolean {
+  const timestamp = recentOptimisticUpdates.get(table);
+  if (!timestamp) return false;
+
+  const elapsed = Date.now() - timestamp;
+  if (elapsed < OPTIMISTIC_UPDATE_WINDOW_MS) {
+    // Clear the entry after use
+    recentOptimisticUpdates.delete(table);
+    return true;
+  }
+
+  // Expired, remove it
+  recentOptimisticUpdates.delete(table);
+  return false;
+}
+
+/**
+ * Debounced db:commit handling to prevent UI freezing during sync.
+ * Batches commits by table and processes them after a delay.
+ */
+const pendingCommits = new Set<string>();
+let commitDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+const COMMIT_DEBOUNCE_MS = 500; // Wait 500ms after last commit before refreshing
+
+function queueCommitRefresh(table: string, processCommits: () => void): void {
+  pendingCommits.add(table);
+
+  if (commitDebounceTimer) {
+    clearTimeout(commitDebounceTimer);
+  }
+
+  commitDebounceTimer = setTimeout(() => {
+    commitDebounceTimer = null;
+    processCommits();
+  }, COMMIT_DEBOUNCE_MS);
+}
+
+function processPendingCommits(
+  fetchCourses: () => void,
+  fetchTasks: () => void,
+  fetchNotifications: () => void,
+  fetchImportedCalendars: () => void,
+  refreshAll: () => void
+): void {
+  if (pendingCommits.size === 0) return;
+
+  const tables = new Set(pendingCommits);
+  pendingCommits.clear();
+
+  // If too many different tables changed, just refresh all
+  if (tables.size > 3) {
+    refreshAll();
+    return;
+  }
+
+  // Refresh each affected table once
+  if (tables.has('courses')) fetchCourses();
+  if (tables.has('tasks')) fetchTasks();
+  if (tables.has('notifications')) fetchNotifications();
+  if (tables.has('imported_calendars') || tables.has('calendar_events')) {
+    fetchImportedCalendars();
+  }
+}
 
 /**
  * Initial state
@@ -44,6 +124,8 @@ const initialState: StoreState = {
     grades: [],
   },
   syncStatus: 'idle',
+  syncMessage: null,
+  isAutoSync: false,
   lastSyncedAt: null,
   lastSyncResult: null,
   systemState: null,
@@ -51,6 +133,7 @@ const initialState: StoreState = {
   isAuthenticated: false,
   isInitialized: false,
   lastError: null,
+  syncConflicts: [],
 };
 
 /**
@@ -135,83 +218,85 @@ export const useStore = create<Store>()(
           })));
 
           // Apply semester filtering based on academic settings
+          // Default to 'auto' if no settings exist (matches UI default)
+          let semesterSelection: 'all' | 'auto' | string = 'auto';
           const academicSettings = localStorage.getItem('academicSettings');
           if (academicSettings) {
             try {
               const settings = JSON.parse(academicSettings);
-              const semesterSelection = settings.termSelection || 'auto';
-
-              console.debug('[Store] Semester selection:', semesterSelection, 'Courses before filter:', courses.length);
-
-              if (semesterSelection !== 'all') {
-                if (semesterSelection === 'auto') {
-                  // Auto-detect: show courses where semester is currently active
-                  // Canvas end_at is usually ~1 month after actual course end, so we subtract 30 days
-                  const terms = await api.getEnrollmentTerms();
-                  const now = new Date();
-                  const DAYS_BUFFER = 30; // Canvas end_at is ~1 month after actual course end
-
-                  console.debug('[Store] All terms from DB:', terms.map((t: EnrollmentTerm) => ({
-                    id: t.id,
-                    externalId: t.externalId,
-                    name: t.name,
-                    startAt: t.startAt,
-                    endAt: t.endAt,
-                  })));
-                  console.debug('[Store] Current date:', now.toISOString());
-
-                  // Find terms that are currently active
-                  const currentTermIds = new Set<number>();
-                  for (const term of terms) {
-                    const termIdNum = parseInt(term.externalId, 10);
-
-                    // Skip "Default Term" - these are non-academic courses
-                    if (term.name === 'Default Term' || termIdNum === 1) {
-                      console.debug(`[Store] Term "${term.name}" (${termIdNum}): skipping Default Term`);
-                      continue;
-                    }
-
-                    if (!term.endAt) {
-                      // No end date and not Default Term - skip (shouldn't happen for real terms)
-                      console.debug(`[Store] Term "${term.name}" (${termIdNum}): no end_at, skipping`);
-                      continue;
-                    }
-
-                    // Subtract buffer days from end_at to get actual course end
-                    const endDate = new Date(term.endAt);
-                    const adjustedEndDate = new Date(endDate.getTime() - DAYS_BUFFER * 24 * 60 * 60 * 1000);
-                    const isCurrent = adjustedEndDate > now;
-
-                    console.debug(`[Store] Term "${term.name}" (${termIdNum}): end_at=${term.endAt}, adjusted=${adjustedEndDate.toISOString()}, isCurrent=${isCurrent}`);
-
-                    if (isCurrent) {
-                      currentTermIds.add(termIdNum);
-                    }
-                  }
-
-                  console.debug('[Store] Current semester IDs:', Array.from(currentTermIds));
-
-                  if (currentTermIds.size > 0) {
-                    const beforeCount = courses.length;
-                    courses = courses.filter((c: Course) =>
-                      c.enrollmentTermId !== null && currentTermIds.has(c.enrollmentTermId)
-                    );
-                    console.debug(`[Store] Filtered ${beforeCount} -> ${courses.length} courses`);
-                  } else {
-                    console.debug('[Store] No current semesters found, showing all courses');
-                  }
-                  console.debug('[Store] Courses after auto-filter:', courses.map((c: Course) => c.code));
-                } else {
-                  // Specific semester selected - filter by term external_id
-                  const selectedTermId = parseInt(semesterSelection, 10);
-                  if (!isNaN(selectedTermId)) {
-                    courses = courses.filter((c: Course) => c.enrollmentTermId === selectedTermId);
-                    console.debug('[Store] Filtering by semester:', selectedTermId, 'Courses after filter:', courses.length);
-                  }
-                }
-              }
+              semesterSelection = settings.termSelection || 'auto';
             } catch (e) {
               console.error('[Store] Failed to parse academic settings:', e);
+            }
+          }
+
+          console.debug('[Store] Semester selection:', semesterSelection, 'Courses before filter:', courses.length);
+
+          if (semesterSelection !== 'all') {
+            if (semesterSelection === 'auto') {
+              // Auto-detect: show courses where semester is currently active
+              // Canvas end_at is usually ~1 month after actual course end, so we subtract 30 days
+              const terms = await api.getEnrollmentTerms();
+              const now = new Date();
+              const DAYS_BUFFER = 30; // Canvas end_at is ~1 month after actual course end
+
+              console.debug('[Store] All terms from DB:', terms.map((t: EnrollmentTerm) => ({
+                id: t.id,
+                externalId: t.externalId,
+                name: t.name,
+                startAt: t.startAt,
+                endAt: t.endAt,
+              })));
+              console.debug('[Store] Current date:', now.toISOString());
+
+              // Find terms that are currently active
+              const currentTermIds = new Set<number>();
+              for (const term of terms) {
+                const termIdNum = parseInt(term.externalId, 10);
+
+                // Skip "Default Term" - these are non-academic courses
+                if (term.name === 'Default Term' || termIdNum === 1) {
+                  console.debug(`[Store] Term "${term.name}" (${termIdNum}): skipping Default Term`);
+                  continue;
+                }
+
+                if (!term.endAt) {
+                  // No end date and not Default Term - skip (shouldn't happen for real terms)
+                  console.debug(`[Store] Term "${term.name}" (${termIdNum}): no end_at, skipping`);
+                  continue;
+                }
+
+                // Subtract buffer days from end_at to get actual course end
+                const endDate = new Date(term.endAt);
+                const adjustedEndDate = new Date(endDate.getTime() - DAYS_BUFFER * 24 * 60 * 60 * 1000);
+                const isCurrent = adjustedEndDate > now;
+
+                console.debug(`[Store] Term "${term.name}" (${termIdNum}): end_at=${term.endAt}, adjusted=${adjustedEndDate.toISOString()}, isCurrent=${isCurrent}`);
+
+                if (isCurrent) {
+                  currentTermIds.add(termIdNum);
+                }
+              }
+
+              console.debug('[Store] Current semester IDs:', Array.from(currentTermIds));
+
+              if (currentTermIds.size > 0) {
+                const beforeCount = courses.length;
+                courses = courses.filter((c: Course) =>
+                  c.enrollmentTermId !== null && currentTermIds.has(c.enrollmentTermId)
+                );
+                console.debug(`[Store] Filtered ${beforeCount} -> ${courses.length} courses`);
+              } else {
+                console.debug('[Store] No current semesters found, showing all courses');
+              }
+              console.debug('[Store] Courses after auto-filter:', courses.map((c: Course) => c.code));
+            } else {
+              // Specific semester selected - filter by term external_id
+              const selectedTermId = parseInt(semesterSelection, 10);
+              if (!isNaN(selectedTermId)) {
+                courses = courses.filter((c: Course) => c.enrollmentTermId === selectedTermId);
+                console.debug('[Store] Filtering by semester:', selectedTermId, 'Courses after filter:', courses.length);
+              }
             }
           }
 
@@ -237,9 +322,15 @@ export const useStore = create<Store>()(
             const visibleCourseIds = new Set(
               get().courses.filter((c: Course) => !c.isHidden).map((c: Course) => c.id)
             );
-            const beforeCount = tasks.length;
-            tasks = tasks.filter((t: Task) => visibleCourseIds.has(t.courseId));
-            console.debug(`[Store] Filtered tasks: ${beforeCount} -> ${tasks.length} (only from ${visibleCourseIds.size} visible courses)`);
+            // Defensive: only filter if we have courses loaded, otherwise show all tasks
+            // This prevents tasks from being cleared on restart before courses load
+            if (visibleCourseIds.size > 0) {
+              const beforeCount = tasks.length;
+              tasks = tasks.filter((t: Task) => visibleCourseIds.has(t.courseId));
+              console.debug(`[Store] Filtered tasks: ${beforeCount} -> ${tasks.length} (only from ${visibleCourseIds.size} visible courses)`);
+            } else {
+              console.debug(`[Store] Skipping task filter - no courses loaded yet (${tasks.length} tasks)`);
+            }
           }
 
           if (courseId) {
@@ -455,7 +546,9 @@ export const useStore = create<Store>()(
         try {
           const result = await api.dispatch('UpdateTargetGrade', { courseId, targetGrade });
           if (result.success) {
-            // Optimistically update local state
+            // Mark optimistic update to skip db:commit refresh
+            markOptimisticUpdate('courses');
+            // Update local state directly (no re-fetch needed)
             set((state) => ({
               courses: state.courses.map((c) =>
                 c.id === courseId ? { ...c, targetGrade } : c
@@ -480,6 +573,10 @@ export const useStore = create<Store>()(
         try {
           const result = await api.dispatch('MarkTaskComplete', { taskId, isComplete });
           if (result.success) {
+            // Mark optimistic updates (task + course assessed grade)
+            markOptimisticUpdate('tasks');
+            markOptimisticUpdate('courses');
+            // Update local state directly
             set((state) => ({
               tasks: state.tasks.map((t) =>
                 t.id === taskId
@@ -506,6 +603,9 @@ export const useStore = create<Store>()(
         try {
           const result = await api.dispatch('DismissNotification', { notificationId });
           if (result.success) {
+            // Mark optimistic update
+            markOptimisticUpdate('notifications');
+            // Update local state directly
             set((state) => ({
               notifications: state.notifications.map((n) =>
                 n.id === notificationId
@@ -559,25 +659,45 @@ export const useStore = create<Store>()(
       /**
        * Trigger a sync operation
        * @param type Sync type: 'full', 'courses', 'tasks', or 'notifications'
-       * @param options Optional sync options for full sync (courseIds, syncCanvasFiles, syncAnnouncements)
+       * @param options Optional sync options for full sync (termSelection, syncCanvasFiles, syncAnnouncements, isAutoSync)
        * @returns Sync result with success status and summary data
        */
       triggerSync: async (
         type: 'full' | 'courses' | 'tasks' | 'notifications',
         options?: {
-          courseIds?: number[];
+          termSelection?: 'all' | 'auto' | string;
           syncCanvasFiles?: boolean;
           syncAnnouncements?: boolean;
+          isAutoSync?: boolean;
         }
       ) => {
         const api = getApi();
         if (!api) return { success: false };
 
-        set({ syncStatus: 'syncing' });
+        const isAutoSync = options?.isAutoSync ?? false;
+
+        // Set initial sync state with message
+        const getSyncMessage = (phase: string) => {
+          switch (phase) {
+            case 'courses': return 'Syncing courses...';
+            case 'tasks': return 'Syncing assignments...';
+            case 'notifications': return 'Syncing announcements...';
+            case 'files': return 'Syncing files...';
+            default: return 'Syncing...';
+          }
+        };
+
+        set({
+          syncStatus: 'syncing',
+          syncMessage: getSyncMessage(type === 'full' ? 'courses' : type),
+          isAutoSync,
+        });
 
         try {
           let result;
           if (type === 'full') {
+            // Update message as we progress through phases
+            set({ syncMessage: 'Syncing courses...' });
             result = await api.syncFull(options);
           } else if (type === 'courses') {
             result = await api.syncCourses();
@@ -609,13 +729,19 @@ export const useStore = create<Store>()(
               errors: syncResult?.errors || [],
               timestamp,
             };
-            set({ syncStatus: 'idle', lastSyncedAt: timestamp, lastSyncResult: summary });
+            set({
+              syncStatus: 'idle',
+              syncMessage: null,
+              isAutoSync: false,
+              lastSyncedAt: timestamp,
+              lastSyncResult: summary,
+            });
             // Refresh data after sync
             await get().refreshAll();
             // Return the full result including sync summary
             return { success: true, result: result.result, summary };
           } else {
-            set({ syncStatus: 'error', lastError: result.error });
+            set({ syncStatus: 'error', syncMessage: null, isAutoSync: false, lastError: result.error });
             return { success: false, error: result.error };
           }
         } catch (error) {
@@ -623,10 +749,19 @@ export const useStore = create<Store>()(
           const errorMsg = error instanceof Error ? error.message : String(error);
           set({
             syncStatus: 'error',
+            syncMessage: null,
+            isAutoSync: false,
             lastError: errorMsg,
           });
           return { success: false, error: errorMsg };
         }
+      },
+
+      /**
+       * Dismiss the auto-sync banner
+       */
+      dismissAutoSyncBanner: () => {
+        set({ isAutoSync: false });
       },
 
       /**
@@ -655,29 +790,30 @@ export const useStore = create<Store>()(
 
       /**
        * Handle database commit event from main process
+       *
+       * Debounces refreshes to prevent UI freezing during sync.
+       * Skips refresh if we recently performed an optimistic update for that table.
        */
       handleDbCommit: (event: DbCommitEvent) => {
-        // Refresh data based on which table changed
-        const { fetchCourses, fetchTasks, fetchNotifications, fetchImportedCalendars } = get();
-
-        switch (event.table) {
-          case 'courses':
-            fetchCourses();
-            break;
-          case 'tasks':
-            fetchTasks();
-            break;
-          case 'notifications':
-            fetchNotifications();
-            break;
-          case 'imported_calendars':
-          case 'calendar_events':
-            fetchImportedCalendars();
-            break;
-          default:
-            // For unknown tables, refresh all
-            get().refreshAll();
+        // Skip refresh if we recently updated this table optimistically
+        if (shouldSkipRefresh(event.table)) {
+          console.debug(`[Store] Skipping refresh for ${event.table} (recent optimistic update)`);
+          return;
         }
+
+        // Skip immediate refresh while syncing - we'll refresh when sync completes
+        const { syncStatus } = get();
+        if (syncStatus === 'syncing') {
+          // Just track which tables changed, don't refresh yet
+          pendingCommits.add(event.table);
+          return;
+        }
+
+        // Queue the refresh with debouncing
+        const { fetchCourses, fetchTasks, fetchNotifications, fetchImportedCalendars, refreshAll } = get();
+        queueCommitRefresh(event.table, () => {
+          processPendingCommits(fetchCourses, fetchTasks, fetchNotifications, fetchImportedCalendars, refreshAll);
+        });
       },
 
       /**
@@ -692,6 +828,69 @@ export const useStore = create<Store>()(
        */
       clearSyncResult: () => {
         set({ lastSyncResult: null });
+      },
+
+      /**
+       * Add sync conflicts from sync engine
+       */
+      addSyncConflicts: (conflicts) => {
+        set((state) => ({
+          syncConflicts: [...state.syncConflicts, ...conflicts],
+        }));
+      },
+
+      /**
+       * Resolve a single sync conflict
+       */
+      resolveSyncConflict: async (conflictId, useCanvasValue, rememberChoice, rememberForAll) => {
+        const api = getApi();
+        if (!api) return;
+
+        try {
+          await api.resolveSyncConflict({
+            conflictId,
+            useCanvasValue,
+            rememberChoice,
+            rememberForAll,
+          });
+
+          // Remove the resolved conflict from state
+          set((state) => ({
+            syncConflicts: state.syncConflicts.filter((c) => c.id !== conflictId),
+          }));
+
+          // Refresh data after resolution
+          await get().refreshAll();
+        } catch (error) {
+          console.error('Failed to resolve sync conflict:', error);
+        }
+      },
+
+      /**
+       * Resolve all sync conflicts at once
+       */
+      resolveAllSyncConflicts: async (useCanvasValues) => {
+        const api = getApi();
+        if (!api) return;
+
+        try {
+          await api.resolveAllSyncConflicts(useCanvasValues);
+
+          // Clear all conflicts from state
+          set({ syncConflicts: [] });
+
+          // Refresh data after resolution
+          await get().refreshAll();
+        } catch (error) {
+          console.error('Failed to resolve all sync conflicts:', error);
+        }
+      },
+
+      /**
+       * Clear sync conflicts without resolving (dismiss)
+       */
+      clearSyncConflicts: () => {
+        set({ syncConflicts: [] });
       },
     })),
     { name: 'canvas-store' }
@@ -727,11 +926,68 @@ export function subscribeToIpcEvents(): () => void {
     }
   });
 
+  const unsubSyncConflicts = api.onSyncConflicts((conflicts: SyncConflictItem[]) => {
+    useStore.getState().addSyncConflicts(conflicts);
+  });
+
   return () => {
     unsubSimulation();
     unsubDbCommit();
     unsubSyncStatus();
+    unsubSyncConflicts();
   };
+}
+
+/**
+ * Memoized course grades calculation
+ * Uses a cache to avoid O(courses × tasks) on every render
+ */
+const courseGradesCache = new Map<string, { earned: number; trend: number; assessed: number }>();
+let lastTasksHash = '';
+
+function computeTasksHash(tasks: { courseId: number; weight: number; grade: number | null }[]): string {
+  // Simple hash based on task courseId and grades - changes trigger recalculation
+  return tasks
+    .filter(t => t.weight > 0)
+    .map(t => `${t.courseId}:${t.grade}:${t.weight}`)
+    .join('|');
+}
+
+export function getCachedCourseGrades(
+  courseId: number,
+  tasks: { courseId: number; weight: number; grade: number | null }[]
+): { earned: number; trend: number; assessed: number } {
+  const tasksHash = computeTasksHash(tasks);
+
+  // Invalidate cache if tasks changed
+  if (tasksHash !== lastTasksHash) {
+    courseGradesCache.clear();
+    lastTasksHash = tasksHash;
+  }
+
+  const cacheKey = `${courseId}`;
+  const cached = courseGradesCache.get(cacheKey);
+  if (cached) return cached;
+
+  // Calculate grades for this course
+  let totalWeight = 0;
+  let totalContribution = 0;
+
+  for (const task of tasks) {
+    if (task.courseId === courseId && task.weight > 0 && task.grade !== null) {
+      totalWeight += task.weight;
+      totalContribution += (task.grade / 100) * task.weight;
+    }
+  }
+
+  const result = {
+    earned: totalContribution,
+    assessed: totalWeight,
+    trend: totalWeight > 0 ? (totalContribution / totalWeight) * 100 : 0,
+  };
+
+  courseGradesCache.set(cacheKey, result);
+  return result;
 }
 
 /**
@@ -803,4 +1059,22 @@ export const selectors = {
    */
   calendarEvents: (calendarId: number) => (state: StoreState) =>
     state.calendarEvents.filter((e) => e.importedCalendarId === calendarId),
+
+  /**
+   * Get memoized grade calculations for a course
+   * Uses internal cache to avoid O(courses × tasks) calculations
+   */
+  courseGrades: (courseId: number) => (state: StoreState) =>
+    getCachedCourseGrades(courseId, state.tasks),
+
+  /**
+   * Get all course grades (memoized)
+   */
+  allCourseGrades: (state: StoreState) => {
+    const grades: Record<number, { earned: number; trend: number; assessed: number }> = {};
+    for (const course of state.courses) {
+      grades[course.id] = getCachedCourseGrades(course.id, state.tasks);
+    }
+    return grades;
+  },
 };

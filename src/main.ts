@@ -193,6 +193,15 @@ async function initializeCanvasClient(token: string, baseUrl: string): Promise<b
       logger.error(`Sync error in ${type}: ${error}`);
     });
 
+    // Forward sync conflicts to renderer for user resolution
+    syncEngine.on('sync-conflicts', ({ entity, conflicts }) => {
+      if (mainWindow && !mainWindow.isDestroyed() && conflicts.length > 0) {
+        logger.info(`Sync conflicts detected: ${conflicts.length} ${entity} conflict(s)`);
+        mainWindow.webContents.send('sync:conflicts', conflicts);
+        metricsCollector.increment(`sync.conflicts.${entity}`);
+      }
+    });
+
     return true;
   } catch (error) {
     logger.error(`Failed to initialize Canvas client: ${error}`);
@@ -372,10 +381,12 @@ function registerIpcHandlers(): void {
 
   // Sync operations
   ipcMain.handle('sync:full', async (_event, options?: {
-    courseIds?: number[];
+    termSelection?: 'all' | 'auto' | string;
     syncCanvasFiles?: boolean;
     syncAnnouncements?: boolean;
   }) => {
+    console.debug(`[IPC sync:full] Received options: ${JSON.stringify(options)}`);
+
     if (!syncEngine) {
       logger.warn('Sync attempted but Canvas client not initialized');
       return { success: false, error: 'Canvas client not initialized. Please reconnect to Canvas.' };
@@ -385,6 +396,8 @@ function registerIpcHandlers(): void {
       logger.warn('Sync blocked due to system state');
       return { success: false, error: 'Sync disabled due to system state (battery/focus)' };
     }
+
+    logger.info(`Sync requested with options: termSelection=${options?.termSelection ?? 'all'}, syncCanvasFiles=${options?.syncCanvasFiles ?? true}, syncAnnouncements=${options?.syncAnnouncements ?? true}`);
 
     try {
       const result = await syncEngine.syncAll(options);
@@ -520,6 +533,7 @@ function registerIpcHandlers(): void {
       course_id: number | null;
       title: string;
       message: string;
+      message_html: string | null;
       published_at: string;
       dismissed_at: string | null;
       url: string | null;
@@ -532,6 +546,7 @@ function registerIpcHandlers(): void {
       courseId: row.course_id,
       title: row.title,
       message: row.message,
+      messageHtml: row.message_html,
       publishedAt: row.published_at,
       dismissedAt: row.dismissed_at,
       url: row.url,
@@ -547,6 +562,7 @@ function registerIpcHandlers(): void {
       course_id: number | null;
       title: string;
       message: string;
+      message_html: string | null;
       published_at: string;
       dismissed_at: string | null;
       url: string | null;
@@ -561,6 +577,7 @@ function registerIpcHandlers(): void {
       courseId: row.course_id,
       title: row.title,
       message: row.message,
+      messageHtml: row.message_html,
       publishedAt: row.published_at,
       dismissedAt: row.dismissed_at,
       url: row.url,
@@ -704,7 +721,9 @@ function registerIpcHandlers(): void {
       ORDER BY na.course_id, na.display_name
     `);
 
-    logger.info(`Found ${resources.length} resources and ${attachments.length} attachments`);
+    const downloadedResources = resources.filter(r => r.local_path !== null).length;
+    const downloadedAttachments = attachments.filter(a => a.download_status === 'completed').length;
+    logger.info(`Found ${resources.length} resources (${downloadedResources} downloaded) and ${attachments.length} attachments (${downloadedAttachments} downloaded)`);
 
     return {
       resources: resources.map((r) => ({
@@ -752,6 +771,7 @@ function registerIpcHandlers(): void {
       course_id: number | null;
       title: string;
       message: string;
+      message_html: string | null;
       published_at: string;
       dismissed_at: string | null;
       url: string | null;
@@ -764,6 +784,7 @@ function registerIpcHandlers(): void {
       courseId: row.course_id,
       title: row.title,
       message: row.message,
+      messageHtml: row.message_html,
       publishedAt: row.published_at,
       dismissedAt: row.dismissed_at,
       url: row.url,
@@ -1076,6 +1097,246 @@ function registerIpcHandlers(): void {
       return { success: false, error: String(error) };
     }
   });
+
+  // Clear all app data (preserves Canvas API token)
+  ipcMain.handle('data:clearAll', () => {
+    logger.info('Clearing all app data (preserving credentials)');
+    try {
+      database.transaction(() => {
+        // Clear all data tables in dependency order (children first, parents last)
+        // Tables with foreign keys to other tables must be deleted before their parents
+
+        // Policy-related child tables
+        database.executeWrite('DELETE FROM grade_replacements', [], 'grade_replacements');
+        database.executeWrite('DELETE FROM weight_transfers', [], 'weight_transfers');
+        database.executeWrite('DELETE FROM grace_token_usage', [], 'grace_token_usage');
+        database.executeWrite('DELETE FROM policy_rules', [], 'policy_rules');
+        database.executeWrite('DELETE FROM grace_tokens', [], 'grace_tokens');
+        database.executeWrite('DELETE FROM course_task_groups', [], 'course_task_groups');
+        database.executeWrite('DELETE FROM global_task_types', [], 'global_task_types');
+
+        // Module-related tables
+        database.executeWrite('DELETE FROM module_items', [], 'module_items');
+        database.executeWrite('DELETE FROM modules', [], 'modules');
+
+        // Notification-related tables
+        database.executeWrite('DELETE FROM policy_announcements', [], 'policy_announcements');
+        database.executeWrite('DELETE FROM announcement_file_references', [], 'announcement_file_references');
+        database.executeWrite('DELETE FROM notification_attachments', [], 'notification_attachments');
+        database.executeWrite('DELETE FROM notifications', [], 'notifications');
+
+        // Course-related tables
+        database.executeWrite('DELETE FROM grade_history', [], 'grade_history');
+        database.executeWrite('DELETE FROM course_pages', [], 'course_pages');
+        database.executeWrite('DELETE FROM course_policies', [], 'course_policies');
+        database.executeWrite('DELETE FROM resources', [], 'resources');
+        database.executeWrite('DELETE FROM calendar_events', [], 'calendar_events');
+        database.executeWrite('DELETE FROM imported_calendars', [], 'imported_calendars');
+        database.executeWrite('DELETE FROM tasks', [], 'tasks');
+        database.executeWrite('DELETE FROM courses', [], 'courses');
+
+        // Top-level tables
+        database.executeWrite('DELETE FROM enrollment_terms', [], 'enrollment_terms');
+        database.executeWrite('DELETE FROM user_preferences', [], 'user_preferences');
+        database.executeWrite('DELETE FROM sync_metadata', [], 'sync_metadata');
+        database.executeWrite('DELETE FROM endpoint_backoff', [], 'endpoint_backoff');
+        database.executeWrite('DELETE FROM sync_preferences', [], 'sync_preferences');
+        database.executeWrite('DELETE FROM field_modifications', [], 'field_modifications');
+      });
+      logger.info('All app data cleared successfully');
+      metricsCollector.increment('data.cleared');
+      return { success: true };
+    } catch (error) {
+      logger.error(`Failed to clear all data: ${error}`);
+      return { success: false, error: String(error) };
+    }
+  });
+
+  // ============ Course Pages Handlers ============
+
+  // Get all pages for a course (wiki pages + syllabus)
+  ipcMain.handle('pages:getByCourse', (_event, courseId: number) => {
+    const pages = database.executeRead<{
+      id: number;
+      external_id: string | null;
+      course_id: number;
+      page_type: string;
+      title: string;
+      url_slug: string | null;
+      body_html: string | null;
+      body_text: string | null;
+      is_front_page: number;
+      published: number;
+      last_synced_at: string | null;
+    }>('SELECT * FROM course_pages WHERE course_id = ? ORDER BY is_front_page DESC, title', [courseId]);
+
+    // Also check if course has syllabus_body
+    const course = database.executeRead<{
+      id: number;
+      code: string;
+      name: string;
+      syllabus_body: string | null;
+    }>('SELECT id, code, name, syllabus_body FROM courses WHERE id = ?', [courseId])[0];
+
+    const result = pages.map((p) => ({
+      id: p.id,
+      externalId: p.external_id,
+      courseId: p.course_id,
+      pageType: p.page_type,
+      title: p.title,
+      urlSlug: p.url_slug,
+      bodyHtml: p.body_html,
+      bodyText: p.body_text,
+      isFrontPage: p.is_front_page === 1,
+      published: p.published === 1,
+      lastSyncedAt: p.last_synced_at,
+    }));
+
+    // Add syllabus as a virtual page if it exists
+    if (course?.syllabus_body) {
+      result.unshift({
+        id: -1, // Virtual ID for syllabus
+        externalId: `syllabus-${courseId}`,
+        courseId: courseId,
+        pageType: 'syllabus',
+        title: 'Course Syllabus',
+        urlSlug: 'syllabus',
+        bodyHtml: course.syllabus_body,
+        bodyText: course.syllabus_body.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim(),
+        isFrontPage: false,
+        published: true,
+        lastSyncedAt: null,
+      });
+    }
+
+    return result;
+  });
+
+  // Get a single page by ID
+  ipcMain.handle('pages:get', (_event, pageId: number) => {
+    // Handle virtual syllabus ID
+    if (pageId === -1) {
+      return { success: false, error: 'Use pages:getByCourse to get syllabus' };
+    }
+
+    const page = database.executeRead<{
+      id: number;
+      external_id: string | null;
+      course_id: number;
+      page_type: string;
+      title: string;
+      url_slug: string | null;
+      body_html: string | null;
+      body_text: string | null;
+      is_front_page: number;
+      published: number;
+    }>('SELECT * FROM course_pages WHERE id = ?', [pageId])[0];
+
+    if (!page) {
+      return { success: false, error: 'Page not found' };
+    }
+
+    return {
+      success: true,
+      data: {
+        id: page.id,
+        externalId: page.external_id,
+        courseId: page.course_id,
+        pageType: page.page_type,
+        title: page.title,
+        urlSlug: page.url_slug,
+        bodyHtml: page.body_html,
+        bodyText: page.body_text,
+        isFrontPage: page.is_front_page === 1,
+        published: page.published === 1,
+      },
+    };
+  });
+
+  // Export page as HTML file (with proper HTML wrapper)
+  ipcMain.handle(
+    'pages:exportHtml',
+    async (
+      _event,
+      options: {
+        courseId: number;
+        pageId: number; // -1 for syllabus
+        title: string;
+        bodyHtml: string;
+      }
+    ) => {
+      if (!mainWindow) {
+        return { success: false, error: 'No window available' };
+      }
+
+      // Get course info for filename
+      const course = database.executeRead<{ code: string }>(
+        'SELECT code FROM courses WHERE id = ?',
+        [options.courseId]
+      )[0];
+
+      const courseCode = course?.code || 'Unknown';
+      const safeTitle = options.title.replace(/[<>:"/\\|?*]/g, '_').substring(0, 50);
+      const defaultName = `${courseCode}_${safeTitle}.html`;
+
+      // Wrap body in full HTML document
+      const fullHtml = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${options.title} - ${courseCode}</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 2rem;
+      line-height: 1.6;
+      color: #333;
+    }
+    h1 { border-bottom: 2px solid #2563eb; padding-bottom: 0.5rem; }
+    h1, h2, h3 { color: #1e40af; }
+    a { color: #2563eb; }
+    table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+    th, td { border: 1px solid #ddd; padding: 0.5rem; text-align: left; }
+    th { background: #f3f4f6; }
+    pre, code { background: #f3f4f6; padding: 0.25rem 0.5rem; border-radius: 4px; }
+    pre { padding: 1rem; overflow-x: auto; }
+    img { max-width: 100%; height: auto; }
+    .meta { color: #666; font-size: 0.9rem; margin-bottom: 1rem; }
+  </style>
+</head>
+<body>
+  <h1>${options.title}</h1>
+  <p class="meta">Course: ${courseCode} | Exported: ${new Date().toLocaleDateString()}</p>
+  <hr>
+  ${options.bodyHtml}
+</body>
+</html>`;
+
+      const result = await dialog.showSaveDialog(mainWindow, {
+        defaultPath: defaultName,
+        filters: [
+          { name: 'HTML Files', extensions: ['html', 'htm'] },
+          { name: 'All Files', extensions: ['*'] },
+        ],
+      });
+
+      if (result.canceled || !result.filePath) {
+        return { success: false, error: 'Save cancelled' };
+      }
+
+      try {
+        fs.writeFileSync(result.filePath, fullHtml, 'utf-8');
+        logger.info(`Page exported: ${result.filePath}`);
+        return { success: true, data: { filePath: result.filePath } };
+      } catch (error) {
+        logger.error(`Failed to export page: ${error}`);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
 
   // ============ Imported Calendar Handlers ============
 
@@ -1502,6 +1763,14 @@ function registerIpcHandlers(): void {
       return { success: false, error: 'Command dispatcher not initialized' };
     }
 
+    // Validate command name against registered commands (security: prevent arbitrary command injection)
+    const registeredCommands = commandDispatcher.getRegisteredCommands();
+    if (!registeredCommands.includes(commandName)) {
+      logger.warn(`Rejected unknown command: ${commandName}`);
+      metricsCollector.increment('command.rejected.unknown');
+      return { success: false, error: `Unknown command: ${commandName}` };
+    }
+
     const result = await commandDispatcher.dispatch(commandName as Parameters<typeof commandDispatcher.dispatch>[0], params);
     if (result.success) {
       metricsCollector.increment(`command.${commandName}.success`);
@@ -1532,6 +1801,112 @@ function registerIpcHandlers(): void {
 
     commandDispatcher.clearSimulation();
     return { success: true };
+  });
+
+  // ============ Sync Conflict Handlers ============
+
+  ipcMain.handle('sync:getPendingConflicts', () => {
+    if (!syncEngine) {
+      return [];
+    }
+    return syncEngine.getConflictResolver().getPendingConflicts();
+  });
+
+  ipcMain.handle('sync:resolveConflict', async (_event, resolution: {
+    conflictId: string;
+    useCanvasValue: boolean;
+    rememberChoice: boolean;
+    rememberForAll: boolean;
+  }) => {
+    if (!syncEngine) {
+      return { success: false, error: 'Sync engine not initialized' };
+    }
+
+    try {
+      const result = syncEngine.getConflictResolver().resolveConflict(resolution);
+      if (result) {
+        // Apply the resolution to the database
+        const conflict = syncEngine.getConflictResolver().getPendingConflicts()
+          .find(c => c.id === resolution.conflictId);
+        if (conflict) {
+          const tableName = conflict.entity === 'course' ? 'courses' :
+                           conflict.entity === 'task' ? 'tasks' : 'notifications';
+          database.executeWrite(
+            `UPDATE ${tableName} SET ${result.field} = ? WHERE id = ?`,
+            [result.value, conflict.entityId],
+            tableName
+          );
+
+          // Clear the modified flag if using Canvas value
+          if (resolution.useCanvasValue) {
+            syncEngine.getConflictResolver().clearFieldModified(tableName, conflict.entityId, result.field);
+          }
+        }
+      }
+      return { success: true };
+    } catch (error) {
+      logger.error(`Failed to resolve sync conflict: ${error}`);
+      return { success: false, error: String(error) };
+    }
+  });
+
+  ipcMain.handle('sync:resolveAllConflicts', async (_event, useCanvasValues: boolean) => {
+    if (!syncEngine) {
+      return { success: false, error: 'Sync engine not initialized' };
+    }
+
+    try {
+      const conflictResolver = syncEngine.getConflictResolver();
+      const conflicts = conflictResolver.getPendingConflicts();
+      const results = conflictResolver.resolveAllConflicts(useCanvasValues);
+
+      // Apply all resolutions to the database
+      database.transaction(() => {
+        for (let i = 0; i < results.length; i++) {
+          const result = results[i];
+          const conflict = conflicts[i];
+          if (conflict && result) {
+            const tableName = conflict.entity === 'course' ? 'courses' :
+                             conflict.entity === 'task' ? 'tasks' : 'notifications';
+            database.executeWrite(
+              `UPDATE ${tableName} SET ${result.field} = ? WHERE id = ?`,
+              [result.value, conflict.entityId],
+              tableName
+            );
+
+            // Clear the modified flag if using Canvas value
+            if (useCanvasValues) {
+              conflictResolver.clearFieldModified(tableName, conflict.entityId, result.field);
+            }
+          }
+        }
+      });
+
+      return { success: true };
+    } catch (error) {
+      logger.error(`Failed to resolve all sync conflicts: ${error}`);
+      return { success: false, error: String(error) };
+    }
+  });
+
+  ipcMain.handle('sync:getSyncPreferences', () => {
+    if (!syncEngine) {
+      return [];
+    }
+    return syncEngine.getConflictResolver().getAllPreferences();
+  });
+
+  ipcMain.handle('sync:deleteSyncPreference', (_event, entity: string, entityId: number | null, field: string) => {
+    if (!syncEngine) {
+      return { success: false, error: 'Sync engine not initialized' };
+    }
+
+    try {
+      syncEngine.getConflictResolver().deletePreference(entity, entityId, field);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
   });
 }
 
@@ -1598,6 +1973,21 @@ app.whenReady().then(async () => {
       if (cleaned > 0) {
         logger.info(`Cleaned HTML from ${cleaned} notification messages`);
       }
+    }
+
+    // Auto-complete tasks that have both weight > 0 and grade set
+    // This ensures graded assignments are marked as complete
+    const autoCompleteResult = database.executeWrite(
+      `UPDATE tasks SET
+        is_completed = 1,
+        completed_at = COALESCE(completed_at, CURRENT_TIMESTAMP),
+        updated_at = CURRENT_TIMESTAMP
+      WHERE weight > 0 AND grade IS NOT NULL AND is_completed = 0`,
+      [],
+      'tasks'
+    );
+    if (autoCompleteResult.changes > 0) {
+      logger.info(`Auto-completed ${autoCompleteResult.changes} graded tasks`);
     }
 
     // Initialize L4 CommandDispatcher now that database is ready

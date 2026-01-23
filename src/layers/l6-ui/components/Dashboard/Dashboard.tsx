@@ -5,7 +5,7 @@
 
 import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { RefreshCw, FlaskConical } from 'lucide-react';
+import { RefreshCw, FlaskConical, X } from 'lucide-react';
 import { useStore } from '../../../l5-presentation/store';
 import { useDashboardViewModel } from '../../../l5-presentation/viewModels/DashboardViewModel';
 import { QuickStats, StatItem } from './QuickStats';
@@ -213,8 +213,33 @@ export function Dashboard() {
     await state.dismissNotification(notificationId);
   };
 
+  // Get sync message from state
+  const syncButtonText = state.syncStatus === 'syncing'
+    ? (state.syncMessage || 'Syncing...')
+    : 'Sync Now';
+
   return (
     <div ref={pageRef} style={styles.page}>
+      {/* Auto-sync Banner */}
+      {state.isAutoSync && state.syncStatus === 'syncing' && (
+        <div style={styles.autoSyncBanner}>
+          <div style={styles.autoSyncContent}>
+            <RefreshCw
+              size={14}
+              style={{ animation: 'spin 1s linear infinite' }}
+            />
+            <span>Auto syncing in progress...</span>
+          </div>
+          <button
+            style={styles.autoSyncDismiss}
+            onClick={() => state.dismissAutoSyncBanner()}
+            title="Dismiss"
+          >
+            <X size={14} />
+          </button>
+        </div>
+      )}
+
       {/* Page Header */}
       <header style={styles.header}>
         <div style={styles.headerLeft}>
@@ -234,7 +259,20 @@ export function Dashboard() {
             ...styles.syncButton,
             opacity: state.syncStatus === 'syncing' ? 0.7 : 1,
           }}
-          onClick={() => state.triggerSync('full')}
+          onClick={() => {
+            // Read term selection from academic settings
+            let termSelection: 'all' | 'auto' | string = 'auto';
+            try {
+              const academicSettings = localStorage.getItem('academicSettings');
+              if (academicSettings) {
+                const settings = JSON.parse(academicSettings);
+                termSelection = settings.termSelection || 'auto';
+              }
+            } catch (e) {
+              console.error('[Dashboard] Failed to parse academic settings:', e);
+            }
+            state.triggerSync('full', { termSelection });
+          }}
           disabled={state.syncStatus === 'syncing'}
         >
           <RefreshCw
@@ -244,7 +282,7 @@ export function Dashboard() {
               animation: state.syncStatus === 'syncing' ? 'spin 1s linear infinite' : 'none',
             }}
           />
-          {state.syncStatus === 'syncing' ? 'Syncing...' : 'Sync Now'}
+          {syncButtonText}
         </button>
       </header>
 
@@ -310,6 +348,43 @@ export function Dashboard() {
 const styles: Record<string, React.CSSProperties> = {
   page: {
     width: '100%',
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+  },
+
+  autoSyncBanner: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 'var(--space-2) var(--space-4)',
+    marginBottom: 'var(--space-4)',
+    backgroundColor: 'var(--color-info-bg)',
+    color: 'var(--color-info)',
+    borderRadius: 'var(--radius-md)',
+    fontSize: 'var(--text-sm)',
+  },
+
+  autoSyncContent: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-2)',
+  },
+
+  autoSyncDismiss: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '24px',
+    height: '24px',
+    padding: 0,
+    background: 'none',
+    border: 'none',
+    cursor: 'pointer',
+    color: 'var(--color-info)',
+    borderRadius: 'var(--radius-sm)',
+    opacity: 0.7,
+    transition: 'opacity var(--transition-fast)',
   },
 
   header: {
