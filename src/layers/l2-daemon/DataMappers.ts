@@ -78,6 +78,7 @@ export interface CanvasModule {
   published: boolean;
   items_count: number;
   items_url: string;
+  items?: CanvasModuleItem[];
 }
 
 export interface CanvasModuleItem {
@@ -121,6 +122,7 @@ export interface CanvasFile {
   content_type: string;
   created_at: string;
   updated_at: string;
+  modified_at?: string; // Canvas uses modified_at for actual content changes
   unlock_at: string | null;
   hidden: boolean;
 }
@@ -176,6 +178,7 @@ export interface LocalNotification {
   course_id: number;
   title: string;
   message: string;
+  message_html: string | null; // Original HTML content for display
   url: string | null;
   priority_level: 'critical' | 'high' | 'medium' | 'low';
   published_at: string;
@@ -268,6 +271,9 @@ export interface LocalResource {
   size_bytes: number | null;
   mime_type: string | null;
   unlock_at: string | null;
+  remote_updated_at: string | null;
+  context_type: 'page' | 'assignment' | 'syllabus' | 'module' | 'announcement' | 'files' | null;
+  context_id: string | null;
 }
 
 // Policy detection keywords
@@ -288,14 +294,19 @@ export function mapCourse(canvas: CanvasCourse, baseUrl: string): LocalCourse {
   const enrollment = canvas.enrollments?.[0];
   const currentGrade = enrollment?.computed_current_score ?? null;
 
+  // Defensive null checks for required fields
+  const courseId = canvas.id ?? 0;
+  const courseCode = canvas.course_code || `Course_${courseId}`;
+  const courseName = canvas.name || courseCode;
+
   return {
-    external_id: String(canvas.id),
-    code: canvas.course_code,
-    name: canvas.name,
+    external_id: String(courseId),
+    code: courseCode,
+    name: courseName,
     current_grade: currentGrade,
     assessed_grade: null,
     target_grade: 85.0,
-    landing_page_url: `${baseUrl}/courses/${canvas.id}`,
+    landing_page_url: `${baseUrl}/courses/${courseId}`,
     syllabus_body: canvas.syllabus_body ?? null,
     last_synced_at: new Date().toISOString(),
     enrollment_term_id: canvas.enrollment_term_id ?? null,
@@ -306,11 +317,15 @@ export function mapCourse(canvas: CanvasCourse, baseUrl: string): LocalCourse {
  * Map Canvas assignment to local task record
  */
 export function mapAssignment(canvas: CanvasAssignment, localCourseId: number): LocalTask {
+  // Defensive null checks for required fields
+  const assignmentId = canvas.id ?? 0;
+  const assignmentName = canvas.name || `Assignment_${assignmentId}`;
+
   return {
-    external_id: String(canvas.id),
+    external_id: String(assignmentId),
     source_type: 'canvas',
     course_id: localCourseId,
-    title: canvas.name,
+    title: assignmentName,
     description: canvas.description,
     due_at: canvas.due_at,
     unlock_at: canvas.unlock_at,
@@ -331,23 +346,23 @@ export function htmlToPlainText(html: string): string {
 
   const text = convert(html, {
     wordwrap: false,
-    preserveNewlines: true,
+    preserveNewlines: false, // Don't preserve raw newlines from HTML source
     selectors: [
-      // Paragraphs get double line break for visual separation
-      { selector: 'p', options: { leadingLineBreaks: 0, trailingLineBreaks: 2 } },
+      // Paragraphs get single line break - we'll handle spacing in CSS
+      { selector: 'p', options: { leadingLineBreaks: 0, trailingLineBreaks: 1 } },
       { selector: 'div', options: { leadingLineBreaks: 0, trailingLineBreaks: 1 } },
       // Headings
-      { selector: 'h1', options: { leadingLineBreaks: 1, trailingLineBreaks: 2, uppercase: false } },
-      { selector: 'h2', options: { leadingLineBreaks: 1, trailingLineBreaks: 2, uppercase: false } },
-      { selector: 'h3', options: { leadingLineBreaks: 1, trailingLineBreaks: 2, uppercase: false } },
+      { selector: 'h1', options: { leadingLineBreaks: 1, trailingLineBreaks: 1, uppercase: false } },
+      { selector: 'h2', options: { leadingLineBreaks: 1, trailingLineBreaks: 1, uppercase: false } },
+      { selector: 'h3', options: { leadingLineBreaks: 1, trailingLineBreaks: 1, uppercase: false } },
       { selector: 'h4', options: { leadingLineBreaks: 1, trailingLineBreaks: 1, uppercase: false } },
       { selector: 'h5', options: { leadingLineBreaks: 1, trailingLineBreaks: 1, uppercase: false } },
       { selector: 'h6', options: { leadingLineBreaks: 1, trailingLineBreaks: 1, uppercase: false } },
       // Lists
-      { selector: 'ul', format: 'unorderedList', options: { leadingLineBreaks: 1, trailingLineBreaks: 2, itemPrefix: '• ' } },
-      { selector: 'ol', format: 'orderedList', options: { leadingLineBreaks: 1, trailingLineBreaks: 2 } },
+      { selector: 'ul', format: 'unorderedList', options: { leadingLineBreaks: 1, trailingLineBreaks: 1, itemPrefix: '• ' } },
+      { selector: 'ol', format: 'orderedList', options: { leadingLineBreaks: 1, trailingLineBreaks: 1 } },
       // Block quotes
-      { selector: 'blockquote', options: { leadingLineBreaks: 1, trailingLineBreaks: 2 } },
+      { selector: 'blockquote', options: { leadingLineBreaks: 1, trailingLineBreaks: 1 } },
       // Links - keep text, ignore href
       { selector: 'a', options: { ignoreHref: true } },
       // Skip images
@@ -357,12 +372,12 @@ export function htmlToPlainText(html: string): string {
       // Line breaks
       { selector: 'br', format: 'lineBreak' },
       // Horizontal rules
-      { selector: 'hr', options: { leadingLineBreaks: 1, trailingLineBreaks: 2 } },
+      { selector: 'hr', options: { leadingLineBreaks: 1, trailingLineBreaks: 1 } },
     ],
   });
 
-  // Collapse excessive newlines (3+) to double newline, preserve paragraph breaks
-  return text.replace(/\n{3,}/g, '\n\n').trim();
+  // Collapse any 2+ consecutive newlines to single newline
+  return text.replace(/\n{2,}/g, '\n').trim();
 }
 
 export interface MappedAnnouncement {
@@ -510,6 +525,7 @@ export function mapAnnouncement(
       course_id: localCourseId,
       title: canvas.title,
       message: cleanMessage,
+      message_html: canvas.message || null, // Store original HTML for display
       url: canvasUrl,
       priority_level: isPolicyRelated ? 'high' : 'medium',
       published_at: canvas.posted_at || new Date().toISOString(),
@@ -596,21 +612,33 @@ export function mapFile(
   canvas: CanvasFile,
   localCourseId: number,
   localFolderId: number | null = null,
-  folderPath: string | null = null
-): LocalResource {
-  return {
+  folderPath: string | null = null,
+  contextType: LocalResource['context_type'] = 'files',
+  contextId: string | null = null
+): Omit<LocalResource, 'local_path'> {
+  // Note: local_path is intentionally omitted so it's never overwritten during sync
+  // It gets set when user downloads the file
+
+  // Use modified_at if available (actual content change), otherwise updated_at
+  const remoteUpdatedAt = canvas.modified_at || canvas.updated_at || null;
+
+  const result = {
     external_id: String(canvas.id),
     course_id: localCourseId,
     parent_folder_id: localFolderId,
     folder_path: folderPath,
-    type: 'file',
+    type: 'file' as const,
     title: canvas.display_name,
     url: canvas.url,
-    local_path: null, // Set when downloaded
     size_bytes: canvas.size,
     mime_type: canvas.content_type,
     unlock_at: canvas.unlock_at,
+    remote_updated_at: remoteUpdatedAt,
+    context_type: contextType,
+    context_id: contextId,
   };
+
+  return result;
 }
 
 /**
@@ -620,29 +648,35 @@ export function mapFolder(
   canvas: CanvasFolder,
   localCourseId: number,
   localParentFolderId: number | null = null
-): LocalResource {
+): Omit<LocalResource, 'local_path'> {
   // Canvas full_name is like "course files/Week 1/Lectures"
   // Remove the "course files" prefix for cleaner display
   let folderPath = canvas.full_name || canvas.name;
+
   if (folderPath.startsWith('course files/')) {
     folderPath = folderPath.substring('course files/'.length);
   } else if (folderPath === 'course files') {
     folderPath = '';
   }
 
-  return {
+  // Note: local_path is intentionally omitted - folders are not downloadable
+  const result = {
     external_id: String(canvas.id),
     course_id: localCourseId,
     parent_folder_id: localParentFolderId,
     folder_path: folderPath || null,
-    type: 'folder',
+    type: 'folder' as const,
     title: canvas.name,
     url: null,
-    local_path: null,
     size_bytes: null,
     mime_type: null,
     unlock_at: null,
+    remote_updated_at: canvas.updated_at || null,
+    context_type: 'files' as const,
+    context_id: null,
   };
+
+  return result;
 }
 
 /**

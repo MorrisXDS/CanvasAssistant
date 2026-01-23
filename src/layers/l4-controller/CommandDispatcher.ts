@@ -75,6 +75,10 @@ export class CommandDispatcher extends EventEmitter {
   private commands: Map<string, Command<unknown, unknown>> = new Map();
   private context: CommandContext;
   private simulationManager: SimulationManager;
+  // Store event handler references for cleanup
+  private simulationStartedHandler: ((data: unknown) => void) | null = null;
+  private simulationUpdatedHandler: ((data: unknown) => void) | null = null;
+  private simulationClearedHandler: ((data: unknown) => void) | null = null;
 
   constructor(options: CommandDispatcherOptions) {
     super();
@@ -95,16 +99,19 @@ export class CommandDispatcher extends EventEmitter {
       priorityEngine: options.priorityEngine,
     });
 
-    // Forward simulation events
-    this.simulationManager.on('simulation-started', (data) => {
-      this.emit('simulation-changed', { type: 'started', ...data });
-    });
-    this.simulationManager.on('simulation-updated', (data) => {
-      this.emit('simulation-changed', { type: 'updated', ...data });
-    });
-    this.simulationManager.on('simulation-cleared', (data) => {
-      this.emit('simulation-changed', { type: 'cleared', ...data });
-    });
+    // Forward simulation events (store handlers for cleanup)
+    this.simulationStartedHandler = (data) => {
+      this.emit('simulation-changed', { type: 'started', ...(data as object) });
+    };
+    this.simulationUpdatedHandler = (data) => {
+      this.emit('simulation-changed', { type: 'updated', ...(data as object) });
+    };
+    this.simulationClearedHandler = (data) => {
+      this.emit('simulation-changed', { type: 'cleared', ...(data as object) });
+    };
+    this.simulationManager.on('simulation-started', this.simulationStartedHandler);
+    this.simulationManager.on('simulation-updated', this.simulationUpdatedHandler);
+    this.simulationManager.on('simulation-cleared', this.simulationClearedHandler);
 
     // Register all commands
     this.registerDefaultCommands();
@@ -240,5 +247,31 @@ export class CommandDispatcher extends EventEmitter {
   clearSimulation(): void {
     this.context.simulationContext = createSimulationContext();
     this.simulationManager.clearAll();
+  }
+
+  /**
+   * Dispose of resources and remove event listeners
+   * Call this when the dispatcher is no longer needed to prevent memory leaks
+   */
+  dispose(): void {
+    // Remove simulation manager event listeners
+    if (this.simulationStartedHandler) {
+      this.simulationManager.off('simulation-started', this.simulationStartedHandler);
+      this.simulationStartedHandler = null;
+    }
+    if (this.simulationUpdatedHandler) {
+      this.simulationManager.off('simulation-updated', this.simulationUpdatedHandler);
+      this.simulationUpdatedHandler = null;
+    }
+    if (this.simulationClearedHandler) {
+      this.simulationManager.off('simulation-cleared', this.simulationClearedHandler);
+      this.simulationClearedHandler = null;
+    }
+
+    // Clear registered commands
+    this.commands.clear();
+
+    // Clear simulation state
+    this.clearSimulation();
   }
 }

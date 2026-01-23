@@ -35,30 +35,40 @@ export type { SyncResultSummary } from './types';
 
 /**
  * Track recent optimistic updates to skip unnecessary db:commit refreshes.
- * When a command succeeds, we add its table to this set with a timestamp.
- * When db:commit arrives, we skip refresh if we recently updated that table.
+ * When a command succeeds, we increment the counter for its table.
+ * When db:commit arrives, we decrement and skip refresh if counter > 0.
+ * This handles concurrent commands correctly (multiple updates = multiple skips).
  */
 const recentOptimisticUpdates = new Map<string, number>();
-const OPTIMISTIC_UPDATE_WINDOW_MS = 1000; // Skip refresh within 1 second of optimistic update
+const OPTIMISTIC_UPDATE_WINDOW_MS = 1000; // Auto-cleanup window
 
 function markOptimisticUpdate(table: string): void {
-  recentOptimisticUpdates.set(table, Date.now());
+  const current = recentOptimisticUpdates.get(table) || 0;
+  recentOptimisticUpdates.set(table, current + 1);
+
+  // Auto-decrement after window expires in case db:commit never arrives
+  // This prevents memory leaks and stale skip state
+  setTimeout(() => {
+    const count = recentOptimisticUpdates.get(table) || 0;
+    if (count > 0) {
+      recentOptimisticUpdates.set(table, count - 1);
+    }
+    if (recentOptimisticUpdates.get(table) === 0) {
+      recentOptimisticUpdates.delete(table);
+    }
+  }, OPTIMISTIC_UPDATE_WINDOW_MS);
 }
 
 function shouldSkipRefresh(table: string): boolean {
-  const timestamp = recentOptimisticUpdates.get(table);
-  if (!timestamp) return false;
+  const count = recentOptimisticUpdates.get(table) || 0;
+  if (count <= 0) return false;
 
-  const elapsed = Date.now() - timestamp;
-  if (elapsed < OPTIMISTIC_UPDATE_WINDOW_MS) {
-    // Clear the entry after use
+  // Decrement counter - one skip per optimistic update
+  recentOptimisticUpdates.set(table, count - 1);
+  if (count - 1 <= 0) {
     recentOptimisticUpdates.delete(table);
-    return true;
   }
-
-  // Expired, remove it
-  recentOptimisticUpdates.delete(table);
-  return false;
+  return true;
 }
 
 /**
@@ -319,17 +329,19 @@ export const useStore = create<Store>()(
 
           if (!courseId) {
             // Filter tasks to only include those from visible (non-hidden) courses filtered by semester
+            const allCourses = get().courses;
             const visibleCourseIds = new Set(
-              get().courses.filter((c: Course) => !c.isHidden).map((c: Course) => c.id)
+              allCourses.filter((c: Course) => !c.isHidden).map((c: Course) => c.id)
             );
-            // Defensive: only filter if we have courses loaded, otherwise show all tasks
-            // This prevents tasks from being cleared on restart before courses load
-            if (visibleCourseIds.size > 0) {
+
+            // Only skip filtering if NO courses are loaded yet (loading state)
+            // If courses exist but all are hidden, filter will return empty (correct behavior)
+            if (allCourses.length === 0) {
+              console.debug(`[Store] Skipping task filter - no courses loaded yet (${tasks.length} tasks)`);
+            } else {
               const beforeCount = tasks.length;
               tasks = tasks.filter((t: Task) => visibleCourseIds.has(t.courseId));
               console.debug(`[Store] Filtered tasks: ${beforeCount} -> ${tasks.length} (only from ${visibleCourseIds.size} visible courses)`);
-            } else {
-              console.debug(`[Store] Skipping task filter - no courses loaded yet (${tasks.length} tasks)`);
             }
           }
 
@@ -368,17 +380,26 @@ export const useStore = create<Store>()(
 
       /**
        * Refresh all data
+       * Uses Promise.allSettled to ensure partial failures don't block other refreshes
        */
       refreshAll: async () => {
         const { fetchCourses, fetchTasks, fetchNotifications, fetchImportedCalendars } = get();
         // Fetch courses FIRST since tasks filtering depends on courses being loaded
         await fetchCourses();
-        // Then fetch everything else in parallel
-        await Promise.all([
+        // Then fetch everything else in parallel - use allSettled to handle partial failures
+        const results = await Promise.allSettled([
           fetchTasks(),
           fetchNotifications(),
           fetchImportedCalendars(),
         ]);
+
+        // Log any unexpected failures (individual fetch methods already handle their own errors)
+        const failures = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
+        if (failures.length > 0) {
+          for (const failure of failures) {
+            console.error('[Store] Unexpected refresh failure:', failure.reason);
+          }
+        }
       },
 
       // ============ Imported Calendar Actions ============

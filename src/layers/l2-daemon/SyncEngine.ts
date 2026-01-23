@@ -35,11 +35,21 @@ import {
   calculatePolicyConfidence,
 } from './DataMappers';
 import { SyncConflictResolver, SyncConflict, ConflictResolution } from './SyncConflictResolver';
+import { HtmlFileExtractor, ExtractedFileReference } from './HtmlFileExtractor';
+import { HtmlContentSync, HtmlContentSyncResult } from './HtmlContentSync';
+import { FileDownloadManager } from '../l0-utilities/FileDownloadManager';
+import { HtmlContentSyncConfig } from '../l0-utilities/AppConfig';
 
 export interface SyncEngineConfig {
   client: CanvasClient;
   db: Database;
   rateLimiter?: RateLimiter;
+  /** File download manager for resources */
+  downloadManager?: FileDownloadManager;
+  /** HTML content sync configuration */
+  htmlContentSyncConfig?: HtmlContentSyncConfig;
+  /** Base directory for file storage */
+  filesBaseDir?: string;
 }
 
 export interface SyncResult {
@@ -128,7 +138,15 @@ export class SyncEngine extends EventEmitter {
   private db: Database;
   private rateLimiter: RateLimiter;
   private conflictResolver: SyncConflictResolver;
+  private htmlFileExtractor: HtmlFileExtractor;
+  private htmlContentSync: HtmlContentSync | null = null;
+  private downloadManager: FileDownloadManager | null = null;
+  private filesBaseDir: string | null = null;
   private isSyncing: boolean = false;
+  private syncMutex: Promise<void> = Promise.resolve();
+  private syncMutexRelease: (() => void) | null = null;
+  // Store event handler references for cleanup
+  private rateLimitedHandler: ((info: unknown) => void) | null = null;
   private diagnosticsEnabled: boolean = false;
   private diagnosticLog: SyncDiagnosticEntry[] = [];
   private pausedForConflicts: boolean = false;
@@ -140,14 +158,33 @@ export class SyncEngine extends EventEmitter {
     this.db = config.db;
     this.rateLimiter = config.rateLimiter || new RateLimiter();
     this.conflictResolver = new SyncConflictResolver(this.db);
+    this.htmlFileExtractor = new HtmlFileExtractor({ deduplicate: true });
+    this.downloadManager = config.downloadManager || null;
+    this.filesBaseDir = config.filesBaseDir || null;
+
+    // Initialize HTML content sync if configured
+    console.log(`[SyncEngine] Init: htmlContentSyncConfig=${!!config.htmlContentSyncConfig}, downloadManager=${!!this.downloadManager}, filesBaseDir=${this.filesBaseDir}`);
+    if (config.htmlContentSyncConfig && this.downloadManager && this.filesBaseDir) {
+      this.htmlContentSync = new HtmlContentSync({
+        db: this.db,
+        downloadManager: this.downloadManager,
+        config: config.htmlContentSyncConfig,
+        authToken: this.client.getAuthToken(),
+        baseUrl: this.client.getBaseUrl(),
+      });
+      console.log(`[SyncEngine] HtmlContentSync initialized`);
+    } else {
+      console.log(`[SyncEngine] HtmlContentSync NOT initialized - missing config`);
+    }
 
     // Ensure conflict resolver table exists
     this.conflictResolver.ensureTable();
 
-    // Forward rate limit events
-    this.rateLimiter.on('rate-limited', (info) => {
+    // Forward rate limit events (store handler for cleanup)
+    this.rateLimitedHandler = (info) => {
       this.emit('rate-limited', info);
-    });
+    };
+    this.rateLimiter.on('rate-limited', this.rateLimitedHandler);
 
     // Ensure backoff table exists
     this.ensureBackoffTable();
@@ -178,6 +215,34 @@ export class SyncEngine extends EventEmitter {
   }
 
   /**
+   * Acquire the sync mutex lock atomically.
+   * Returns a release function that must be called when done.
+   * This prevents race conditions between concurrent syncAll() calls.
+   */
+  private acquireSyncMutex(): Promise<() => void> {
+    let release: () => void;
+    const newMutex = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    const previousMutex = this.syncMutex;
+    this.syncMutex = newMutex;
+
+    return previousMutex.then(() => release!);
+  }
+
+  /**
+   * Release the sync mutex and reset syncing state
+   */
+  private releaseSyncMutex(): void {
+    this.isSyncing = false;
+    if (this.syncMutexRelease) {
+      this.syncMutexRelease();
+      this.syncMutexRelease = null;
+    }
+  }
+
+  /**
    * Check if an endpoint is in backoff (should be skipped)
    */
   private isEndpointInBackoff(endpoint: string, courseId: number | null): boolean {
@@ -188,7 +253,6 @@ export class SyncEngine extends EventEmitter {
     );
 
     if (!row) {
-      console.debug(`[Backoff] ${endpoint} (course=${courseId}): No backoff record, proceeding`);
       return false;
     }
 
@@ -205,11 +269,9 @@ export class SyncEngine extends EventEmitter {
     if (lastAttempt) {
       const timeSinceLastAttempt = now.getTime() - new Date(lastAttempt.last_failure_at).getTime();
       const daysSinceLastAttempt = timeSinceLastAttempt / (24 * 60 * 60 * 1000);
-      console.debug(`[Backoff] ${endpoint} (course=${courseId}): ${daysSinceLastAttempt.toFixed(2)} days since last failure`);
 
       if (timeSinceLastAttempt >= BACKOFF_CONFIG.MAX_DELAY_MS) {
         // Reset backoff - we've waited long enough
-        console.debug(`[Backoff] ${endpoint} (course=${courseId}): 2+ days passed, RESETTING backoff`);
         this.resetEndpointBackoff(endpoint, courseId);
         return false;
       }
@@ -218,9 +280,7 @@ export class SyncEngine extends EventEmitter {
     const inBackoff = now < nextRetry;
     if (inBackoff) {
       const minutesRemaining = (nextRetry.getTime() - now.getTime()) / (60 * 1000);
-      console.debug(`[Backoff] ${endpoint} (course=${courseId}): IN BACKOFF, ${minutesRemaining.toFixed(0)} min remaining (failures=${row.failure_count})`);
     } else {
-      console.debug(`[Backoff] ${endpoint} (course=${courseId}): Backoff expired, retrying now`);
     }
 
     return inBackoff;
@@ -287,8 +347,6 @@ export class SyncEngine extends EventEmitter {
     const nextRetryAt = new Date(Date.now() + delayMs);
     const delayHours = delayMs / (60 * 60 * 1000);
 
-    console.debug(`[Backoff] ${endpoint} (course=${courseId}): FAILURE #${failureCount} (${errorCode})`);
-    console.debug(`[Backoff] ${endpoint} (course=${courseId}): Next retry in ${delayHours.toFixed(1)} hours at ${nextRetryAt.toISOString()}`);
 
     this.db.executeWrite(
       `INSERT INTO endpoint_backoff (endpoint, course_id, failure_count, last_failure_at, next_retry_at, error_code, error_message)
@@ -325,7 +383,6 @@ export class SyncEngine extends EventEmitter {
     );
 
     if (existing && existing.failure_count > 0) {
-      console.debug(`[Backoff] ${endpoint} (course=${courseId}): SUCCESS after ${existing.failure_count} failures, clearing backoff`);
     }
 
     this.db.executeWrite(
@@ -343,7 +400,6 @@ export class SyncEngine extends EventEmitter {
    * Reset backoff for an endpoint (called after 2+ days of waiting)
    */
   private resetEndpointBackoff(endpoint: string, courseId: number | null): void {
-    console.debug(`[Backoff] ${endpoint} (course=${courseId}): RESET - backoff record deleted`);
 
     this.db.executeWrite(
       `DELETE FROM endpoint_backoff
@@ -391,12 +447,10 @@ export class SyncEngine extends EventEmitter {
     courseId: number | null,
     fetcher: () => Promise<T>
   ): Promise<{ data: T | null; skipped: boolean; error?: string }> {
-    console.debug(`[Backoff] Fetching: ${endpoint} (course=${courseId})`);
 
     // Check if in backoff
     if (this.isEndpointInBackoff(endpoint, courseId)) {
       const info = this.getEndpointBackoffInfo(endpoint, courseId);
-      console.debug(`[Backoff] ${endpoint} (course=${courseId}): SKIPPED - in backoff until ${info?.nextRetryAt?.toISOString()}`);
       this.emit('endpoint-skipped', {
         endpoint,
         courseId,
@@ -411,26 +465,22 @@ export class SyncEngine extends EventEmitter {
       const data = await fetcher();
       // Success - clear any backoff
       this.recordEndpointSuccess(endpoint, courseId);
-      console.debug(`[Backoff] ${endpoint} (course=${courseId}): SUCCESS`);
       return { data, skipped: false };
     } catch (err) {
       // Extract status from error object (CanvasApiError has status property)
       const status = (err as { status?: number })?.status;
       const errorMessage = (err as { message?: string })?.message || String(err);
 
-      console.debug(`[Backoff] ${endpoint} (course=${courseId}): Error status=${status}, message="${errorMessage.slice(0, 100)}"`);
 
       // Handle auth/access errors with backoff (401, 403, 404)
       // 404 can mean "page disabled for this course" - not a fatal error
       if (status === 401 || status === 403 || status === 404) {
         const errorCode = String(status);
-        console.debug(`[Backoff] ${endpoint} (course=${courseId}): BACKOFF ERROR ${errorCode}`);
         this.recordEndpointFailure(endpoint, courseId, errorCode, errorMessage.slice(0, 200));
         return { data: null, skipped: false, error: `Error ${errorCode}: ${errorMessage.slice(0, 100)}` };
       }
 
       // Non-backoff error - rethrow (5xx server errors, network errors, etc.)
-      console.debug(`[Backoff] ${endpoint} (course=${courseId}): NON-BACKOFF ERROR (status=${status}) - rethrowing`);
       throw err;
     }
   }
@@ -535,11 +585,16 @@ export class SyncEngine extends EventEmitter {
    * @param options Optional sync options to filter courses and content types
    */
   async syncAll(options?: SyncOptions): Promise<FullSyncResult> {
+    console.log(`[SyncEngine] syncAll called, htmlContentSync=${!!this.htmlContentSync}, filesBaseDir=${this.filesBaseDir}`);
+
+    // Acquire mutex lock atomically - prevents race condition between check and set
+    const release = await this.acquireSyncMutex();
     if (this.isSyncing) {
+      release();
       throw new Error('Sync already in progress');
     }
-
     this.isSyncing = true;
+    this.syncMutexRelease = release;
     const startTime = Date.now();
     const errors: string[] = [];
 
@@ -589,8 +644,6 @@ export class SyncEngine extends EventEmitter {
 
       // Filter courses based on term selection
       let coursesToSync = fetched.courses;
-      console.debug(`[SyncEngine] Fetched ${fetched.courses.length} courses from Canvas`);
-      console.debug(`[SyncEngine] termSelection=${termSelection}, syncCanvasFiles=${syncCanvasFiles}, syncAnnouncements=${syncAnnouncements}`);
 
       if (termSelection !== 'all') {
         if (termSelection === 'auto') {
@@ -608,12 +661,10 @@ export class SyncEngine extends EventEmitter {
 
               // Skip "Default Term" - these are non-academic courses
               if (termName === 'Default Term' || termId === 1) {
-                console.debug(`[SyncEngine] Term "${termName}" (${termId}): skipping Default Term`);
                 continue;
               }
 
               if (!course.term.end_at) {
-                console.debug(`[SyncEngine] Term "${termName}" (${termId}): no end_at, skipping`);
                 continue;
               }
 
@@ -622,7 +673,6 @@ export class SyncEngine extends EventEmitter {
               const adjustedEndDate = new Date(endDate.getTime() - DAYS_BUFFER * 24 * 60 * 60 * 1000);
               const isCurrent = adjustedEndDate > now;
 
-              console.debug(`[SyncEngine] Term "${termName}" (${termId}): end_at=${course.term.end_at}, adjusted=${adjustedEndDate.toISOString()}, isCurrent=${isCurrent}`);
 
               if (isCurrent) {
                 currentTermIds.add(termId);
@@ -630,15 +680,12 @@ export class SyncEngine extends EventEmitter {
             }
           }
 
-          console.debug(`[SyncEngine] Auto-detected current term IDs: ${Array.from(currentTermIds).join(', ')}`);
 
           if (currentTermIds.size > 0) {
             coursesToSync = fetched.courses.filter((c) =>
               c.term && currentTermIds.has(c.term.id)
             );
-            console.debug(`[SyncEngine] After auto-filter: ${coursesToSync.length} courses in current semester(s)`);
           } else {
-            console.debug(`[SyncEngine] No current semesters detected, syncing all courses`);
           }
         } else {
           // Specific term selected - filter by term ID
@@ -647,17 +694,14 @@ export class SyncEngine extends EventEmitter {
             coursesToSync = fetched.courses.filter((c) =>
               c.term && c.term.id === selectedTermId
             );
-            console.debug(`[SyncEngine] After term filter (${selectedTermId}): ${coursesToSync.length} courses`);
           }
         }
       }
 
-      console.debug(`[SyncEngine] Will sync data for ${coursesToSync.length} courses: ${coursesToSync.map(c => c.name).join(', ')}`);
 
 
       // Fetch data for each course in parallel
       for (const course of coursesToSync) {
-        console.debug(`[SyncEngine] Syncing course: id=${course.id}, name="${course.name}"`);
 
         const canvasCourseId = course.id;
 
@@ -691,7 +735,8 @@ export class SyncEngine extends EventEmitter {
           })()
         );
 
-        // Pages (with backoff tracking)
+        // Pages (with backoff tracking) - include body for HTML content
+        // Falls back to front_page if pages list is disabled
         fetchPromises.push(
           (async () => {
             const endpoint = `/courses/${canvasCourseId}/pages`;
@@ -699,11 +744,34 @@ export class SyncEngine extends EventEmitter {
               endpoint,
               canvasCourseId,
               () => this.rateLimiter.enqueue(
-                () => this.client.getAll<CanvasPage>(endpoint),
+                () => this.client.getAll<CanvasPage>(endpoint, { 'include[]': 'body' }),
                 2
               )
             );
-            fetched.pages.set(canvasCourseId, result.data || []);
+
+            // If pages list succeeded and has data, use it
+            if (result.data && result.data.length > 0) {
+              fetched.pages.set(canvasCourseId, result.data);
+              return;
+            }
+
+            // If pages list failed or empty, try fetching front_page directly
+            // This handles courses where pages list is disabled but front_page exists
+            try {
+              const frontPageResponse = await this.rateLimiter.enqueue(
+                () => this.client.get<CanvasPage>(`/courses/${canvasCourseId}/front_page`),
+                2
+              );
+              if (frontPageResponse.data) {
+                fetched.pages.set(canvasCourseId, [frontPageResponse.data]);
+                console.log(`[SyncEngine] Fetched front_page for course ${canvasCourseId} (pages list unavailable)`);
+              } else {
+                fetched.pages.set(canvasCourseId, []);
+              }
+            } catch {
+              // No front page available either
+              fetched.pages.set(canvasCourseId, []);
+            }
           })()
         );
 
@@ -722,11 +790,9 @@ export class SyncEngine extends EventEmitter {
 
         // Folders and Files (if enabled, with backoff tracking)
         if (syncCanvasFiles) {
-          console.debug(`[FileSync] syncAll: Queuing folder/file fetch for course ${canvasCourseId}`);
           fetchPromises.push(
             (async () => {
               const endpoint = `/courses/${canvasCourseId}/folders`;
-              console.debug(`[FileSync] syncAll: Fetching folders for course ${canvasCourseId}`);
               const result = await this.fetchWithBackoff(
                 endpoint,
                 canvasCourseId,
@@ -736,7 +802,6 @@ export class SyncEngine extends EventEmitter {
                 )
               );
               const folders = result.data || [];
-              console.debug(`[FileSync] syncAll: Got ${folders.length} folders for course ${canvasCourseId}`);
               fetched.folders.set(canvasCourseId, folders);
             })()
           );
@@ -744,7 +809,6 @@ export class SyncEngine extends EventEmitter {
           fetchPromises.push(
             (async () => {
               const endpoint = `/courses/${canvasCourseId}/files`;
-              console.debug(`[FileSync] syncAll: Fetching files for course ${canvasCourseId}`);
               const result = await this.fetchWithBackoff(
                 endpoint,
                 canvasCourseId,
@@ -754,33 +818,31 @@ export class SyncEngine extends EventEmitter {
                 )
               );
               const files = result.data || [];
-              console.debug(`[FileSync] syncAll: Got ${files.length} files for course ${canvasCourseId}`);
               fetched.files.set(canvasCourseId, files);
             })()
           );
         }
 
-        // Wait for all fetches for this course
-        console.debug(`[SyncEngine] Waiting for ${fetchPromises.length} fetch promises for course ${course.id}`);
-        await Promise.all(fetchPromises);
-        console.debug(`[SyncEngine] Completed fetches for course ${course.id}`);
+        // Wait for all fetches for this course - use allSettled to handle partial failures
+        const results = await Promise.allSettled(fetchPromises);
+
+        // Log any failures but continue with successful fetches
+        const failures = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
+        if (failures.length > 0) {
+          for (const failure of failures) {
+            const reason = failure.reason instanceof Error ? failure.reason.message : String(failure.reason);
+            errors.push(`Course ${canvasCourseId} fetch: ${reason}`);
+          }
+        }
       }
 
       // Summary of fetched data
-      console.debug(`[SyncEngine] FETCH PHASE COMPLETE - Summary:`);
-      console.debug(`[SyncEngine]   courses: ${fetched.courses.length}`);
-      console.debug(`[SyncEngine]   tasks: ${Array.from(fetched.tasks.values()).reduce((a, b) => a + b.length, 0)} across ${fetched.tasks.size} courses`);
-      console.debug(`[SyncEngine]   announcements: ${Array.from(fetched.announcements.values()).reduce((a, b) => a + b.length, 0)} across ${fetched.announcements.size} courses`);
-      console.debug(`[SyncEngine]   modules: ${Array.from(fetched.modules.values()).reduce((a, b) => a + b.length, 0)} across ${fetched.modules.size} courses`);
-      console.debug(`[SyncEngine]   pages: ${Array.from(fetched.pages.values()).reduce((a, b) => a + b.length, 0)} across ${fetched.pages.size} courses`);
-      console.debug(`[SyncEngine]   folders: ${Array.from(fetched.folders.values()).reduce((a, b) => a + b.length, 0)} across ${fetched.folders.size} courses`);
-      console.debug(`[SyncEngine]   files: ${Array.from(fetched.files.values()).reduce((a, b) => a + b.length, 0)} across ${fetched.files.size} courses`);
 
       this.emit('sync-phase', { phase: 'fetch', status: 'complete' });
 
     } catch (fetchError) {
       // FETCH FAILED - Abort without writing anything
-      this.isSyncing = false;
+      this.releaseSyncMutex();
       const message = fetchError instanceof Error ? fetchError.message : String(fetchError);
       errors.push(`Fetch failed: ${message}`);
 
@@ -979,7 +1041,8 @@ export class SyncEngine extends EventEmitter {
           }
         }
 
-        // --- Write Modules ---
+        // --- Write Modules and Module Items ---
+        let totalModuleItems = 0;
         for (const [canvasCourseId, modules] of fetched.modules) {
           const localCourseId = courseIdMap.get(canvasCourseId);
           if (!localCourseId) continue;
@@ -988,7 +1051,24 @@ export class SyncEngine extends EventEmitter {
             const localModule = mapModule(module, localCourseId);
             this.db.upsert('modules', localModule);
             counts.modules++;
+
+            // Get local module ID for items
+            const insertedModule = this.db.executeReadOne<{ id: number }>(
+              'SELECT id FROM modules WHERE external_id = ?',
+              [String(module.id)]
+            );
+
+            // Write module items if available (from include: ['items'])
+            if (insertedModule && module.items && module.items.length > 0) {
+              for (const item of module.items) {
+                const localItem = mapModuleItem(item, insertedModule.id);
+                this.db.upsert('module_items', localItem);
+                totalModuleItems++;
+              }
+            }
           }
+        }
+        if (totalModuleItems > 0) {
         }
 
         // --- Write Pages ---
@@ -1005,29 +1085,23 @@ export class SyncEngine extends EventEmitter {
         }
 
         // --- Write Folders ---
-        console.debug(`[FileSync] syncAll COMMIT: Writing folders for ${fetched.folders.size} courses`);
         for (const [canvasCourseId, folders] of fetched.folders) {
           const localCourseId = courseIdMap.get(canvasCourseId);
           if (!localCourseId) {
-            console.debug(`[FileSync] syncAll COMMIT: No local course ID for canvas course ${canvasCourseId}, skipping folders`);
             continue;
           }
 
-          console.debug(`[FileSync] syncAll COMMIT: Writing ${folders.length} folders for course ${canvasCourseId} -> ${localCourseId}`);
           for (const folder of folders) {
             const localFolder = mapFolder(folder, localCourseId);
-            console.debug(`[FileSync] syncAll COMMIT: Folder id=${folder.id}, name="${folder.name}", path="${folder.full_name}"`);
             this.db.upsert('resources', localFolder as Record<string, unknown>);
             counts.folders++;
           }
         }
 
         // --- Write Files ---
-        console.debug(`[FileSync] syncAll COMMIT: Writing files for ${fetched.files.size} courses`);
         for (const [canvasCourseId, files] of fetched.files) {
           const localCourseId = courseIdMap.get(canvasCourseId);
           if (!localCourseId) {
-            console.debug(`[FileSync] syncAll COMMIT: No local course ID for canvas course ${canvasCourseId}, skipping files`);
             continue;
           }
 
@@ -1040,9 +1114,7 @@ export class SyncEngine extends EventEmitter {
           for (const folder of dbFolders) {
             folderPathMap.set(parseInt(folder.external_id, 10), folder.folder_path || '');
           }
-          console.debug(`[FileSync] syncAll COMMIT: Built folder path map with ${folderPathMap.size} entries for course ${localCourseId}`);
 
-          console.debug(`[FileSync] syncAll COMMIT: Writing ${files.length} files for course ${canvasCourseId} -> ${localCourseId}`);
           for (const file of files) {
             const folderPath = folderPathMap.get(file.folder_id) ?? null;
             const localFile = mapFile(file, localCourseId, null, folderPath);
@@ -1052,7 +1124,6 @@ export class SyncEngine extends EventEmitter {
               'SELECT id, local_path FROM resources WHERE external_id = ?',
               [String(file.id)]
             );
-            console.debug(`[FileSync] syncAll COMMIT: File id=${file.id}, name="${file.display_name}", folder_id=${file.folder_id}, folderPath="${folderPath}", existing_local_path="${existing?.local_path || 'none'}"`);
 
             this.db.upsert('resources', localFile as Record<string, unknown>, 'external_id', true);
             counts.files++;
@@ -1075,7 +1146,7 @@ export class SyncEngine extends EventEmitter {
 
     } catch (commitError) {
       // COMMIT FAILED - Transaction automatically rolled back
-      this.isSyncing = false;
+      this.releaseSyncMutex();
       const message = commitError instanceof Error ? commitError.message : String(commitError);
       errors.push(`Commit failed (rolled back): ${message}`);
 
@@ -1094,7 +1165,78 @@ export class SyncEngine extends EventEmitter {
         errors,
       };
     } finally {
-      this.isSyncing = false;
+      this.releaseSyncMutex();
+    }
+
+    // ============ PHASE 3: EXTRACT FILE REFERENCES ============
+    this.emit('sync-phase', { phase: 'file-refs', status: 'started' });
+
+    const fileRefCounts = {
+      pages: 0,
+      assignments: 0,
+      syllabus: 0,
+      announcements: 0,
+      modules: 0,
+      fetched: 0,
+    };
+
+    // Extract file references from all synced courses
+    for (const course of fetched.courses) {
+      const localCourse = this.db.executeReadOne<{ id: number }>(
+        'SELECT id FROM courses WHERE external_id = ?',
+        [String(course.id)]
+      );
+
+      if (localCourse) {
+        const extracted = await this.extractAllFileReferences(localCourse.id);
+        fileRefCounts.pages += extracted.pages.count;
+        fileRefCounts.assignments += extracted.assignments.count;
+        fileRefCounts.syllabus += extracted.syllabus.count;
+        fileRefCounts.announcements += extracted.announcements.count;
+        fileRefCounts.modules += extracted.modules.count;
+
+        // Fetch missing files discovered in HTML
+        const fetchedRefs = await this.fetchMissingFileReferences(localCourse.id);
+        fileRefCounts.fetched += fetchedRefs.count;
+      }
+    }
+
+    this.emit('sync-phase', { phase: 'file-refs', status: 'complete', counts: fileRefCounts });
+
+    // ============ PHASE 4: HTML CONTENT REGISTRATION ============
+    // Register HTML content items (pages, assignments, announcements) as downloadable resources
+    // Actual download happens when user requests it from Files panel
+    console.log(`[SyncEngine] Phase 4: htmlContentSync=${!!this.htmlContentSync}, filesBaseDir=${this.filesBaseDir}`);
+
+    const htmlSyncCounts = {
+      itemsRegistered: 0,
+      resourcesFound: 0,
+    };
+
+    if (this.htmlContentSync && this.filesBaseDir) {
+      this.emit('sync-phase', { phase: 'html-content', status: 'started' });
+
+      for (const course of fetched.courses) {
+        const localCourse = this.db.executeReadOne<{ id: number }>(
+          'SELECT id FROM courses WHERE external_id = ?',
+          [String(course.id)]
+        );
+
+        if (localCourse) {
+          const htmlResult = await this.htmlContentSync.syncCourseHtmlContent(
+            localCourse.id,
+            this.filesBaseDir
+          );
+          htmlSyncCounts.itemsRegistered += htmlResult.itemsRegistered;
+          htmlSyncCounts.resourcesFound += htmlResult.resourcesFound;
+
+          if (htmlResult.errors.length > 0) {
+            errors.push(...htmlResult.errors.map(e => `HTML sync: ${e}`));
+          }
+        }
+      }
+
+      this.emit('sync-phase', { phase: 'html-content', status: 'complete', counts: htmlSyncCounts });
     }
 
     // ============ SUCCESS ============
@@ -1142,7 +1284,6 @@ export class SyncEngine extends EventEmitter {
 
         console.debug('[SyncEngine] Processing courses for term extraction...');
         for (const course of courses) {
-          console.debug(`[SyncEngine] Course ${course.course_code}: term=${JSON.stringify(course.term)}, enrollment_term_id=${course.enrollment_term_id}`);
 
           if (course.term) {
             if (!termsMap.has(course.term.id)) {
@@ -1152,7 +1293,6 @@ export class SyncEngine extends EventEmitter {
                 start_at: course.term.start_at,
                 end_at: course.term.end_at,
               });
-              console.debug(`[SyncEngine] Added term: ${course.term.name} (${course.term.id}), end_at=${course.term.end_at}`);
             }
           } else if (course.enrollment_term_id) {
             // Fallback if term object not included
@@ -1163,7 +1303,6 @@ export class SyncEngine extends EventEmitter {
                 start_at: null,
                 end_at: null,
               });
-              console.debug(`[SyncEngine] Added fallback term: Semester ${course.enrollment_term_id} (no term object)`);
             }
           }
         }
@@ -1670,6 +1809,9 @@ export class SyncEngine extends EventEmitter {
 
       const modules = result.data;
 
+      // First pass: upsert modules
+      const modulesWithItems: Array<{ canvasModule: typeof modules[0]; localModuleId: number }> = [];
+
       this.db.transaction(() => {
         for (const module of modules) {
           try {
@@ -1677,21 +1819,40 @@ export class SyncEngine extends EventEmitter {
             this.db.upsert('modules', localModule);
             count++;
 
-            // Get local module ID for items
             const insertedModule = this.db.executeReadOne<{ id: number }>(
               'SELECT id FROM modules WHERE external_id = ?',
               [String(module.id)]
             );
 
-            // Sync module items
-            if (insertedModule && module.items_count > 0) {
-              this.syncModuleItems(canvasCourseId, module.id, insertedModule.id);
+            if (insertedModule && (module.items?.length || module.items_count > 0)) {
+              modulesWithItems.push({ canvasModule: module, localModuleId: insertedModule.id });
             }
           } catch (error) {
             errors.push(`Module ${module.id}: ${error instanceof Error ? error.message : String(error)}`);
           }
         }
       });
+
+      // Second pass: sync module items (outside transaction, properly awaited)
+      let totalItemsSynced = 0;
+      for (const { canvasModule, localModuleId } of modulesWithItems) {
+        // Use embedded items if available (from include: ['items'])
+        if (canvasModule.items && canvasModule.items.length > 0) {
+          this.db.transaction(() => {
+            for (const item of canvasModule.items!) {
+              const localItem = mapModuleItem(item, localModuleId);
+              this.db.upsert('module_items', localItem);
+              totalItemsSynced++;
+            }
+          });
+        } else {
+          // Fallback: fetch items via API
+          await this.syncModuleItems(canvasCourseId, canvasModule.id, localModuleId);
+        }
+      }
+
+      // Single summary line
+      const sample = modules[0];
 
       this.updateSyncMetadata(`/courses/${canvasCourseId}/modules`);
 
@@ -1737,13 +1898,13 @@ export class SyncEngine extends EventEmitter {
         this.db.upsert('module_items', localItem);
       }
     } catch (error) {
-      // Log but don't fail entire module sync
-      console.error(`Failed to sync items for module ${canvasModuleId}:`, error);
+      console.error(`[ModuleSync] Failed to sync items for module ${canvasModuleId}:`, error);
     }
   }
 
   /**
    * Sync pages for a specific course (includes syllabus and landing page)
+   * Falls back to front_page if pages list is disabled
    */
   async syncPages(canvasCourseId: number, localCourseId: number): Promise<SyncResult> {
     const startTime = Date.now();
@@ -1753,16 +1914,37 @@ export class SyncEngine extends EventEmitter {
 
     try {
       // Sync course pages (with backoff tracking)
+      // Include body content for HTML extraction
       const result = await this.fetchWithBackoff(
         endpoint,
         canvasCourseId,
         () => this.rateLimiter.enqueue(
-          () => this.client.getAll<CanvasPage>(endpoint),
+          () => this.client.getAll<CanvasPage>(endpoint, { 'include[]': 'body' }),
           2
         )
       );
 
-      if (result.skipped || !result.data) {
+      let pages: CanvasPage[] = [];
+
+      if (result.data && result.data.length > 0) {
+        pages = result.data;
+      } else if (!result.skipped) {
+        // Pages list failed or empty - try fetching front_page directly
+        try {
+          const frontPageResponse = await this.rateLimiter.enqueue(
+            () => this.client.get<CanvasPage>(`/courses/${canvasCourseId}/front_page`),
+            2
+          );
+          if (frontPageResponse.data) {
+            pages = [frontPageResponse.data];
+            console.log(`[SyncEngine] Fetched front_page for course ${canvasCourseId} (pages list unavailable)`);
+          }
+        } catch {
+          // No front page available
+        }
+      }
+
+      if (pages.length === 0) {
         return {
           success: true,
           entity: 'pages',
@@ -1771,8 +1953,6 @@ export class SyncEngine extends EventEmitter {
           duration: Date.now() - startTime,
         };
       }
-
-      const pages = result.data;
 
       this.db.transaction(() => {
         for (const page of pages) {
@@ -1819,7 +1999,6 @@ export class SyncEngine extends EventEmitter {
     let count = 0;
     const endpoint = `/courses/${canvasCourseId}/folders`;
 
-    console.debug(`[FileSync] syncFolders START: canvasCourse=${canvasCourseId}, localCourse=${localCourseId}`);
 
     try {
       // Fetch all folders for the course (with backoff tracking)
@@ -1833,7 +2012,6 @@ export class SyncEngine extends EventEmitter {
       );
 
       if (result.skipped || !result.data) {
-        console.debug(`[FileSync] syncFolders SKIPPED: ${result.error || 'no data'}`);
         return {
           success: true,
           entity: 'folders',
@@ -1844,24 +2022,20 @@ export class SyncEngine extends EventEmitter {
       }
 
       const folders = result.data;
-      console.debug(`[FileSync] syncFolders FETCHED: ${folders.length} folders`);
 
       this.db.transaction(() => {
         for (const folder of folders) {
           try {
             const localFolder = mapFolder(folder, localCourseId);
-            console.debug(`[FileSync] Folder: id=${folder.id}, name="${folder.name}", path="${folder.full_name}", parent=${folder.parent_folder_id}`);
             this.db.upsert('resources', localFolder as Record<string, unknown>);
             count++;
           } catch (error) {
-            console.debug(`[FileSync] Folder ERROR: ${folder.name}: ${error}`);
             errors.push(`Folder ${folder.name}: ${error instanceof Error ? error.message : String(error)}`);
           }
         }
       });
 
       this.updateSyncMetadata(endpoint);
-      console.debug(`[FileSync] syncFolders COMPLETE: ${count} folders synced in ${Date.now() - startTime}ms`);
 
       return {
         success: errors.length === 0,
@@ -1872,7 +2046,6 @@ export class SyncEngine extends EventEmitter {
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : JSON.stringify(error);
-      console.debug(`[FileSync] syncFolders FAILED: ${message}`);
       errors.push(`Failed to sync folders for course ${canvasCourseId}: ${message}`);
       return {
         success: false,
@@ -1894,7 +2067,6 @@ export class SyncEngine extends EventEmitter {
     let count = 0;
     const endpoint = `/courses/${canvasCourseId}/files`;
 
-    console.debug(`[FileSync] syncFiles START: canvasCourse=${canvasCourseId}, localCourse=${localCourseId}`);
 
     try {
       // Fetch all files for the course (with backoff tracking)
@@ -1908,7 +2080,6 @@ export class SyncEngine extends EventEmitter {
       );
 
       if (result.skipped || !result.data) {
-        console.debug(`[FileSync] syncFiles SKIPPED: ${result.error || 'no data'}, trying module fallback...`);
         // Fallback: extract files from module items
         const fallbackResult = await this.syncFilesFromModules(canvasCourseId, localCourseId);
         return {
@@ -1921,7 +2092,6 @@ export class SyncEngine extends EventEmitter {
       }
 
       const files = result.data;
-      console.debug(`[FileSync] syncFiles FETCHED: ${files.length} files from Canvas API`);
 
       // Build a lookup map from Canvas folder_id to folder_path
       // Folders should be synced before files
@@ -1933,7 +2103,6 @@ export class SyncEngine extends EventEmitter {
       for (const folder of dbFolders) {
         folderPathMap.set(parseInt(folder.external_id, 10), folder.folder_path || '');
       }
-      console.debug(`[FileSync] Folder path map built: ${folderPathMap.size} folders`);
 
       this.db.transaction(() => {
         for (const file of files) {
@@ -1942,31 +2111,41 @@ export class SyncEngine extends EventEmitter {
             const folderPath = folderPathMap.get(file.folder_id) ?? null;
             const localFile = mapFile(file, localCourseId, null, folderPath);
 
-            // Check existing record to see if local_path would be preserved
-            const existing = this.db.executeReadOne<{ id: number; local_path: string | null }>(
-              'SELECT id, local_path FROM resources WHERE external_id = ?',
+            // Check existing record for version tracking and local_path preservation
+            const existing = this.db.executeReadOne<{
+              id: number;
+              local_path: string | null;
+              remote_updated_at: string | null;
+            }>(
+              'SELECT id, local_path, remote_updated_at FROM resources WHERE external_id = ?',
               [String(file.id)]
             );
 
-            console.debug(`[FileSync] File: id=${file.id}, name="${file.display_name}", folder_id=${file.folder_id}, folderPath="${folderPath}", size=${file.size}, existing_local_path="${existing?.local_path || 'none'}"`);
+            // Check if file needs update based on remote timestamp
+            const needsUpdate = this.fileNeedsUpdate(existing ?? null, file);
 
-            // Debug: verify local_path is not in the data
-            if ('local_path' in localFile) {
-              console.error('[FileSync] BUG: local_path should not be in mapped file data!');
+            // Emit file-updated event if the file content has changed and was previously downloaded
+            if (needsUpdate && existing?.local_path) {
+              this.emit('file-updated', {
+                resourceId: existing.id,
+                externalId: String(file.id),
+                filename: file.display_name,
+                localPath: existing.local_path,
+                oldTimestamp: existing.remote_updated_at,
+                newTimestamp: localFile.remote_updated_at,
+              });
             }
 
             // local_path is not in localFile data, so it won't be overwritten on sync
             this.db.upsert('resources', localFile as Record<string, unknown>, 'external_id', true);
             count++;
           } catch (error) {
-            console.debug(`[FileSync] File ERROR: ${file.display_name}: ${error}`);
             errors.push(`File ${file.display_name}: ${error instanceof Error ? error.message : String(error)}`);
           }
         }
       });
 
       this.updateSyncMetadata(endpoint);
-      console.debug(`[FileSync] syncFiles COMPLETE: ${count} files synced in ${Date.now() - startTime}ms`);
 
       return {
         success: errors.length === 0,
@@ -1977,7 +2156,6 @@ export class SyncEngine extends EventEmitter {
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : JSON.stringify(error);
-      console.debug(`[FileSync] syncFiles FAILED: ${message}`);
       errors.push(`Failed to sync files for course ${canvasCourseId}: ${message}`);
       return {
         success: false,
@@ -2014,7 +2192,6 @@ export class SyncEngine extends EventEmitter {
         [localCourseId]
       );
 
-      console.debug(`[FileSync] Module fallback: found ${fileItems.length} file items for course ${canvasCourseId}`);
 
       if (fileItems.length === 0) {
         return { success: true, count: 0, errors: [] };
@@ -2041,21 +2218,17 @@ export class SyncEngine extends EventEmitter {
 
             this.db.upsert('resources', localFile as Record<string, unknown>, 'external_id', true);
             count++;
-            console.debug(`[FileSync] Module fallback: synced file ${file.display_name} (${file.id})`);
           }
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           // Don't fail the whole sync for individual file errors
-          console.debug(`[FileSync] Module fallback: failed to fetch file ${item.content_id}: ${message}`);
           errors.push(`File ${item.title}: ${message}`);
         }
       }
 
-      console.debug(`[FileSync] Module fallback COMPLETE: ${count} files synced from modules`);
       return { success: true, count, errors };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      console.debug(`[FileSync] Module fallback FAILED: ${message}`);
       errors.push(`Module fallback failed: ${message}`);
       return { success: false, count, errors };
     }
@@ -2100,13 +2273,27 @@ export class SyncEngine extends EventEmitter {
       };
     }
 
-    // Sync related data in parallel
-    const [tasks, announcements, modules, pages] = await Promise.all([
+    // Sync related data in parallel - use allSettled to handle partial failures
+    const results = await Promise.allSettled([
       this.syncTasks(canvasCourseId, localCourse.id),
       this.syncAnnouncements(canvasCourseId, localCourse.id),
       this.syncModules(canvasCourseId, localCourse.id),
       this.syncPages(canvasCourseId, localCourse.id),
     ]);
+
+    // Extract results, using error fallback for rejected promises
+    const makeFailedResult = (entity: string, error: unknown): SyncResult => ({
+      success: false,
+      entity,
+      count: 0,
+      errors: [error instanceof Error ? error.message : String(error)],
+      duration: 0,
+    });
+
+    const tasks = results[0].status === 'fulfilled' ? results[0].value : makeFailedResult('tasks', results[0].reason);
+    const announcements = results[1].status === 'fulfilled' ? results[1].value : makeFailedResult('announcements', results[1].reason);
+    const modules = results[2].status === 'fulfilled' ? results[2].value : makeFailedResult('modules', results[2].reason);
+    const pages = results[3].status === 'fulfilled' ? results[3].value : makeFailedResult('pages', results[3].reason);
 
     return { course: courseResult, tasks, announcements, modules, pages };
   }
@@ -2198,11 +2385,461 @@ export class SyncEngine extends EventEmitter {
   }
 
   /**
-   * Stop any ongoing sync operations
+   * Extract file references from page HTML content and store them
+   */
+  async extractPageFileRefs(localCourseId: number): Promise<{ count: number; errors: string[] }> {
+    const errors: string[] = [];
+    let count = 0;
+
+    try {
+      // Get all pages with HTML content
+      const pages = this.db.executeRead<{
+        id: number;
+        external_id: string;
+        body_html: string | null;
+        title: string;
+      }>(
+        'SELECT id, external_id, body_html, title FROM course_pages WHERE course_id = ? AND body_html IS NOT NULL',
+        [localCourseId]
+      );
+
+      for (const page of pages) {
+        if (!page.body_html) continue;
+
+        const refs = this.htmlFileExtractor.extract(page.body_html);
+        for (const ref of refs) {
+          try {
+            this.storeContentFileReference(localCourseId, 'page', page.external_id, ref);
+            count++;
+          } catch (error) {
+            errors.push(`Page ${page.title}: ${error instanceof Error ? error.message : String(error)}`);
+          }
+        }
+      }
+
+      return { count, errors };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      errors.push(`Failed to extract page file refs: ${message}`);
+      return { count, errors };
+    }
+  }
+
+  /**
+   * Extract file references from assignment descriptions
+   */
+  async extractAssignmentFileRefs(localCourseId: number): Promise<{ count: number; errors: string[] }> {
+    const errors: string[] = [];
+    let count = 0;
+
+    try {
+      // Get all assignments with HTML descriptions
+      const tasks = this.db.executeRead<{
+        id: number;
+        external_id: string;
+        description: string | null;
+        title: string;
+      }>(
+        'SELECT id, external_id, description, title FROM tasks WHERE course_id = ? AND description IS NOT NULL AND source_type = ?',
+        [localCourseId, 'canvas']
+      );
+
+      for (const task of tasks) {
+        if (!task.description) continue;
+
+        const refs = this.htmlFileExtractor.extract(task.description);
+        for (const ref of refs) {
+          try {
+            this.storeContentFileReference(localCourseId, 'assignment', task.external_id, ref);
+            count++;
+          } catch (error) {
+            errors.push(`Assignment ${task.title}: ${error instanceof Error ? error.message : String(error)}`);
+          }
+        }
+      }
+
+      return { count, errors };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      errors.push(`Failed to extract assignment file refs: ${message}`);
+      return { count, errors };
+    }
+  }
+
+  /**
+   * Extract file references from syllabus body
+   */
+  async extractSyllabusFileRefs(localCourseId: number): Promise<{ count: number; errors: string[] }> {
+    const errors: string[] = [];
+    let count = 0;
+
+    try {
+      // Get course syllabus
+      const course = this.db.executeReadOne<{
+        id: number;
+        external_id: string;
+        syllabus_body: string | null;
+        code: string;
+      }>(
+        'SELECT id, external_id, syllabus_body, code FROM courses WHERE id = ?',
+        [localCourseId]
+      );
+
+      if (!course?.syllabus_body) {
+        return { count: 0, errors: [] };
+      }
+
+      const refs = this.htmlFileExtractor.extract(course.syllabus_body);
+      for (const ref of refs) {
+        try {
+          this.storeContentFileReference(localCourseId, 'syllabus', course.external_id, ref);
+          count++;
+        } catch (error) {
+          errors.push(`Syllabus: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
+
+      return { count, errors };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      errors.push(`Failed to extract syllabus file refs: ${message}`);
+      return { count, errors };
+    }
+  }
+
+  /**
+   * Extract file references from announcement HTML content
+   */
+  async extractAnnouncementFileRefs(localCourseId: number): Promise<{ count: number; errors: string[] }> {
+    const errors: string[] = [];
+    let count = 0;
+
+    try {
+      // Get announcements with HTML content
+      const announcements = this.db.executeRead<{
+        id: number;
+        source_id: string;
+        message_html: string | null;
+        title: string;
+      }>(
+        'SELECT id, source_id, message_html, title FROM notifications WHERE course_id = ? AND source_type = ? AND message_html IS NOT NULL',
+        [localCourseId, 'canvas']
+      );
+
+      for (const announcement of announcements) {
+        if (!announcement.message_html) continue;
+
+        const refs = this.htmlFileExtractor.extract(announcement.message_html);
+        for (const ref of refs) {
+          try {
+            this.storeContentFileReference(localCourseId, 'announcement', announcement.source_id, ref);
+            count++;
+          } catch (error) {
+            errors.push(`Announcement ${announcement.title}: ${error instanceof Error ? error.message : String(error)}`);
+          }
+        }
+      }
+
+      return { count, errors };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      errors.push(`Failed to extract announcement file refs: ${message}`);
+      return { count, errors };
+    }
+  }
+
+  /**
+   * Extract file references from module items with type='File'
+   * These items have content_id (Canvas file ID) and url (API endpoint)
+   */
+  async extractModuleFileRefs(localCourseId: number): Promise<{ count: number; errors: string[] }> {
+    const errors: string[] = [];
+    let count = 0;
+
+    try {
+      // Debug: Check what's in module_items for this course
+      const allItems = this.db.executeRead<{ item_type: string; cnt: number }>(
+        `SELECT mi.item_type, COUNT(*) as cnt
+         FROM module_items mi
+         JOIN modules m ON mi.module_id = m.id
+         WHERE m.course_id = ?
+         GROUP BY mi.item_type`,
+        [localCourseId]
+      );
+
+      // Get module items with type='File' that have content_id
+      const fileItems = this.db.executeRead<{
+        id: number;
+        external_id: string;
+        content_id: string;
+        url: string | null;
+        title: string;
+        module_id: number;
+      }>(
+        `SELECT mi.id, mi.external_id, mi.content_id, mi.url, mi.title, mi.module_id
+         FROM module_items mi
+         JOIN modules m ON mi.module_id = m.id
+         WHERE m.course_id = ? AND mi.item_type = 'File' AND mi.content_id IS NOT NULL`,
+        [localCourseId]
+      );
+
+      // Only log if there are items or file refs found
+      if (allItems.length > 0 || fileItems.length > 0) {
+        const typeSummary = allItems.map(i => `${i.item_type}:${i.cnt}`).join(',') || 'none';
+      }
+
+      if (fileItems.length === 0) {
+        return { count: 0, errors: [] };
+      }
+
+      for (const item of fileItems) {
+        try {
+          // Create ExtractedFileReference object matching the interface
+          const ref: ExtractedFileReference = {
+            canvasFileId: item.content_id,
+            matchedUrl: item.url || `/files/${item.content_id}`,
+            patternType: 'api',
+            isDownloadLink: true,
+          };
+          this.storeContentFileReference(localCourseId, 'module', item.external_id, ref);
+          count++;
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          errors.push(`Module item ${item.external_id}: ${msg}`);
+        }
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      errors.push(`Module file refs extraction failed: ${msg}`);
+    }
+
+    return { count, errors };
+  }
+
+  /**
+   * Store a content file reference in the database
+   */
+  private storeContentFileReference(
+    courseId: number,
+    sourceType: 'page' | 'assignment' | 'syllabus' | 'module' | 'announcement',
+    sourceId: string,
+    ref: ExtractedFileReference
+  ): void {
+    // Check if we already have this file in resources
+    const existingResource = this.db.executeReadOne<{ id: number }>(
+      'SELECT id FROM resources WHERE external_id = ?',
+      [ref.canvasFileId]
+    );
+
+    this.db.executeWrite(
+      `INSERT INTO content_file_references
+       (course_id, source_type, source_id, canvas_file_id, extracted_url, resource_id, download_status)
+       VALUES (?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(course_id, source_type, source_id, canvas_file_id) DO UPDATE SET
+         extracted_url = excluded.extracted_url,
+         resource_id = COALESCE(content_file_references.resource_id, excluded.resource_id)`,
+      [
+        courseId,
+        sourceType,
+        sourceId,
+        ref.canvasFileId,
+        ref.matchedUrl,
+        existingResource?.id || null,
+        existingResource ? 'completed' : 'pending',
+      ],
+      'content_file_references'
+    );
+  }
+
+  /**
+   * Fetch files that were discovered in HTML but not in resources table
+   */
+  async fetchMissingFileReferences(localCourseId: number): Promise<{ count: number; errors: string[] }> {
+    const errors: string[] = [];
+    let count = 0;
+
+    try {
+      // Get course external ID
+      const course = this.db.executeReadOne<{ external_id: string; code: string }>(
+        'SELECT external_id, code FROM courses WHERE id = ?',
+        [localCourseId]
+      );
+
+      if (!course) {
+        return { count: 0, errors: ['Course not found'] };
+      }
+
+      const canvasCourseId = parseInt(course.external_id, 10);
+
+      // Get pending file references that don't have a resource_id yet
+      const pendingRefs = this.db.executeRead<{
+        id: number;
+        canvas_file_id: string;
+        source_type: string;
+        source_id: string;
+      }>(
+        `SELECT id, canvas_file_id, source_type, source_id FROM content_file_references
+         WHERE course_id = ? AND download_status = 'pending' AND resource_id IS NULL`,
+        [localCourseId]
+      );
+
+
+      // Fetch each missing file from Canvas API
+      for (const ref of pendingRefs) {
+        try {
+          const fileEndpoint = `/courses/${canvasCourseId}/files/${ref.canvas_file_id}`;
+
+          const response = await this.rateLimiter.enqueue(
+            () => this.client.get<CanvasFile>(fileEndpoint),
+            3
+          );
+
+          const file = response?.data;
+          if (file) {
+            // Determine context type and folder path based on source
+            const contextType = ref.source_type as 'page' | 'assignment' | 'syllabus' | 'module' | 'announcement';
+            const contextFolder = this.getContextFolder(contextType, ref.source_id);
+
+            // Map and store the file
+            const localFile = mapFile(file, localCourseId, null, contextFolder, contextType, ref.source_id);
+
+            const result = this.db.upsert('resources', localFile as Record<string, unknown>, 'external_id', true);
+
+            // Get the resource ID and update the file reference
+            const resourceRow = this.db.executeReadOne<{ id: number }>(
+              'SELECT id FROM resources WHERE external_id = ?',
+              [ref.canvas_file_id]
+            );
+
+            if (resourceRow) {
+              this.db.executeWrite(
+                `UPDATE content_file_references SET resource_id = ?, download_status = 'completed' WHERE id = ?`,
+                [resourceRow.id, ref.id],
+                'content_file_references'
+              );
+            }
+
+            count++;
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          const status = (error as { status?: number })?.status;
+
+          // Mark as not_found for 404 errors, failed for others
+          const newStatus = status === 404 ? 'not_found' : 'failed';
+          this.db.executeWrite(
+            `UPDATE content_file_references SET download_status = ? WHERE id = ?`,
+            [newStatus, ref.id],
+            'content_file_references'
+          );
+
+          errors.push(`File ${ref.canvas_file_id}: ${message}`);
+        }
+      }
+
+      return { count, errors };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      errors.push(`Failed to fetch missing file refs: ${message}`);
+      return { count, errors };
+    }
+  }
+
+  /**
+   * Get context folder path based on source type
+   */
+  private getContextFolder(sourceType: string, sourceId: string): string {
+    switch (sourceType) {
+      case 'page':
+        return 'Pages';
+      case 'assignment':
+        return 'Assignments';
+      case 'syllabus':
+        return 'Syllabus';
+      case 'module': {
+        // Look up module name from module_items -> modules
+        const moduleInfo = this.db.executeReadOne<{ module_name: string }>(
+          `SELECT m.name as module_name FROM module_items mi
+           JOIN modules m ON mi.module_id = m.id
+           WHERE mi.external_id = ?`,
+          [sourceId]
+        );
+        return moduleInfo?.module_name || 'Modules';
+      }
+      case 'announcement':
+        return 'Announcements';
+      default:
+        return 'Other';
+    }
+  }
+
+  /**
+   * Extract all file references for a course (pages, assignments, syllabus, announcements, modules)
+   */
+  async extractAllFileReferences(localCourseId: number): Promise<{
+    pages: { count: number; errors: string[] };
+    assignments: { count: number; errors: string[] };
+    syllabus: { count: number; errors: string[] };
+    announcements: { count: number; errors: string[] };
+    modules: { count: number; errors: string[] };
+    total: number;
+  }> {
+    const [pages, assignments, syllabus, announcements, modules] = await Promise.all([
+      this.extractPageFileRefs(localCourseId),
+      this.extractAssignmentFileRefs(localCourseId),
+      this.extractSyllabusFileRefs(localCourseId),
+      this.extractAnnouncementFileRefs(localCourseId),
+      this.extractModuleFileRefs(localCourseId),
+    ]);
+
+    const total = pages.count + assignments.count + syllabus.count + announcements.count + modules.count;
+
+    return { pages, assignments, syllabus, announcements, modules, total };
+  }
+
+  /**
+   * Check if a file needs to be updated based on remote timestamp
+   */
+  fileNeedsUpdate(existing: { remote_updated_at: string | null } | null, canvasFile: CanvasFile): boolean {
+    if (!existing) return true;
+    if (!existing.remote_updated_at) return true;
+
+    const remoteTimestamp = canvasFile.modified_at || canvasFile.updated_at;
+    if (!remoteTimestamp) return false;
+
+    return new Date(remoteTimestamp) > new Date(existing.remote_updated_at);
+  }
+
+  /**
+   * Configure HTML content sync
+   */
+  configureHtmlContentSync(config: {
+    downloadManager: FileDownloadManager;
+    htmlContentSyncConfig: HtmlContentSyncConfig;
+    filesBaseDir: string;
+  }): void {
+    this.downloadManager = config.downloadManager;
+    this.filesBaseDir = config.filesBaseDir;
+    this.htmlContentSync = new HtmlContentSync({
+      db: this.db,
+      downloadManager: config.downloadManager,
+      config: config.htmlContentSyncConfig,
+      authToken: this.client.getAuthToken(),
+      baseUrl: this.client.getBaseUrl(),
+    });
+  }
+
+  /**
+   * Stop any ongoing sync operations and cleanup resources
    */
   stop(): void {
+    // Remove event listeners to prevent memory leaks
+    if (this.rateLimitedHandler) {
+      this.rateLimiter.off('rate-limited', this.rateLimitedHandler);
+      this.rateLimitedHandler = null;
+    }
     this.rateLimiter.stop();
-    this.isSyncing = false;
+    this.releaseSyncMutex();
   }
 
   /**

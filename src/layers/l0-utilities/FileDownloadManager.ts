@@ -38,6 +38,10 @@ export interface DownloadRequest {
   expectedSize?: number;
   /** Authorization token for Canvas API */
   authToken?: string;
+  /** Context folder for organizing files by source (e.g., 'Home_Page', 'Modules/Week_1', 'Assignments', 'Syllabus') */
+  contextFolder?: string;
+  /** Original folder path from Canvas (used for files from /files endpoint) */
+  folderPath?: string;
 }
 
 export interface DownloadResult {
@@ -65,7 +69,7 @@ export class FileDownloadManager extends EventEmitter {
   private logger?: Logger;
   private activeDownloads: Map<string, AbortController> = new Map();
   private queue: DownloadRequest[] = [];
-  private processing: boolean = false;
+  private processingPromise: Promise<void> | null = null;
 
   constructor(config: FileDownloadManagerConfig) {
     super();
@@ -91,8 +95,55 @@ export class FileDownloadManager extends EventEmitter {
    */
   getCourseFilesPath(courseCode: string): string {
     // Sanitize course code for filesystem
-    const sanitized = courseCode.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const sanitized = this.sanitizePathComponent(courseCode);
     return path.join(this.baseDir, sanitized);
+  }
+
+  /**
+   * Sanitize a path component for filesystem safety
+   */
+  private sanitizePathComponent(component: string): string {
+    return component.replace(/[^a-zA-Z0-9_\-. ]/g, '_').replace(/\s+/g, '_');
+  }
+
+  /**
+   * Get the full directory path for a download request
+   * Handles context folders and folder paths
+   *
+   * Structure: {baseDir}/{courseCode}/{contextFolder|folderPath}/{filename}
+   *
+   * Examples:
+   * - Files tab: TEP327/Lectures/slides.pdf
+   * - Home page: TEP327/Home_Page/intro.pdf
+   * - Syllabus: TEP327/Syllabus/outline.pdf
+   * - Module: TEP327/Modules/Week_1/homework.pdf
+   * - Assignment: TEP327/Assignments/Project_1/rubric.pdf
+   */
+  getDownloadDirectory(request: DownloadRequest): string {
+    const courseDir = this.getCourseFilesPath(request.courseCode);
+
+    // Determine subfolder: contextFolder takes priority, then folderPath
+    let subfolder: string | undefined;
+
+    if (request.contextFolder) {
+      // Context folder can contain path separators (e.g., "Modules/Week_1")
+      subfolder = request.contextFolder
+        .split('/')
+        .map(c => this.sanitizePathComponent(c))
+        .join(path.sep);
+    } else if (request.folderPath) {
+      // Canvas folder path
+      subfolder = request.folderPath
+        .split('/')
+        .map(c => this.sanitizePathComponent(c))
+        .join(path.sep);
+    }
+
+    if (subfolder) {
+      return path.join(courseDir, subfolder);
+    }
+
+    return courseDir;
   }
 
   /**
@@ -115,19 +166,28 @@ export class FileDownloadManager extends EventEmitter {
 
   /**
    * Process the download queue
+   * Uses promise-based lock to prevent race condition where multiple
+   * processQueue calls could start before the first sets the processing flag.
    */
-  private async processQueue(): Promise<void> {
-    if (this.processing) return;
-    this.processing = true;
+  private processQueue(): void {
+    // If already processing, don't start another loop
+    if (this.processingPromise) return;
 
+    this.processingPromise = this.processQueueInternal().finally(() => {
+      this.processingPromise = null;
+    });
+  }
+
+  /**
+   * Internal queue processing - called by processQueue wrapper
+   */
+  private async processQueueInternal(): Promise<void> {
     while (this.queue.length > 0 && this.activeDownloads.size < this.maxConcurrent) {
       const request = this.queue.shift();
       if (request) {
         this.startDownload(request);
       }
     }
-
-    this.processing = false;
   }
 
   /**
@@ -141,12 +201,12 @@ export class FileDownloadManager extends EventEmitter {
     let bytesDownloaded = 0;
 
     try {
-      // Ensure course directory exists
-      const courseDir = this.getCourseFilesPath(request.courseCode);
-      this.ensureDirectory(courseDir);
+      // Get target directory (handles context folders and folder paths)
+      const targetDir = this.getDownloadDirectory(request);
+      this.ensureDirectory(targetDir);
 
       // Generate unique filename to avoid collisions
-      const localPath = this.getUniqueFilePath(courseDir, request.filename);
+      const localPath = this.getUniqueFilePath(targetDir, request.filename);
 
       this.logger?.info(`Starting download: ${request.filename} -> ${localPath}`);
       this.emit('download-start', { id: request.id, filename: request.filename });

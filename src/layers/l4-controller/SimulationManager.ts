@@ -227,11 +227,18 @@ export class SimulationManager extends EventEmitter {
       // Track affected tasks (those with simulations)
       const simulation = this.context.grades.get(task.id);
       if (simulation) {
-        // For now, use original priority - full recalc would need PriorityEngine
+        // Recalculate priority if PriorityEngine is available
+        let simulatedPriority = task.priority_score;
+        if (this.priorityEngine) {
+          const explanation = this.priorityEngine.getTaskExplanation(task.id);
+          if (explanation) {
+            simulatedPriority = explanation.finalScore;
+          }
+        }
         affectedTasks.push({
           id: task.id,
           originalPriority: task.priority_score,
-          simulatedPriority: task.priority_score, // TODO: Recalculate with PriorityEngine
+          simulatedPriority,
         });
       }
     }

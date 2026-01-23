@@ -65,11 +65,63 @@ export class CanvasClient extends EventEmitter {
         'Content-Type': 'application/json',
         Accept: 'application/json',
       },
+      // Canvas API expects array params as include[]=val1&include[]=val2
+      paramsSerializer: (params) => {
+        const parts: string[] = [];
+        for (const [key, value] of Object.entries(params)) {
+          if (value === undefined || value === null) continue;
+          if (Array.isArray(value)) {
+            for (const v of value) {
+              parts.push(`${encodeURIComponent(key)}[]=${encodeURIComponent(String(v))}`);
+            }
+          } else {
+            parts.push(`${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`);
+          }
+        }
+        return parts.join('&');
+      },
     });
 
-    // Add response interceptor for error handling
+    // Add request interceptor for logging
+    this.client.interceptors.request.use(
+      (config) => {
+        const url = config.url || '';
+        const params = config.params ? JSON.stringify(config.params) : '';
+        console.debug(`[CanvasAPI] REQUEST: ${config.method?.toUpperCase()} ${url}${params ? ` params=${params}` : ''}`);
+        return config;
+      },
+      (error) => {
+        console.debug(`[CanvasAPI] REQUEST ERROR: ${error.message}`);
+        return Promise.reject(error);
+      }
+    );
+
+    // Add response interceptor for logging and error handling
     this.client.interceptors.response.use(
-      (response) => response,
+      (response) => {
+        const url = response.config.url || '';
+        const status = response.status;
+        const isArray = Array.isArray(response.data);
+        const dataLength = isArray ? response.data.length : (response.data ? 1 : 0);
+        const rateLimitRemaining = response.headers['x-rate-limit-remaining'];
+        const linkHeader = response.headers['link'];
+        const hasNextPage = linkHeader?.includes('rel="next"');
+
+        console.debug(`[CanvasAPI] RESPONSE: ${status} ${url} - ${dataLength} items, rate_limit_remaining=${rateLimitRemaining || 'N/A'}${hasNextPage ? ', has_next_page=true' : ''}`);
+
+        // Log first few items for debugging (truncated) - only for arrays
+        if (isArray && response.data.length > 0) {
+          const sample = response.data.slice(0, 2).map((item: Record<string, unknown>) => {
+            if (!item || typeof item !== 'object') return '{invalid}';
+            const id = item.id || item.url || 'unknown';
+            const name = item.name || item.display_name || item.title || '';
+            return `{id:${id}, name:"${String(name).slice(0, 30)}"}`;
+          });
+          console.debug(`[CanvasAPI] SAMPLE: [${sample.join(', ')}${response.data.length > 2 ? ', ...' : ''}]`);
+        }
+
+        return response;
+      },
       (error: AxiosError) => this.handleError(error)
     );
   }
@@ -154,19 +206,38 @@ export class CanvasClient extends EventEmitter {
     const results: T[] = [];
     let url: string | null = endpoint;
     const queryParams = { ...params, per_page: 100 };
+    let pageNum = 1;
+
+    console.debug(`[CanvasAPI] getAll START: ${endpoint}`);
 
     while (url) {
       const response = await this.client.get<T[]>(url, {
         params: url === endpoint ? queryParams : undefined,
       });
 
-      results.push(...response.data);
+      // Validate response is an array before spreading
+      if (!Array.isArray(response.data)) {
+        console.warn(`[CanvasAPI] getAll: expected array but got ${typeof response.data} for ${endpoint}`);
+        break; // Stop pagination if response format is unexpected
+      }
 
-      // Parse Link header for next page
-      const links = this.parseLinkHeader(response.headers['link'] as string);
+      results.push(...response.data);
+      console.debug(`[CanvasAPI] getAll page ${pageNum}: got ${response.data.length} items, total=${results.length}`);
+
+      // Parse Link header for next page (handle string or string[] header)
+      const linkHeader = response.headers['link'];
+      const links = this.parseLinkHeader(
+        typeof linkHeader === 'string' ? linkHeader : Array.isArray(linkHeader) ? linkHeader[0] : undefined
+      );
       url = links.next || null;
+
+      if (url) {
+        pageNum++;
+        console.debug(`[CanvasAPI] getAll: fetching next page ${pageNum}...`);
+      }
     }
 
+    console.debug(`[CanvasAPI] getAll COMPLETE: ${endpoint} - ${results.length} total items in ${pageNum} pages`);
     return results;
   }
 
@@ -232,20 +303,35 @@ export class CanvasClient extends EventEmitter {
    * Handle API errors
    */
   private handleError(error: AxiosError): Promise<never> {
+    const url = error.config?.url || 'unknown';
+
     if (error.response) {
       const status = error.response.status;
       const data = error.response.data as { errors?: Array<{ message: string }>; message?: string };
 
+      console.debug(`[CanvasAPI] ERROR: ${status} ${url} - ${JSON.stringify(data)}`);
+
       // Emit rate limit event
       if (status === 429) {
+        const retryAfter = error.response.headers['retry-after'];
+        console.debug(`[CanvasAPI] RATE LIMITED: retry-after=${retryAfter}`);
         this.emit('rate-limited', {
-          retryAfter: error.response.headers['retry-after'],
+          retryAfter,
         });
       }
 
       // Emit auth error event
       if (status === 401) {
+        console.debug(`[CanvasAPI] AUTH ERROR: 401 Unauthorized`);
         this.emit('auth-error', { message: 'Invalid or expired access token' });
+      }
+
+      if (status === 403) {
+        console.debug(`[CanvasAPI] FORBIDDEN: 403 - access denied to ${url}`);
+      }
+
+      if (status === 404) {
+        console.debug(`[CanvasAPI] NOT FOUND: 404 - resource not found at ${url}`);
       }
 
       const errorMessage =
@@ -265,12 +351,14 @@ export class CanvasClient extends EventEmitter {
 
     // Network error
     if (error.request) {
+      console.debug(`[CanvasAPI] NETWORK ERROR: Could not reach server for ${url}`);
       return Promise.reject({
         status: 0,
         message: 'Network error - could not reach Canvas server',
       });
     }
 
+    console.debug(`[CanvasAPI] UNKNOWN ERROR: ${error.message}`);
     return Promise.reject({
       status: 0,
       message: error.message || 'Unknown error',
@@ -291,10 +379,9 @@ export class CanvasClient extends EventEmitter {
         { per_page: 100 }
       );
       return response.data.enrollment_terms || [];
-    } catch (error) {
-      // Account-level access may be denied for students
+    } catch {
+      // Account-level access is typically denied for students (403)
       // Return empty and let caller handle extracting from courses
-      console.debug('[CanvasClient] Could not fetch enrollment terms from account:', error);
       return [];
     }
   }
@@ -304,6 +391,13 @@ export class CanvasClient extends EventEmitter {
    */
   getBaseUrl(): string {
     return this.baseUrl;
+  }
+
+  /**
+   * Get the access token (for authenticated downloads)
+   */
+  getAuthToken(): string {
+    return this.accessToken;
   }
 
   /**

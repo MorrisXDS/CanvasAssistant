@@ -10,6 +10,10 @@ export interface DatabaseConfig {
   verbose?: boolean;
   /** Performance settings from AppConfig */
   performance?: Partial<AppDatabaseConfig>;
+  /** Idle checkpoint delay in ms (default: 5 minutes) */
+  idleCheckpointMs?: number;
+  /** WAL file size threshold for checkpoint in bytes (default: 100MB) */
+  walCheckpointThreshold?: number;
 }
 
 export interface CommitEvent {
@@ -31,6 +35,21 @@ export interface CommitEvent {
 // Default performance settings
 const DEFAULT_CACHE_SIZE_KB = 64000; // 64MB
 const DEFAULT_MMAP_SIZE_BYTES = 268435456; // 256MB
+const DEFAULT_IDLE_CHECKPOINT_MS = 5 * 60 * 1000; // 5 minutes
+const DEFAULT_WAL_CHECKPOINT_THRESHOLD = 100 * 1024 * 1024; // 100MB
+
+// SQL identifier validation - prevents SQL injection via table/column names
+const VALID_SQL_IDENTIFIER = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
+
+/**
+ * Validate that a string is a safe SQL identifier (table or column name)
+ * Prevents SQL injection through dynamic table/column names
+ */
+function validateSqlIdentifier(name: string, type: 'table' | 'column'): void {
+  if (!VALID_SQL_IDENTIFIER.test(name)) {
+    throw new Error(`Invalid ${type} name: "${name}". Must match pattern ${VALID_SQL_IDENTIFIER}`);
+  }
+}
 
 export class Database extends EventEmitter {
   private db: SQLiteDatabase;
@@ -39,6 +58,13 @@ export class Database extends EventEmitter {
   private readonly cacheSizeKb: number;
   private readonly mmapSizeBytes: number;
   private readonly walMode: boolean;
+  private readonly idleCheckpointMs: number;
+  private readonly walCheckpointThreshold: number;
+
+  // Checkpoint management
+  private idleCheckpointTimer: NodeJS.Timeout | null = null;
+  private lastWriteTime: number = 0;
+  private walCheckInterval: NodeJS.Timeout | null = null;
 
   constructor(config: DatabaseConfig) {
     super();
@@ -48,6 +74,8 @@ export class Database extends EventEmitter {
     this.cacheSizeKb = config.performance?.cacheSizeKb ?? DEFAULT_CACHE_SIZE_KB;
     this.mmapSizeBytes = config.performance?.mmapSizeBytes ?? DEFAULT_MMAP_SIZE_BYTES;
     this.walMode = config.performance?.walMode ?? true;
+    this.idleCheckpointMs = config.idleCheckpointMs ?? DEFAULT_IDLE_CHECKPOINT_MS;
+    this.walCheckpointThreshold = config.walCheckpointThreshold ?? DEFAULT_WAL_CHECKPOINT_THRESHOLD;
 
     // Ensure directory exists
     const dbDir = path.dirname(this.dbPath);
@@ -62,6 +90,11 @@ export class Database extends EventEmitter {
 
     // Configure for performance and safety
     this.configurePragmas();
+
+    // Start checkpoint management if WAL mode is enabled
+    if (this.walMode) {
+      this.startCheckpointManagement();
+    }
   }
 
   /**
@@ -152,6 +185,9 @@ export class Database extends EventEmitter {
       lastInsertRowid: Number(result.lastInsertRowid),
     };
 
+    // Track write time for idle checkpoint
+    this.recordWrite();
+
     // Emit commit event if table name provided
     if (tableName) {
       const operation = this.detectOperation(sql);
@@ -199,29 +235,88 @@ export class Database extends EventEmitter {
    * Upsert operation with conflict resolution
    * @param conflictColumns - Single column name or array of column names for composite unique constraint
    * @param updateTimestamp - Whether to automatically update updated_at column (default: true)
+   * @param preserveColumns - Columns to preserve (not overwrite) if record exists. Uses COALESCE to keep existing value.
    */
   upsert(
     tableName: string,
     data: Record<string, unknown>,
     conflictColumns: string | string[] = 'external_id',
-    updateTimestamp: boolean = true
+    updateTimestamp: boolean = true,
+    preserveColumns: string[] = []
   ): BetterSqlite3.RunResult {
+    // Validate identifiers to prevent SQL injection
+    validateSqlIdentifier(tableName, 'table');
     const columns = Object.keys(data);
+    columns.forEach(col => validateSqlIdentifier(col, 'column'));
+    const conflictColArray = Array.isArray(conflictColumns) ? conflictColumns : [conflictColumns];
+    conflictColArray.forEach(col => validateSqlIdentifier(col, 'column'));
+    preserveColumns.forEach(col => validateSqlIdentifier(col, 'column'));
     const values = Object.values(data);
     const placeholders = columns.map(() => '?').join(', ');
-
-    // Handle both single and composite conflict columns
-    const conflictColArray = Array.isArray(conflictColumns) ? conflictColumns : [conflictColumns];
     const conflictClause = conflictColArray.join(', ');
 
     const updates = columns
       .filter((col) => !conflictColArray.includes(col) && col !== 'id')
-      .map((col) => `${col} = excluded.${col}`);
+      .map((col) => {
+        // For preserved columns, use COALESCE to keep existing value if it was user-modified
+        if (preserveColumns.includes(col)) {
+          return `${col} = COALESCE(${tableName}.${col}, excluded.${col})`;
+        }
+        return `${col} = excluded.${col}`;
+      });
 
     // Optionally add updated_at if the table has that column
     if (updateTimestamp && !columns.includes('updated_at')) {
       updates.push('updated_at = CURRENT_TIMESTAMP');
     }
+
+    const sql = `
+      INSERT INTO ${tableName} (${columns.join(', ')})
+      VALUES (${placeholders})
+      ON CONFLICT(${conflictClause}) DO UPDATE SET
+        ${updates.join(', ')}
+    `;
+
+    return this.executeWrite(sql, values, tableName);
+  }
+
+  /**
+   * Upsert that only updates specified columns (for sync operations)
+   * On INSERT: inserts all provided data
+   * On UPDATE: only updates the columns specified in updateColumns
+   *
+   * This ensures local-only fields are never overwritten by sync.
+   *
+   * @param tableName - Table name
+   * @param data - Full data for insert
+   * @param conflictColumns - Conflict column(s) for upsert
+   * @param updateColumns - Only these columns will be updated on conflict (others preserved)
+   */
+  upsertSyncData(
+    tableName: string,
+    data: Record<string, unknown>,
+    conflictColumns: string | string[] = 'external_id',
+    updateColumns: string[]
+  ): BetterSqlite3.RunResult {
+    // Validate identifiers to prevent SQL injection
+    validateSqlIdentifier(tableName, 'table');
+    const columns = Object.keys(data);
+    columns.forEach(col => validateSqlIdentifier(col, 'column'));
+    const conflictColArray = Array.isArray(conflictColumns) ? conflictColumns : [conflictColumns];
+    conflictColArray.forEach(col => validateSqlIdentifier(col, 'column'));
+    updateColumns.forEach(col => validateSqlIdentifier(col, 'column'));
+
+    const values = Object.values(data);
+    const placeholders = columns.map(() => '?').join(', ');
+    const conflictClause = conflictColArray.join(', ');
+
+    // Only update the specified columns (Canvas-provided data)
+    const updates = updateColumns
+      .filter(col => !conflictColArray.includes(col) && col !== 'id' && columns.includes(col))
+      .map(col => `${col} = excluded.${col}`);
+
+    // Always update updated_at
+    updates.push('updated_at = CURRENT_TIMESTAMP');
 
     const sql = `
       INSERT INTO ${tableName} (${columns.join(', ')})
@@ -269,7 +364,91 @@ export class Database extends EventEmitter {
    * Checkpoint WAL file (merge into main database)
    */
   checkpoint(): void {
-    this.db.pragma('wal_checkpoint(TRUNCATE)');
+    const result = this.db.pragma('wal_checkpoint(TRUNCATE)');
+    this.emit('checkpoint', {
+      result,
+      timestamp: new Date().toISOString(),
+    });
+  }
+
+  /**
+   * Start checkpoint management (idle and WAL size based)
+   */
+  private startCheckpointManagement(): void {
+    // Check WAL file size every 60 seconds
+    this.walCheckInterval = setInterval(() => {
+      this.checkWalFileSize();
+    }, 60000);
+
+    // Schedule idle checkpoint check
+    this.scheduleIdleCheckpoint();
+  }
+
+  /**
+   * Schedule or reschedule idle checkpoint
+   */
+  private scheduleIdleCheckpoint(): void {
+    if (this.idleCheckpointTimer) {
+      clearTimeout(this.idleCheckpointTimer);
+    }
+
+    this.idleCheckpointTimer = setTimeout(() => {
+      const timeSinceLastWrite = Date.now() - this.lastWriteTime;
+      if (timeSinceLastWrite >= this.idleCheckpointMs) {
+        this.performIdleCheckpoint();
+      } else {
+        // Reschedule for remaining time
+        this.scheduleIdleCheckpoint();
+      }
+    }, this.idleCheckpointMs);
+  }
+
+  /**
+   * Perform idle checkpoint
+   */
+  private performIdleCheckpoint(): void {
+    try {
+      this.checkpoint();
+      this.emit('idle-checkpoint', {
+        timestamp: new Date().toISOString(),
+        idleDurationMs: Date.now() - this.lastWriteTime,
+      });
+    } catch (error) {
+      this.emit('checkpoint-error', {
+        type: 'idle',
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  /**
+   * Check WAL file size and checkpoint if above threshold
+   */
+  private checkWalFileSize(): void {
+    const walPath = `${this.dbPath}-wal`;
+    try {
+      if (!fs.existsSync(walPath)) return;
+
+      const stats = fs.statSync(walPath);
+      if (stats.size >= this.walCheckpointThreshold) {
+        this.checkpoint();
+        this.emit('wal-size-checkpoint', {
+          timestamp: new Date().toISOString(),
+          walSizeBytes: stats.size,
+          threshold: this.walCheckpointThreshold,
+        });
+      }
+    } catch (error) {
+      // Ignore errors - WAL file may not exist
+    }
+  }
+
+  /**
+   * Record write time (called after every write operation)
+   */
+  private recordWrite(): void {
+    this.lastWriteTime = Date.now();
+    this.scheduleIdleCheckpoint();
   }
 
   /**
@@ -292,8 +471,28 @@ export class Database extends EventEmitter {
    * Close database connection
    */
   close(): void {
+    // Clear checkpoint management timers
+    if (this.idleCheckpointTimer) {
+      clearTimeout(this.idleCheckpointTimer);
+      this.idleCheckpointTimer = null;
+    }
+    if (this.walCheckInterval) {
+      clearInterval(this.walCheckInterval);
+      this.walCheckInterval = null;
+    }
+
     // Checkpoint before close to ensure all data is written
-    this.checkpoint();
-    this.db.close();
+    // Use try-finally to ensure db.close() is always called even if checkpoint fails
+    try {
+      this.checkpoint();
+    } catch (error) {
+      // Log but don't throw - we still need to close the connection
+      this.emit('checkpoint-error', {
+        type: 'close',
+        error: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      this.db.close();
+    }
   }
 }

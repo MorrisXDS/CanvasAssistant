@@ -43,8 +43,15 @@ export class TriggerSyncCommand
       return { valid: false, error: `Invalid sync type: ${params.type}` };
     }
 
-    if (params.courseId !== undefined && params.courseId <= 0) {
-      return { valid: false, error: 'Invalid course ID' };
+    if (params.courseId !== undefined) {
+      // Validate courseId is a positive integer
+      if (typeof params.courseId !== 'number' || !Number.isInteger(params.courseId) || params.courseId < 1) {
+        return { valid: false, error: 'Invalid course ID: must be a positive integer' };
+      }
+      // Reasonable upper bound check (SQLite INTEGER max is 2^63-1, but IDs should be reasonable)
+      if (params.courseId > 2147483647) {
+        return { valid: false, error: 'Invalid course ID: exceeds maximum value' };
+      }
     }
 
     return { valid: true };
