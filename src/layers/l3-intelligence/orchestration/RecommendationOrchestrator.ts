@@ -11,11 +11,11 @@
 
 import { EventEmitter } from 'events';
 import { Database } from '../../l1-persistence/Database';
+import { generateAllRecommendations } from '../domain/RecommendationEngine';
 import {
-  generateAllRecommendations,
-  getActiveRecommendations,
-} from '../domain/RecommendationEngine';
-import { identifyStrugglePatterns, calculateCourseDifficulty } from '../domain/BehaviorAnalytics';
+  identifyStrugglePatterns,
+  calculateCourseDifficulty,
+} from '../domain/BehaviorAnalytics';
 import { batchEstimateEffort } from '../domain/EffortEstimator';
 import { MessageProbationService } from '../domain/MessageProbationService';
 import {
@@ -26,8 +26,6 @@ import {
   CourseForPriority,
   EffortEstimate,
   TaskCompletionEvent,
-  StrugglePattern,
-  CoursePerformance,
 } from '../types';
 
 /**
@@ -268,7 +266,10 @@ export class RecommendationOrchestrator extends EventEmitter {
 
     // Get behavior patterns
     const strugglePatterns = identifyStrugglePatterns(events);
-    const coursePerformance = calculateCourseDifficulty(events, Array.from(courses.values()));
+    const coursePerformance = calculateCourseDifficulty(
+      events,
+      Array.from(courses.values())
+    );
 
     // Build context
     const context: RecommendationContext = {
@@ -293,12 +294,11 @@ export class RecommendationOrchestrator extends EventEmitter {
     recommendations = this.probationService.filterGrounded(
       recommendations,
       'recommendation',
-      (rec) => this.probationService.generateContentHash(
-        'recommendation',
-        rec.type,
-        rec.title,
-        { taskId: rec.taskId, courseId: rec.courseId }
-      )
+      (rec) =>
+        this.probationService.generateContentHash('recommendation', rec.type, rec.title, {
+          taskId: rec.taskId,
+          courseId: rec.courseId,
+        })
     );
 
     // Save to database and record displays
@@ -326,8 +326,45 @@ export class RecommendationOrchestrator extends EventEmitter {
 
   /**
    * Save recommendation to database
+   * Checks for existing active recommendation with same task/type to avoid duplicates
    */
   private saveRecommendation(recommendation: Recommendation): number {
+    const now = new Date().toISOString();
+
+    // Check if an active recommendation already exists for this task/type
+    const existing = this.db.executeReadOne<{ id: number }>(
+      `SELECT id FROM recommendations
+       WHERE recommendation_type = ?
+         AND COALESCE(task_id, 0) = COALESCE(?, 0)
+         AND COALESCE(course_id, 0) = COALESCE(?, 0)
+         AND dismissed_at IS NULL
+         AND acted_on_at IS NULL
+         AND valid_until >= ?
+       LIMIT 1`,
+      [recommendation.type, recommendation.taskId, recommendation.courseId, now]
+    );
+
+    if (existing) {
+      // Update existing recommendation instead of creating duplicate
+      this.db.executeWrite(
+        `UPDATE recommendations SET
+          title = ?, description = ?, reasoning = ?,
+          priority_score = ?, valid_from = ?, valid_until = ?
+        WHERE id = ?`,
+        [
+          recommendation.title,
+          recommendation.description,
+          recommendation.reasoning,
+          recommendation.priorityScore,
+          recommendation.validFrom.toISOString(),
+          recommendation.validUntil.toISOString(),
+          existing.id,
+        ],
+        'recommendations'
+      );
+      return existing.id;
+    }
+
     const result = this.db.executeWrite(
       `INSERT INTO recommendations (
         recommendation_type, task_id, course_id, title, description,
@@ -352,17 +389,32 @@ export class RecommendationOrchestrator extends EventEmitter {
 
   /**
    * Get active (not dismissed, not expired) recommendations
+   * Deduplicates by (task_id, recommendation_type), keeping the highest priority
    */
   getActiveRecommendations(): Recommendation[] {
     const now = new Date();
-    const rows = this.db.executeRead<RecommendationRow>(`
-      SELECT * FROM recommendations
-      WHERE dismissed_at IS NULL
-        AND acted_on_at IS NULL
-        AND valid_from <= ?
-        AND valid_until >= ?
-      ORDER BY priority_score DESC
-    `, [now.toISOString(), now.toISOString()]);
+    // Use a subquery to get the max id (most recent) for each unique combination
+    // This ensures we don't show duplicate recommendations for the same task/type
+    const rows = this.db.executeRead<RecommendationRow>(
+      `
+      SELECT r.* FROM recommendations r
+      INNER JOIN (
+        SELECT
+          COALESCE(task_id, 0) as tid,
+          COALESCE(course_id, 0) as cid,
+          recommendation_type,
+          MAX(id) as max_id
+        FROM recommendations
+        WHERE dismissed_at IS NULL
+          AND acted_on_at IS NULL
+          AND valid_from <= ?
+          AND valid_until >= ?
+        GROUP BY COALESCE(task_id, 0), COALESCE(course_id, 0), recommendation_type
+      ) latest ON r.id = latest.max_id
+      ORDER BY r.priority_score DESC
+    `,
+      [now.toISOString(), now.toISOString()]
+    );
 
     return rows.map((row) => this.mapRecommendationRow(row));
   }
@@ -371,11 +423,14 @@ export class RecommendationOrchestrator extends EventEmitter {
    * Get all recommendations (including dismissed)
    */
   getAllRecommendations(limit: number = 50): Recommendation[] {
-    const rows = this.db.executeRead<RecommendationRow>(`
+    const rows = this.db.executeRead<RecommendationRow>(
+      `
       SELECT * FROM recommendations
       ORDER BY created_at DESC
       LIMIT ?
-    `, [limit]);
+    `,
+      [limit]
+    );
 
     return rows.map((row) => this.mapRecommendationRow(row));
   }
@@ -452,13 +507,16 @@ export class RecommendationOrchestrator extends EventEmitter {
    */
   getRecommendationsForTask(taskId: number): Recommendation[] {
     const now = new Date();
-    const rows = this.db.executeRead<RecommendationRow>(`
+    const rows = this.db.executeRead<RecommendationRow>(
+      `
       SELECT * FROM recommendations
       WHERE task_id = ?
         AND dismissed_at IS NULL
         AND valid_until >= ?
       ORDER BY priority_score DESC
-    `, [taskId, now.toISOString()]);
+    `,
+      [taskId, now.toISOString()]
+    );
 
     return rows.map((row) => this.mapRecommendationRow(row));
   }
@@ -468,13 +526,16 @@ export class RecommendationOrchestrator extends EventEmitter {
    */
   getRecommendationsForCourse(courseId: number): Recommendation[] {
     const now = new Date();
-    const rows = this.db.executeRead<RecommendationRow>(`
+    const rows = this.db.executeRead<RecommendationRow>(
+      `
       SELECT * FROM recommendations
       WHERE course_id = ?
         AND dismissed_at IS NULL
         AND valid_until >= ?
       ORDER BY priority_score DESC
-    `, [courseId, now.toISOString()]);
+    `,
+      [courseId, now.toISOString()]
+    );
 
     return rows.map((row) => this.mapRecommendationRow(row));
   }
