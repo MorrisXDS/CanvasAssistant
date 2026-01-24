@@ -27,8 +27,8 @@
     "electron"
   ],
   "author": {
-    "name": "UofT Students",
-    "email": "quercus-desktop@uoft.me"
+    "name": "Morris Sun",
+    "email": "mcl211204@gmail.com"
   },
   "license": "MIT",
   "dependencies": {
@@ -97,18 +97,24 @@
       {
         "from": "node_modules/better-sqlite3/build/Release",
         "to": "better-sqlite3",
-        "filter": ["*.node"]
+        "filter": [
+          "*.node"
+        ]
       }
     ],
     "win": {
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         },
         {
           "target": "portable",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "icon": "assets/icon.ico"
@@ -121,12 +127,18 @@
       "installerHeaderIcon": "assets/icon.ico"
     },
     "mac": {
-      "target": ["dmg", "zip"],
+      "target": [
+        "dmg",
+        "zip"
+      ],
       "icon": "assets/icon.png",
       "category": "public.app-category.education"
     },
     "linux": {
-      "target": ["AppImage", "deb"],
+      "target": [
+        "AppImage",
+        "deb"
+      ],
       "icon": "assets/icon.png",
       "category": "Education"
     }
