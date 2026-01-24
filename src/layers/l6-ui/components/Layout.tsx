@@ -27,8 +27,8 @@ import { useStore, SyncResultSummary } from '../../l5-presentation/store';
 import { TitleBar } from './TitleBar';
 import { SyncResultToast, SyncConflictModal } from './shared';
 
-// Debug flag - set to true for debugging
-const DEBUG_LAYOUT = true;
+// Debug flag - set to true only when debugging layout issues
+const DEBUG_LAYOUT = false;
 
 // Storage keys
 const SIDEBAR_COLLAPSED_KEY = 'sidebarCollapsed';

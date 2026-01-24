@@ -13,8 +13,8 @@ import { TaskListModal, TaskWithCourse } from './TaskListModal';
 import { GradeBreakdownModal } from './GradeBreakdownModal';
 import { UnifiedDashboardGrid } from './UnifiedDashboardGrid';
 
-// Debug flag - set to false in production
-const DEBUG_LAYOUT = true;
+// Debug flag - set to true only when debugging layout issues
+const DEBUG_LAYOUT = false;
 
 export function Dashboard() {
   const pageRef = useRef<HTMLDivElement>(null);

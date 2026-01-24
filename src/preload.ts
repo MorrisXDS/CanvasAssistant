@@ -379,4 +379,7 @@ declare global {
   }
 }
 
-console.log('Preload script loaded - IPC API exposed as window.api');
+// Only log in development mode
+if (process.env.NODE_ENV === 'development') {
+  console.log('Preload script loaded - IPC API exposed as window.api');
+}

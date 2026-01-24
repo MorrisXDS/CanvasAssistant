@@ -779,14 +779,6 @@ function CourseGridCard({
         {/* Header row - Grid row 1 */}
         <div style={styles.gridCardHeader}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-            {/* Drag handle */}
-            <div
-              style={styles.dragHandle}
-              title="Drag to reorder"
-              data-drag-handle
-            >
-              <GripVertical size={14} />
-            </div>
             <span style={{ ...styles.courseCodeBadge, backgroundColor: color }}>
               {getShortCode(course.code)}
             </span>
@@ -891,9 +883,19 @@ function CourseGridCard({
           )}
         </div>
 
-        {/* Sync time - Grid row 5 */}
-        <div style={styles.syncTime}>
-          {course.lastSyncedAt ? `Synced ${new Date(course.lastSyncedAt).toLocaleDateString()}` : '\u00A0'}
+        {/* Footer row - Grid row 5: Sync time + Drag handle */}
+        <div style={styles.cardFooter}>
+          <div style={styles.syncTime}>
+            {course.lastSyncedAt ? `Synced ${new Date(course.lastSyncedAt).toLocaleDateString()}` : '\u00A0'}
+          </div>
+          {/* Drag handle */}
+          <div
+            style={styles.dragHandle}
+            title="Drag to reorder"
+            data-drag-handle
+          >
+            <GripVertical size={14} />
+          </div>
         </div>
       </div>
     </div>
@@ -1596,10 +1598,16 @@ const styles: Record<string, React.CSSProperties> = {
     color: 'var(--text-primary)',
   },
 
+  cardFooter: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: '0 clamp(12px, 1.5vw, 20px) clamp(12px, 1.5vw, 20px) clamp(12px, 1.5vw, 20px)',
+  },
+
   syncTime: {
     fontSize: 'clamp(10px, 0.8vw, 13px)',
     color: 'var(--text-muted)',
-    padding: '0 clamp(12px, 1.5vw, 20px) clamp(12px, 1.5vw, 20px) clamp(12px, 1.5vw, 20px)',
   },
 
   // List View Styles - fills available space

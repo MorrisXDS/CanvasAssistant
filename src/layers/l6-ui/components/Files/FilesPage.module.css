@@ -1083,7 +1083,8 @@
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-2) var(--space-4);
-  padding-left: calc(var(--space-6) + 18px); /* Align with folder content */
+  /* Align with folder icon: base (var(--space-6)) + drag handle (16px) + chevron (14px) + gap (8px) + depth offset */
+  padding-left: calc(var(--space-6) + 42px + var(--folder-depth-offset, 0px));
   border-bottom: 1px solid var(--border-light);
   transition: background-color var(--transition-fast);
 }
@@ -1235,7 +1236,8 @@
   grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   gap: var(--space-3);
   padding: var(--space-4);
-  padding-left: calc(var(--space-6) + 18px); /* Align with folder header and list items */
+  /* Align with folder icon: matches fileListItem with depth offset */
+  padding-left: calc(var(--space-6) + 42px + var(--folder-depth-offset, 0px));
   border-top: 1px solid var(--border-light);
 }
 

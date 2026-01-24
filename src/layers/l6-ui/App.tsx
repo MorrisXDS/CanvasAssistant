@@ -5,7 +5,7 @@
 
 import React, { useEffect, useState } from 'react';
 import {
-  BrowserRouter,
+  HashRouter,
   Routes,
   Route,
   Navigate,
@@ -168,10 +168,12 @@ function AppContent() {
  * App wrapper with Router
  */
 export default function App() {
+  // HashRouter is required for Electron's file:// protocol in production
+  // BrowserRouter only works with http:// URLs (dev server)
   return (
-    <BrowserRouter>
+    <HashRouter>
       <AppContent />
-    </BrowserRouter>
+    </HashRouter>
   );
 }
 

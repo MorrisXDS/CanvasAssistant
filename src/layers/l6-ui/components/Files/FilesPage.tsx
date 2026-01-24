@@ -1303,7 +1303,12 @@ export function FilesPage() {
                           {/* Files in Folder */}
                           {folderExpanded && (
                             viewMode === 'list' ? (
-                              <div className={styles.fileList}>
+                              <div
+                                className={styles.fileList}
+                                style={{
+                                  '--folder-depth-offset': `${folderDepth * 20}px`,
+                                } as React.CSSProperties}
+                              >
                                 {folderFiles.map((file) => (
                                   <FileListItem
                                     key={getFileKey(file)}
@@ -1320,7 +1325,12 @@ export function FilesPage() {
                                 ))}
                               </div>
                             ) : (
-                              <div className={styles.fileGrid}>
+                              <div
+                                className={styles.fileGrid}
+                                style={{
+                                  '--folder-depth-offset': `${folderDepth * 20}px`,
+                                } as React.CSSProperties}
+                              >
                                 {folderFiles.map((file) => (
                                   <FileGridItem
                                     key={getFileKey(file)}

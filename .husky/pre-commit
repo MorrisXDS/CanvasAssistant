@@ -1,0 +1,6 @@
+#!/usr/bin/env sh
+
+# Cross-platform compatibility pre-commit hook
+# Runs lint-staged to check for platform-specific patterns
+
+npx lint-staged

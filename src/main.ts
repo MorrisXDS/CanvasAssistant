@@ -415,8 +415,14 @@ function registerIpcHandlers(): void {
     }
   });
 
-  // Debug: Direct Canvas API call (for testing)
+  // Debug: Direct Canvas API call (for testing) - only available in development
   ipcMain.handle('canvas:debugFetch', async (_event, endpoint: string) => {
+    // Only allow debug API access in development mode
+    if (process.env.NODE_ENV !== 'development') {
+      logger.warn('[canvas:debugFetch] Debug API blocked in production mode');
+      return { success: false, error: 'Debug API only available in development mode' };
+    }
+
     if (!canvasClient) {
       return { success: false, error: 'Canvas client not initialized' };
     }
@@ -437,7 +443,7 @@ function registerIpcHandlers(): void {
     syncAnnouncements?: boolean;
     courseIds?: number[];
   }) => {
-    console.debug(`[IPC sync:full] Received options: ${JSON.stringify(options)}`);
+    logger.debug(`[IPC sync:full] Received options: ${JSON.stringify(options)}`);
 
     if (!syncEngine) {
       logger.warn('Sync attempted but Canvas client not initialized');
@@ -1156,16 +1162,16 @@ function registerIpcHandlers(): void {
       [attachmentId]
     );
 
-    console.log('[attachment:open] Attachment:', { attachmentId, localPath: attachment?.local_path, url: attachment?.url });
+    logger.debug(`[attachment:open] Attachment: ${JSON.stringify({ attachmentId, localPath: attachment?.local_path, url: attachment?.url })}`);
 
     if (!attachment?.local_path) {
-      console.log('[attachment:open] No local_path, file not downloaded');
+      logger.debug('[attachment:open] No local_path, file not downloaded');
       return { success: false, error: 'File not downloaded' };
     }
 
     // Verify the local path is actually a file path, not a URL
     if (attachment.local_path.startsWith('http://') || attachment.local_path.startsWith('https://')) {
-      console.error('[attachment:open] local_path is a URL, not a file path:', attachment.local_path);
+      logger.error(`[attachment:open] local_path is a URL, not a file path: ${attachment.local_path}`);
       return { success: false, error: 'Invalid local path (URL stored instead of file path)' };
     }
 
@@ -1173,23 +1179,19 @@ function registerIpcHandlers(): void {
 
     // Check if file exists
     if (!fs.existsSync(attachment.local_path)) {
-      console.error('[attachment:open] File does not exist:', attachment.local_path);
+      logger.error(`[attachment:open] File does not exist: ${attachment.local_path}`);
       return { success: false, error: 'File not found on disk' };
     }
 
-    // Use spawn with detached to completely decouple from Electron process
-    const { spawn } = require('child_process');
-    const openCommand = process.platform === 'darwin' ? 'open'
-      : process.platform === 'win32' ? 'start'
-      : 'xdg-open';
-
-    const child = spawn(openCommand, [attachment.local_path], {
-      detached: true,
-      stdio: 'ignore',
+    // Use Electron's shell.openPath for cross-platform file opening
+    const { shell } = require('electron');
+    shell.openPath(attachment.local_path).then((error: string) => {
+      if (error) {
+        logger.error(`[attachment:open] Failed to open: ${error}`);
+      }
     });
-    child.unref(); // Allow Electron to exit independently
 
-    console.log('[attachment:open] Spawned detached process, returning immediately');
+    logger.debug('[attachment:open] Opening file with default application');
     return { success: true };
   });
 
@@ -2107,32 +2109,28 @@ function registerIpcHandlers(): void {
   });
 
   ipcMain.handle('resource:open', (_event, resourceId: number) => {
-    console.log('[resource:open] START', resourceId);
+    logger.debug(`[resource:open] START resourceId=${resourceId}`);
     const resource = database.executeReadOne<{ local_path: string | null }>(
       'SELECT local_path FROM resources WHERE id = ?',
       [resourceId]
     );
 
     if (!resource?.local_path) {
-      console.log('[resource:open] No local_path');
+      logger.debug('[resource:open] No local_path');
       return { success: false, error: 'File not downloaded' };
     }
 
-    console.log('[resource:open] Opening:', resource.local_path);
+    logger.debug(`[resource:open] Opening: ${resource.local_path}`);
 
-    // Use spawn with detached to completely decouple from Electron process
-    const { spawn } = require('child_process');
-    const openCommand = process.platform === 'darwin' ? 'open'
-      : process.platform === 'win32' ? 'start'
-      : 'xdg-open';
-
-    const child = spawn(openCommand, [resource.local_path], {
-      detached: true,
-      stdio: 'ignore',
+    // Use Electron's shell.openPath for cross-platform file opening
+    const { shell } = require('electron');
+    shell.openPath(resource.local_path).then((error: string) => {
+      if (error) {
+        logger.error(`[resource:open] Failed to open: ${error}`);
+      }
     });
-    child.unref(); // Allow Electron to exit independently
 
-    console.log('[resource:open] Spawned detached process, returning immediately');
+    logger.debug('[resource:open] Opening file with default application');
     return { success: true };
   });
 
