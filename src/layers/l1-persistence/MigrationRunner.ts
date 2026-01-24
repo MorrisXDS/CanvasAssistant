@@ -1030,4 +1030,158 @@ export const coreMigrations: Migration[] = [
       DROP TABLE IF EXISTS enrollment_terms;
     `,
   },
+  {
+    version: 36,
+    description: 'Add message_html column to notifications for original HTML content',
+    up: `
+      ALTER TABLE notifications ADD COLUMN message_html TEXT;
+    `,
+    down: `
+      -- SQLite doesn't support DROP COLUMN easily
+      SELECT 1;
+    `,
+  },
+  {
+    version: 37,
+    description: 'Create endpoint_backoff table for tracking auth failures with exponential backoff',
+    up: `
+      CREATE TABLE endpoint_backoff (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        endpoint TEXT NOT NULL,
+        course_id INTEGER,
+        failure_count INTEGER DEFAULT 1,
+        last_failure_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        next_retry_at DATETIME NOT NULL,
+        last_success_at DATETIME,
+        error_code TEXT,
+        error_message TEXT,
+        UNIQUE(endpoint, course_id)
+      );
+
+      CREATE INDEX idx_endpoint_backoff_next_retry ON endpoint_backoff(next_retry_at);
+      CREATE INDEX idx_endpoint_backoff_course ON endpoint_backoff(course_id);
+    `,
+    down: `
+      DROP INDEX IF EXISTS idx_endpoint_backoff_next_retry;
+      DROP INDEX IF EXISTS idx_endpoint_backoff_course;
+      DROP TABLE endpoint_backoff;
+    `,
+  },
+  {
+    version: 38,
+    description: 'Create sync_preferences table for remembering user sync conflict choices',
+    up: `
+      CREATE TABLE IF NOT EXISTS sync_preferences (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        entity TEXT NOT NULL,
+        entity_id INTEGER,
+        field TEXT NOT NULL,
+        prefer_local BOOLEAN DEFAULT FALSE,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(entity, entity_id, field)
+      );
+
+      CREATE INDEX idx_sync_preferences_entity ON sync_preferences(entity, entity_id);
+    `,
+    down: `
+      DROP INDEX IF EXISTS idx_sync_preferences_entity;
+      DROP TABLE IF EXISTS sync_preferences;
+    `,
+  },
+  {
+    version: 39,
+    description: 'Create field_modifications table for tracking local changes',
+    up: `
+      CREATE TABLE IF NOT EXISTS field_modifications (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        table_name TEXT NOT NULL,
+        entity_id INTEGER NOT NULL,
+        field TEXT NOT NULL,
+        modified_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(table_name, entity_id, field)
+      );
+
+      CREATE INDEX idx_field_modifications_entity ON field_modifications(table_name, entity_id);
+    `,
+    down: `
+      DROP INDEX IF EXISTS idx_field_modifications_entity;
+      DROP TABLE IF EXISTS field_modifications;
+    `,
+  },
+  {
+    version: 40,
+    description: 'Add content_file_references, html_exports tables and resource version tracking',
+    up: `
+      -- Table to track file references extracted from HTML content (pages, assignments, syllabus, etc.)
+      CREATE TABLE IF NOT EXISTS content_file_references (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        course_id INTEGER NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+        source_type TEXT NOT NULL CHECK(source_type IN ('page', 'assignment', 'syllabus', 'module', 'announcement')),
+        source_id TEXT NOT NULL,
+        canvas_file_id TEXT NOT NULL,
+        extracted_url TEXT NOT NULL,
+        resource_id INTEGER REFERENCES resources(id) ON DELETE SET NULL,
+        download_status TEXT DEFAULT 'pending' CHECK(download_status IN ('pending', 'downloading', 'completed', 'failed', 'not_found')),
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(course_id, source_type, source_id, canvas_file_id)
+      );
+
+      CREATE INDEX idx_content_file_refs_course ON content_file_references(course_id);
+      CREATE INDEX idx_content_file_refs_source ON content_file_references(source_type, source_id);
+      CREATE INDEX idx_content_file_refs_canvas_file ON content_file_references(canvas_file_id);
+      CREATE INDEX idx_content_file_refs_status ON content_file_references(download_status);
+
+      -- Table to track exported HTML files (pages, syllabus, assignments as local HTML)
+      CREATE TABLE IF NOT EXISTS html_exports (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        course_id INTEGER NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+        source_type TEXT NOT NULL CHECK(source_type IN ('page', 'assignment', 'syllabus', 'module', 'announcement')),
+        source_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        content_hash TEXT,
+        local_path TEXT,
+        remote_updated_at TEXT,
+        exported_at DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(course_id, source_type, source_id)
+      );
+
+      CREATE INDEX idx_html_exports_course ON html_exports(course_id);
+      CREATE INDEX idx_html_exports_source ON html_exports(source_type, source_id);
+
+      -- Add version tracking and context columns to resources table
+      ALTER TABLE resources ADD COLUMN remote_updated_at TEXT;
+      ALTER TABLE resources ADD COLUMN context_type TEXT CHECK(context_type IN ('page', 'assignment', 'syllabus', 'module', 'announcement', 'files'));
+      ALTER TABLE resources ADD COLUMN context_id TEXT;
+
+      CREATE INDEX idx_resources_remote_updated ON resources(remote_updated_at);
+      CREATE INDEX idx_resources_context ON resources(context_type, context_id);
+    `,
+    down: `
+      DROP INDEX IF EXISTS idx_resources_context;
+      DROP INDEX IF EXISTS idx_resources_remote_updated;
+      DROP INDEX IF EXISTS idx_html_exports_source;
+      DROP INDEX IF EXISTS idx_html_exports_course;
+      DROP INDEX IF EXISTS idx_content_file_refs_status;
+      DROP INDEX IF EXISTS idx_content_file_refs_canvas_file;
+      DROP INDEX IF EXISTS idx_content_file_refs_source;
+      DROP INDEX IF EXISTS idx_content_file_refs_course;
+      DROP TABLE IF EXISTS html_exports;
+      DROP TABLE IF EXISTS content_file_references;
+      -- Note: Cannot drop columns in SQLite easily
+    `,
+  },
+  {
+    version: 41,
+    description: 'Add lock_at column to tasks for submission lock deadlines',
+    up: `
+      ALTER TABLE tasks ADD COLUMN lock_at DATETIME;
+      CREATE INDEX idx_tasks_lock_at ON tasks(lock_at);
+    `,
+    down: `
+      DROP INDEX IF EXISTS idx_tasks_lock_at;
+      -- SQLite doesn't support DROP COLUMN easily
+      SELECT 1;
+    `,
+  },
 ];

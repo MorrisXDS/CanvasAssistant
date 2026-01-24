@@ -1,6 +1,7 @@
 /**
  * DismissNotificationCommand - Mark a notification as dismissed
  *
+ * Uses repository for data access.
  * Dismisses a notification so it no longer appears in the user's feed.
  * The notification is soft-deleted (dismissed_at timestamp set).
  */
@@ -11,6 +12,7 @@ import {
   CommandResult,
   DismissNotificationParams,
 } from '../types';
+import { NotificationRepository } from '../../l1-persistence/repositories';
 
 export class DismissNotificationCommand
   implements Command<DismissNotificationParams, { dismissedAt: Date }>
@@ -35,35 +37,24 @@ export class DismissNotificationCommand
     }
 
     try {
-      // Check if notification exists and is not already dismissed
-      const notification = context.db.executeReadOne<{
-        id: number;
-        dismissed_at: string | null;
-      }>(
-        'SELECT id, dismissed_at FROM notifications WHERE id = ?',
-        [params.notificationId]
-      );
+      const notificationRepo = new NotificationRepository(context.db);
 
-      if (!notification) {
+      // Check if notification exists
+      if (!notificationRepo.exists(params.notificationId)) {
         return { success: false, error: 'Notification not found' };
       }
 
-      if (notification.dismissed_at) {
+      // Check if already dismissed
+      if (notificationRepo.isDismissed(params.notificationId)) {
         return { success: false, error: 'Notification already dismissed' };
       }
 
-      const dismissedAt = new Date();
-
-      // Mark as dismissed
-      context.db.executeWrite(
-        'UPDATE notifications SET dismissed_at = ? WHERE id = ?',
-        [dismissedAt.toISOString(), params.notificationId],
-        'notifications'
-      );
+      // Dismiss using repository
+      notificationRepo.dismiss(params.notificationId);
 
       return {
         success: true,
-        data: { dismissedAt },
+        data: { dismissedAt: new Date() },
       };
     } catch (error) {
       return {

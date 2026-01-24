@@ -99,6 +99,7 @@ export class PriorityEngine extends EventEmitter {
         active: [],
         overdue: [],
         deadlines: [],
+        upcoming: [],
       },
       calculatedAt: now,
       nextRefreshAt: new Date(now.getTime() + 30 * 60 * 1000), // Default 30 min
@@ -677,9 +678,14 @@ export class PriorityEngine extends EventEmitter {
    * Load tasks from database
    */
   private loadTasks(): TaskForPriority[] {
-    const rows = this.db.executeRead<TaskRow>(
-      `SELECT id, course_id, title, due_at, unlock_at, points_possible,
-              weight, is_completed, grade, completed_at
+    const rows = this.db.executeRead<TaskRow & {
+      lock_at: string | null;
+      task_type: string | null;
+      task_group_id: number | null;
+      submission_status: string | null;
+    }>(
+      `SELECT id, course_id, title, due_at, unlock_at, lock_at, points_possible,
+              weight, is_completed, grade, completed_at, task_type, task_group_id, submission_status
        FROM tasks
        WHERE is_completed = 0 OR (is_completed = 1 AND completed_at > datetime('now', '-7 days'))
        ORDER BY due_at`
@@ -691,12 +697,16 @@ export class PriorityEngine extends EventEmitter {
       title: row.title,
       dueAt: row.due_at ? new Date(row.due_at) : null,
       unlockAt: row.unlock_at ? new Date(row.unlock_at) : null,
+      lockAt: row.lock_at ? new Date(row.lock_at) : null,
       pointsPossible: row.points_possible,
       weight: row.weight,
       isCompleted: row.is_completed === 1,
       isPinned: this.preferences.pinnedTaskIds.has(row.id),
       grade: row.grade,
       submittedAt: row.completed_at ? new Date(row.completed_at) : null,
+      taskType: row.task_type || 'assignment',
+      taskGroupId: row.task_group_id,
+      submissionStatus: row.submission_status as TaskForPriority['submissionStatus'],
     }));
   }
 
@@ -791,9 +801,14 @@ export class PriorityEngine extends EventEmitter {
    * Get explanation for a specific task
    */
   getTaskExplanation(taskId: number, now: Date = new Date()): PriorityExplanation | null {
-    const rows = this.db.executeRead<TaskRow>(
-      `SELECT id, course_id, title, due_at, unlock_at, points_possible,
-              weight, is_completed, grade, completed_at
+    const rows = this.db.executeRead<TaskRow & {
+      lock_at: string | null;
+      task_type: string | null;
+      task_group_id: number | null;
+      submission_status: string | null;
+    }>(
+      `SELECT id, course_id, title, due_at, unlock_at, lock_at, points_possible,
+              weight, is_completed, grade, completed_at, task_type, task_group_id, submission_status
        FROM tasks WHERE id = ?`,
       [taskId]
     );
@@ -807,12 +822,16 @@ export class PriorityEngine extends EventEmitter {
       title: row.title,
       dueAt: row.due_at ? new Date(row.due_at) : null,
       unlockAt: row.unlock_at ? new Date(row.unlock_at) : null,
+      lockAt: row.lock_at ? new Date(row.lock_at) : null,
       pointsPossible: row.points_possible,
       weight: row.weight,
       isCompleted: row.is_completed === 1,
       isPinned: this.preferences.pinnedTaskIds.has(row.id),
       grade: row.grade,
       submittedAt: row.completed_at ? new Date(row.completed_at) : null,
+      taskType: row.task_type || 'assignment',
+      taskGroupId: row.task_group_id,
+      submissionStatus: row.submission_status as TaskForPriority['submissionStatus'],
     };
 
     const course = this.loadCourse(task.courseId);

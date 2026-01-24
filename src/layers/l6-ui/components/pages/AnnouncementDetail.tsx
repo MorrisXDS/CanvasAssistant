@@ -291,39 +291,34 @@ export function AnnouncementDetail() {
     }
   };
 
-  const handleOpen = async (attachment: NotificationAttachment) => {
+  const handleOpen = (attachment: NotificationAttachment) => {
     const api = window.api;
     if (!api) return;
-    try {
-      const result = await api.openAttachment(attachment.id);
-      if (!result.success) {
-        console.error('Failed to open:', result.error);
-      }
-    } catch (error) {
+    // Fire-and-forget: don't block UI while file opens in external app
+    api.openAttachment(attachment.id).catch((error) => {
       console.error('Failed to open file:', error);
-    }
+    });
   };
 
-  const handleShowInFolder = async (attachment: NotificationAttachment) => {
+  const handleShowInFolder = (attachment: NotificationAttachment) => {
     const api = window.api;
     if (!api) return;
-    try {
-      await api.showAttachmentInFolder(attachment.id);
-    } catch (error) {
+    // Fire-and-forget: don't block UI
+    api.showAttachmentInFolder(attachment.id).catch((error) => {
       console.error('Failed to show in folder:', error);
-    }
+    });
   };
 
   // Handle clicking on inline file links (from file references)
-  const handleFileReferenceClick = async (ref: AnnouncementFileReference) => {
+  const handleFileReferenceClick = (ref: AnnouncementFileReference) => {
     if (ref.attachment) {
       // Has linked attachment
       if (ref.attachment.downloadStatus === 'completed') {
         // Open the downloaded file
-        await handleOpen(ref.attachment);
+        handleOpen(ref.attachment);
       } else {
-        // Download the file
-        await handleDownload(ref.attachment);
+        // Download the file (this one needs await for UI feedback)
+        handleDownload(ref.attachment);
       }
     } else if (ref.originalUrl) {
       // No local attachment, open original URL in browser
@@ -368,15 +363,34 @@ export function AnnouncementDetail() {
           {/* Divider */}
           <div style={styles.divider} />
 
-          {/* Message Content with inline file links */}
-          <div style={styles.content}>
-            <MessageWithFileLinks
-              message={notification.message}
-              fileReferences={fileReferences}
-              onFileClick={handleFileReferenceClick}
-              loadingAttachment={loadingAttachment}
+          {/* Message Content - render HTML if available, otherwise plain text with file links */}
+          {notification.messageHtml ? (
+            <div
+              className="announcement-content"
+              style={styles.htmlContent}
+              dangerouslySetInnerHTML={{ __html: notification.messageHtml }}
+              onClick={(e) => {
+                // Intercept link clicks and open externally
+                const target = e.target as HTMLElement;
+                if (target.tagName === 'A') {
+                  e.preventDefault();
+                  const href = (target as HTMLAnchorElement).href;
+                  if (href) {
+                    window.api?.openExternal(href);
+                  }
+                }
+              }}
             />
-          </div>
+          ) : (
+            <div style={styles.content}>
+              <MessageWithFileLinks
+                message={notification.message}
+                fileReferences={fileReferences}
+                onFileClick={handleFileReferenceClick}
+                loadingAttachment={loadingAttachment}
+              />
+            </div>
+          )}
 
           {/* Attachments */}
           {attachments.length > 0 && (
@@ -465,16 +479,17 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     justifyContent: 'center',
     width: '100%',
-    minHeight: '100%',
+    flex: 1,
   },
 
   page: {
     width: '100%',
-    maxWidth: 'min(720px, calc(100vw - var(--sidebar-width) - var(--space-8)))',
+    maxWidth: 'min(800px, calc(100vw - var(--sidebar-width) - var(--space-8)))',
     display: 'flex',
     flexDirection: 'column',
     gap: 'var(--space-4)',
     paddingBottom: 'var(--space-8)',
+    flex: 1,
   },
 
   backButton: {
@@ -561,11 +576,18 @@ const styles: Record<string, React.CSSProperties> = {
   },
 
   content: {
-    padding: 'var(--space-8) var(--space-6)',
+    padding: 'var(--space-6)',
     fontSize: 'var(--text-base)',
-    lineHeight: '1.75',
+    lineHeight: '1.6',
     color: 'var(--text-primary)',
-    whiteSpace: 'pre-wrap',
+    whiteSpace: 'pre-line', // Preserves newlines but collapses spaces
+  },
+
+  htmlContent: {
+    padding: 'var(--space-6)',
+    fontSize: 'var(--text-base)',
+    lineHeight: '1.6',
+    color: 'var(--text-primary)',
   },
 
   attachmentsSection: {

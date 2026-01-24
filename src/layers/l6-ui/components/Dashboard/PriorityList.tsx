@@ -6,7 +6,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PartyPopper } from 'lucide-react';
-import { Card, Badge, BadgeVariant } from '../shared';
+import { Card, Badge, BadgeVariant, InfoTrigger } from '../shared';
 import type { PriorityItem } from '../../../l5-presentation/types';
 
 export interface PriorityListProps {
@@ -108,9 +108,32 @@ export function PriorityList({
               <div style={styles.content}>
                 <div style={styles.topRow}>
                   <span style={styles.courseCode}>{item.course.code}</span>
-                  <Badge variant={urgencyToVariant(item.urgencyLevel)} size="sm">
-                    {item.urgencyLevel}
-                  </Badge>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-1)' }}>
+                    <InfoTrigger
+                      summary={`${item.task.title} - ${item.course.name}`}
+                      title={item.task.title}
+                      details={
+                        <div>
+                          <p><strong>Course:</strong> {item.course.code} - {item.course.name}</p>
+                          <p><strong>Due:</strong> {item.task.dueAt ? new Date(item.task.dueAt).toLocaleString() : 'No due date'}</p>
+                          <p><strong>Weight:</strong> {item.task.weight > 0 ? `${item.task.weight}%` : 'Not weighted'}</p>
+                          <p><strong>Type:</strong> {item.task.taskType}</p>
+                          <p><strong>Priority:</strong> {item.urgencyLevel}</p>
+                          {item.task.description && (
+                            <>
+                              <p style={{ marginTop: 'var(--space-3)' }}><strong>Description:</strong></p>
+                              <p style={{ color: 'var(--text-secondary)' }}>{item.task.description.replace(/<[^>]*>/g, '').slice(0, 300)}{item.task.description.length > 300 ? '...' : ''}</p>
+                            </>
+                          )}
+                        </div>
+                      }
+                      size="sm"
+                      position="left"
+                    />
+                    <Badge variant={urgencyToVariant(item.urgencyLevel)} size="sm">
+                      {item.urgencyLevel}
+                    </Badge>
+                  </div>
                 </div>
                 <div style={styles.title}>{item.task.title}</div>
                 <div style={styles.bottomRow}>
@@ -235,4 +258,5 @@ const styles: Record<string, React.CSSProperties> = {
   },
 };
 
-export default PriorityList;
+// Memoized for performance - prevents re-renders when parent updates unrelated state
+export default React.memo(PriorityList);

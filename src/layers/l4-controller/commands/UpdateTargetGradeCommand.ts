@@ -1,6 +1,7 @@
 /**
  * UpdateTargetGradeCommand - Update a course's target grade
  *
+ * Uses repository for data access.
  * Changes the user's target grade for a course, which affects
  * priority calculations for all assignments in that course.
  */
@@ -11,6 +12,7 @@ import {
   CommandResult,
   UpdateTargetGradeParams,
 } from '../types';
+import { CourseRepository } from '../../l1-persistence/repositories';
 
 export class UpdateTargetGradeCommand
   implements Command<UpdateTargetGradeParams, { previousGrade: number }>
@@ -43,24 +45,19 @@ export class UpdateTargetGradeCommand
     }
 
     try {
-      // Get current target grade
-      const course = context.db.executeReadOne<{ target_grade: number }>(
-        'SELECT target_grade FROM courses WHERE id = ?',
-        [params.courseId]
-      );
+      const courseRepo = new CourseRepository(context.db);
 
-      if (!course) {
+      // Get current target grade
+      const previousGrade = courseRepo.getTargetGrade(params.courseId);
+      if (previousGrade === null) {
         return { success: false, error: 'Course not found' };
       }
 
-      const previousGrade = course.target_grade;
+      // Update target grade using repository
+      courseRepo.update(params.courseId, { targetGrade: params.targetGrade });
 
-      // Update target grade
-      context.db.executeWrite(
-        'UPDATE courses SET target_grade = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-        [params.targetGrade, params.courseId],
-        'courses'
-      );
+      // Mark the field as locally modified for sync conflict detection
+      courseRepo.markFieldModified(params.courseId, 'target_grade');
 
       // Note: Priority recalculation will be triggered by the commit event
       // The L5 Presentation layer listens to DB commits and triggers recalcs

@@ -353,12 +353,16 @@ export class DependencyResolver {
           title: task.title,
           dueAt: null,
           unlockAt: null,
+          lockAt: null,
           pointsPossible: null,
           weight: null,
           isCompleted: false,
           isPinned: false,
           grade: null,
           submittedAt: null,
+          taskType: 'assignment',
+          taskGroupId: null,
+          submissionStatus: null,
         },
         courseId
       );

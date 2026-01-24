@@ -95,6 +95,18 @@ const api = {
     bodyHtml: string;
   }) => ipcRenderer.invoke('pages:exportHtml', options),
 
+  // ============ HTML Export ============
+
+  exportHtmlBatch: (params: {
+    courseId: number;
+    items: Array<{
+      sourceType: 'page' | 'assignment' | 'syllabus' | 'module' | 'announcement';
+      sourceId: string;
+      title: string;
+      bodyHtml: string;
+    }>;
+  }) => ipcRenderer.invoke('html:exportBatch', params),
+
   // ============ Imported Calendars ============
 
   getImportedCalendars: () => ipcRenderer.invoke('calendar:getImportedCalendars'),
@@ -136,6 +148,15 @@ const api = {
 
   clearSimulation: () => ipcRenderer.invoke('simulation:clear'),
 
+  // ============ Priorities ============
+
+  calculatePriorities: () => ipcRenderer.invoke('priorities:calculate'),
+
+  refreshPriorities: () => ipcRenderer.invoke('priorities:refresh'),
+
+  getPriorityExplanation: (taskId: number) =>
+    ipcRenderer.invoke('priorities:getExplanation', { taskId }),
+
   // ============ System ============
 
   getSystemState: () => ipcRenderer.invoke('system:state'),
@@ -168,15 +189,31 @@ const api = {
   validateToken: (token: string, baseUrl: string) =>
     ipcRenderer.invoke('canvas:validateToken', token, baseUrl),
 
+  // Debug: Direct Canvas API fetch
+  canvasDebugFetch: (endpoint: string) =>
+    ipcRenderer.invoke('canvas:debugFetch', endpoint),
+
   // ============ Sync ============
 
   syncFull: (options?: {
     termSelection?: 'all' | 'auto' | string;
     syncCanvasFiles?: boolean;
     syncAnnouncements?: boolean;
+    courseIds?: number[];
   }) => ipcRenderer.invoke('sync:full', options),
 
   syncCourses: () => ipcRenderer.invoke('sync:courses'),
+
+  syncFolderFiles: (params: {
+    canvasFolderId: number;
+    localCourseId: number;
+    forceRefresh?: boolean;
+  }) => ipcRenderer.invoke('sync:folderFiles', params),
+
+  syncFolderByPath: (params: {
+    courseId: number;
+    folderPath: string;
+  }) => ipcRenderer.invoke('sync:folderByPath', params),
 
   // ============ Sync Conflicts ============
 

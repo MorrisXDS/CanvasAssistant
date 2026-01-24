@@ -1,348 +1,82 @@
 /**
  * L5 Presentation - Type Definitions
  *
- * Types for the Zustand store and view models.
- * All data flows from main process via IPC.
+ * Re-exports shared types and defines store-specific types.
+ * All entity types come from the IPC contract (single source of truth).
  */
 
-/**
- * Sync status for displaying to user
- */
-export type SyncStatus = 'idle' | 'syncing' | 'error' | 'offline';
+// Re-export all entity types from shared contract
+export type {
+  SyncStatus,
+  Course,
+  CourseDetail,
+  EnrollmentTerm,
+  Task,
+  Notification,
+  NotificationAttachment,
+  AnnouncementFileReference,
+  SimulatedGrade,
+  SimulationState,
+  HealthStatus,
+  SystemState,
+  ImportedCalendar,
+  ExternalCalendarEvent,
+  DisplayCalendarEvent,
+  ParsedICSEvent,
+  ICSImportPreview,
+  PriorityItem,
+  CourseSummary,
+  Policy,
+  GradeHistoryEntry,
+  FileResource,
+  FileAttachment,
+  FilesData,
+  UserProfile,
+  SimulationChangeEvent,
+  DbCommitEvent,
+  SyncResultSummary,
+  ApiResult,
+} from '../../shared/ipc-contract';
 
-/**
- * Course data as stored in the database
- */
-export interface Course {
-  id: number;
-  externalId: string;
-  code: string;
-  name: string;
-  targetGrade: number;
-  assessedGrade: number | null;
-  currentGrade: number | null;
-  color: string | null;
-  nickname: string | null;
-  isHidden: boolean;
-  lastSyncedAt: string | null;
-  enrollmentTermId: number | null;
-}
-
-/**
- * Enrollment term (semester) data
- */
-export interface EnrollmentTerm {
-  id: number;
-  externalId: string;
-  name: string;
-  startAt: string | null;
-  endAt: string | null;
-}
-
-/**
- * Task (assignment/lab/project) data
- */
-export interface Task {
-  id: number;
-  externalId: string;
-  courseId: number;
-  title: string;
-  description: string | null;
-  dueAt: string | null;
-  weight: number;
-  grade: number | null;
-  pointsPossible: number | null;
-  priorityScore: number;
-  isCompleted: boolean;
-  completedAt: string | null;
-  submissionStatus: string | null;
-  taskType: string | null;
-  taskGroupId: number | null;
-}
-
-/**
- * Notification data
- */
-export interface Notification {
-  id: number;
-  sourceType: string;
-  sourceId: string;
-  courseId: number | null;
-  title: string;
-  message: string;
-  publishedAt: string;
-  dismissedAt: string | null;
-  url: string | null;
-  attachments?: NotificationAttachment[];
-}
-
-/**
- * Notification attachment (file)
- */
-export interface NotificationAttachment {
-  id: number;
-  notificationId: number;
-  externalId: string;
-  displayName: string;
-  filename: string;
-  url: string;
-  sizeBytes: number | null;
-  contentType: string | null;
-  localPath: string | null;
-  downloadStatus: 'pending' | 'downloading' | 'completed' | 'failed';
-  downloadedAt: string | null;
-}
-
-/**
- * File reference detected in announcement message
- * Links text positions to attachments for clickable file links
- */
-export interface AnnouncementFileReference {
-  id: number;
-  notificationId: number;
-  attachmentId: number | null;
-  startPosition: number;
-  endPosition: number;
-  matchedText: string;
-  originalUrl: string | null;
-  // Joined from attachment table when attachment exists
-  attachment?: NotificationAttachment;
-}
-
-/**
- * Simulated grade for what-if analysis
- */
-export interface SimulatedGrade {
-  taskId: number;
-  courseId: number;
-  originalGrade: number | null;
-  simulatedGrade: number;
-  timestamp: string;
-}
-
-/**
- * Simulation state from main process
- */
-export interface SimulationState {
-  isActive: boolean;
-  startedAt: string | null;
-  grades: SimulatedGrade[];
-}
-
-/**
- * Health status for system monitoring
- */
-export interface HealthStatus {
-  overall: 'healthy' | 'degraded' | 'unhealthy';
-  probes: Record<string, {
-    status: 'healthy' | 'degraded' | 'unhealthy';
-    lastChecked: string | null;
-  }>;
-}
-
-/**
- * System state from L0 SystemMonitor
- */
-export interface SystemState {
-  powerSource: 'battery' | 'ac' | 'unknown';
-  batteryLevel: number | null;
-  windowFocused: boolean;
-  isFullscreen: boolean;
-  canSync: boolean;
-}
-
-/**
- * Imported calendar metadata
- */
-export interface ImportedCalendar {
-  id: number;
-  name: string;
-  filename: string;
-  fileHash: string | null;
-  color: string;
-  eventCount: number;
-  isVisible: boolean;
-  importedAt: string;
-  updatedAt: string;
-}
-
-/**
- * Calendar event from imported ICS or Canvas
- */
-export interface ExternalCalendarEvent {
-  id: number;
-  externalId: string | null;
-  sourceType: 'canvas' | 'user' | 'imported';
-  courseId: number | null;
-  importedCalendarId: number | null;
-  title: string;
-  description: string | null;
-  startAt: string;
-  endAt: string | null;
-  allDay: boolean;
-  location: string | null;
-  uid: string | null;
-  recurrenceRule: string | null;
-  recurrenceExceptionDates: string | null;
-  parentEventId: number | null;
-}
-
-/**
- * Expanded calendar event for display (includes recurrence instances)
- */
-export interface DisplayCalendarEvent extends ExternalCalendarEvent {
-  isRecurrenceInstance: boolean;
-  recurrenceDate?: string;
-  originalEventId?: number;
-  color: string;
-  calendarName?: string;
-}
-
-/**
- * Parsed ICS event before import
- */
-export interface ParsedICSEvent {
-  uid: string;
-  summary: string;
-  description: string | null;
-  dtstart: Date | null;
-  dtend: Date | null;
-  allDay: boolean;
-  location: string | null;
-  rrule: string | null;
-  exdates: string[] | null;
-  sequence: number;
-}
-
-/**
- * ICS import preview for confirmation modal
- */
-export interface ICSImportPreview {
-  calendarName: string;
-  filename: string;
-  events: ParsedICSEvent[];
-  hasRecurringEvents: boolean;
-  dateRange: { start: Date; end: Date } | null;
-  warnings: string[];
-}
-
-/**
- * Dashboard priority item for the main view
- */
-export interface PriorityItem {
-  task: Task;
-  course: Course;
-  urgencyLevel: 'critical' | 'high' | 'medium' | 'low';
-  daysUntilDue: number | null;
-  effectiveGrade: number | null; // Uses simulated grade if active
-}
-
-/**
- * Course summary for dashboard cards
- */
-export interface CourseSummary {
-  course: Course;
-  taskCount: number;
-  completedCount: number;
-  upcomingCount: number;
-  overdueCount: number;
-  effectiveAssessedGrade: number | null; // With simulations applied
-  targetDelta: number; // How far from target
-}
+// Re-export schemas for runtime validation if needed
+export {
+  SyncStatusSchema,
+  CourseSchema,
+  TaskSchema,
+  NotificationSchema,
+  SimulationStateSchema,
+} from '../../shared/ipc-contract';
 
 /**
  * IPC API contract - methods available from renderer
+ * Now uses the TypedApi from shared module
  */
-export interface IpcApi {
-  // Data fetching
-  getCourses: () => Promise<Course[]>;
-  getTasks: (courseId?: number) => Promise<Task[]>;
-  getNotifications: () => Promise<Notification[]>;
-
-  // Imported Calendars
-  getImportedCalendars: () => Promise<ImportedCalendar[]>;
-  getCalendarEventsForRange: (params: { startDate: string; endDate: string; includeHidden?: boolean }) => Promise<DisplayCalendarEvent[]>;
-  parseICSPreview: (content: string, filename: string) => Promise<ICSImportPreview>;
-  importICS: (params: { content: string; filename: string; name?: string; color?: string }) => Promise<{ success: boolean; data?: { calendarId: number; eventCount: number }; error?: string }>;
-  deleteImportedCalendar: (calendarId: number) => Promise<{ success: boolean; error?: string }>;
-  toggleCalendarVisibility: (calendarId: number, isVisible: boolean) => Promise<{ success: boolean; error?: string }>;
-  updateImportedCalendar: (calendarId: number, updates: { name?: string; color?: string }) => Promise<{ success: boolean; error?: string }>;
-
-  // Commands
-  dispatch: (command: string, params: unknown) => Promise<{ success: boolean; data?: unknown; error?: string }>;
-
-  // Simulation
-  getSimulationState: () => Promise<SimulationState>;
-  clearSimulation: () => Promise<{ success: boolean }>;
-
-  // System
-  getSystemState: () => Promise<SystemState>;
-  getHealthStatus: () => Promise<HealthStatus>;
-
-  // Credentials
-  hasCredential: () => Promise<boolean>;
-  storeCredential: (token: string) => Promise<{ success: boolean }>;
-  deleteCredential: () => Promise<{ success: boolean }>;
-
-  // Canvas
-  connectCanvas: (baseUrl: string) => Promise<{ success: boolean; error?: string }>;
-  validateToken: (token: string, baseUrl: string) => Promise<{ valid: boolean; error?: string; user?: { name: string } }>;
-
-  // Sync
-  syncFull: () => Promise<{ success: boolean; error?: string }>;
-  syncCourses: () => Promise<{ success: boolean; error?: string }>;
-
-  // Event listeners
-  onSimulationChanged: (callback: (event: SimulationChangeEvent) => void) => () => void;
-  onDbCommit: (callback: (event: DbCommitEvent) => void) => () => void;
-}
-
-/**
- * Events pushed from main process
- */
-export interface SimulationChangeEvent {
-  type: 'started' | 'updated' | 'cleared';
-  context?: SimulationState;
-}
-
-export interface DbCommitEvent {
-  table: string;
-}
-
-/**
- * Sync result summary for UI display
- */
-export interface SyncResultSummary {
-  courses?: { synced: number; new: number };
-  tasks?: { synced: number; new: number };
-  announcements?: { synced: number; new: number };
-  files?: { synced: number; new: number };
-  errors?: string[];
-  timestamp: string;
-}
+export type { TypedApi as IpcApi } from '../../shared/ipc-client';
 
 /**
  * Store state shape
  */
 export interface StoreState {
   // Data
-  courses: Course[];
-  tasks: Task[];
-  notifications: Notification[];
+  courses: import('../../shared/ipc-contract').Course[];
+  tasks: import('../../shared/ipc-contract').Task[];
+  notifications: import('../../shared/ipc-contract').Notification[];
 
   // Imported Calendars
-  importedCalendars: ImportedCalendar[];
-  calendarEvents: DisplayCalendarEvent[];
+  importedCalendars: import('../../shared/ipc-contract').ImportedCalendar[];
+  calendarEvents: import('../../shared/ipc-contract').DisplayCalendarEvent[];
 
   // Simulation
-  simulation: SimulationState;
+  simulation: import('../../shared/ipc-contract').SimulationState;
 
   // System
-  syncStatus: SyncStatus;
+  syncStatus: import('../../shared/ipc-contract').SyncStatus;
+  syncMessage: string | null;
+  isAutoSync: boolean;
   lastSyncedAt: string | null;
-  lastSyncResult: SyncResultSummary | null;
-  systemState: SystemState | null;
-  healthStatus: HealthStatus | null;
+  lastSyncResult: import('../../shared/ipc-contract').SyncResultSummary | null;
+  systemState: import('../../shared/ipc-contract').SystemState | null;
+  healthStatus: import('../../shared/ipc-contract').HealthStatus | null;
 
   // Auth
   isAuthenticated: boolean;
@@ -350,6 +84,22 @@ export interface StoreState {
 
   // Error handling
   lastError: string | null;
+
+  // Sync conflicts
+  syncConflicts: SyncConflictItem[];
+}
+
+export interface SyncConflictItem {
+  id: string;
+  entity: 'course' | 'task' | 'notification';
+  entityId: number;
+  externalId: string;
+  entityName: string;
+  field: string;
+  fieldLabel: string;
+  localValue: unknown;
+  canvasValue: unknown;
+  timestamp: string;
 }
 
 /**
@@ -384,20 +134,29 @@ export interface StoreActions {
   triggerSync: (
     type: 'full' | 'courses' | 'tasks' | 'notifications',
     options?: {
-      courseIds?: number[];
+      termSelection?: 'all' | 'auto' | string;
       syncCanvasFiles?: boolean;
       syncAnnouncements?: boolean;
+      isAutoSync?: boolean;
+      courseIds?: number[];
     }
-  ) => Promise<{ success: boolean; result?: unknown; summary?: SyncResultSummary; error?: string }>;
+  ) => Promise<{ success: boolean; result?: unknown; summary?: import('../../shared/ipc-contract').SyncResultSummary; error?: string }>;
   clearSyncResult: () => void;
+  dismissAutoSyncBanner: () => void;
 
   // Auth
   setAuthenticated: (authenticated: boolean) => void;
 
   // Internal
-  handleSimulationChange: (event: SimulationChangeEvent) => void;
-  handleDbCommit: (event: DbCommitEvent) => void;
+  handleSimulationChange: (event: import('../../shared/ipc-contract').SimulationChangeEvent) => void;
+  handleDbCommit: (event: import('../../shared/ipc-contract').DbCommitEvent) => void;
   setError: (error: string | null) => void;
+
+  // Sync conflicts
+  addSyncConflicts: (conflicts: SyncConflictItem[]) => void;
+  resolveSyncConflict: (conflictId: string, useCanvasValue: boolean, rememberChoice: boolean, rememberForAll: boolean) => Promise<void>;
+  resolveAllSyncConflicts: (useCanvasValues: boolean) => Promise<void>;
+  clearSyncConflicts: () => void;
 }
 
 export type Store = StoreState & StoreActions;

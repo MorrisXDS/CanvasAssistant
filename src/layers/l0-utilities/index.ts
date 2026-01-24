@@ -5,6 +5,29 @@ export {
   type RotationConfig,
 } from './Logger';
 export { SystemMonitor, type SystemState, type SystemMonitorOptions } from './SystemMonitor';
+
+// Dependency Injection
+export { ServiceRegistry, type ServiceFactory, type ServiceCleanup } from './ServiceRegistry';
+export type {
+  ServiceToken,
+  ServiceDefinitions,
+  ServiceRegistryConfig,
+} from './ServiceTokens';
+export { DEFAULT_REGISTRY_CONFIG } from './ServiceTokens';
+
+// Feature Flags
+export {
+  FeatureFlags,
+  FlagType,
+  FlagCategory,
+  FLAG_DEFINITIONS,
+} from './FeatureFlags';
+export type {
+  FlagKey,
+  FlagValue,
+  FlagDefinition,
+  FeatureFlagsOptions,
+} from './FeatureFlags';
 export {
   CredentialManager,
   type CredentialManagerOptions,
@@ -62,6 +85,7 @@ export type {
   RateLimiterConfig,
   CircuitBreakerConfig,
   SyncConfig,
+  HtmlContentSyncConfig,
   PolicyDetectionConfig,
   InputValidatorConfig,
   // Intelligence

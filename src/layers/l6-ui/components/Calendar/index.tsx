@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
   ChevronLeft,
   ChevronRight,
@@ -213,6 +213,7 @@ export function CalendarPage() {
     updateImportedCalendar,
   } = useStore();
   const location = useLocation();
+  const navigate = useNavigate();
   const [view, setViewState] = useState<CalendarView>(() => {
     const loaded = loadCalendarViewMode();
     console.log('[Calendar] Initial view state:', loaded);
@@ -404,15 +405,15 @@ export function CalendarPage() {
 
   const hasActiveFilters = selectedCourses !== null || deadlineFilter !== 'all' || priorityFilter !== 'all';
 
+  // Build courses with generated colors
+  const coursesWithColors = useMemo(() => {
+    return courses.map((c) => ({ ...c, color: getCourseColor(c.id, c.color) }));
+  }, [courses]);
+
   // Build course map with generated colors
   const courseMap = useMemo(() => {
-    return new Map(
-      courses.map((c) => [
-        c.id,
-        { ...c, color: getCourseColor(c.id, c.color) },
-      ])
-    );
-  }, [courses]);
+    return new Map(coursesWithColors.map((c) => [c.id, c]));
+  }, [coursesWithColors]);
 
   // Build task events with filtering
   const taskEvents: TaskCalendarEvent[] = useMemo(() => {
@@ -548,8 +549,24 @@ export function CalendarPage() {
         .filter((e): e is TaskCalendarEvent => e.type === 'task')
         .map((e) => e.course.id)
     );
+    // Also include courses matched from imported events
+    for (const event of visibleEvents) {
+      if (event.type === 'imported') {
+        const eventTitle = event.event.title.toLowerCase();
+        const calendarName = event.event.calendarName?.toLowerCase() || '';
+        for (const course of coursesWithColors) {
+          const code = course.code.toLowerCase();
+          const shortCode = code.split(/[hy]\d/)[0];
+          if (eventTitle.includes(code) || calendarName.includes(code) ||
+              (shortCode.length >= 3 && (eventTitle.includes(shortCode) || calendarName.includes(shortCode)))) {
+            courseIds.add(course.id);
+            break;
+          }
+        }
+      }
+    }
     return Array.from(courseMap.values()).filter((c) => courseIds.has(c.id));
-  }, [visibleEvents, courseMap]);
+  }, [visibleEvents, courseMap, coursesWithColors]);
 
   // Debug: Log state changes
   useEffect(() => {
@@ -955,8 +972,10 @@ export function CalendarPage() {
         view={view}
         currentDate={currentDate}
         events={events}
+        courses={coursesWithColors}
         onEventClick={handleEventClick}
         onDateClick={handleDateClick}
+        onCourseClick={(courseId) => navigate(`/courses/${courseId}`)}
       />
 
       {/* Course Legend */}
@@ -985,7 +1004,9 @@ export function CalendarPage() {
 const styles: Record<string, React.CSSProperties> = {
   page: {
     width: '100%',
-    minHeight: '100%',
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
     position: 'relative',
   },
 

@@ -601,12 +601,36 @@ export const IpcContract = {
       termSelection: z.union([z.literal('all'), z.literal('auto'), z.string()]).optional(),
       syncCanvasFiles: z.boolean().optional(),
       syncAnnouncements: z.boolean().optional(),
+      courseIds: z.array(z.number()).optional(),
     }).optional(),
     result: ApiResultSchema(z.unknown()),
   },
   'sync:courses': {
     params: z.void(),
     result: ApiResultSchema(z.unknown()),
+  },
+  'sync:folderFiles': {
+    params: z.object({
+      canvasFolderId: z.number(),
+      localCourseId: z.number(),
+      forceRefresh: z.boolean().optional(),
+    }),
+    result: ApiResultSchema(z.object({
+      success: z.boolean(),
+      count: z.number(),
+      errors: z.array(z.string()),
+    })),
+  },
+  'sync:folderByPath': {
+    params: z.object({
+      courseId: z.number(),
+      folderPath: z.string(),
+    }),
+    result: ApiResultSchema(z.object({
+      success: z.boolean(),
+      count: z.number(),
+      errors: z.array(z.string()),
+    })),
   },
 
   // ============ File Operations ============

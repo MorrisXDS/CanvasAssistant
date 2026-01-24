@@ -491,4 +491,167 @@ describe('SyncEngine', () => {
       expect(result.modules).toBeDefined();
     });
   });
+
+  describe('File sync', () => {
+    const mockCourse = {
+      id: 12345,
+      name: 'Test Course',
+      course_code: 'TEST101',
+      enrollment_term_id: 1,
+      default_view: 'modules',
+    };
+
+    beforeEach(async () => {
+      // Setup: create a course in the database
+      mockGetAll.mockResolvedValue([mockCourse]);
+      await syncEngine.syncCourses();
+    });
+
+    it('should sync files from Files area and module items', async () => {
+      // Mock files from /courses/:id/files (Files area)
+      const filesAreaFiles = [
+        {
+          id: 1001,
+          display_name: 'syllabus.pdf',
+          filename: 'syllabus.pdf',
+          folder_id: 100,
+          size: 1024,
+          'content-type': 'application/pdf',
+          url: 'https://example.com/files/1001/download',
+          created_at: '2024-01-01T00:00:00Z',
+          updated_at: '2024-01-01T00:00:00Z',
+        },
+      ];
+
+      // Mock module with file item
+      const mockModules = [
+        {
+          id: 2001,
+          name: 'Week 1',
+          position: 1,
+          items_count: 1,
+          items_url: 'https://example.com/modules/2001/items',
+          items: [
+            {
+              id: 3001,
+              module_id: 2001,
+              title: 'Lecture Notes',
+              type: 'File',
+              content_id: 1002, // Different from files area
+              position: 1,
+              indent: 0,
+              published: true,
+            },
+          ],
+        },
+      ];
+
+      // Mock file fetched via module item content_id
+      const moduleFile = {
+        id: 1002,
+        display_name: 'lecture-notes.pdf',
+        filename: 'lecture-notes.pdf',
+        folder_id: 100,
+        size: 2048,
+        'content-type': 'application/pdf',
+        url: 'https://example.com/files/1002/download',
+        created_at: '2024-01-02T00:00:00Z',
+        updated_at: '2024-01-02T00:00:00Z',
+      };
+
+      // Setup mocks
+      mockGetAll
+        .mockResolvedValueOnce([]) // folders
+        .mockResolvedValueOnce(filesAreaFiles) // files
+        .mockResolvedValueOnce(mockModules); // modules
+
+      mockGet.mockResolvedValue({ data: moduleFile });
+
+      // Sync folders first (required before files)
+      await syncEngine.syncFolders(12345, 1);
+
+      // Sync files - should get both Files area AND module item files
+      const result = await syncEngine.syncFiles(12345, 1);
+
+      expect(result.success).toBe(true);
+      // Should have synced 1 from Files area + 1 from module items
+      expect(result.count).toBeGreaterThanOrEqual(1);
+    });
+
+    it('should sync folder files on demand', async () => {
+      // Setup: create a folder in the database
+      db.upsert('resources', {
+        external_id: '100',
+        course_id: 1,
+        type: 'folder',
+        name: 'Documents',
+        folder_path: 'Documents',
+        size: 0,
+      });
+
+      // Mock files in specific folder
+      const folderFiles = [
+        {
+          id: 1003,
+          display_name: 'document1.pdf',
+          filename: 'document1.pdf',
+          folder_id: 100,
+          size: 512,
+          'content-type': 'application/pdf',
+          url: 'https://example.com/files/1003/download',
+          created_at: '2024-01-03T00:00:00Z',
+          updated_at: '2024-01-03T00:00:00Z',
+        },
+        {
+          id: 1004,
+          display_name: 'document2.pdf',
+          filename: 'document2.pdf',
+          folder_id: 100,
+          size: 1024,
+          'content-type': 'application/pdf',
+          url: 'https://example.com/files/1004/download',
+          created_at: '2024-01-04T00:00:00Z',
+          updated_at: '2024-01-04T00:00:00Z',
+        },
+      ];
+
+      mockGetAll.mockResolvedValue(folderFiles);
+
+      // Sync files for specific folder
+      const result = await syncEngine.syncFolderFiles(100, 1);
+
+      expect(result.success).toBe(true);
+      expect(result.count).toBe(2);
+      expect(result.entity).toBe('folder_files');
+
+      // Verify files are in database
+      const dbFiles = db.executeRead<{ name: string }>(
+        'SELECT name FROM resources WHERE course_id = ? AND type = ?',
+        [1, 'file']
+      );
+      expect(dbFiles.length).toBe(2);
+    });
+
+    it('should return cached data when offline', async () => {
+      // Setup: create cached files in database
+      db.upsert('resources', {
+        external_id: '1005',
+        course_id: 1,
+        type: 'file',
+        name: 'cached-file.pdf',
+        folder_id: '100',
+        size: 256,
+      });
+
+      // Pause rate limiter to simulate offline
+      rateLimiter.pause();
+
+      const result = await syncEngine.syncFolderFiles(100, 1);
+
+      expect(result.success).toBe(true);
+      expect(result.count).toBe(1);
+      // Should not have made API calls
+      expect(mockGetAll).not.toHaveBeenCalled();
+    });
+  });
 });

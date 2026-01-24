@@ -230,6 +230,19 @@ export interface SyncConfig {
   defaultPriority: number;
 }
 
+export interface HtmlContentSyncConfig {
+  /** Whether to save HTML content files (pages, assignments, announcements) */
+  enabled: boolean;
+  /** URL rewriting mode for offline access: 'local' rewrites to local paths, 'original' keeps Canvas URLs */
+  urlRewriting: 'local' | 'original';
+  /** Extract and download embedded images */
+  downloadImages: boolean;
+  /** Extract and download linked files */
+  downloadLinkedFiles: boolean;
+  /** Max concurrent downloads for resources */
+  maxConcurrentDownloads: number;
+}
+
 export interface PolicyDetectionConfig {
   /** Confidence boost for pattern matches */
   patternBoost: number;
@@ -249,6 +262,7 @@ export interface DaemonConfig {
   rateLimiter: RateLimiterConfig;
   circuitBreaker: CircuitBreakerConfig;
   sync: SyncConfig;
+  htmlContentSync: HtmlContentSyncConfig;
   policyDetection: PolicyDetectionConfig;
   inputValidator: InputValidatorConfig;
 }
@@ -491,6 +505,13 @@ export const DEFAULT_APP_CONFIG: AppConfigData = {
       coursePriority: 10,
       taskPriority: 5,
       defaultPriority: 10,
+    },
+    htmlContentSync: {
+      enabled: true,
+      urlRewriting: 'local',
+      downloadImages: true,
+      downloadLinkedFiles: true,
+      maxConcurrentDownloads: 3,
     },
     policyDetection: {
       patternBoost: 0.15,

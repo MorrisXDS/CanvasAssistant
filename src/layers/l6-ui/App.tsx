@@ -19,6 +19,64 @@ import { AnnouncementDetail, AnnouncementsPage, CalendarPage, CourseDetail, Cour
 
 import './styles/global.css';
 
+// ============ Settings Preload ============
+// Apply saved settings immediately on app load
+
+const STORAGE_KEYS = {
+  APPEARANCE: 'appearanceSettings',
+};
+
+interface AppearanceSettings {
+  theme: 'light' | 'dark' | 'system';
+  sidebarCollapsed: boolean;
+}
+
+function applyTheme(theme: 'light' | 'dark' | 'system') {
+  const root = document.documentElement;
+  if (theme === 'system') {
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    root.setAttribute('data-theme', prefersDark ? 'dark' : 'light');
+  } else {
+    root.setAttribute('data-theme', theme);
+  }
+}
+
+function initializeSettings() {
+  // Load and apply appearance settings
+  try {
+    const stored = localStorage.getItem(STORAGE_KEYS.APPEARANCE);
+    if (stored) {
+      const appearance: AppearanceSettings = JSON.parse(stored);
+      applyTheme(appearance.theme || 'system');
+    } else {
+      applyTheme('system');
+    }
+  } catch {
+    applyTheme('system');
+  }
+
+  // Listen for system theme changes if using 'system' theme
+  const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+  mediaQuery.addEventListener('change', () => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEYS.APPEARANCE);
+      if (stored) {
+        const appearance: AppearanceSettings = JSON.parse(stored);
+        if (appearance.theme === 'system') {
+          applyTheme('system');
+        }
+      } else {
+        applyTheme('system');
+      }
+    } catch {
+      applyTheme('system');
+    }
+  });
+}
+
+// Initialize settings immediately (before React renders)
+initializeSettings();
+
 /**
  * Loading Screen
  */

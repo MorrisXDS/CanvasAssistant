@@ -38,6 +38,14 @@
   --color-info: #007FA3;
   --color-info-bg: #EFF6FF;
 
+  /* ============ Urgency Colors (Overdue Tasks) ============ */
+  --color-urgency-critical: #ef4444;     /* Red - severely overdue */
+  --color-urgency-critical-bg: #fef2f2;
+  --color-urgency-high: #f97316;         /* Orange - overdue */
+  --color-urgency-high-bg: #fff7ed;
+  --color-urgency-medium: #eab308;       /* Yellow - due soon */
+  --color-urgency-medium-bg: #fefce8;
+
   /* ============ Neutral Colors ============ */
   --color-white: #FFFFFF;
   --color-gray-50: #F9FAFB;
@@ -206,4 +214,81 @@
 
   --border-default: var(--color-gray-200);
   --border-light: var(--color-gray-100);
+}
+
+/* ============ Keyframe Animations ============ */
+
+/* Spin animation for loading indicators */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Fade in animation */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Slide up animation for modals */
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Lock animation - shake effect when locking */
+@keyframes lockShake {
+  0%, 100% { transform: rotate(0deg) scale(1); }
+  20% { transform: rotate(-15deg) scale(1.2); }
+  40% { transform: rotate(10deg) scale(1.15); }
+  60% { transform: rotate(-8deg) scale(1.1); }
+  80% { transform: rotate(5deg) scale(1.05); }
+}
+
+/* Unlock animation - wiggle and shrink */
+@keyframes unlockWiggle {
+  0%, 100% { transform: rotate(0deg) scale(1); }
+  25% { transform: rotate(12deg) scale(0.95); }
+  50% { transform: rotate(-12deg) scale(0.9); }
+  75% { transform: rotate(8deg) scale(0.95); }
+}
+
+/* Task checkbox styles */
+.task-checkbox {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  flex-shrink: 0;
+  border-radius: 50%;
+  transition: transform 0.15s ease, background-color 0.15s ease;
+}
+
+.task-checkbox:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+  transform: scale(1.1);
+}
+
+.task-checkbox:active {
+  transform: scale(0.9);
+}
+
+/* Checkbox pop animation on complete */
+@keyframes checkPop {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.3); }
+  100% { transform: scale(1); }
+}
+
+.task-checkbox.completing {
+  animation: checkPop 0.3s ease;
 }

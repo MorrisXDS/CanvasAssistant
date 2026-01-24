@@ -9,6 +9,7 @@ export interface RateLimiterConfig {
   maxBackoffMs?: number; // Max backoff cap (default: 16000ms)
   warningThreshold?: number; // Rate limit warning threshold (default: 10)
   autoResumeDelayMs?: number; // Auto-resume delay after warning (default: 5000ms)
+  maxQueueSize?: number; // Max queue size before rejecting (default: 100)
 }
 
 // Type alias for AppConfig compatibility
@@ -57,6 +58,7 @@ export class RateLimiter extends EventEmitter {
   private readonly maxBackoffMs: number;
   private readonly warningThreshold: number;
   private readonly autoResumeDelayMs: number;
+  private readonly maxQueueSize: number;
 
   /**
    * Create a new RateLimiter instance
@@ -71,16 +73,30 @@ export class RateLimiter extends EventEmitter {
     this.maxBackoffMs = config.maxBackoffMs ?? 16000;
     this.warningThreshold = config.warningThreshold ?? 10;
     this.autoResumeDelayMs = config.autoResumeDelayMs ?? 5000;
+    this.maxQueueSize = (config as RateLimiterConfig).maxQueueSize ?? 100;
   }
 
   /**
    * Add a request to the queue
+   * @throws Error if queue is full (maxQueueSize exceeded)
    */
   enqueue<T>(
     execute: () => Promise<T>,
     priority: number = 0
   ): Promise<T> {
     return new Promise((resolve, reject) => {
+      // Check queue size limit
+      if (this.queue.length >= this.maxQueueSize) {
+        console.debug(`[RateLimiter] QUEUE FULL: ${this.queue.length}/${this.maxQueueSize}`);
+        const error = new Error(`Queue full: exceeded max size of ${this.maxQueueSize}`);
+        this.emit('queue-full', {
+          queueLength: this.queue.length,
+          maxQueueSize: this.maxQueueSize,
+        });
+        reject(error);
+        return;
+      }
+
       const request: QueuedRequest<T> = {
         id: `req_${++this.requestIdCounter}`,
         execute,
@@ -101,6 +117,7 @@ export class RateLimiter extends EventEmitter {
         this.queue.splice(insertIndex, 0, request as QueuedRequest<unknown>);
       }
 
+      console.debug(`[RateLimiter] ENQUEUE: ${request.id}, priority=${priority}, queue_length=${this.queue.length}, active=${this.activeRequests}`);
       this.emit('queued', { id: request.id, queueLength: this.queue.length });
       this.processQueue();
     });
@@ -110,23 +127,34 @@ export class RateLimiter extends EventEmitter {
    * Process the request queue
    */
   private async processQueue(): Promise<void> {
-    if (this.isPaused) return;
-    if (this.activeRequests >= this.maxConcurrent) return;
+    if (this.isPaused) {
+      console.debug(`[RateLimiter] PAUSED: not processing queue`);
+      return;
+    }
+    if (this.activeRequests >= this.maxConcurrent) {
+      console.debug(`[RateLimiter] AT CAPACITY: ${this.activeRequests}/${this.maxConcurrent} active, waiting...`);
+      return;
+    }
     if (this.queue.length === 0) return;
 
     const request = this.queue.shift();
     if (!request) return;
 
     this.activeRequests++;
+    console.debug(`[RateLimiter] START: ${request.id}, active=${this.activeRequests}/${this.maxConcurrent}, queue=${this.queue.length}`);
     this.emit('request-start', { id: request.id, active: this.activeRequests });
 
     try {
+      const startTime = Date.now();
       const result = await request.execute();
+      const duration = Date.now() - startTime;
       this.activeRequests--;
       request.resolve(result);
+      console.debug(`[RateLimiter] COMPLETE: ${request.id} in ${duration}ms, active=${this.activeRequests}`);
       this.emit('request-complete', { id: request.id, active: this.activeRequests });
     } catch (error) {
       this.activeRequests--;
+      console.debug(`[RateLimiter] ERROR: ${request.id} - ${error}`);
       await this.handleRequestError(request, error);
     }
 
@@ -147,11 +175,23 @@ export class RateLimiter extends EventEmitter {
     const isRateLimited = this.isRateLimitError(error);
     const isRetryable = this.isRetryableError(error);
 
+    console.debug(`[RateLimiter] HANDLE ERROR: ${request.id}, isRateLimited=${isRateLimited}, isRetryable=${isRetryable}, retries=${request.retries}/${this.maxRetries}`);
+
     if (isRateLimited) {
       // Pause all requests and retry with backoff
+      console.debug(`[RateLimiter] RATE LIMITED: pausing queue`);
       this.pause();
-      const backoff = this.calculateBackoff(request.retries);
-      this.emit('rate-limited', { backoffMs: backoff, retries: request.retries });
+
+      // Try to parse Retry-After header for server-specified delay
+      const retryAfterMs = this.parseRetryAfter(error);
+      const backoff = this.calculateBackoff(request.retries, retryAfterMs);
+
+      console.debug(`[RateLimiter] BACKOFF: ${backoff}ms (retry-after=${retryAfterMs || 'none'})`);
+      this.emit('rate-limited', {
+        backoffMs: backoff,
+        retries: request.retries,
+        retryAfterMs: retryAfterMs || null,
+      });
 
       await this.delay(backoff);
       this.resume();
@@ -159,12 +199,14 @@ export class RateLimiter extends EventEmitter {
       // Re-queue with incremented retry count
       request.retries++;
       this.queue.unshift(request); // Add to front
+      console.debug(`[RateLimiter] RETRY RATE LIMITED: ${request.id}, attempt=${request.retries}`);
       this.processQueue();
       return;
     }
 
     if (isRetryable && request.retries < this.maxRetries) {
       const backoff = this.calculateBackoff(request.retries);
+      console.debug(`[RateLimiter] RETRY: ${request.id}, attempt=${request.retries + 1}/${this.maxRetries}, backoff=${backoff}ms`);
       this.emit('retry', {
         id: request.id,
         attempt: request.retries + 1,
@@ -179,6 +221,7 @@ export class RateLimiter extends EventEmitter {
     }
 
     // Give up - reject the promise
+    console.debug(`[RateLimiter] FAILED: ${request.id}, giving up after ${request.retries} retries`);
     this.emit('request-failed', {
       id: request.id,
       error,
@@ -188,11 +231,55 @@ export class RateLimiter extends EventEmitter {
   }
 
   /**
-   * Calculate exponential backoff
+   * Calculate exponential backoff with jitter
+   * Jitter range: 0.5x to 1.0x of base backoff (prevents thundering herd)
    */
-  private calculateBackoff(retryCount: number): number {
-    const backoff = this.baseBackoffMs * Math.pow(2, retryCount);
-    return Math.min(backoff, this.maxBackoffMs);
+  private calculateBackoff(retryCount: number, retryAfterMs?: number): number {
+    // Use server-specified retry-after if available
+    if (retryAfterMs !== undefined && retryAfterMs > 0) {
+      // Add jitter to server-specified delay too
+      const jitter = 0.5 + Math.random() * 0.5;
+      return Math.min(retryAfterMs * jitter, this.maxBackoffMs);
+    }
+
+    // Calculate exponential backoff
+    const baseBackoff = this.baseBackoffMs * Math.pow(2, retryCount);
+    // Add jitter: multiply by random factor between 0.5 and 1.0
+    const jitter = 0.5 + Math.random() * 0.5;
+    return Math.min(baseBackoff * jitter, this.maxBackoffMs);
+  }
+
+  /**
+   * Parse Retry-After header value to milliseconds
+   * Supports both delay-seconds (integer) and HTTP-date formats
+   */
+  private parseRetryAfter(error: unknown): number | undefined {
+    if (typeof error !== 'object' || error === null) return undefined;
+
+    // Check for retry-after header in error response
+    const headers = (error as { headers?: Record<string, string> }).headers;
+    const retryAfter = headers?.['retry-after'] || headers?.['Retry-After'];
+
+    if (!retryAfter) return undefined;
+
+    // Try parsing as integer (delay-seconds)
+    const seconds = parseInt(retryAfter, 10);
+    if (!isNaN(seconds) && seconds > 0) {
+      return seconds * 1000;
+    }
+
+    // Try parsing as HTTP-date
+    try {
+      const date = new Date(retryAfter);
+      if (!isNaN(date.getTime())) {
+        const delayMs = date.getTime() - Date.now();
+        return delayMs > 0 ? delayMs : undefined;
+      }
+    } catch {
+      // Invalid date format, ignore
+    }
+
+    return undefined;
   }
 
   /**

@@ -3,8 +3,9 @@
  * Application shell with collapsible sidebar navigation
  */
 
-import React, { useEffect, useRef, useState } from 'react';
-import { NavLink, Outlet } from 'react-router-dom';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { createPortal } from 'react-dom';
+import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard,
   Calendar,
@@ -13,39 +14,104 @@ import {
   CheckCircle,
   AlertCircle,
   Loader2,
-  ChevronLeft,
-  ChevronRight,
+  Lock,
+  Unlock,
   User,
   Settings,
   LogOut,
   ChevronDown,
-  Info,
+  GripVertical,
   type LucideIcon,
 } from 'lucide-react';
 import { useStore, SyncResultSummary } from '../../l5-presentation/store';
 import { TitleBar } from './TitleBar';
 import { SettingsModal } from './SettingsModal';
-import { SyncResultToast } from './shared';
+import { SyncResultToast, SyncConflictModal } from './shared';
 
 // Debug flag - set to true for debugging
 const DEBUG_LAYOUT = true;
 
-// Sidebar state storage key
+// Storage keys
 const SIDEBAR_COLLAPSED_KEY = 'sidebarCollapsed';
+const NAV_ORDER_KEY = 'navItemOrder';
+const LANDING_PAGE_KEY = 'landingPage';
 
 /** Navigation item configuration */
 interface NavItem {
+  id: string;
   path: string;
   label: string;
   icon: LucideIcon;
 }
 
-const navItems: NavItem[] = [
-  { path: '/', label: 'Dashboard', icon: LayoutDashboard },
-  { path: '/calendar', label: 'Calendar', icon: Calendar },
-  { path: '/courses', label: 'Courses', icon: BookOpen },
-  { path: '/files', label: 'Files', icon: FolderOpen },
+const defaultNavItems: NavItem[] = [
+  { id: 'dashboard', path: '/', label: 'Dashboard', icon: LayoutDashboard },
+  { id: 'calendar', path: '/calendar', label: 'Calendar', icon: Calendar },
+  { id: 'courses', path: '/courses', label: 'Courses', icon: BookOpen },
+  { id: 'files', path: '/files', label: 'Files', icon: FolderOpen },
 ];
+
+// Load nav order from localStorage
+function loadNavOrder(): string[] | null {
+  try {
+    const stored = localStorage.getItem(NAV_ORDER_KEY);
+    return stored ? JSON.parse(stored) : null;
+  } catch {
+    return null;
+  }
+}
+
+// Save nav order to localStorage
+function saveNavOrder(order: string[]): void {
+  try {
+    localStorage.setItem(NAV_ORDER_KEY, JSON.stringify(order));
+  } catch (e) {
+    console.error('Failed to save nav order:', e);
+  }
+}
+
+// Get ordered nav items based on saved order
+function getOrderedNavItems(savedOrder: string[] | null): NavItem[] {
+  if (!savedOrder) return defaultNavItems;
+
+  const itemMap = new Map(defaultNavItems.map(item => [item.id, item]));
+  const ordered: NavItem[] = [];
+
+  // Add items in saved order
+  for (const id of savedOrder) {
+    const item = itemMap.get(id);
+    if (item) {
+      ordered.push(item);
+      itemMap.delete(id);
+    }
+  }
+
+  // Add any remaining items (new items not in saved order)
+  for (const item of itemMap.values()) {
+    ordered.push(item);
+  }
+
+  return ordered;
+}
+
+// Load landing page from localStorage
+export function loadLandingPage(): string {
+  try {
+    const stored = localStorage.getItem(LANDING_PAGE_KEY);
+    return stored || '/';
+  } catch {
+    return '/';
+  }
+}
+
+// Save landing page to localStorage
+export function saveLandingPage(path: string): void {
+  try {
+    localStorage.setItem(LANDING_PAGE_KEY, path);
+  } catch (e) {
+    console.error('Failed to save landing page:', e);
+  }
+}
 
 // Load sidebar state from localStorage
 function loadSidebarState(): boolean {
@@ -67,12 +133,94 @@ function saveSidebarState(collapsed: boolean): void {
 }
 
 export function Layout() {
-  const { syncStatus, courses, lastSyncResult, clearSyncResult } = useStore();
+  const {
+    syncStatus,
+    courses,
+    lastSyncResult,
+    clearSyncResult,
+    syncConflicts,
+    resolveSyncConflict,
+    resolveAllSyncConflicts,
+    clearSyncConflicts,
+  } = useStore();
   const containerRef = useRef<HTMLDivElement>(null);
   const mainRef = useRef<HTMLElement>(null);
+  const navigate = useNavigate();
+  const location = useLocation();
 
   // Sidebar collapse state
   const [isCollapsed, setIsCollapsed] = useState(() => loadSidebarState());
+  const [isSidebarHovered, setIsSidebarHovered] = useState(false);
+  const [lockAnimation, setLockAnimation] = useState<'lock' | 'unlock' | null>(null);
+
+  // Nav items with drag and drop
+  const [navItems, setNavItems] = useState<NavItem[]>(() => getOrderedNavItems(loadNavOrder()));
+  const [draggedItem, setDraggedItem] = useState<string | null>(null);
+  const [dragOverItem, setDragOverItem] = useState<string | null>(null);
+
+  // Redirect to landing page on initial mount
+  const hasRedirected = useRef(false);
+  useEffect(() => {
+    if (!hasRedirected.current && location.pathname === '/') {
+      const landingPage = loadLandingPage();
+      if (landingPage !== '/') {
+        navigate(landingPage, { replace: true });
+      }
+      hasRedirected.current = true;
+    }
+  }, [location.pathname, navigate]);
+
+  // Drag handlers for nav items
+  const handleDragStart = (e: React.DragEvent, itemId: string) => {
+    setDraggedItem(itemId);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', itemId);
+    // Add drag image styling
+    const target = e.target as HTMLElement;
+    target.style.opacity = '0.5';
+  };
+
+  const handleDragEnd = (e: React.DragEvent) => {
+    const target = e.target as HTMLElement;
+    target.style.opacity = '1';
+    setDraggedItem(null);
+    setDragOverItem(null);
+  };
+
+  const handleDragOver = (e: React.DragEvent, itemId: string) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (draggedItem && itemId !== draggedItem) {
+      setDragOverItem(itemId);
+    }
+  };
+
+  const handleDragLeave = () => {
+    setDragOverItem(null);
+  };
+
+  const handleDrop = (e: React.DragEvent, targetId: string) => {
+    e.preventDefault();
+    if (!draggedItem || draggedItem === targetId) return;
+
+    const newItems = [...navItems];
+    const draggedIndex = newItems.findIndex(item => item.id === draggedItem);
+    const targetIndex = newItems.findIndex(item => item.id === targetId);
+
+    if (draggedIndex !== -1 && targetIndex !== -1) {
+      // Remove dragged item and insert at target position
+      const [removed] = newItems.splice(draggedIndex, 1);
+      newItems.splice(targetIndex, 0, removed);
+      setNavItems(newItems);
+      saveNavOrder(newItems.map(item => item.id));
+    }
+
+    setDraggedItem(null);
+    setDragOverItem(null);
+  };
+
+  // Effective collapsed state: collapsed unless hovered
+  const effectiveCollapsed = isCollapsed && !isSidebarHovered;
 
   // User profile state (will be populated from Canvas API)
   const [userProfile, setUserProfile] = useState<{
@@ -84,17 +232,20 @@ export function Layout() {
   // Settings modal state
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
-  // About modal state
-  const [isAboutOpen, setIsAboutOpen] = useState(false);
 
   // Profile dropdown state
   const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
+  const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0, width: 0 });
+  const profileButtonRef = useRef<HTMLButtonElement>(null);
   const profileDropdownRef = useRef<HTMLDivElement>(null);
 
   // Close profile dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (profileDropdownRef.current && !profileDropdownRef.current.contains(event.target as Node)) {
+      const target = event.target as Node;
+      const isOutsideButton = profileButtonRef.current && !profileButtonRef.current.contains(target);
+      const isOutsideDropdown = profileDropdownRef.current && !profileDropdownRef.current.contains(target);
+      if (isOutsideButton && isOutsideDropdown) {
         setIsProfileDropdownOpen(false);
       }
     };
@@ -102,11 +253,28 @@ export function Layout() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Toggle sidebar
+  // Handle profile button click - calculate position and toggle dropdown
+  const handleProfileClick = useCallback(() => {
+    if (!isProfileDropdownOpen && profileButtonRef.current) {
+      const rect = profileButtonRef.current.getBoundingClientRect();
+      setDropdownPosition({
+        top: rect.bottom + 4, // 4px gap
+        left: rect.left + 8, // Small inset from left edge
+        width: Math.max(rect.width - 16, 120), // Min width 120px
+      });
+    }
+    setIsProfileDropdownOpen(!isProfileDropdownOpen);
+  }, [isProfileDropdownOpen]);
+
+  // Toggle sidebar with animation
   const toggleSidebar = () => {
     const newState = !isCollapsed;
+    // Trigger animation: locking (expanded->collapsed) or unlocking (collapsed->expanded)
+    setLockAnimation(newState ? 'unlock' : 'lock');
     setIsCollapsed(newState);
     saveSidebarState(newState);
+    // Clear animation after it completes
+    setTimeout(() => setLockAnimation(null), 500);
   };
 
   // Fetch user profile
@@ -210,7 +378,7 @@ export function Layout() {
   };
 
   const syncDisplay = getSyncDisplay();
-  const sidebarWidth = isCollapsed ? 64 : 220;
+  const sidebarWidth = effectiveCollapsed ? 64 : 220;
 
   // Debug: Log sidebar state changes
   useEffect(() => {
@@ -221,28 +389,31 @@ export function Layout() {
     <>
       <TitleBar sidebarWidth={sidebarWidth} onSidebarToggle={toggleSidebar} />
       <div ref={containerRef} style={styles.container}>
-        {/* Sidebar - double-click to toggle */}
+        {/* Sidebar - double-click to toggle, hover to temporarily expand */}
         <aside
           style={{
             ...styles.sidebar,
             width: `${sidebarWidth}px`,
           }}
           onDoubleClick={toggleSidebar}
+          onMouseEnter={() => setIsSidebarHovered(true)}
+          onMouseLeave={() => setIsSidebarHovered(false)}
         >
           {/* User Profile / Logo - clickable for dropdown */}
-          <div ref={profileDropdownRef} style={{ position: 'relative' }}>
+          <div style={{ position: 'relative' }}>
             <button
+              ref={profileButtonRef}
               style={{
                 ...styles.profileSection,
-                justifyContent: isCollapsed ? 'center' : 'flex-start',
-                padding: isCollapsed ? 'var(--space-4) var(--space-2)' : 'var(--space-4)',
+                justifyContent: effectiveCollapsed ? 'center' : 'flex-start',
+                padding: effectiveCollapsed ? 'var(--space-4) var(--space-2)' : 'var(--space-4)',
                 cursor: 'pointer',
                 border: 'none',
                 background: 'transparent',
                 width: '100%',
               }}
-              onClick={() => setIsProfileDropdownOpen(!isProfileDropdownOpen)}
-              title={isCollapsed ? 'Profile menu' : undefined}
+              onClick={handleProfileClick}
+              title={effectiveCollapsed ? 'Profile menu' : undefined}
             >
               {userProfile?.avatarUrl ? (
                 <img
@@ -255,7 +426,7 @@ export function Layout() {
                   <User size={20} />
                 </div>
               )}
-              {!isCollapsed && (
+              {!effectiveCollapsed && (
                 <>
                   <div style={styles.profileInfo}>
                     <span style={styles.userName}>
@@ -277,78 +448,101 @@ export function Layout() {
                 </>
               )}
             </button>
-
-            {/* Profile Dropdown */}
-            {isProfileDropdownOpen && (
-              <div style={styles.profileDropdown}>
-                <button
-                  style={styles.dropdownItem}
-                  onClick={() => {
-                    setIsProfileDropdownOpen(false);
-                    setIsAboutOpen(true);
-                  }}
-                >
-                  <Info size={16} />
-                  <span>About</span>
-                </button>
-                <button
-                  style={{ ...styles.dropdownItem, color: 'var(--color-error)' }}
-                  onClick={async () => {
-                    setIsProfileDropdownOpen(false);
-                    await window.api.deleteCredential();
-                    window.location.reload();
-                  }}
-                >
-                  <LogOut size={16} />
-                  <span>Exit</span>
-                </button>
-              </div>
-            )}
           </div>
 
-          {/* Navigation */}
+          {/* Navigation - drag to reorder */}
           <nav style={styles.nav}>
             {navItems.map((item) => {
               const Icon = item.icon;
+              const isDragging = draggedItem === item.id;
+              const isDragOver = dragOverItem === item.id;
               return (
-                <NavLink
-                  key={item.path}
-                  to={item.path}
-                  style={({ isActive }) => ({
-                    ...styles.navLink,
-                    ...(isActive ? styles.navLinkActive : {}),
-                    justifyContent: isCollapsed ? 'center' : 'flex-start',
-                    paddingLeft: isCollapsed ? 0 : 'var(--space-5)',
-                    paddingRight: isCollapsed ? 0 : 'var(--space-5)',
-                  })}
-                  title={isCollapsed ? item.label : undefined}
+                <div
+                  key={item.id}
+                  draggable
+                  onDragStart={(e) => handleDragStart(e, item.id)}
+                  onDragEnd={handleDragEnd}
+                  onDragOver={(e) => handleDragOver(e, item.id)}
+                  onDragLeave={handleDragLeave}
+                  onDrop={(e) => handleDrop(e, item.id)}
+                  style={{
+                    position: 'relative',
+                    borderTop: isDragOver ? '2px solid var(--color-blue)' : '2px solid transparent',
+                    transition: 'border-color 150ms ease',
+                  }}
                 >
-                  <Icon size={18} style={{ flexShrink: 0 }} />
-                  {!isCollapsed && <span>{item.label}</span>}
-                </NavLink>
+                  <NavLink
+                    to={item.path}
+                    style={({ isActive }) => ({
+                      ...styles.navLink,
+                      ...(isActive ? styles.navLinkActive : {}),
+                      justifyContent: effectiveCollapsed ? 'center' : 'flex-start',
+                      paddingLeft: effectiveCollapsed ? 0 : 'var(--space-3)',
+                      paddingRight: effectiveCollapsed ? 0 : 'var(--space-5)',
+                      opacity: isDragging ? 0.5 : 1,
+                    })}
+                    title={effectiveCollapsed ? item.label : undefined}
+                  >
+                    {!effectiveCollapsed && (
+                      <GripVertical
+                        size={14}
+                        style={{
+                          ...styles.dragHandle,
+                          cursor: 'grab',
+                        }}
+                      />
+                    )}
+                    <Icon size={18} style={{ flexShrink: 0 }} />
+                    {!effectiveCollapsed && <span>{item.label}</span>}
+                  </NavLink>
+                </div>
               );
             })}
-
           </nav>
 
-          {/* Collapse Toggle */}
+          {/* Collapse Toggle - Lock/Unlock */}
           <button
-            style={styles.collapseButton}
+            style={{
+              ...styles.collapseButton,
+              backgroundColor: isCollapsed
+                ? 'rgba(255, 255, 255, 0.1)'
+                : 'rgba(59, 130, 246, 0.35)',
+              color: isCollapsed
+                ? 'rgba(255, 255, 255, 0.6)'
+                : '#60a5fa',
+              boxShadow: isCollapsed
+                ? 'none'
+                : '0 0 8px rgba(96, 165, 250, 0.4)',
+              transition: 'all 300ms ease',
+            }}
             onClick={toggleSidebar}
-            title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            title={isCollapsed ? 'Lock sidebar expanded' : 'Unlock sidebar'}
           >
-            {isCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+            <span
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                animation: lockAnimation === 'lock'
+                  ? 'lockShake 400ms ease-out'
+                  : lockAnimation === 'unlock'
+                    ? 'unlockWiggle 400ms ease-out'
+                    : 'none',
+              }}
+            >
+              {isCollapsed ? <Unlock size={16} /> : <Lock size={16} />}
+            </span>
           </button>
 
           {/* Footer */}
           <div
             style={{
               ...styles.sidebarFooter,
-              justifyContent: isCollapsed ? 'center' : 'space-between',
-              padding: isCollapsed ? 'var(--space-4) var(--space-2)' : 'var(--space-4) var(--space-5)',
+              justifyContent: effectiveCollapsed ? 'center' : 'space-between',
+              padding: effectiveCollapsed ? 'var(--space-4) var(--space-2)' : 'var(--space-4) var(--space-5)',
             }}
           >
-            {/* Left: Settings button */}
+            {/* Settings button - always visible */}
             <button
               style={styles.settingsButton}
               onClick={() => setIsSettingsOpen(true)}
@@ -356,16 +550,16 @@ export function Layout() {
             >
               <Settings size={16} />
             </button>
-            {/* Center: Version */}
-            {!isCollapsed && <div style={styles.version}>v0.1.0</div>}
-            {/* Right: Sync status */}
-            <div
-              style={styles.syncStatusDisplay}
-              title={isCollapsed ? syncDisplay.text : undefined}
-            >
-              {syncDisplay.icon}
-              {!isCollapsed && <span style={styles.syncText}>{syncDisplay.text}</span>}
-            </div>
+            {/* Version and sync status - only when expanded */}
+            {!effectiveCollapsed && (
+              <>
+                <div style={styles.version}>v0.1.0</div>
+                <div style={styles.syncStatusDisplay}>
+                  {syncDisplay.icon}
+                  <span style={styles.syncText}>{syncDisplay.text}</span>
+                </div>
+              </>
+            )}
           </div>
         </aside>
 
@@ -384,27 +578,6 @@ export function Layout() {
       {/* Settings Modal */}
       <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
 
-      {/* About Modal */}
-      {isAboutOpen && (
-        <div style={styles.modalOverlay} onClick={() => setIsAboutOpen(false)}>
-          <div style={styles.aboutModal} onClick={(e) => e.stopPropagation()}>
-            <h2 style={styles.aboutTitle}>Canvas Assistant</h2>
-            <p style={styles.aboutVersion}>Version 0.1.0</p>
-            <p style={styles.aboutDescription}>
-              An offline-first academic command center for Canvas LMS.
-              Track assignments, manage deadlines, and stay on top of your courses.
-            </p>
-            <div style={styles.aboutFooter}>
-              <button
-                style={styles.aboutCloseBtn}
-                onClick={() => setIsAboutOpen(false)}
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Sync Result Toast */}
       <SyncResultToast
@@ -412,6 +585,55 @@ export function Layout() {
         onClose={clearSyncResult}
         autoHideDuration={6000}
       />
+
+      {/* Sync Conflict Modal */}
+      <SyncConflictModal
+        isOpen={syncConflicts.length > 0}
+        conflicts={syncConflicts}
+        onResolve={(resolution) => {
+          resolveSyncConflict(
+            resolution.conflictId,
+            resolution.useCanvasValue,
+            resolution.rememberChoice,
+            resolution.rememberForAll
+          );
+        }}
+        onResolveAll={(useCanvasValues) => {
+          resolveAllSyncConflicts(useCanvasValues);
+        }}
+        onClose={clearSyncConflicts}
+      />
+
+      {/* Profile Dropdown - rendered via portal to escape sidebar overflow */}
+      {isProfileDropdownOpen && createPortal(
+        <div
+          ref={profileDropdownRef}
+          style={{
+            position: 'fixed',
+            top: dropdownPosition.top,
+            left: dropdownPosition.left,
+            width: dropdownPosition.width,
+            backgroundColor: 'var(--bg-card)',
+            borderRadius: 'var(--radius-md)',
+            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+            padding: 'var(--space-2)',
+            zIndex: 1000,
+          }}
+        >
+          <button
+            style={{ ...styles.dropdownItem, color: 'var(--color-error)' }}
+            onClick={async () => {
+              setIsProfileDropdownOpen(false);
+              await window.api.deleteCredential();
+              window.location.reload();
+            }}
+          >
+            <LogOut size={16} />
+            <span>Log Out</span>
+          </button>
+        </div>,
+        document.body
+      )}
     </>
   );
 }
@@ -441,7 +663,7 @@ const styles: Record<string, React.CSSProperties> = {
     bottom: 0,
     paddingTop: `${TITLE_BAR_HEIGHT}px`,
     zIndex: 100,
-    transition: 'width 200ms ease',
+    transition: 'width 250ms cubic-bezier(0.33, 1, 0.68, 1)',
     overflow: 'hidden',
     minWidth: 64, // Prevent sidebar from shrinking below minimum
     userSelect: 'none', // Prevent text selection on double-click
@@ -559,6 +781,13 @@ const styles: Record<string, React.CSSProperties> = {
     borderLeftColor: 'var(--color-blue)',
   },
 
+  dragHandle: {
+    color: 'rgba(255, 255, 255, 0.3)',
+    flexShrink: 0,
+    marginRight: 'var(--space-1)',
+    transition: 'color var(--transition-fast)',
+  },
+
   collapseButton: {
     display: 'flex',
     alignItems: 'center',
@@ -613,75 +842,18 @@ const styles: Record<string, React.CSSProperties> = {
     color: 'rgba(255, 255, 255, 0.4)',
   },
 
-  // Main content
+  // Main content - fills available space and scales with viewport
   main: {
     flex: 1,
     backgroundColor: 'var(--bg-app)',
-    minHeight: '100vh',
+    height: `calc(100vh - ${TITLE_BAR_HEIGHT}px)`,
     padding: 'var(--space-6)',
     overflowY: 'auto',
-    transition: 'margin-left 200ms ease',
-  },
-
-  // About Modal styles
-  modalOverlay: {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    transition: 'margin-left 250ms cubic-bezier(0.33, 1, 0.68, 1)',
     display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 1000,
+    flexDirection: 'column',
   },
 
-  aboutModal: {
-    backgroundColor: 'var(--bg-card)',
-    borderRadius: 'var(--radius-lg)',
-    padding: 'var(--space-6)',
-    maxWidth: '400px',
-    width: '90%',
-    textAlign: 'center',
-    boxShadow: '0 10px 40px rgba(0, 0, 0, 0.2)',
-  },
-
-  aboutTitle: {
-    fontSize: 'var(--text-2xl)',
-    fontWeight: 'var(--font-bold)',
-    color: 'var(--text-primary)',
-    marginBottom: 'var(--space-2)',
-  },
-
-  aboutVersion: {
-    fontSize: 'var(--text-sm)',
-    color: 'var(--text-muted)',
-    marginBottom: 'var(--space-4)',
-  },
-
-  aboutDescription: {
-    fontSize: 'var(--text-sm)',
-    color: 'var(--text-secondary)',
-    lineHeight: 'var(--leading-relaxed)',
-    marginBottom: 'var(--space-6)',
-  },
-
-  aboutFooter: {
-    display: 'flex',
-    justifyContent: 'center',
-  },
-
-  aboutCloseBtn: {
-    padding: 'var(--space-2) var(--space-6)',
-    backgroundColor: 'var(--color-navy)',
-    color: 'white',
-    border: 'none',
-    borderRadius: 'var(--radius-md)',
-    fontSize: 'var(--text-sm)',
-    fontWeight: 'var(--font-medium)',
-    cursor: 'pointer',
-  },
 };
 
 export default Layout;

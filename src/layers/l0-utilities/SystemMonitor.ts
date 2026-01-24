@@ -23,6 +23,8 @@ export class SystemMonitor extends EventEmitter {
   private pollInterval: NodeJS.Timeout | null = null;
   private lastEmittedState: string = '';
   private readonly pollIntervalMs: number;
+  private focusDebounceTimer: NodeJS.Timeout | null = null;
+  private readonly focusDebounceMs = 200; // Debounce focus changes by 200ms
 
   /**
    * Create a new SystemMonitor instance
@@ -70,6 +72,10 @@ export class SystemMonitor extends EventEmitter {
       clearInterval(this.pollInterval);
       this.pollInterval = null;
     }
+    if (this.focusDebounceTimer) {
+      clearTimeout(this.focusDebounceTimer);
+      this.focusDebounceTimer = null;
+    }
   }
 
   /**
@@ -81,12 +87,23 @@ export class SystemMonitor extends EventEmitter {
 
   /**
    * Update window focus state (called from main process)
+   * Debounced to prevent thrashing when external apps open/close
    */
   setWindowFocused(focused: boolean): void {
-    if (this.state.windowFocused !== focused) {
-      this.state.windowFocused = focused;
-      this.emitStateChange();
+    // Clear any pending focus change
+    if (this.focusDebounceTimer) {
+      clearTimeout(this.focusDebounceTimer);
+      this.focusDebounceTimer = null;
     }
+
+    // Debounce focus changes to prevent rapid oscillation
+    this.focusDebounceTimer = setTimeout(() => {
+      this.focusDebounceTimer = null;
+      if (this.state.windowFocused !== focused) {
+        this.state.windowFocused = focused;
+        this.emitStateChange();
+      }
+    }, this.focusDebounceMs);
   }
 
   /**

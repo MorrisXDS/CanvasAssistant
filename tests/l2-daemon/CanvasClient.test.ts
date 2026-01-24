@@ -19,6 +19,9 @@ describe('CanvasClient', () => {
     delete: jest.fn(),
     defaults: { headers: {} as Record<string, string> },
     interceptors: {
+      request: {
+        use: jest.fn(),
+      },
       response: {
         use: jest.fn(),
       },

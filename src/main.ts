@@ -18,6 +18,9 @@ import { Database, MigrationRunner, coreMigrations } from './layers/l1-persisten
 import { CanvasClient, SyncEngine, RateLimiter, CircuitBreaker, htmlToPlainText, ICSParser, RRuleExpander } from './layers/l2-daemon';
 import crypto from 'crypto';
 
+// L3 - Intelligence
+import { PriorityOrchestrator } from './layers/l3-intelligence/orchestration/PriorityOrchestrator';
+
 // L4 - Controller
 import { CommandDispatcher } from './layers/l4-controller';
 
@@ -67,7 +70,7 @@ const housekeepingManager = new HousekeepingManager({
 });
 const fileDownloadManager = new FileDownloadManager({
   baseDir: FILES_DIR,
-  maxConcurrent: 2,
+  maxConcurrent: 10,
   logger,
 });
 
@@ -78,6 +81,7 @@ const migrationRunner = new MigrationRunner(database);
 // Initialize Layer 4 controller (after database is ready)
 // Note: CommandDispatcher is initialized lazily after database.initialize()
 let commandDispatcher: CommandDispatcher | null = null;
+let priorityOrchestrator: PriorityOrchestrator | null = null;
 
 // Initialize Layer 2 daemon components (lazy-init for CanvasClient/SyncEngine)
 const rateLimiter = new RateLimiter({ maxConcurrent: 3, minDelayMs: 100 });
@@ -169,11 +173,20 @@ async function initializeCanvasClient(token: string, baseUrl: string): Promise<b
     logger.info(`Canvas client initialized for user: ${validation.user?.name}`);
     metricsCollector.increment('canvas.auth.success');
 
-    // Initialize sync engine
+    // Initialize sync engine with HTML content sync
     syncEngine = new SyncEngine({
       client: canvasClient,
       db: database,
       rateLimiter,
+      downloadManager: fileDownloadManager,
+      filesBaseDir: FILES_DIR,
+      htmlContentSyncConfig: {
+        enabled: true,
+        urlRewriting: 'local',
+        downloadImages: true,
+        downloadLinkedFiles: true,
+        maxConcurrentDownloads: 3,
+      },
     });
 
     // Forward sync events to metrics
@@ -379,11 +392,27 @@ function registerIpcHandlers(): void {
     }
   });
 
+  // Debug: Direct Canvas API call (for testing)
+  ipcMain.handle('canvas:debugFetch', async (_event, endpoint: string) => {
+    if (!canvasClient) {
+      return { success: false, error: 'Canvas client not initialized' };
+    }
+    try {
+      logger.debug(`[canvas:debugFetch] Fetching: ${endpoint}`);
+      const response = await canvasClient.get(endpoint);
+      return { success: true, data: response.data };
+    } catch (error) {
+      logger.error(`[canvas:debugFetch] Error: ${error}`);
+      return { success: false, error: String(error) };
+    }
+  });
+
   // Sync operations
   ipcMain.handle('sync:full', async (_event, options?: {
     termSelection?: 'all' | 'auto' | string;
     syncCanvasFiles?: boolean;
     syncAnnouncements?: boolean;
+    courseIds?: number[];
   }) => {
     console.debug(`[IPC sync:full] Received options: ${JSON.stringify(options)}`);
 
@@ -397,7 +426,8 @@ function registerIpcHandlers(): void {
       return { success: false, error: 'Sync disabled due to system state (battery/focus)' };
     }
 
-    logger.info(`Sync requested with options: termSelection=${options?.termSelection ?? 'all'}, syncCanvasFiles=${options?.syncCanvasFiles ?? true}, syncAnnouncements=${options?.syncAnnouncements ?? true}`);
+    const courseIdsStr = options?.courseIds ? `courseIds=[${options.courseIds.length} courses]` : 'courseIds=all';
+    logger.info(`Sync requested with options: termSelection=${options?.termSelection ?? 'all'}, syncCanvasFiles=${options?.syncCanvasFiles ?? true}, syncAnnouncements=${options?.syncAnnouncements ?? true}, ${courseIdsStr}`);
 
     try {
       const result = await syncEngine.syncAll(options);
@@ -417,6 +447,87 @@ function registerIpcHandlers(): void {
     try {
       const result = await syncEngine.syncCourses();
       return { success: true, result };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+
+  ipcMain.handle('sync:folderFiles', async (_event, params: {
+    canvasFolderId: number;
+    localCourseId: number;
+    forceRefresh?: boolean;
+  }) => {
+    if (!syncEngine) {
+      return { success: false, error: 'Canvas client not initialized' };
+    }
+
+    try {
+      const result = await syncEngine.syncFolderFiles(
+        params.canvasFolderId,
+        params.localCourseId,
+        { forceRefresh: params.forceRefresh }
+      );
+      return {
+        success: true,
+        data: {
+          success: result.success,
+          count: result.count,
+          errors: result.errors,
+        },
+      };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+
+  ipcMain.handle('sync:folderByPath', async (_event, params: {
+    courseId: number;
+    folderPath: string;
+  }) => {
+    if (!syncEngine) {
+      return { success: false, error: 'Canvas client not initialized' };
+    }
+
+    try {
+      // Look up the folder's Canvas ID from database
+      const folder = database.executeReadOne<{
+        external_id: string;
+        course_id: number;
+      }>(
+        `SELECT external_id, course_id FROM resources
+         WHERE course_id = ? AND folder_path = ? AND type = 'folder'`,
+        [params.courseId, params.folderPath]
+      );
+
+      if (!folder) {
+        // Folder not in database - might be a virtual folder path, return success with 0 count
+        return {
+          success: true,
+          data: { success: true, count: 0, errors: [] },
+        };
+      }
+
+      // Get the Canvas course ID from the local course
+      const course = database.executeReadOne<{ external_id: string }>(
+        'SELECT external_id FROM courses WHERE id = ?',
+        [params.courseId]
+      );
+
+      if (!course) {
+        return { success: false, error: 'Course not found' };
+      }
+
+      const canvasFolderId = parseInt(folder.external_id, 10);
+      const result = await syncEngine.syncFolderFiles(canvasFolderId, params.courseId);
+
+      return {
+        success: true,
+        data: {
+          success: result.success,
+          count: result.count,
+          errors: result.errors,
+        },
+      };
     } catch (error) {
       return { success: false, error: String(error) };
     }
@@ -669,7 +780,6 @@ function registerIpcHandlers(): void {
 
   // Get all files (resources + notification attachments)
   ipcMain.handle('data:getFiles', () => {
-    logger.info('Fetching files from database');
     // Get resources (files synced from Canvas)
     const resources = database.executeRead<{
       id: number;
@@ -688,7 +798,7 @@ function registerIpcHandlers(): void {
       SELECT r.*, c.code as course_code, c.name as course_name
       FROM resources r
       JOIN courses c ON r.course_id = c.id
-      WHERE r.type = 'file'
+      WHERE r.type IN ('file', 'page')
       ORDER BY r.course_id, r.folder_path, r.title
     `);
 
@@ -721,9 +831,34 @@ function registerIpcHandlers(): void {
       ORDER BY na.course_id, na.display_name
     `);
 
+    // Get pages from course_pages with module info
+    const pages = database.executeRead<{
+      id: number;
+      external_id: string | null;
+      course_id: number;
+      page_type: string;
+      title: string;
+      url_slug: string | null;
+      body_html: string | null;
+      is_front_page: number;
+      published: number;
+      last_synced_at: string | null;
+      module_name: string | null;
+    }>(`
+      SELECT
+        cp.*,
+        m.name as module_name
+      FROM course_pages cp
+      JOIN courses c ON cp.course_id = c.id
+      LEFT JOIN module_items mi ON mi.item_type = 'Page' AND mi.content_id = cp.external_id
+      LEFT JOIN modules m ON mi.module_id = m.id
+      WHERE cp.published = 1
+      ORDER BY cp.course_id, m.position, cp.title
+    `);
+
     const downloadedResources = resources.filter(r => r.local_path !== null).length;
     const downloadedAttachments = attachments.filter(a => a.download_status === 'completed').length;
-    logger.info(`Found ${resources.length} resources (${downloadedResources} downloaded) and ${attachments.length} attachments (${downloadedAttachments} downloaded)`);
+    logger.info(`Found ${resources.length} resources (${downloadedResources} downloaded), ${attachments.length} attachments (${downloadedAttachments} downloaded), and ${pages.length} pages`);
 
     return {
       resources: resources.map((r) => ({
@@ -758,6 +893,21 @@ function registerIpcHandlers(): void {
         courseName: a.course_name,
         notificationTitle: a.notification_title,
         source: 'attachment' as const,
+      })),
+      pages: pages.map((p) => ({
+        id: p.id,
+        externalId: p.external_id,
+        courseId: p.course_id,
+        pageType: p.page_type,
+        title: p.title,
+        urlSlug: p.url_slug,
+        hasContent: !!p.body_html,
+        isFrontPage: p.is_front_page === 1,
+        published: p.published === 1,
+        lastSyncedAt: p.last_synced_at,
+        folderPath: p.module_name || (p.is_front_page ? 'Front Page' : 'Pages'),
+        sizeBytes: null,  // Pages don't have a file size
+        source: 'page' as const,
       })),
     };
   });
@@ -970,7 +1120,7 @@ function registerIpcHandlers(): void {
   });
 
   // Open a downloaded file
-  ipcMain.handle('attachment:open', async (_event, attachmentId: number) => {
+  ipcMain.handle('attachment:open', (_event, attachmentId: number) => {
     const attachment = database.executeReadOne<{ local_path: string | null; url: string }>(
       'SELECT local_path, url FROM notification_attachments WHERE id = ?',
       [attachmentId]
@@ -989,7 +1139,6 @@ function registerIpcHandlers(): void {
       return { success: false, error: 'Invalid local path (URL stored instead of file path)' };
     }
 
-    const { shell } = require('electron');
     const fs = require('fs');
 
     // Check if file exists
@@ -998,18 +1147,20 @@ function registerIpcHandlers(): void {
       return { success: false, error: 'File not found on disk' };
     }
 
-    try {
-      const result = await shell.openPath(attachment.local_path);
-      console.log('[attachment:open] shell.openPath result:', result || 'success (empty string)');
-      if (result) {
-        // shell.openPath returns error string on failure, empty string on success
-        return { success: false, error: result };
-      }
-      return { success: true };
-    } catch (error) {
-      console.error('[attachment:open] Error:', error);
-      return { success: false, error: String(error) };
-    }
+    // Use spawn with detached to completely decouple from Electron process
+    const { spawn } = require('child_process');
+    const openCommand = process.platform === 'darwin' ? 'open'
+      : process.platform === 'win32' ? 'start'
+      : 'xdg-open';
+
+    const child = spawn(openCommand, [attachment.local_path], {
+      detached: true,
+      stdio: 'ignore',
+    });
+    child.unref(); // Allow Electron to exit independently
+
+    console.log('[attachment:open] Spawned detached process, returning immediately');
+    return { success: true };
   });
 
   // Show file in folder
@@ -1236,6 +1387,13 @@ function registerIpcHandlers(): void {
       return { success: false, error: 'Page not found' };
     }
 
+    // Construct Canvas URL for the page
+    let canvasUrl: string | null = null;
+    if (canvasClient && page.url_slug) {
+      const baseUrl = canvasClient.getBaseUrl();
+      canvasUrl = `${baseUrl}/courses/${page.course_id}/pages/${page.url_slug}`;
+    }
+
     return {
       success: true,
       data: {
@@ -1249,6 +1407,7 @@ function registerIpcHandlers(): void {
         bodyText: page.body_text,
         isFrontPage: page.is_front_page === 1,
         published: page.published === 1,
+        canvasUrl,
       },
     };
   });
@@ -1335,6 +1494,134 @@ function registerIpcHandlers(): void {
         logger.error(`Failed to export page: ${error}`);
         return { success: false, error: String(error) };
       }
+    }
+  );
+
+  // Batch export HTML content (saves to app files directory)
+  ipcMain.handle(
+    'html:exportBatch',
+    async (
+      _event,
+      params: {
+        courseId: number;
+        items: Array<{
+          sourceType: 'page' | 'assignment' | 'syllabus' | 'module' | 'announcement';
+          sourceId: string;
+          title: string;
+          bodyHtml: string;
+        }>;
+      }
+    ) => {
+      // Get course info
+      const course = database.executeRead<{ code: string; external_id: string }>(
+        'SELECT code, external_id FROM courses WHERE id = ?',
+        [params.courseId]
+      )[0];
+
+      if (!course) {
+        return { success: false, error: 'Course not found' };
+      }
+
+      const courseCode = course.code.replace(/[^a-zA-Z0-9_-]/g, '_');
+      const results: Array<{ sourceType: string; sourceId: string; success: boolean; localPath?: string; error?: string }> = [];
+
+      for (const item of params.items) {
+        try {
+          // Create directory structure: files/{courseCode}/{sourceType}/
+          const contextDir = path.join(FILES_DIR, courseCode, item.sourceType.charAt(0).toUpperCase() + item.sourceType.slice(1));
+          if (!fs.existsSync(contextDir)) {
+            fs.mkdirSync(contextDir, { recursive: true });
+          }
+
+          // Generate safe filename
+          const safeTitle = item.title.replace(/[<>:"/\\|?*]/g, '_').substring(0, 50);
+          const filename = `${safeTitle}.html`;
+          const localPath = path.join(contextDir, filename);
+
+          // Generate styled HTML
+          const fullHtml = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${item.title} - ${course.code}</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 2rem;
+      line-height: 1.6;
+      color: #333;
+    }
+    h1 { border-bottom: 2px solid #2563eb; padding-bottom: 0.5rem; }
+    h1, h2, h3 { color: #1e40af; }
+    a { color: #2563eb; }
+    table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+    th, td { border: 1px solid #ddd; padding: 0.5rem; text-align: left; }
+    th { background: #f3f4f6; }
+    pre, code { background: #f3f4f6; padding: 0.25rem 0.5rem; border-radius: 4px; }
+    pre { padding: 1rem; overflow-x: auto; }
+    img { max-width: 100%; height: auto; }
+    .meta { color: #666; font-size: 0.9rem; margin-bottom: 1rem; }
+  </style>
+</head>
+<body>
+  <h1>${item.title}</h1>
+  <p class="meta">Course: ${course.code} | Type: ${item.sourceType} | Exported: ${new Date().toLocaleDateString()}</p>
+  <hr>
+  ${item.bodyHtml}
+</body>
+</html>`;
+
+          fs.writeFileSync(localPath, fullHtml, 'utf-8');
+
+          // Compute content hash for change detection
+          const contentHash = crypto.createHash('md5').update(item.bodyHtml).digest('hex');
+
+          // Update html_exports table
+          database.executeWrite(
+            `INSERT INTO html_exports (course_id, source_type, source_id, title, content_hash, local_path, exported_at)
+             VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+             ON CONFLICT(course_id, source_type, source_id) DO UPDATE SET
+               title = excluded.title,
+               content_hash = excluded.content_hash,
+               local_path = excluded.local_path,
+               exported_at = CURRENT_TIMESTAMP`,
+            [params.courseId, item.sourceType, item.sourceId, item.title, contentHash, localPath],
+            'html_exports'
+          );
+
+          results.push({
+            sourceType: item.sourceType,
+            sourceId: item.sourceId,
+            success: true,
+            localPath,
+          });
+
+          logger.debug(`HTML exported: ${localPath}`);
+        } catch (error) {
+          results.push({
+            sourceType: item.sourceType,
+            sourceId: item.sourceId,
+            success: false,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          logger.error(`Failed to export HTML ${item.sourceType}/${item.sourceId}: ${error}`);
+        }
+      }
+
+      const successCount = results.filter((r) => r.success).length;
+      logger.info(`Batch HTML export: ${successCount}/${params.items.length} items exported for course ${course.code}`);
+
+      return {
+        success: results.every((r) => r.success),
+        data: {
+          exported: successCount,
+          total: params.items.length,
+          results,
+        },
+      };
     }
   );
 
@@ -1668,6 +1955,18 @@ function registerIpcHandlers(): void {
       return { success: false, error: 'Resource not found' };
     }
 
+    // Handle HTML content items (pages, assignments, announcements)
+    if (resource.external_id.startsWith('html-') && syncEngine?.['htmlContentSync']) {
+      const htmlSync = syncEngine['htmlContentSync'] as import('./layers/l2-daemon/HtmlContentSync').HtmlContentSync;
+      const result = await htmlSync.downloadHtmlItem(resource.external_id, FILES_DIR);
+      if (result.success) {
+        metricsCollector.increment('resource.download.html.success');
+      } else {
+        metricsCollector.increment('resource.download.html.failure');
+      }
+      return result;
+    }
+
     if (!resource.url) {
       return { success: false, error: 'Resource has no download URL' };
     }
@@ -1724,21 +2023,33 @@ function registerIpcHandlers(): void {
     });
   });
 
-  ipcMain.handle('resource:open', async (_event, resourceId: number) => {
+  ipcMain.handle('resource:open', (_event, resourceId: number) => {
+    console.log('[resource:open] START', resourceId);
     const resource = database.executeReadOne<{ local_path: string | null }>(
       'SELECT local_path FROM resources WHERE id = ?',
       [resourceId]
     );
 
     if (!resource?.local_path) {
+      console.log('[resource:open] No local_path');
       return { success: false, error: 'File not downloaded' };
     }
 
-    const { shell } = require('electron');
-    const result = await shell.openPath(resource.local_path);
-    if (result) {
-      return { success: false, error: result };
-    }
+    console.log('[resource:open] Opening:', resource.local_path);
+
+    // Use spawn with detached to completely decouple from Electron process
+    const { spawn } = require('child_process');
+    const openCommand = process.platform === 'darwin' ? 'open'
+      : process.platform === 'win32' ? 'start'
+      : 'xdg-open';
+
+    const child = spawn(openCommand, [resource.local_path], {
+      detached: true,
+      stdio: 'ignore',
+    });
+    child.unref(); // Allow Electron to exit independently
+
+    console.log('[resource:open] Spawned detached process, returning immediately');
     return { success: true };
   });
 
@@ -1801,6 +2112,65 @@ function registerIpcHandlers(): void {
 
     commandDispatcher.clearSimulation();
     return { success: true };
+  });
+
+  // ============ Priority Handlers ============
+
+  ipcMain.handle('priorities:calculate', () => {
+    if (!priorityOrchestrator) {
+      return { success: false, error: 'Priority system not initialized' };
+    }
+    try {
+      const result = priorityOrchestrator.calculateAll();
+      return { success: true, data: result };
+    } catch (error) {
+      logger.error('Priority calculation failed', error as Error);
+      return { success: false, error: 'Priority calculation failed' };
+    }
+  });
+
+  ipcMain.handle('priorities:refresh', () => {
+    if (!priorityOrchestrator) {
+      return { success: false, error: 'Priority system not initialized' };
+    }
+    try {
+      priorityOrchestrator.calculateAll();
+      return { success: true };
+    } catch (error) {
+      logger.error('Priority refresh failed', error as Error);
+      return { success: false, error: 'Priority refresh failed' };
+    }
+  });
+
+  ipcMain.handle('priorities:getExplanation', (_event, params: { taskId: number }) => {
+    if (!priorityOrchestrator) {
+      return { success: false, error: 'Priority system not initialized' };
+    }
+    try {
+      const explanation = priorityOrchestrator.getExplanation(params.taskId);
+      if (!explanation) {
+        return { success: false, error: 'Task not found' };
+      }
+      return { success: true, data: explanation };
+    } catch (error) {
+      logger.error('Failed to get priority explanation', error as Error);
+      return { success: false, error: 'Failed to get priority explanation' };
+    }
+  });
+
+  // Recalculate priorities when relevant tables change
+  database.on('commit', (tableName: string) => {
+    if (['tasks', 'courses', 'course_policies', 'grace_tokens'].includes(tableName)) {
+      // Debounce recalculation to avoid excessive computation
+      setTimeout(() => {
+        if (!priorityOrchestrator) return;
+        try {
+          priorityOrchestrator.calculateAll();
+        } catch (error) {
+          logger.error('Auto priority recalculation failed', error as Error);
+        }
+      }, 500);
+    }
   });
 
   // ============ Sync Conflict Handlers ============
@@ -1992,6 +2362,12 @@ app.whenReady().then(async () => {
 
     // Initialize L4 CommandDispatcher now that database is ready
     commandDispatcher = new CommandDispatcher({ db: database });
+
+    // Initialize L3 PriorityOrchestrator
+    priorityOrchestrator = new PriorityOrchestrator(database, {
+      refreshIntervalMs: 15 * 60 * 1000, // 15 minutes
+      autoRefresh: true,
+    });
 
     // Forward sync requests from CommandDispatcher to SyncEngine
     commandDispatcher.on('sync-requested', async (event) => {

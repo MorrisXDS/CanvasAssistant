@@ -967,6 +967,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     flexDirection: 'column',
     gap: 'var(--space-4)',
+    flex: 1,
   },
 
   header: {

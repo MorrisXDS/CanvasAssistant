@@ -15,7 +15,13 @@
 
 export { CanvasClient, CanvasClientConfig, CanvasUser, CanvasApiError } from './CanvasClient';
 export { RateLimiter, RateLimiterConfig, RateLimitStatus } from './RateLimiter';
-export { SyncEngine, SyncEngineConfig, SyncResult, FullSyncResult } from './SyncEngine';
+export { SyncEngine, SyncEngineConfig, SyncResult, FullSyncResult, SyncDiagnosticEntry } from './SyncEngine';
+export {
+  SyncConflictResolver,
+  type SyncConflict,
+  type ConflictResolution,
+  type SyncPreference,
+} from './SyncConflictResolver';
 export {
   CircuitBreaker,
   CircuitOpenError,
@@ -48,3 +54,22 @@ export {
   type CalendarEventRecord,
   type ExpandedEvent,
 } from './RRuleExpander';
+export {
+  ResilienceWrapper,
+  type ResilienceWrapperConfig,
+  type ResilienceStatus,
+} from './ResilienceWrapper';
+export {
+  HtmlFileExtractor,
+  extractCanvasFileIds,
+  extractCanvasFileReferences,
+  type ExtractedFileReference,
+  type HtmlFileExtractorConfig,
+} from './HtmlFileExtractor';
+export {
+  HtmlContentSync,
+  type HtmlContentSyncOptions,
+  type HtmlContentSyncResult,
+  type HtmlContentItem,
+  type ExtractedResource,
+} from './HtmlContentSync';

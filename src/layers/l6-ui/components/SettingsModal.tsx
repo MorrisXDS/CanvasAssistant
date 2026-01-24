@@ -42,6 +42,11 @@ interface SyncPreferences {
   autoSyncInterval: number;
   syncFiles: boolean;
   syncAnnouncements: boolean;
+  // HTML content sync
+  saveHtmlContent: boolean;
+  htmlUrlRewriting: 'local' | 'original';
+  downloadImages: boolean;
+  downloadLinkedFiles: boolean;
 }
 
 interface AppearanceSettings {
@@ -114,11 +119,20 @@ const STORAGE_KEYS = {
   LANDING_PAGE: 'landingPage',
 };
 
-function loadSettings<T>(key: string, defaults: T): T {
+function loadSettings<T extends object>(key: string, defaults: T): T {
   try {
     const stored = localStorage.getItem(key);
     if (stored) {
-      return { ...defaults, ...JSON.parse(stored) };
+      const parsed = JSON.parse(stored);
+      // Merge with defaults, but only use stored values that are defined
+      // This ensures new default fields are applied to old stored settings
+      const result = { ...defaults };
+      for (const k of Object.keys(parsed)) {
+        if (parsed[k] !== undefined) {
+          (result as Record<string, unknown>)[k] = parsed[k];
+        }
+      }
+      return result;
     }
   } catch (e) {
     console.error(`Failed to load ${key}:`, e);
@@ -163,6 +177,10 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
       autoSyncInterval: 30,
       syncFiles: true,
       syncAnnouncements: true,
+      saveHtmlContent: true,
+      htmlUrlRewriting: 'local' as const,
+      downloadImages: true,
+      downloadLinkedFiles: true,
     })
   );
 
@@ -654,6 +672,49 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                   checked={syncPrefs.syncAnnouncements}
                   onChange={() => updateSyncPrefs({ syncAnnouncements: !syncPrefs.syncAnnouncements })}
                 />
+
+                <div style={styles.divider} />
+                <div style={styles.subsectionTitle}>Offline content</div>
+
+                <ToggleRow
+                  label="Save HTML content"
+                  description="Download pages, assignments, and announcements as HTML files for offline viewing"
+                  checked={syncPrefs.saveHtmlContent}
+                  onChange={() => updateSyncPrefs({ saveHtmlContent: !syncPrefs.saveHtmlContent })}
+                />
+
+                {syncPrefs.saveHtmlContent && (
+                  <>
+                    <div style={styles.field}>
+                      <label style={styles.label}>URL handling</label>
+                      <p style={styles.fieldDesc}>
+                        How to handle links to images and files in HTML content.
+                      </p>
+                      <select
+                        value={syncPrefs.htmlUrlRewriting}
+                        onChange={(e) => updateSyncPrefs({ htmlUrlRewriting: e.target.value as 'local' | 'original' })}
+                        style={styles.select}
+                      >
+                        <option value="local">Rewrite for offline use (recommended)</option>
+                        <option value="original">Keep original Canvas URLs</option>
+                      </select>
+                    </div>
+
+                    <ToggleRow
+                      label="Download images"
+                      description="Download embedded images for offline access"
+                      checked={syncPrefs.downloadImages}
+                      onChange={() => updateSyncPrefs({ downloadImages: !syncPrefs.downloadImages })}
+                    />
+
+                    <ToggleRow
+                      label="Download linked files"
+                      description="Download files linked in content"
+                      checked={syncPrefs.downloadLinkedFiles}
+                      onChange={() => updateSyncPrefs({ downloadLinkedFiles: !syncPrefs.downloadLinkedFiles })}
+                    />
+                  </>
+                )}
               </div>
             )}
 

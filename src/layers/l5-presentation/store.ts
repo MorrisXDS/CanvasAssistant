@@ -690,6 +690,7 @@ export const useStore = create<Store>()(
           syncCanvasFiles?: boolean;
           syncAnnouncements?: boolean;
           isAutoSync?: boolean;
+          courseIds?: number[];
         }
       ) => {
         const api = getApi();

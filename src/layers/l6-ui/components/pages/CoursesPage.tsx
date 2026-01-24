@@ -3,8 +3,9 @@
  * Course glossary with grid/list view toggle and pin functionality
  */
 
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { FixedSizeList as VirtualList } from 'react-window';
 import {
   BookOpen,
   Grid,
@@ -13,7 +14,6 @@ import {
   PinOff,
   ChevronRight,
   Target,
-  TrendingUp,
   Search,
   Filter,
   X,
@@ -21,8 +21,8 @@ import {
   EyeOff,
   Palette,
 } from 'lucide-react';
-import { useStore } from '../../../l5-presentation/store';
-import { Card, Badge } from '../shared';
+import { useStore, getCachedCourseGrades } from '../../../l5-presentation/store';
+import { Card, Badge, InfoTrigger } from '../shared';
 import type { Course } from '../../../l5-presentation/types';
 
 // Course color palette
@@ -132,7 +132,7 @@ function saveViewMode(pageKey: string, mode: ViewMode): void {
 
 export function CoursesPage() {
   const navigate = useNavigate();
-  const { courses, fetchCourses } = useStore();
+  const { courses, fetchCourses, tasks } = useStore();
   const [viewMode, setViewModeState] = useState<ViewMode>(() =>
     loadViewMode('courses', loadCourseSettings().defaultViewMode)
   );
@@ -188,10 +188,10 @@ export function CoursesPage() {
     }
   }, [availablePrefixes, availableTypes, prefixFilter, typeFilter]);
 
-  // Navigate to course detail
-  const handleCourseClick = (courseId: number) => {
+  // Navigate to course detail - memoized to prevent unnecessary re-renders
+  const handleCourseClick = useCallback((courseId: number) => {
     navigate(`/course/${courseId}`);
-  };
+  }, [navigate]);
 
   // Save pinned courses when they change
   useEffect(() => {
@@ -508,43 +508,82 @@ export function CoursesPage() {
       ) : viewMode === 'grid' ? (
         /* Grid View */
         <div style={styles.grid}>
-          {filteredCourses.map((course) => (
-            <CourseGridCard
-              key={course.id}
-              course={course}
-              isPinned={pinnedCourses.has(course.id)}
-              onTogglePin={togglePin}
-              onToggleHide={handleToggleHide}
-              onClick={() => handleCourseClick(course.id)}
-              onColorClick={openColorPicker}
-              showColorPicker={colorPickerCourseId === course.id}
-              colorPickerValue={colorPickerCourseId === course.id ? customColor : undefined}
-              onColorChange={handleColorChange}
-              onColorInputChange={setCustomColor}
-              onColorPickerClose={closeColorPicker}
-            />
-          ))}
+          {filteredCourses.map((course) => {
+            const grades = getCachedCourseGrades(course.id, tasks);
+            return (
+              <MemoizedCourseGridCard
+                key={course.id}
+                course={course}
+                isPinned={pinnedCourses.has(course.id)}
+                earned={grades.earned}
+                trend={grades.trend}
+                assessed={grades.assessed}
+                onTogglePin={togglePin}
+                onToggleHide={handleToggleHide}
+                onClick={() => handleCourseClick(course.id)}
+                onColorClick={openColorPicker}
+                showColorPicker={colorPickerCourseId === course.id}
+                colorPickerValue={colorPickerCourseId === course.id ? customColor : undefined}
+                onColorChange={handleColorChange}
+                onColorInputChange={setCustomColor}
+                onColorPickerClose={closeColorPicker}
+              />
+            );
+          })}
         </div>
       ) : (
-        /* List View */
+        /* List View - Virtualized for performance */
         <div style={styles.list}>
-          {filteredCourses.map((course, index) => (
-            <CourseListItem
-              key={course.id}
-              course={course}
-              isPinned={pinnedCourses.has(course.id)}
-              onTogglePin={togglePin}
-              onToggleHide={handleToggleHide}
-              isFirst={index === 0}
-              onClick={() => handleCourseClick(course.id)}
-              onColorClick={openColorPicker}
-              showColorPicker={colorPickerCourseId === course.id}
-              colorPickerValue={colorPickerCourseId === course.id ? customColor : undefined}
-              onColorChange={handleColorChange}
-              onColorInputChange={setCustomColor}
-              onColorPickerClose={closeColorPicker}
-            />
-          ))}
+          {filteredCourses.length <= 20 ? (
+            // For small lists, render directly (virtualization overhead not worth it)
+            filteredCourses.map((course, index) => {
+              const grades = getCachedCourseGrades(course.id, tasks);
+              return (
+                <MemoizedCourseListItem
+                  key={course.id}
+                  course={course}
+                  isPinned={pinnedCourses.has(course.id)}
+                  earned={grades.earned}
+                  trend={grades.trend}
+                  assessed={grades.assessed}
+                  onTogglePin={togglePin}
+                  onToggleHide={handleToggleHide}
+                  isFirst={index === 0}
+                  onClick={() => handleCourseClick(course.id)}
+                  onColorClick={openColorPicker}
+                  showColorPicker={colorPickerCourseId === course.id}
+                  colorPickerValue={colorPickerCourseId === course.id ? customColor : undefined}
+                  onColorChange={handleColorChange}
+                  onColorInputChange={setCustomColor}
+                  onColorPickerClose={closeColorPicker}
+                />
+              );
+            })
+          ) : (
+            // For large lists, use virtualization
+            <VirtualList
+              height={Math.min(filteredCourses.length * 80, 600)} // 80px per item, max 600px
+              itemCount={filteredCourses.length}
+              itemSize={80}
+              width="100%"
+              itemData={{
+                courses: filteredCourses,
+                tasks,
+                pinnedCourses,
+                togglePin,
+                handleToggleHide,
+                handleCourseClick,
+                openColorPicker,
+                colorPickerCourseId,
+                customColor,
+                handleColorChange,
+                setCustomColor,
+                closeColorPicker,
+              }}
+            >
+              {VirtualizedListItem}
+            </VirtualList>
+          )}
         </div>
       )}
     </div>
@@ -554,6 +593,9 @@ export function CoursesPage() {
 interface CourseCardProps {
   course: Course;
   isPinned: boolean;
+  earned: number;
+  trend: number;
+  assessed: number;
   onTogglePin: (courseId: number, e: React.MouseEvent) => void;
   onToggleHide: (courseId: number, currentlyHidden: boolean) => void;
   onClick: () => void;
@@ -568,6 +610,9 @@ interface CourseCardProps {
 function CourseGridCard({
   course,
   isPinned,
+  earned,
+  trend,
+  assessed,
   onTogglePin,
   onToggleHide,
   onClick,
@@ -664,12 +709,35 @@ function CourseGridCard({
         )}
       </div>
 
+      {/* Use display: contents to allow children to participate in parent grid */}
       <div style={styles.gridCardContent}>
-        {/* Header row */}
+        {/* Header row - Grid row 1 */}
         <div style={styles.gridCardHeader}>
-          <span style={{ ...styles.courseCodeBadge, backgroundColor: color }}>
-            {getShortCode(course.code)}
-          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+            <span style={{ ...styles.courseCodeBadge, backgroundColor: color }}>
+              {getShortCode(course.code)}
+            </span>
+            <InfoTrigger
+              summary={`${course.code} - ${course.nickname || course.name}`}
+              title={course.code}
+              details={
+                <div>
+                  <p><strong>Full Name:</strong> {course.name}</p>
+                  {course.nickname && <p><strong>Nickname:</strong> {course.nickname}</p>}
+                  <p><strong>Target Grade:</strong> {course.targetGrade}%</p>
+                  <p><strong>Current Grade:</strong> {course.currentGrade !== null ? `${course.currentGrade.toFixed(1)}%` : 'Not yet assessed'}</p>
+                  {course.assessedGrade !== null && (
+                    <p><strong>Assessed Grade:</strong> {course.assessedGrade.toFixed(1)}%</p>
+                  )}
+                  {course.lastSyncedAt && (
+                    <p><strong>Last Synced:</strong> {new Date(course.lastSyncedAt).toLocaleString()}</p>
+                  )}
+                </div>
+              }
+              size="sm"
+              position="right"
+            />
+          </div>
           <div style={{ display: 'flex', gap: 'var(--space-1)' }}>
             <button
               style={{
@@ -697,48 +765,63 @@ function CourseGridCard({
           </div>
         </div>
 
-        {/* Course name */}
+        {/* Course name - Grid row 2 */}
         <h3 style={styles.gridCourseName}>
           {course.nickname || course.name}
         </h3>
 
-        {/* Full code */}
+        {/* Full code - Grid row 3 (flex spacer) */}
         <span style={styles.fullCode}>{course.code}</span>
 
-        {/* Stats */}
+        {/* Stats - Grid row 4 */}
         <div style={styles.gridStats}>
           <div style={styles.gridStatItem}>
             <Target size={14} color="var(--text-muted)" />
             <span style={styles.gridStatLabel}>Target</span>
             <span style={styles.gridStatValue}>{course.targetGrade}%</span>
           </div>
-          {course.currentGrade !== null && (
-            <div style={styles.gridStatItem}>
-              <TrendingUp size={14} color="var(--text-muted)" />
-              <span style={styles.gridStatLabel}>Current</span>
-              <span
-                style={{
-                  ...styles.gridStatValue,
-                  color:
-                    course.currentGrade >= course.targetGrade
-                      ? 'var(--color-success)'
-                      : course.currentGrade >= course.targetGrade - 10
-                      ? 'var(--color-medium)'
-                      : 'var(--color-high)',
-                }}
-              >
-                {course.currentGrade.toFixed(1)}%
-              </span>
-            </div>
+          {assessed > 0 && (
+            <>
+              <div style={styles.gridStatItem}>
+                <span style={styles.gridStatLabel}>Earned</span>
+                <span
+                  style={{
+                    ...styles.gridStatValue,
+                    color:
+                      trend >= course.targetGrade
+                        ? 'var(--color-success)'
+                        : trend >= course.targetGrade - 10
+                        ? 'var(--color-medium)'
+                        : 'var(--color-high)',
+                  }}
+                >
+                  {earned.toFixed(1)}%
+                </span>
+              </div>
+              <div style={styles.gridStatItem}>
+                <span style={styles.gridStatLabel}>Trend</span>
+                <span
+                  style={{
+                    ...styles.gridStatValue,
+                    color:
+                      trend >= course.targetGrade
+                        ? 'var(--color-success)'
+                        : trend >= course.targetGrade - 10
+                        ? 'var(--color-medium)'
+                        : 'var(--color-high)',
+                  }}
+                >
+                  {trend.toFixed(1)}%
+                </span>
+              </div>
+            </>
           )}
         </div>
 
-        {/* Sync time */}
-        {course.lastSyncedAt && (
-          <div style={styles.syncTime}>
-            Synced {new Date(course.lastSyncedAt).toLocaleDateString()}
-          </div>
-        )}
+        {/* Sync time - Grid row 5 */}
+        <div style={styles.syncTime}>
+          {course.lastSyncedAt ? `Synced ${new Date(course.lastSyncedAt).toLocaleDateString()}` : '\u00A0'}
+        </div>
       </div>
     </div>
   );
@@ -751,6 +834,9 @@ interface CourseListItemProps extends CourseCardProps {
 function CourseListItem({
   course,
   isPinned,
+  earned,
+  trend,
+  assessed,
   onTogglePin,
   onToggleHide,
   isFirst,
@@ -863,6 +949,26 @@ function CourseListItem({
             {getShortCode(course.code)}
           </span>
           <span style={styles.listFullCode}>{course.code}</span>
+          <InfoTrigger
+            summary={`${course.code} - ${course.nickname || course.name}`}
+            title={course.code}
+            details={
+              <div>
+                <p><strong>Full Name:</strong> {course.name}</p>
+                {course.nickname && <p><strong>Nickname:</strong> {course.nickname}</p>}
+                <p><strong>Target Grade:</strong> {course.targetGrade}%</p>
+                <p><strong>Current Grade:</strong> {course.currentGrade !== null ? `${course.currentGrade.toFixed(1)}%` : 'Not yet assessed'}</p>
+                {course.assessedGrade !== null && (
+                  <p><strong>Assessed Grade:</strong> {course.assessedGrade.toFixed(1)}%</p>
+                )}
+                {course.lastSyncedAt && (
+                  <p><strong>Last Synced:</strong> {new Date(course.lastSyncedAt).toLocaleString()}</p>
+                )}
+              </div>
+            }
+            size="sm"
+            position="right"
+          />
         </div>
         <h3 style={styles.listCourseName}>
           {course.nickname || course.name}
@@ -875,23 +981,41 @@ function CourseListItem({
           <span style={styles.listGradeLabel}>Target</span>
           <span style={styles.listGradeValue}>{course.targetGrade}%</span>
         </div>
-        {course.currentGrade !== null && (
-          <div style={styles.listGradeItem}>
-            <span style={styles.listGradeLabel}>Current</span>
-            <span
-              style={{
-                ...styles.listGradeValue,
-                color:
-                  course.currentGrade >= course.targetGrade
-                    ? 'var(--color-success)'
-                    : course.currentGrade >= course.targetGrade - 10
-                    ? 'var(--color-medium)'
-                    : 'var(--color-high)',
-              }}
-            >
-              {course.currentGrade.toFixed(1)}%
-            </span>
-          </div>
+        {assessed > 0 && (
+          <>
+            <div style={styles.listGradeItem}>
+              <span style={styles.listGradeLabel}>Earned</span>
+              <span
+                style={{
+                  ...styles.listGradeValue,
+                  color:
+                    trend >= course.targetGrade
+                      ? 'var(--color-success)'
+                      : trend >= course.targetGrade - 10
+                      ? 'var(--color-medium)'
+                      : 'var(--color-high)',
+                }}
+              >
+                {earned.toFixed(1)}%
+              </span>
+            </div>
+            <div style={styles.listGradeItem}>
+              <span style={styles.listGradeLabel}>Trend</span>
+              <span
+                style={{
+                  ...styles.listGradeValue,
+                  color:
+                    trend >= course.targetGrade
+                      ? 'var(--color-success)'
+                      : trend >= course.targetGrade - 10
+                      ? 'var(--color-medium)'
+                      : 'var(--color-high)',
+                }}
+              >
+                {trend.toFixed(1)}%
+              </span>
+            </div>
+          </>
         )}
       </div>
 
@@ -926,9 +1050,67 @@ function CourseListItem({
   );
 }
 
+// Memoized components to prevent unnecessary re-renders
+const MemoizedCourseGridCard = React.memo(CourseGridCard);
+const MemoizedCourseListItem = React.memo(CourseListItem);
+
+// Virtualized list item renderer for react-window
+interface VirtualizedListItemData {
+  courses: Course[];
+  tasks: { courseId: number; weight: number; grade: number | null }[];
+  pinnedCourses: Set<number>;
+  togglePin: (courseId: number, e: React.MouseEvent) => void;
+  handleToggleHide: (courseId: number, currentlyHidden: boolean) => Promise<void>;
+  handleCourseClick: (courseId: number) => void;
+  openColorPicker: (courseId: number, currentColor: string, e: React.MouseEvent) => void;
+  colorPickerCourseId: number | null;
+  customColor: string;
+  handleColorChange: (courseId: number, color: string) => Promise<void>;
+  setCustomColor: (value: string) => void;
+  closeColorPicker: () => void;
+}
+
+function VirtualizedListItem({
+  index,
+  style,
+  data,
+}: {
+  index: number;
+  style: React.CSSProperties;
+  data: VirtualizedListItemData;
+}) {
+  const course = data.courses[index];
+  const grades = getCachedCourseGrades(course.id, data.tasks);
+
+  return (
+    <div style={style}>
+      <MemoizedCourseListItem
+        course={course}
+        isPinned={data.pinnedCourses.has(course.id)}
+        earned={grades.earned}
+        trend={grades.trend}
+        assessed={grades.assessed}
+        onTogglePin={data.togglePin}
+        onToggleHide={data.handleToggleHide}
+        isFirst={index === 0}
+        onClick={() => data.handleCourseClick(course.id)}
+        onColorClick={data.openColorPicker}
+        showColorPicker={data.colorPickerCourseId === course.id}
+        colorPickerValue={data.colorPickerCourseId === course.id ? data.customColor : undefined}
+        onColorChange={data.handleColorChange}
+        onColorInputChange={data.setCustomColor}
+        onColorPickerClose={data.closeColorPicker}
+      />
+    </div>
+  );
+}
+
 const styles: Record<string, React.CSSProperties> = {
   page: {
     width: '100%',
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
   },
 
   header: {
@@ -1134,11 +1316,15 @@ const styles: Record<string, React.CSSProperties> = {
     transition: 'all var(--transition-fast)',
   },
 
-  // Grid View Styles
+  // Grid View Styles - uses CSS Grid for card alignment, scales proportionally with viewport
   grid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
-    gap: 'var(--space-4)',
+    // Cards grow from 280px min to fill available space, with max ~400px before wrapping
+    gridTemplateColumns: 'repeat(auto-fill, minmax(clamp(280px, 20vw, 400px), 1fr))',
+    gap: 'clamp(16px, 2vw, 24px)',
+    // Each card is a 5-row grid for internal alignment
+    alignItems: 'stretch',
+    flex: 1,
   },
 
   gridCard: {
@@ -1148,6 +1334,11 @@ const styles: Record<string, React.CSSProperties> = {
     overflow: 'hidden',
     transition: 'box-shadow var(--transition-fast), transform var(--transition-fast)',
     cursor: 'pointer',
+    // Internal grid for consistent alignment
+    display: 'grid',
+    gridTemplateRows: 'auto auto 1fr auto auto', // header, name, spacer, stats, footer
+    height: '100%', // Stretch to fill row height
+    minHeight: 'clamp(200px, 18vw, 280px)', // Proportional minimum height
   },
 
   colorBar: {
@@ -1230,22 +1421,22 @@ const styles: Record<string, React.CSSProperties> = {
   },
 
   gridCardContent: {
-    padding: 'var(--space-4)',
+    display: 'contents', // Let children participate in parent grid
   },
 
   gridCardHeader: {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 'var(--space-2)',
+    padding: 'clamp(12px, 1.5vw, 20px) clamp(12px, 1.5vw, 20px) clamp(6px, 0.8vw, 12px) clamp(12px, 1.5vw, 20px)',
   },
 
   courseCodeBadge: {
-    fontSize: '11px',
+    fontSize: 'clamp(10px, 0.85vw, 13px)',
     fontWeight: 'var(--font-bold)',
     color: 'white',
-    padding: '3px 8px',
-    borderRadius: '4px',
+    padding: 'clamp(2px, 0.3vw, 5px) clamp(6px, 0.6vw, 10px)',
+    borderRadius: 'clamp(3px, 0.3vw, 5px)',
     textTransform: 'uppercase',
     letterSpacing: '0.025em',
   },
@@ -1264,56 +1455,61 @@ const styles: Record<string, React.CSSProperties> = {
   },
 
   gridCourseName: {
-    fontSize: 'var(--text-base)',
+    fontSize: 'clamp(14px, 1.1vw, 18px)',
     fontWeight: 'var(--font-semibold)',
     color: 'var(--text-primary)',
     lineHeight: 'var(--leading-snug)',
-    marginBottom: 'var(--space-1)',
+    padding: '0 clamp(12px, 1.5vw, 20px)',
   },
 
   fullCode: {
-    fontSize: 'var(--text-xs)',
+    fontSize: 'clamp(10px, 0.8vw, 13px)',
     color: 'var(--text-muted)',
-    marginBottom: 'var(--space-3)',
     display: 'block',
+    padding: 'clamp(4px, 0.4vw, 8px) clamp(12px, 1.5vw, 20px) 0 clamp(12px, 1.5vw, 20px)',
+    alignSelf: 'start', // Align to top of flex area
   },
 
   gridStats: {
     display: 'flex',
-    gap: 'var(--space-4)',
-    paddingTop: 'var(--space-3)',
+    gap: 'clamp(12px, 1.2vw, 20px)',
+    padding: 'clamp(8px, 1vw, 16px) clamp(12px, 1.5vw, 20px)',
     borderTop: '1px solid var(--border-light)',
+    marginTop: 'auto', // Push to bottom of flex area
   },
 
   gridStatItem: {
     display: 'flex',
     alignItems: 'center',
-    gap: 'var(--space-1)',
+    gap: 'clamp(4px, 0.4vw, 8px)',
   },
 
   gridStatLabel: {
-    fontSize: 'var(--text-xs)',
+    fontSize: 'clamp(10px, 0.8vw, 13px)',
     color: 'var(--text-muted)',
   },
 
   gridStatValue: {
-    fontSize: 'var(--text-sm)',
+    fontSize: 'clamp(12px, 1vw, 16px)',
     fontWeight: 'var(--font-semibold)',
     color: 'var(--text-primary)',
   },
 
   syncTime: {
-    fontSize: 'var(--text-xs)',
+    fontSize: 'clamp(10px, 0.8vw, 13px)',
     color: 'var(--text-muted)',
-    marginTop: 'var(--space-3)',
+    padding: '0 clamp(12px, 1.5vw, 20px) clamp(12px, 1.5vw, 20px) clamp(12px, 1.5vw, 20px)',
   },
 
-  // List View Styles
+  // List View Styles - fills available space
   list: {
     backgroundColor: 'var(--bg-card)',
     borderRadius: 'var(--radius-lg)',
     boxShadow: 'var(--shadow-card)',
     overflow: 'hidden',
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
   },
 
   listItem: {

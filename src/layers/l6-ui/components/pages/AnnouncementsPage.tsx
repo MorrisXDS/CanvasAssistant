@@ -20,6 +20,7 @@ import {
   GraduationCap,
   X,
   Filter,
+  Search,
 } from 'lucide-react';
 import { Card } from '../shared';
 import { useStore } from '../../../l5-presentation/store';
@@ -97,6 +98,7 @@ export function AnnouncementsPage() {
   // Filter state - read initial course from URL
   const [readFilter, setReadFilter] = useState<ReadFilter>('all');
   const [intentFilter, setIntentFilter] = useState<IntentType>('all');
+  const [searchQuery, setSearchQuery] = useState('');
   const [courseFilter, setCourseFilter] = useState<number | null>(() => {
     const courseParam = searchParams.get('course');
     return courseParam ? parseInt(courseParam, 10) : null;
@@ -142,6 +144,7 @@ export function AnnouncementsPage() {
 
   // Apply all filters (intersection mode)
   const filteredAnnouncements = useMemo(() => {
+    const query = searchQuery.toLowerCase().trim();
     return allAnnouncements.filter(a => {
       // Read status filter
       if (readFilter === 'unread' && a.notification.dismissedAt) return false;
@@ -153,9 +156,20 @@ export function AnnouncementsPage() {
       // Course filter
       if (courseFilter !== null && a.notification.courseId !== courseFilter) return false;
 
+      // Search filter - search in title, message, and course name
+      if (query) {
+        const title = a.notification.title.toLowerCase();
+        const message = a.notification.message.toLowerCase();
+        const courseName = a.course?.name?.toLowerCase() || '';
+        const courseCode = a.course?.code?.toLowerCase() || '';
+        if (!title.includes(query) && !message.includes(query) && !courseName.includes(query) && !courseCode.includes(query)) {
+          return false;
+        }
+      }
+
       return true;
     });
-  }, [allAnnouncements, readFilter, intentFilter, courseFilter]);
+  }, [allAnnouncements, readFilter, intentFilter, courseFilter, searchQuery]);
 
   // Stats for filter badges
   const stats = useMemo(() => ({
@@ -191,9 +205,10 @@ export function AnnouncementsPage() {
     setReadFilter('all');
     setIntentFilter('all');
     setCourseFilter(null);
+    setSearchQuery('');
   };
 
-  const hasActiveFilters = readFilter !== 'all' || intentFilter !== 'all' || courseFilter !== null;
+  const hasActiveFilters = readFilter !== 'all' || intentFilter !== 'all' || courseFilter !== null || searchQuery.trim() !== '';
 
   const readOptions: { value: ReadFilter; label: string; count: number; icon: React.ReactNode }[] = [
     { value: 'all', label: 'All', count: stats.all, icon: <Megaphone size={14} /> },
@@ -216,6 +231,26 @@ export function AnnouncementsPage() {
             {hasActiveFilters && ' (filtered)'}
           </p>
         </div>
+      </div>
+
+      {/* Search Bar */}
+      <div style={styles.searchContainer}>
+        <Search size={18} style={styles.searchIcon} />
+        <input
+          type="text"
+          placeholder="Search announcements..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          style={styles.searchInput}
+        />
+        {searchQuery && (
+          <button
+            style={styles.searchClear}
+            onClick={() => setSearchQuery('')}
+          >
+            <X size={16} />
+          </button>
+        )}
       </div>
 
       {/* Filters Panel */}
@@ -415,9 +450,12 @@ export function AnnouncementsPage() {
 const styles: Record<string, React.CSSProperties> = {
   page: {
     width: '100%',
-    maxWidth: '900px',
+    maxWidth: 'min(1000px, 100%)',
     margin: '0 auto',
     padding: '0',
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
   },
 
   header: {
@@ -451,6 +489,46 @@ const styles: Record<string, React.CSSProperties> = {
   subtitle: {
     fontSize: 'var(--text-sm)',
     color: 'var(--text-secondary)',
+  },
+
+  searchContainer: {
+    position: 'relative',
+    marginBottom: 'var(--space-4)',
+  },
+
+  searchIcon: {
+    position: 'absolute',
+    left: 'var(--space-3)',
+    top: '50%',
+    transform: 'translateY(-50%)',
+    color: 'var(--text-muted)',
+    pointerEvents: 'none',
+  },
+
+  searchInput: {
+    width: '100%',
+    padding: 'var(--space-3) var(--space-10)',
+    fontSize: 'var(--text-base)',
+    backgroundColor: 'var(--bg-card)',
+    border: '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-lg)',
+    color: 'var(--text-primary)',
+    outline: 'none',
+  },
+
+  searchClear: {
+    position: 'absolute',
+    right: 'var(--space-3)',
+    top: '50%',
+    transform: 'translateY(-50%)',
+    background: 'none',
+    border: 'none',
+    color: 'var(--text-muted)',
+    cursor: 'pointer',
+    padding: 'var(--space-1)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 
   filtersPanel: {

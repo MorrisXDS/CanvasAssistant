@@ -9,6 +9,7 @@ import { EventEmitter } from 'events';
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
+import axios, { AxiosError } from 'axios';
 import { CredentialManagerConfig } from './AppConfig';
 import { ComponentLogger, Logger } from './Logger';
 
@@ -22,6 +23,8 @@ export interface CredentialManagerOptions {
   fallbackFilePath?: string;
   validateOnRetrieve?: boolean;
   logger?: Logger;
+  /** Base URL for Canvas API (e.g., 'https://utoronto.instructure.com') */
+  baseUrl?: string;
   /** Custom token validator function (for testing or custom validation) */
   tokenValidator?: (token: string) => Promise<boolean>;
 }
@@ -57,6 +60,7 @@ export class CredentialManager extends EventEmitter {
   private readonly validateOnRetrieve: boolean;
   private readonly tokenValidator?: (token: string) => Promise<boolean>;
   private readonly log: ComponentLogger;
+  private baseUrl: string;
 
   private storageBackend: StorageBackend = 'none';
   private lastValidated: Date | null = null;
@@ -64,6 +68,15 @@ export class CredentialManager extends EventEmitter {
   private keytar: typeof import('keytar') | null = null;
   private keytarAvailable: boolean = false;
   private encryptionKey: Buffer | null = null;
+
+  // Token validation settings
+  private static readonly VALIDATION_TIMEOUT_MS = 10000; // 10 seconds
+  private static readonly VALIDATION_MAX_RETRIES = 2;
+  private static readonly VALIDATION_RETRY_DELAY_MS = 1000;
+  private static readonly BACKGROUND_VALIDATION_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
+
+  // Background validation state
+  private backgroundValidationTimer: NodeJS.Timeout | null = null;
 
   constructor(config?: CredentialManagerConfig | CredentialManagerOptions, logger?: Logger) {
     super();
@@ -74,6 +87,7 @@ export class CredentialManager extends EventEmitter {
     this.enableFileFallback = config?.enableFileFallback ?? true;
     this.fallbackFilePath = config?.fallbackFilePath ?? 'data/.credentials';
     this.validateOnRetrieve = config?.validateOnRetrieve ?? true;
+    this.baseUrl = (config && 'baseUrl' in config ? config.baseUrl : undefined) ?? 'https://utoronto.instructure.com';
 
     // Check for options-specific properties
     if (config && 'tokenValidator' in config) {
@@ -331,7 +345,21 @@ export class CredentialManager extends EventEmitter {
   }
 
   /**
-   * Validate a token by making a test API call
+   * Set the Canvas base URL for token validation
+   */
+  setBaseUrl(baseUrl: string): void {
+    this.baseUrl = baseUrl;
+  }
+
+  /**
+   * Get the current Canvas base URL
+   */
+  getBaseUrl(): string {
+    return this.baseUrl;
+  }
+
+  /**
+   * Validate a token by making a test API call with retry logic
    */
   private async validateToken(token: string): Promise<boolean> {
     try {
@@ -343,22 +371,51 @@ export class CredentialManager extends EventEmitter {
         return isValid;
       }
 
-      // Default validation: make a test API call to Canvas
+      // Default validation: make a test API call to Canvas using axios
       // This is a lightweight endpoint that just returns user info
-      const response = await fetch('https://canvas.instructure.com/api/v1/users/self', {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
+      const validateUrl = `${this.baseUrl}/api/v1/users/self`;
 
-      this.lastValidated = new Date();
-      this.lastValidationResult = response.ok;
+      let lastError: Error | null = null;
 
-      if (!response.ok) {
-        this.log.warn(`Token validation failed with status ${response.status}`);
+      for (let attempt = 0; attempt <= CredentialManager.VALIDATION_MAX_RETRIES; attempt++) {
+        try {
+          const response = await axios.get(validateUrl, {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+            timeout: CredentialManager.VALIDATION_TIMEOUT_MS,
+            validateStatus: () => true, // Don't throw on non-2xx
+          });
+
+          this.lastValidated = new Date();
+          this.lastValidationResult = response.status >= 200 && response.status < 300;
+
+          if (!this.lastValidationResult) {
+            this.log.warn(`Token validation failed with status ${response.status}`);
+          }
+
+          return this.lastValidationResult;
+        } catch (error) {
+          lastError = error instanceof Error ? error : new Error(String(error));
+
+          // Check if error is retryable (network errors, timeouts)
+          const isRetryable = this.isRetryableError(error);
+
+          if (isRetryable && attempt < CredentialManager.VALIDATION_MAX_RETRIES) {
+            this.log.debug(`Token validation attempt ${attempt + 1} failed, retrying...`);
+            await this.delay(CredentialManager.VALIDATION_RETRY_DELAY_MS);
+            continue;
+          }
+
+          // Non-retryable error or max retries reached
+          break;
+        }
       }
 
-      return response.ok;
+      this.log.error('Token validation error after retries', lastError || undefined);
+      this.lastValidated = new Date();
+      this.lastValidationResult = false;
+      return false;
     } catch (error) {
       this.log.error('Token validation error', error instanceof Error ? error : undefined);
       this.lastValidated = new Date();
@@ -368,7 +425,29 @@ export class CredentialManager extends EventEmitter {
   }
 
   /**
-   * Store token to encrypted file
+   * Check if an error is retryable (network issues, timeouts)
+   */
+  private isRetryableError(error: unknown): boolean {
+    if (error instanceof AxiosError) {
+      // Network errors (no response)
+      if (!error.response) return true;
+      // Server errors (5xx)
+      if (error.response.status >= 500) return true;
+      // Rate limited (429) - should retry after delay
+      if (error.response.status === 429) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Helper to create a delay
+   */
+  private delay(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  /**
+   * Store token to encrypted file with secure permissions
    */
   private storeToFile(token: string): void {
     if (!this.encryptionKey) {
@@ -395,12 +474,21 @@ export class CredentialManager extends EventEmitter {
       Buffer.from(encrypted, 'hex'),
     ]);
 
-    // Write to file
-    fs.writeFileSync(this.fallbackFilePath, data);
+    // Write to file with secure permissions (owner read/write only)
+    fs.writeFileSync(this.fallbackFilePath, data, { mode: 0o600 });
+
+    // On Unix systems, also explicitly set permissions in case umask affected the write
+    if (process.platform !== 'win32') {
+      try {
+        fs.chmodSync(this.fallbackFilePath, 0o600);
+      } catch {
+        // Ignore chmod errors - the initial write mode should suffice
+      }
+    }
   }
 
   /**
-   * Retrieve token from encrypted file
+   * Retrieve token from encrypted file with integrity verification
    */
   private retrieveFromFile(): string | null {
     if (!this.encryptionKey) {
@@ -412,7 +500,24 @@ export class CredentialManager extends EventEmitter {
     }
 
     try {
+      // Verify file permissions on Unix systems (security check)
+      if (process.platform !== 'win32') {
+        const stats = fs.statSync(this.fallbackFilePath);
+        const mode = stats.mode & 0o777;
+        if (mode !== 0o600) {
+          this.log.warn(`Credential file has insecure permissions (${mode.toString(8)}), fixing...`);
+          fs.chmodSync(this.fallbackFilePath, 0o600);
+        }
+      }
+
       const data = fs.readFileSync(this.fallbackFilePath);
+
+      // Verify minimum file size (salt + iv + authTag + at least 1 byte encrypted)
+      const minSize = SALT_LENGTH + IV_LENGTH + AUTH_TAG_LENGTH + 1;
+      if (data.length < minSize) {
+        this.log.error('Credential file corrupted: too small');
+        return null;
+      }
 
       // Extract parts
       const salt = data.subarray(0, SALT_LENGTH);
@@ -424,13 +529,18 @@ export class CredentialManager extends EventEmitter {
       const decipher = crypto.createDecipheriv(ALGORITHM, this.encryptionKey, iv);
       decipher.setAuthTag(authTag);
 
-      // Decrypt
+      // Decrypt (GCM mode provides authentication - will throw on tampered data)
       let decrypted = decipher.update(encrypted);
       decrypted = Buffer.concat([decrypted, decipher.final()]);
 
       return decrypted.toString('utf8');
     } catch (error) {
-      this.log.error('Failed to decrypt credential file', error instanceof Error ? error : undefined);
+      // GCM authentication failure indicates tampering or corruption
+      if (error instanceof Error && error.message.includes('Unsupported state')) {
+        this.log.error('Credential file integrity check failed - possible tampering');
+      } else {
+        this.log.error('Failed to decrypt credential file', error instanceof Error ? error : undefined);
+      }
       return null;
     }
   }
@@ -441,6 +551,71 @@ export class CredentialManager extends EventEmitter {
   async ensureInitialized(): Promise<void> {
     if (this.storageBackend === 'none') {
       await this.initializeStorage();
+    }
+  }
+
+  /**
+   * Start background token validation
+   * Checks token validity every hour and emits event if invalid
+   */
+  startBackgroundValidation(): void {
+    if (this.backgroundValidationTimer) {
+      return; // Already running
+    }
+
+    this.log.info('Starting background token validation');
+
+    this.backgroundValidationTimer = setInterval(async () => {
+      await this.performBackgroundValidation();
+    }, CredentialManager.BACKGROUND_VALIDATION_INTERVAL_MS);
+
+    // Also run immediately on start (with small delay to avoid startup congestion)
+    setTimeout(() => this.performBackgroundValidation(), 5000);
+  }
+
+  /**
+   * Stop background token validation
+   */
+  stopBackgroundValidation(): void {
+    if (this.backgroundValidationTimer) {
+      clearInterval(this.backgroundValidationTimer);
+      this.backgroundValidationTimer = null;
+      this.log.info('Stopped background token validation');
+    }
+  }
+
+  /**
+   * Perform a single background validation check
+   */
+  private async performBackgroundValidation(): Promise<void> {
+    try {
+      // Retrieve token without validation (to avoid recursion)
+      let token: string | null = null;
+
+      if (this.storageBackend === 'keychain' && this.keytar) {
+        token = await this.keytar.getPassword(this.serviceName, this.accountName);
+      } else if (this.storageBackend === 'file') {
+        token = this.retrieveFromFile();
+      }
+
+      if (!token) {
+        return; // No token stored, nothing to validate
+      }
+
+      // Validate the token
+      const isValid = await this.validateToken(token);
+
+      if (!isValid) {
+        this.log.warn('Background validation: stored token is no longer valid');
+        this.emit('token-invalid', {
+          reason: 'background-validation-failed',
+          timestamp: new Date().toISOString(),
+        });
+      } else {
+        this.log.debug('Background validation: token is valid');
+      }
+    } catch (error) {
+      this.log.error('Background validation error', error instanceof Error ? error : undefined);
     }
   }
 }

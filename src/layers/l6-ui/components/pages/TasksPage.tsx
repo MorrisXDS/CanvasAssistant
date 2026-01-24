@@ -272,9 +272,12 @@ export function TasksPage() {
 const styles: Record<string, React.CSSProperties> = {
   page: {
     width: '100%',
-    maxWidth: '800px',
+    maxWidth: 'min(900px, 100%)',
     margin: '0 auto',
     padding: '0',
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
   },
 
   header: {

@@ -8,7 +8,12 @@
 /**
  * Task queues for priority categorization
  */
-export type TaskQueue = 'pinned' | 'active' | 'overdue' | 'deadlines';
+export type TaskQueue = 'pinned' | 'active' | 'overdue' | 'deadlines' | 'upcoming';
+
+/**
+ * Submission status from Canvas
+ */
+export type SubmissionStatus = 'unsubmitted' | 'submitted' | 'graded' | 'late' | 'missing' | null;
 
 /**
  * A factor contributing to the priority score
@@ -101,12 +106,16 @@ export interface TaskForPriority {
   title: string;
   dueAt: Date | null;
   unlockAt: Date | null;
+  lockAt: Date | null;
   pointsPossible: number | null;
   weight: number | null;
   isCompleted: boolean;
   isPinned: boolean;
   grade: number | null;
   submittedAt: Date | null;
+  taskType: string;
+  taskGroupId: number | null;
+  submissionStatus: SubmissionStatus;
 }
 
 /**
@@ -156,6 +165,7 @@ export interface PriorityCalculationResult {
     active: PriorityExplanation[];
     overdue: PriorityExplanation[];
     deadlines: PriorityExplanation[];
+    upcoming: PriorityExplanation[];
   };
   /** Timestamp of calculation */
   calculatedAt: Date;
@@ -180,4 +190,61 @@ export interface PriorityPreferences {
   pinnedTaskIds: Set<number>;
   /** Whether to show estimated submission notices */
   showEstimatedSubmissions: boolean;
+}
+
+/**
+ * Grace token policy configuration
+ */
+export interface GraceTokenPolicy {
+  totalTokens: number;
+  tokensRemaining: number;
+  hoursPerToken: number;
+  maxTokensPerTask: number;
+}
+
+/**
+ * Input for the pure priority calculation function
+ */
+export interface PriorityInput {
+  task: TaskForPriority;
+  course: CourseForPriority;
+  policies: PolicyForPriority[];
+  graceTokenPolicy: GraceTokenPolicy | null;
+  now: Date;
+}
+
+/**
+ * All factors contributing to priority score
+ */
+export interface PriorityFactors {
+  /** 0-100: Time-based urgency */
+  urgency: number;
+  /** 0-50: Grade impact (weight) */
+  weight: number;
+  /** 0-30: Distance from target grade */
+  courseGap: number;
+  /** -100 to +20: Policy adjustments */
+  policyAdjustment: number;
+  /** -50 or 0: Dependency blocking */
+  dependency: number;
+  /** -2.5 to +10: Task type weighting */
+  taskTypeBoost: number;
+  /** 0-50: Lock time critical boost */
+  lockTimeUrgency: number;
+  /** -10 to +20: Grace token salvage factor */
+  graceTokenFactor: number;
+  /** -100 to 0: Submission status handling */
+  submissionFactor: number;
+}
+
+/**
+ * Result of a single task priority calculation
+ */
+export interface PriorityResult {
+  taskId: number;
+  queue: TaskQueue;
+  score: number;
+  factors: PriorityFactors;
+  reason: string;
+  explanation: PriorityExplanation;
 }

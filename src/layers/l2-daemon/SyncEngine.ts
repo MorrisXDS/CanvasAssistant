@@ -84,6 +84,8 @@ export interface SyncOptions {
   syncCanvasFiles?: boolean;
   /** Whether to sync announcement attachments */
   syncAnnouncements?: boolean;
+  /** Specific course IDs to sync (if provided, only these courses are synced) */
+  courseIds?: number[];
 }
 
 export interface SyncMetadata {
@@ -698,8 +700,6 @@ export class SyncEngine extends EventEmitter {
         }
       }
 
-
-
       // Fetch data for each course in parallel
       for (const course of coursesToSync) {
 
@@ -1216,7 +1216,15 @@ export class SyncEngine extends EventEmitter {
     if (this.htmlContentSync && this.filesBaseDir) {
       this.emit('sync-phase', { phase: 'html-content', status: 'started' });
 
-      for (const course of fetched.courses) {
+      // Filter courses for file sync if courseIds provided
+      let coursesForFileSync = fetched.courses;
+      if (options?.courseIds && options.courseIds.length > 0) {
+        const courseIdSet = new Set(options.courseIds);
+        coursesForFileSync = fetched.courses.filter((c) => courseIdSet.has(c.id));
+        console.log(`[SyncEngine] Files sync filtered to ${coursesForFileSync.length} courses based on courseIds selection`);
+      }
+
+      for (const course of coursesForFileSync) {
         const localCourse = this.db.executeReadOne<{ id: number }>(
           'SELECT id FROM courses WHERE external_id = ?',
           [String(course.id)]
@@ -2168,8 +2176,8 @@ export class SyncEngine extends EventEmitter {
   }
 
   /**
-   * Fallback: Sync files by extracting content_ids from module items
-   * Used when /files endpoint returns 403 (user not authorized)
+   * Sync files by extracting content_ids from module items
+   * Called after main file sync to get files attached to modules
    */
   private async syncFilesFromModules(
     canvasCourseId: number,
@@ -2188,7 +2196,7 @@ export class SyncEngine extends EventEmitter {
         `SELECT mi.id, mi.content_id, mi.title
          FROM module_items mi
          JOIN modules m ON mi.module_id = m.id
-         WHERE m.course_id = ? AND mi.type = 'File' AND mi.content_id IS NOT NULL`,
+         WHERE m.course_id = ? AND mi.item_type = 'File' AND mi.content_id IS NOT NULL`,
         [localCourseId]
       );
 
@@ -2231,6 +2239,141 @@ export class SyncEngine extends EventEmitter {
       const message = error instanceof Error ? error.message : String(error);
       errors.push(`Module fallback failed: ${message}`);
       return { success: false, count, errors };
+    }
+  }
+
+  /**
+   * Sync files for a specific folder by folder ID
+   * Used for on-demand folder loading when user expands a folder in UI
+   * Online: fetches fresh data from /folders/:id/files
+   * Offline: returns cached data from database
+   */
+  async syncFolderFiles(
+    canvasFolderId: number,
+    localCourseId: number,
+    options: { forceRefresh?: boolean } = {}
+  ): Promise<SyncResult> {
+    const startTime = Date.now();
+    const errors: string[] = [];
+    let count = 0;
+    const endpoint = `/folders/${canvasFolderId}/files`;
+
+    // Check if we're online by testing rate limiter availability
+    const isOnline = this.rateLimiter !== null && !this.rateLimiter.getStatus().isPaused;
+
+    if (!isOnline && !options.forceRefresh) {
+      // Offline mode: return cached files for this folder
+      const cachedFiles = this.db.executeRead<{ id: number }>(
+        `SELECT id FROM resources
+         WHERE course_id = ? AND type = 'file'
+         AND folder_id = ?`,
+        [localCourseId, String(canvasFolderId)]
+      );
+
+      return {
+        success: true,
+        entity: 'folder_files',
+        count: cachedFiles.length,
+        errors: [],
+        duration: Date.now() - startTime,
+      };
+    }
+
+    try {
+      // Fetch files for this specific folder with timeout
+      const timeoutMs = 10000; // 10 second timeout
+      const fetchPromise = this.rateLimiter.enqueue(
+        () => this.client.getAll<CanvasFile>(endpoint),
+        2 // Medium priority
+      );
+
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error('Folder sync timeout')), timeoutMs);
+      });
+
+      const files = await Promise.race([fetchPromise, timeoutPromise]);
+
+      // Get folder path for this folder
+      const folderRecord = this.db.executeReadOne<{ folder_path: string | null }>(
+        'SELECT folder_path FROM resources WHERE external_id = ? AND type = ?',
+        [String(canvasFolderId), 'folder']
+      );
+      const folderPath = folderRecord?.folder_path ?? null;
+
+      this.db.transaction(() => {
+        for (const file of files) {
+          try {
+            const localFile = mapFile(file, localCourseId, null, folderPath);
+
+            // Check existing record for local_path preservation
+            const existing = this.db.executeReadOne<{
+              id: number;
+              local_path: string | null;
+              remote_updated_at: string | null;
+            }>(
+              'SELECT id, local_path, remote_updated_at FROM resources WHERE external_id = ?',
+              [String(file.id)]
+            );
+
+            // Check if file needs update
+            const needsUpdate = this.fileNeedsUpdate(existing ?? null, file);
+
+            // Emit file-updated event if changed and was downloaded
+            if (needsUpdate && existing?.local_path) {
+              this.emit('file-updated', {
+                resourceId: existing.id,
+                externalId: String(file.id),
+                filename: file.display_name,
+                localPath: existing.local_path,
+                oldTimestamp: existing.remote_updated_at,
+                newTimestamp: localFile.remote_updated_at,
+              });
+            }
+
+            this.db.upsert('resources', localFile as Record<string, unknown>, 'external_id', true);
+            count++;
+          } catch (error) {
+            errors.push(`File ${file.display_name}: ${error instanceof Error ? error.message : String(error)}`);
+          }
+        }
+      });
+
+      return {
+        success: errors.length === 0,
+        entity: 'folder_files',
+        count,
+        errors,
+        duration: Date.now() - startTime,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+
+      // On API error, try to return cached data
+      const cachedFiles = this.db.executeRead<{ id: number }>(
+        `SELECT id FROM resources
+         WHERE course_id = ? AND type = 'file'
+         AND folder_id = ?`,
+        [localCourseId, String(canvasFolderId)]
+      );
+
+      if (cachedFiles.length > 0) {
+        return {
+          success: true,
+          entity: 'folder_files',
+          count: cachedFiles.length,
+          errors: [`API error (using cache): ${message}`],
+          duration: Date.now() - startTime,
+        };
+      }
+
+      errors.push(`Failed to sync folder ${canvasFolderId}: ${message}`);
+      return {
+        success: false,
+        entity: 'folder_files',
+        count: 0,
+        errors,
+        duration: Date.now() - startTime,
+      };
     }
   }
 

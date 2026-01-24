@@ -165,6 +165,7 @@ export interface LocalTask {
   description: string | null;
   due_at: string | null;
   unlock_at: string | null;
+  lock_at: string | null;
   points_possible: number | null;
   submission_types: string | null;
   weight: number;
@@ -329,6 +330,7 @@ export function mapAssignment(canvas: CanvasAssignment, localCourseId: number): 
     description: canvas.description,
     due_at: canvas.due_at,
     unlock_at: canvas.unlock_at,
+    lock_at: canvas.lock_at,
     points_possible: canvas.points_possible,
     submission_types: canvas.submission_types?.join(',') ?? null,
     weight: 0, // Will be calculated by L3 Intelligence

@@ -1,8 +1,7 @@
 /**
  * MarkTaskCompleteCommand - Mark a task as complete/incomplete
  *
- * Allows users to manually mark tasks as done locally.
- * This is a local override - Canvas submission status may differ.
+ * Uses repositories for data access and domain services for grade calculation.
  */
 
 import {
@@ -11,11 +10,15 @@ import {
   CommandResult,
   MarkTaskCompleteParams,
 } from '../types';
+import { TaskRepository, CourseRepository } from '../../l1-persistence/repositories';
+import { GradeCalculationService } from '../../l3-intelligence/domain';
 
 export class MarkTaskCompleteCommand
   implements Command<MarkTaskCompleteParams, { previousState: boolean; completedAt: Date | null }>
 {
   readonly name = 'MarkTaskComplete';
+
+  private readonly gradeService = new GradeCalculationService();
 
   validate(params: MarkTaskCompleteParams): { valid: boolean; error?: string } {
     if (!params.taskId || params.taskId <= 0) {
@@ -39,43 +42,27 @@ export class MarkTaskCompleteCommand
     }
 
     try {
-      // Get current state
-      const task = context.db.executeReadOne<{
-        id: number;
-        course_id: number;
-        is_completed: boolean;
-        completed_at: string | null;
-      }>(
-        'SELECT id, course_id, is_completed, completed_at FROM tasks WHERE id = ?',
-        [params.taskId]
-      );
+      const taskRepo = new TaskRepository(context.db);
+      const courseRepo = new CourseRepository(context.db);
 
+      // Get current task
+      const task = taskRepo.findById(params.taskId);
       if (!task) {
         return { success: false, error: 'Task not found' };
       }
 
-      const previousState = Boolean(task.is_completed);
+      const previousState = task.isCompleted;
       const completedAt = params.isComplete ? new Date() : null;
 
-      // Update completion status
-      context.db.executeWrite(
-        `UPDATE tasks
-         SET is_completed = ?,
-             completed_at = ?,
-             local_modified_at = CURRENT_TIMESTAMP,
-             updated_at = CURRENT_TIMESTAMP
-         WHERE id = ?`,
-        [
-          params.isComplete ? 1 : 0,
-          completedAt?.toISOString() ?? null,
-          params.taskId,
-        ],
-        'tasks'
-      );
+      // Update task completion status
+      taskRepo.setCompleted(params.taskId, params.isComplete);
+
+      // Mark the field as locally modified for sync conflict detection
+      taskRepo.markFieldModified(params.taskId, 'is_completed');
 
       // Recalculate course assessed grade if completion changed
       if (previousState !== params.isComplete) {
-        this.updateCourseAssessedGrade(context, task.course_id);
+        this.recalculateCourseGrade(taskRepo, courseRepo, task.courseId);
       }
 
       return {
@@ -90,28 +77,18 @@ export class MarkTaskCompleteCommand
     }
   }
 
-  private updateCourseAssessedGrade(context: CommandContext, courseId: number): void {
-    // Calculate new assessed grade from completed tasks
-    const result = context.db.executeReadOne<{
-      weighted_sum: number;
-      total_weight: number;
-    }>(
-      `SELECT
-         SUM(CASE WHEN grade IS NOT NULL THEN grade * weight ELSE 0 END) as weighted_sum,
-         SUM(CASE WHEN grade IS NOT NULL THEN weight ELSE 0 END) as total_weight
-       FROM tasks
-       WHERE course_id = ? AND is_completed = 1`,
-      [courseId]
-    );
+  private recalculateCourseGrade(
+    taskRepo: TaskRepository,
+    courseRepo: CourseRepository,
+    courseId: number
+  ): void {
+    // Get grade data from repository
+    const gradeData = taskRepo.getGradeData(courseId);
 
-    if (result && result.total_weight > 0) {
-      const assessedGrade = result.weighted_sum / result.total_weight;
+    // Use domain service for calculation
+    const assessedGrade = this.gradeService.calculateAssessedGrade(gradeData);
 
-      context.db.executeWrite(
-        'UPDATE courses SET assessed_grade = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-        [assessedGrade, courseId],
-        'courses'
-      );
-    }
+    // Update course with new assessed grade
+    courseRepo.updateAssessedGrade(courseId, assessedGrade);
   }
 }
