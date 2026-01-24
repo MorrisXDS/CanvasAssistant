@@ -79,5 +79,53 @@
   "bugs": {
     "url": "https://github.com/MorrisXDS/CanvasAssistant/issues"
   },
-  "homepage": "https://github.com/MorrisXDS/CanvasAssistant#readme"
+  "homepage": "https://github.com/MorrisXDS/CanvasAssistant#readme",
+  "build": {
+    "appId": "com.quercus.desktop",
+    "productName": "Quercus Desktop",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "node_modules/better-sqlite3/build/Release",
+        "to": "better-sqlite3",
+        "filter": ["*.node"]
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        },
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico",
+      "installerHeaderIcon": "assets/icon.ico"
+    },
+    "mac": {
+      "target": ["dmg", "zip"],
+      "icon": "assets/icon.icns",
+      "category": "public.app-category.education"
+    },
+    "linux": {
+      "target": ["AppImage", "deb"],
+      "icon": "assets/icon.png",
+      "category": "Education"
+    }
+  }
 }
