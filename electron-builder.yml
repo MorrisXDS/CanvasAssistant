@@ -3,8 +3,8 @@ productName: Canvas Assistant
 copyright: Copyright © 2024-2026
 
 directories:
-  output: dist
-  buildResources: build
+  output: release
+  buildResources: assets
 
 files:
   - dist/**/*
@@ -17,20 +17,20 @@ extraMetadata:
 win:
   target:
     - nsis
-  icon: build/icon.ico
+  icon: assets/app.ico
 
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
-  installerIcon: build/icon.ico
-  uninstallerIcon: build/icon.ico
+  installerIcon: assets/app.ico
+  uninstallerIcon: assets/app.ico
 
 # macOS
 mac:
   target:
     - dmg
     - zip
-  icon: build/icon.icns
+  icon: assets/app.iconset
   category: public.app-category.education
   hardenedRuntime: true
   gatekeeperAssess: false
@@ -49,7 +49,7 @@ linux:
   target:
     - AppImage
     - deb
-  icon: build/icons
+  icon: assets/app.iconset
   category: Education
   maintainer: Canvas Assistant
 
