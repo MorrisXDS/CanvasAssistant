@@ -16,7 +16,8 @@
     "package": "electron-builder",
     "package:mac": "electron-builder --mac",
     "package:win": "electron-builder --win",
-    "package:linux": "electron-builder --linux"
+    "package:linux": "electron-builder --linux",
+    "postinstall": "electron-builder install-app-deps"
   },
   "keywords": [
     "canvas",
@@ -91,16 +92,12 @@
     },
     "files": [
       "dist/**/*",
-      "package.json"
+      "package.json",
+      "node_modules/**/*"
     ],
-    "extraResources": [
-      {
-        "from": "node_modules/better-sqlite3/build/Release",
-        "to": "better-sqlite3",
-        "filter": [
-          "*.node"
-        ]
-      }
+    "asarUnpack": [
+      "node_modules/better-sqlite3/**/*",
+      "node_modules/keytar/**/*"
     ],
     "win": {
       "target": [
