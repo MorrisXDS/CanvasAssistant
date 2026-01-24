@@ -9,11 +9,9 @@ import { RefreshCw, FlaskConical, X } from 'lucide-react';
 import { useStore } from '../../../l5-presentation/store';
 import { useDashboardViewModel } from '../../../l5-presentation/viewModels/DashboardViewModel';
 import { QuickStats, StatItem } from './QuickStats';
-import { HealthIndicator, HealthState } from './HealthIndicator';
-import { PriorityList } from './PriorityList';
-import { NotificationsFeed } from './NotificationsFeed';
 import { TaskListModal, TaskWithCourse } from './TaskListModal';
 import { GradeBreakdownModal } from './GradeBreakdownModal';
+import { UnifiedDashboardGrid } from './UnifiedDashboardGrid';
 
 // Debug flag - set to false in production
 const DEBUG_LAYOUT = true;
@@ -182,24 +180,6 @@ export function Dashboard() {
     },
   ];
 
-  // Derive health status
-  const healthStatus: HealthState = state.healthStatus?.overall ?? 'healthy';
-
-  // Format database size
-  const formatDbSize = (): string | undefined => {
-    // This would come from health check in real implementation
-    return undefined;
-  };
-
-  // Get last sync time - prefer store's lastSyncedAt (includes scheduled syncs),
-  // fall back to most recent course sync time
-  const lastSyncedAt = state.lastSyncedAt || state.courses.reduce((latest: string | null, course) => {
-    if (!course.lastSyncedAt) return latest;
-    if (!latest) return course.lastSyncedAt;
-    return new Date(course.lastSyncedAt) > new Date(latest)
-      ? course.lastSyncedAt
-      : latest;
-  }, null);
 
   const handleTaskClick = (taskId: number) => {
     // Find the task to get its course ID
@@ -293,30 +273,15 @@ export function Dashboard() {
           <QuickStats stats={stats} onAction={handleStatAction} />
         </section>
 
-        {/* Main Row: Priority List + Right Column (Health + Notifications) */}
-        <section ref={mainRowRef} style={styles.mainRow}>
-          <div style={styles.priorityColumn}>
-            <PriorityList
-              items={viewModel.priorityQueue}
-              totalPendingTasks={viewModel.stats.upcomingTasks + viewModel.stats.overdueTasks}
-              onTaskClick={handleTaskClick}
-              maxItems={8}
-            />
-          </div>
-          <div style={styles.rightColumn}>
-            <HealthIndicator
-              status={healthStatus}
-              lastSyncedAt={lastSyncedAt}
-              dbSize={formatDbSize()}
-            />
-            <div style={styles.notificationsWrapper}>
-              <NotificationsFeed
-                notifications={state.notifications}
-                onDismiss={handleDismissNotification}
-                maxItems={5}
-              />
-            </div>
-          </div>
+        {/* Unified Dashboard Grid - 2x2 draggable sections */}
+        <section ref={mainRowRef}>
+          <UnifiedDashboardGrid
+            priorityItems={viewModel.priorityQueue}
+            totalPendingTasks={viewModel.stats.upcomingTasks + viewModel.stats.overdueTasks}
+            notifications={state.notifications}
+            onTaskClick={handleTaskClick}
+            onDismissNotification={handleDismissNotification}
+          />
         </section>
       </div>
 
@@ -348,9 +313,9 @@ export function Dashboard() {
 const styles: Record<string, React.CSSProperties> = {
   page: {
     width: '100%',
-    flex: 1,
     display: 'flex',
     flexDirection: 'column',
+    paddingBottom: 'var(--space-6)',
   },
 
   autoSyncBanner: {
@@ -443,39 +408,11 @@ const styles: Record<string, React.CSSProperties> = {
   grid: {
     display: 'flex',
     flexDirection: 'column',
-    gap: 'var(--space-6)',
+    gap: 'var(--space-3)',
   },
 
   statsRow: {
     width: '100%',
-  },
-
-  mainRow: {
-    display: 'flex',
-    gap: 'var(--space-4)',
-    alignItems: 'stretch',
-    flexWrap: 'wrap',
-  },
-
-  priorityColumn: {
-    flex: '2 1 400px',
-    minWidth: 0,
-    display: 'flex',
-    flexDirection: 'column',
-  },
-
-  rightColumn: {
-    flex: '1 1 320px',
-    minWidth: '280px',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 'var(--space-4)',
-  },
-
-  notificationsWrapper: {
-    flex: 1,
-    display: 'flex',
-    flexDirection: 'column',
   },
 };
 
