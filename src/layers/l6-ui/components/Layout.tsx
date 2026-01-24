@@ -660,6 +660,8 @@ const styles: Record<string, React.CSSProperties> = {
     overflow: 'hidden',
     minWidth: 64, // Prevent sidebar from shrinking below minimum
     userSelect: 'none', // Prevent text selection on double-click
+    // @ts-expect-error - webkit property for electron
+    WebkitAppRegion: 'no-drag', // Ensure sidebar is clickable
   },
 
   profileSection: {
