@@ -364,13 +364,30 @@ export const useStore = create<Store>()(
 
       /**
        * Fetch all notifications
+       * Filters by visible courses (non-hidden, within selected semester)
        */
       fetchNotifications: async () => {
         const api = getApi();
         if (!api) return;
 
         try {
-          const notifications = await api.getNotifications();
+          let notifications = await api.getNotifications();
+
+          // Filter notifications to only include those from visible (non-hidden) courses
+          // System notifications (courseId is null) are always included
+          const allCourses = get().courses;
+          const visibleCourseIds = new Set(
+            allCourses.filter((c: Course) => !c.isHidden).map((c: Course) => c.id)
+          );
+
+          if (allCourses.length > 0) {
+            const beforeCount = notifications.length;
+            notifications = notifications.filter((n: Notification) =>
+              n.courseId === null || visibleCourseIds.has(n.courseId)
+            );
+            console.debug(`[Store] Filtered notifications: ${beforeCount} -> ${notifications.length} (only from ${visibleCourseIds.size} visible courses)`);
+          }
+
           set({ notifications });
         } catch (error) {
           console.error('Failed to fetch notifications:', error);
