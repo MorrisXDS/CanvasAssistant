@@ -1,5 +1,6 @@
 import { EventEmitter } from 'events';
 import { RateLimiterConfig as AppRateLimiterConfig } from '../l0-utilities/AppConfig';
+import type { ComponentLogger } from '../l0-utilities/Logger';
 
 export interface RateLimiterConfig {
   maxConcurrent?: number; // Max concurrent requests (default: 3)
@@ -10,6 +11,7 @@ export interface RateLimiterConfig {
   warningThreshold?: number; // Rate limit warning threshold (default: 10)
   autoResumeDelayMs?: number; // Auto-resume delay after warning (default: 5000ms)
   maxQueueSize?: number; // Max queue size before rejecting (default: 100)
+  logger?: ComponentLogger; // Optional logger for debug output
 }
 
 // Type alias for AppConfig compatibility
@@ -50,6 +52,7 @@ export class RateLimiter extends EventEmitter {
   private requestIdCounter: number = 0;
   private processingInterval: NodeJS.Timeout | null = null;
   private autoResumeTimeout: NodeJS.Timeout | null = null;
+  private log: ComponentLogger | null;
 
   private readonly maxConcurrent: number;
   private readonly minDelayMs: number;
@@ -74,6 +77,7 @@ export class RateLimiter extends EventEmitter {
     this.warningThreshold = config.warningThreshold ?? 10;
     this.autoResumeDelayMs = config.autoResumeDelayMs ?? 5000;
     this.maxQueueSize = (config as RateLimiterConfig).maxQueueSize ?? 100;
+    this.log = (config as RateLimiterConfig).logger ?? null;
   }
 
   /**
@@ -87,7 +91,7 @@ export class RateLimiter extends EventEmitter {
     return new Promise((resolve, reject) => {
       // Check queue size limit
       if (this.queue.length >= this.maxQueueSize) {
-        console.debug(`[RateLimiter] QUEUE FULL: ${this.queue.length}/${this.maxQueueSize}`);
+        this.log?.debug(` QUEUE FULL: ${this.queue.length}/${this.maxQueueSize}`);
         const error = new Error(`Queue full: exceeded max size of ${this.maxQueueSize}`);
         this.emit('queue-full', {
           queueLength: this.queue.length,
@@ -117,7 +121,7 @@ export class RateLimiter extends EventEmitter {
         this.queue.splice(insertIndex, 0, request as QueuedRequest<unknown>);
       }
 
-      console.debug(`[RateLimiter] ENQUEUE: ${request.id}, priority=${priority}, queue_length=${this.queue.length}, active=${this.activeRequests}`);
+      this.log?.debug(` ENQUEUE: ${request.id}, priority=${priority}, queue_length=${this.queue.length}, active=${this.activeRequests}`);
       this.emit('queued', { id: request.id, queueLength: this.queue.length });
       this.processQueue();
     });
@@ -128,11 +132,11 @@ export class RateLimiter extends EventEmitter {
    */
   private async processQueue(): Promise<void> {
     if (this.isPaused) {
-      console.debug(`[RateLimiter] PAUSED: not processing queue`);
+      this.log?.debug(` PAUSED: not processing queue`);
       return;
     }
     if (this.activeRequests >= this.maxConcurrent) {
-      console.debug(`[RateLimiter] AT CAPACITY: ${this.activeRequests}/${this.maxConcurrent} active, waiting...`);
+      this.log?.debug(` AT CAPACITY: ${this.activeRequests}/${this.maxConcurrent} active, waiting...`);
       return;
     }
     if (this.queue.length === 0) return;
@@ -141,7 +145,7 @@ export class RateLimiter extends EventEmitter {
     if (!request) return;
 
     this.activeRequests++;
-    console.debug(`[RateLimiter] START: ${request.id}, active=${this.activeRequests}/${this.maxConcurrent}, queue=${this.queue.length}`);
+    this.log?.debug(` START: ${request.id}, active=${this.activeRequests}/${this.maxConcurrent}, queue=${this.queue.length}`);
     this.emit('request-start', { id: request.id, active: this.activeRequests });
 
     try {
@@ -150,11 +154,11 @@ export class RateLimiter extends EventEmitter {
       const duration = Date.now() - startTime;
       this.activeRequests--;
       request.resolve(result);
-      console.debug(`[RateLimiter] COMPLETE: ${request.id} in ${duration}ms, active=${this.activeRequests}`);
+      this.log?.debug(` COMPLETE: ${request.id} in ${duration}ms, active=${this.activeRequests}`);
       this.emit('request-complete', { id: request.id, active: this.activeRequests });
     } catch (error) {
       this.activeRequests--;
-      console.debug(`[RateLimiter] ERROR: ${request.id} - ${error}`);
+      this.log?.debug(` ERROR: ${request.id} - ${error}`);
       await this.handleRequestError(request, error);
     }
 
@@ -175,18 +179,18 @@ export class RateLimiter extends EventEmitter {
     const isRateLimited = this.isRateLimitError(error);
     const isRetryable = this.isRetryableError(error);
 
-    console.debug(`[RateLimiter] HANDLE ERROR: ${request.id}, isRateLimited=${isRateLimited}, isRetryable=${isRetryable}, retries=${request.retries}/${this.maxRetries}`);
+    this.log?.debug(` HANDLE ERROR: ${request.id}, isRateLimited=${isRateLimited}, isRetryable=${isRetryable}, retries=${request.retries}/${this.maxRetries}`);
 
     if (isRateLimited) {
       // Pause all requests and retry with backoff
-      console.debug(`[RateLimiter] RATE LIMITED: pausing queue`);
+      this.log?.debug(` RATE LIMITED: pausing queue`);
       this.pause();
 
       // Try to parse Retry-After header for server-specified delay
       const retryAfterMs = this.parseRetryAfter(error);
       const backoff = this.calculateBackoff(request.retries, retryAfterMs);
 
-      console.debug(`[RateLimiter] BACKOFF: ${backoff}ms (retry-after=${retryAfterMs || 'none'})`);
+      this.log?.debug(` BACKOFF: ${backoff}ms (retry-after=${retryAfterMs || 'none'})`);
       this.emit('rate-limited', {
         backoffMs: backoff,
         retries: request.retries,
@@ -199,14 +203,14 @@ export class RateLimiter extends EventEmitter {
       // Re-queue with incremented retry count
       request.retries++;
       this.queue.unshift(request); // Add to front
-      console.debug(`[RateLimiter] RETRY RATE LIMITED: ${request.id}, attempt=${request.retries}`);
+      this.log?.debug(` RETRY RATE LIMITED: ${request.id}, attempt=${request.retries}`);
       this.processQueue();
       return;
     }
 
     if (isRetryable && request.retries < this.maxRetries) {
       const backoff = this.calculateBackoff(request.retries);
-      console.debug(`[RateLimiter] RETRY: ${request.id}, attempt=${request.retries + 1}/${this.maxRetries}, backoff=${backoff}ms`);
+      this.log?.debug(` RETRY: ${request.id}, attempt=${request.retries + 1}/${this.maxRetries}, backoff=${backoff}ms`);
       this.emit('retry', {
         id: request.id,
         attempt: request.retries + 1,
@@ -221,7 +225,7 @@ export class RateLimiter extends EventEmitter {
     }
 
     // Give up - reject the promise
-    console.debug(`[RateLimiter] FAILED: ${request.id}, giving up after ${request.retries} retries`);
+    this.log?.debug(` FAILED: ${request.id}, giving up after ${request.retries} retries`);
     this.emit('request-failed', {
       id: request.id,
       error,

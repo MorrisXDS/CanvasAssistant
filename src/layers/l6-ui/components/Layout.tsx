@@ -25,7 +25,6 @@ import {
 } from 'lucide-react';
 import { useStore, SyncResultSummary } from '../../l5-presentation/store';
 import { TitleBar } from './TitleBar';
-import { SettingsModal } from './SettingsModal';
 import { SyncResultToast, SyncConflictModal } from './shared';
 
 // Debug flag - set to true for debugging
@@ -49,6 +48,7 @@ const defaultNavItems: NavItem[] = [
   { id: 'calendar', path: '/calendar', label: 'Calendar', icon: Calendar },
   { id: 'courses', path: '/courses', label: 'Courses', icon: BookOpen },
   { id: 'files', path: '/files', label: 'Files', icon: FolderOpen },
+  { id: 'settings', path: '/settings', label: 'Settings', icon: Settings },
 ];
 
 // Load nav order from localStorage
@@ -137,6 +137,7 @@ export function Layout() {
     syncStatus,
     courses,
     lastSyncResult,
+    lastSyncedAt,
     clearSyncResult,
     syncConflicts,
     resolveSyncConflict,
@@ -229,8 +230,6 @@ export function Layout() {
     avatarUrl: string | null;
   } | null>(null);
 
-  // Settings modal state
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
 
   // Profile dropdown state
@@ -349,17 +348,33 @@ export function Layout() {
     };
   }, []);
 
+  // Format time ago
+  const formatTimeAgo = (dateStr: string | null): string => {
+    if (!dateStr) return 'Never';
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours < 24) return `${diffHours}h ago`;
+    const diffDays = Math.floor(diffHours / 24);
+    return `${diffDays}d ago`;
+  };
+
   // Determine sync display based on actual state
   const getSyncDisplay = () => {
     if (syncStatus === 'syncing') {
       return {
-        icon: <Loader2 size={12} color="var(--color-info)" style={{ animation: 'spin 1s linear infinite' }} />,
+        icon: <Loader2 size={14} color="var(--color-info)" style={{ animation: 'spin 1s linear infinite' }} />,
         text: 'Syncing...',
       };
     }
     if (syncStatus === 'error') {
       return {
-        icon: <AlertCircle size={12} color="var(--color-error)" />,
+        icon: <AlertCircle size={14} color="var(--color-error)" />,
         text: 'Sync Error',
       };
     }
@@ -367,13 +382,13 @@ export function Layout() {
     const hasData = courses.some(c => c.lastSyncedAt);
     if (!hasData) {
       return {
-        icon: <AlertCircle size={12} color="var(--color-warning)" />,
+        icon: <AlertCircle size={14} color="var(--color-warning)" />,
         text: 'Not Synced',
       };
     }
     return {
-      icon: <CheckCircle size={12} color="var(--color-success)" />,
-      text: 'Synced',
+      icon: <CheckCircle size={14} color="var(--color-success)" />,
+      text: formatTimeAgo(lastSyncedAt),
     };
   };
 
@@ -405,8 +420,6 @@ export function Layout() {
               ref={profileButtonRef}
               style={{
                 ...styles.profileSection,
-                justifyContent: effectiveCollapsed ? 'center' : 'flex-start',
-                padding: effectiveCollapsed ? 'var(--space-4) var(--space-2)' : 'var(--space-4)',
                 cursor: 'pointer',
                 border: 'none',
                 background: 'transparent',
@@ -534,32 +547,14 @@ export function Layout() {
             </span>
           </button>
 
-          {/* Footer */}
-          <div
-            style={{
-              ...styles.sidebarFooter,
-              justifyContent: effectiveCollapsed ? 'center' : 'space-between',
-              padding: effectiveCollapsed ? 'var(--space-4) var(--space-2)' : 'var(--space-4) var(--space-5)',
-            }}
-          >
-            {/* Settings button - always visible */}
-            <button
-              style={styles.settingsButton}
-              onClick={() => setIsSettingsOpen(true)}
-              title="Settings"
-            >
-              <Settings size={16} />
-            </button>
-            {/* Version and sync status - only when expanded */}
-            {!effectiveCollapsed && (
-              <>
-                <div style={styles.version}>v0.1.0</div>
-                <div style={styles.syncStatusDisplay}>
-                  {syncDisplay.icon}
-                  <span style={styles.syncText}>{syncDisplay.text}</span>
-                </div>
-              </>
-            )}
+          {/* Footer - Sync Status Centered */}
+          <div style={styles.sidebarFooter}>
+            <div style={styles.syncStatusCentered} title={syncDisplay.text}>
+              {syncDisplay.icon}
+              {!effectiveCollapsed && (
+                <span style={styles.syncText}>{syncDisplay.text}</span>
+              )}
+            </div>
           </div>
         </aside>
 
@@ -575,8 +570,6 @@ export function Layout() {
         </main>
       </div>
 
-      {/* Settings Modal */}
-      <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
 
 
       {/* Sync Result Toast */}
@@ -674,6 +667,7 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     gap: 'var(--space-3)',
     padding: 'var(--space-4)',
+    paddingLeft: '12px', // Fixed left padding to keep avatar position stable
     borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
     minHeight: '72px',
     overflow: 'hidden',
@@ -804,42 +798,23 @@ const styles: Record<string, React.CSSProperties> = {
   },
 
   sidebarFooter: {
-    padding: 'var(--space-4) var(--space-5)',
+    padding: 'var(--space-3) var(--space-4)',
     borderTop: '1px solid rgba(255, 255, 255, 0.1)',
     display: 'flex',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 'var(--space-2)',
+    justifyContent: 'center',
   },
 
-  settingsButton: {
+  syncStatusCentered: {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    width: '28px',
-    height: '28px',
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    border: 'none',
-    borderRadius: 'var(--radius-md)',
-    color: 'rgba(255, 255, 255, 0.7)',
-    cursor: 'pointer',
-    transition: 'all var(--transition-fast)',
-  },
-
-  syncStatusDisplay: {
-    display: 'flex',
-    alignItems: 'center',
     gap: 'var(--space-2)',
   },
 
   syncText: {
     fontSize: 'var(--text-xs)',
     color: 'rgba(255, 255, 255, 0.6)',
-  },
-
-  version: {
-    fontSize: 'var(--text-xs)',
-    color: 'rgba(255, 255, 255, 0.4)',
   },
 
   // Main content - fills available space and scales with viewport
@@ -849,6 +824,7 @@ const styles: Record<string, React.CSSProperties> = {
     height: `calc(100vh - ${TITLE_BAR_HEIGHT}px)`,
     padding: 'var(--space-6)',
     overflowY: 'auto',
+    overflowX: 'hidden',
     transition: 'margin-left 250ms cubic-bezier(0.33, 1, 0.68, 1)',
     display: 'flex',
     flexDirection: 'column',

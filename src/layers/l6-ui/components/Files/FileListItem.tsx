@@ -277,6 +277,7 @@ export interface FileListItemProps {
   onDownload: () => void;
   onOpen: () => void;
   onShowInFolder?: () => void;
+  onContextMenu?: (e: React.MouseEvent) => void;
 }
 
 export function FileListItem({
@@ -288,6 +289,7 @@ export function FileListItem({
   onDownload,
   onOpen,
   onShowInFolder,
+  onContextMenu,
 }: FileListItemProps) {
   const isAttachment = file.source === 'attachment';
   const downloadStatus = isAttachment ? (file as FileAttachment).downloadStatus : null;
@@ -317,7 +319,8 @@ export function FileListItem({
     <div
       className={styles.fileListItem}
       onDoubleClick={handleDoubleClick}
-      title={isDownloaded ? 'Double-click to open' : 'Double-click to download'}
+      onContextMenu={onContextMenu}
+      title={isDownloaded ? 'Double-click to open, right-click for options' : 'Double-click to download, right-click for options'}
       role="row"
       tabIndex={0}
       onKeyDown={(e) => {

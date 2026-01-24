@@ -39,6 +39,7 @@ import { HtmlFileExtractor, ExtractedFileReference } from './HtmlFileExtractor';
 import { HtmlContentSync, HtmlContentSyncResult } from './HtmlContentSync';
 import { FileDownloadManager } from '../l0-utilities/FileDownloadManager';
 import { HtmlContentSyncConfig } from '../l0-utilities/AppConfig';
+import type { ComponentLogger } from '../l0-utilities/Logger';
 
 export interface SyncEngineConfig {
   client: CanvasClient;
@@ -50,6 +51,8 @@ export interface SyncEngineConfig {
   htmlContentSyncConfig?: HtmlContentSyncConfig;
   /** Base directory for file storage */
   filesBaseDir?: string;
+  /** Optional logger for debug output */
+  logger?: ComponentLogger;
 }
 
 export interface SyncResult {
@@ -153,6 +156,7 @@ export class SyncEngine extends EventEmitter {
   private diagnosticLog: SyncDiagnosticEntry[] = [];
   private pausedForConflicts: boolean = false;
   private pendingConflictData: Map<string, { tableName: string; data: Record<string, unknown> }> = new Map();
+  private log: ComponentLogger | null;
 
   constructor(config: SyncEngineConfig) {
     super();
@@ -163,9 +167,10 @@ export class SyncEngine extends EventEmitter {
     this.htmlFileExtractor = new HtmlFileExtractor({ deduplicate: true });
     this.downloadManager = config.downloadManager || null;
     this.filesBaseDir = config.filesBaseDir || null;
+    this.log = config.logger ?? null;
 
     // Initialize HTML content sync if configured
-    console.log(`[SyncEngine] Init: htmlContentSyncConfig=${!!config.htmlContentSyncConfig}, downloadManager=${!!this.downloadManager}, filesBaseDir=${this.filesBaseDir}`);
+    this.log?.debug(`Init: htmlContentSyncConfig=${!!config.htmlContentSyncConfig}, downloadManager=${!!this.downloadManager}, filesBaseDir=${this.filesBaseDir}`);
     if (config.htmlContentSyncConfig && this.downloadManager && this.filesBaseDir) {
       this.htmlContentSync = new HtmlContentSync({
         db: this.db,
@@ -173,10 +178,11 @@ export class SyncEngine extends EventEmitter {
         config: config.htmlContentSyncConfig,
         authToken: this.client.getAuthToken(),
         baseUrl: this.client.getBaseUrl(),
+        logger: this.log ?? undefined,
       });
-      console.log(`[SyncEngine] HtmlContentSync initialized`);
+      this.log?.debug('HtmlContentSync initialized');
     } else {
-      console.log(`[SyncEngine] HtmlContentSync NOT initialized - missing config`);
+      this.log?.debug('HtmlContentSync NOT initialized - missing config');
     }
 
     // Ensure conflict resolver table exists
@@ -587,7 +593,7 @@ export class SyncEngine extends EventEmitter {
    * @param options Optional sync options to filter courses and content types
    */
   async syncAll(options?: SyncOptions): Promise<FullSyncResult> {
-    console.log(`[SyncEngine] syncAll called, htmlContentSync=${!!this.htmlContentSync}, filesBaseDir=${this.filesBaseDir}`);
+    this.log?.debug(`syncAll called, htmlContentSync=${!!this.htmlContentSync}, filesBaseDir=${this.filesBaseDir}`);
 
     // Acquire mutex lock atomically - prevents race condition between check and set
     const release = await this.acquireSyncMutex();
@@ -764,7 +770,7 @@ export class SyncEngine extends EventEmitter {
               );
               if (frontPageResponse.data) {
                 fetched.pages.set(canvasCourseId, [frontPageResponse.data]);
-                console.log(`[SyncEngine] Fetched front_page for course ${canvasCourseId} (pages list unavailable)`);
+                this.log?.debug(`Fetched front_page for course ${canvasCourseId} (pages list unavailable)`);
               } else {
                 fetched.pages.set(canvasCourseId, []);
               }
@@ -1206,7 +1212,7 @@ export class SyncEngine extends EventEmitter {
     // ============ PHASE 4: HTML CONTENT REGISTRATION ============
     // Register HTML content items (pages, assignments, announcements) as downloadable resources
     // Actual download happens when user requests it from Files panel
-    console.log(`[SyncEngine] Phase 4: htmlContentSync=${!!this.htmlContentSync}, filesBaseDir=${this.filesBaseDir}`);
+    this.log?.debug(`Phase 4: htmlContentSync=${!!this.htmlContentSync}, filesBaseDir=${this.filesBaseDir}`);
 
     const htmlSyncCounts = {
       itemsRegistered: 0,
@@ -1221,7 +1227,7 @@ export class SyncEngine extends EventEmitter {
       if (options?.courseIds && options.courseIds.length > 0) {
         const courseIdSet = new Set(options.courseIds);
         coursesForFileSync = fetched.courses.filter((c) => courseIdSet.has(c.id));
-        console.log(`[SyncEngine] Files sync filtered to ${coursesForFileSync.length} courses based on courseIds selection`);
+        this.log?.debug(`Files sync filtered to ${coursesForFileSync.length} courses based on courseIds selection`);
       }
 
       for (const course of coursesForFileSync) {
@@ -1290,7 +1296,7 @@ export class SyncEngine extends EventEmitter {
         // Extract enrollment terms from courses (Canvas includes term data with include[]=term)
         const termsMap = new Map<number, { id: number; name: string; start_at: string | null; end_at: string | null }>();
 
-        console.debug('[SyncEngine] Processing courses for term extraction...');
+        this.log?.debug('Processing courses for term extraction...');
         for (const course of courses) {
 
           if (course.term) {
@@ -1315,7 +1321,7 @@ export class SyncEngine extends EventEmitter {
           }
         }
 
-        console.debug('[SyncEngine] Terms extracted:', Array.from(termsMap.values()));
+        this.log?.debug(`Terms extracted: ${JSON.stringify(Array.from(termsMap.values()))}`);
 
         // Upsert enrollment terms with full data
         for (const [termId, term] of termsMap) {
@@ -1906,7 +1912,7 @@ export class SyncEngine extends EventEmitter {
         this.db.upsert('module_items', localItem);
       }
     } catch (error) {
-      console.error(`[ModuleSync] Failed to sync items for module ${canvasModuleId}:`, error);
+      this.log?.error(`Failed to sync items for module ${canvasModuleId}`, error instanceof Error ? error : new Error(String(error)));
     }
   }
 
@@ -1945,7 +1951,7 @@ export class SyncEngine extends EventEmitter {
           );
           if (frontPageResponse.data) {
             pages = [frontPageResponse.data];
-            console.log(`[SyncEngine] Fetched front_page for course ${canvasCourseId} (pages list unavailable)`);
+            this.log?.debug(`Fetched front_page for course ${canvasCourseId} (pages list unavailable)`);
           }
         } catch {
           // No front page available
@@ -2518,6 +2524,28 @@ export class SyncEngine extends EventEmitter {
    */
   isBusy(): boolean {
     return this.isSyncing;
+  }
+
+  /**
+   * Cancel any pending sync operations
+   * Used when system is about to suspend
+   */
+  async cancelPendingSync(): Promise<void> {
+    if (!this.isSyncing) {
+      return;
+    }
+
+    this.log?.info('[SyncEngine] Cancelling pending sync for system suspend');
+    this.emit('sync:cancelling');
+
+    // Mark as no longer syncing
+    this.releaseSyncMutex();
+
+    // Give a moment for any in-flight requests to complete
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    this.emit('sync:cancelled');
+    this.log?.info('[SyncEngine] Sync cancelled successfully');
   }
 
   /**

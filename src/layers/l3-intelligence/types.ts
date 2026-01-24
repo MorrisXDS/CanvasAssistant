@@ -202,6 +202,345 @@ export interface GraceTokenPolicy {
   maxTokensPerTask: number;
 }
 
+// ============================================================================
+// Behavioral Analytics Types
+// ============================================================================
+
+/**
+ * Task completion event for pattern analysis
+ */
+export interface TaskCompletionEvent {
+  id?: number;
+  taskId: number;
+  courseId: number;
+  taskType: string;
+  startedAt: Date | null;
+  completedAt: Date;
+  dueAt: Date | null;
+  timeToCompleteMinutes: number | null;
+  dayOfWeek: number; // 0-6 (Sunday-Saturday)
+  hourOfDay: number; // 0-23
+  daysBeforeDue: number | null;
+  wasLate: boolean;
+  scoreAchieved: number | null;
+  pointsPossible: number | null;
+}
+
+/**
+ * Aggregated user behavior pattern
+ */
+export interface UserBehaviorPattern {
+  id?: number;
+  patternType: 'weekly_rhythm' | 'course_difficulty' | 'task_type_performance' | 'optimal_work_time';
+  patternKey: string;
+  patternValue: string;
+  sampleSize: number;
+  confidence: number;
+  lastUpdatedAt: Date;
+}
+
+/**
+ * Weekly rhythm analysis result
+ */
+export interface WeeklyRhythm {
+  productiveDays: Array<{
+    dayOfWeek: number;
+    dayName: string;
+    completionCount: number;
+    avgScore: number;
+  }>;
+  productiveHours: Array<{
+    hour: number;
+    completionCount: number;
+    avgScore: number;
+  }>;
+  peakDay: number;
+  peakHour: number;
+  sampleSize: number;
+  confidence: number;
+}
+
+/**
+ * Course difficulty/performance ranking
+ */
+export interface CoursePerformance {
+  courseId: number;
+  courseCode: string;
+  courseName: string;
+  avgScore: number;
+  onTimeRate: number;
+  lateRate: number;
+  missedRate: number;
+  totalTasks: number;
+  struggleScore: number; // 0-100, higher = more struggle
+}
+
+/**
+ * Struggle pattern for a task type
+ */
+export interface StrugglePattern {
+  taskType: string;
+  avgScore: number;
+  onTimeRate: number;
+  avgDaysEarly: number;
+  struggleScore: number;
+  sampleSize: number;
+}
+
+// ============================================================================
+// Effort Estimation Types
+// ============================================================================
+
+/**
+ * Effort estimation for a task
+ */
+export interface EffortEstimate {
+  taskId: number;
+  courseId: number;
+  taskType: string;
+  pointsPossible: number | null;
+  estimatedMinutes: number;
+  actualMinutes: number | null;
+  estimationMethod: 'default' | 'historical' | 'calibrated' | 'hybrid';
+  confidence: number; // 0-1
+}
+
+/**
+ * Effort estimation context for more accurate predictions
+ */
+export interface EffortEstimationContext {
+  taskType: string;
+  pointsPossible: number | null;
+  courseId: number;
+  historicalAverageMinutes: number | null;
+  courseMultiplier: number;
+  taskTypeMultiplier: number;
+}
+
+/**
+ * Calibration data for improving estimates
+ */
+export interface EffortCalibrationInput {
+  taskId: number;
+  taskType: string;
+  courseId: number;
+  estimatedMinutes: number;
+  actualMinutes: number;
+}
+
+// ============================================================================
+// Workload Analysis Types
+// ============================================================================
+
+/**
+ * Workload snapshot for a specific date
+ */
+export interface WorkloadSnapshot {
+  snapshotDate: Date;
+  totalTasksDue: number;
+  totalEstimatedMinutes: number;
+  tasksByCourse: Record<number, number>;
+  tasksByUrgency: Record<string, number>;
+  deadlineClusteringScore: number; // 0-1, higher = more clustered
+}
+
+/**
+ * Full workload distribution analysis
+ */
+export interface WorkloadDistribution {
+  startDate: Date;
+  endDate: Date;
+  dailySnapshots: WorkloadSnapshot[];
+  peakDay: Date | null;
+  peakMinutes: number;
+  avgDailyMinutes: number;
+  clusteringScore: number;
+  balanceScore: number; // 0-100, higher = more balanced
+}
+
+/**
+ * Task redistribution suggestion
+ */
+export interface RedistributionSuggestion {
+  taskId: number;
+  taskTitle: string;
+  currentDueDate: Date;
+  suggestedDate: Date;
+  reason: string;
+  timeGained: number; // minutes
+}
+
+/**
+ * Neglected course detection result
+ */
+export interface NeglectedCourse {
+  courseId: number;
+  courseCode: string;
+  courseName: string;
+  daysSinceActivity: number;
+  pendingTaskCount: number;
+  upcomingDeadlines: number;
+  neglectScore: number; // 0-100, higher = more neglected
+}
+
+// ============================================================================
+// Recommendation Types
+// ============================================================================
+
+/**
+ * Recommendation type enum
+ */
+export type RecommendationType =
+  | 'work_now'
+  | 'start_early'
+  | 'take_break'
+  | 'course_focus'
+  | 'redistribute';
+
+/**
+ * A generated recommendation
+ */
+export interface Recommendation {
+  id?: number;
+  type: RecommendationType;
+  taskId: number | null;
+  courseId: number | null;
+  title: string;
+  description: string;
+  reasoning: string;
+  priorityScore: number;
+  validFrom: Date;
+  validUntil: Date;
+  dismissedAt: Date | null;
+  actedOnAt: Date | null;
+  createdAt?: Date;
+}
+
+/**
+ * Context for generating recommendations
+ */
+export interface RecommendationContext {
+  currentTime: Date;
+  availableMinutes: number;
+  recentActivity: TaskCompletionEvent[];
+  userPatterns: UserBehaviorPattern[];
+}
+
+// ============================================================================
+// Insight Types
+// ============================================================================
+
+/**
+ * Insight type enum
+ */
+export type InsightType =
+  | 'deadline_pattern'
+  | 'course_struggle'
+  | 'productivity_window'
+  | 'workload_warning'
+  | 'streak'
+  | 'improvement'
+  | 'data_completeness';
+
+/**
+ * Insight severity level
+ */
+export type InsightSeverity = 'info' | 'warning' | 'critical';
+
+/**
+ * A generated user insight
+ */
+export interface Insight {
+  id?: number;
+  type: InsightType;
+  title: string;
+  description: string;
+  severity: InsightSeverity;
+  data: Record<string, unknown>;
+  acknowledgedAt: Date | null;
+  expiresAt: Date | null;
+  createdAt?: Date;
+}
+
+// ============================================================================
+// Adaptive Weight Types
+// ============================================================================
+
+/**
+ * Learning outcome for weight adjustment
+ */
+export type LearningOutcome =
+  | 'completed_early'
+  | 'completed_ontime'
+  | 'completed_late'
+  | 'missed';
+
+/**
+ * Learning input for adaptive weights
+ */
+export interface LearningInput {
+  taskId: number;
+  courseId: number;
+  taskType: string;
+  priorityScore: number;
+  factors: PriorityFactors;
+  outcome: LearningOutcome;
+  daysFromDeadline: number;
+}
+
+/**
+ * Weight adjustment record
+ */
+export interface WeightAdjustment {
+  factorName: string;
+  courseId: number | null;
+  taskType: string | null;
+  weightMultiplier: number;
+  adjustmentReason: string;
+  sampleSize: number;
+  lastUpdatedAt: Date;
+}
+
+/**
+ * Adaptive weights configuration
+ */
+export interface AdaptiveWeights {
+  baseWeights: PriorityFactors;
+  adjustments: WeightAdjustment[];
+  globalMultipliers: Record<string, number>;
+}
+
+// ============================================================================
+// Enhanced Priority Types
+// ============================================================================
+
+/**
+ * Enhanced priority explanation with adaptive learning data
+ */
+export interface EnhancedPriorityExplanation extends PriorityExplanation {
+  effortEstimate: EffortEstimate | null;
+  adaptiveAdjustments: WeightAdjustment[];
+  behavioralInsights: {
+    optimalWorkTime: { dayOfWeek: number; hourOfDay: number } | null;
+    historicalPerformance: { avgScore: number; onTimeRate: number } | null;
+    courseStruggleScore: number | null;
+  };
+}
+
+/**
+ * Daily plan entry
+ */
+export interface DailyPlanEntry {
+  taskId: number;
+  taskTitle: string;
+  courseCode: string;
+  dueAt: Date | null;
+  estimatedMinutes: number;
+  priorityScore: number;
+  recommendedStartTime: Date | null;
+  reason: string;
+}
+
 /**
  * Input for the pure priority calculation function
  */

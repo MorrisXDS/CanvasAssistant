@@ -15,7 +15,7 @@ import { useStore, subscribeToIpcEvents } from '../l5-presentation/store';
 import { Layout } from './components/Layout';
 import { Dashboard } from './components/Dashboard';
 import { Onboarding } from './components/Onboarding';
-import { AnnouncementDetail, AnnouncementsPage, CalendarPage, CourseDetail, CoursesPage, FilesPage, TasksPage } from './components/pages';
+import { AnnouncementDetail, AnnouncementsPage, CalendarPage, CourseDetail, CoursesPage, FilesPage, SettingsPage, TasksPage } from './components/pages';
 
 import './styles/global.css';
 
@@ -24,6 +24,7 @@ import './styles/global.css';
 
 const STORAGE_KEYS = {
   APPEARANCE: 'appearanceSettings',
+  FILE_EXPLORER: 'fileExplorerSettings',
 };
 
 interface AppearanceSettings {
@@ -72,6 +73,22 @@ function initializeSettings() {
       applyTheme('system');
     }
   });
+
+  // Restore custom download location if saved
+  try {
+    const fileSettings = localStorage.getItem(STORAGE_KEYS.FILE_EXPLORER);
+    if (fileSettings) {
+      const parsed = JSON.parse(fileSettings);
+      if (parsed.downloadLocation) {
+        // Async restore - don't block startup
+        window.api?.setFilesDirectory?.(parsed.downloadLocation).catch((err: Error) => {
+          console.warn('[App] Failed to restore download location:', err);
+        });
+      }
+    }
+  } catch {
+    // Ignore errors in download location restoration
+  }
 }
 
 // Initialize settings immediately (before React renders)
@@ -139,6 +156,7 @@ function AppContent() {
         <Route path="/courses" element={<CoursesPage />} />
         <Route path="/course/:id" element={<CourseDetail />} />
         <Route path="/files" element={<FilesPage />} />
+        <Route path="/settings" element={<SettingsPage />} />
         <Route path="/tasks" element={<TasksPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>

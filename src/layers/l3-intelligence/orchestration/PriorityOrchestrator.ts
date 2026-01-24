@@ -300,7 +300,7 @@ export class PriorityOrchestrator extends EventEmitter {
       for (const task of tasks) {
         const course = courses.get(task.courseId);
         if (!course) {
-          console.warn(`[PriorityOrchestrator] No course found for task ${task.id}`);
+          // Skip tasks with missing courses (can happen during partial sync or data inconsistency)
           continue;
         }
 

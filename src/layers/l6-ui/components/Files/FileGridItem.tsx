@@ -36,6 +36,7 @@ export interface FileGridItemProps {
   onDownload: () => void;
   onOpen: () => void;
   onShowInFolder?: () => void;
+  onContextMenu?: (e: React.MouseEvent) => void;
 }
 
 export function FileGridItem({
@@ -47,6 +48,7 @@ export function FileGridItem({
   onDownload,
   onOpen,
   onShowInFolder,
+  onContextMenu,
 }: FileGridItemProps) {
   const isDownloaded = isFileDownloaded(file);
 
@@ -84,6 +86,7 @@ export function FileGridItem({
       className={`${styles.fileGridItem} ${isSelected ? styles.fileGridItemSelected : ''}`}
       onClick={handleClick}
       onKeyDown={handleKeyDown}
+      onContextMenu={onContextMenu}
       role="gridcell"
       tabIndex={0}
       aria-selected={isSelected}

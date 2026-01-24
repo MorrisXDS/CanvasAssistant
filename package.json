@@ -33,6 +33,7 @@
     "@types/html-to-text": "^9.0.4",
     "axios": "^1.7.9",
     "better-sqlite3": "^11.7.0",
+    "chokidar": "^5.0.0",
     "dompurify": "^3.3.1",
     "html-to-text": "^9.0.5",
     "keytar": "^7.9.0",

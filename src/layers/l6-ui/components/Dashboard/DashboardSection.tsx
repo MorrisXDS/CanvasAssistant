@@ -4,16 +4,14 @@
  */
 
 import React from 'react';
-import { GripVertical, ChevronUp, ChevronDown } from 'lucide-react';
+import { GripVertical } from 'lucide-react';
 
 export interface DashboardSectionProps {
   id: string;
   title: string;
   children: React.ReactNode;
-  isCollapsed: boolean;
   isDragging: boolean;
   isDragOver: boolean;
-  onToggleCollapse: () => void;
   onDragStart: (e: React.DragEvent) => void;
   onDragEnd: (e: React.DragEvent) => void;
   onDragOver: (e: React.DragEvent) => void;
@@ -23,12 +21,9 @@ export interface DashboardSectionProps {
 
 export function DashboardSection({
   id,
-  title,
   children,
-  isCollapsed,
   isDragging,
   isDragOver,
-  onToggleCollapse,
   onDragStart,
   onDragEnd,
   onDragOver,
@@ -51,39 +46,27 @@ export function DashboardSection({
         transition: 'box-shadow 150ms ease, opacity 150ms ease',
       }}
     >
-      {/* Minimal toolbar - drag handle and collapse only */}
-      <div style={styles.toolbar}>
-        <div style={styles.dragHandle} title="Drag to reorder">
-          <GripVertical size={14} />
-        </div>
-        {isCollapsed && <span style={styles.collapsedTitle}>{title}</span>}
-        <button
-          style={styles.collapseButton}
-          onClick={onToggleCollapse}
-          title={isCollapsed ? 'Expand section' : 'Collapse section'}
-        >
-          {isCollapsed ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
-        </button>
+      {/* Drag handle - top left, visible on hover */}
+      <div style={styles.dragHandle} data-toolbar title="Drag to reorder">
+        <GripVertical size={14} />
       </div>
 
-      {/* Content - hidden when collapsed */}
-      {!isCollapsed && (
-        <div style={styles.content}>
-          {React.Children.map(children, child =>
-            React.isValidElement(child)
-              ? React.cloneElement(child as React.ReactElement<{ style?: React.CSSProperties }>, {
-                  style: {
-                    ...(child.props as { style?: React.CSSProperties }).style,
-                    flex: 1,
-                    display: 'flex',
-                    flexDirection: 'column' as const,
-                    height: '100%',
-                  }
-                })
-              : child
-          )}
-        </div>
-      )}
+      {/* Content */}
+      <div style={styles.content}>
+        {React.Children.map(children, child =>
+          React.isValidElement(child)
+            ? React.cloneElement(child as React.ReactElement<{ style?: React.CSSProperties }>, {
+                style: {
+                  ...(child.props as { style?: React.CSSProperties }).style,
+                  flex: 1,
+                  display: 'flex',
+                  flexDirection: 'column' as const,
+                  height: '100%',
+                }
+              })
+            : child
+        )}
+      </div>
     </div>
   );
 }
@@ -96,53 +79,23 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: 'column',
     position: 'relative',
     height: '100%',
-    minHeight: '250px',
-  },
-
-  toolbar: {
-    position: 'absolute',
-    top: 'var(--space-2)',
-    right: 'var(--space-2)',
-    display: 'flex',
-    alignItems: 'center',
-    gap: 'var(--space-1)',
-    zIndex: 10,
-    backgroundColor: 'var(--bg-card)',
-    borderRadius: 'var(--radius-sm)',
-    padding: '2px',
-    opacity: 0.6,
-    transition: 'opacity var(--transition-fast)',
   },
 
   dragHandle: {
+    position: 'absolute',
+    top: 'var(--space-2)',
+    left: 'var(--space-2)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
     padding: '4px',
+    zIndex: 10,
+    backgroundColor: 'var(--bg-card)',
+    borderRadius: 'var(--radius-sm)',
     color: 'var(--text-muted)',
     cursor: 'grab',
-  },
-
-  collapsedTitle: {
-    fontSize: 'var(--text-xs)',
-    fontWeight: 'var(--font-medium)',
-    color: 'var(--text-secondary)',
-    padding: '0 var(--space-2)',
-  },
-
-  collapseButton: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: '22px',
-    height: '22px',
-    padding: 0,
-    background: 'none',
-    border: 'none',
-    borderRadius: 'var(--radius-sm)',
-    cursor: 'pointer',
-    color: 'var(--text-muted)',
-    transition: 'background-color var(--transition-fast), color var(--transition-fast)',
+    opacity: 0,
+    transition: 'opacity var(--transition-fast)',
   },
 
   content: {
@@ -152,5 +105,20 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: 'column',
   },
 };
+
+// Inject hover styles for toolbar visibility
+if (typeof document !== 'undefined') {
+  const styleId = 'dashboard-section-hover-styles';
+  if (!document.getElementById(styleId)) {
+    const style = document.createElement('style');
+    style.id = styleId;
+    style.textContent = `
+      [data-section-id]:hover [data-toolbar] {
+        opacity: 1 !important;
+      }
+    `;
+    document.head.appendChild(style);
+  }
+}
 
 export default DashboardSection;

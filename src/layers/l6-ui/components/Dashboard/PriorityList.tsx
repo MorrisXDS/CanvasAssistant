@@ -6,7 +6,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PartyPopper } from 'lucide-react';
-import { Card, Badge, BadgeVariant, InfoTrigger } from '../shared';
+import { Card, Badge, BadgeVariant } from '../shared';
 import type { PriorityItem } from '../../../l5-presentation/types';
 
 export interface PriorityListProps {
@@ -47,14 +47,14 @@ export function PriorityList({
   return (
     <Card
       padding="none"
-      title="Upcoming Tasks"
+      title="Upcoming Courseworks"
       headerAction={
         items.length > 0 && (
           <button
             style={styles.viewAll}
             onClick={() => navigate('/tasks')}
           >
-            View all ({items.length})
+            View all ({totalPendingTasks ?? items.length})
           </button>
         )
       }
@@ -108,32 +108,9 @@ export function PriorityList({
               <div style={styles.content}>
                 <div style={styles.topRow}>
                   <span style={styles.courseCode}>{item.course.code}</span>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-1)' }}>
-                    <InfoTrigger
-                      summary={`${item.task.title} - ${item.course.name}`}
-                      title={item.task.title}
-                      details={
-                        <div>
-                          <p><strong>Course:</strong> {item.course.code} - {item.course.name}</p>
-                          <p><strong>Due:</strong> {item.task.dueAt ? new Date(item.task.dueAt).toLocaleString() : 'No due date'}</p>
-                          <p><strong>Weight:</strong> {item.task.weight > 0 ? `${item.task.weight}%` : 'Not weighted'}</p>
-                          <p><strong>Type:</strong> {item.task.taskType}</p>
-                          <p><strong>Priority:</strong> {item.urgencyLevel}</p>
-                          {item.task.description && (
-                            <>
-                              <p style={{ marginTop: 'var(--space-3)' }}><strong>Description:</strong></p>
-                              <p style={{ color: 'var(--text-secondary)' }}>{item.task.description.replace(/<[^>]*>/g, '').slice(0, 300)}{item.task.description.length > 300 ? '...' : ''}</p>
-                            </>
-                          )}
-                        </div>
-                      }
-                      size="sm"
-                      position="left"
-                    />
-                    <Badge variant={urgencyToVariant(item.urgencyLevel)} size="sm">
-                      {item.urgencyLevel}
-                    </Badge>
-                  </div>
+                  <Badge variant={urgencyToVariant(item.urgencyLevel)} size="sm">
+                    {item.urgencyLevel}
+                  </Badge>
                 </div>
                 <div style={styles.title}>{item.task.title}</div>
                 <div style={styles.bottomRow}>
@@ -187,8 +164,8 @@ const styles: Record<string, React.CSSProperties> = {
   topRow: {
     display: 'flex',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 'var(--space-2)', // Reduced slightly for tighter grouping
+    gap: 'var(--space-2)',
+    marginBottom: 'var(--space-2)',
   },
 
   courseCode: {
@@ -240,9 +217,10 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 'var(--space-4)',
+    padding: 'var(--space-6)',
     textAlign: 'center',
-    minHeight: '200px', // Added minHeight for better empty state presence
+    flex: 1,
+    minHeight: '150px',
   },
 
   emptyText: {

@@ -62,6 +62,16 @@ export {
   type DownloadResult,
   type DownloadProgress,
 } from './FileDownloadManager';
+export {
+  FileWatcher,
+  type FileWatcherConfig,
+  type FileChangeEvent,
+} from './FileWatcher';
+export {
+  IdleStateManager,
+  type IdleStateManagerConfig,
+  type SystemPowerState,
+} from './IdleStateManager';
 export { AppConfig, DEFAULT_APP_CONFIG } from './AppConfig';
 export type {
   AppConfigData,

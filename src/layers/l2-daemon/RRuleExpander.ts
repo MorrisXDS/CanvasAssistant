@@ -107,9 +107,9 @@ export class RRuleExpander {
         originalEventId: event.id,
         parentEventId: event.id,
       }));
-    } catch (error) {
-      // If RRULE parsing fails, return the original event
-      console.error(`Failed to expand RRULE for event ${event.id}:`, error);
+    } catch {
+      // If RRULE parsing fails, return the original event as non-recurring
+      // This is expected for malformed RRULE strings from external sources
       return [{
         ...event,
         isRecurrenceInstance: false,

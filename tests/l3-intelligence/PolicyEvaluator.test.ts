@@ -15,12 +15,16 @@ describe('PolicyEvaluator', () => {
       title: 'Test Assignment',
       dueAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // Due in 24 hours
       unlockAt: null,
+      lockAt: null,
       pointsPossible: 100,
       weight: 10,
       isCompleted: false,
       isPinned: false,
       grade: null,
       submittedAt: null,
+      taskType: 'assignment',
+      taskGroupId: null,
+      submissionStatus: null,
     };
 
     baseCourse = {

@@ -33,8 +33,10 @@ export type { RefreshStats } from './RefreshScheduler';
 
 // Domain Services (pure business logic)
 export {
+  // Grade Calculation
   GradeCalculationService,
   GraceTokenService,
+  // Priority Calculator
   calculatePriority,
   calculateUrgencyScore,
   calculateWeightScore,
@@ -47,6 +49,61 @@ export {
   calculateAllFactors,
   calculateFinalScore,
   assignQueue,
+  // Behavior Analytics
+  analyzeWeeklyRhythm,
+  calculateCourseDifficulty,
+  identifyStrugglePatterns,
+  predictOptimalWorkTime,
+  getProductivityScore,
+  analyzeCompletionTiming,
+  // Effort Estimation
+  DEFAULT_EFFORT_MINUTES,
+  getDefaultEffort,
+  calculatePointsBasedEffort,
+  calculateHistoricalAverage,
+  calculateCourseMultiplier,
+  estimateEffort,
+  batchEstimateEffort,
+  calibrateEstimates,
+  calculateAccuracyMetrics,
+  formatEffortEstimate,
+  getEffortLevel,
+  // Workload Analysis
+  calculateClusteringScore,
+  analyzeWorkloadDistribution,
+  suggestRedistribution,
+  detectNeglectedCourses,
+  calculateCourseBalanceScore,
+  getDailyWorkloadSummary,
+  identifyDeadlineClusters,
+  // Recommendation Engine
+  generateWorkNowRecommendation,
+  generateStartEarlyRecommendation,
+  generateBreakRecommendation,
+  generateCourseFocusRecommendation,
+  generateAllRecommendations,
+  isRecommendationValid,
+  getActiveRecommendations,
+  // Insight Generator
+  generateDeadlinePatternInsight,
+  generateCourseStruggleInsight,
+  generateProductivityWindowInsight,
+  generateWorkloadWarningInsight,
+  generateStreakInsight,
+  generateImprovementInsight,
+  generateAllInsights,
+  isInsightValid,
+  getActiveInsights,
+  getInsightIcon,
+  getSeverityColor,
+  // Adaptive Weight Service
+  calculateAdaptiveWeights,
+  applyAdaptiveWeights,
+  detectWeightDrift,
+  buildAdaptiveWeights,
+  getAdjustmentSummary,
+  determineOutcome,
+  createLearningInput,
 } from './domain';
 
 export type {
@@ -61,7 +118,22 @@ export type {
 } from './domain';
 
 // Orchestration (coordinates domain + DB)
-export { PriorityOrchestrator } from './orchestration';
-export type { PriorityOrchestratorConfig } from './orchestration';
+export {
+  PriorityOrchestrator,
+  BehaviorTrackingOrchestrator,
+  WorkloadOrchestrator,
+  RecommendationOrchestrator,
+  InsightOrchestrator,
+  AdaptiveLearningOrchestrator,
+} from './orchestration';
+
+export type {
+  PriorityOrchestratorConfig,
+  BehaviorTrackingOrchestratorConfig,
+  WorkloadOrchestratorConfig,
+  RecommendationOrchestratorConfig,
+  InsightOrchestratorConfig,
+  AdaptiveLearningOrchestratorConfig,
+} from './orchestration';
 
 export * from './types';

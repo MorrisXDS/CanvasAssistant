@@ -320,6 +320,124 @@ export const CoursePageSchema = z.object({
 });
 export type CoursePage = z.infer<typeof CoursePageSchema>;
 
+// ============ Intelligence Layer Schemas ============
+
+export const RecommendationTypeSchema = z.enum([
+  'work_now',
+  'start_early',
+  'take_break',
+  'course_focus',
+  'redistribute',
+]);
+export type RecommendationType = z.infer<typeof RecommendationTypeSchema>;
+
+export const RecommendationSchema = z.object({
+  id: z.number().optional(),
+  type: RecommendationTypeSchema,
+  taskId: z.number().nullable(),
+  courseId: z.number().nullable(),
+  title: z.string(),
+  description: z.string(),
+  reasoning: z.string(),
+  priorityScore: z.number(),
+  validFrom: z.string(),
+  validUntil: z.string(),
+  dismissedAt: z.string().nullable(),
+  actedOnAt: z.string().nullable(),
+  createdAt: z.string().optional(),
+});
+export type Recommendation = z.infer<typeof RecommendationSchema>;
+
+export const InsightTypeSchema = z.enum([
+  'deadline_pattern',
+  'course_struggle',
+  'productivity_window',
+  'workload_warning',
+  'streak',
+  'improvement',
+  'data_completeness',
+]);
+export type InsightType = z.infer<typeof InsightTypeSchema>;
+
+export const InsightSeveritySchema = z.enum(['info', 'warning', 'critical']);
+export type InsightSeverity = z.infer<typeof InsightSeveritySchema>;
+
+export const InsightSchema = z.object({
+  id: z.number().optional(),
+  type: InsightTypeSchema,
+  title: z.string(),
+  description: z.string(),
+  severity: InsightSeveritySchema,
+  data: z.record(z.string(), z.unknown()),
+  acknowledgedAt: z.string().nullable(),
+  expiresAt: z.string().nullable(),
+  createdAt: z.string().optional(),
+});
+export type Insight = z.infer<typeof InsightSchema>;
+
+export const WorkloadSnapshotSchema = z.object({
+  snapshotDate: z.string(),
+  totalTasksDue: z.number(),
+  totalEstimatedMinutes: z.number(),
+  tasksByCourse: z.record(z.string(), z.number()),
+  tasksByUrgency: z.record(z.string(), z.number()),
+  deadlineClusteringScore: z.number(),
+});
+export type WorkloadSnapshot = z.infer<typeof WorkloadSnapshotSchema>;
+
+export const WorkloadDistributionSchema = z.object({
+  startDate: z.string(),
+  endDate: z.string(),
+  dailySnapshots: z.array(WorkloadSnapshotSchema),
+  peakDay: z.string().nullable(),
+  peakMinutes: z.number(),
+  avgDailyMinutes: z.number(),
+  clusteringScore: z.number(),
+  balanceScore: z.number(),
+});
+export type WorkloadDistribution = z.infer<typeof WorkloadDistributionSchema>;
+
+export const EffortEstimateSchema = z.object({
+  taskId: z.number(),
+  courseId: z.number(),
+  taskType: z.string(),
+  pointsPossible: z.number().nullable(),
+  estimatedMinutes: z.number(),
+  actualMinutes: z.number().nullable(),
+  estimationMethod: z.enum(['default', 'historical', 'calibrated', 'hybrid']),
+  confidence: z.number(),
+});
+export type EffortEstimate = z.infer<typeof EffortEstimateSchema>;
+
+export const DailyPlanEntrySchema = z.object({
+  taskId: z.number(),
+  taskTitle: z.string(),
+  courseCode: z.string(),
+  dueAt: z.string().nullable(),
+  estimatedMinutes: z.number(),
+  priorityScore: z.number(),
+  recommendedStartTime: z.string().nullable(),
+  reason: z.string(),
+});
+export type DailyPlanEntry = z.infer<typeof DailyPlanEntrySchema>;
+
+export const RecommendationStatsSchema = z.object({
+  totalGenerated: z.number(),
+  totalDismissed: z.number(),
+  totalActedOn: z.number(),
+  activeCount: z.number(),
+});
+export type RecommendationStats = z.infer<typeof RecommendationStatsSchema>;
+
+export const InsightStatsSchema = z.object({
+  totalGenerated: z.number(),
+  totalAcknowledged: z.number(),
+  activeCount: z.number(),
+  bySeverity: z.record(InsightSeveritySchema, z.number()),
+  byType: z.record(z.string(), z.number()),
+});
+export type InsightStats = z.infer<typeof InsightStatsSchema>;
+
 // ============ Event Schemas ============
 
 export const SimulationChangeEventSchema = z.object({
@@ -644,6 +762,71 @@ export const IpcContract = {
       })).optional(),
     }),
     result: ApiResultSchema(z.object({ filePath: z.string() })),
+  },
+
+  // ============ Intelligence - Recommendations ============
+  'intelligence:getActiveRecommendations': {
+    params: z.void(),
+    result: z.array(RecommendationSchema),
+  },
+  'intelligence:generateRecommendations': {
+    params: z.object({ availableMinutes: z.number().optional() }).optional(),
+    result: z.array(RecommendationSchema),
+  },
+  'intelligence:dismissRecommendation': {
+    params: z.number(),
+    result: ApiResultSchema(z.void()),
+  },
+  'intelligence:actOnRecommendation': {
+    params: z.number(),
+    result: ApiResultSchema(z.void()),
+  },
+  'intelligence:getRecommendationStats': {
+    params: z.void(),
+    result: RecommendationStatsSchema,
+  },
+
+  // ============ Intelligence - Insights ============
+  'intelligence:getActiveInsights': {
+    params: z.void(),
+    result: z.array(InsightSchema),
+  },
+  'intelligence:generateInsights': {
+    params: z.void(),
+    result: z.array(InsightSchema),
+  },
+  'intelligence:acknowledgeInsight': {
+    params: z.number(),
+    result: ApiResultSchema(z.void()),
+  },
+  'intelligence:acknowledgeAllInsights': {
+    params: z.void(),
+    result: ApiResultSchema(z.object({ count: z.number() })),
+  },
+  'intelligence:getInsightStats': {
+    params: z.void(),
+    result: InsightStatsSchema,
+  },
+
+  // ============ Intelligence - Workload ============
+  'intelligence:getWorkloadDistribution': {
+    params: z.object({
+      startDate: z.string().optional(),
+      endDate: z.string().optional(),
+    }).optional(),
+    result: WorkloadDistributionSchema.nullable(),
+  },
+  'intelligence:getDailyPlan': {
+    params: z.object({ date: z.string().optional() }).optional(),
+    result: z.array(DailyPlanEntrySchema),
+  },
+  'intelligence:getEffortEstimate': {
+    params: z.number(),
+    result: EffortEstimateSchema.nullable(),
+  },
+  'intelligence:getClusteringScore': {
+    params: z.object({ windowDays: z.number().optional() }).optional(),
+    result: z.number(),
   },
 } as const;
 

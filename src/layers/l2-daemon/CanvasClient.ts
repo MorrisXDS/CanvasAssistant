@@ -1,10 +1,13 @@
 import axios, { AxiosInstance, AxiosResponse, AxiosError } from 'axios';
 import { EventEmitter } from 'events';
+import type { ComponentLogger } from '../l0-utilities/Logger';
 
 export interface CanvasClientConfig {
   baseUrl: string; // e.g., 'https://utoronto.instructure.com'
   accessToken: string;
   timeout?: number;
+  /** Optional logger for debugging API calls */
+  logger?: ComponentLogger;
 }
 
 export interface CanvasUser {
@@ -51,11 +54,13 @@ export class CanvasClient extends EventEmitter {
   private client: AxiosInstance;
   private baseUrl: string;
   private accessToken: string;
+  private log: ComponentLogger | null;
 
   constructor(config: CanvasClientConfig) {
     super();
     this.baseUrl = config.baseUrl.replace(/\/+$/, ''); // Remove trailing slashes
     this.accessToken = config.accessToken;
+    this.log = config.logger ?? null;
 
     this.client = axios.create({
       baseURL: `${this.baseUrl}/api/v1`,
@@ -84,14 +89,14 @@ export class CanvasClient extends EventEmitter {
 
     // Add request interceptor for logging
     this.client.interceptors.request.use(
-      (config) => {
-        const url = config.url || '';
-        const params = config.params ? JSON.stringify(config.params) : '';
-        console.debug(`[CanvasAPI] REQUEST: ${config.method?.toUpperCase()} ${url}${params ? ` params=${params}` : ''}`);
-        return config;
+      (cfg) => {
+        const url = cfg.url || '';
+        const params = cfg.params ? JSON.stringify(cfg.params) : '';
+        this.log?.debug(`REQUEST: ${cfg.method?.toUpperCase()} ${url}${params ? ` params=${params}` : ''}`);
+        return cfg;
       },
       (error) => {
-        console.debug(`[CanvasAPI] REQUEST ERROR: ${error.message}`);
+        this.log?.debug(`REQUEST ERROR: ${error.message}`);
         return Promise.reject(error);
       }
     );
@@ -107,17 +112,17 @@ export class CanvasClient extends EventEmitter {
         const linkHeader = response.headers['link'];
         const hasNextPage = linkHeader?.includes('rel="next"');
 
-        console.debug(`[CanvasAPI] RESPONSE: ${status} ${url} - ${dataLength} items, rate_limit_remaining=${rateLimitRemaining || 'N/A'}${hasNextPage ? ', has_next_page=true' : ''}`);
+        this.log?.debug(`RESPONSE: ${status} ${url} - ${dataLength} items, rate_limit_remaining=${rateLimitRemaining || 'N/A'}${hasNextPage ? ', has_next_page=true' : ''}`);
 
         // Log first few items for debugging (truncated) - only for arrays
-        if (isArray && response.data.length > 0) {
+        if (this.log && isArray && response.data.length > 0) {
           const sample = response.data.slice(0, 2).map((item: Record<string, unknown>) => {
             if (!item || typeof item !== 'object') return '{invalid}';
             const id = item.id || item.url || 'unknown';
             const name = item.name || item.display_name || item.title || '';
             return `{id:${id}, name:"${String(name).slice(0, 30)}"}`;
           });
-          console.debug(`[CanvasAPI] SAMPLE: [${sample.join(', ')}${response.data.length > 2 ? ', ...' : ''}]`);
+          this.log.debug(`SAMPLE: [${sample.join(', ')}${response.data.length > 2 ? ', ...' : ''}]`);
         }
 
         return response;
@@ -208,7 +213,7 @@ export class CanvasClient extends EventEmitter {
     const queryParams = { ...params, per_page: 100 };
     let pageNum = 1;
 
-    console.debug(`[CanvasAPI] getAll START: ${endpoint}`);
+    this.log?.debug(`getAll START: ${endpoint}`);
 
     while (url) {
       const response = await this.client.get<T[]>(url, {
@@ -217,12 +222,12 @@ export class CanvasClient extends EventEmitter {
 
       // Validate response is an array before spreading
       if (!Array.isArray(response.data)) {
-        console.warn(`[CanvasAPI] getAll: expected array but got ${typeof response.data} for ${endpoint}`);
+        this.log?.warn(`getAll: expected array but got ${typeof response.data} for ${endpoint}`);
         break; // Stop pagination if response format is unexpected
       }
 
       results.push(...response.data);
-      console.debug(`[CanvasAPI] getAll page ${pageNum}: got ${response.data.length} items, total=${results.length}`);
+      this.log?.debug(`getAll page ${pageNum}: got ${response.data.length} items, total=${results.length}`);
 
       // Parse Link header for next page (handle string or string[] header)
       const linkHeader = response.headers['link'];
@@ -233,11 +238,11 @@ export class CanvasClient extends EventEmitter {
 
       if (url) {
         pageNum++;
-        console.debug(`[CanvasAPI] getAll: fetching next page ${pageNum}...`);
+        this.log?.debug(`getAll: fetching next page ${pageNum}...`);
       }
     }
 
-    console.debug(`[CanvasAPI] getAll COMPLETE: ${endpoint} - ${results.length} total items in ${pageNum} pages`);
+    this.log?.debug(`getAll COMPLETE: ${endpoint} - ${results.length} total items in ${pageNum} pages`);
     return results;
   }
 
@@ -309,12 +314,12 @@ export class CanvasClient extends EventEmitter {
       const status = error.response.status;
       const data = error.response.data as { errors?: Array<{ message: string }>; message?: string };
 
-      console.debug(`[CanvasAPI] ERROR: ${status} ${url} - ${JSON.stringify(data)}`);
+      this.log?.debug(`ERROR: ${status} ${url} - ${JSON.stringify(data)}`);
 
       // Emit rate limit event
       if (status === 429) {
         const retryAfter = error.response.headers['retry-after'];
-        console.debug(`[CanvasAPI] RATE LIMITED: retry-after=${retryAfter}`);
+        this.log?.debug(`RATE LIMITED: retry-after=${retryAfter}`);
         this.emit('rate-limited', {
           retryAfter,
         });
@@ -322,16 +327,16 @@ export class CanvasClient extends EventEmitter {
 
       // Emit auth error event
       if (status === 401) {
-        console.debug(`[CanvasAPI] AUTH ERROR: 401 Unauthorized`);
+        this.log?.debug('AUTH ERROR: 401 Unauthorized');
         this.emit('auth-error', { message: 'Invalid or expired access token' });
       }
 
       if (status === 403) {
-        console.debug(`[CanvasAPI] FORBIDDEN: 403 - access denied to ${url}`);
+        this.log?.debug(`FORBIDDEN: 403 - access denied to ${url}`);
       }
 
       if (status === 404) {
-        console.debug(`[CanvasAPI] NOT FOUND: 404 - resource not found at ${url}`);
+        this.log?.debug(`NOT FOUND: 404 - resource not found at ${url}`);
       }
 
       const errorMessage =
@@ -351,14 +356,14 @@ export class CanvasClient extends EventEmitter {
 
     // Network error
     if (error.request) {
-      console.debug(`[CanvasAPI] NETWORK ERROR: Could not reach server for ${url}`);
+      this.log?.debug(`NETWORK ERROR: Could not reach server for ${url}`);
       return Promise.reject({
         status: 0,
         message: 'Network error - could not reach Canvas server',
       });
     }
 
-    console.debug(`[CanvasAPI] UNKNOWN ERROR: ${error.message}`);
+    this.log?.debug(`UNKNOWN ERROR: ${error.message}`);
     return Promise.reject({
       status: 0,
       message: error.message || 'Unknown error',

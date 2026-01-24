@@ -59,11 +59,10 @@ export function Card({
   };
 
   const titleStyle: React.CSSProperties = {
-    fontSize: 'var(--text-xs)',
+    fontSize: 'var(--text-sm)',
     fontWeight: 'var(--font-bold)',
-    color: 'var(--text-muted)',
-    textTransform: 'uppercase',
-    letterSpacing: '0.05em',
+    color: 'var(--text-primary)',
+    letterSpacing: '0.01em',
   };
 
   const bodyStyle: React.CSSProperties = {

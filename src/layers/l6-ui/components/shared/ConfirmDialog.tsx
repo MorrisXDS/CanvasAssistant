@@ -16,6 +16,10 @@ interface ConfirmDialogProps {
   cancelText?: string;
   onConfirm: () => void;
   onCancel: () => void;
+  /** Additional content to render below the message */
+  children?: React.ReactNode;
+  /** Hide the cancel button */
+  hideCancel?: boolean;
 }
 
 const typeConfig: Record<DialogType, { icon: React.ReactNode; color: string; bgColor: string }> = {
@@ -50,6 +54,8 @@ export function ConfirmDialog({
   cancelText = 'Cancel',
   onConfirm,
   onCancel,
+  children,
+  hideCancel = false,
 }: ConfirmDialogProps) {
   if (!isOpen) return null;
 
@@ -70,14 +76,17 @@ export function ConfirmDialog({
         {/* Content */}
         <div style={styles.content}>
           <h3 style={styles.title}>{title}</h3>
-          <p style={styles.message}>{message}</p>
+          {message && <p style={styles.message}>{message}</p>}
+          {children}
         </div>
 
         {/* Actions */}
         <div style={styles.actions}>
-          <button style={styles.cancelBtn} onClick={onCancel}>
-            {cancelText}
-          </button>
+          {!hideCancel && (
+            <button style={styles.cancelBtn} onClick={onCancel}>
+              {cancelText}
+            </button>
+          )}
           <button
             style={{
               ...styles.confirmBtn,

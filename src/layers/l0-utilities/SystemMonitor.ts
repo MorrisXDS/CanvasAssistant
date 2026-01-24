@@ -136,9 +136,9 @@ export class SystemMonitor extends EventEmitter {
 
       // Emit event only if state changed
       this.emitStateChange();
-    } catch (error) {
+    } catch {
       // powerMonitor may not be available in all environments (tests, etc.)
-      console.warn('SystemMonitor: Unable to update state', error);
+      // Silently ignore - this is expected in test environments
     }
   }
 

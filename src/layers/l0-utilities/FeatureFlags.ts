@@ -10,6 +10,7 @@
 
 import { EventEmitter } from 'events';
 import type { Database } from '../l1-persistence/Database';
+import { Logger, ComponentLogger } from './Logger';
 
 /**
  * Flag types for different use cases.
@@ -187,6 +188,8 @@ export interface FeatureFlagsOptions {
   devMode?: boolean;
   /** User ID for percentage-based rollouts */
   userId?: string;
+  /** Logger for error/warning messages */
+  logger?: Logger;
 }
 
 /**
@@ -217,6 +220,7 @@ export class FeatureFlags extends EventEmitter {
   private readonly devMode: boolean;
   private readonly userId: string;
   private readonly overrides: Map<string, unknown> = new Map();
+  private readonly log: ComponentLogger | null;
   private initialized = false;
 
   constructor(options: FeatureFlagsOptions = {}) {
@@ -224,6 +228,7 @@ export class FeatureFlags extends EventEmitter {
     this.db = options.db;
     this.devMode = options.devMode ?? false;
     this.userId = options.userId ?? 'default';
+    this.log = options.logger?.child('featureFlags') ?? null;
   }
 
   /**
@@ -257,7 +262,7 @@ export class FeatureFlags extends EventEmitter {
   isEnabled<K extends FlagKey>(key: K): boolean {
     const def = FLAG_DEFINITIONS[key];
     if (def.type !== FlagType.BOOLEAN) {
-      console.warn(`[FeatureFlags] Flag '${key}' is not a boolean flag`);
+      this.log?.warn(`Flag '${key}' is not a boolean flag`);
       return false;
     }
 
@@ -299,14 +304,14 @@ export class FeatureFlags extends EventEmitter {
   set<K extends FlagKey>(key: K, value: FlagValue<K>): void {
     const def = FLAG_DEFINITIONS[key];
     if (!def) {
-      console.warn(`[FeatureFlags] Unknown flag '${key}'`);
+      this.log?.warn(`Unknown flag '${key}'`);
       return;
     }
 
     // Validate type
     const valid = this.validateValue(key, value);
     if (!valid) {
-      console.warn(`[FeatureFlags] Invalid value for flag '${key}'`);
+      this.log?.warn(`Invalid value for flag '${key}'`);
       return;
     }
 
@@ -417,7 +422,7 @@ export class FeatureFlags extends EventEmitter {
         this.overrides.set(row.key, value);
       }
     } catch (error) {
-      console.error('[FeatureFlags] Failed to load overrides:', error);
+      this.log?.error('Failed to load overrides', error instanceof Error ? error : new Error(String(error)));
     }
   }
 

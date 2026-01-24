@@ -82,6 +82,23 @@ export class FileDownloadManager extends EventEmitter {
   }
 
   /**
+   * Update the base directory for file storage
+   * Used when user changes download location in settings
+   */
+  updateBaseDir(newBaseDir: string): void {
+    this.baseDir = newBaseDir;
+    this.ensureDirectory(this.baseDir);
+    this.logger?.info(`Updated download base directory to: ${newBaseDir}`);
+  }
+
+  /**
+   * Get the current base directory
+   */
+  getBaseDir(): string {
+    return this.baseDir;
+  }
+
+  /**
    * Ensure a directory exists, creating it if necessary
    */
   private ensureDirectory(dirPath: string): void {

@@ -3,7 +3,7 @@
  * Modal overlay for application settings
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   X,
   Link,
@@ -24,17 +24,25 @@ import {
   LayoutDashboard,
   Paintbrush,
   Bell,
+  Database,
+  FileJson,
+  HardDrive,
+  GripVertical,
+  RotateCcw,
+  LayoutGrid,
+  Upload,
 } from 'lucide-react';
 import { useStore } from '../../l5-presentation/store';
 import type { Course } from '../../l5-presentation/types';
 import { ConfirmDialog } from './shared/ConfirmDialog';
 
 // Settings sections
-type SettingsSection = 'general' | 'canvas' | 'sync' | 'academic' | 'courses' | 'calendar' | 'files' | 'appearance' | 'notifications';
+type SettingsSection = 'general' | 'dashboard' | 'canvas' | 'sync' | 'academic' | 'courses' | 'calendar' | 'files' | 'appearance' | 'notifications';
 
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
+  isFullPage?: boolean;
 }
 
 interface SyncPreferences {
@@ -85,6 +93,7 @@ interface EnrollmentTerm {
 interface FileExplorerSettings {
   defaultState: 'collapsed' | 'expanded' | 'remember';
   defaultViewMode: 'list' | 'grid';
+  downloadLocation: string | null; // null = use default
 }
 
 interface CourseSettings {
@@ -160,7 +169,273 @@ function applyTheme(theme: 'light' | 'dark' | 'system') {
   }
 }
 
-export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
+// Dashboard layout settings constants
+const DASHBOARD_STORAGE_KEYS = {
+  SECTION_ORDER: 'dashboardSectionOrder',
+};
+
+const DEFAULT_DASHBOARD_ORDER = ['priority', 'notifications', 'recommendations', 'insights'];
+
+const DASHBOARD_SECTION_LABELS: Record<string, string> = {
+  priority: 'Upcoming Assignments',
+  notifications: 'Recent Updates',
+  recommendations: 'Recommendations',
+  insights: 'Insights',
+};
+
+/**
+ * Dashboard Settings Section - Interactive layout configuration
+ */
+function DashboardSettingsSection() {
+  const [sectionOrder, setSectionOrder] = React.useState<string[]>(() => {
+    try {
+      const stored = localStorage.getItem(DASHBOARD_STORAGE_KEYS.SECTION_ORDER);
+      if (stored) return JSON.parse(stored);
+    } catch {}
+    return [...DEFAULT_DASHBOARD_ORDER];
+  });
+
+  const [draggedItem, setDraggedItem] = React.useState<string | null>(null);
+  const [dragOverItem, setDragOverItem] = React.useState<string | null>(null);
+
+  const isCustomized = React.useMemo(() => {
+    return sectionOrder.some((id, i) => id !== DEFAULT_DASHBOARD_ORDER[i]);
+  }, [sectionOrder]);
+
+  const handleDragStart = (e: React.DragEvent, sectionId: string) => {
+    setDraggedItem(sectionId);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDragOver = (e: React.DragEvent, sectionId: string) => {
+    e.preventDefault();
+    if (draggedItem && sectionId !== draggedItem) {
+      setDragOverItem(sectionId);
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent, targetId: string) => {
+    e.preventDefault();
+    if (!draggedItem || draggedItem === targetId) return;
+
+    const newOrder = [...sectionOrder];
+    const draggedIndex = newOrder.indexOf(draggedItem);
+    const targetIndex = newOrder.indexOf(targetId);
+
+    if (draggedIndex !== -1 && targetIndex !== -1) {
+      // Swap positions
+      newOrder[draggedIndex] = targetId;
+      newOrder[targetIndex] = draggedItem;
+      setSectionOrder(newOrder);
+      localStorage.setItem(DASHBOARD_STORAGE_KEYS.SECTION_ORDER, JSON.stringify(newOrder));
+    }
+
+    setDraggedItem(null);
+    setDragOverItem(null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedItem(null);
+    setDragOverItem(null);
+  };
+
+  const handleReset = () => {
+    setSectionOrder([...DEFAULT_DASHBOARD_ORDER]);
+    localStorage.removeItem(DASHBOARD_STORAGE_KEYS.SECTION_ORDER);
+  };
+
+  return (
+    <div style={dashboardStyles.section}>
+      <h3 style={dashboardStyles.sectionTitle}>Dashboard Layout</h3>
+      <p style={dashboardStyles.sectionDesc}>
+        Customize the arrangement of dashboard sections. Drag items to reorder.
+      </p>
+
+      <div style={dashboardStyles.gridPreview}>
+        {sectionOrder.map((sectionId, index) => (
+          <div
+            key={sectionId}
+            draggable
+            onDragStart={(e) => handleDragStart(e, sectionId)}
+            onDragOver={(e) => handleDragOver(e, sectionId)}
+            onDrop={(e) => handleDrop(e, sectionId)}
+            onDragEnd={handleDragEnd}
+            style={{
+              ...dashboardStyles.gridItem,
+              opacity: draggedItem === sectionId ? 0.5 : 1,
+              borderColor: dragOverItem === sectionId ? 'var(--color-blue)' : 'var(--border-default)',
+              borderWidth: dragOverItem === sectionId ? '2px' : '1px',
+            }}
+          >
+            <GripVertical size={14} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+            <span style={dashboardStyles.gridItemLabel}>
+              {DASHBOARD_SECTION_LABELS[sectionId]}
+            </span>
+            <span style={dashboardStyles.gridItemPosition}>
+              {index + 1}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      <div style={dashboardStyles.gridLegend}>
+        <div style={dashboardStyles.legendItem}>
+          <div style={{ ...dashboardStyles.legendBox, backgroundColor: 'var(--color-blue-50)' }}>1</div>
+          <span>Top Left</span>
+        </div>
+        <div style={dashboardStyles.legendItem}>
+          <div style={{ ...dashboardStyles.legendBox, backgroundColor: 'var(--color-blue-50)' }}>2</div>
+          <span>Top Right</span>
+        </div>
+        <div style={dashboardStyles.legendItem}>
+          <div style={{ ...dashboardStyles.legendBox, backgroundColor: 'var(--color-blue-50)' }}>3</div>
+          <span>Bottom Left</span>
+        </div>
+        <div style={dashboardStyles.legendItem}>
+          <div style={{ ...dashboardStyles.legendBox, backgroundColor: 'var(--color-blue-50)' }}>4</div>
+          <span>Bottom Right</span>
+        </div>
+      </div>
+
+      {isCustomized && (
+        <button style={dashboardStyles.resetButton} onClick={handleReset}>
+          <RotateCcw size={14} />
+          Reset to Default Layout
+        </button>
+      )}
+
+      <div style={dashboardStyles.divider} />
+
+      <div style={dashboardStyles.field}>
+        <label style={dashboardStyles.label}>Interaction Tips</label>
+        <ul style={dashboardStyles.tipsList}>
+          <li>Hover over any section to reveal the drag handle</li>
+          <li>Drag sections by their grip handle to reorder</li>
+          <li>Your layout preferences are saved automatically</li>
+        </ul>
+      </div>
+    </div>
+  );
+}
+
+const dashboardStyles: Record<string, React.CSSProperties> = {
+  section: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 'var(--space-4)',
+  },
+  sectionTitle: {
+    fontSize: 'var(--text-lg)',
+    fontWeight: 'var(--font-semibold)',
+    color: 'var(--text-primary)',
+    margin: 0,
+  },
+  sectionDesc: {
+    fontSize: 'var(--text-sm)',
+    color: 'var(--text-secondary)',
+    margin: 0,
+  },
+  gridPreview: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(2, 1fr)',
+    gap: 'var(--space-2)',
+    padding: 'var(--space-3)',
+    backgroundColor: 'var(--bg-app)',
+    borderRadius: 'var(--radius-md)',
+    border: '1px solid var(--border-default)',
+  },
+  gridItem: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-2)',
+    padding: 'var(--space-3)',
+    backgroundColor: 'var(--bg-card)',
+    border: '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-md)',
+    cursor: 'grab',
+    transition: 'all var(--transition-fast)',
+  },
+  gridItemLabel: {
+    flex: 1,
+    fontSize: 'var(--text-sm)',
+    fontWeight: 'var(--font-medium)',
+    color: 'var(--text-primary)',
+  },
+  gridItemPosition: {
+    width: '20px',
+    height: '20px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '10px',
+    fontWeight: 'var(--font-semibold)',
+    backgroundColor: 'var(--color-blue-50)',
+    color: 'var(--color-navy)',
+    borderRadius: 'var(--radius-full)',
+  },
+  gridLegend: {
+    display: 'flex',
+    gap: 'var(--space-4)',
+    justifyContent: 'center',
+    fontSize: 'var(--text-xs)',
+    color: 'var(--text-muted)',
+  },
+  legendItem: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-1)',
+  },
+  legendBox: {
+    width: '16px',
+    height: '16px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '9px',
+    fontWeight: 'var(--font-semibold)',
+    borderRadius: 'var(--radius-sm)',
+    color: 'var(--color-navy)',
+  },
+  resetButton: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 'var(--space-2)',
+    padding: 'var(--space-2) var(--space-4)',
+    backgroundColor: 'transparent',
+    border: '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-md)',
+    fontSize: 'var(--text-sm)',
+    color: 'var(--text-secondary)',
+    cursor: 'pointer',
+    transition: 'all var(--transition-fast)',
+    alignSelf: 'center',
+  },
+  divider: {
+    height: '1px',
+    backgroundColor: 'var(--border-light)',
+    margin: 'var(--space-2) 0',
+  },
+  field: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 'var(--space-2)',
+  },
+  label: {
+    fontSize: 'var(--text-sm)',
+    fontWeight: 'var(--font-medium)',
+    color: 'var(--text-primary)',
+  },
+  tipsList: {
+    margin: 0,
+    paddingLeft: 'var(--space-4)',
+    fontSize: 'var(--text-xs)',
+    color: 'var(--text-secondary)',
+    lineHeight: 'var(--leading-relaxed)',
+  },
+};
+
+export function SettingsModal({ isOpen, onClose, isFullPage = false }: SettingsModalProps) {
   const { courses, fetchCourses } = useStore();
   const [activeSection, setActiveSection] = useState<SettingsSection>('general');
 
@@ -224,8 +499,12 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     loadSettings(STORAGE_KEYS.FILE_EXPLORER, {
       defaultState: 'remember',
       defaultViewMode: 'list',
+      downloadLocation: null,
     })
   );
+
+  // Current download directory (fetched from main process)
+  const [currentDownloadPath, setCurrentDownloadPath] = useState<string>('');
 
   // Course settings
   const [courseSettings, setCourseSettings] = useState<CourseSettings>(() =>
@@ -271,8 +550,39 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     if (isOpen) {
       checkCanvasConnection();
       fetchEnrollmentTerms();
+      fetchDownloadDirectory();
     }
   }, [isOpen]);
+
+  // Fetch current download directory
+  const fetchDownloadDirectory = async () => {
+    try {
+      const result = await window.api.getFilesDirectory();
+      setCurrentDownloadPath(result.path);
+    } catch (error) {
+      console.error('[Settings] Failed to fetch download directory:', error);
+    }
+  };
+
+  // Handle changing download directory
+  const handleChangeDownloadLocation = async () => {
+    try {
+      const result = await window.api.selectFilesDirectory();
+      if (result.success && result.data?.path) {
+        const newPath = result.data.path;
+        // Set the directory in the main process
+        const setResult = await window.api.setFilesDirectory(newPath);
+        if (setResult.success) {
+          setCurrentDownloadPath(newPath);
+          updateFileExplorer({ downloadLocation: newPath });
+        } else {
+          console.error('[Settings] Failed to set download directory:', setResult.error);
+        }
+      }
+    } catch (error) {
+      console.error('[Settings] Failed to change download location:', error);
+    }
+  };
 
   // Fetch enrollment terms from database
   const fetchEnrollmentTerms = async () => {
@@ -325,10 +635,87 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     }
   };
 
-  const updateSyncPrefs = (updates: Partial<SyncPreferences>) => {
+  const updateSyncPrefs = async (updates: Partial<SyncPreferences>) => {
     const newPrefs = { ...syncPrefs, ...updates };
     setSyncPrefs(newPrefs);
     saveSettings(STORAGE_KEYS.SYNC_PREFS, newPrefs);
+
+    // Sync auto-sync settings to backend
+    if ('autoSyncEnabled' in updates || 'autoSyncInterval' in updates) {
+      try {
+        await window.api.setAutoSyncPreferences({
+          autoSyncEnabled: newPrefs.autoSyncEnabled,
+          autoSyncInterval: newPrefs.autoSyncInterval,
+        });
+      } catch (e) {
+        console.error('Failed to sync auto-sync preferences:', e);
+      }
+    }
+  };
+
+  // Data export/import handlers
+  const [isExporting, setIsExporting] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const [exportMessage, setExportMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const handleExportDatabase = async () => {
+    setIsExporting(true);
+    setExportMessage(null);
+    try {
+      const result = await window.api.exportDatabase();
+      if (result.success) {
+        setExportMessage({ type: 'success', text: `Database exported to ${result.data?.filePath}` });
+      } else {
+        setExportMessage({ type: 'error', text: result.error || 'Export failed' });
+      }
+    } catch (e) {
+      setExportMessage({ type: 'error', text: e instanceof Error ? e.message : 'Export failed' });
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleExportCourseData = async () => {
+    setIsExporting(true);
+    setExportMessage(null);
+    try {
+      const result = await window.api.exportCourseData();
+      if (result.success) {
+        setExportMessage({
+          type: 'success',
+          text: `Exported ${result.data?.courseCount} courses, ${result.data?.taskCount} tasks to ${result.data?.filePath}`,
+        });
+      } else {
+        setExportMessage({ type: 'error', text: result.error || 'Export failed' });
+      }
+    } catch (e) {
+      setExportMessage({ type: 'error', text: e instanceof Error ? e.message : 'Export failed' });
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleImportCourseData = async () => {
+    setIsImporting(true);
+    setExportMessage(null);
+    try {
+      const result = await window.api.importCourseData();
+      if (result.success) {
+        const d = result.data;
+        setExportMessage({
+          type: 'success',
+          text: `Imported ${d?.coursesImported} courses, ${d?.tasksImported} tasks, ${d?.notificationsImported} notifications`,
+        });
+        // Refresh data after import
+        fetchCourses();
+      } else {
+        setExportMessage({ type: 'error', text: result.error || 'Import failed' });
+      }
+    } catch (e) {
+      setExportMessage({ type: 'error', text: e instanceof Error ? e.message : 'Import failed' });
+    } finally {
+      setIsImporting(false);
+    }
   };
 
   const updateAppearance = (updates: Partial<AppearanceSettings>) => {
@@ -408,10 +795,52 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     return () => window.removeEventListener('keydown', handleEscape);
   }, [isOpen, onClose]);
 
+  // Settings tab drag-and-drop state
+  const [draggedTab, setDraggedTab] = useState<SettingsSection | null>(null);
+  const [dragOverTab, setDragOverTab] = useState<SettingsSection | null>(null);
+  const [tabOrder, setTabOrder] = useState<SettingsSection[]>(() => {
+    try {
+      const stored = localStorage.getItem('settingsTabOrder');
+      if (stored) return JSON.parse(stored);
+    } catch {
+      // ignore
+    }
+    return ['general', 'dashboard', 'canvas', 'sync', 'academic', 'courses', 'calendar', 'files', 'appearance', 'notifications'];
+  });
+
+  const handleTabDragStart = useCallback((e: React.DragEvent, tabId: SettingsSection) => {
+    e.dataTransfer.effectAllowed = 'move';
+    setDraggedTab(tabId);
+  }, []);
+
+  const handleTabDragOver = useCallback((e: React.DragEvent, tabId: SettingsSection) => {
+    e.preventDefault();
+    if (tabId !== draggedTab) setDragOverTab(tabId);
+  }, [draggedTab]);
+
+  const handleTabDrop = useCallback((e: React.DragEvent, targetTab: SettingsSection) => {
+    e.preventDefault();
+    if (!draggedTab || draggedTab === targetTab) {
+      setDraggedTab(null);
+      setDragOverTab(null);
+      return;
+    }
+    const newOrder = [...tabOrder];
+    const draggedIdx = newOrder.indexOf(draggedTab);
+    const targetIdx = newOrder.indexOf(targetTab);
+    newOrder[draggedIdx] = targetTab;
+    newOrder[targetIdx] = draggedTab;
+    setTabOrder(newOrder);
+    localStorage.setItem('settingsTabOrder', JSON.stringify(newOrder));
+    setDraggedTab(null);
+    setDragOverTab(null);
+  }, [draggedTab, tabOrder]);
+
   if (!isOpen) return null;
 
-  const sections = [
+  const allSections = [
     { id: 'general' as const, label: 'General', icon: Home },
+    { id: 'dashboard' as const, label: 'Dashboard', icon: LayoutGrid },
     { id: 'canvas' as const, label: 'Canvas', icon: Link },
     { id: 'sync' as const, label: 'Sync', icon: RefreshCw },
     { id: 'academic' as const, label: 'Academic', icon: GraduationCap },
@@ -422,22 +851,41 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     { id: 'notifications' as const, label: 'Notifications', icon: Bell },
   ];
 
+  // Sort sections by custom order
+  const sections = tabOrder
+    .map((id) => allSections.find((s) => s.id === id))
+    .filter(Boolean) as typeof allSections;
+
   const themeOptions = [
     { value: 'light' as const, label: 'Light', icon: Sun },
     { value: 'dark' as const, label: 'Dark', icon: Moon },
     { value: 'system' as const, label: 'System', icon: Monitor },
   ];
 
+  // Wrapper component based on mode
+  const Wrapper = isFullPage
+    ? ({ children }: { children: React.ReactNode }) => (
+        <div style={styles.fullPage}>{children}</div>
+      )
+    : ({ children }: { children: React.ReactNode }) => (
+        <div style={styles.overlay} onClick={onClose}>
+          <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+            {children}
+          </div>
+        </div>
+      );
+
   return (
-    <div style={styles.overlay} onClick={onClose}>
-      <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
-        {/* Header */}
-        <div style={styles.header}>
-          <h2 style={styles.title}>Settings</h2>
+    <Wrapper>
+      {/* Header */}
+      <div style={isFullPage ? styles.pageHeader : styles.header}>
+        <h2 style={isFullPage ? styles.pageTitle : styles.title}>Settings</h2>
+        {!isFullPage && (
           <button style={styles.closeButton} onClick={onClose} aria-label="Close">
             <X size={20} />
           </button>
-        </div>
+        )}
+      </div>
 
         <div style={styles.content}>
           {/* Sidebar */}
@@ -445,12 +893,23 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
             {sections.map((section) => {
               const Icon = section.icon;
               const isActive = activeSection === section.id;
+              const isDragging = draggedTab === section.id;
+              const isDragOver = dragOverTab === section.id;
               return (
                 <button
                   key={section.id}
+                  draggable
+                  onDragStart={(e) => handleTabDragStart(e, section.id)}
+                  onDragEnd={() => { setDraggedTab(null); setDragOverTab(null); }}
+                  onDragOver={(e) => handleTabDragOver(e, section.id)}
+                  onDragLeave={() => setDragOverTab(null)}
+                  onDrop={(e) => handleTabDrop(e, section.id)}
                   style={{
                     ...styles.sidebarItem,
                     ...(isActive ? styles.sidebarItemActive : {}),
+                    opacity: isDragging ? 0.5 : 1,
+                    boxShadow: isDragOver ? 'inset 0 0 0 2px var(--color-blue)' : 'none',
+                    transition: 'opacity 150ms ease, box-shadow 150ms ease, background-color var(--transition-fast)',
                   }}
                   onClick={() => setActiveSection(section.id)}
                 >
@@ -501,20 +960,110 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                 <div style={styles.divider} />
 
                 <div style={styles.field}>
-                  <label style={styles.label}>Sidebar order</label>
+                  <label style={styles.label}>Reset to Default Order</label>
                   <p style={styles.fieldDesc}>
-                    Drag navigation items in the sidebar to reorder them. Your order is saved automatically.
+                    Reset custom ordering for various UI elements. Drag-and-drop ordering is saved automatically.
                   </p>
-                  <button
-                    style={styles.resetButton}
-                    onClick={() => {
-                      localStorage.removeItem('navItemOrder');
-                      // Trigger a reload to apply the change
-                      window.location.reload();
-                    }}
-                  >
-                    Reset to Default Order
-                  </button>
+                  <div style={styles.resetOrderGrid}>
+                    <button
+                      style={styles.resetOrderButton}
+                      onClick={() => {
+                        localStorage.removeItem('navItemOrder');
+                        window.location.reload();
+                      }}
+                    >
+                      <RotateCcw size={14} />
+                      Sidebar
+                    </button>
+                    <button
+                      style={styles.resetOrderButton}
+                      onClick={() => {
+                        localStorage.removeItem('dashboardSectionOrder');
+                        window.location.reload();
+                      }}
+                    >
+                      <RotateCcw size={14} />
+                      Dashboard
+                    </button>
+                    <button
+                      style={styles.resetOrderButton}
+                      onClick={() => {
+                        localStorage.removeItem('courseOrder');
+                        window.location.reload();
+                      }}
+                    >
+                      <RotateCcw size={14} />
+                      Courses
+                    </button>
+                    <button
+                      style={styles.resetOrderButton}
+                      onClick={() => {
+                        localStorage.removeItem('filesCourseOrder');
+                        localStorage.removeItem('folderOrder');
+                        window.location.reload();
+                      }}
+                    >
+                      <RotateCcw size={14} />
+                      Files
+                    </button>
+                    <button
+                      style={styles.resetOrderButton}
+                      onClick={() => {
+                        localStorage.removeItem('settingsTabOrder');
+                        window.location.reload();
+                      }}
+                    >
+                      <RotateCcw size={14} />
+                      Settings Tabs
+                    </button>
+                  </div>
+                </div>
+
+                <div style={styles.divider} />
+
+                <div style={styles.field}>
+                  <label style={styles.label}>
+                    <Database size={16} style={{ verticalAlign: 'middle', marginRight: '8px' }} />
+                    Data Export & Import
+                  </label>
+                  <p style={styles.fieldDesc}>
+                    Export your data for backup or import previously exported data.
+                  </p>
+                  <div style={styles.exportButtons}>
+                    <button
+                      style={styles.secondaryButton}
+                      onClick={handleExportDatabase}
+                      disabled={isExporting || isImporting}
+                    >
+                      {isExporting ? <Loader2 size={14} className="spin" /> : <HardDrive size={14} />}
+                      Export Database Backup
+                    </button>
+                    <button
+                      style={styles.secondaryButton}
+                      onClick={handleExportCourseData}
+                      disabled={isExporting || isImporting}
+                    >
+                      {isExporting ? <Loader2 size={14} className="spin" /> : <FileJson size={14} />}
+                      Export Course Data (JSON)
+                    </button>
+                    <button
+                      style={styles.secondaryButton}
+                      onClick={handleImportCourseData}
+                      disabled={isExporting || isImporting}
+                    >
+                      {isImporting ? <Loader2 size={14} className="spin" /> : <Upload size={14} />}
+                      Import Course Data (JSON)
+                    </button>
+                  </div>
+                  {exportMessage && (
+                    <div style={{
+                      ...styles.exportMessage,
+                      backgroundColor: exportMessage.type === 'success' ? 'var(--color-success-bg)' : 'var(--color-error-bg)',
+                      color: exportMessage.type === 'success' ? 'var(--color-success)' : 'var(--color-error)',
+                    }}>
+                      {exportMessage.text}
+                    </div>
+                  )}
                 </div>
 
                 <div style={styles.divider} />
@@ -560,6 +1109,10 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                   }}
                 />
               </div>
+            )}
+
+            {activeSection === 'dashboard' && (
+              <DashboardSettingsSection />
             )}
 
             {activeSection === 'canvas' && (
@@ -907,6 +1460,27 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                 </p>
 
                 <div style={styles.field}>
+                  <label style={styles.label}>Download location</label>
+                  <p style={styles.fieldDesc}>
+                    Where downloaded files are stored on your computer.
+                  </p>
+                  <div style={styles.downloadLocationRow}>
+                    <div style={styles.downloadLocationPath}>
+                      {currentDownloadPath || 'Loading...'}
+                    </div>
+                    <button
+                      style={styles.changeLocationBtn}
+                      onClick={handleChangeDownloadLocation}
+                    >
+                      <FolderOpen size={14} />
+                      Change
+                    </button>
+                  </div>
+                </div>
+
+                <div style={styles.divider} />
+
+                <div style={styles.field}>
                   <label style={styles.label}>Default folder state</label>
                   <p style={styles.fieldDesc}>
                     How folders appear when opening the Files page.
@@ -1107,8 +1681,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
             )}
           </div>
         </div>
-      </div>
-    </div>
+    </Wrapper>
   );
 }
 
@@ -1170,6 +1743,25 @@ const styles: Record<string, React.CSSProperties> = {
     overflow: 'hidden',
   },
 
+  fullPage: {
+    display: 'flex',
+    flexDirection: 'column',
+    height: '100%',
+    overflow: 'hidden',
+  },
+
+  pageHeader: {
+    marginBottom: 'var(--space-4)',
+    flexShrink: 0,
+  },
+
+  pageTitle: {
+    margin: 0,
+    fontSize: 'var(--text-2xl)',
+    fontWeight: 'var(--font-bold)',
+    color: 'var(--text-primary)',
+  },
+
   header: {
     display: 'flex',
     alignItems: 'center',
@@ -1219,7 +1811,7 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     gap: 'var(--space-2)',
     padding: 'var(--space-2) var(--space-3)',
-    backgroundColor: 'var(--bg-card)',
+    backgroundColor: 'transparent',
     border: 'none',
     borderRadius: 'var(--radius-md)',
     cursor: 'pointer',
@@ -1657,6 +2249,92 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
     transition: 'all var(--transition-fast)',
     marginTop: 'var(--space-2)',
+  },
+
+  resetOrderGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))',
+    gap: 'var(--space-2)',
+    marginTop: 'var(--space-2)',
+  },
+
+  resetOrderButton: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 'var(--space-1)',
+    padding: 'var(--space-2) var(--space-3)',
+    backgroundColor: 'var(--bg-app)',
+    border: '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-md)',
+    fontSize: 'var(--text-xs)',
+    color: 'var(--text-secondary)',
+    cursor: 'pointer',
+    transition: 'all var(--transition-fast)',
+  },
+
+  // Data export styles
+  exportButtons: {
+    display: 'flex',
+    gap: 'var(--space-2)',
+    flexWrap: 'wrap' as const,
+  },
+
+  secondaryButton: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-2)',
+    padding: 'var(--space-2) var(--space-3)',
+    backgroundColor: 'var(--bg-app)',
+    border: '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-md)',
+    fontSize: 'var(--text-sm)',
+    color: 'var(--text-secondary)',
+    cursor: 'pointer',
+    transition: 'all var(--transition-fast)',
+  },
+
+  exportMessage: {
+    padding: 'var(--space-2) var(--space-3)',
+    borderRadius: 'var(--radius-md)',
+    fontSize: 'var(--text-sm)',
+    marginTop: 'var(--space-2)',
+  },
+
+  // Download location styles
+  downloadLocationRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-2)',
+    padding: 'var(--space-2) var(--space-3)',
+    backgroundColor: 'var(--bg-app)',
+    borderRadius: 'var(--radius-md)',
+    border: '1px solid var(--border-default)',
+  },
+
+  downloadLocationPath: {
+    flex: 1,
+    fontSize: 'var(--text-sm)',
+    color: 'var(--text-secondary)',
+    fontFamily: 'var(--font-mono)',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  },
+
+  changeLocationBtn: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-1)',
+    padding: 'var(--space-1) var(--space-2)',
+    backgroundColor: 'var(--bg-card)',
+    border: '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-sm)',
+    fontSize: 'var(--text-xs)',
+    color: 'var(--text-secondary)',
+    cursor: 'pointer',
+    transition: 'all var(--transition-fast)',
+    flexShrink: 0,
   },
 };
 

@@ -4,7 +4,6 @@
  */
 
 import React from 'react';
-import { RotateCcw } from 'lucide-react';
 import { DashboardSection } from './DashboardSection';
 import { useDashboardDragDrop } from './useDashboardDragDrop';
 import { PriorityList } from './PriorityList';
@@ -44,7 +43,6 @@ export function UnifiedDashboardGrid({
 }: UnifiedDashboardGridProps) {
   const {
     sectionOrder,
-    collapsedSections,
     draggedItem,
     dragOverItem,
     handleDragStart,
@@ -52,8 +50,6 @@ export function UnifiedDashboardGrid({
     handleDragOver,
     handleDragLeave,
     handleDrop,
-    toggleCollapsed,
-    resetLayout,
   } = useDashboardDragDrop();
 
   // Render section content based on ID
@@ -90,29 +86,10 @@ export function UnifiedDashboardGrid({
     return SECTIONS.find(s => s.id === id);
   };
 
-  // Check if layout has been customized
-  const isCustomized = React.useMemo(() => {
-    const defaultOrder = ['priority', 'notifications', 'recommendations', 'insights'];
-    const orderChanged = sectionOrder.some((id, i) => id !== defaultOrder[i]);
-    const hasCollapsed = collapsedSections.size > 0;
-    return orderChanged || hasCollapsed;
-  }, [sectionOrder, collapsedSections]);
-
   return (
     <div style={styles.wrapper}>
       {/* 2x2 Grid */}
       <div style={styles.grid}>
-        {/* Reset button - floating in top right */}
-        {isCustomized && (
-          <button
-            style={styles.resetButton}
-            onClick={resetLayout}
-            title="Reset to default layout"
-          >
-            <RotateCcw size={12} />
-            <span>Reset</span>
-          </button>
-        )}
         {sectionOrder.map(sectionId => {
           const config = getSectionConfig(sectionId);
           if (!config) return null;
@@ -122,10 +99,8 @@ export function UnifiedDashboardGrid({
               key={sectionId}
               id={sectionId}
               title={config.title}
-              isCollapsed={collapsedSections.has(sectionId)}
               isDragging={draggedItem === sectionId}
               isDragOver={dragOverItem === sectionId}
-              onToggleCollapse={() => toggleCollapsed(sectionId)}
               onDragStart={(e) => handleDragStart(e, sectionId)}
               onDragEnd={handleDragEnd}
               onDragOver={(e) => handleDragOver(e, sectionId)}
@@ -146,32 +121,16 @@ const styles: Record<string, React.CSSProperties> = {
     position: 'relative',
   },
 
-  resetButton: {
-    position: 'absolute',
-    top: '-28px',
-    right: '0',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '4px',
-    padding: '4px 8px',
-    background: 'var(--bg-card)',
-    border: '1px solid var(--border-default)',
-    borderRadius: 'var(--radius-sm)',
-    cursor: 'pointer',
-    color: 'var(--text-muted)',
-    fontSize: '11px',
-    transition: 'all var(--transition-fast)',
-    zIndex: 5,
-  },
-
   grid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(2, 1fr)',
-    gridTemplateRows: 'auto auto',
+    gridTemplateRows: 'repeat(2, 1fr)',
     columnGap: 'var(--space-4)',
     rowGap: 'var(--space-4)',
     width: '100%',
-    alignItems: 'stretch',
+    // Fill available vertical space: viewport - header(~80px) - stats(~100px) - spacing(~120px)
+    height: 'calc(100vh - 300px)',
+    minHeight: '400px',
   },
 };
 

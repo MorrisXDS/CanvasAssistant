@@ -8,6 +8,7 @@
 
 import { EventEmitter } from 'events';
 import { Database } from '../l1-persistence/Database';
+import { isCanvasField } from './CanvasFieldMappings';
 
 export interface SyncConflict {
   id: string;
@@ -36,23 +37,6 @@ export interface SyncPreference {
   preferCanvas: boolean;
   createdAt: string;
 }
-
-// Fields that Canvas provides for each entity type
-const CANVAS_PROVIDED_FIELDS: Record<string, string[]> = {
-  courses: [
-    'external_id', 'code', 'name', 'current_grade', 'landing_page_url',
-    'syllabus_body', 'last_synced_at', 'enrollment_term_id'
-  ],
-  tasks: [
-    'external_id', 'source_type', 'course_id', 'title', 'description',
-    'due_at', 'unlock_at', 'points_possible', 'submission_types', 'is_completed'
-  ],
-  notifications: [
-    'source_type', 'source_id', 'course_id', 'title', 'message',
-    'message_html', 'url', 'priority_level', 'published_at',
-    'is_policy_related', 'policy_keywords'
-  ],
-};
 
 // Human-readable field labels
 const FIELD_LABELS: Record<string, string> = {
@@ -128,11 +112,11 @@ export class SyncConflictResolver extends EventEmitter {
   }
 
   /**
-   * Check if a field is provided by Canvas for an entity type
+   * Check if a field is provided by Canvas for an entity type.
+   * Delegates to CanvasFieldMappings for single source of truth.
    */
-  isCanvasField(entity: string, field: string): boolean {
-    const fields = CANVAS_PROVIDED_FIELDS[entity];
-    return fields ? fields.includes(field) : false;
+  isCanvasProvidedField(entity: string, field: string): boolean {
+    return isCanvasField(entity, field);
   }
 
   /**
@@ -194,9 +178,9 @@ export class SyncConflictResolver extends EventEmitter {
       }
 
       const localValue = localRecord[field];
-      const isCanvasField = this.isCanvasField(tableName, field);
+      const isCanvasProvided = this.isCanvasProvidedField(tableName, field);
 
-      if (!isCanvasField) {
+      if (!isCanvasProvided) {
         // Canvas doesn't provide this field - always preserve local value
         preservedFields.push(field);
         continue;

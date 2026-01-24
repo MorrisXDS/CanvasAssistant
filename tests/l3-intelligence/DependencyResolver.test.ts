@@ -12,6 +12,26 @@ describe('DependencyResolver', () => {
 
   let courseId: number;
 
+  // Helper to create TaskForPriority with required fields
+  const createTask = (overrides: Partial<TaskForPriority> = {}): TaskForPriority => ({
+    id: 1,
+    courseId: 1,
+    title: 'Test Task',
+    dueAt: null,
+    unlockAt: null,
+    lockAt: null,
+    pointsPossible: null,
+    weight: null,
+    isCompleted: false,
+    isPinned: false,
+    grade: null,
+    submittedAt: null,
+    taskType: 'assignment',
+    taskGroupId: null,
+    submissionStatus: null,
+    ...overrides,
+  });
+
   beforeAll(() => {
     const testDir = path.dirname(testDbPath);
     if (!fs.existsSync(testDir)) {
@@ -67,19 +87,11 @@ describe('DependencyResolver', () => {
 
       const taskId = db.executeReadOne<{ id: number }>("SELECT id FROM tasks WHERE external_id = 'task1'")!.id;
 
-      const task: TaskForPriority = {
+      const task = createTask({
         id: taskId,
         courseId,
         title: 'Standalone Task',
-        dueAt: null,
-        unlockAt: null,
-        pointsPossible: null,
-        weight: null,
-        isCompleted: false,
-        isPinned: false,
-        grade: null,
-        submittedAt: null,
-      };
+      });
 
       const result = resolver.resolve(task, courseId);
 
@@ -125,19 +137,11 @@ describe('DependencyResolver', () => {
         published: 1,
       });
 
-      const task: TaskForPriority = {
+      const task = createTask({
         id: taskId,
         courseId,
         title: 'Assignment 1',
-        dueAt: null,
-        unlockAt: null,
-        pointsPossible: null,
-        weight: null,
-        isCompleted: false,
-        isPinned: false,
-        grade: null,
-        submittedAt: null,
-      };
+      });
 
       const result = resolver.resolve(task, courseId);
 
@@ -184,19 +188,11 @@ describe('DependencyResolver', () => {
         published: 1,
       });
 
-      const task: TaskForPriority = {
+      const task = createTask({
         id: taskId,
         courseId,
         title: 'First Task',
-        dueAt: null,
-        unlockAt: null,
-        pointsPossible: null,
-        weight: null,
-        isCompleted: false,
-        isPinned: false,
-        grade: null,
-        submittedAt: null,
-      };
+      });
 
       const result = resolver.resolve(task, courseId);
 
@@ -247,19 +243,11 @@ describe('DependencyResolver', () => {
         published: 1,
       });
 
-      const task: TaskForPriority = {
+      const task = createTask({
         id: dependentTaskId,
         courseId,
         title: 'Dependent Task',
-        dueAt: null,
-        unlockAt: null,
-        pointsPossible: null,
-        weight: null,
-        isCompleted: false,
-        isPinned: false,
-        grade: null,
-        submittedAt: null,
-      };
+      });
 
       const result = resolver.resolve(task, courseId);
 
@@ -314,19 +302,11 @@ describe('DependencyResolver', () => {
         published: 1,
       });
 
-      const task: TaskForPriority = {
+      const task = createTask({
         id: nextTaskId,
         courseId,
         title: 'Next Task',
-        dueAt: null,
-        unlockAt: null,
-        pointsPossible: null,
-        weight: null,
-        isCompleted: false,
-        isPinned: false,
-        grade: null,
-        submittedAt: null,
-      };
+      });
 
       const result = resolver.resolve(task, courseId);
 
@@ -355,32 +335,8 @@ describe('DependencyResolver', () => {
       const taskB = db.executeReadOne<{ id: number }>("SELECT id FROM tasks WHERE external_id = 'task-b'")!;
 
       const tasks: TaskForPriority[] = [
-        {
-          id: taskA.id,
-          courseId,
-          title: 'Task A',
-          dueAt: null,
-          unlockAt: null,
-          pointsPossible: null,
-          weight: null,
-          isCompleted: false,
-          isPinned: false,
-          grade: null,
-          submittedAt: null,
-        },
-        {
-          id: taskB.id,
-          courseId,
-          title: 'Task B',
-          dueAt: null,
-          unlockAt: null,
-          pointsPossible: null,
-          weight: null,
-          isCompleted: false,
-          isPinned: false,
-          grade: null,
-          submittedAt: null,
-        },
+        createTask({ id: taskA.id, courseId, title: 'Task A' }),
+        createTask({ id: taskB.id, courseId, title: 'Task B' }),
       ];
 
       const results = resolver.resolveAll(tasks, courseId);
@@ -506,19 +462,11 @@ describe('DependencyResolver', () => {
         published: 1,
       });
 
-      const task: TaskForPriority = {
+      const task = createTask({
         id: taskId,
         courseId,
         title: 'Target Task',
-        dueAt: null,
-        unlockAt: null,
-        pointsPossible: null,
-        weight: null,
-        isCompleted: false,
-        isPinned: false,
-        grade: null,
-        submittedAt: null,
-      };
+      });
 
       const result = resolver.resolve(task, courseId);
 
@@ -567,19 +515,11 @@ describe('DependencyResolver', () => {
         published: 1,
       });
 
-      const task: TaskForPriority = {
+      const task = createTask({
         id: nextTaskId,
         courseId,
         title: 'Next Task',
-        dueAt: null,
-        unlockAt: null,
-        pointsPossible: null,
-        weight: null,
-        isCompleted: false,
-        isPinned: false,
-        grade: null,
-        submittedAt: null,
-      };
+      });
 
       const result = resolver.resolve(task, courseId);
 

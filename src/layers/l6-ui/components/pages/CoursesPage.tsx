@@ -20,9 +20,12 @@ import {
   Eye,
   EyeOff,
   Palette,
+  GripVertical,
+  RotateCcw,
 } from 'lucide-react';
 import { useStore, getCachedCourseGrades } from '../../../l5-presentation/store';
 import { Card, Badge, InfoTrigger } from '../shared';
+import { useCourseDragDrop } from './useCourseDragDrop';
 import type { Course } from '../../../l5-presentation/types';
 
 // Course color palette
@@ -143,6 +146,21 @@ export function CoursesPage() {
     saveViewMode('courses', mode);
   };
   const [pinnedCourses, setPinnedCourses] = useState<Set<number>>(() => loadPinnedCourses());
+
+  // Drag-and-drop reordering
+  const courseIds = useMemo(() => courses.map((c) => c.id), [courses]);
+  const {
+    sortByCustomOrder,
+    draggedCourseId,
+    dragOverCourseId,
+    handleDragStart,
+    handleDragOver,
+    handleDragLeave,
+    handleDragEnd,
+    handleDrop,
+    resetOrder,
+    hasCustomOrder,
+  } = useCourseDragDrop(courseIds);
 
   // Color picker state
   const [colorPickerCourseId, setColorPickerCourseId] = useState<number | null>(null);
@@ -282,17 +300,28 @@ export function CoursesPage() {
       result = result.filter((c) => getCourseType(c) === typeFilter);
     }
 
-    // Sort: pinned first, then alphabetically
+    // Sort: apply custom order first, then pinned first, then alphabetically
+    const orderedIds = sortByCustomOrder(result.map((c) => c.id));
+    const orderMap = new Map(orderedIds.map((id, index) => [id, index]));
+
     result.sort((a, b) => {
+      // Pinned courses always first
       const aPinned = pinnedCourses.has(a.id);
       const bPinned = pinnedCourses.has(b.id);
       if (aPinned && !bPinned) return -1;
       if (!aPinned && bPinned) return 1;
+
+      // Then by custom order (if exists)
+      const orderA = orderMap.get(a.id) ?? Infinity;
+      const orderB = orderMap.get(b.id) ?? Infinity;
+      if (orderA !== orderB) return orderA - orderB;
+
+      // Finally alphabetically
       return a.code.localeCompare(b.code);
     });
 
     return result;
-  }, [courses, pinnedCourses, searchQuery, gradeFilter, prefixFilter, typeFilter, showHidden]);
+  }, [courses, pinnedCourses, searchQuery, gradeFilter, prefixFilter, typeFilter, showHidden, sortByCustomOrder]);
 
   const pinnedCount = filteredCourses.filter((c) => pinnedCourses.has(c.id)).length;
   const hiddenCount = courses.filter((c) => c.isHidden).length;
@@ -527,6 +556,13 @@ export function CoursesPage() {
                 onColorChange={handleColorChange}
                 onColorInputChange={setCustomColor}
                 onColorPickerClose={closeColorPicker}
+                isDragging={draggedCourseId === course.id}
+                isDragOver={dragOverCourseId === course.id}
+                onDragStart={(e) => handleDragStart(e, course.id)}
+                onDragEnd={handleDragEnd}
+                onDragOver={(e) => handleDragOver(e, course.id)}
+                onDragLeave={handleDragLeave}
+                onDrop={(e) => handleDrop(e, course.id)}
               />
             );
           })}
@@ -605,6 +641,14 @@ interface CourseCardProps {
   onColorChange?: (courseId: number, color: string) => void;
   onColorInputChange?: (value: string) => void;
   onColorPickerClose?: () => void;
+  // Drag-and-drop props
+  isDragging?: boolean;
+  isDragOver?: boolean;
+  onDragStart?: (e: React.DragEvent) => void;
+  onDragEnd?: (e: React.DragEvent) => void;
+  onDragOver?: (e: React.DragEvent) => void;
+  onDragLeave?: () => void;
+  onDrop?: (e: React.DragEvent) => void;
 }
 
 function CourseGridCard({
@@ -622,6 +666,13 @@ function CourseGridCard({
   onColorChange,
   onColorInputChange,
   onColorPickerClose,
+  isDragging,
+  isDragOver,
+  onDragStart,
+  onDragEnd,
+  onDragOver,
+  onDragLeave,
+  onDrop,
 }: CourseCardProps) {
   const color = getCourseColor(course.id, course.color);
   const colorPickerRef = useRef<HTMLDivElement>(null);
@@ -641,7 +692,21 @@ function CourseGridCard({
   }, [showColorPicker, onColorPickerClose]);
 
   return (
-    <div style={styles.gridCard} onClick={onClick}>
+    <div
+      style={{
+        ...styles.gridCard,
+        opacity: isDragging ? 0.5 : 1,
+        boxShadow: isDragOver ? '0 0 0 2px var(--color-blue)' : 'var(--shadow-card)',
+        transition: 'box-shadow 150ms ease, opacity 150ms ease',
+      }}
+      onClick={onClick}
+      draggable
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+    >
       {/* Color accent bar - click to change color */}
       <div
         style={{ ...styles.colorBar, backgroundColor: color, cursor: 'pointer', position: 'relative' }}
@@ -714,6 +779,14 @@ function CourseGridCard({
         {/* Header row - Grid row 1 */}
         <div style={styles.gridCardHeader}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+            {/* Drag handle */}
+            <div
+              style={styles.dragHandle}
+              title="Drag to reorder"
+              data-drag-handle
+            >
+              <GripVertical size={14} />
+            </div>
             <span style={{ ...styles.courseCodeBadge, backgroundColor: color }}>
               {getShortCode(course.code)}
             </span>
@@ -1316,6 +1389,34 @@ const styles: Record<string, React.CSSProperties> = {
     transition: 'all var(--transition-fast)',
   },
 
+  resetOrderButton: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-1)',
+    height: '36px',
+    padding: '0 var(--space-3)',
+    fontSize: 'var(--text-xs)',
+    fontWeight: 'var(--font-medium)',
+    color: 'var(--text-secondary)',
+    backgroundColor: 'var(--bg-card)',
+    border: '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-md)',
+    cursor: 'pointer',
+    transition: 'all var(--transition-fast)',
+  },
+
+  dragHandle: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: '4px',
+    borderRadius: 'var(--radius-sm)',
+    color: 'var(--text-muted)',
+    cursor: 'grab',
+    opacity: 0,
+    transition: 'opacity var(--transition-fast)',
+  },
+
   // Grid View Styles - uses CSS Grid for card alignment, scales proportionally with viewport
   grid: {
     display: 'grid',
@@ -1612,5 +1713,24 @@ const styles: Record<string, React.CSSProperties> = {
     color: 'var(--text-secondary)',
   },
 };
+
+// Inject hover styles for drag handle visibility
+if (typeof document !== 'undefined') {
+  const styleId = 'course-card-drag-styles';
+  if (!document.getElementById(styleId)) {
+    const style = document.createElement('style');
+    style.id = styleId;
+    style.textContent = `
+      [data-drag-handle] {
+        opacity: 0 !important;
+      }
+      div:hover > div > div > [data-drag-handle],
+      div:hover > div > [data-drag-handle] {
+        opacity: 1 !important;
+      }
+    `;
+    document.head.appendChild(style);
+  }
+}
 
 export default CoursesPage;

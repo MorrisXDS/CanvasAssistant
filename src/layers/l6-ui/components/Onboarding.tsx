@@ -1,9 +1,9 @@
 /**
  * Onboarding Component
- * First-run experience for token setup
+ * First-run experience for token setup and initial configuration
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   GraduationCap,
   BarChart3,
@@ -12,6 +12,11 @@ import {
   Loader2,
   CheckCircle,
   AlertTriangle,
+  ChevronRight,
+  Settings,
+  BookOpen,
+  Target,
+  RefreshCw,
 } from 'lucide-react';
 import { Card } from './shared';
 
@@ -19,21 +24,74 @@ export interface OnboardingProps {
   onComplete: () => void;
 }
 
-type Step = 'welcome' | 'token' | 'validating' | 'success' | 'error';
+type Step = 'welcome' | 'token' | 'validating' | 'success' | 'config-academic' | 'config-sync' | 'error';
+
+interface CourseForSetup {
+  id: number;
+  code: string;
+  name: string;
+  color: string | null;
+}
+
+// Storage keys for settings (same as SettingsModal)
+const STORAGE_KEYS = {
+  SYNC_PREFS: 'syncPreferences',
+  ACADEMIC: 'academicSettings',
+};
 
 export function Onboarding({ onComplete }: OnboardingProps) {
   const [step, setStep] = useState<Step>('welcome');
   const [token, setToken] = useState('');
+  const [canvasUrl, setCanvasUrl] = useState('https://utoronto.instructure.com');
   const [error, setError] = useState<string | null>(null);
   const [userName, setUserName] = useState<string | null>(null);
 
+  // Configuration state
+  const [targetGrade, setTargetGrade] = useState(80);
+  const [autoSync, setAutoSync] = useState(true);
+  const [syncInterval, setSyncInterval] = useState(30);
+
+  // Save settings to localStorage
+  const saveSettings = () => {
+    // Save academic settings
+    localStorage.setItem(STORAGE_KEYS.ACADEMIC, JSON.stringify({
+      defaultTargetGrade: targetGrade,
+      termSelection: 'auto',
+    }));
+
+    // Save sync preferences
+    localStorage.setItem(STORAGE_KEYS.SYNC_PREFS, JSON.stringify({
+      autoSyncEnabled: autoSync,
+      autoSyncInterval: syncInterval,
+      syncFiles: true,
+      syncAnnouncements: true,
+      saveHtmlContent: true,
+      htmlUrlRewriting: 'local',
+      downloadImages: true,
+      downloadLinkedFiles: true,
+    }));
+  };
+
   const handleTokenSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!canvasUrl.trim()) {
+      setError('Please enter your Canvas URL');
+      return;
+    }
 
     if (!token.trim()) {
       setError('Please enter your Canvas API token');
       return;
     }
+
+    // Normalize URL
+    let baseUrl = canvasUrl.trim();
+    if (!baseUrl.startsWith('http://') && !baseUrl.startsWith('https://')) {
+      baseUrl = 'https://' + baseUrl;
+    }
+    // Remove trailing slash
+    baseUrl = baseUrl.replace(/\/+$/, '');
 
     setStep('validating');
     setError(null);
@@ -51,7 +109,6 @@ export function Onboarding({ onComplete }: OnboardingProps) {
       }
 
       // Validate token with Canvas
-      const baseUrl = 'https://utoronto.instructure.com';
       const result = await api.validateToken(token.trim(), baseUrl);
 
       if (result.valid) {
@@ -64,10 +121,10 @@ export function Onboarding({ onComplete }: OnboardingProps) {
         setUserName(result.user?.name ?? null);
         setStep('success');
 
-        // Auto-proceed after success
+        // Proceed to configuration after brief delay
         setTimeout(() => {
-          onComplete();
-        }, 2000);
+          setStep('config-academic');
+        }, 1500);
       } else {
         setError(result.error || 'Invalid token. Please check and try again.');
         setStep('error');
@@ -82,6 +139,35 @@ export function Onboarding({ onComplete }: OnboardingProps) {
     setStep('token');
     setError(null);
   };
+
+  const handleSkipConfig = () => {
+    saveSettings();
+    onComplete();
+  };
+
+  const handleNextStep = () => {
+    if (step === 'config-academic') {
+      setStep('config-sync');
+    } else if (step === 'config-sync') {
+      saveSettings();
+      onComplete();
+    }
+  };
+
+  const handlePrevStep = () => {
+    if (step === 'config-sync') {
+      setStep('config-academic');
+    }
+  };
+
+  // Get current step number for progress indicator
+  const getStepNumber = () => {
+    if (step === 'config-academic') return 1;
+    if (step === 'config-sync') return 2;
+    return 0;
+  };
+
+  const totalConfigSteps = 2;
 
   return (
     <div style={styles.container}>
@@ -142,6 +228,24 @@ export function Onboarding({ onComplete }: OnboardingProps) {
               )}
 
               <div style={styles.inputGroup}>
+                <label style={styles.label} htmlFor="canvasUrl">
+                  Canvas URL
+                </label>
+                <input
+                  id="canvasUrl"
+                  type="text"
+                  value={canvasUrl}
+                  onChange={(e) => setCanvasUrl(e.target.value)}
+                  placeholder="e.g., canvas.university.edu"
+                  style={styles.input}
+                  autoFocus
+                />
+                <span style={styles.inputHint}>
+                  Your institution&apos;s Canvas website address
+                </span>
+              </div>
+
+              <div style={styles.inputGroup}>
                 <label style={styles.label} htmlFor="token">
                   Access Token
                 </label>
@@ -152,7 +256,6 @@ export function Onboarding({ onComplete }: OnboardingProps) {
                   onChange={(e) => setToken(e.target.value)}
                   placeholder="Paste your Canvas token here..."
                   style={styles.input}
-                  autoFocus
                 />
               </div>
 
@@ -207,8 +310,148 @@ export function Onboarding({ onComplete }: OnboardingProps) {
               </div>
               <h2 style={styles.stepTitle}>Connected!</h2>
               <p style={styles.stepDescription}>
-                {userName ? `Welcome, ${userName}!` : 'Welcome!'} Taking you to your dashboard...
+                {userName ? `Welcome, ${userName}!` : 'Welcome!'} Let&apos;s set up a few things...
               </p>
+            </div>
+          </Card>
+        )}
+
+        {/* Academic Settings Step */}
+        {step === 'config-academic' && (
+          <Card padding="lg">
+            <div style={styles.stepContent}>
+              <div style={styles.configHeader}>
+                <div style={styles.configIcon}>
+                  <Target size={24} color="var(--color-navy)" />
+                </div>
+                <div style={styles.stepProgress}>
+                  Step {getStepNumber()} of {totalConfigSteps}
+                </div>
+              </div>
+              <h2 style={styles.stepTitle}>Set Your Target Grade</h2>
+              <p style={styles.stepDescription}>
+                This helps prioritize your assignments based on your goals.
+                You can change this per-course later.
+              </p>
+
+              <div style={styles.gradeSliderContainer}>
+                <input
+                  type="range"
+                  min="50"
+                  max="100"
+                  step="5"
+                  value={targetGrade}
+                  onChange={(e) => setTargetGrade(Number(e.target.value))}
+                  style={styles.slider}
+                />
+                <div style={styles.gradeDisplay}>
+                  <span style={styles.gradeValue}>{targetGrade}%</span>
+                  <span style={styles.gradeLabel}>
+                    {targetGrade >= 90 ? 'A+' : targetGrade >= 85 ? 'A' : targetGrade >= 80 ? 'A-' : targetGrade >= 77 ? 'B+' : targetGrade >= 73 ? 'B' : targetGrade >= 70 ? 'B-' : targetGrade >= 67 ? 'C+' : targetGrade >= 63 ? 'C' : 'C-'}
+                  </span>
+                </div>
+              </div>
+
+              <div style={styles.buttonRow}>
+                <button
+                  type="button"
+                  style={styles.skipButton}
+                  onClick={handleSkipConfig}
+                >
+                  Skip Setup
+                </button>
+                <button
+                  type="button"
+                  style={styles.primaryButton}
+                  onClick={handleNextStep}
+                >
+                  Continue
+                  <ChevronRight size={16} />
+                </button>
+              </div>
+            </div>
+          </Card>
+        )}
+
+        {/* Sync Settings Step */}
+        {step === 'config-sync' && (
+          <Card padding="lg">
+            <div style={styles.stepContent}>
+              <div style={styles.configHeader}>
+                <div style={styles.configIcon}>
+                  <RefreshCw size={24} color="var(--color-navy)" />
+                </div>
+                <div style={styles.stepProgress}>
+                  Step {getStepNumber()} of {totalConfigSteps}
+                </div>
+              </div>
+              <h2 style={styles.stepTitle}>Auto-Sync Preferences</h2>
+              <p style={styles.stepDescription}>
+                Keep your data up to date automatically in the background.
+              </p>
+
+              <div style={styles.toggleContainer}>
+                <div style={styles.toggleRow}>
+                  <div style={styles.toggleText}>
+                    <span style={styles.toggleLabel}>Enable Auto-Sync</span>
+                    <span style={styles.toggleDesc}>Sync data automatically</span>
+                  </div>
+                  <button
+                    type="button"
+                    style={{
+                      ...styles.toggleSwitch,
+                      backgroundColor: autoSync ? 'var(--color-navy)' : 'var(--color-gray-300)',
+                    }}
+                    onClick={() => setAutoSync(!autoSync)}
+                  >
+                    <div
+                      style={{
+                        ...styles.toggleKnob,
+                        transform: autoSync ? 'translateX(20px)' : 'translateX(0)',
+                      }}
+                    />
+                  </button>
+                </div>
+
+                {autoSync && (
+                  <div style={styles.intervalSelector}>
+                    <label style={styles.intervalLabel}>Sync every:</label>
+                    <select
+                      value={syncInterval}
+                      onChange={(e) => setSyncInterval(Number(e.target.value))}
+                      style={styles.select}
+                    >
+                      <option value={15}>15 minutes</option>
+                      <option value={30}>30 minutes</option>
+                      <option value={60}>1 hour</option>
+                      <option value={120}>2 hours</option>
+                    </select>
+                  </div>
+                )}
+              </div>
+
+              <div style={styles.recommendedNote}>
+                <Settings size={14} />
+                <span>You can adjust these and more in Settings anytime.</span>
+              </div>
+
+              <div style={styles.buttonRow}>
+                <button
+                  type="button"
+                  style={styles.secondaryButton}
+                  onClick={handlePrevStep}
+                >
+                  Back
+                </button>
+                <button
+                  type="button"
+                  style={styles.primaryButton}
+                  onClick={handleNextStep}
+                >
+                  <CheckCircle size={16} />
+                  Finish Setup
+                </button>
+              </div>
             </div>
           </Card>
         )}
@@ -309,6 +552,13 @@ const styles: Record<string, React.CSSProperties> = {
     transition: 'border-color var(--transition-fast)',
   },
 
+  inputHint: {
+    display: 'block',
+    fontSize: 'var(--text-xs)',
+    color: 'var(--text-muted)',
+    marginTop: 'var(--space-1)',
+  },
+
   helpBox: {
     textAlign: 'left',
     padding: 'var(--space-3)',
@@ -338,6 +588,9 @@ const styles: Record<string, React.CSSProperties> = {
   },
 
   primaryButton: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-2)',
     padding: 'var(--space-3) var(--space-6)',
     backgroundColor: 'var(--color-navy)',
     color: 'var(--text-inverse)',
@@ -398,6 +651,161 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 'var(--text-xs)',
     color: 'var(--text-muted)',
     marginTop: 'var(--space-6)',
+  },
+
+  // Configuration steps styles
+  configHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 'var(--space-4)',
+  },
+
+  configIcon: {
+    width: '48px',
+    height: '48px',
+    borderRadius: '50%',
+    backgroundColor: 'var(--color-blue-50)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  stepProgress: {
+    fontSize: 'var(--text-xs)',
+    color: 'var(--text-muted)',
+    fontWeight: 'var(--font-medium)',
+  },
+
+  gradeSliderContainer: {
+    marginBottom: 'var(--space-6)',
+  },
+
+  slider: {
+    width: '100%',
+    height: '8px',
+    borderRadius: '4px',
+    background: 'linear-gradient(to right, var(--color-gray-200), var(--color-blue), var(--color-navy))',
+    outline: 'none',
+    cursor: 'pointer',
+  },
+
+  gradeDisplay: {
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'baseline',
+    gap: 'var(--space-2)',
+    marginTop: 'var(--space-3)',
+  },
+
+  gradeValue: {
+    fontSize: 'var(--text-3xl)',
+    fontWeight: 'var(--font-bold)',
+    color: 'var(--color-navy)',
+  },
+
+  gradeLabel: {
+    fontSize: 'var(--text-lg)',
+    color: 'var(--text-secondary)',
+  },
+
+  toggleContainer: {
+    marginBottom: 'var(--space-4)',
+    textAlign: 'left',
+  },
+
+  toggleRow: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 'var(--space-3)',
+    backgroundColor: 'var(--bg-app)',
+    borderRadius: 'var(--radius-md)',
+    marginBottom: 'var(--space-2)',
+  },
+
+  toggleText: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '2px',
+  },
+
+  toggleLabel: {
+    fontSize: 'var(--text-sm)',
+    fontWeight: 'var(--font-medium)',
+    color: 'var(--text-primary)',
+  },
+
+  toggleDesc: {
+    fontSize: 'var(--text-xs)',
+    color: 'var(--text-muted)',
+  },
+
+  toggleSwitch: {
+    position: 'relative',
+    width: '44px',
+    height: '24px',
+    borderRadius: '12px',
+    border: 'none',
+    cursor: 'pointer',
+    transition: 'background-color var(--transition-fast)',
+  },
+
+  toggleKnob: {
+    position: 'absolute',
+    top: '2px',
+    left: '2px',
+    width: '20px',
+    height: '20px',
+    borderRadius: '50%',
+    backgroundColor: 'white',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+    transition: 'transform var(--transition-fast)',
+  },
+
+  intervalSelector: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-2)',
+    padding: 'var(--space-3)',
+    backgroundColor: 'var(--bg-app)',
+    borderRadius: 'var(--radius-md)',
+  },
+
+  intervalLabel: {
+    fontSize: 'var(--text-sm)',
+    color: 'var(--text-secondary)',
+  },
+
+  select: {
+    flex: 1,
+    padding: 'var(--space-2)',
+    border: '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-sm)',
+    backgroundColor: 'var(--bg-card)',
+    color: 'var(--text-primary)',
+    fontSize: 'var(--text-sm)',
+  },
+
+  recommendedNote: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 'var(--space-2)',
+    fontSize: 'var(--text-xs)',
+    color: 'var(--text-muted)',
+    marginBottom: 'var(--space-4)',
+  },
+
+  skipButton: {
+    padding: 'var(--space-3) var(--space-6)',
+    backgroundColor: 'transparent',
+    color: 'var(--text-muted)',
+    border: 'none',
+    borderRadius: 'var(--radius-md)',
+    fontSize: 'var(--text-sm)',
+    cursor: 'pointer',
+    transition: 'all var(--transition-fast)',
   },
 };
 

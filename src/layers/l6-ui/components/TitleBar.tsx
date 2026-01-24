@@ -85,7 +85,7 @@ const styles: Record<string, React.CSSProperties> = {
   sidebarSpacer: {
     height: '100%',
     backgroundColor: 'var(--bg-sidebar)',
-    transition: 'width 200ms ease',
+    transition: 'width 250ms cubic-bezier(0.33, 1, 0.68, 1)',
     // @ts-expect-error - webkit property for electron
     WebkitAppRegion: 'drag',
   },

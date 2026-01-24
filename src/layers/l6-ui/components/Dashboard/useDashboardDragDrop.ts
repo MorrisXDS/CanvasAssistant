@@ -127,9 +127,9 @@ export function useDashboardDragDrop(): DashboardDragDropState & DashboardDragDr
       const targetIndex = newOrder.indexOf(targetId);
 
       if (draggedIndex !== -1 && targetIndex !== -1) {
-        // Remove dragged item and insert at target position
-        const [removed] = newOrder.splice(draggedIndex, 1);
-        newOrder.splice(targetIndex, 0, removed);
+        // Swap positions instead of insert
+        newOrder[draggedIndex] = targetId;
+        newOrder[targetIndex] = draggedItem;
       }
 
       return newOrder;

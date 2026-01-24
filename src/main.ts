@@ -20,6 +20,9 @@ import crypto from 'crypto';
 
 // L3 - Intelligence
 import { PriorityOrchestrator } from './layers/l3-intelligence/orchestration/PriorityOrchestrator';
+import { RecommendationOrchestrator } from './layers/l3-intelligence/orchestration/RecommendationOrchestrator';
+import { InsightOrchestrator } from './layers/l3-intelligence/orchestration/InsightOrchestrator';
+import { WorkloadOrchestrator } from './layers/l3-intelligence/orchestration/WorkloadOrchestrator';
 
 // L4 - Controller
 import { CommandDispatcher } from './layers/l4-controller';
@@ -31,6 +34,13 @@ const METRICS_DB_PATH = path.join(APP_DATA_DIR, 'metrics.db');
 const LOG_DIR = path.join(APP_DATA_DIR, 'logs');
 const FILES_DIR = path.join(APP_DATA_DIR, 'files');
 const CREDENTIAL_FILE = path.join(APP_DATA_DIR, '.credentials');
+const CRASH_FLAG_FILE = path.join(APP_DATA_DIR, '.crash_flag');
+const SESSION_STATE_FILE = path.join(APP_DATA_DIR, '.session_state');
+
+// Auto-sync state
+let autoSyncInterval: NodeJS.Timeout | null = null;
+let lastFocusLostAt: number | null = null;
+const FOCUS_RESTORE_SYNC_THRESHOLD_MS = 60000; // 1 minute
 
 // Initialize Layer 0 utilities
 const logger = new Logger({ logDir: LOG_DIR, enableConsole: true });
@@ -82,6 +92,9 @@ const migrationRunner = new MigrationRunner(database);
 // Note: CommandDispatcher is initialized lazily after database.initialize()
 let commandDispatcher: CommandDispatcher | null = null;
 let priorityOrchestrator: PriorityOrchestrator | null = null;
+let recommendationOrchestrator: RecommendationOrchestrator | null = null;
+let insightOrchestrator: InsightOrchestrator | null = null;
+let workloadOrchestrator: WorkloadOrchestrator | null = null;
 
 // Initialize Layer 2 daemon components (lazy-init for CanvasClient/SyncEngine)
 const rateLimiter = new RateLimiter({ maxConcurrent: 3, minDelayMs: 100 });
@@ -103,10 +116,10 @@ function createWindow() {
   logger.info('Creating main window...');
 
   mainWindow = new BrowserWindow({
-    width: 1280,
-    height: 800,
-    minWidth: 900,
-    minHeight: 600,
+    width: 1536,
+    height: 960,
+    minWidth: 1080,
+    minHeight: 720,
     frame: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -119,10 +132,20 @@ function createWindow() {
   mainWindow.on('focus', () => {
     systemMonitor.setWindowFocused(true);
     logger.debug('Window focused');
+
+    // Trigger sync if away for more than threshold
+    if (lastFocusLostAt && Date.now() - lastFocusLostAt > FOCUS_RESTORE_SYNC_THRESHOLD_MS) {
+      // Debounce: wait 500ms before syncing
+      setTimeout(() => {
+        triggerFocusRestoreSync();
+      }, 500);
+    }
+    lastFocusLostAt = null;
   });
 
   mainWindow.on('blur', () => {
     systemMonitor.setWindowFocused(false);
+    lastFocusLostAt = Date.now();
     logger.debug('Window unfocused');
   });
 
@@ -637,6 +660,8 @@ function registerIpcHandlers(): void {
   });
 
   ipcMain.handle('data:getNotifications', () => {
+    // Only return notifications from courses that are currently synced
+    // (exist in courses table) or system notifications (course_id is null)
     const rows = database.executeRead<{
       id: number;
       source_type: string;
@@ -648,7 +673,12 @@ function registerIpcHandlers(): void {
       published_at: string;
       dismissed_at: string | null;
       url: string | null;
-    }>('SELECT * FROM notifications ORDER BY published_at DESC');
+    }>(`
+      SELECT n.* FROM notifications n
+      LEFT JOIN courses c ON n.course_id = c.id
+      WHERE n.course_id IS NULL OR c.id IS NOT NULL
+      ORDER BY n.published_at DESC
+    `);
 
     return rows.map((row) => ({
       id: row.id,
@@ -1181,19 +1211,57 @@ function registerIpcHandlers(): void {
 
   // Files directory handlers
   ipcMain.handle('files:getDirectory', () => {
-    return { path: FILES_DIR };
+    return { path: fileDownloadManager.getBaseDir() };
   });
 
   ipcMain.handle('files:openDirectory', () => {
     const { shell } = require('electron');
+    const currentDir = fileDownloadManager.getBaseDir();
 
     // Ensure directory exists
-    if (!fs.existsSync(FILES_DIR)) {
-      fs.mkdirSync(FILES_DIR, { recursive: true });
+    if (!fs.existsSync(currentDir)) {
+      fs.mkdirSync(currentDir, { recursive: true });
     }
 
-    shell.openPath(FILES_DIR);
+    shell.openPath(currentDir);
     return { success: true };
+  });
+
+  // Select a new download directory via system dialog
+  ipcMain.handle('files:selectDirectory', async () => {
+    if (!mainWindow) {
+      return { success: false, error: 'No window available' };
+    }
+
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Select Download Location',
+      defaultPath: fileDownloadManager.getBaseDir(),
+      properties: ['openDirectory', 'createDirectory'],
+    });
+
+    if (result.canceled || !result.filePaths[0]) {
+      return { success: false, error: 'Selection cancelled' };
+    }
+
+    const selectedPath = result.filePaths[0];
+    return { success: true, data: { path: selectedPath } };
+  });
+
+  // Set the download directory (persists via localStorage on renderer side)
+  ipcMain.handle('files:setDirectory', (_event, newPath: string) => {
+    try {
+      // Validate the path exists or can be created
+      if (!fs.existsSync(newPath)) {
+        fs.mkdirSync(newPath, { recursive: true });
+      }
+
+      fileDownloadManager.updateBaseDir(newPath);
+      logger.info(`Download directory changed to: ${newPath}`);
+      return { success: true };
+    } catch (error) {
+      logger.error(`Failed to set download directory: ${error}`);
+      return { success: false, error: String(error) };
+    }
   });
 
   // Save file with dialog
@@ -1256,6 +1324,21 @@ function registerIpcHandlers(): void {
       database.transaction(() => {
         // Clear all data tables in dependency order (children first, parents last)
         // Tables with foreign keys to other tables must be deleted before their parents
+
+        // Intelligence/analytics tables (reference tasks/courses)
+        database.executeWrite('DELETE FROM message_display_history', [], 'message_display_history');
+        database.executeWrite('DELETE FROM field_notification_suppressions', [], 'field_notification_suppressions');
+        database.executeWrite('DELETE FROM adaptive_weight_adjustments', [], 'adaptive_weight_adjustments');
+        database.executeWrite('DELETE FROM user_insights', [], 'user_insights');
+        database.executeWrite('DELETE FROM recommendations', [], 'recommendations');
+        database.executeWrite('DELETE FROM workload_snapshots', [], 'workload_snapshots');
+        database.executeWrite('DELETE FROM effort_estimations', [], 'effort_estimations');
+        database.executeWrite('DELETE FROM user_behavior_patterns', [], 'user_behavior_patterns');
+        database.executeWrite('DELETE FROM task_completion_events', [], 'task_completion_events');
+
+        // Content/file reference tables (reference resources/courses)
+        database.executeWrite('DELETE FROM html_exports', [], 'html_exports');
+        database.executeWrite('DELETE FROM content_file_references', [], 'content_file_references');
 
         // Policy-related child tables
         database.executeWrite('DELETE FROM grade_replacements', [], 'grade_replacements');
@@ -2173,6 +2256,250 @@ function registerIpcHandlers(): void {
     }
   });
 
+  // ============ Intelligence - Recommendations ============
+
+  ipcMain.handle('intelligence:getActiveRecommendations', () => {
+    if (!recommendationOrchestrator) {
+      return [];
+    }
+    try {
+      const recommendations = recommendationOrchestrator.getActiveRecommendations();
+      return recommendations.map((r) => ({
+        ...r,
+        validFrom: r.validFrom.toISOString(),
+        validUntil: r.validUntil.toISOString(),
+        dismissedAt: r.dismissedAt?.toISOString() ?? null,
+        actedOnAt: r.actedOnAt?.toISOString() ?? null,
+        createdAt: r.createdAt?.toISOString(),
+      }));
+    } catch (error) {
+      logger.error('Failed to get active recommendations', error as Error);
+      return [];
+    }
+  });
+
+  ipcMain.handle('intelligence:generateRecommendations', (_event, params?: { availableMinutes?: number }) => {
+    if (!recommendationOrchestrator) {
+      return [];
+    }
+    try {
+      const recommendations = recommendationOrchestrator.generateRecommendations(params?.availableMinutes);
+      return recommendations.map((r) => ({
+        ...r,
+        validFrom: r.validFrom.toISOString(),
+        validUntil: r.validUntil.toISOString(),
+        dismissedAt: r.dismissedAt?.toISOString() ?? null,
+        actedOnAt: r.actedOnAt?.toISOString() ?? null,
+        createdAt: r.createdAt?.toISOString(),
+      }));
+    } catch (error) {
+      logger.error('Failed to generate recommendations', error as Error);
+      return [];
+    }
+  });
+
+  ipcMain.handle('intelligence:dismissRecommendation', (_event, recommendationId: number) => {
+    if (!recommendationOrchestrator) {
+      return { success: false, error: 'Recommendation system not initialized' };
+    }
+    try {
+      const dismissed = recommendationOrchestrator.dismissRecommendation(recommendationId);
+      return { success: dismissed };
+    } catch (error) {
+      logger.error('Failed to dismiss recommendation', error as Error);
+      return { success: false, error: String(error) };
+    }
+  });
+
+  ipcMain.handle('intelligence:actOnRecommendation', (_event, recommendationId: number) => {
+    if (!recommendationOrchestrator) {
+      return { success: false, error: 'Recommendation system not initialized' };
+    }
+    try {
+      const acted = recommendationOrchestrator.markRecommendationActed(recommendationId);
+      return { success: acted };
+    } catch (error) {
+      logger.error('Failed to mark recommendation as acted', error as Error);
+      return { success: false, error: String(error) };
+    }
+  });
+
+  ipcMain.handle('intelligence:getRecommendationStats', () => {
+    if (!recommendationOrchestrator) {
+      return { totalGenerated: 0, totalDismissed: 0, totalActedOn: 0, activeCount: 0 };
+    }
+    try {
+      return recommendationOrchestrator.getStatistics();
+    } catch (error) {
+      logger.error('Failed to get recommendation stats', error as Error);
+      return { totalGenerated: 0, totalDismissed: 0, totalActedOn: 0, activeCount: 0 };
+    }
+  });
+
+  // ============ Intelligence - Insights ============
+
+  ipcMain.handle('intelligence:getActiveInsights', () => {
+    if (!insightOrchestrator) {
+      return [];
+    }
+    try {
+      const insights = insightOrchestrator.getActiveInsights();
+      return insights.map((i) => ({
+        ...i,
+        acknowledgedAt: i.acknowledgedAt?.toISOString() ?? null,
+        expiresAt: i.expiresAt?.toISOString() ?? null,
+        createdAt: i.createdAt?.toISOString(),
+      }));
+    } catch (error) {
+      logger.error('Failed to get active insights', error as Error);
+      return [];
+    }
+  });
+
+  ipcMain.handle('intelligence:generateInsights', () => {
+    if (!insightOrchestrator) {
+      return [];
+    }
+    try {
+      const insights = insightOrchestrator.generateInsights();
+      return insights.map((i) => ({
+        ...i,
+        acknowledgedAt: i.acknowledgedAt?.toISOString() ?? null,
+        expiresAt: i.expiresAt?.toISOString() ?? null,
+        createdAt: i.createdAt?.toISOString(),
+      }));
+    } catch (error) {
+      logger.error('Failed to generate insights', error as Error);
+      return [];
+    }
+  });
+
+  ipcMain.handle('intelligence:acknowledgeInsight', (_event, insightId: number) => {
+    if (!insightOrchestrator) {
+      return { success: false, error: 'Insight system not initialized' };
+    }
+    try {
+      const acknowledged = insightOrchestrator.acknowledgeInsight(insightId);
+      return { success: acknowledged };
+    } catch (error) {
+      logger.error('Failed to acknowledge insight', error as Error);
+      return { success: false, error: String(error) };
+    }
+  });
+
+  ipcMain.handle('intelligence:acknowledgeAllInsights', () => {
+    if (!insightOrchestrator) {
+      return { success: false, error: 'Insight system not initialized' };
+    }
+    try {
+      const count = insightOrchestrator.acknowledgeAllInsights();
+      return { success: true, data: { count } };
+    } catch (error) {
+      logger.error('Failed to acknowledge all insights', error as Error);
+      return { success: false, error: String(error) };
+    }
+  });
+
+  ipcMain.handle('intelligence:getInsightStats', () => {
+    if (!insightOrchestrator) {
+      return {
+        totalGenerated: 0,
+        totalAcknowledged: 0,
+        activeCount: 0,
+        bySeverity: { info: 0, warning: 0, critical: 0 },
+        byType: {},
+      };
+    }
+    try {
+      return insightOrchestrator.getStatistics();
+    } catch (error) {
+      logger.error('Failed to get insight stats', error as Error);
+      return {
+        totalGenerated: 0,
+        totalAcknowledged: 0,
+        activeCount: 0,
+        bySeverity: { info: 0, warning: 0, critical: 0 },
+        byType: {},
+      };
+    }
+  });
+
+  // ============ Intelligence - Workload ============
+
+  ipcMain.handle('intelligence:getWorkloadDistribution', (_event, params?: { startDate?: string; endDate?: string }) => {
+    if (!workloadOrchestrator) {
+      return null;
+    }
+    try {
+      const startDate = params?.startDate ? new Date(params.startDate) : new Date();
+      const endDate = params?.endDate ? new Date(params.endDate) : undefined;
+      const distribution = workloadOrchestrator.analyzeWorkload(startDate, endDate);
+
+      return {
+        startDate: distribution.startDate.toISOString(),
+        endDate: distribution.endDate.toISOString(),
+        dailySnapshots: distribution.dailySnapshots.map((s) => ({
+          snapshotDate: s.snapshotDate.toISOString(),
+          totalTasksDue: s.totalTasksDue,
+          totalEstimatedMinutes: s.totalEstimatedMinutes,
+          tasksByCourse: s.tasksByCourse,
+          tasksByUrgency: s.tasksByUrgency,
+          deadlineClusteringScore: s.deadlineClusteringScore,
+        })),
+        peakDay: distribution.peakDay?.toISOString() ?? null,
+        peakMinutes: distribution.peakMinutes,
+        avgDailyMinutes: distribution.avgDailyMinutes,
+        clusteringScore: distribution.clusteringScore,
+        balanceScore: distribution.balanceScore,
+      };
+    } catch (error) {
+      logger.error('Failed to get workload distribution', error as Error);
+      return null;
+    }
+  });
+
+  ipcMain.handle('intelligence:getDailyPlan', (_event, params?: { date?: string }) => {
+    if (!workloadOrchestrator) {
+      return [];
+    }
+    try {
+      const date = params?.date ? new Date(params.date) : new Date();
+      const plan = workloadOrchestrator.generateDailyPlan(date);
+      return plan.map((entry) => ({
+        ...entry,
+        dueAt: entry.dueAt?.toISOString() ?? null,
+        recommendedStartTime: entry.recommendedStartTime?.toISOString() ?? null,
+      }));
+    } catch (error) {
+      logger.error('Failed to generate daily plan', error as Error);
+      return [];
+    }
+  });
+
+  ipcMain.handle('intelligence:getEffortEstimate', (_event, taskId: number) => {
+    if (!workloadOrchestrator) {
+      return null;
+    }
+    try {
+      return workloadOrchestrator.getEffortEstimate(taskId);
+    } catch (error) {
+      logger.error('Failed to get effort estimate', error as Error);
+      return null;
+    }
+  });
+
+  ipcMain.handle('intelligence:getClusteringScore', (_event, params?: { windowDays?: number }) => {
+    if (!workloadOrchestrator) {
+      return 0;
+    }
+    try {
+      return workloadOrchestrator.getClusteringScore(params?.windowDays);
+    } catch (error) {
+      logger.error('Failed to get clustering score', error as Error);
+      return 0;
+    }
+  });
+
   // ============ Sync Conflict Handlers ============
 
   ipcMain.handle('sync:getPendingConflicts', () => {
@@ -2278,6 +2605,609 @@ function registerIpcHandlers(): void {
       return { success: false, error: String(error) };
     }
   });
+
+  // ============ Auto-Sync Preferences ============
+
+  ipcMain.handle('sync:getAutoSyncPreferences', () => {
+    try {
+      const prefs = database.executeReadOne<{ value: string }>(
+        "SELECT value FROM user_preferences WHERE key = 'syncPreferences'"
+      );
+      if (prefs?.value) {
+        return JSON.parse(prefs.value);
+      }
+      return { autoSyncEnabled: true, autoSyncInterval: 15 };
+    } catch (e) {
+      return { autoSyncEnabled: true, autoSyncInterval: 15 };
+    }
+  });
+
+  ipcMain.handle('sync:setAutoSyncPreferences', (_event, prefs: { autoSyncEnabled: boolean; autoSyncInterval: number }) => {
+    try {
+      database.executeWrite(
+        `INSERT INTO user_preferences (key, value) VALUES ('syncPreferences', ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+        [JSON.stringify(prefs)],
+        'user_preferences'
+      );
+
+      // Restart auto-sync with new settings
+      if (prefs.autoSyncEnabled) {
+        startAutoSync();
+      } else {
+        stopAutoSync();
+      }
+
+      logger.info(`Auto-sync preferences updated: enabled=${prefs.autoSyncEnabled}, interval=${prefs.autoSyncInterval}min`);
+      return { success: true };
+    } catch (error) {
+      logger.error('Failed to save auto-sync preferences:', error as Error);
+      return { success: false, error: String(error) };
+    }
+  });
+
+  // ============ Data Export/Backup Handlers ============
+
+  ipcMain.handle('data:exportDatabase', async () => {
+    if (!mainWindow) {
+      return { success: false, error: 'No window available' };
+    }
+
+    const result = await dialog.showSaveDialog(mainWindow, {
+      defaultPath: `canvas-backup-${new Date().toISOString().split('T')[0]}.db`,
+      filters: [
+        { name: 'SQLite Database', extensions: ['db'] },
+        { name: 'All Files', extensions: ['*'] },
+      ],
+    });
+
+    if (result.canceled || !result.filePath) {
+      return { success: false, error: 'Save cancelled' };
+    }
+
+    try {
+      // Checkpoint WAL before copying
+      database.executeWrite('PRAGMA wal_checkpoint(TRUNCATE)', [], 'system');
+
+      // Copy database file
+      fs.copyFileSync(DB_PATH, result.filePath);
+      logger.info(`Database exported to: ${result.filePath}`);
+      metricsCollector.increment('data.export.database');
+      return { success: true, data: { filePath: result.filePath } };
+    } catch (error) {
+      logger.error('Failed to export database:', error as Error);
+      return { success: false, error: String(error) };
+    }
+  });
+
+  ipcMain.handle('data:exportCourseData', async (_event, params?: { courseIds?: number[]; includeFiles?: boolean }) => {
+    if (!mainWindow) {
+      return { success: false, error: 'No window available' };
+    }
+
+    try {
+      // Build course filter
+      let courseFilter = '';
+      const courseIds = params?.courseIds;
+      if (courseIds && courseIds.length > 0) {
+        courseFilter = ` WHERE id IN (${courseIds.join(',')})`;
+      }
+
+      // Fetch courses
+      const courses = database.executeRead<{
+        id: number;
+        external_id: string;
+        code: string;
+        name: string;
+        nickname: string | null;
+        color: string | null;
+        workflow_state: string | null;
+        enrollment_term_id: number | null;
+      }>(`SELECT * FROM courses${courseFilter}`);
+
+      if (courses.length === 0) {
+        return { success: false, error: 'No courses found to export' };
+      }
+
+      const courseIdList = courses.map((c) => c.id).join(',');
+
+      // Fetch related data
+      const tasks = database.executeRead<Record<string, unknown>>(
+        `SELECT * FROM tasks WHERE course_id IN (${courseIdList})`
+      );
+
+      const notifications = database.executeRead<Record<string, unknown>>(
+        `SELECT * FROM notifications WHERE course_id IN (${courseIdList})`
+      );
+
+      const pages = database.executeRead<Record<string, unknown>>(
+        `SELECT * FROM course_pages WHERE course_id IN (${courseIdList})`
+      );
+
+      const policies = database.executeRead<Record<string, unknown>>(
+        `SELECT * FROM course_policies WHERE course_id IN (${courseIdList})`
+      );
+
+      const resources = database.executeRead<Record<string, unknown>>(
+        `SELECT id, external_id, course_id, folder_path, type, title, url, size_bytes, mime_type FROM resources WHERE course_id IN (${courseIdList})`
+      );
+
+      const exportData = {
+        exportedAt: new Date().toISOString(),
+        version: '1.0',
+        courses: courses.map((c) => ({
+          id: c.id,
+          externalId: c.external_id,
+          code: c.code,
+          name: c.name,
+          nickname: c.nickname,
+          color: c.color,
+          workflowState: c.workflow_state,
+          enrollmentTermId: c.enrollment_term_id,
+        })),
+        tasks,
+        notifications,
+        pages,
+        policies,
+        resources: resources.map((r) => ({
+          ...r,
+          localPath: undefined, // Don't include local paths in export
+        })),
+      };
+
+      const result = await dialog.showSaveDialog(mainWindow, {
+        defaultPath: `canvas-export-${new Date().toISOString().split('T')[0]}.json`,
+        filters: [
+          { name: 'JSON Files', extensions: ['json'] },
+          { name: 'All Files', extensions: ['*'] },
+        ],
+      });
+
+      if (result.canceled || !result.filePath) {
+        return { success: false, error: 'Save cancelled' };
+      }
+
+      fs.writeFileSync(result.filePath, JSON.stringify(exportData, null, 2), 'utf-8');
+      logger.info(`Course data exported to: ${result.filePath}`);
+      metricsCollector.increment('data.export.courses');
+
+      return {
+        success: true,
+        data: {
+          filePath: result.filePath,
+          courseCount: courses.length,
+          taskCount: tasks.length,
+          notificationCount: notifications.length,
+        },
+      };
+    } catch (error) {
+      logger.error('Failed to export course data:', error as Error);
+      return { success: false, error: String(error) };
+    }
+  });
+
+  // Import course data from JSON (same format as export)
+  ipcMain.handle('data:importCourseData', async () => {
+    if (!mainWindow) {
+      return { success: false, error: 'No window available' };
+    }
+
+    try {
+      const result = await dialog.showOpenDialog(mainWindow, {
+        properties: ['openFile'],
+        filters: [
+          { name: 'JSON Files', extensions: ['json'] },
+          { name: 'All Files', extensions: ['*'] },
+        ],
+      });
+
+      if (result.canceled || !result.filePaths.length) {
+        return { success: false, error: 'Import cancelled' };
+      }
+
+      const filePath = result.filePaths[0];
+      const fileContent = fs.readFileSync(filePath, 'utf-8');
+      const importData = JSON.parse(fileContent);
+
+      // Validate format
+      if (!importData.version || !importData.courses) {
+        return { success: false, error: 'Invalid export file format. Missing version or courses.' };
+      }
+
+      let coursesImported = 0;
+      let tasksImported = 0;
+      let notificationsImported = 0;
+      let pagesImported = 0;
+      let policiesImported = 0;
+      let resourcesImported = 0;
+
+      // Build course ID mapping: old ID -> new ID (using external_id as key)
+      const courseIdMap = new Map<number, number>();
+
+      // Import courses first and build mapping
+      if (Array.isArray(importData.courses)) {
+        for (const course of importData.courses) {
+          const externalId = course.externalId || course.external_id;
+          const oldId = course.id;
+
+          database.upsert(
+            'courses',
+            {
+              external_id: externalId,
+              code: course.code,
+              name: course.name,
+              nickname: course.nickname,
+              color: course.color,
+              enrollment_term_id: course.enrollmentTermId || course.enrollment_term_id,
+            },
+            'external_id'
+          );
+
+          // Get the actual ID from database
+          const dbCourse = database.executeReadOne<{ id: number }>(
+            'SELECT id FROM courses WHERE external_id = ?',
+            [externalId]
+          );
+          if (dbCourse && oldId) {
+            courseIdMap.set(oldId, dbCourse.id);
+          }
+          coursesImported++;
+        }
+      }
+
+      // Helper to map old course ID to new course ID
+      const mapCourseId = (oldId: number | null | undefined): number | null => {
+        if (oldId == null) return null;
+        return courseIdMap.get(oldId) ?? oldId; // Fall back to original if not in map
+      };
+
+      // Import tasks
+      if (Array.isArray(importData.tasks)) {
+        for (const task of importData.tasks) {
+          const oldCourseId = task.course_id || task.courseId;
+          const newCourseId = mapCourseId(oldCourseId);
+          if (!newCourseId) continue; // Skip if no valid course
+
+          database.upsert(
+            'tasks',
+            {
+              external_id: task.external_id || task.externalId,
+              course_id: newCourseId,
+              title: task.title,
+              description: task.description,
+              due_at: task.due_at || task.dueAt,
+              weight: task.weight || 0,
+              grade: task.grade,
+              points_possible: task.points_possible || task.pointsPossible,
+              priority_score: task.priority_score || task.priorityScore || 0,
+              is_completed: task.is_completed || task.isCompleted || 0,
+              completed_at: task.completed_at || task.completedAt,
+              submission_status: task.submission_status || task.submissionStatus,
+              task_type: task.task_type || task.taskType,
+              task_group_id: task.task_group_id || task.taskGroupId,
+            },
+            'external_id'
+          );
+          tasksImported++;
+        }
+      }
+
+      // Import notifications (unique on source_type + source_id, no updated_at column)
+      if (Array.isArray(importData.notifications)) {
+        for (const notif of importData.notifications) {
+          const oldCourseId = notif.course_id || notif.courseId;
+          const newCourseId = mapCourseId(oldCourseId);
+
+          database.upsert(
+            'notifications',
+            {
+              source_type: notif.source_type || notif.sourceType || 'canvas',
+              source_id: notif.source_id || notif.sourceId,
+              course_id: newCourseId,
+              title: notif.title,
+              message: notif.message,
+              message_html: notif.message_html || notif.messageHtml,
+              published_at: notif.published_at || notif.publishedAt,
+              dismissed_at: notif.dismissed_at || notif.dismissedAt,
+              url: notif.url,
+            },
+            ['source_type', 'source_id'],
+            false // notifications table has no updated_at column
+          );
+          notificationsImported++;
+        }
+      }
+
+      // Import pages
+      if (Array.isArray(importData.pages)) {
+        for (const page of importData.pages) {
+          const oldCourseId = page.course_id || page.courseId;
+          const newCourseId = mapCourseId(oldCourseId);
+          if (!newCourseId) continue; // Skip if no valid course
+
+          database.upsert(
+            'course_pages',
+            {
+              external_id: page.external_id || page.externalId,
+              course_id: newCourseId,
+              title: page.title,
+              body_html: page.body_html || page.bodyHtml || page.body,
+              body_text: page.body_text || page.bodyText,
+              url_slug: page.url_slug || page.urlSlug || page.url,
+              page_type: page.page_type || page.pageType || 'content',
+              published: page.published ?? 1,
+              is_front_page: page.is_front_page || page.isFrontPage || page.front_page || page.frontPage || 0,
+            },
+            'external_id'
+          );
+          pagesImported++;
+        }
+      }
+
+      // Import policies
+      if (Array.isArray(importData.policies)) {
+        for (const policy of importData.policies) {
+          const oldCourseId = policy.course_id || policy.courseId;
+          const newCourseId = mapCourseId(oldCourseId);
+          if (!newCourseId) continue; // Skip if no valid course
+
+          database.upsert(
+            'course_policies',
+            {
+              course_id: newCourseId,
+              policy_type: policy.policy_type || policy.policyType,
+              policy_name: policy.policy_name || policy.policyName || 'imported',
+              policy_config: policy.policy_config || policy.policyConfig || JSON.stringify({ value: policy.value }),
+              raw_text: policy.raw_text || policy.rawText,
+            },
+            ['course_id', 'policy_type', 'policy_name']
+          );
+          policiesImported++;
+        }
+      }
+
+      // Import resources (without local paths)
+      if (Array.isArray(importData.resources)) {
+        for (const resource of importData.resources) {
+          const oldCourseId = resource.course_id || resource.courseId;
+          const newCourseId = mapCourseId(oldCourseId);
+          if (!newCourseId) continue; // Skip if no valid course
+
+          database.upsert(
+            'resources',
+            {
+              external_id: resource.external_id || resource.externalId,
+              course_id: newCourseId,
+              folder_path: resource.folder_path || resource.folderPath,
+              type: resource.type,
+              title: resource.title,
+              url: resource.url,
+              size_bytes: resource.size_bytes || resource.sizeBytes,
+              mime_type: resource.mime_type || resource.mimeType,
+            },
+            'external_id'
+          );
+          resourcesImported++;
+        }
+      }
+
+      logger.info(`Data imported from: ${filePath} (${coursesImported} courses, ${tasksImported} tasks, ${notificationsImported} notifications, ${pagesImported} pages, ${policiesImported} policies, ${resourcesImported} resources)`);
+      metricsCollector.increment('data.import.courses');
+
+      return {
+        success: true,
+        data: {
+          filePath,
+          coursesImported,
+          tasksImported,
+          notificationsImported,
+          pagesImported,
+          policiesImported,
+          resourcesImported,
+        },
+      };
+    } catch (error) {
+      logger.error('Failed to import course data:', error as Error);
+      return { success: false, error: String(error) };
+    }
+  });
+
+  // Check if previous session crashed (for recovery dialog)
+  ipcMain.handle('app:getCrashInfo', () => {
+    const crashCheck = checkCrashFlag();
+    return crashCheck.crashed ? crashCheck.data : null;
+  });
+}
+
+// ============ Crash Protection ============
+
+/**
+ * Write crash flag to disk on unexpected exit
+ */
+function writeCrashFlag(reason: string): void {
+  try {
+    const crashData = {
+      timestamp: new Date().toISOString(),
+      reason,
+      pid: process.pid,
+      platform: process.platform,
+    };
+    if (!fs.existsSync(APP_DATA_DIR)) {
+      fs.mkdirSync(APP_DATA_DIR, { recursive: true });
+    }
+    fs.writeFileSync(CRASH_FLAG_FILE, JSON.stringify(crashData, null, 2));
+  } catch (e) {
+    // Cannot log, just ignore
+  }
+}
+
+/**
+ * Clear crash flag on clean exit
+ */
+function clearCrashFlag(): void {
+  try {
+    if (fs.existsSync(CRASH_FLAG_FILE)) {
+      fs.unlinkSync(CRASH_FLAG_FILE);
+    }
+  } catch (e) {
+    // Ignore
+  }
+}
+
+/**
+ * Check if previous session crashed
+ */
+function checkCrashFlag(): { crashed: boolean; data?: { timestamp: string; reason: string } } {
+  try {
+    if (fs.existsSync(CRASH_FLAG_FILE)) {
+      const data = JSON.parse(fs.readFileSync(CRASH_FLAG_FILE, 'utf-8'));
+      return { crashed: true, data };
+    }
+  } catch (e) {
+    // Ignore
+  }
+  return { crashed: false };
+}
+
+/**
+ * Emergency cleanup on crash
+ */
+function emergencyCleanup(): void {
+  try {
+    // Try to checkpoint database with timeout
+    const timeout = setTimeout(() => {
+      process.exit(1);
+    }, 2000); // 2 second timeout
+
+    try {
+      database.close();
+      clearTimeout(timeout);
+    } catch (e) {
+      clearTimeout(timeout);
+    }
+  } catch (e) {
+    // Ignore
+  }
+}
+
+// Handle uncaught exceptions
+process.on('uncaughtException', (error) => {
+  writeCrashFlag(`uncaughtException: ${error.message}`);
+  logger.error('Uncaught Exception:', error);
+  emergencyCleanup();
+  process.exit(1);
+});
+
+// Handle unhandled promise rejections
+process.on('unhandledRejection', (reason, promise) => {
+  writeCrashFlag(`unhandledRejection: ${reason}`);
+  logger.error('Unhandled Rejection:', reason instanceof Error ? reason : new Error(String(reason)));
+  // Don't exit on unhandled rejection, just log
+});
+
+// ============ Auto-Sync ============
+
+/**
+ * Start the auto-sync scheduler based on user settings
+ */
+function startAutoSync(): void {
+  stopAutoSync(); // Clear any existing interval
+
+  // Load sync preferences from localStorage equivalent (read from DB user_preferences)
+  let autoSyncEnabled = true;
+  let autoSyncIntervalMs = 15 * 60 * 1000; // Default 15 minutes
+
+  try {
+    const prefs = database.executeReadOne<{ value: string }>(
+      "SELECT value FROM user_preferences WHERE key = 'syncPreferences'"
+    );
+    if (prefs?.value) {
+      const parsed = JSON.parse(prefs.value);
+      autoSyncEnabled = parsed.autoSyncEnabled ?? true;
+      autoSyncIntervalMs = (parsed.autoSyncInterval ?? 15) * 60 * 1000;
+    }
+  } catch (e) {
+    // Use defaults
+  }
+
+  if (!autoSyncEnabled) {
+    logger.info('Auto-sync is disabled');
+    return;
+  }
+
+  logger.info(`Auto-sync enabled, interval: ${autoSyncIntervalMs / 60000} minutes`);
+
+  autoSyncInterval = setInterval(async () => {
+    if (!syncEngine || !systemMonitor.getState().canSync) {
+      logger.debug('Auto-sync skipped: sync engine not ready or system state prevents sync');
+      return;
+    }
+
+    logger.info('Auto-sync triggered');
+    try {
+      // Notify renderer that sync is starting
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('sync:status', 'syncing');
+      }
+
+      await syncEngine.syncAll();
+
+      // Notify renderer that sync completed
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('sync:status', 'idle');
+      }
+
+      metricsCollector.increment('sync.auto.success');
+    } catch (error) {
+      logger.error(`Auto-sync failed: ${error}`);
+      metricsCollector.increment('sync.auto.failure');
+
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('sync:status', 'error');
+      }
+    }
+  }, autoSyncIntervalMs);
+}
+
+/**
+ * Stop the auto-sync scheduler
+ */
+function stopAutoSync(): void {
+  if (autoSyncInterval) {
+    clearInterval(autoSyncInterval);
+    autoSyncInterval = null;
+  }
+}
+
+/**
+ * Trigger background sync when window regains focus after being away
+ */
+async function triggerFocusRestoreSync(): Promise<void> {
+  if (!syncEngine || !systemMonitor.getState().canSync) {
+    return;
+  }
+
+  logger.info('Focus restore sync triggered');
+  try {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('sync:status', 'syncing');
+    }
+
+    await syncEngine.syncAll();
+
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('sync:status', 'idle');
+    }
+
+    metricsCollector.increment('sync.focus_restore.success');
+  } catch (error) {
+    logger.error(`Focus restore sync failed: ${error}`);
+    metricsCollector.increment('sync.focus_restore.failure');
+
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('sync:status', 'error');
+    }
+  }
 }
 
 // Start system monitoring
@@ -2308,6 +3238,18 @@ app.whenReady().then(async () => {
   logger.info('Canvas Integration Dashboard starting...');
   logger.info(`Platform: ${process.platform}, Electron: ${process.versions.electron}`);
   logger.info(`Data directory: ${APP_DATA_DIR}`);
+
+  // Check for previous crash
+  const crashCheck = checkCrashFlag();
+  if (crashCheck.crashed && crashCheck.data) {
+    logger.warn(`Previous session crashed at ${crashCheck.data.timestamp}: ${crashCheck.data.reason}`);
+    metricsCollector.increment('app.crash_recovery');
+    // Clear the crash flag since we've detected it
+    clearCrashFlag();
+  }
+
+  // Write crash flag - will be cleared on clean exit
+  writeCrashFlag('session_start');
 
   // Initialize database and run migrations
   try {
@@ -2368,6 +3310,24 @@ app.whenReady().then(async () => {
       refreshIntervalMs: 15 * 60 * 1000, // 15 minutes
       autoRefresh: true,
     });
+
+    // Initialize L3 Intelligence Orchestrators
+    recommendationOrchestrator = new RecommendationOrchestrator(database, {
+      refreshIntervalMs: 30 * 60 * 1000, // 30 minutes
+      autoRefresh: true,
+    });
+
+    insightOrchestrator = new InsightOrchestrator(database, {
+      refreshIntervalMs: 6 * 60 * 60 * 1000, // 6 hours
+      autoRefresh: true,
+    });
+
+    workloadOrchestrator = new WorkloadOrchestrator(database, {
+      defaultAvailableHoursPerDay: 4,
+      defaultLookAheadDays: 14,
+    });
+
+    logger.info('L3 Intelligence orchestrators initialized');
 
     // Forward sync requests from CommandDispatcher to SyncEngine
     commandDispatcher.on('sync-requested', async (event) => {
@@ -2430,6 +3390,9 @@ app.whenReady().then(async () => {
       // Default Canvas URL - could be stored in config
       const baseUrl = 'https://utoronto.instructure.com';
       await initializeCanvasClient(token, baseUrl);
+
+      // Start auto-sync scheduler after Canvas client is ready
+      startAutoSync();
     }
   }
 
@@ -2453,9 +3416,23 @@ app.on('window-all-closed', () => {
 app.on('quit', () => {
   logger.info('Application quitting...');
 
+  // Stop auto-sync scheduler
+  stopAutoSync();
+
+  // Clear crash flag on clean exit
+  clearCrashFlag();
+
   // Clear simulation state (as per spec: clears on app close)
   if (commandDispatcher) {
     commandDispatcher.clearSimulation();
+  }
+
+  // Stop L3 Intelligence orchestrators
+  if (recommendationOrchestrator) {
+    recommendationOrchestrator.stop();
+  }
+  if (insightOrchestrator) {
+    insightOrchestrator.stop();
   }
 
   // Stop all background services
@@ -2465,8 +3442,17 @@ app.on('quit', () => {
   housekeepingManager.stop();
   circuitBreaker.stop();
 
-  // Close database
-  database.close();
+  // Close database with timeout protection
+  const closeTimeout = setTimeout(() => {
+    logger.warn('Database close timed out');
+  }, 2000);
+  try {
+    database.close();
+    clearTimeout(closeTimeout);
+  } catch (e) {
+    clearTimeout(closeTimeout);
+    logger.error('Database close failed:', e as Error);
+  }
 
   logger.close();
 });

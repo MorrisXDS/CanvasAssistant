@@ -12,6 +12,7 @@ import path from 'path';
 import { Database } from '../l1-persistence/Database';
 import { FileDownloadManager, DownloadRequest } from '../l0-utilities/FileDownloadManager';
 import { HtmlContentSyncConfig } from '../l0-utilities/AppConfig';
+import type { ComponentLogger } from '../l0-utilities/Logger';
 
 /**
  * Represents an extracted resource from HTML content
@@ -70,6 +71,8 @@ export interface HtmlContentSyncOptions {
   config: HtmlContentSyncConfig;
   authToken?: string;
   baseUrl: string;
+  /** Optional logger for debug output */
+  logger?: ComponentLogger;
 }
 
 /**
@@ -139,6 +142,7 @@ export class HtmlContentSync extends EventEmitter {
   private config: HtmlContentSyncConfig;
   private authToken?: string;
   private baseUrl: string;
+  private log: ComponentLogger | null;
 
   constructor(options: HtmlContentSyncOptions) {
     super();
@@ -147,6 +151,7 @@ export class HtmlContentSync extends EventEmitter {
     this.config = options.config;
     this.authToken = options.authToken;
     this.baseUrl = options.baseUrl;
+    this.log = options.logger ?? null;
   }
 
   /**
@@ -451,8 +456,8 @@ export class HtmlContentSync extends EventEmitter {
     localCourseId: number,
     baseDir: string
   ): Promise<HtmlContentSyncResult> {
-    console.log(`[HtmlContentSync] Starting sync for course ${localCourseId}, baseDir: ${baseDir}`);
-    console.log(`[HtmlContentSync] Config: enabled=${this.config.enabled}, urlRewriting=${this.config.urlRewriting}`);
+    this.log?.debug(`Starting sync for course ${localCourseId}, baseDir: ${baseDir}`);
+    this.log?.debug(`Config: enabled=${this.config.enabled}, urlRewriting=${this.config.urlRewriting}`);
 
     const result: HtmlContentSyncResult = {
       itemsRegistered: 0,
@@ -461,7 +466,7 @@ export class HtmlContentSync extends EventEmitter {
     };
 
     if (!this.config.enabled) {
-      console.log(`[HtmlContentSync] Skipping - disabled in config`);
+      this.log?.debug('Skipping - disabled in config');
       return result;
     }
 
@@ -593,8 +598,8 @@ export class HtmlContentSync extends EventEmitter {
     const annCount = items.filter(i => i.sourceType === 'announcement').length;
     const assignCount = items.filter(i => i.sourceType === 'assignment').length;
     const syllabusCount = items.filter(i => i.sourceType === 'syllabus').length;
-    console.log(`[HtmlContentSync] Found items: ${pageCount} pages, ${annCount} announcements, ${assignCount} assignments, ${syllabusCount} syllabus`);
-    console.log(`[HtmlContentSync] Total items to process: ${items.length}`);
+    this.log?.debug(`Found items: ${pageCount} pages, ${annCount} announcements, ${assignCount} assignments, ${syllabusCount} syllabus`);
+    this.log?.debug(`Total items to process: ${items.length}`);
 
     // Register each item in resources table (no file download yet)
     for (const item of items) {
@@ -626,7 +631,7 @@ export class HtmlContentSync extends EventEmitter {
       }
     }
 
-    console.log(`[HtmlContentSync] Registered ${result.itemsRegistered} items, found ${result.resourcesFound} embedded resources`);
+    this.log?.debug(`Registered ${result.itemsRegistered} items, found ${result.resourcesFound} embedded resources`);
 
     this.emit('html-sync-complete', {
       courseId: localCourseId,

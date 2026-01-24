@@ -27,17 +27,22 @@ import {
   FileQuestion,
   Library,
   FolderArchive,
+  GripVertical,
+  RotateCcw,
+  FileText,
 } from 'lucide-react';
 import { Card, ConfirmDialog, Dropdown, DropdownSection, DropdownSubmenu } from '../shared';
 import { useStore } from '../../../l5-presentation/store';
 import styles from './FilesPage.module.css';
 
 // Import extracted components
-import { FileListItem, FileItem, FileAttachment, FileResource, FilePage, getFileName, isFileDownloaded } from './FileListItem';
+import { FileListItem, FileItem, FileAttachment, FileResource, FilePage, getFileName, isFileDownloaded, formatFileSize } from './FileListItem';
 import { FileGridItem } from './FileGridItem';
 import { FileFilterPanel, SourceFilter, StatusFilter, SizeFilter } from './FileFilterPanel';
 import { FileSyncConfig } from './FileSyncConfig';
 import { FileSelectionBar, DownloadProgress } from './FileSelectionBar';
+import { FileContextMenu, FilePropertiesContent } from './FileContextMenu';
+import { ConfirmDialog as PropertiesDialog } from '../shared';
 import {
   getFolderTypeFromPath,
   getFolderDepth,
@@ -47,6 +52,8 @@ import {
   getCourseTerm,
   FolderTypeConfig,
 } from './folderTypes';
+import { useFolderDragDrop } from './useFolderDragDrop';
+import { useFilesCourseDragDrop } from './useFilesCourseDragDrop';
 
 // Storage keys
 const EXPANDED_STATE_KEY = 'fileExplorerExpandedState';
@@ -158,6 +165,7 @@ function getFolderIcon(type: FolderTypeConfig, size: number = 14) {
     case 'tutorials': return <GraduationCap size={size} />;
     case 'exams': return <FileQuestion size={size} />;
     case 'resources': return <Library size={size} />;
+    case 'pages': return <FileText size={size} />;
     default: return <FolderArchive size={size} />;
   }
 }
@@ -202,6 +210,35 @@ export function FilesPage() {
     return new Set();
   });
 
+  // Folder drag-and-drop reordering
+  const {
+    draggedFolder,
+    dragOverFolder,
+    handleDragStart: folderDragStart,
+    handleDragOver: folderDragOver,
+    handleDragLeave: folderDragLeave,
+    handleDragEnd: folderDragEnd,
+    handleDrop: folderDrop,
+    sortFoldersByCustomOrder,
+    resetAllOrders: resetFolderOrders,
+    hasAnyCustomOrder: hasCustomFolderOrder,
+  } = useFolderDragDrop();
+
+  // Course drag-and-drop reordering (in files page)
+  const filesCourseIds = useMemo(() => courses.map((c) => c.id), [courses]);
+  const {
+    sortByCustomOrder: sortCoursesByCustomOrder,
+    draggedCourseId: filesDraggedCourseId,
+    dragOverCourseId: filesDragOverCourseId,
+    handleDragStart: filesCoursesDragStart,
+    handleDragOver: filesCoursesDragOver,
+    handleDragLeave: filesCoursesDragLeave,
+    handleDragEnd: filesCoursesDragEnd,
+    handleDrop: filesCoursesDrop,
+    resetOrder: resetFilesCourseOrder,
+    hasCustomOrder: hasCustomFilesCourseOrder,
+  } = useFilesCourseDragDrop(filesCourseIds);
+
   const [hasAppliedDefaultExpand, setHasAppliedDefaultExpand] = useState(false);
   const [downloadingIds, setDownloadingIds] = useState<Set<number>>(new Set());
   const [showFilters, setShowFilters] = useState(false);
@@ -226,6 +263,16 @@ export function FilesPage() {
   // Sync config states
   const [showSyncConfig, setShowSyncConfig] = useState(false);
   const [filesDirectory, setFilesDirectory] = useState<string>('');
+
+  // Context menu state
+  const [contextMenu, setContextMenu] = useState<{
+    file: FileItem;
+    x: number;
+    y: number;
+  } | null>(null);
+
+  // Properties dialog state
+  const [propertiesFile, setPropertiesFile] = useState<FileItem | null>(null);
 
   // Fetch files directory path
   useEffect(() => {
@@ -825,6 +872,70 @@ export function FilesPage() {
     }
   };
 
+  // Context menu handlers
+  const handleContextMenu = (file: FileItem, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({ file, x: e.clientX, y: e.clientY });
+  };
+
+  const handleCopyPath = async (file: FileItem) => {
+    if (file.source === 'page') return;
+
+    const localPath = file.source === 'attachment'
+      ? (file as FileAttachment).localPath
+      : (file as FileResource).localPath;
+
+    if (localPath) {
+      try {
+        await navigator.clipboard.writeText(localPath);
+      } catch (err) {
+        console.error('Failed to copy path:', err);
+      }
+    }
+  };
+
+  const handleOpenInCanvas = (file: FileItem) => {
+    const api = window.api;
+    if (!api) return;
+
+    // Construct Canvas URL based on file type
+    // Note: This requires the Canvas base URL, which we'll approximate
+    let canvasUrl: string | null = null;
+
+    if (file.source === 'resource') {
+      // Canvas file URL
+      const resource = file as FileResource;
+      if (resource.url) {
+        api.openExternal(resource.url);
+      }
+    } else if (file.source === 'page') {
+      // Page URL - need to fetch from backend
+      const page = file as FilePage;
+      api.getPage(page.id).then((result) => {
+        if (result?.success && result.data?.canvasUrl) {
+          api.openExternal(result.data.canvasUrl);
+        }
+      });
+    } else if (file.source === 'attachment') {
+      // Attachment URL
+      const attachment = file as FileAttachment;
+      if (attachment.url) {
+        api.openExternal(attachment.url);
+      }
+    }
+  };
+
+  const handleDeleteLocalCopy = async (file: FileItem) => {
+    // TODO: Implement local file deletion
+    // This would require a new IPC handler
+    console.log('Delete local copy:', file);
+  };
+
+  const handleShowProperties = (file: FileItem) => {
+    setPropertiesFile(file);
+  };
+
   // Loading state
   if (loading) {
     return (
@@ -1037,54 +1148,83 @@ export function FilesPage() {
       ) : (
         /* File List by Course */
         <div className={styles.courseList}>
-          {Array.from(groupedFiles.entries()).map(([courseId, folderMap]) => {
-            const course = courseMap.get(courseId);
-            const isExpanded = expandedCourses.has(courseId);
-            const courseColor = getCourseColor(courseId, course?.color || null);
-            const courseCode = course ? getShortCode(course.code) : 'Unknown';
+          {(() => {
+            // Sort courses by custom order
+            const courseEntries = Array.from(groupedFiles.entries());
+            const sortedCourseIds = sortCoursesByCustomOrder(courseEntries.map(([id]) => id));
+            const sortedEntries = sortedCourseIds
+              .map((id) => courseEntries.find(([cid]) => cid === id))
+              .filter(Boolean) as [number, Map<string, FileItem[]>][];
 
-            let totalInCourse = 0;
-            let downloadedInCourse = 0;
-            for (const fileList of folderMap.values()) {
-              totalInCourse += fileList.length;
-              downloadedInCourse += fileList.filter(isFileDownloaded).length;
-            }
+            return sortedEntries.map(([courseId, folderMap]) => {
+              const course = courseMap.get(courseId);
+              const isExpanded = expandedCourses.has(courseId);
+              const courseColor = getCourseColor(courseId, course?.color || null);
+              const courseCode = course ? getShortCode(course.code) : 'Unknown';
+              const isCoursesDragging = filesDraggedCourseId === courseId;
+              const isCoursesDragOver = filesDragOverCourseId === courseId;
 
-            // Sort folders: Announcements first, then by type, then alphabetically
-            const sortedFolders = Array.from(folderMap.entries()).sort((a, b) => {
-              if (a[0] === 'Announcements') return -1;
-              if (b[0] === 'Announcements') return 1;
-              if (a[0] === '') return -1;
-              if (b[0] === '') return 1;
-              return a[0].localeCompare(b[0]);
-            });
+              let totalInCourse = 0;
+              let downloadedInCourse = 0;
+              for (const fileList of folderMap.values()) {
+                totalInCourse += fileList.length;
+                downloadedInCourse += fileList.filter(isFileDownloaded).length;
+              }
 
-            return (
-              <div key={courseId} className={styles.courseSection}>
-                {/* Course Header */}
-                <button
-                  className={styles.courseHeader}
-                  onClick={() => toggleCourse(courseId)}
-                  aria-expanded={isExpanded}
+              // Sort folders: Apply custom order first, then default sorting
+              const folderPaths = Array.from(folderMap.keys());
+              const orderedPaths = sortFoldersByCustomOrder(courseId, folderPaths);
+              const sortedFolders = orderedPaths.map((path) => [path, folderMap.get(path)!] as [string, FileItem[]]);
+
+              return (
+                <div
+                  key={courseId}
+                  className={styles.courseSection}
+                  draggable
+                  onDragStart={(e) => filesCoursesDragStart(e, courseId)}
+                  onDragEnd={filesCoursesDragEnd}
+                  onDragOver={(e) => filesCoursesDragOver(e, courseId)}
+                  onDragLeave={filesCoursesDragLeave}
+                  onDrop={(e) => filesCoursesDrop(e, courseId)}
+                  style={{
+                    opacity: isCoursesDragging ? 0.5 : 1,
+                    boxShadow: isCoursesDragOver ? '0 0 0 2px var(--color-blue)' : 'none',
+                    borderRadius: isCoursesDragOver ? 'var(--radius-md)' : undefined,
+                    transition: 'opacity 150ms ease, box-shadow 150ms ease',
+                  }}
                 >
-                  <div className={styles.courseHeaderLeft}>
-                    {isExpanded ? (
-                      <ChevronDown size={18} color="var(--text-secondary)" />
-                    ) : (
-                      <ChevronRight size={18} color="var(--text-secondary)" />
-                    )}
-                    <span
-                      className={styles.courseCodeBadge}
-                      style={{ backgroundColor: courseColor }}
-                    >
-                      {courseCode}
-                    </span>
-                    <span className={styles.courseHeaderName}>
-                      {course?.nickname || course?.name || 'Unknown Course'}
-                    </span>
-                  </div>
-                  <span className={styles.courseFileCount}>
-                    {downloadedInCourse}/{totalInCourse} downloaded
+                  {/* Course Header */}
+                  <button
+                    className={styles.courseHeader}
+                    onClick={() => toggleCourse(courseId)}
+                    aria-expanded={isExpanded}
+                  >
+                    <div className={styles.courseHeaderLeft}>
+                      {/* Drag handle */}
+                      <span
+                        className={styles.courseDragHandle}
+                        title="Drag to reorder"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <GripVertical size={14} />
+                      </span>
+                      {isExpanded ? (
+                        <ChevronDown size={18} color="var(--text-secondary)" />
+                      ) : (
+                        <ChevronRight size={18} color="var(--text-secondary)" />
+                      )}
+                      <span
+                        className={styles.courseCodeBadge}
+                        style={{ backgroundColor: courseColor }}
+                      >
+                        {courseCode}
+                      </span>
+                      <span className={styles.courseHeaderName}>
+                        {course?.nickname || course?.name || 'Unknown Course'}
+                      </span>
+                    </div>
+                    <span className={styles.courseFileCount}>
+                      {downloadedInCourse}/{totalInCourse} downloaded
                   </span>
                 </button>
 
@@ -1100,8 +1240,26 @@ export function FilesPage() {
                       const folderType = getFolderTypeFromPath(folderPath || null);
                       const folderDepth = getFolderDepth(folderPath || null);
 
+                      const isDragging = draggedFolder?.courseId === courseId && draggedFolder?.path === folderPath;
+                      const isDragOver = dragOverFolder?.courseId === courseId && dragOverFolder?.path === folderPath;
+
                       return (
-                        <div key={folderPath} className={styles.folderSection}>
+                        <div
+                          key={folderPath}
+                          className={styles.folderSection}
+                          draggable
+                          onDragStart={(e) => folderDragStart(e, courseId, folderPath)}
+                          onDragEnd={folderDragEnd}
+                          onDragOver={(e) => folderDragOver(e, courseId, folderPath)}
+                          onDragLeave={folderDragLeave}
+                          onDrop={(e) => folderDrop(e, courseId, folderPath, folderPaths)}
+                          style={{
+                            opacity: isDragging ? 0.5 : 1,
+                            boxShadow: isDragOver ? '0 0 0 2px var(--color-blue)' : 'none',
+                            borderRadius: isDragOver ? 'var(--radius-md)' : undefined,
+                            transition: 'opacity 150ms ease, box-shadow 150ms ease',
+                          }}
+                        >
                           {/* Folder Header with Type Color */}
                           <button
                             className={styles.folderHeader}
@@ -1113,6 +1271,14 @@ export function FilesPage() {
                             aria-expanded={folderExpanded}
                           >
                             <div className={styles.folderHeaderLeft}>
+                              {/* Drag handle */}
+                              <span
+                                className={styles.folderDragHandle}
+                                title="Drag to reorder"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <GripVertical size={12} />
+                              </span>
                               {folderExpanded ? (
                                 <ChevronDown size={14} color="var(--text-muted)" />
                               ) : (
@@ -1122,14 +1288,12 @@ export function FilesPage() {
                                 {getFolderIcon(folderType, 14)}
                               </span>
                               <span className={styles.folderName}>{displayPath}</span>
-                              {folderType.type !== 'default' && (
-                                <span
-                                  className={styles.folderTypeBadge}
-                                  style={{ backgroundColor: folderType.color }}
-                                >
-                                  {folderType.label}
-                                </span>
-                              )}
+                              <span
+                                className={styles.folderTypeBadge}
+                                style={{ backgroundColor: folderType.color }}
+                              >
+                                {folderType.label}
+                              </span>
                             </div>
                             <span className={styles.folderFileCount}>
                               {folderDownloaded}/{folderFiles.length}
@@ -1151,6 +1315,7 @@ export function FilesPage() {
                                     onDownload={() => handleDownload(file)}
                                     onOpen={() => handleOpen(file)}
                                     onShowInFolder={() => handleShowInFolder(file)}
+                                    onContextMenu={(e) => handleContextMenu(file, e)}
                                   />
                                 ))}
                               </div>
@@ -1167,6 +1332,7 @@ export function FilesPage() {
                                     onDownload={() => handleDownload(file)}
                                     onOpen={() => handleOpen(file)}
                                     onShowInFolder={() => handleShowInFolder(file)}
+                                    onContextMenu={(e) => handleContextMenu(file, e)}
                                   />
                                 ))}
                               </div>
@@ -1179,7 +1345,8 @@ export function FilesPage() {
                 )}
               </div>
             );
-          })}
+          });
+          })()}
         </div>
       )}
 
@@ -1198,6 +1365,44 @@ export function FilesPage() {
         onConfirm={confirmDownload}
         onCancel={() => setPendingDownload(null)}
       />
+
+      {/* File Context Menu */}
+      {contextMenu && (
+        <FileContextMenu
+          file={contextMenu.file}
+          position={{ x: contextMenu.x, y: contextMenu.y }}
+          onClose={() => setContextMenu(null)}
+          onOpen={() => handleOpen(contextMenu.file)}
+          onDownload={() => handleDownload(contextMenu.file)}
+          onShowInFolder={() => handleShowInFolder(contextMenu.file)}
+          onCopyPath={() => handleCopyPath(contextMenu.file)}
+          onOpenInCanvas={() => handleOpenInCanvas(contextMenu.file)}
+          onShowProperties={() => handleShowProperties(contextMenu.file)}
+        />
+      )}
+
+      {/* File Properties Dialog */}
+      <ConfirmDialog
+        isOpen={propertiesFile !== null}
+        title="File Properties"
+        message=""
+        type="info"
+        confirmText="Close"
+        onConfirm={() => setPropertiesFile(null)}
+        onCancel={() => setPropertiesFile(null)}
+        hideCancel
+      >
+        {propertiesFile && (
+          <FilePropertiesContent
+            file={propertiesFile}
+            courseName={
+              courseMap.get(propertiesFile.courseId)?.nickname ||
+              courseMap.get(propertiesFile.courseId)?.name ||
+              'Unknown Course'
+            }
+          />
+        )}
+      </ConfirmDialog>
     </div>
   );
 }

@@ -14,6 +14,7 @@ export type FolderType =
   | 'tutorials'
   | 'exams'
   | 'resources'
+  | 'pages'
   | 'default';
 
 // Folder type configuration
@@ -104,13 +105,21 @@ export const FOLDER_TYPES: FolderTypeConfig[] = [
       /syllabus/i,
     ],
   },
+  {
+    type: 'pages',
+    color: '#6A1B9A', // Deep purple
+    label: 'Pages', // Will be dynamically set to "Page" or "Pages" based on match
+    patterns: [
+      /\bpages?\b/i,
+    ],
+  },
 ];
 
 // Default folder config - blue-gray for unclassified
 export const DEFAULT_FOLDER_CONFIG: FolderTypeConfig = {
   type: 'default',
   color: '#546E7A', // Blue-gray (distinguishable but neutral)
-  label: 'Files',
+  label: 'Others',
   patterns: [],
 };
 
@@ -122,6 +131,12 @@ export function detectFolderType(folderName: string): FolderTypeConfig {
   for (const config of FOLDER_TYPES) {
     for (const pattern of config.patterns) {
       if (pattern.test(folderName)) {
+        // Special handling for pages - use "Page" or "Pages" based on actual word
+        if (config.type === 'pages') {
+          const match = folderName.match(/\b(pages?)\b/i);
+          const label = match && match[1].toLowerCase() === 'page' ? 'Page' : 'Pages';
+          return { ...config, label };
+        }
         return config;
       }
     }

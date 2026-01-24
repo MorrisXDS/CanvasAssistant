@@ -17,6 +17,7 @@
 html {
   font-size: 16px;
   -webkit-text-size-adjust: 100%;
+  overflow: hidden;
 }
 
 body {
@@ -27,6 +28,7 @@ body {
   background-color: var(--bg-app);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  overflow: hidden;
 }
 
 /* ============ Typography Defaults ============ */
@@ -104,22 +106,42 @@ textarea:focus-visible {
 }
 
 /* ============ Scrollbar Styling ============ */
+/* Auto-hide scrollbars - only show when needed and on hover/scroll */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+*:hover {
+  scrollbar-color: var(--scrollbar-thumb, var(--color-gray-300)) transparent;
+}
+
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: var(--scrollbar-track, var(--color-gray-100));
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--scrollbar-thumb, var(--color-gray-300));
+  background: transparent;
   border-radius: var(--radius-full);
+  transition: background 0.2s ease;
+}
+
+*:hover::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb, var(--color-gray-300));
 }
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--scrollbar-thumb-hover, var(--color-gray-400));
+}
+
+/* Only show scrollbar on containers being scrolled */
+.scrollable::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb, var(--color-gray-300));
 }
 
 /* ============ Utility Classes ============ */
@@ -143,7 +165,8 @@ textarea:focus-visible {
 
 /* ============ App Root ============ */
 #root {
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
 }
 
 /* ============ Animations ============ */

@@ -80,6 +80,10 @@ const api = {
 
   openFilesDirectory: () => ipcRenderer.invoke('files:openDirectory'),
 
+  selectFilesDirectory: () => ipcRenderer.invoke('files:selectDirectory'),
+
+  setFilesDirectory: (newPath: string) => ipcRenderer.invoke('files:setDirectory', newPath),
+
   clearFilesSync: () => ipcRenderer.invoke('files:clearSync'),
 
   // ============ Course Pages ============
@@ -157,6 +161,54 @@ const api = {
   getPriorityExplanation: (taskId: number) =>
     ipcRenderer.invoke('priorities:getExplanation', { taskId }),
 
+  // ============ Intelligence - Recommendations ============
+
+  getActiveRecommendations: () =>
+    ipcRenderer.invoke('intelligence:getActiveRecommendations'),
+
+  generateRecommendations: (availableMinutes?: number) =>
+    ipcRenderer.invoke('intelligence:generateRecommendations', { availableMinutes }),
+
+  dismissRecommendation: (recommendationId: number) =>
+    ipcRenderer.invoke('intelligence:dismissRecommendation', recommendationId),
+
+  actOnRecommendation: (recommendationId: number) =>
+    ipcRenderer.invoke('intelligence:actOnRecommendation', recommendationId),
+
+  getRecommendationStats: () =>
+    ipcRenderer.invoke('intelligence:getRecommendationStats'),
+
+  // ============ Intelligence - Insights ============
+
+  getActiveInsights: () =>
+    ipcRenderer.invoke('intelligence:getActiveInsights'),
+
+  generateInsights: () =>
+    ipcRenderer.invoke('intelligence:generateInsights'),
+
+  acknowledgeInsight: (insightId: number) =>
+    ipcRenderer.invoke('intelligence:acknowledgeInsight', insightId),
+
+  acknowledgeAllInsights: () =>
+    ipcRenderer.invoke('intelligence:acknowledgeAllInsights'),
+
+  getInsightStats: () =>
+    ipcRenderer.invoke('intelligence:getInsightStats'),
+
+  // ============ Intelligence - Workload ============
+
+  getWorkloadDistribution: (params?: { startDate?: string; endDate?: string }) =>
+    ipcRenderer.invoke('intelligence:getWorkloadDistribution', params),
+
+  getDailyPlan: (date?: string) =>
+    ipcRenderer.invoke('intelligence:getDailyPlan', { date }),
+
+  getEffortEstimate: (taskId: number) =>
+    ipcRenderer.invoke('intelligence:getEffortEstimate', taskId),
+
+  getClusteringScore: (windowDays?: number) =>
+    ipcRenderer.invoke('intelligence:getClusteringScore', { windowDays }),
+
   // ============ System ============
 
   getSystemState: () => ipcRenderer.invoke('system:state'),
@@ -233,6 +285,25 @@ const api = {
 
   deleteSyncPreference: (entity: string, entityId: number | null, field: string) =>
     ipcRenderer.invoke('sync:deleteSyncPreference', entity, entityId, field),
+
+  // ============ Auto-Sync Preferences ============
+
+  getAutoSyncPreferences: () =>
+    ipcRenderer.invoke('sync:getAutoSyncPreferences'),
+
+  setAutoSyncPreferences: (prefs: { autoSyncEnabled: boolean; autoSyncInterval: number }) =>
+    ipcRenderer.invoke('sync:setAutoSyncPreferences', prefs),
+
+  // ============ Data Export/Backup ============
+
+  exportDatabase: () => ipcRenderer.invoke('data:exportDatabase'),
+
+  exportCourseData: (params?: { courseIds?: number[]; includeFiles?: boolean }) =>
+    ipcRenderer.invoke('data:exportCourseData', params),
+
+  importCourseData: () => ipcRenderer.invoke('data:importCourseData'),
+
+  getCrashInfo: () => ipcRenderer.invoke('app:getCrashInfo'),
 
   // ============ Window Controls ============
 

@@ -20,11 +20,18 @@ function createBaseState(overrides: Partial<StoreState> = {}): StoreState {
       grades: [],
     },
     syncStatus: 'idle',
+    syncMessage: null,
+    isAutoSync: false,
+    lastSyncedAt: null,
+    lastSyncResult: null,
     systemState: null,
     healthStatus: null,
     isAuthenticated: true,
     isInitialized: true,
     lastError: null,
+    importedCalendars: [],
+    calendarEvents: [],
+    syncConflicts: [],
     ...overrides,
   };
 }
@@ -43,6 +50,7 @@ function createCourse(overrides: Partial<Course> = {}): Course {
     nickname: null,
     isHidden: false,
     lastSyncedAt: '2024-01-15T10:00:00Z',
+    enrollmentTermId: null,
     ...overrides,
   };
 }
@@ -63,6 +71,8 @@ function createTask(overrides: Partial<Task> = {}): Task {
     isCompleted: false,
     completedAt: null,
     submissionStatus: null,
+    taskType: null,
+    taskGroupId: null,
     ...overrides,
   };
 }
@@ -76,6 +86,7 @@ function createNotification(overrides: Partial<Notification> = {}): Notification
     courseId: 1,
     title: 'Test Notification',
     message: 'This is a test notification',
+    messageHtml: null,
     publishedAt: '2024-01-15T10:00:00Z',
     dismissedAt: null,
     url: null,

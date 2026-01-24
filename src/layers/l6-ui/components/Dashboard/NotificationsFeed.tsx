@@ -126,14 +126,7 @@ export function NotificationsFeed({
               >
                 <div style={styles.itemHeader}>
                   <div style={styles.itemSourceRow}>
-                    <span style={styles.itemSource}>
-                      {notification.sourceType === 'canvas' ? (
-                        <Megaphone size={14} />
-                      ) : (
-                        <Bell size={14} />
-                      )}
-                    </span>
-                    {notification.courseId && courseMap.get(notification.courseId) && (
+                    {notification.courseId != null && courseMap.has(notification.courseId) && (
                       <button
                         style={{
                           ...styles.courseCode,
@@ -151,6 +144,13 @@ export function NotificationsFeed({
                         {getShortCode(courseMap.get(notification.courseId)!.code)}
                       </button>
                     )}
+                    <span style={styles.itemSource}>
+                      {notification.sourceType === 'canvas' ? (
+                        <Megaphone size={12} />
+                      ) : (
+                        <Bell size={12} />
+                      )}
+                    </span>
                   </div>
                   <span style={styles.itemTime}>
                     {formatTimeAgo(notification.publishedAt)}
@@ -226,13 +226,14 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '10px',
     fontWeight: 'var(--font-bold)',
     color: 'white',
-    padding: '2px 6px',
-    borderRadius: '4px',
+    padding: '3px 8px',
+    borderRadius: 'var(--radius-sm)',
     textTransform: 'uppercase',
-    letterSpacing: '0.025em',
+    letterSpacing: '0.03em',
     border: 'none',
     cursor: 'pointer',
     transition: 'opacity var(--transition-fast)',
+    flexShrink: 0,
   },
 
   itemTime: {
@@ -288,8 +289,10 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 'var(--space-2)',
+    padding: 'var(--space-6)',
     textAlign: 'center',
+    flex: 1,
+    minHeight: '150px',
   },
 
   emptyIcon: {

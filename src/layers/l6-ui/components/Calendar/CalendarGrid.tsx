@@ -788,11 +788,15 @@ export function CalendarGrid({
 
   if (view === 'month') {
     const days = getMonthDays(currentDate.getFullYear(), currentDate.getMonth());
+    const weeksNeeded = Math.ceil(days.length / 7);
     const MAX_VISIBLE = 2;
 
     return (
       <div ref={containerRef} style={styles.monthWrapper} onMouseLeave={hidePopupDelayed}>
-        <div style={styles.monthGrid}>
+        <div style={{
+          ...styles.monthGrid,
+          gridTemplateRows: `auto repeat(${weeksNeeded}, 1fr)`,
+        }}>
           {/* Weekday headers */}
           {WEEKDAYS.map((day) => (
             <div key={day} style={styles.weekdayHeader}>
@@ -1340,14 +1344,17 @@ export function CalendarGrid({
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  // Month view
+  // Month view - adaptive sizing
   monthGrid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(7, 1fr)',
+    // gridTemplateRows set dynamically based on weeks needed
     border: '1px solid var(--border-light)',
     borderRadius: '12px',
     overflow: 'hidden',
     boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+    height: 'calc(100vh - 220px)', // Viewport - header/nav/controls
+    minHeight: '400px',
   },
 
   weekdayHeader: {
@@ -1363,7 +1370,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
 
   dayCell: {
-    minHeight: '110px',
+    minHeight: '80px',
     padding: 'var(--space-2)',
     borderRight: '1px solid var(--border-light)',
     borderBottom: '1px solid var(--border-light)',
@@ -1371,6 +1378,8 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
     transition: 'background-color var(--transition-fast)',
     overflow: 'hidden',
+    display: 'flex',
+    flexDirection: 'column',
   },
 
   dayNumber: {

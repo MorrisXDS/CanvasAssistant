@@ -372,7 +372,9 @@ export class ServiceRegistry extends EventEmitter {
           await instance.shutdown();
         }
       } catch (error) {
-        console.error(`Error shutting down ${token}:`, error);
+        // Use logger if available, otherwise silently fail during shutdown
+        const logger = this.instances.get('logger') as { error?: (msg: string, err?: Error) => void } | undefined;
+        logger?.error?.(`Error shutting down ${token}`, error instanceof Error ? error : undefined);
       }
     }
 

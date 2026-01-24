@@ -1184,4 +1184,225 @@ export const coreMigrations: Migration[] = [
       SELECT 1;
     `,
   },
+  {
+    version: 42,
+    description: 'Create behavioral analytics tables for adaptive learning',
+    up: `
+      -- Track task completion events for pattern analysis
+      CREATE TABLE task_completion_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+        course_id INTEGER NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+        task_type TEXT NOT NULL,
+        started_at DATETIME,
+        completed_at DATETIME NOT NULL,
+        due_at DATETIME,
+        time_to_complete_minutes INTEGER,
+        day_of_week INTEGER NOT NULL,
+        hour_of_day INTEGER NOT NULL,
+        days_before_due INTEGER,
+        was_late BOOLEAN DEFAULT FALSE,
+        score_achieved REAL,
+        points_possible REAL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE INDEX idx_task_completion_events_task ON task_completion_events(task_id);
+      CREATE INDEX idx_task_completion_events_course ON task_completion_events(course_id);
+      CREATE INDEX idx_task_completion_events_type ON task_completion_events(task_type);
+      CREATE INDEX idx_task_completion_events_completed ON task_completion_events(completed_at);
+
+      -- Aggregated user behavior patterns
+      CREATE TABLE user_behavior_patterns (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        pattern_type TEXT NOT NULL,
+        pattern_key TEXT NOT NULL,
+        pattern_value TEXT NOT NULL,
+        sample_size INTEGER DEFAULT 0,
+        confidence REAL DEFAULT 0.0,
+        last_updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(pattern_type, pattern_key)
+      );
+
+      CREATE INDEX idx_user_behavior_patterns_type ON user_behavior_patterns(pattern_type);
+
+      -- Effort estimations per task
+      CREATE TABLE effort_estimations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+        course_id INTEGER NOT NULL REFERENCES courses(id),
+        task_type TEXT NOT NULL,
+        points_possible REAL,
+        estimated_minutes INTEGER NOT NULL,
+        actual_minutes INTEGER,
+        estimation_method TEXT NOT NULL,
+        confidence REAL DEFAULT 0.5,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(task_id)
+      );
+
+      CREATE INDEX idx_effort_estimations_task ON effort_estimations(task_id);
+      CREATE INDEX idx_effort_estimations_course ON effort_estimations(course_id);
+      CREATE INDEX idx_effort_estimations_type ON effort_estimations(task_type);
+    `,
+    down: `
+      DROP INDEX IF EXISTS idx_effort_estimations_type;
+      DROP INDEX IF EXISTS idx_effort_estimations_course;
+      DROP INDEX IF EXISTS idx_effort_estimations_task;
+      DROP TABLE IF EXISTS effort_estimations;
+
+      DROP INDEX IF EXISTS idx_user_behavior_patterns_type;
+      DROP TABLE IF EXISTS user_behavior_patterns;
+
+      DROP INDEX IF EXISTS idx_task_completion_events_completed;
+      DROP INDEX IF EXISTS idx_task_completion_events_type;
+      DROP INDEX IF EXISTS idx_task_completion_events_course;
+      DROP INDEX IF EXISTS idx_task_completion_events_task;
+      DROP TABLE IF EXISTS task_completion_events;
+    `,
+  },
+  {
+    version: 43,
+    description: 'Create workload, recommendations, insights, and adaptive weight tables',
+    up: `
+      -- Daily workload snapshots
+      CREATE TABLE workload_snapshots (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        snapshot_date DATE NOT NULL UNIQUE,
+        total_tasks_due INTEGER DEFAULT 0,
+        total_estimated_minutes INTEGER DEFAULT 0,
+        tasks_by_course TEXT,
+        tasks_by_urgency TEXT,
+        deadline_clustering_score REAL DEFAULT 0.0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE INDEX idx_workload_snapshots_date ON workload_snapshots(snapshot_date);
+
+      -- Generated recommendations
+      CREATE TABLE recommendations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        recommendation_type TEXT NOT NULL,
+        task_id INTEGER REFERENCES tasks(id) ON DELETE CASCADE,
+        course_id INTEGER REFERENCES courses(id),
+        title TEXT NOT NULL,
+        description TEXT NOT NULL,
+        reasoning TEXT NOT NULL,
+        priority_score REAL DEFAULT 50.0,
+        valid_from DATETIME NOT NULL,
+        valid_until DATETIME NOT NULL,
+        dismissed_at DATETIME,
+        acted_on_at DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE INDEX idx_recommendations_type ON recommendations(recommendation_type);
+      CREATE INDEX idx_recommendations_task ON recommendations(task_id);
+      CREATE INDEX idx_recommendations_course ON recommendations(course_id);
+      CREATE INDEX idx_recommendations_valid ON recommendations(valid_from, valid_until);
+      CREATE INDEX idx_recommendations_dismissed ON recommendations(dismissed_at);
+
+      -- User insights
+      CREATE TABLE user_insights (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        insight_type TEXT NOT NULL,
+        title TEXT NOT NULL,
+        description TEXT NOT NULL,
+        severity TEXT CHECK(severity IN ('info', 'warning', 'critical')) DEFAULT 'info',
+        data_json TEXT NOT NULL,
+        acknowledged_at DATETIME,
+        expires_at DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE INDEX idx_user_insights_type ON user_insights(insight_type);
+      CREATE INDEX idx_user_insights_severity ON user_insights(severity);
+      CREATE INDEX idx_user_insights_acknowledged ON user_insights(acknowledged_at);
+      CREATE INDEX idx_user_insights_expires ON user_insights(expires_at);
+
+      -- Adaptive weight adjustments
+      CREATE TABLE adaptive_weight_adjustments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        factor_name TEXT NOT NULL,
+        course_id INTEGER REFERENCES courses(id),
+        task_type TEXT,
+        weight_multiplier REAL DEFAULT 1.0,
+        adjustment_reason TEXT,
+        sample_size INTEGER DEFAULT 0,
+        last_updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(factor_name, course_id, task_type)
+      );
+
+      CREATE INDEX idx_adaptive_weights_factor ON adaptive_weight_adjustments(factor_name);
+      CREATE INDEX idx_adaptive_weights_course ON adaptive_weight_adjustments(course_id);
+      CREATE INDEX idx_adaptive_weights_type ON adaptive_weight_adjustments(task_type);
+    `,
+    down: `
+      DROP INDEX IF EXISTS idx_adaptive_weights_type;
+      DROP INDEX IF EXISTS idx_adaptive_weights_course;
+      DROP INDEX IF EXISTS idx_adaptive_weights_factor;
+      DROP TABLE IF EXISTS adaptive_weight_adjustments;
+
+      DROP INDEX IF EXISTS idx_user_insights_expires;
+      DROP INDEX IF EXISTS idx_user_insights_acknowledged;
+      DROP INDEX IF EXISTS idx_user_insights_severity;
+      DROP INDEX IF EXISTS idx_user_insights_type;
+      DROP TABLE IF EXISTS user_insights;
+
+      DROP INDEX IF EXISTS idx_recommendations_dismissed;
+      DROP INDEX IF EXISTS idx_recommendations_valid;
+      DROP INDEX IF EXISTS idx_recommendations_course;
+      DROP INDEX IF EXISTS idx_recommendations_task;
+      DROP INDEX IF EXISTS idx_recommendations_type;
+      DROP TABLE IF EXISTS recommendations;
+
+      DROP INDEX IF EXISTS idx_workload_snapshots_date;
+      DROP TABLE IF EXISTS workload_snapshots;
+    `,
+  },
+  {
+    version: 44,
+    description: 'Create field_notification_suppressions table for data completeness alerts',
+    up: `
+      CREATE TABLE field_notification_suppressions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        field_key TEXT NOT NULL UNIQUE,
+        suppressed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        expires_at DATETIME
+      );
+
+      CREATE INDEX idx_field_suppressions_key ON field_notification_suppressions(field_key);
+      CREATE INDEX idx_field_suppressions_expires ON field_notification_suppressions(expires_at);
+    `,
+    down: `
+      DROP INDEX IF EXISTS idx_field_suppressions_expires;
+      DROP INDEX IF EXISTS idx_field_suppressions_key;
+      DROP TABLE IF EXISTS field_notification_suppressions;
+    `,
+  },
+  {
+    version: 45,
+    description: 'Create message_display_history table for duplicate prevention with probation',
+    up: `
+      -- Track display history for insights/recommendations to prevent duplicates
+      CREATE TABLE message_display_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        message_type TEXT NOT NULL CHECK(message_type IN ('insight', 'recommendation')),
+        content_hash TEXT NOT NULL,
+        display_count INTEGER DEFAULT 1,
+        first_shown_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        last_shown_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        grounded_until DATETIME,
+        quiet_period_start DATETIME
+      );
+
+      CREATE UNIQUE INDEX idx_message_display_hash ON message_display_history(message_type, content_hash);
+      CREATE INDEX idx_message_display_grounded ON message_display_history(grounded_until);
+    `,
+    down: `
+      DROP INDEX IF EXISTS idx_message_display_grounded;
+      DROP INDEX IF EXISTS idx_message_display_hash;
+      DROP TABLE IF EXISTS message_display_history;
+    `,
+  },
 ];
