@@ -26,7 +26,10 @@
     "uoft",
     "electron"
   ],
-  "author": "UofT Students",
+  "author": {
+    "name": "UofT Students",
+    "email": "quercus-desktop@uoft.me"
+  },
   "license": "MIT",
   "dependencies": {
     "@types/dompurify": "^3.2.0",
