@@ -185,10 +185,15 @@ const noConsoleInMain = {
   create(context) {
     const filename = context.getFilename();
 
-    // Only apply to main process files and layers
+    // Only apply to main process code (main.ts, preload.ts, layers l0-l4)
+    // Renderer layers (l5-presentation, l6-ui) use browser console for DevTools
     const isMainProcess = filename.includes('main.ts') ||
-                          filename.includes('src/layers/') ||
-                          filename.includes('src\\layers\\');
+                          filename.includes('preload.ts') ||
+                          filename.includes('l0-utilities') ||
+                          filename.includes('l1-persistence') ||
+                          filename.includes('l2-daemon') ||
+                          filename.includes('l3-intelligence') ||
+                          filename.includes('l4-controller');
 
     // Exclude test files
     const isTestFile = filename.includes('.test.') ||

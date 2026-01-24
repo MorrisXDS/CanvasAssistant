@@ -215,6 +215,20 @@ const api = {
 
   getHealthStatus: () => ipcRenderer.invoke('health:status'),
 
+  // ============ Renderer Logger ============
+  // Sends logs from renderer to main process Logger
+
+  log: {
+    debug: (message: string, component?: string) =>
+      ipcRenderer.invoke('log:renderer', 'debug', message, component),
+    info: (message: string, component?: string) =>
+      ipcRenderer.invoke('log:renderer', 'info', message, component),
+    warn: (message: string, component?: string) =>
+      ipcRenderer.invoke('log:renderer', 'warn', message, component),
+    error: (message: string, component?: string) =>
+      ipcRenderer.invoke('log:renderer', 'error', message, component),
+  },
+
   // ============ Credentials ============
 
   hasCredential: async (): Promise<boolean> => {

@@ -575,6 +575,29 @@ function registerIpcHandlers(): void {
     return systemMonitor.getState();
   });
 
+  // Renderer logger - forwards logs from renderer to main process Logger
+  ipcMain.handle('log:renderer', (_event, level: string, message: string, component?: string) => {
+    const prefix = component ? `[Renderer:${component}]` : '[Renderer]';
+    const fullMessage = `${prefix} ${message}`;
+
+    switch (level) {
+      case 'debug':
+        logger.debug(fullMessage);
+        break;
+      case 'info':
+        logger.info(fullMessage);
+        break;
+      case 'warn':
+        logger.warn(fullMessage);
+        break;
+      case 'error':
+        logger.error(fullMessage);
+        break;
+      default:
+        logger.info(fullMessage);
+    }
+  });
+
   // Data fetching handlers for L5 store
   ipcMain.handle('data:getEnrollmentTerms', () => {
     const rows = database.executeRead<{
