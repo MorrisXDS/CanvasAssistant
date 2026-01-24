@@ -318,34 +318,19 @@ export const useStore = create<Store>()(
       },
 
       /**
-       * Fetch tasks (optionally for a specific course)
+       * Fetch tasks - filtered by visible courses at source for bandwidth efficiency
+       * Pass courseId for single course, or leave empty for all visible courses
        */
       fetchTasks: async (courseId?: number) => {
         const api = getApi();
         if (!api) return;
 
         try {
-          let tasks = await api.getTasks(courseId);
-
-          if (!courseId) {
-            // Filter tasks to only include those from visible (non-hidden) courses filtered by semester
-            const allCourses = get().courses;
-            const visibleCourseIds = new Set(
-              allCourses.filter((c: Course) => !c.isHidden).map((c: Course) => c.id)
-            );
-
-            // Only skip filtering if NO courses are loaded yet (loading state)
-            // If courses exist but all are hidden, filter will return empty (correct behavior)
-            if (allCourses.length === 0) {
-              console.debug(`[Store] Skipping task filter - no courses loaded yet (${tasks.length} tasks)`);
-            } else {
-              const beforeCount = tasks.length;
-              tasks = tasks.filter((t: Task) => visibleCourseIds.has(t.courseId));
-              console.debug(`[Store] Filtered tasks: ${beforeCount} -> ${tasks.length} (only from ${visibleCourseIds.size} visible courses)`);
-            }
-          }
+          let tasks: Task[];
 
           if (courseId) {
+            // Single course fetch
+            tasks = await api.getTasks(courseId);
             // Update only tasks for this course
             set((state) => ({
               tasks: [
@@ -354,6 +339,23 @@ export const useStore = create<Store>()(
               ],
             }));
           } else {
+            // Fetch tasks only for visible courses (filter at source)
+            const allCourses = get().courses;
+
+            if (allCourses.length === 0) {
+              // No courses loaded yet - fetch all (will be empty anyway)
+              console.debug('[Store] Fetching all tasks - no courses loaded yet');
+              tasks = await api.getTasks({ courseIds: 'all' });
+            } else {
+              // Get visible course IDs and fetch only those tasks
+              const visibleCourseIds = allCourses
+                .filter((c: Course) => !c.isHidden)
+                .map((c: Course) => c.id);
+
+              console.debug(`[Store] Fetching tasks for ${visibleCourseIds.length} visible courses`);
+              tasks = await api.getTasks({ courseIds: visibleCourseIds });
+            }
+
             set({ tasks });
           }
         } catch (error) {
@@ -363,29 +365,30 @@ export const useStore = create<Store>()(
       },
 
       /**
-       * Fetch all notifications
-       * Filters by visible courses (non-hidden, within selected semester)
+       * Fetch notifications - filtered by visible courses at source for bandwidth efficiency
+       * System notifications (courseId is null) are always included by the IPC handler
        */
       fetchNotifications: async () => {
         const api = getApi();
         if (!api) return;
 
         try {
-          let notifications = await api.getNotifications();
-
-          // Filter notifications to only include those from visible (non-hidden) courses
-          // System notifications (courseId is null) are always included
           const allCourses = get().courses;
-          const visibleCourseIds = new Set(
-            allCourses.filter((c: Course) => !c.isHidden).map((c: Course) => c.id)
-          );
 
-          if (allCourses.length > 0) {
-            const beforeCount = notifications.length;
-            notifications = notifications.filter((n: Notification) =>
-              n.courseId === null || visibleCourseIds.has(n.courseId)
-            );
-            console.debug(`[Store] Filtered notifications: ${beforeCount} -> ${notifications.length} (only from ${visibleCourseIds.size} visible courses)`);
+          let notifications: Notification[];
+
+          if (allCourses.length === 0) {
+            // No courses loaded yet - fetch all
+            console.debug('[Store] Fetching all notifications - no courses loaded yet');
+            notifications = await api.getNotifications({ courseIds: 'all' });
+          } else {
+            // Get visible course IDs and fetch only those notifications
+            const visibleCourseIds = allCourses
+              .filter((c: Course) => !c.isHidden)
+              .map((c: Course) => c.id);
+
+            console.debug(`[Store] Fetching notifications for ${visibleCourseIds.length} visible courses`);
+            notifications = await api.getNotifications({ courseIds: visibleCourseIds });
           }
 
           set({ notifications });

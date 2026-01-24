@@ -28,9 +28,25 @@ const api = {
 
   getCourse: (courseId: number) => ipcRenderer.invoke('data:getCourse', courseId),
 
-  getTasks: (courseId?: number) => ipcRenderer.invoke('data:getTasks', courseId),
+  // Tasks - requires courseIds for filtered fetch, or explicit 'all' for unfiltered
+  getTasks: (options: { courseIds: number[] | 'all' } | number) => {
+    if (typeof options === 'number') {
+      // Legacy single courseId support
+      return ipcRenderer.invoke('data:getTasks', options);
+    }
+    if (options.courseIds === 'all') {
+      return ipcRenderer.invoke('data:getTasks');
+    }
+    return ipcRenderer.invoke('data:getTasks', { courseIds: options.courseIds });
+  },
 
-  getNotifications: () => ipcRenderer.invoke('data:getNotifications'),
+  // Notifications - requires courseIds for filtered fetch, or explicit 'all' for unfiltered
+  getNotifications: (options: { courseIds: number[] | 'all' }) => {
+    if (options.courseIds === 'all') {
+      return ipcRenderer.invoke('data:getNotifications');
+    }
+    return ipcRenderer.invoke('data:getNotifications', { courseIds: options.courseIds });
+  },
 
   getNotification: (notificationId: number) =>
     ipcRenderer.invoke('data:getNotification', notificationId),

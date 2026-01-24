@@ -649,11 +649,24 @@ function registerIpcHandlers(): void {
     }));
   });
 
-  ipcMain.handle('data:getTasks', (_event, courseId?: number) => {
-    const sql = courseId
-      ? 'SELECT * FROM tasks WHERE course_id = ? ORDER BY priority_score DESC'
-      : 'SELECT * FROM tasks ORDER BY priority_score DESC';
-    const params = courseId ? [courseId] : [];
+  ipcMain.handle('data:getTasks', (_event, options?: { courseIds?: number[] } | number) => {
+    // Support both old API (single courseId) and new API (courseIds array)
+    let sql: string;
+    let params: number[] = [];
+
+    if (typeof options === 'number') {
+      // Legacy: single courseId
+      sql = 'SELECT * FROM tasks WHERE course_id = ? ORDER BY priority_score DESC';
+      params = [options];
+    } else if (options?.courseIds && options.courseIds.length > 0) {
+      // New: array of courseIds - filter at source for bandwidth efficiency
+      const placeholders = options.courseIds.map(() => '?').join(', ');
+      sql = `SELECT * FROM tasks WHERE course_id IN (${placeholders}) ORDER BY priority_score DESC`;
+      params = options.courseIds;
+    } else {
+      // No filter - return all tasks
+      sql = 'SELECT * FROM tasks ORDER BY priority_score DESC';
+    }
 
     const rows = database.executeRead<{
       id: number;
@@ -688,9 +701,32 @@ function registerIpcHandlers(): void {
     }));
   });
 
-  ipcMain.handle('data:getNotifications', () => {
-    // Only return notifications from courses that are currently synced
-    // (exist in courses table) or system notifications (course_id is null)
+  ipcMain.handle('data:getNotifications', (_event, options?: { courseIds?: number[] }) => {
+    // Filter by courseIds if provided, always include system notifications (course_id is null)
+    let sql: string;
+    let params: number[] = [];
+
+    if (options?.courseIds && options.courseIds.length > 0) {
+      // Filter by courseIds - keeps system notifications + notifications from specified courses
+      const placeholders = options.courseIds.map(() => '?').join(', ');
+      sql = `
+        SELECT n.* FROM notifications n
+        LEFT JOIN courses c ON n.course_id = c.id
+        WHERE (n.course_id IS NULL OR n.course_id IN (${placeholders}))
+          AND (n.course_id IS NULL OR c.id IS NOT NULL)
+        ORDER BY n.published_at DESC
+      `;
+      params = options.courseIds;
+    } else {
+      // No filter - return all notifications from synced courses
+      sql = `
+        SELECT n.* FROM notifications n
+        LEFT JOIN courses c ON n.course_id = c.id
+        WHERE n.course_id IS NULL OR c.id IS NOT NULL
+        ORDER BY n.published_at DESC
+      `;
+    }
+
     const rows = database.executeRead<{
       id: number;
       source_type: string;
@@ -702,12 +738,7 @@ function registerIpcHandlers(): void {
       published_at: string;
       dismissed_at: string | null;
       url: string | null;
-    }>(`
-      SELECT n.* FROM notifications n
-      LEFT JOIN courses c ON n.course_id = c.id
-      WHERE n.course_id IS NULL OR c.id IS NOT NULL
-      ORDER BY n.published_at DESC
-    `);
+    }>(sql, params);
 
     return rows.map((row) => ({
       id: row.id,
