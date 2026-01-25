@@ -300,9 +300,15 @@ const api = {
   validateToken: (token: string, baseUrl: string) =>
     ipcRenderer.invoke('canvas:validateToken', token, baseUrl),
 
-  // Debug: Direct Canvas API fetch
-  canvasDebugFetch: (endpoint: string) =>
-    ipcRenderer.invoke('canvas:debugFetch', endpoint),
+  // Debug: Direct Canvas API fetch (only available in development)
+  canvasDebugFetch:
+    process.env.NODE_ENV === 'development'
+      ? (endpoint: string) => ipcRenderer.invoke('canvas:debugFetch', endpoint)
+      : () =>
+          Promise.resolve({
+            success: false,
+            error: 'Debug API only available in development',
+          }),
 
   // ============ Sync ============
 
