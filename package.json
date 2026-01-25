@@ -7,11 +7,13 @@
     "node": ">=20.18.0 <21.0.0"
   },
   "scripts": {
+    "predev": "npm run check-node",
     "dev": "concurrently \"npm run dev:main\" \"npm run dev:renderer\" \"npm run dev:electron\"",
     "dev:main": "tsc -w",
     "dev:renderer": "vite",
     "dev:electron": "node -e \"setTimeout(() => {}, 3000)\" && cross-env NODE_ENV=development electron .",
     "build": "tsc && vite build",
+    "pretest": "npm run check-node",
     "test": "jest",
     "test:watch": "jest --watch",
     "lint": "eslint src/**/*.ts src/**/*.tsx",
