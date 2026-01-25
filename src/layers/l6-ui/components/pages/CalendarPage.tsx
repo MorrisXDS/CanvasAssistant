@@ -601,7 +601,7 @@ export function CalendarPage() {
             onClick={() => fileInputRef.current?.click()}
             title="Import ICS"
           >
-            <Upload size={16} />
+            <Download size={16} />
             <span>Import</span>
           </button>
           <button
@@ -609,7 +609,7 @@ export function CalendarPage() {
             onClick={handleExportICS}
             title="Export ICS"
           >
-            <Download size={16} />
+            <Upload size={16} />
             <span>Export</span>
           </button>
 

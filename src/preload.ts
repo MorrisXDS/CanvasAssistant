@@ -156,6 +156,37 @@ const api = {
     includeHidden?: boolean;
   }) => ipcRenderer.invoke('calendar:getEventsForRange', params),
 
+  createCalendarEvent: (data: {
+    title: string;
+    description?: string;
+    startAt: string;
+    endAt?: string;
+    allDay: boolean;
+    location?: string;
+    courseId?: number;
+  }) => ipcRenderer.invoke('calendar:createEvent', data),
+
+  updateCalendarEvent: (id: number, data: {
+    title?: string;
+    description?: string;
+    startAt?: string;
+    endAt?: string;
+    allDay?: boolean;
+    location?: string;
+  }) => ipcRenderer.invoke('calendar:updateEvent', id, data),
+
+  deleteCalendarEvent: (id: number) =>
+    ipcRenderer.invoke('calendar:deleteEvent', id),
+
+  exportCalendarsBatch: (options: {
+    mode: 'all' | 'selected';
+    calendarIds?: number[];
+    courseIds?: number[];
+    includeUserEvents?: boolean;
+    consolidate?: boolean;
+    dateRange?: { start: string; end: string };
+  }) => ipcRenderer.invoke('calendar:exportBatch', options),
+
   // ============ Commands ============
 
   dispatch: (command: string, params: unknown) =>
@@ -259,7 +290,8 @@ const api = {
 
   // ============ Data Management ============
 
-  clearAllData: () => ipcRenderer.invoke('data:clearAll'),
+  clearAllData: (options?: { deleteToken?: boolean }) =>
+    ipcRenderer.invoke('data:clearAll', options),
 
   // ============ Canvas ============
 
@@ -321,12 +353,32 @@ const api = {
   getAutoSyncPreferences: () =>
     ipcRenderer.invoke('sync:getAutoSyncPreferences'),
 
-  setAutoSyncPreferences: (prefs: { autoSyncEnabled: boolean; autoSyncInterval: number }) =>
+  setAutoSyncPreferences: (prefs: { autoSyncEnabled: boolean; autoSyncInterval: number; autoAssignDueDate?: boolean }) =>
     ipcRenderer.invoke('sync:setAutoSyncPreferences', prefs),
 
-  // ============ Data Export/Backup ============
+  // ============ Academic Settings ============
+
+  getDefaultTargetGrade: () =>
+    ipcRenderer.invoke('settings:getDefaultTargetGrade'),
+
+  setDefaultTargetGrade: (targetGrade: number) =>
+    ipcRenderer.invoke('settings:setDefaultTargetGrade', targetGrade),
+
+  // ============ Course Settings ============
+
+  getCourseSettings: (courseId: number) =>
+    ipcRenderer.invoke('course:getSettings', courseId),
+
+  updateCourseSettings: (courseId: number, settings: {
+    autoAssignDueDate?: number | null;
+    allowGuessedOverride?: number;
+  }) => ipcRenderer.invoke('course:updateSettings', courseId, settings),
+
+  // ============ Data Export/Import ============
 
   exportDatabase: () => ipcRenderer.invoke('data:exportDatabase'),
+
+  importDatabase: () => ipcRenderer.invoke('data:importDatabase'),
 
   exportCourseData: (params?: { courseIds?: number[]; includeFiles?: boolean }) =>
     ipcRenderer.invoke('data:exportCourseData', params),
@@ -396,6 +448,22 @@ const api = {
     };
     ipcRenderer.on('sync:conflicts', handler);
     return () => ipcRenderer.removeListener('sync:conflicts', handler);
+  },
+
+  onAuthExpired: (callback: (data: { reason: string }) => void): (() => void) => {
+    const handler = (_event: IpcRendererEvent, data: { reason: string }) => {
+      callback(data);
+    };
+    ipcRenderer.on('auth:expired', handler);
+    return () => ipcRenderer.removeListener('auth:expired', handler);
+  },
+
+  onAppReset: (callback: (data: { tokenDeleted: boolean; clearLocalStorage: boolean }) => void): (() => void) => {
+    const handler = (_event: IpcRendererEvent, data: { tokenDeleted: boolean; clearLocalStorage: boolean }) => {
+      callback(data);
+    };
+    ipcRenderer.on('app:reset', handler);
+    return () => ipcRenderer.removeListener('app:reset', handler);
   },
 };
 

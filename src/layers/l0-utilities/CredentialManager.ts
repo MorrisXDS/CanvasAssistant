@@ -69,6 +69,10 @@ export class CredentialManager extends EventEmitter {
   private keytarAvailable: boolean = false;
   private encryptionKey: Buffer | null = null;
 
+  // Initialization state tracking to prevent race conditions
+  private initializationPromise: Promise<void> | null = null;
+  private isInitialized: boolean = false;
+
   // Token validation settings
   private static readonly VALIDATION_TIMEOUT_MS = 10000; // 10 seconds
   private static readonly VALIDATION_MAX_RETRIES = 2;
@@ -103,8 +107,33 @@ export class CredentialManager extends EventEmitter {
       this.log = defaultLogger.child('credentialManager');
     }
 
-    // Initialize storage backend
-    this.initializeStorage();
+    // Initialize storage backend (non-blocking)
+    // Callers should use ensureInitialized() or await methods that call waitForInit()
+    this.initializationPromise = this.initializeStorage()
+      .then(() => {
+        this.isInitialized = true;
+        this.emit('initialized', { backend: this.storageBackend });
+      })
+      .catch((error) => {
+        this.log.error('Storage initialization failed', error instanceof Error ? error : undefined);
+        this.isInitialized = true; // Mark as done even on failure
+        this.emit('error', {
+          type: 'init-failed',
+          message: 'Storage initialization failed',
+          error,
+        });
+      });
+  }
+
+  /**
+   * Wait for storage initialization to complete
+   * Call this before any storage operation if you need to ensure init is done
+   */
+  private async waitForInit(): Promise<void> {
+    if (this.isInitialized) return;
+    if (this.initializationPromise) {
+      await this.initializationPromise;
+    }
   }
 
   /**
@@ -184,6 +213,9 @@ export class CredentialManager extends EventEmitter {
    * Store a credential securely
    */
   async store(token: string): Promise<boolean> {
+    // Wait for initialization to complete before storing
+    await this.waitForInit();
+
     if (!token || token.trim() === '') {
       this.log.error('Attempted to store empty token');
       this.emit('error', {
@@ -230,6 +262,9 @@ export class CredentialManager extends EventEmitter {
    * Optionally validates the token before returning
    */
   async retrieve(): Promise<string | null> {
+    // Wait for initialization to complete before retrieving
+    await this.waitForInit();
+
     try {
       let token: string | null = null;
 
@@ -272,6 +307,9 @@ export class CredentialManager extends EventEmitter {
    * Delete stored credential
    */
   async delete(): Promise<boolean> {
+    // Wait for initialization to complete before deleting
+    await this.waitForInit();
+
     try {
       if (this.storageBackend === 'keychain' && this.keytar) {
         const deleted = await this.keytar.deletePassword(this.serviceName, this.accountName);
@@ -308,6 +346,9 @@ export class CredentialManager extends EventEmitter {
    * Check if a credential exists (without retrieving it)
    */
   async exists(): Promise<boolean> {
+    // Wait for initialization to complete before checking
+    await this.waitForInit();
+
     try {
       if (this.storageBackend === 'keychain' && this.keytar) {
         const token = await this.keytar.getPassword(this.serviceName, this.accountName);
@@ -520,7 +561,7 @@ export class CredentialManager extends EventEmitter {
       }
 
       // Extract parts
-      const salt = data.subarray(0, SALT_LENGTH);
+      const _salt = data.subarray(0, SALT_LENGTH);
       const iv = data.subarray(SALT_LENGTH, SALT_LENGTH + IV_LENGTH);
       const authTag = data.subarray(SALT_LENGTH + IV_LENGTH, SALT_LENGTH + IV_LENGTH + AUTH_TAG_LENGTH);
       const encrypted = data.subarray(SALT_LENGTH + IV_LENGTH + AUTH_TAG_LENGTH);
@@ -547,9 +588,13 @@ export class CredentialManager extends EventEmitter {
 
   /**
    * Ensure storage is initialized (call after constructor for async init)
+   * This is safe to call multiple times - it will only wait for the initial init
    */
   async ensureInitialized(): Promise<void> {
-    if (this.storageBackend === 'none') {
+    await this.waitForInit();
+    // If storage backend is still 'none' after init, try one more time
+    // This handles the case where keytar failed but file fallback wasn't tried
+    if (this.storageBackend === 'none' && this.enableFileFallback) {
       await this.initializeStorage();
     }
   }

@@ -15,13 +15,17 @@ import {
   Square,
   Download,
   Upload,
+  Plus,
+  Edit2,
+  Trash2,
 } from 'lucide-react';
 import { useStore } from '../../../l5-presentation/store';
 import { CalendarGrid, CalendarView, CalendarEvent, TaskCalendarEvent, ImportedCalendarEvent } from './CalendarGrid';
 import { ImportConfirmationModal } from './ImportConfirmationModal';
 import { CalendarManagerPanel } from './CalendarManagerPanel';
 import { TaskDetailModal } from './TaskDetailModal';
-import type { ICSImportPreview, Task } from '../../../l5-presentation/types';
+import { EventFormModal } from './EventFormModal';
+import type { ICSImportPreview, Task, DisplayCalendarEvent } from '../../../l5-presentation/types';
 
 // Distinct color palette for courses
 const COURSE_COLORS = [
@@ -211,6 +215,10 @@ export function CalendarPage() {
     deleteImportedCalendar,
     toggleCalendarVisibility,
     updateImportedCalendar,
+    createCalendarEvent,
+    updateCalendarEvent,
+    deleteCalendarEvent,
+    exportCalendarsBatch,
   } = useStore();
   const location = useLocation();
   const navigate = useNavigate();
@@ -245,6 +253,10 @@ export function CalendarPage() {
 
   // Task detail modal state
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
+
+  // Event form modal state (for create/edit)
+  const [showEventFormModal, setShowEventFormModal] = useState(false);
+  const [eventToEdit, setEventToEdit] = useState<DisplayCalendarEvent | null>(null);
 
   // Fetch imported calendars on mount
   useEffect(() => {
@@ -430,8 +442,8 @@ export function CalendarPage() {
 
     return tasks
       .filter((task) => {
-        // Must have due date and not completed
-        if (!task.dueAt || task.isCompleted) return false;
+        // Must have due date
+        if (!task.dueAt) return false;
 
         // Course filter
         if (selectedCourses !== null && !selectedCourses.has(task.courseId)) {
@@ -558,7 +570,7 @@ export function CalendarPage() {
           const code = course.code.toLowerCase();
           const shortCode = code.split(/[hy]\d/)[0];
           if (eventTitle.includes(code) || calendarName.includes(code) ||
-              (shortCode.length >= 3 && (eventTitle.includes(shortCode) || calendarName.includes(shortCode)))) {
+            (shortCode.length >= 3 && (eventTitle.includes(shortCode) || calendarName.includes(shortCode)))) {
             courseIds.add(course.id);
             break;
           }
@@ -672,6 +684,96 @@ export function CalendarPage() {
     }
   };
 
+  // Open create event modal
+  const handleOpenCreateEvent = () => {
+    setEventToEdit(null);
+    setShowEventFormModal(true);
+  };
+
+  // Open edit event modal
+  const handleOpenEditEvent = (event: DisplayCalendarEvent) => {
+    setEventToEdit(event);
+    setShowEventFormModal(true);
+    setSelectedEvent(null); // Close detail modal
+  };
+
+  // Save calendar event (create or update)
+  const handleSaveEvent = async (data: {
+    title: string;
+    description?: string;
+    startAt: string;
+    endAt?: string;
+    allDay: boolean;
+    location?: string;
+    courseId?: number;
+  }) => {
+    if (eventToEdit) {
+      // Update existing event
+      await updateCalendarEvent(eventToEdit.id, data);
+    } else {
+      // Create new event
+      await createCalendarEvent(data);
+    }
+    setShowEventFormModal(false);
+    setEventToEdit(null);
+    // Refetch events to get updated list
+    fetchCalendarEventsForRange(visibleRange.start, visibleRange.end);
+  };
+
+  // Save coursework (create new task via command dispatcher)
+  const handleSaveCoursework = async (data: {
+    courseId: number;
+    title: string;
+    description?: string;
+    dueAt?: string;
+    weight?: number;
+    pointsPossible?: number;
+  }): Promise<{ success: boolean; taskId?: number }> => {
+    try {
+      const api = window.api;
+      if (!api) {
+        return { success: false };
+      }
+
+      const result = await api.dispatch('CreateTask', data);
+      if (result.success) {
+        setShowEventFormModal(false);
+        setEventToEdit(null);
+        // Tasks will automatically update via db:commit event
+        return { success: true, taskId: result.data?.taskId };
+      }
+      return { success: false };
+    } catch (error) {
+      console.error('Failed to create coursework:', error);
+      return { success: false };
+    }
+  };
+
+  // Delete event
+  const handleDeleteEvent = async () => {
+    if (eventToEdit) {
+      await deleteCalendarEvent(eventToEdit.id);
+      setShowEventFormModal(false);
+      setEventToEdit(null);
+      fetchCalendarEventsForRange(visibleRange.start, visibleRange.end);
+    }
+  };
+
+  // Handle edit/delete from detail modal
+  const handleEditFromDetail = () => {
+    if (selectedEvent?.type === 'imported') {
+      handleOpenEditEvent(selectedEvent.event);
+    }
+  };
+
+  const handleDeleteFromDetail = async () => {
+    if (selectedEvent?.type === 'imported') {
+      await deleteCalendarEvent(selectedEvent.event.id);
+      setSelectedEvent(null);
+      fetchCalendarEventsForRange(visibleRange.start, visibleRange.end);
+    }
+  };
+
   // ICS Export
   const handleExportICS = async () => {
     const icsContent = generateICS(events);
@@ -754,6 +856,22 @@ export function CalendarPage() {
         event={selectedEvent}
         onClose={handleCloseEventModal}
         onToggleComplete={handleToggleTaskComplete}
+        onEdit={handleEditFromDetail}
+        onDelete={handleDeleteFromDetail}
+      />
+
+      {/* Event Form Modal (Create/Edit) */}
+      <EventFormModal
+        isOpen={showEventFormModal}
+        event={eventToEdit}
+        courses={coursesWithColors}
+        onSaveEvent={handleSaveEvent}
+        onSaveCoursework={handleSaveCoursework}
+        onDelete={eventToEdit ? handleDeleteEvent : undefined}
+        onClose={() => {
+          setShowEventFormModal(false);
+          setEventToEdit(null);
+        }}
       />
 
       {/* Header */}
@@ -794,13 +912,23 @@ export function CalendarPage() {
             )}
           </button>
 
+          {/* Add Event Button */}
+          <button
+            style={styles.addEventButton}
+            onClick={handleOpenCreateEvent}
+            title="Add Event"
+          >
+            <Plus size={16} />
+            Add Event
+          </button>
+
           {/* ICS Import/Export */}
           <div style={styles.icsButtons}>
             <button style={styles.icsButton} onClick={handleImportICS} title="Import ICS">
-              <Upload size={16} />
+              <Download size={16} />
             </button>
             <button style={styles.icsButton} onClick={handleExportICS} title="Export ICS">
-              <Download size={16} />
+              <Upload size={16} />
             </button>
           </div>
 
@@ -975,7 +1103,7 @@ export function CalendarPage() {
         courses={coursesWithColors}
         onEventClick={handleEventClick}
         onDateClick={handleDateClick}
-        onCourseClick={(courseId) => navigate(`/courses/${courseId}`)}
+        onCourseClick={(courseId) => navigate(`/course/${courseId}`)}
       />
 
       {/* Course Legend */}
@@ -1212,6 +1340,21 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '1px 6px',
     borderRadius: 'var(--radius-full)',
     marginLeft: 'var(--space-1)',
+  },
+
+  addEventButton: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-2)',
+    padding: 'var(--space-2) var(--space-3)',
+    backgroundColor: 'var(--color-navy)',
+    color: 'white',
+    border: 'none',
+    borderRadius: 'var(--radius-md)',
+    cursor: 'pointer',
+    fontSize: 'var(--text-sm)',
+    fontWeight: 'var(--font-medium)',
+    transition: 'all var(--transition-fast)',
   },
 
   icsButtons: {

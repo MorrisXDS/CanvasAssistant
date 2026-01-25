@@ -29,6 +29,19 @@ Never miss professor announcements. All Canvas communications organized by cours
 ### 📁 Offline File Access
 Download course materials once and access them offline. Browse your Canvas files with full folder hierarchy, even without internet.
 
+### 🧠 Smart Recommendations & Insights
+AI-powered suggestions help you work smarter:
+- **Work Now**: Tasks that fit your current time slot with high urgency
+- **Start Early**: High-stakes assignments 3-7 days out
+- **Course Focus**: Neglected courses that need attention
+- **Productivity Insights**: Discover your peak productivity windows and deadline patterns
+
+### 📋 Policy Management
+Configure course-specific policies for accurate grade calculations:
+- **Grace Tokens**: Track late submission allowances
+- **Late Penalties**: Define percentage deductions per day
+- **Automatic Application**: Policies factor into priority calculations
+
 ### ⌨️ Keyboard-Centric Workflow
 Power users rejoice! Navigate between sections (`Alt+1-5`), move through lists (`j/k`), and trigger actions without touching your mouse.
 
@@ -71,16 +84,25 @@ chmod +x CanvasIntegrationDashboard-*.AppImage
    - Expiry: None (or set custom)
    - **Copy the token** (only shown once!)
 
-2. **Launch CID:**
-   - Open the Canvas Integration Dashboard app
-   - Paste your Canvas instance URL: `https://utoronto.instructure.com`
-   - Paste your API token
-   - Click **Connect**
+2. **Launch CID & Complete Setup Wizard:**
+   The app guides you through a comprehensive 7-stage setup:
+
+   | Stage | What You Configure |
+   |-------|-------------------|
+   | Welcome | Feature overview |
+   | Connection | Canvas URL & API token |
+   | Appearance | Light/Dark/System theme |
+   | Storage | Download location for files |
+   | Notifications | Desktop notification preferences |
+   | Academic | Default target grade (applied to all courses) |
+   | Sync | Auto-sync interval and preferences |
+
+   > **Tip:** You can skip optional stages and adjust settings later. After token validation, a "Skip to Dashboard" option appears.
 
 3. **Initial Sync:**
-   - The app will download all your courses, assignments, and grades
-   - This takes ~30 seconds for 6 courses
-   - You'll see a progress indicator
+   - The app downloads all your courses, assignments, and grades
+   - Progress indicator shows sync status
+   - You can start using the app while sync completes in background
 
 4. **Start Using CID:**
    - Navigate to **Dashboard** (`Alt+1`) to see your priority queue
@@ -212,13 +234,34 @@ Supports Light, Dark, and System modes.
 - Or use `Ctrl/Cmd+T`
 
 ### Target Grade
-Default: 85% for all courses
+Default: 80% for all courses (configurable during setup)
+
+**How Target Grades Work:**
+- **App Default**: Set in Settings → Academic. Applies to all new courses.
+- **Per-Course**: Each course can have its own target grade.
+- **Sync Behavior**: Courses using the "(default)" grade automatically update when you change the app default. Once you manually change a course's grade, it becomes independent and won't auto-update.
+
+**To change app default:**
+- Go to **Settings → Academic**
+- Adjust "Default Target Grade" slider
+- All courses marked "(default)" will update automatically
 
 **To customize per course:**
 - Go to **Courses** (`Alt+3`)
 - Click course name
 - Edit "Target Grade" field in Info Hub
-- Analytics will recalculate automatically
+- The "(default)" indicator will disappear, and this course becomes independent
+
+### Content & Links
+
+**Link Behavior:**
+Configure how links in announcements and course content are handled:
+- **Always External** (default): All links open in your browser
+- **Prefer Local**: If a file has been downloaded, open it locally; otherwise, open externally
+
+**To change:**
+- Go to **Settings → Content**
+- Select your preferred link behavior
 
 ### Keyboard Shortcuts
 All shortcuts are customizable:
@@ -293,11 +336,38 @@ Yes! Go to **File → Export Database As...** to save a copy of your SQLite data
 ## 🐛 Known Issues
 
 ### Version 0.1.0 (MVP)
-- **Recurring events not supported:** Lectures/labs must be created as individual events
-- **File sync is manual:** No automatic background downloads (coming in v0.2.0)
+- **File sync is manual:** Files require manual download—no automatic background downloads (planned for v0.2.0)
 - **No grade predictions:** Only shows current analytics, not future projections
+- **ICS calendar import limitations:** Some complex recurrence rules may not parse correctly
+
+### Recently Fixed
+- **Recurring events:** Now supported via RRULE parsing for Canvas and imported calendars
+- **Duplicate recommendations:** Fixed deduplication logic in v0.1.0
 
 See [GitHub Issues](https://github.com/MorrisXDS/CanvasAssistant/issues) for full list.
+
+---
+
+## 🏗️ Technical Architecture
+
+CID follows a **7-layer architecture** with strict unidirectional dependencies:
+
+| Layer | Purpose |
+|-------|---------|
+| L0 - Utilities | Logging, system monitoring, configuration |
+| L1 - Persistence | SQLite database (WAL mode), migrations |
+| L2 - Daemon | Canvas API client, sync engine, rate limiting |
+| L3 - Intelligence | Priority calculation, recommendations, insights |
+| L4 - Controller | Command dispatch, IPC handling |
+| L5 - Presentation | Zustand state management, view models |
+| L6 - UI | React components |
+
+**Key Design Principles:**
+- **Offline-First**: All data stored locally in SQLite; network is optional
+- **Privacy-Respecting**: No telemetry, no cloud sync, data never leaves your machine
+- **Performance**: <300MB memory, <1ms write latency, 60fps UI
+
+For developer documentation, see `CLAUDE.md` in the repository root.
 
 ---
 
@@ -345,4 +415,4 @@ See `DevDocs/README.md` for technical documentation.
 
 **Made with ❤️ by UofT students, for UofT students**
 
-*Version 0.1.0 | Last Updated: January 2026*
+*Version 0.1.0 | Last Updated: January 24, 2026*

@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(powershell.exe -Command \"node --version\")",
+      "Bash(powershell.exe -Command \"winget install OpenJS.NodeJS.LTS --version 20.18.3 --silent --accept-package-agreements --accept-source-agreements\")"
+    ]
+  }
+}

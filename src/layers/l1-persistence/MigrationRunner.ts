@@ -49,7 +49,7 @@ export class MigrationRunner {
 
     for (const file of files) {
       const filePath = path.join(this.migrationsPath, file);
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
+       
       const migration = require(filePath);
       if (migration.default) {
         this.migrations.push(migration.default);
@@ -131,8 +131,10 @@ export class MigrationRunner {
       try {
         this.db.transaction(() => {
           this.db.exec(migration.down!);
-          this.db.exec(
-            `DELETE FROM schema_version WHERE version = ${migration.version}`
+          // Use parameterized query to prevent SQL injection
+          this.db.executeWrite(
+            'DELETE FROM schema_version WHERE version = ?',
+            [migration.version]
           );
         });
         rolledBack++;
@@ -1403,6 +1405,188 @@ export const coreMigrations: Migration[] = [
       DROP INDEX IF EXISTS idx_message_display_grounded;
       DROP INDEX IF EXISTS idx_message_display_hash;
       DROP TABLE IF EXISTS message_display_history;
+    `,
+  },
+  {
+    version: 46,
+    description: 'Add target_grade_source column to courses for default/manual tracking',
+    up: `
+      -- Add column to track whether target grade is using app default or was manually set
+      -- 'default' = follows app default changes automatically
+      -- 'manual' = user explicitly set, independent of app default
+      ALTER TABLE courses ADD COLUMN target_grade_source TEXT DEFAULT 'default' CHECK(target_grade_source IN ('default', 'manual'));
+
+      -- Set existing courses with non-85 target grades as 'manual' (likely user-modified)
+      -- Courses with exactly 85.0 (the old hardcoded default) stay as 'default'
+      UPDATE courses SET target_grade_source = 'manual' WHERE target_grade != 85.0;
+    `,
+    down: `
+      -- SQLite doesn't support DROP COLUMN easily
+      SELECT 1;
+    `,
+  },
+  {
+    version: 47,
+    description: 'Add field_sources tracking for guessed vs user-set fields',
+    up: `
+      -- Track source of field values: 'canvas' (from API), 'user' (manually set), 'guessed' (auto-filled)
+      -- JSON object: {"due_at": "guessed", "title": "canvas", "grade": "user"}
+      ALTER TABLE tasks ADD COLUMN field_sources TEXT;
+      ALTER TABLE courses ADD COLUMN field_sources TEXT;
+
+      -- Per-course setting to control whether Canvas can silently override guessed values
+      -- 1 = allow Canvas to override guessed values (default), 0 = treat guessed as user
+      ALTER TABLE courses ADD COLUMN allow_guessed_override INTEGER DEFAULT 1;
+
+      -- Initialize field_sources as empty JSON for existing records
+      UPDATE tasks SET field_sources = '{}' WHERE field_sources IS NULL;
+      UPDATE courses SET field_sources = '{}' WHERE field_sources IS NULL;
+    `,
+    down: `
+      -- SQLite doesn't support DROP COLUMN easily
+      SELECT 1;
+    `,
+  },
+  {
+    version: 48,
+    description: 'Add per-course auto_assign_due_date setting',
+    up: `
+      -- Per-course setting for auto-assigning due dates to tasks without one
+      -- NULL = inherit from app default, 0 = disabled, 1 = enabled
+      ALTER TABLE courses ADD COLUMN auto_assign_due_date INTEGER DEFAULT NULL;
+    `,
+    down: `
+      -- SQLite doesn't support DROP COLUMN easily
+      SELECT 1;
+    `,
+  },
+  {
+    version: 49,
+    description: 'Add local_modified_fields column for sync conflict tracking',
+    up: `
+      -- Track which fields the user has explicitly modified
+      -- Used to detect conflicts when Canvas values change
+      -- Note: These columns may already exist from SyncConflictResolver or migration 50's table recreation
+      -- This migration is now a no-op to avoid duplicate column errors; columns are ensured by later migrations
+      SELECT 1;
+    `,
+    down: `
+      -- SQLite doesn't support DROP COLUMN easily
+      SELECT 1;
+    `,
+  },
+  {
+    version: 50,
+    description: 'Add ON DELETE CASCADE to tasks and notifications foreign keys',
+    up: `
+      -- Rebuild tasks table with CASCADE on course_id foreign key
+      -- This prevents orphaned task records when courses are deleted
+      CREATE TABLE tasks_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        external_id TEXT UNIQUE,
+        source_type TEXT CHECK(source_type IN ('canvas', 'user')) DEFAULT 'canvas',
+        course_id INTEGER,
+        title TEXT NOT NULL,
+        description TEXT,
+        due_at DATETIME,
+        unlock_at DATETIME,
+        lock_at DATETIME,
+        points_possible REAL,
+        submission_types TEXT,
+        weight REAL DEFAULT 0.0,
+        grade REAL,
+        priority_score REAL DEFAULT 0.0,
+        is_completed BOOLEAN DEFAULT FALSE,
+        completed_at DATETIME,
+        local_modified_at DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        task_group_id INTEGER,
+        task_type TEXT DEFAULT 'assignment',
+        canvas_assignment_group_id TEXT,
+        original_grade REAL,
+        effective_grade REAL,
+        grade_override_reason TEXT,
+        submission_status TEXT,
+        pain_index REAL DEFAULT 0.0,
+        penalty_severity REAL DEFAULT 0.0,
+        has_safety_net BOOLEAN DEFAULT FALSE,
+        days_until_cutoff INTEGER,
+        field_sources TEXT,
+        local_modified_fields TEXT,
+        FOREIGN KEY(course_id) REFERENCES courses(id) ON DELETE CASCADE,
+        FOREIGN KEY(task_group_id) REFERENCES course_task_groups(id)
+      );
+
+      -- Copy existing data
+      INSERT INTO tasks_new SELECT
+        id, external_id, source_type, course_id, title, description,
+        due_at, unlock_at, lock_at, points_possible, submission_types,
+        weight, grade, priority_score, is_completed, completed_at,
+        local_modified_at, created_at, updated_at, task_group_id,
+        task_type, canvas_assignment_group_id, original_grade,
+        effective_grade, grade_override_reason, submission_status,
+        pain_index, penalty_severity, has_safety_net, days_until_cutoff,
+        field_sources, local_modified_fields
+      FROM tasks;
+
+      -- Drop old table and rename
+      DROP TABLE tasks;
+      ALTER TABLE tasks_new RENAME TO tasks;
+
+      -- Recreate indexes
+      CREATE INDEX idx_tasks_priority ON tasks(priority_score DESC);
+      CREATE INDEX idx_tasks_due_date ON tasks(due_at);
+      CREATE INDEX idx_tasks_course ON tasks(course_id);
+      CREATE INDEX idx_tasks_source ON tasks(source_type);
+      CREATE INDEX idx_tasks_group ON tasks(task_group_id);
+      CREATE INDEX idx_tasks_type ON tasks(task_type);
+      CREATE INDEX idx_tasks_pain_index ON tasks(pain_index DESC);
+      CREATE INDEX idx_tasks_lock_at ON tasks(lock_at);
+
+      -- Rebuild notifications table with CASCADE on course_id foreign key
+      CREATE TABLE notifications_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        source_type TEXT CHECK(source_type IN ('canvas', 'system')),
+        source_id TEXT,
+        course_id INTEGER,
+        title TEXT NOT NULL,
+        message TEXT NOT NULL,
+        message_html TEXT,
+        priority_level TEXT CHECK(priority_level IN ('critical', 'high', 'medium', 'low')) DEFAULT 'medium',
+        priority_score REAL DEFAULT 0.0,
+        published_at DATETIME NOT NULL,
+        dismissed_at DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        url TEXT,
+        is_policy_related BOOLEAN DEFAULT FALSE,
+        policy_keywords TEXT,
+        linked_policy_id INTEGER,
+        FOREIGN KEY(course_id) REFERENCES courses(id) ON DELETE CASCADE,
+        FOREIGN KEY(linked_policy_id) REFERENCES course_policies(id),
+        UNIQUE(source_type, source_id)
+      );
+
+      -- Copy existing data
+      INSERT INTO notifications_new SELECT
+        id, source_type, source_id, course_id, title, message,
+        message_html, priority_level, priority_score, published_at,
+        dismissed_at, created_at, url, is_policy_related,
+        policy_keywords, linked_policy_id
+      FROM notifications;
+
+      -- Drop old table and rename
+      DROP TABLE notifications;
+      ALTER TABLE notifications_new RENAME TO notifications;
+
+      -- Recreate indexes
+      CREATE INDEX idx_notifications_dismissed ON notifications(dismissed_at);
+      CREATE INDEX idx_notifications_course ON notifications(course_id);
+    `,
+    down: `
+      -- Reverting CASCADE requires table rebuild (complex)
+      -- This down migration just ensures the schema remains valid
+      SELECT 1;
     `,
   },
 ];

@@ -33,8 +33,8 @@ export class UpdateTaskCommand
       return { valid: false, error: 'Weight must be between 0 and 100' };
     }
 
-    if (params.grade !== undefined && params.grade !== null && (params.grade < 0 || params.grade > 100)) {
-      return { valid: false, error: 'Grade must be between 0 and 100' };
+    if (params.grade !== undefined && params.grade !== null && (params.grade < 0 || params.grade > 150)) {
+      return { valid: false, error: 'Grade must be between 0 and 150' };
     }
 
     return { valid: true };

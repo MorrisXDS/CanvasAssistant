@@ -32,6 +32,7 @@ function createBaseState(overrides: Partial<StoreState> = {}): StoreState {
     importedCalendars: [],
     calendarEvents: [],
     syncConflicts: [],
+    authError: null,
     ...overrides,
   };
 }
@@ -44,6 +45,7 @@ function createCourse(overrides: Partial<Course> = {}): Course {
     code: 'CS101',
     name: 'Intro to Computer Science',
     targetGrade: 85,
+    targetGradeSource: 'default',
     assessedGrade: 80,
     currentGrade: 78,
     color: '#FF5733',
@@ -458,7 +460,7 @@ describe('CourseDetailViewModel', () => {
         expect(viewModel.gradeBreakdown.remaining.requiredAverage).toBe(100);
       });
 
-      it('caps required average at 100', () => {
+      it('caps required average at 150 (allows bonus grades)', () => {
         const course = createCourse({ id: 1, targetGrade: 95 });
         const tasks = [
           createTask({ id: 1, courseId: 1, weight: 50, grade: 70 }),
@@ -468,7 +470,8 @@ describe('CourseDetailViewModel', () => {
         const state = createBaseState({ courses: [course], tasks });
         const viewModel = computeCourseDetailViewModel(state, 1);
 
-        expect(viewModel.gradeBreakdown.remaining.requiredAverage).toBe(100);
+        // Required: (95 - 35) / 0.5 = 120%, now allowed for bonus grades
+        expect(viewModel.gradeBreakdown.remaining.requiredAverage).toBe(120);
       });
 
       it('calculates simulated grade separately', () => {

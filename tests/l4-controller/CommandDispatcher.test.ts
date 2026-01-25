@@ -314,11 +314,11 @@ describe('CommandDispatcher', () => {
     it('should reject invalid grades', async () => {
       const result = await dispatcher.dispatch('SimulateGrade', {
         taskId: 1,
-        grade: 150,
+        grade: 160,
       });
 
       expect(result.success).toBe(false);
-      expect(result.error).toContain('between 0 and 100');
+      expect(result.error).toContain('between 0 and 150');
     });
 
     it('should allow multiple simulations', async () => {

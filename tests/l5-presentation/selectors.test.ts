@@ -32,6 +32,7 @@ function createBaseState(overrides: Partial<StoreState> = {}): StoreState {
     importedCalendars: [],
     calendarEvents: [],
     syncConflicts: [],
+    authError: null,
     ...overrides,
   };
 }
@@ -44,6 +45,7 @@ function createCourse(overrides: Partial<Course> = {}): Course {
     code: 'CS101',
     name: 'Intro to Computer Science',
     targetGrade: 85,
+    targetGradeSource: 'default',
     assessedGrade: 80,
     currentGrade: 78,
     color: '#FF5733',

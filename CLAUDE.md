@@ -5,9 +5,15 @@
 ## 1. Stack Boundaries (Negative Constraints)
 
 ### Runtime
-- **Node.js:** 20.x required. NO Node 18 or earlier.
+- **Node.js:** 20.x required (see `.nvmrc`). Electron 34 bundles Node 20.18.1 - using a different version causes native module ABI mismatches with `better-sqlite3`.
 - **TypeScript:** 5.7+ with `strict: true`. NO `any` without explicit comment.
 - **Electron:** 34.x. Main process is CommonJS, renderer is ESM via Vite.
+
+```bash
+# Before development, ensure correct Node version:
+nvm use        # Reads .nvmrc automatically
+npm rebuild    # Rebuild native modules if switching versions
+```
 
 ### Forbidden Libraries
 - NO `fetch` - use `axios` (already configured with rate limiting)

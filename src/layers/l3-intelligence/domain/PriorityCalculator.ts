@@ -446,26 +446,72 @@ function buildSubmissionWindows(task: TaskForPriority, graceTokenPolicy: GraceTo
 }
 
 /**
- * Build grade impact analysis
+ * Build grade impact analysis using points-based calculation
+ *
+ * Uses the formula:
+ * - Grade = totalPointsEarned / totalPointsPossible * 100
+ * - If task skipped: newGrade = currentPointsEarned / (currentPointsPossible + taskPoints)
+ * - If task aced: newGrade = (currentPointsEarned + taskPoints) / (currentPointsPossible + taskPoints)
  */
 function buildGradeImpact(task: TaskForPriority, course: CourseForPriority): GradeImpact {
   const currentGrade = course.currentGrade ?? 0;
   const targetGrade = course.targetGrade;
-  const taskWeight = task.weight ?? 0;
+  const taskWeight = task.weight;
+  const taskPoints = task.pointsPossible ?? 0;
 
-  // Calculate projected grades
-  const gradeIfSkipped = currentGrade - taskWeight * (currentGrade / 100);
-  const gradeIfAverage = currentGrade + taskWeight * 0.1; // Assuming average adds 10% of weight
+  // Guard against zero/null weight - this is a deadline-only task with no grade impact
+  if (taskWeight === null || taskWeight === 0) {
+    return {
+      currentGrade,
+      targetGrade,
+      gapToTarget: targetGrade - currentGrade,
+      gradeIfSkipped: currentGrade,
+      gradeIfAverage: currentGrade,
+      minScoreForTarget: null,
+      riskLevel: 'low',
+    };
+  }
+
+  // Points-based grading calculation
+  // Estimate current points based on course total weight and current grade
+  const coursePointsBasis = course.totalWeight || 100;
+  const currentPointsPossible = (coursePointsBasis / 100) * 1000; // Normalize to 1000-point scale
+  const currentPointsEarned = (currentGrade / 100) * currentPointsPossible;
+  const totalPointsAfterTask = currentPointsPossible + taskPoints;
+
+  // Guard against zero total points
+  if (totalPointsAfterTask === 0) {
+    return {
+      currentGrade,
+      targetGrade,
+      gapToTarget: targetGrade - currentGrade,
+      gradeIfSkipped: currentGrade,
+      gradeIfAverage: currentGrade,
+      minScoreForTarget: null,
+      riskLevel: 'low',
+    };
+  }
+
+  // Calculate grade projections
+  const gradeIfSkipped = (currentPointsEarned / totalPointsAfterTask) * 100;
+  const gradeIfAverage = ((currentPointsEarned + taskPoints * (currentGrade / 100)) / totalPointsAfterTask) * 100;
 
   // Calculate minimum score needed
   const gapToTarget = targetGrade - currentGrade;
-  const minScoreForTarget = taskWeight > 0 ? Math.max(0, (gapToTarget / taskWeight) * 100) : null;
+  let minScoreForTarget: number | null = null;
+  if (currentGrade < targetGrade && taskPoints > 0) {
+    const neededPoints = (targetGrade / 100) * totalPointsAfterTask - currentPointsEarned;
+    const neededScore = (neededPoints / taskPoints) * 100;
+    // Allow values > 100 to indicate bonus points needed
+    minScoreForTarget = Math.min(Math.max(neededScore, 0), 150);
+  }
 
-  // Determine risk level
+  // Determine risk level based on grade drop if skipped
+  const dropIfSkipped = currentGrade - gradeIfSkipped;
   let riskLevel: 'low' | 'medium' | 'high' | 'critical' = 'low';
-  if (gapToTarget > 15) riskLevel = 'critical';
-  else if (gapToTarget > 10) riskLevel = 'high';
-  else if (gapToTarget > 5) riskLevel = 'medium';
+  if (dropIfSkipped >= 10) riskLevel = 'critical';
+  else if (dropIfSkipped >= 5) riskLevel = 'high';
+  else if (dropIfSkipped >= 2) riskLevel = 'medium';
 
   return {
     currentGrade,

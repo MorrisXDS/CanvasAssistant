@@ -14,6 +14,8 @@ import {
   Circle,
   ExternalLink,
   Clock,
+  Edit2,
+  Trash2,
 } from 'lucide-react';
 import type { Task, Course } from '../../../l5-presentation/types';
 import type { CalendarEvent } from './CalendarGrid';
@@ -23,6 +25,8 @@ interface TaskDetailModalProps {
   event: CalendarEvent | null;
   onClose: () => void;
   onToggleComplete?: (task: Task) => void;
+  onEdit?: () => void;
+  onDelete?: () => void;
 }
 
 function formatDate(dateStr: string | null): string {
@@ -71,8 +75,18 @@ export function TaskDetailModal({
   event,
   onClose,
   onToggleComplete,
+  onEdit,
+  onDelete,
 }: TaskDetailModalProps) {
   const navigate = useNavigate();
+  const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false);
+
+  // Reset delete confirm state when modal closes
+  React.useEffect(() => {
+    if (!isOpen) {
+      setShowDeleteConfirm(false);
+    }
+  }, [isOpen]);
 
   if (!isOpen || !event) return null;
 
@@ -84,7 +98,7 @@ export function TaskDetailModal({
   const handleGoToCourse = () => {
     if (course) {
       onClose();
-      navigate(`/courses/${course.id}`);
+      navigate(`/course/${course.id}`);
     }
   };
 
@@ -256,15 +270,57 @@ export function TaskDetailModal({
 
         {/* Footer Actions */}
         <div style={styles.footer}>
-          {isTask && course && (
-            <button style={styles.primaryButton} onClick={handleGoToCourse}>
-              <BookOpen size={16} />
-              Go to Course
-            </button>
+          {/* Left side - Edit/Delete for editable events */}
+          {!isTask && importedEvent && (importedEvent.sourceType === 'user' || importedEvent.sourceType === 'imported') && (
+            <div style={styles.footerLeft}>
+              {showDeleteConfirm ? (
+                <div style={styles.deleteConfirm}>
+                  <span style={styles.deleteText}>Delete event?</span>
+                  <button
+                    style={styles.confirmDeleteButton}
+                    onClick={() => {
+                      onDelete?.();
+                      setShowDeleteConfirm(false);
+                    }}
+                  >
+                    Delete
+                  </button>
+                  <button
+                    style={styles.cancelDeleteButton}
+                    onClick={() => setShowDeleteConfirm(false)}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <>
+                  {onEdit && (
+                    <button style={styles.editButton} onClick={onEdit}>
+                      <Edit2 size={14} />
+                      Edit
+                    </button>
+                  )}
+                  {onDelete && (
+                    <button style={styles.deleteButton} onClick={() => setShowDeleteConfirm(true)}>
+                      <Trash2 size={14} />
+                      Delete
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
           )}
-          <button style={styles.secondaryButton} onClick={onClose}>
-            Close
-          </button>
+          <div style={styles.footerRight}>
+            {isTask && course && (
+              <button style={styles.primaryButton} onClick={handleGoToCourse}>
+                <BookOpen size={16} />
+                Go to Course
+              </button>
+            )}
+            <button style={styles.secondaryButton} onClick={onClose}>
+              Close
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -449,10 +505,86 @@ const styles: Record<string, React.CSSProperties> = {
 
   footer: {
     display: 'flex',
-    justifyContent: 'flex-end',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     gap: 'var(--space-2)',
     padding: 'var(--space-4)',
     borderTop: '1px solid var(--border-light)',
+  },
+
+  footerLeft: {
+    display: 'flex',
+    gap: 'var(--space-2)',
+    alignItems: 'center',
+  },
+
+  footerRight: {
+    display: 'flex',
+    gap: 'var(--space-2)',
+    marginLeft: 'auto',
+  },
+
+  editButton: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-1)',
+    padding: 'var(--space-2) var(--space-3)',
+    backgroundColor: 'transparent',
+    color: 'var(--text-secondary)',
+    border: '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-md)',
+    fontSize: 'var(--text-sm)',
+    fontWeight: 'var(--font-medium)',
+    cursor: 'pointer',
+    transition: 'all var(--transition-fast)',
+  },
+
+  deleteButton: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-1)',
+    padding: 'var(--space-2) var(--space-3)',
+    backgroundColor: 'transparent',
+    color: 'var(--color-error)',
+    border: '1px solid var(--color-error)',
+    borderRadius: 'var(--radius-md)',
+    fontSize: 'var(--text-sm)',
+    fontWeight: 'var(--font-medium)',
+    cursor: 'pointer',
+    transition: 'all var(--transition-fast)',
+  },
+
+  deleteConfirm: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-2)',
+  },
+
+  deleteText: {
+    fontSize: 'var(--text-sm)',
+    color: 'var(--text-secondary)',
+  },
+
+  confirmDeleteButton: {
+    padding: 'var(--space-1) var(--space-3)',
+    backgroundColor: 'var(--color-error)',
+    color: 'white',
+    border: 'none',
+    borderRadius: 'var(--radius-sm)',
+    fontSize: 'var(--text-xs)',
+    fontWeight: 'var(--font-medium)',
+    cursor: 'pointer',
+  },
+
+  cancelDeleteButton: {
+    padding: 'var(--space-1) var(--space-3)',
+    backgroundColor: 'transparent',
+    color: 'var(--text-secondary)',
+    border: '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-sm)',
+    fontSize: 'var(--text-xs)',
+    fontWeight: 'var(--font-medium)',
+    cursor: 'pointer',
   },
 
   primaryButton: {

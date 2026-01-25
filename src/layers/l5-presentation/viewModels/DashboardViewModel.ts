@@ -54,13 +54,20 @@ function getUrgencyLevel(task: Task): 'critical' | 'high' | 'medium' | 'low' {
 }
 
 /**
- * Calculate days until due (negative if overdue)
+ * Calculate days until due using calendar days (not 24-hour periods)
+ * Returns 0 for "due today", 1 for "due tomorrow", -1 for "1 day overdue", etc.
  */
 function getDaysUntilDue(dueAt: string | null): number | null {
   if (!dueAt) return null;
   const now = new Date();
   const due = new Date(dueAt);
-  return Math.ceil((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+
+  // Compare dates at midnight to get calendar days
+  const nowDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const dueDate = new Date(due.getFullYear(), due.getMonth(), due.getDate());
+
+  const diffMs = dueDate.getTime() - nowDate.getTime();
+  return Math.round(diffMs / (1000 * 60 * 60 * 24));
 }
 
 /**

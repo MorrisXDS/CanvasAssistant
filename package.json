@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "description": "Offline-first academic command center for Canvas LMS",
   "main": "dist/main.js",
+  "engines": {
+    "node": ">=20.18.0 <21.0.0"
+  },
   "scripts": {
     "dev": "concurrently \"npm run dev:main\" \"npm run dev:renderer\" \"npm run dev:electron\"",
     "dev:main": "tsc -w",
@@ -19,7 +22,9 @@
     "package:win": "electron-builder --win",
     "package:linux": "electron-builder --linux",
     "prepare": "husky",
-    "postinstall": "electron-builder install-app-deps"
+    "postinstall": "electron-builder install-app-deps",
+    "rebuild": "electron-rebuild -f -w better-sqlite3",
+    "check-node": "node -e \"const v = process.versions.node.split('.')[0]; if (v !== '20') { console.error('\\x1b[31mError: Node 20.x required (you have ' + process.version + '). Run: nvm use\\x1b[0m'); process.exit(1); }\""
   },
   "lint-staged": {
     "src/**/*.{ts,tsx}": [
@@ -79,6 +84,7 @@
     "eslint": "^9.18.0",
     "husky": "^9.1.7",
     "jest": "^29.7.0",
+    "jest-environment-jsdom": "^30.2.0",
     "lint-staged": "^15.5.2",
     "prettier": "^3.4.2",
     "ts-jest": "^29.2.5",

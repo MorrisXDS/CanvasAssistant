@@ -53,8 +53,9 @@ export class UpdateTargetGradeCommand
         return { success: false, error: 'Course not found' };
       }
 
-      // Update target grade using repository
-      courseRepo.update(params.courseId, { targetGrade: params.targetGrade });
+      // Update target grade using repository, marking as manually set
+      // This ensures the course won't auto-update when app default changes
+      courseRepo.updateTargetGradeManual(params.courseId, params.targetGrade);
 
       // Mark the field as locally modified for sync conflict detection
       courseRepo.markFieldModified(params.courseId, 'target_grade');

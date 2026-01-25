@@ -12,12 +12,16 @@ import { z } from 'zod';
 export const SyncStatusSchema = z.enum(['idle', 'syncing', 'error', 'offline']);
 export type SyncStatus = z.infer<typeof SyncStatusSchema>;
 
+export const TargetGradeSourceSchema = z.enum(['default', 'manual']);
+export type TargetGradeSource = z.infer<typeof TargetGradeSourceSchema>;
+
 export const CourseSchema = z.object({
   id: z.number(),
   externalId: z.string(),
   code: z.string(),
   name: z.string(),
   targetGrade: z.number(),
+  targetGradeSource: TargetGradeSourceSchema,
   assessedGrade: z.number().nullable(),
   currentGrade: z.number().nullable(),
   color: z.string().nullable(),
@@ -59,6 +63,7 @@ export const TaskSchema = z.object({
   submissionStatus: z.string().nullable(),
   taskType: z.string().nullable(),
   taskGroupId: z.number().nullable(),
+  fieldSources: z.record(z.string(), z.enum(['canvas', 'user', 'guessed'])).optional(),
 });
 export type Task = z.infer<typeof TaskSchema>;
 
@@ -211,6 +216,41 @@ export const ICSImportPreviewSchema = z.object({
 });
 export type ICSImportPreview = z.infer<typeof ICSImportPreviewSchema>;
 
+// Calendar Event CRUD Schemas
+export const CreateCalendarEventSchema = z.object({
+  title: z.string().min(1),
+  description: z.string().optional(),
+  startAt: z.string(),
+  endAt: z.string().optional(),
+  allDay: z.boolean().default(false),
+  location: z.string().optional(),
+  courseId: z.number().optional(),
+});
+export type CreateCalendarEventInput = z.infer<typeof CreateCalendarEventSchema>;
+
+export const UpdateCalendarEventSchema = z.object({
+  title: z.string().min(1).optional(),
+  description: z.string().optional(),
+  startAt: z.string().optional(),
+  endAt: z.string().optional(),
+  allDay: z.boolean().optional(),
+  location: z.string().optional(),
+});
+export type UpdateCalendarEventInput = z.infer<typeof UpdateCalendarEventSchema>;
+
+export const ExportBatchOptionsSchema = z.object({
+  mode: z.enum(['all', 'selected']),
+  calendarIds: z.array(z.number()).optional(),
+  courseIds: z.array(z.number()).optional(),
+  includeUserEvents: z.boolean().default(true),
+  consolidate: z.boolean().default(true),
+  dateRange: z.object({
+    start: z.string(),
+    end: z.string(),
+  }).optional(),
+});
+export type ExportBatchOptions = z.infer<typeof ExportBatchOptionsSchema>;
+
 export const UrgencyLevelSchema = z.enum(['critical', 'high', 'medium', 'low']);
 
 export const PriorityItemSchema = z.object({
@@ -304,6 +344,11 @@ export const UserProfileSchema = z.object({
   avatarUrl: z.string().nullable(),
 });
 export type UserProfile = z.infer<typeof UserProfileSchema>;
+
+export const ClearDataOptionsSchema = z.object({
+  deleteToken: z.boolean().optional().default(false),
+});
+export type ClearDataOptions = z.infer<typeof ClearDataOptionsSchema>;
 
 export const CoursePageSchema = z.object({
   id: z.number(),
@@ -643,6 +688,25 @@ export const IpcContract = {
       includeHidden: z.boolean().optional(),
     }),
     result: z.array(DisplayCalendarEventSchema),
+  },
+  'calendar:createEvent': {
+    params: CreateCalendarEventSchema,
+    result: ApiResultSchema(z.object({ id: z.number() })),
+  },
+  'calendar:updateEvent': {
+    params: z.object({
+      id: z.number(),
+      data: UpdateCalendarEventSchema,
+    }),
+    result: ApiResultSchema(z.void()),
+  },
+  'calendar:deleteEvent': {
+    params: z.number(),
+    result: ApiResultSchema(z.void()),
+  },
+  'calendar:exportBatch': {
+    params: ExportBatchOptionsSchema,
+    result: ApiResultSchema(z.object({ content: z.string(), eventCount: z.number() })),
   },
 
   // ============ Commands ============

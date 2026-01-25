@@ -82,6 +82,7 @@ interface CourseDetailData {
   code: string;
   name: string;
   targetGrade: number;
+  targetGradeSource: 'default' | 'manual';
   assessedGrade: number | null;
   currentGrade: number | null;
   totalWeight: number;
@@ -276,7 +277,8 @@ export function CourseDetail() {
 
     try {
       await api.dispatch('UpdateTargetGrade', { courseId, targetGrade: newTarget });
-      setCourse((prev) => prev ? { ...prev, targetGrade: newTarget } : null);
+      // Mark as 'manual' since user explicitly changed it
+      setCourse((prev) => prev ? { ...prev, targetGrade: newTarget, targetGradeSource: 'manual' } : null);
       setEditingTarget(false);
     } catch (error) {
       console.error('Failed to update target grade:', error);
@@ -298,12 +300,12 @@ export function CourseDetail() {
         },
       });
 
-      // Save target grade if changed
+      // Save target grade if changed (marks as 'manual')
       const newTarget = parseFloat(targetGradeInput);
       if (!isNaN(newTarget) && newTarget >= 0 && newTarget <= 100 && newTarget !== course?.targetGrade) {
         await api.dispatch('UpdateTargetGrade', { courseId, targetGrade: newTarget });
         setCourse((prev) =>
-          prev ? { ...prev, nickname: nicknameInput || null, color: selectedColor, targetGrade: newTarget } : null
+          prev ? { ...prev, nickname: nicknameInput || null, color: selectedColor, targetGrade: newTarget, targetGradeSource: 'manual' } : null
         );
       } else {
         setCourse((prev) =>
@@ -823,7 +825,11 @@ export function CourseDetail() {
                     </div>
                   )}
                   <div style={styles.gradeSubtext}>
-                    final goal
+                    final goal{course.targetGradeSource === 'default' && (
+                      <span style={{ color: 'var(--color-blue)', marginLeft: '4px' }} title="Using app default - will update when you change the default target grade in Settings">
+                        (default)
+                      </span>
+                    )}
                   </div>
                 </div>
                 <div style={styles.gradeDivider} />
@@ -847,11 +853,9 @@ export function CourseDetail() {
                   >
                     {completedWeight > 0 ? `${earnedContribution.toFixed(2)}%` : '—'}
                   </div>
-                  {completedWeight > 0 && (
-                    <div style={styles.gradeSubtext}>
-                      of {completedWeight.toFixed(0)}% assessed
-                    </div>
-                  )}
+                  <div style={styles.gradeSubtext}>
+                    {completedWeight > 0 ? `of ${completedWeight.toFixed(0)}% assessed` : '\u00A0'}
+                  </div>
                 </div>
                 <div style={styles.gradeDivider} />
                 <div style={styles.gradeItem}>
@@ -874,11 +878,9 @@ export function CourseDetail() {
                   >
                     {completedWeight > 0 ? `${effectiveGrade.toFixed(1)}%` : '—'}
                   </div>
-                  {completedWeight > 0 && (
-                    <div style={styles.gradeSubtext}>
-                      avg on graded work
-                    </div>
-                  )}
+                  <div style={styles.gradeSubtext}>
+                    {completedWeight > 0 ? 'avg on graded work' : '\u00A0'}
+                  </div>
                 </div>
                 {/* Settings Button */}
                 <div style={styles.gradeDivider} />
@@ -1626,6 +1628,9 @@ function TaskItem({
               <span style={{ color: isCompleted ? 'var(--text-muted)' : getUrgencyColor(task.dueAt) }}>
                 <Calendar size={12} />
                 {formatDate(task.dueAt)}
+                {task.fieldSources?.due_at === 'guessed' && (
+                  <span style={styles.guessedBadge} title="Auto-assigned date">(est.)</span>
+                )}
               </span>
             )}
             {task.weight > 0 && (
@@ -1737,7 +1742,7 @@ function TaskItem({
                     onChange={(e) => onEditGradeChange(e.target.value)}
                     style={styles.taskEditInput}
                     min="0"
-                    max="100"
+                    max="150"
                     placeholder="e.g. 85"
                   />
                 </div>
@@ -2489,6 +2494,13 @@ const styles: Record<string, React.CSSProperties> = {
   taskScore: {
     fontWeight: 'var(--font-medium)',
     color: 'var(--color-success)',
+    cursor: 'help',
+  },
+
+  guessedBadge: {
+    marginLeft: '4px',
+    fontStyle: 'italic',
+    color: 'var(--color-blue)',
     cursor: 'help',
   },
 

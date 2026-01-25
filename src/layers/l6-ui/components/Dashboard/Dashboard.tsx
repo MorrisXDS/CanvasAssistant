@@ -103,9 +103,14 @@ export function Dashboard() {
       const course = courseMap.get(task.courseId);
       if (!course) continue;
 
-      const daysUntilDue = task.dueAt
-        ? Math.ceil((new Date(task.dueAt).getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
-        : null;
+      // Calculate days until due using calendar days (not 24-hour periods)
+      let daysUntilDue: number | null = null;
+      if (task.dueAt) {
+        const due = new Date(task.dueAt);
+        const nowDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const dueDate = new Date(due.getFullYear(), due.getMonth(), due.getDate());
+        daysUntilDue = Math.round((dueDate.getTime() - nowDate.getTime()) / (1000 * 60 * 60 * 24));
+      }
 
       const taskWithCourse: TaskWithCourse = { task, course, daysUntilDue };
 

@@ -32,6 +32,7 @@ function createBaseState(overrides: Partial<StoreState> = {}): StoreState {
     importedCalendars: [],
     calendarEvents: [],
     syncConflicts: [],
+    authError: null,
     ...overrides,
   };
 }
@@ -44,6 +45,7 @@ function createCourse(overrides: Partial<Course> = {}): Course {
     code: 'CS101',
     name: 'Intro to Computer Science',
     targetGrade: 85,
+    targetGradeSource: 'default',
     assessedGrade: 80,
     currentGrade: 78,
     color: '#FF5733',
@@ -57,13 +59,17 @@ function createCourse(overrides: Partial<Course> = {}): Course {
 
 // Helper to create a task
 function createTask(overrides: Partial<Task> = {}): Task {
+  // Default due date is 3 days from now to ensure tasks appear in priority queue
+  const defaultDueAt = new Date();
+  defaultDueAt.setDate(defaultDueAt.getDate() + 3);
+
   return {
     id: 1,
     externalId: 'task-1',
     courseId: 1,
     title: 'Assignment 1',
     description: 'First assignment',
-    dueAt: null,
+    dueAt: defaultDueAt.toISOString(),
     weight: 10,
     grade: null,
     pointsPossible: 100,
@@ -226,18 +232,21 @@ describe('DashboardViewModel', () => {
         expect(viewModel.priorityQueue[0].daysUntilDue).toBe(3);
       });
 
-      it('returns null for days until due when no due date', () => {
+      it('excludes tasks without due date from priority queue', () => {
         const course = createCourse();
-        const task = createTask({ id: 1, dueAt: null });
+        const taskWithDue = createTask({ id: 1 }); // Has default dueAt
+        const taskWithoutDue = createTask({ id: 2, dueAt: null });
 
         const state = createBaseState({
           courses: [course],
-          tasks: [task],
+          tasks: [taskWithDue, taskWithoutDue],
         });
 
         const viewModel = computeDashboardViewModel(state);
 
-        expect(viewModel.priorityQueue[0].daysUntilDue).toBeNull();
+        // Only task with due date should be in priority queue
+        expect(viewModel.priorityQueue).toHaveLength(1);
+        expect(viewModel.priorityQueue[0].task.id).toBe(1);
       });
     });
 

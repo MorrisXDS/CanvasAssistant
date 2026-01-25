@@ -44,6 +44,16 @@ export class TaskRepository extends BaseRepository<Task, TaskRow> {
   }
 
   protected mapRowToEntity(row: TaskRow): Task {
+    // Parse field_sources JSON if present
+    let fieldSources: Record<string, 'canvas' | 'user' | 'guessed'> | undefined;
+    if (row.field_sources) {
+      try {
+        fieldSources = JSON.parse(row.field_sources);
+      } catch {
+        // Invalid JSON, ignore
+      }
+    }
+
     return {
       id: row.id,
       externalId: row.external_id,
@@ -60,6 +70,7 @@ export class TaskRepository extends BaseRepository<Task, TaskRow> {
       submissionStatus: row.submission_status,
       taskType: row.task_type,
       taskGroupId: row.task_group_id,
+      fieldSources,
     };
   }
 
@@ -254,7 +265,7 @@ export class TaskRepository extends BaseRepository<Task, TaskRow> {
       'SELECT id FROM tasks WHERE id = ?',
       [id]
     );
-    return row !== null;
+    return row !== undefined;
   }
 
   /**

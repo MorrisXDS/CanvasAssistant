@@ -111,7 +111,6 @@ const styles: Record<string, React.CSSProperties> = {
     bottom: 0,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     zIndex: 1000,
-    animation: 'fadeIn 150ms ease',
   },
 
   dialog: {
@@ -126,7 +125,7 @@ const styles: Record<string, React.CSSProperties> = {
     maxWidth: '400px',
     padding: '24px',
     zIndex: 1001,
-    animation: 'fadeIn 150ms ease',
+    // Remove animation to prevent positioning flash on render
   },
 
   iconWrapper: {

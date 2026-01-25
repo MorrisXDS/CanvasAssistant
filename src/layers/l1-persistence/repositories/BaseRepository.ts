@@ -82,6 +82,7 @@ export interface CourseRow {
   code: string;
   name: string;
   target_grade: number;
+  target_grade_source: 'default' | 'manual';
   assessed_grade: number | null;
   current_grade: number | null;
   total_weight: number;
@@ -112,6 +113,7 @@ export interface TaskRow {
   task_type: string | null;
   task_group_id: number | null;
   local_modified_at: string | null;
+  field_sources: string | null; // JSON: {"due_at": "guessed", "grade": "canvas"}
   created_at: string;
   updated_at: string;
 }

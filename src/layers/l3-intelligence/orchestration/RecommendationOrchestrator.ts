@@ -159,12 +159,15 @@ export class RecommendationOrchestrator extends EventEmitter {
   private fetchTasks(): TaskForPriority[] {
     const rows = this.db.executeRead<TaskRow>(`
       SELECT
-        id, course_id, title, due_at, unlock_at, lock_at,
-        points_possible, weight, is_completed, grade,
-        task_type, task_group_id, submission_status
-      FROM tasks
-      WHERE is_completed = 0
-      ORDER BY due_at ASC
+        t.id, t.course_id, t.title, t.due_at, t.unlock_at, t.lock_at,
+        t.points_possible, t.weight, t.is_completed, t.grade,
+        t.task_type, t.task_group_id, t.submission_status
+      FROM tasks t
+      JOIN courses c ON t.course_id = c.id
+      WHERE t.is_completed = 0
+        AND c.is_hidden = 0
+        AND c.deleted_at IS NULL
+      ORDER BY t.due_at ASC
     `);
 
     return rows.map((row) => ({
@@ -192,7 +195,7 @@ export class RecommendationOrchestrator extends EventEmitter {
   private fetchCourses(): Map<number, CourseForPriority> {
     const rows = this.db.executeRead<CourseRow>(`
       SELECT id, code, name, current_grade, target_grade, total_weight
-      FROM courses WHERE deleted_at IS NULL
+      FROM courses WHERE deleted_at IS NULL AND is_hidden = 0
     `);
 
     const map = new Map<number, CourseForPriority>();

@@ -6,7 +6,66 @@
  */
 
 import React, { useState } from 'react';
-import { AlertTriangle, X, Check, RefreshCw } from 'lucide-react';
+import { AlertTriangle, X, RefreshCw } from 'lucide-react';
+
+/**
+ * User-friendly field name mappings
+ */
+const FIELD_LABELS: Record<string, Record<string, string>> = {
+  task: {
+    is_completed: 'Completion Status',
+    title: 'Title',
+    description: 'Description',
+    due_at: 'Due Date',
+    weight: 'Grade Weight (%)',
+    grade: 'Your Grade',
+    points_possible: 'Total Points',
+    priority_score: 'Priority',
+    submission_status: 'Submission Status',
+    unlock_at: 'Available From',
+    lock_at: 'Available Until',
+  },
+  course: {
+    name: 'Course Name',
+    code: 'Course Code',
+    current_grade: 'Current Grade',
+    target_grade: 'Target Grade',
+    color: 'Color',
+    nickname: 'Nickname',
+    is_hidden: 'Visibility',
+    syllabus_body: 'Syllabus',
+  },
+  notification: {
+    title: 'Title',
+    message: 'Message',
+    dismissed_at: 'Dismissed',
+    is_read: 'Read Status',
+    published_at: 'Published Date',
+  },
+};
+
+/**
+ * User-friendly entity type mappings
+ */
+const ENTITY_LABELS: Record<string, string> = {
+  task: 'COURSEWORK',
+  course: 'COURSE',
+  notification: 'ANNOUNCEMENT',
+};
+
+/**
+ * Get user-friendly label for a field
+ */
+function getFieldLabel(entity: string, field: string): string {
+  return FIELD_LABELS[entity]?.[field] || field.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
+/**
+ * Get user-friendly label for an entity type
+ */
+function getEntityLabel(entity: string): string {
+  return ENTITY_LABELS[entity] || entity.toUpperCase();
+}
 
 export interface SyncConflictData {
   id: string;
@@ -113,12 +172,12 @@ export function SyncConflictModal({
         {/* Conflict Details */}
         <div style={styles.content}>
           <div style={styles.entityInfo}>
-            <span style={styles.entityType}>{currentConflict.entity}</span>
+            <span style={styles.entityType}>{getEntityLabel(currentConflict.entity)}</span>
             <span style={styles.entityName}>{currentConflict.entityName}</span>
           </div>
 
           <div style={styles.fieldInfo}>
-            <span style={styles.fieldLabel}>{currentConflict.fieldLabel}</span>
+            <span style={styles.fieldLabel}>{getFieldLabel(currentConflict.entity, currentConflict.field)}</span>
             <span style={styles.fieldName}>({currentConflict.field})</span>
           </div>
 
@@ -126,17 +185,16 @@ export function SyncConflictModal({
           <div style={styles.valuesContainer}>
             <div style={styles.valueBox}>
               <div style={styles.valueHeader}>
-                <span style={styles.valueLabel}>Your Value</span>
+                <span style={styles.valueLabel}>Local Value</span>
               </div>
               <div style={styles.valueContent}>
                 {formatValue(currentConflict.localValue)}
               </div>
               <button
-                style={styles.choiceButton}
+                style={{ ...styles.choiceButton, ...styles.localButton }}
                 onClick={() => handleResolve(false)}
               >
-                <Check size={16} />
-                Keep My Value
+                Keep Local
               </button>
             </div>
 
@@ -155,8 +213,7 @@ export function SyncConflictModal({
                 style={{ ...styles.choiceButton, ...styles.canvasButton }}
                 onClick={() => handleResolve(true)}
               >
-                <Check size={16} />
-                Use Canvas Value
+                Use Canvas
               </button>
             </div>
           </div>
@@ -172,7 +229,7 @@ export function SyncConflictModal({
                   if (!e.target.checked) setRememberForAll(false);
                 }}
               />
-              <span>Remember my choice for this {currentConflict.entity}'s {currentConflict.fieldLabel}</span>
+              <span>Always use local value for "{getFieldLabel(currentConflict.entity, currentConflict.field)}" in future syncs</span>
             </label>
 
             {rememberChoice && (
@@ -182,7 +239,7 @@ export function SyncConflictModal({
                   checked={rememberForAll}
                   onChange={(e) => setRememberForAll(e.target.checked)}
                 />
-                <span>Apply to all {currentConflict.entity}s</span>
+                <span>Apply to all {currentConflict.entity === 'task' ? 'courseworks in this course' : currentConflict.entity === 'notification' ? 'announcements' : 'courses'}</span>
               </label>
             )}
           </div>
@@ -194,13 +251,13 @@ export function SyncConflictModal({
             style={styles.bulkButton}
             onClick={() => onResolveAll(false)}
           >
-            Keep All My Values
+            Skip All - Keep Local
           </button>
           <button
             style={styles.bulkButton}
             onClick={() => onResolveAll(true)}
           >
-            Use All Canvas Values
+            Skip All - Use Canvas
           </button>
         </div>
       </div>
@@ -370,13 +427,16 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: 'center',
     gap: 'var(--space-2)',
     padding: 'var(--space-2) var(--space-3)',
-    backgroundColor: 'var(--color-green)',
+    backgroundColor: 'var(--color-success)',
     color: 'white',
     border: 'none',
     borderRadius: 'var(--radius-md)',
     fontSize: 'var(--text-sm)',
     fontWeight: 'var(--font-medium)',
     cursor: 'pointer',
+  },
+  localButton: {
+    backgroundColor: 'var(--color-success)',
   },
   canvasButton: {
     backgroundColor: 'var(--color-blue)',

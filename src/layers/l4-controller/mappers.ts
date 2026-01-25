@@ -32,6 +32,7 @@ export function mapCourseRowToEntity(row: {
   code: string;
   name: string;
   target_grade: number;
+  target_grade_source?: 'default' | 'manual';
   assessed_grade: number | null;
   current_grade: number | null;
   color: string | null;
@@ -46,6 +47,7 @@ export function mapCourseRowToEntity(row: {
     code: row.code,
     name: row.name,
     targetGrade: row.target_grade,
+    targetGradeSource: row.target_grade_source ?? 'default',
     assessedGrade: row.assessed_grade,
     currentGrade: row.current_grade,
     color: row.color,
@@ -65,6 +67,7 @@ export function mapCourseRowToDetail(row: {
   code: string;
   name: string;
   target_grade: number;
+  target_grade_source?: 'default' | 'manual';
   assessed_grade: number | null;
   current_grade: number | null;
   total_weight: number;

@@ -30,8 +30,8 @@ export class SimulateGradeCommand
       return { valid: false, error: 'Grade must be a number' };
     }
 
-    if (params.grade < 0 || params.grade > 100) {
-      return { valid: false, error: 'Grade must be between 0 and 100' };
+    if (params.grade < 0 || params.grade > 150) {
+      return { valid: false, error: 'Grade must be between 0 and 150' };
     }
 
     return { valid: true };
@@ -126,10 +126,23 @@ export class SimulateGradeCommand
       }
 
       if (simulation) {
+        // Calculate simulated priority using PriorityEngine if available
+        let simulatedPriority = task.priority_score;
+
+        if (context.priorityEngine && simulation.simulatedGrade !== null) {
+          const calculated = context.priorityEngine.getSimulatedTaskPriority(
+            task.id,
+            simulation.simulatedGrade
+          );
+          if (calculated !== null) {
+            simulatedPriority = calculated;
+          }
+        }
+
         affectedTasks.push({
           id: task.id,
           originalPriority: task.priority_score,
-          simulatedPriority: task.priority_score, // TODO: Recalculate
+          simulatedPriority,
         });
       }
     }

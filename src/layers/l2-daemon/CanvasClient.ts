@@ -1,6 +1,7 @@
 import axios, { AxiosInstance, AxiosResponse, AxiosError } from 'axios';
 import { EventEmitter } from 'events';
 import type { ComponentLogger } from '../l0-utilities/Logger';
+import { InputValidator } from './InputValidator';
 
 export interface CanvasClientConfig {
   baseUrl: string; // e.g., 'https://utoronto.instructure.com'
@@ -55,12 +56,14 @@ export class CanvasClient extends EventEmitter {
   private baseUrl: string;
   private accessToken: string;
   private log: ComponentLogger | null;
+  private validator: InputValidator;
 
   constructor(config: CanvasClientConfig) {
     super();
     this.baseUrl = config.baseUrl.replace(/\/+$/, ''); // Remove trailing slashes
     this.accessToken = config.accessToken;
     this.log = config.logger ?? null;
+    this.validator = new InputValidator({ strictness: 'lenient', logWarnings: true });
 
     this.client = axios.create({
       baseURL: `${this.baseUrl}/api/v1`,

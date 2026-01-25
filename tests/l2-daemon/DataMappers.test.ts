@@ -42,7 +42,7 @@ describe('DataMappers', () => {
       expect(result.current_grade).toBe(87.5);
       expect(result.syllabus_body).toBe('<p>Welcome to CSC108!</p>');
       expect(result.landing_page_url).toBe('https://q.utoronto.ca/courses/12345');
-      expect(result.target_grade).toBe(85.0);
+      expect(result.target_grade).toBe(80.0); // Default target grade is now 80
     });
 
     it('should handle missing enrollment data', () => {

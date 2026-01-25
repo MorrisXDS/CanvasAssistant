@@ -46,6 +46,32 @@ function formatFileSize(bytes: number | null): string {
 }
 
 /**
+ * Get the user's link behavior preference from localStorage
+ */
+function getLinkBehaviorPreference(): 'always-external' | 'prefer-local' {
+  try {
+    const stored = localStorage.getItem('contentSettings');
+    if (stored) {
+      const settings = JSON.parse(stored);
+      return settings.linkBehavior ?? 'always-external';
+    }
+  } catch {
+    // Ignore parse errors
+  }
+  return 'always-external';
+}
+
+/**
+ * Extract Canvas file ID from a URL if possible
+ * Returns null if not a Canvas file URL
+ */
+function extractCanvasFileId(url: string): string | null {
+  // Match patterns like /files/12345 or /files/12345/download
+  const match = url.match(/\/files\/(\d+)/);
+  return match ? match[1] : null;
+}
+
+/**
  * Extract short course code (e.g., "ECE568H1 LEC0101" -> "ECE568")
  */
 function getShortCode(code: string): string {
@@ -369,15 +395,37 @@ export function AnnouncementDetail() {
               className="announcement-content"
               style={styles.htmlContent}
               dangerouslySetInnerHTML={{ __html: notification.messageHtml }}
-              onClick={(e) => {
-                // Intercept link clicks and open externally
+              onClick={async (e) => {
+                // Intercept link clicks and handle based on user preference
                 const target = e.target as HTMLElement;
                 if (target.tagName === 'A') {
                   e.preventDefault();
                   const href = (target as HTMLAnchorElement).href;
-                  if (href) {
-                    window.api?.openExternal(href);
+                  if (!href) return;
+
+                  const linkBehavior = getLinkBehaviorPreference();
+
+                  if (linkBehavior === 'prefer-local') {
+                    // Check if this is a Canvas file link and try to open locally
+                    const fileId = extractCanvasFileId(href);
+                    if (fileId && window.api) {
+                      try {
+                        // Try to find this file in our downloaded resources
+                        const files = await window.api.getFiles();
+                        const file = files.find((f: { externalId: string }) => f.externalId === fileId);
+                        if (file?.localPath) {
+                          // File is downloaded, open it locally
+                          await window.api.openResource(file.id);
+                          return;
+                        }
+                      } catch {
+                        // Fall through to open externally
+                      }
+                    }
                   }
+
+                  // Default: open in browser
+                  window.api?.openExternal(href);
                 }
               }}
             />

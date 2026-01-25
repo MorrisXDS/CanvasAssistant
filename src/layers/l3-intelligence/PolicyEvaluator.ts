@@ -47,6 +47,9 @@ interface DropLowestPolicy {
   category: string;
   drop_count: number;
   min_submissions: number;
+  // Optional: ID-based matching (preferred over string matching)
+  taskGroupId?: number;
+  taskGroupIds?: number[];
 }
 
 /**
@@ -59,6 +62,42 @@ interface WeightTransferPolicy {
   condition: 'if_higher' | 'if_lower' | 'always' | 'if_missed';
   max_transfer_percent: number;
   transfer_ratio: number;
+  // Optional: ID-based matching (preferred over string matching)
+  fromTaskId?: number;
+  toTaskId?: number;
+  fromTaskGroupId?: number;
+  toTaskGroupId?: number;
+}
+
+/**
+ * Match a task against a category/pattern using multiple strategies:
+ * 1. ID-based matching (most reliable)
+ * 2. Word-boundary aware string matching
+ * 3. Case-insensitive substring fallback
+ */
+function matchesCategory(
+  task: { title: string; taskGroupId: number | null },
+  pattern: string,
+  options?: { taskGroupId?: number; taskGroupIds?: number[] }
+): boolean {
+  // Strategy 1: ID-based matching (most reliable)
+  if (options?.taskGroupId !== undefined && task.taskGroupId !== null) {
+    return task.taskGroupId === options.taskGroupId;
+  }
+  if (options?.taskGroupIds?.length && task.taskGroupId !== null) {
+    return options.taskGroupIds.includes(task.taskGroupId);
+  }
+
+  // Strategy 2: Word-boundary aware matching
+  // Creates pattern that matches word boundaries, e.g., "Homework" matches "Homework 1" but not "MyHomework"
+  const escapedPattern = pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const wordBoundaryRegex = new RegExp(`\\b${escapedPattern}\\b`, 'i');
+  if (wordBoundaryRegex.test(task.title)) {
+    return true;
+  }
+
+  // Strategy 3: Case-insensitive substring (most permissive fallback)
+  return task.title.toLowerCase().includes(pattern.toLowerCase());
 }
 
 /**
@@ -406,9 +445,12 @@ export class PolicyEvaluator {
     config: DropLowestPolicy,
     result: PolicyEvaluationResult
   ): void {
-    // Check if task matches the category (simplified check)
-    const taskMatchesCategory =
-      task.title.toLowerCase().includes(config.category.toLowerCase());
+    // Check if task matches the category using multi-strategy matching
+    const taskMatchesCategory = matchesCategory(
+      task,
+      config.category,
+      { taskGroupId: config.taskGroupId, taskGroupIds: config.taskGroupIds }
+    );
 
     if (taskMatchesCategory) {
       result.isDroppable = true;
@@ -432,8 +474,14 @@ export class PolicyEvaluator {
     config: WeightTransferPolicy,
     result: PolicyEvaluationResult
   ): void {
-    const isSourceTask = task.title.includes(config.from_task);
-    const isTargetTask = task.title.includes(config.to_task);
+    // Check source/target matching using multi-strategy matching
+    const isSourceTask = config.fromTaskId !== undefined
+      ? task.id === config.fromTaskId
+      : matchesCategory(task, config.from_task, { taskGroupId: config.fromTaskGroupId });
+
+    const isTargetTask = config.toTaskId !== undefined
+      ? task.id === config.toTaskId
+      : matchesCategory(task, config.to_task, { taskGroupId: config.toTaskGroupId });
 
     if (isSourceTask) {
       result.canTransferWeight = true;

@@ -15,6 +15,7 @@ import { useStore, subscribeToIpcEvents } from '../l5-presentation/store';
 import { Layout } from './components/Layout';
 import { Dashboard } from './components/Dashboard';
 import { Onboarding } from './components/Onboarding';
+import { ReAuthModal } from './components/shared/ReAuthModal';
 import { AnnouncementDetail, AnnouncementsPage, CalendarPage, CourseDetail, CoursesPage, FilesPage, SettingsPage, TasksPage } from './components/pages';
 
 import './styles/global.css';
@@ -112,7 +113,7 @@ function LoadingScreen() {
  * Main App with auth routing
  */
 function AppContent() {
-  const { isInitialized, isAuthenticated, initialize, setAuthenticated, refreshAll } =
+  const { isInitialized, isAuthenticated, authError, initialize, setAuthenticated, clearAuthError, refreshAll } =
     useStore();
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
 
@@ -135,6 +136,18 @@ function AppContent() {
     await refreshAll();
   };
 
+  // Handle successful re-authentication
+  const handleReauthSuccess = async () => {
+    clearAuthError();
+    await refreshAll();
+  };
+
+  // Handle disconnect from re-auth modal
+  const handleReauthDisconnect = () => {
+    clearAuthError();
+    setAuthenticated(false);
+  };
+
   // Show loading while checking auth
   if (!isInitialized || isCheckingAuth) {
     return <LoadingScreen />;
@@ -145,22 +158,31 @@ function AppContent() {
     return <Onboarding onComplete={handleOnboardingComplete} />;
   }
 
-  // Show main app
+  // Show main app with ReAuthModal overlay if auth error
   return (
-    <Routes>
-      <Route element={<Layout />}>
-        <Route path="/" element={<Dashboard />} />
-        <Route path="/announcement/:id" element={<AnnouncementDetail />} />
-        <Route path="/announcements" element={<AnnouncementsPage />} />
-        <Route path="/calendar" element={<CalendarPage />} />
-        <Route path="/courses" element={<CoursesPage />} />
-        <Route path="/course/:id" element={<CourseDetail />} />
-        <Route path="/files" element={<FilesPage />} />
-        <Route path="/settings" element={<SettingsPage />} />
-        <Route path="/tasks" element={<TasksPage />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Route>
-    </Routes>
+    <>
+      {authError && (
+        <ReAuthModal
+          reason={authError.reason}
+          onReauthSuccess={handleReauthSuccess}
+          onDisconnect={handleReauthDisconnect}
+        />
+      )}
+      <Routes>
+        <Route element={<Layout />}>
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/announcement/:id" element={<AnnouncementDetail />} />
+          <Route path="/announcements" element={<AnnouncementsPage />} />
+          <Route path="/calendar" element={<CalendarPage />} />
+          <Route path="/courses" element={<CoursesPage />} />
+          <Route path="/course/:id" element={<CourseDetail />} />
+          <Route path="/files" element={<FilesPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/tasks" element={<TasksPage />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Route>
+      </Routes>
+    </>
   );
 }
 

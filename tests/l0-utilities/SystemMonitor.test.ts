@@ -11,11 +11,13 @@ describe('SystemMonitor', () => {
   let monitor: SystemMonitor;
 
   beforeEach(() => {
+    jest.useFakeTimers();
     monitor = new SystemMonitor();
   });
 
   afterEach(() => {
     monitor.stop();
+    jest.useRealTimers();
   });
 
   describe('Initialization', () => {
@@ -49,10 +51,12 @@ describe('SystemMonitor', () => {
   describe('Window State Updates', () => {
     it('should update window focus state', () => {
       monitor.setWindowFocused(false);
+      jest.advanceTimersByTime(200); // Wait for debounce
       const state = monitor.getState();
       expect(state.windowFocused).toBe(false);
 
       monitor.setWindowFocused(true);
+      jest.advanceTimersByTime(200); // Wait for debounce
       const updatedState = monitor.getState();
       expect(updatedState.windowFocused).toBe(true);
     });
@@ -67,13 +71,16 @@ describe('SystemMonitor', () => {
       expect(updatedState.isFullscreen).toBe(false);
     });
 
-    it('should emit event when window focus changes', (done) => {
-      monitor.on('state-change', (state: SystemState) => {
-        expect(state.windowFocused).toBe(false);
-        done();
-      });
+    it('should emit event when window focus changes', () => {
+      const eventSpy = jest.fn();
+      monitor.on('state-change', eventSpy);
 
       monitor.setWindowFocused(false);
+      jest.advanceTimersByTime(200); // Wait for debounce
+
+      expect(eventSpy).toHaveBeenCalledWith(expect.objectContaining({
+        windowFocused: false,
+      }));
     });
 
     it('should emit event when fullscreen changes', (done) => {
@@ -125,6 +132,7 @@ describe('SystemMonitor', () => {
 
     it('should indicate when sync is allowed', () => {
       monitor.setWindowFocused(true);
+      jest.advanceTimersByTime(200); // Wait for debounce
       const state = monitor.getState();
 
       // On AC power with window focused, sync should be allowed
@@ -136,10 +144,12 @@ describe('SystemMonitor', () => {
 
     it('should show focused state in description', () => {
       monitor.setWindowFocused(true);
+      jest.advanceTimersByTime(200); // Wait for debounce
       let description = monitor.getStateDescription();
       expect(description).toContain('Focused');
 
       monitor.setWindowFocused(false);
+      jest.advanceTimersByTime(200); // Wait for debounce
       description = monitor.getStateDescription();
       expect(description).toContain('Unfocused');
     });
@@ -158,27 +168,33 @@ describe('SystemMonitor', () => {
 
       // First change should emit
       monitor.setWindowFocused(false);
+      jest.advanceTimersByTime(200); // Wait for debounce
       expect(eventSpy).toHaveBeenCalledTimes(1);
 
       // Same value should not emit
       monitor.setWindowFocused(false);
+      jest.advanceTimersByTime(200); // Wait for debounce
       expect(eventSpy).toHaveBeenCalledTimes(1);
 
       // Different value should emit
       monitor.setWindowFocused(true);
+      jest.advanceTimersByTime(200); // Wait for debounce
       expect(eventSpy).toHaveBeenCalledTimes(2);
     });
 
-    it('should emit complete state object on change', (done) => {
-      monitor.on('state-change', (state: SystemState) => {
-        expect(state).toHaveProperty('powerSource');
-        expect(state).toHaveProperty('windowFocused');
-        expect(state).toHaveProperty('isFullscreen');
-        expect(state).toHaveProperty('canSync');
-        done();
-      });
+    it('should emit complete state object on change', () => {
+      const eventSpy = jest.fn();
+      monitor.on('state-change', eventSpy);
 
       monitor.setWindowFocused(false);
+      jest.advanceTimersByTime(200); // Wait for debounce
+
+      expect(eventSpy).toHaveBeenCalled();
+      const emittedState = eventSpy.mock.calls[0][0];
+      expect(emittedState).toHaveProperty('powerSource');
+      expect(emittedState).toHaveProperty('windowFocused');
+      expect(emittedState).toHaveProperty('isFullscreen');
+      expect(emittedState).toHaveProperty('canSync');
     });
   });
 });

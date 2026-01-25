@@ -13,7 +13,6 @@ import { DependencyResolver } from './DependencyResolver';
 import {
   TaskQueue,
   PriorityFactor,
-  SubmissionWindow,
   GradeImpact,
   PriorityExplanation,
   TaskForPriority,
@@ -111,7 +110,10 @@ export class PriorityEngine extends EventEmitter {
     const courseCache = new Map<number, CourseForPriority>();
     const policyCache = new Map<number, PolicyForPriority[]>();
 
-    let earliestRefresh = Infinity;
+    // Track earliest refresh interval in milliseconds
+    // Minimum refresh of 30 seconds to prevent rapid refresh loops
+    const MIN_REFRESH_MS = 30 * 1000;
+    let earliestRefreshMs = Infinity;
 
     for (const task of tasks) {
       // Get course data (cached)
@@ -140,11 +142,12 @@ export class PriorityEngine extends EventEmitter {
       const queue = this.determineQueue(task, explanation, policies, now);
       result.queues[queue].push(explanation);
 
-      // Track earliest refresh time
-      const refreshInterval = this.config.getRefreshIntervalForTask(
-        task.dueAt ? (task.dueAt.getTime() - now.getTime()) / (1000 * 60 * 60) : Infinity
-      );
-      earliestRefresh = Math.min(earliestRefresh, refreshInterval);
+      // Track earliest refresh time (in milliseconds)
+      const hoursUntilDue = task.dueAt
+        ? (task.dueAt.getTime() - now.getTime()) / (1000 * 60 * 60)
+        : Infinity;
+      const refreshIntervalMs = this.config.getRefreshIntervalForTask(hoursUntilDue);
+      earliestRefreshMs = Math.min(earliestRefreshMs, refreshIntervalMs);
 
       // Check for notices
       this.checkNotices(task, explanation, result, now);
@@ -155,9 +158,10 @@ export class PriorityEngine extends EventEmitter {
       queue.sort((a, b) => b.finalScore - a.finalScore);
     }
 
-    // Set next refresh time
-    if (earliestRefresh < Infinity) {
-      result.nextRefreshAt = new Date(now.getTime() + earliestRefresh);
+    // Set next refresh time with minimum guard to prevent rapid refresh loops
+    if (earliestRefreshMs < Infinity) {
+      const safeRefreshMs = Math.max(earliestRefreshMs, MIN_REFRESH_MS);
+      result.nextRefreshAt = new Date(now.getTime() + safeRefreshMs);
     }
 
     this.emit('priorities-calculated', result);
@@ -302,10 +306,19 @@ export class PriorityEngine extends EventEmitter {
   }
 
   /**
-   * Calculate course gap factor
+   * Calculate course gap factor with achievability check
+   *
+   * Considers:
+   * - Current gap to target
+   * - Whether target is achievable with remaining weight
+   * - Urgency scaling based on gap size
    */
-  private calculateCourseGapFactor(course: CourseForPriority): PriorityFactor {
-    const gap = course.targetGrade - (course.currentGrade || 0);
+  private calculateCourseGapFactor(
+    course: CourseForPriority,
+    remainingWeight?: number
+  ): PriorityFactor {
+    const currentGrade = course.currentGrade || 0;
+    const gap = course.targetGrade - currentGrade;
 
     if (gap <= 0) {
       return {
@@ -317,39 +330,112 @@ export class PriorityEngine extends EventEmitter {
       };
     }
 
-    // More urgency if far from target
-    const impact = Math.min(gap * 1.5, 30);
+    // Calculate if target is achievable with remaining assignments
+    // Assuming remaining assignments can be aced (100%)
+    const effectiveRemainingWeight = remainingWeight ?? (100 - (course.totalWeight || 0));
+    const maxPossibleGrade = currentGrade + effectiveRemainingWeight;
+    const isAchievable = maxPossibleGrade >= course.targetGrade;
+
+    if (!isAchievable) {
+      // Target is mathematically unachievable
+      return {
+        id: 'course_gap',
+        name: 'Target Unachievable',
+        icon: '⚠️',
+        impact: 40, // High impact to flag this situation
+        description: `Target ${course.targetGrade}% not reachable (max possible: ${maxPossibleGrade.toFixed(1)}%)`,
+        recommendation: 'Consider adjusting target grade',
+      };
+    }
+
+    // Calculate urgency based on gap and remaining capacity
+    // Higher urgency when gap is large relative to remaining weight
+    const gapRatio = effectiveRemainingWeight > 0 ? gap / effectiveRemainingWeight : 1;
+    const baseImpact = gap * 1.5;
+
+    // Scale up impact if gap is significant portion of remaining capacity
+    // gapRatio of 0.5 means need 50% of remaining points just to hit target
+    const capacityMultiplier = 1 + Math.min(gapRatio, 1) * 0.5;
+    const impact = Math.min(baseImpact * capacityMultiplier, 50); // Raised cap from 30 to 50
+
+    let description = `${gap.toFixed(1)}% below target (${course.targetGrade}%)`;
+    if (gapRatio > 0.7) {
+      description += ' - high effort needed';
+    }
 
     return {
       id: 'course_gap',
       name: 'Course Gap',
       icon: '📉',
       impact: Math.round(impact),
-      description: `${gap.toFixed(1)}% below target (${course.targetGrade}%)`,
+      description,
     };
   }
 
   /**
    * Calculate grade impact analysis
+   *
+   * Uses points-based grading calculation:
+   * - Grade = totalPointsEarned / totalPointsPossible * 100
+   * - If task skipped: newGrade = currentPointsEarned / (currentPointsPossible + taskPoints)
+   * - If task aced: newGrade = (currentPointsEarned + taskPoints) / (currentPointsPossible + taskPoints)
    */
   private calculateGradeImpact(
     task: TaskForPriority,
     course: CourseForPriority,
-    policies: PolicyForPriority[]
+    _policies: PolicyForPriority[]
   ): GradeImpact {
     const currentGrade = course.currentGrade || 0;
     const targetGrade = course.targetGrade;
-    const taskWeight = task.weight || 0;
+    const taskWeight = task.weight;
+    const taskPoints = task.pointsPossible || 0;
 
-    // Simple grade projection (would be more complex with full grading data)
-    const gradeIfSkipped = currentGrade - (taskWeight * currentGrade) / 100;
-    const gradeIfAverage = currentGrade; // Assume average maintains current grade
+    // Guard against zero/null weight - this is a deadline-only task with no grade impact
+    if (taskWeight === null || taskWeight === 0) {
+      return {
+        currentGrade,
+        targetGrade,
+        gapToTarget: targetGrade - currentGrade,
+        gradeIfSkipped: currentGrade,
+        gradeIfAverage: currentGrade,
+        minScoreForTarget: null,
+        riskLevel: 'low',
+      };
+    }
+
+    // Points-based grading calculation
+    // Estimate current points based on course total weight and current grade
+    const coursePointsBasis = course.totalWeight || 100;
+    const currentPointsPossible = (coursePointsBasis / 100) * 1000; // Normalize to 1000-point scale
+    const currentPointsEarned = (currentGrade / 100) * currentPointsPossible;
+    const totalPointsAfterTask = currentPointsPossible + taskPoints;
+
+    // Guard against zero total points (shouldn't happen but be safe)
+    if (totalPointsAfterTask === 0) {
+      return {
+        currentGrade,
+        targetGrade,
+        gapToTarget: targetGrade - currentGrade,
+        gradeIfSkipped: currentGrade,
+        gradeIfAverage: currentGrade,
+        minScoreForTarget: null,
+        riskLevel: 'low',
+      };
+    }
+
+    // Calculate grade projections
+    const gradeIfSkipped = (currentPointsEarned / totalPointsAfterTask) * 100;
+    // gradeIfAced calculation available for future grade projection features
+    const gradeIfAverage = ((currentPointsEarned + taskPoints * (currentGrade / 100)) / totalPointsAfterTask) * 100;
 
     // Calculate minimum score needed to reach target
     let minScoreForTarget: number | null = null;
-    if (taskWeight > 0 && currentGrade < targetGrade) {
-      const needed = ((targetGrade - currentGrade) * 100) / taskWeight;
-      minScoreForTarget = Math.min(Math.max(needed, 0), 100);
+    if (currentGrade < targetGrade && taskPoints > 0) {
+      // Solve for score S: (currentPointsEarned + S) / totalPointsAfterTask >= targetGrade / 100
+      const neededPoints = (targetGrade / 100) * totalPointsAfterTask - currentPointsEarned;
+      const neededScore = (neededPoints / taskPoints) * 100;
+      // Allow values > 100 to indicate bonus points needed
+      minScoreForTarget = Math.min(Math.max(neededScore, 0), 150);
     }
 
     const gapToTarget = targetGrade - currentGrade;
@@ -362,13 +448,19 @@ export class PriorityEngine extends EventEmitter {
       gapToTarget,
       gradeIfSkipped: Math.round(gradeIfSkipped * 10) / 10,
       gradeIfAverage: Math.round(gradeIfAverage * 10) / 10,
-      minScoreForTarget: minScoreForTarget ? Math.round(minScoreForTarget) : null,
+      minScoreForTarget: minScoreForTarget !== null ? Math.round(minScoreForTarget) : null,
       riskLevel,
     };
   }
 
   /**
    * Calculate score for overdue tasks (recovery priority)
+   *
+   * Factors considered:
+   * 1. Partial credit potential (can still earn points?)
+   * 2. Late penalty severity (how much has been lost?)
+   * 3. Cutoff urgency (how close to final deadline?)
+   * 4. Risk level (grade impact if not submitted)
    */
   private calculateOverdueScore(
     task: TaskForPriority,
@@ -381,35 +473,103 @@ export class PriorityEngine extends EventEmitter {
     const weights = this.config.getFactorWeights();
     let score = 0;
 
-    // Partial credit potential
+    // Calculate days/hours overdue
+    const dueAt = task.dueAt!;
+    const msOverdue = now.getTime() - dueAt.getTime();
+    const hoursOverdue = msOverdue / (1000 * 60 * 60);
+    const daysOverdue = hoursOverdue / 24;
+
+    // 1. Partial credit potential
     const maxScore = this.policyEvaluator.calculateMaxPossibleScore(task, policies, now);
-    if (maxScore > 0 && task.pointsPossible) {
+    if (task.pointsPossible && task.pointsPossible > 0) {
       const partialCreditPercent = (maxScore / task.pointsPossible) * 100;
-      const partialFactor: PriorityFactor = {
-        id: 'partial_credit',
-        name: 'Partial Credit',
-        icon: '📊',
-        impact: Math.round(partialCreditPercent / 2),
-        description: `Can still earn up to ${partialCreditPercent.toFixed(0)}%`,
-      };
-      factors.push(partialFactor);
-      score += partialFactor.impact * weights.partialCredit;
+
+      if (maxScore === 0) {
+        // Past cutoff - no points available
+        const cutoffFactor: PriorityFactor = {
+          id: 'past_cutoff',
+          name: 'Past Cutoff',
+          icon: '🚫',
+          impact: -50,
+          description: 'No submissions accepted - past deadline cutoff',
+        };
+        factors.push(cutoffFactor);
+        score += cutoffFactor.impact;
+      } else if (maxScore < task.pointsPossible) {
+        // Partial credit available
+        const partialFactor: PriorityFactor = {
+          id: 'partial_credit',
+          name: 'Partial Credit',
+          icon: '📊',
+          impact: Math.round(partialCreditPercent / 2),
+          description: `Can still earn up to ${partialCreditPercent.toFixed(0)}%`,
+        };
+        factors.push(partialFactor);
+        score += partialFactor.impact * weights.partialCredit;
+
+        // 2. Late penalty factor (points already lost)
+        const penaltyPercent = 100 - partialCreditPercent;
+        if (penaltyPercent > 0) {
+          const penaltyFactor: PriorityFactor = {
+            id: 'late_penalty',
+            name: 'Late Penalty',
+            icon: '⏰',
+            impact: -Math.round(penaltyPercent / 5), // -1 to -20 based on penalty
+            description: `${penaltyPercent.toFixed(0)}% penalty applied`,
+          };
+          factors.push(penaltyFactor);
+          score += penaltyFactor.impact;
+        }
+      } else {
+        // Full credit still available (in grace period)
+        const graceFactor: PriorityFactor = {
+          id: 'grace_period',
+          name: 'Grace Period',
+          icon: '⏳',
+          impact: 25,
+          description: 'Still in grace period - no penalty yet',
+        };
+        factors.push(graceFactor);
+        score += graceFactor.impact * weights.partialCredit;
+      }
     }
 
-    // Failure risk factor
-    const riskMultiplier = {
+    // 3. Cutoff urgency (if there's a cutoff approaching)
+    const evaluation = this.policyEvaluator.evaluate(task, course, policies, now);
+    const cutoffWindow = evaluation.submissionWindows.find(w => w.type === 'cutoff');
+    if (cutoffWindow && cutoffWindow.hoursRemaining > 0 && cutoffWindow.hoursRemaining < 72) {
+      // Within 72 hours of cutoff
+      const urgencyImpact = Math.round(30 * (1 - cutoffWindow.hoursRemaining / 72));
+      const cutoffUrgencyFactor: PriorityFactor = {
+        id: 'cutoff_urgency',
+        name: 'Cutoff Approaching',
+        icon: '⚡',
+        impact: urgencyImpact,
+        description: `Only ${cutoffWindow.hoursRemaining.toFixed(1)}h until final cutoff`,
+      };
+      factors.push(cutoffUrgencyFactor);
+      score += cutoffUrgencyFactor.impact;
+    }
+
+    // 4. Risk level (scaled by days overdue)
+    const baseRiskMultiplier = {
       low: 0.5,
       medium: 1.0,
       high: 1.5,
       critical: 2.0,
     }[gradeImpact.riskLevel];
 
+    // Increase risk multiplier based on days overdue (diminishing returns)
+    const overdueMultiplier = Math.min(1 + Math.log1p(daysOverdue) * 0.3, 2.5);
+    const effectiveRiskMultiplier = baseRiskMultiplier * overdueMultiplier;
+
     const riskFactor: PriorityFactor = {
       id: 'failure_risk',
       name: 'Risk Level',
       icon: gradeImpact.riskLevel === 'critical' ? '🚨' : '⚠️',
-      impact: Math.round(20 * riskMultiplier),
-      description: `${gradeImpact.riskLevel.charAt(0).toUpperCase() + gradeImpact.riskLevel.slice(1)} risk if skipped`,
+      impact: Math.round(20 * effectiveRiskMultiplier),
+      description: `${gradeImpact.riskLevel.charAt(0).toUpperCase() + gradeImpact.riskLevel.slice(1)} risk` +
+        (daysOverdue >= 1 ? ` (${daysOverdue.toFixed(1)} days overdue)` : ''),
     };
     factors.push(riskFactor);
     score += riskFactor.impact * weights.failureRisk;
@@ -795,6 +955,118 @@ export class PriorityEngine extends EventEmitter {
    */
   getConfig(): PriorityConfig {
     return this.config;
+  }
+
+  /**
+   * Get simulated priority for a task with an overridden grade
+   * Used for what-if analysis to show how priority would change
+   * @param taskId - The task ID
+   * @param simulatedGrade - The simulated grade (0-100)
+   * @param now - Current time for calculation
+   * @returns The simulated priority score, or null if task not found
+   */
+  getSimulatedTaskPriority(
+    taskId: number,
+    simulatedGrade: number,
+    now: Date = new Date()
+  ): number | null {
+    const rows = this.db.executeRead<TaskRow & {
+      lock_at: string | null;
+      task_type: string | null;
+      task_group_id: number | null;
+      submission_status: string | null;
+    }>(
+      `SELECT id, course_id, title, due_at, unlock_at, lock_at, points_possible,
+              weight, is_completed, grade, completed_at, task_type, task_group_id, submission_status
+       FROM tasks WHERE id = ?`,
+      [taskId]
+    );
+
+    if (rows.length === 0) return null;
+
+    const row = rows[0];
+
+    // Create task with simulated grade
+    const task: TaskForPriority = {
+      id: row.id,
+      courseId: row.course_id,
+      title: row.title,
+      dueAt: row.due_at ? new Date(row.due_at) : null,
+      unlockAt: row.unlock_at ? new Date(row.unlock_at) : null,
+      lockAt: row.lock_at ? new Date(row.lock_at) : null,
+      pointsPossible: row.points_possible,
+      weight: row.weight,
+      isCompleted: row.is_completed === 1,
+      isPinned: this.preferences.pinnedTaskIds.has(row.id),
+      grade: simulatedGrade, // Use simulated grade instead of actual
+      submittedAt: row.completed_at ? new Date(row.completed_at) : null,
+      taskType: row.task_type || 'assignment',
+      taskGroupId: row.task_group_id,
+      submissionStatus: row.submission_status as TaskForPriority['submissionStatus'],
+    };
+
+    const course = this.loadCourse(task.courseId);
+    if (!course) return null;
+
+    // Simulate the course's assessed grade with the simulated task grade
+    const simulatedCourse = this.simulateCourseGrade(course, task.courseId, [
+      { taskId, grade: simulatedGrade },
+    ]);
+
+    const policies = this.loadPolicies(task.courseId);
+    const explanation = this.calculateTaskPriority(task, simulatedCourse, policies, now);
+
+    return explanation.finalScore;
+  }
+
+  /**
+   * Create a copy of course data with simulated grades applied
+   * @param course - Original course data
+   * @param courseId - Course ID
+   * @param simulations - Array of task ID to simulated grade mappings
+   * @returns Course data with updated assessed grade
+   */
+  private simulateCourseGrade(
+    course: CourseForPriority,
+    courseId: number,
+    simulations: Array<{ taskId: number; grade: number }>
+  ): CourseForPriority {
+    // Get all tasks for the course with their grades and weights
+    const tasks = this.db.executeRead<{
+      id: number;
+      grade: number | null;
+      weight: number | null;
+    }>('SELECT id, grade, weight FROM tasks WHERE course_id = ?', [courseId]);
+
+    // Build simulation map
+    const simulationMap = new Map(simulations.map((s) => [s.taskId, s.grade]));
+
+    // Calculate simulated assessed grade
+    let weightedSum = 0;
+    let totalWeight = 0;
+
+    for (const task of tasks) {
+      const weight = task.weight ?? 0;
+      if (weight <= 0) continue;
+
+      // Use simulated grade if available, otherwise use actual grade
+      const effectiveGrade = simulationMap.has(task.id)
+        ? simulationMap.get(task.id)!
+        : task.grade;
+
+      if (effectiveGrade !== null) {
+        weightedSum += effectiveGrade * weight;
+        totalWeight += weight;
+      }
+    }
+
+    const simulatedAssessedGrade = totalWeight > 0 ? weightedSum / totalWeight : null;
+
+    // Return course with simulated current grade
+    return {
+      ...course,
+      currentGrade: simulatedAssessedGrade,
+    };
   }
 
   /**

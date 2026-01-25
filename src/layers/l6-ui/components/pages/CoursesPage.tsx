@@ -24,7 +24,7 @@ import {
   RotateCcw,
 } from 'lucide-react';
 import { useStore, getCachedCourseGrades } from '../../../l5-presentation/store';
-import { Card, Badge, InfoTrigger } from '../shared';
+import { Card, Badge } from '../shared';
 import { useCourseDragDrop } from './useCourseDragDrop';
 import type { Course } from '../../../l5-presentation/types';
 
@@ -782,26 +782,6 @@ function CourseGridCard({
             <span style={{ ...styles.courseCodeBadge, backgroundColor: color }}>
               {getShortCode(course.code)}
             </span>
-            <InfoTrigger
-              summary={`${course.code} - ${course.nickname || course.name}`}
-              title={course.code}
-              details={
-                <div>
-                  <p><strong>Full Name:</strong> {course.name}</p>
-                  {course.nickname && <p><strong>Nickname:</strong> {course.nickname}</p>}
-                  <p><strong>Target Grade:</strong> {course.targetGrade}%</p>
-                  <p><strong>Current Grade:</strong> {course.currentGrade !== null ? `${course.currentGrade.toFixed(1)}%` : 'Not yet assessed'}</p>
-                  {course.assessedGrade !== null && (
-                    <p><strong>Assessed Grade:</strong> {course.assessedGrade.toFixed(1)}%</p>
-                  )}
-                  {course.lastSyncedAt && (
-                    <p><strong>Last Synced:</strong> {new Date(course.lastSyncedAt).toLocaleString()}</p>
-                  )}
-                </div>
-              }
-              size="sm"
-              position="right"
-            />
           </div>
           <div style={{ display: 'flex', gap: 'var(--space-1)' }}>
             <button
@@ -1024,26 +1004,6 @@ function CourseListItem({
             {getShortCode(course.code)}
           </span>
           <span style={styles.listFullCode}>{course.code}</span>
-          <InfoTrigger
-            summary={`${course.code} - ${course.nickname || course.name}`}
-            title={course.code}
-            details={
-              <div>
-                <p><strong>Full Name:</strong> {course.name}</p>
-                {course.nickname && <p><strong>Nickname:</strong> {course.nickname}</p>}
-                <p><strong>Target Grade:</strong> {course.targetGrade}%</p>
-                <p><strong>Current Grade:</strong> {course.currentGrade !== null ? `${course.currentGrade.toFixed(1)}%` : 'Not yet assessed'}</p>
-                {course.assessedGrade !== null && (
-                  <p><strong>Assessed Grade:</strong> {course.assessedGrade.toFixed(1)}%</p>
-                )}
-                {course.lastSyncedAt && (
-                  <p><strong>Last Synced:</strong> {new Date(course.lastSyncedAt).toLocaleString()}</p>
-                )}
-              </div>
-            }
-            size="sm"
-            position="right"
-          />
         </div>
         <h3 style={styles.listCourseName}>
           {course.nickname || course.name}

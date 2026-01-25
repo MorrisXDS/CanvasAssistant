@@ -2055,21 +2055,22 @@ function registerIpcHandlers(): void {
 
       // First check how many events exist
       const countResult = database.executeReadOne<{ count: number }>(
-        'SELECT COUNT(*) as count FROM calendar_events WHERE source_type = ?',
-        ['imported']
+        'SELECT COUNT(*) as count FROM calendar_events WHERE source_type IN (?, ?) AND deleted_at IS NULL',
+        ['imported', 'user']
       );
-      logger.debug(`[Calendar] Total imported events in DB: ${countResult?.count || 0}`);
+      logger.debug(`[Calendar] Total calendar events in DB: ${countResult?.count || 0}`);
 
-      // Build query based on includeHidden flag
+      // Build query based on includeHidden flag - include both 'imported' and 'user' events
       let sql = `
         SELECT ce.*, ic.name as calendar_name, ic.color as calendar_color, ic.is_visible
         FROM calendar_events ce
         LEFT JOIN imported_calendars ic ON ce.imported_calendar_id = ic.id
-        WHERE ce.source_type = 'imported'
+        WHERE ce.source_type IN ('imported', 'user')
+          AND ce.deleted_at IS NULL
       `;
 
       if (!params.includeHidden) {
-        sql += ' AND (ic.is_visible = 1 OR ic.is_visible IS NULL)';
+        sql += ' AND (ic.is_visible = 1 OR ic.is_visible IS NULL OR ce.source_type = \'user\')';
       }
 
       const rows = database.executeRead<{
@@ -2138,6 +2139,390 @@ function registerIpcHandlers(): void {
     } catch (error) {
       logger.error(`Failed to get calendar events: ${error}`);
       return [];
+    }
+  });
+
+  // Create user calendar event
+  ipcMain.handle('calendar:createEvent', async (_event, data: {
+    title: string;
+    description?: string;
+    startAt: string;
+    endAt?: string;
+    allDay: boolean;
+    location?: string;
+    courseId?: number;
+  }) => {
+    try {
+      // Generate a UID for ICS compatibility
+      const uid = `user-${Date.now()}-${Math.random().toString(36).substr(2, 9)}@cid`;
+
+      const result = database.executeWrite(
+        `INSERT INTO calendar_events (
+          source_type, course_id, title, description, start_at, end_at,
+          all_day, location, uid, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+        [
+          'user',
+          data.courseId || null,
+          data.title,
+          data.description || null,
+          data.startAt,
+          data.endAt || null,
+          data.allDay ? 1 : 0,
+          data.location || null,
+          uid,
+        ],
+        'calendar_events'
+      );
+
+      const eventId = result.lastInsertRowid as number;
+      logger.info(`Created user calendar event: ${data.title} (id=${eventId})`);
+
+      return { success: true, data: { id: eventId } };
+    } catch (error) {
+      logger.error(`Failed to create calendar event: ${error}`);
+      return { success: false, error: String(error) };
+    }
+  });
+
+  // Update calendar event (user or imported only)
+  ipcMain.handle('calendar:updateEvent', async (_event, id: number, data: {
+    title?: string;
+    description?: string;
+    startAt?: string;
+    endAt?: string;
+    allDay?: boolean;
+    location?: string;
+  }) => {
+    try {
+      // Verify event exists and is editable (user or imported)
+      const existing = database.executeReadOne<{ source_type: string }>(
+        'SELECT source_type FROM calendar_events WHERE id = ? AND deleted_at IS NULL',
+        [id]
+      );
+
+      if (!existing) {
+        return { success: false, error: 'Event not found' };
+      }
+
+      if (existing.source_type === 'canvas') {
+        return { success: false, error: 'Cannot edit Canvas events' };
+      }
+
+      const setClauses: string[] = [];
+      const values: unknown[] = [];
+
+      if (data.title !== undefined) {
+        setClauses.push('title = ?');
+        values.push(data.title);
+      }
+      if (data.description !== undefined) {
+        setClauses.push('description = ?');
+        values.push(data.description);
+      }
+      if (data.startAt !== undefined) {
+        setClauses.push('start_at = ?');
+        values.push(data.startAt);
+      }
+      if (data.endAt !== undefined) {
+        setClauses.push('end_at = ?');
+        values.push(data.endAt);
+      }
+      if (data.allDay !== undefined) {
+        setClauses.push('all_day = ?');
+        values.push(data.allDay ? 1 : 0);
+      }
+      if (data.location !== undefined) {
+        setClauses.push('location = ?');
+        values.push(data.location);
+      }
+
+      if (setClauses.length === 0) {
+        return { success: true };
+      }
+
+      setClauses.push('updated_at = CURRENT_TIMESTAMP');
+      values.push(id);
+
+      database.executeWrite(
+        `UPDATE calendar_events SET ${setClauses.join(', ')} WHERE id = ?`,
+        values,
+        'calendar_events'
+      );
+
+      logger.info(`Updated calendar event id=${id}`);
+      return { success: true };
+    } catch (error) {
+      logger.error(`Failed to update calendar event: ${error}`);
+      return { success: false, error: String(error) };
+    }
+  });
+
+  // Delete calendar event (soft delete)
+  ipcMain.handle('calendar:deleteEvent', async (_event, id: number) => {
+    try {
+      // Verify event exists
+      const existing = database.executeReadOne<{
+        source_type: string;
+        imported_calendar_id: number | null;
+        title: string;
+      }>(
+        'SELECT source_type, imported_calendar_id, title FROM calendar_events WHERE id = ? AND deleted_at IS NULL',
+        [id]
+      );
+
+      if (!existing) {
+        return { success: false, error: 'Event not found' };
+      }
+
+      if (existing.source_type === 'canvas') {
+        return { success: false, error: 'Cannot delete Canvas events' };
+      }
+
+      // Soft delete the event
+      database.executeWrite(
+        'UPDATE calendar_events SET deleted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+        [id],
+        'calendar_events'
+      );
+
+      // Update event count on parent imported calendar if applicable
+      if (existing.imported_calendar_id) {
+        database.executeWrite(
+          'UPDATE imported_calendars SET event_count = event_count - 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+          [existing.imported_calendar_id],
+          'imported_calendars'
+        );
+      }
+
+      logger.info(`Deleted calendar event: ${existing.title} (id=${id})`);
+      return { success: true };
+    } catch (error) {
+      logger.error(`Failed to delete calendar event: ${error}`);
+      return { success: false, error: String(error) };
+    }
+  });
+
+  // Batch export calendars to ICS
+  ipcMain.handle('calendar:exportBatch', async (_event, options: {
+    mode: 'all' | 'selected';
+    calendarIds?: number[];
+    courseIds?: number[];
+    includeUserEvents?: boolean;
+    consolidate?: boolean;
+    dateRange?: { start: string; end: string };
+  }) => {
+    try {
+      const vevents: string[] = [];
+      const calendarName = 'Canvas Integration Dashboard Export';
+
+      // Helper to format date for ICS
+      const formatICSDate = (dateStr: string, allDay: boolean): string => {
+        const date = new Date(dateStr);
+        if (allDay) {
+          // All-day events use DATE format (YYYYMMDD)
+          return date.toISOString().slice(0, 10).replace(/-/g, '');
+        }
+        // Regular events use DATETIME format (YYYYMMDDTHHMMSSZ)
+        return date.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+      };
+
+      // Helper to escape ICS text
+      const escapeICS = (text: string | null | undefined): string => {
+        if (!text) return '';
+        return text
+          .replace(/\\/g, '\\\\')
+          .replace(/;/g, '\\;')
+          .replace(/,/g, '\\,')
+          .replace(/\n/g, '\\n');
+      };
+
+      // Build date range filter
+      let dateFilter = '';
+      const dateParams: string[] = [];
+      if (options.dateRange) {
+        dateFilter = ' AND start_at >= ? AND start_at <= ?';
+        dateParams.push(options.dateRange.start, options.dateRange.end);
+      }
+
+      // Collect events based on mode
+      if (options.mode === 'all' || options.includeUserEvents) {
+        // Get user-created events
+        const userEvents = database.executeRead<{
+          id: number;
+          title: string;
+          description: string | null;
+          start_at: string;
+          end_at: string | null;
+          all_day: number;
+          location: string | null;
+          uid: string | null;
+        }>(
+          `SELECT id, title, description, start_at, end_at, all_day, location, uid
+           FROM calendar_events
+           WHERE source_type = 'user' AND deleted_at IS NULL${dateFilter}`,
+          dateParams
+        );
+
+        for (const evt of userEvents) {
+          const uid = evt.uid || `user-${evt.id}@cid`;
+          const lines = [
+            'BEGIN:VEVENT',
+            `UID:${uid}`,
+            `DTSTAMP:${formatICSDate(new Date().toISOString(), false)}`,
+          ];
+
+          if (evt.all_day) {
+            lines.push(`DTSTART;VALUE=DATE:${formatICSDate(evt.start_at, true)}`);
+            if (evt.end_at) {
+              lines.push(`DTEND;VALUE=DATE:${formatICSDate(evt.end_at, true)}`);
+            }
+          } else {
+            lines.push(`DTSTART:${formatICSDate(evt.start_at, false)}`);
+            if (evt.end_at) {
+              lines.push(`DTEND:${formatICSDate(evt.end_at, false)}`);
+            }
+          }
+
+          lines.push(`SUMMARY:${escapeICS(evt.title)}`);
+          if (evt.description) lines.push(`DESCRIPTION:${escapeICS(evt.description)}`);
+          if (evt.location) lines.push(`LOCATION:${escapeICS(evt.location)}`);
+          lines.push('END:VEVENT');
+
+          vevents.push(lines.join('\r\n'));
+        }
+      }
+
+      // Get imported calendar events
+      if (options.mode === 'all' || (options.calendarIds && options.calendarIds.length > 0)) {
+        let calendarFilter = '';
+        const params: (string | number)[] = [...dateParams];
+
+        if (options.mode === 'selected' && options.calendarIds) {
+          const placeholders = options.calendarIds.map(() => '?').join(',');
+          calendarFilter = ` AND imported_calendar_id IN (${placeholders})`;
+          params.push(...options.calendarIds);
+        }
+
+        const importedEvents = database.executeRead<{
+          id: number;
+          title: string;
+          description: string | null;
+          start_at: string;
+          end_at: string | null;
+          all_day: number;
+          location: string | null;
+          uid: string | null;
+          recurrence_rule: string | null;
+        }>(
+          `SELECT id, title, description, start_at, end_at, all_day, location, uid, recurrence_rule
+           FROM calendar_events
+           WHERE source_type = 'imported' AND deleted_at IS NULL${dateFilter}${calendarFilter}`,
+          params
+        );
+
+        for (const evt of importedEvents) {
+          const uid = evt.uid || `imported-${evt.id}@cid`;
+          const lines = [
+            'BEGIN:VEVENT',
+            `UID:${uid}`,
+            `DTSTAMP:${formatICSDate(new Date().toISOString(), false)}`,
+          ];
+
+          if (evt.all_day) {
+            lines.push(`DTSTART;VALUE=DATE:${formatICSDate(evt.start_at, true)}`);
+            if (evt.end_at) {
+              lines.push(`DTEND;VALUE=DATE:${formatICSDate(evt.end_at, true)}`);
+            }
+          } else {
+            lines.push(`DTSTART:${formatICSDate(evt.start_at, false)}`);
+            if (evt.end_at) {
+              lines.push(`DTEND:${formatICSDate(evt.end_at, false)}`);
+            }
+          }
+
+          lines.push(`SUMMARY:${escapeICS(evt.title)}`);
+          if (evt.description) lines.push(`DESCRIPTION:${escapeICS(evt.description)}`);
+          if (evt.location) lines.push(`LOCATION:${escapeICS(evt.location)}`);
+          if (evt.recurrence_rule) lines.push(`RRULE:${evt.recurrence_rule}`);
+          lines.push('END:VEVENT');
+
+          vevents.push(lines.join('\r\n'));
+        }
+      }
+
+      // Get course tasks as events
+      if (options.mode === 'all' || (options.courseIds && options.courseIds.length > 0)) {
+        let courseFilter = '';
+        const params: (string | number)[] = [...dateParams];
+
+        if (options.mode === 'selected' && options.courseIds) {
+          const placeholders = options.courseIds.map(() => '?').join(',');
+          courseFilter = ` AND t.course_id IN (${placeholders})`;
+          params.push(...options.courseIds);
+        }
+
+        const tasks = database.executeRead<{
+          id: number;
+          title: string;
+          description: string | null;
+          due_at: string;
+          course_code: string;
+          task_type: string | null;
+          weight: number;
+        }>(
+          `SELECT t.id, t.title, t.description, t.due_at, c.code as course_code, t.task_type, t.weight
+           FROM tasks t
+           JOIN courses c ON t.course_id = c.id
+           WHERE t.due_at IS NOT NULL${dateFilter ? dateFilter.replace('start_at', 't.due_at') : ''}${courseFilter}`,
+          params
+        );
+
+        for (const task of tasks) {
+          const uid = `task-${task.id}@cid`;
+          const dueDate = new Date(task.due_at);
+          const endDate = new Date(dueDate.getTime() + 60 * 60 * 1000); // 1 hour duration
+
+          const description = [
+            `Course: ${task.course_code}`,
+            task.task_type ? `Type: ${task.task_type}` : null,
+            task.weight > 0 ? `Weight: ${task.weight}%` : null,
+            task.description,
+          ].filter(Boolean).join('\\n');
+
+          const lines = [
+            'BEGIN:VEVENT',
+            `UID:${uid}`,
+            `DTSTAMP:${formatICSDate(new Date().toISOString(), false)}`,
+            `DTSTART:${formatICSDate(task.due_at, false)}`,
+            `DTEND:${formatICSDate(endDate.toISOString(), false)}`,
+            `SUMMARY:${escapeICS(task.title)}`,
+            `DESCRIPTION:${escapeICS(description)}`,
+            `CATEGORIES:${escapeICS(task.course_code)}`,
+            'END:VEVENT',
+          ];
+
+          vevents.push(lines.join('\r\n'));
+        }
+      }
+
+      // Build final ICS content
+      const icsContent = [
+        'BEGIN:VCALENDAR',
+        'VERSION:2.0',
+        'PRODID:-//Canvas Integration Dashboard//EN',
+        `X-WR-CALNAME:${escapeICS(calendarName)}`,
+        'CALSCALE:GREGORIAN',
+        'METHOD:PUBLISH',
+        ...vevents,
+        'END:VCALENDAR',
+      ].join('\r\n');
+
+      logger.info(`Exported ${vevents.length} events to ICS`);
+      return { success: true, data: { content: icsContent, eventCount: vevents.length } };
+    } catch (error) {
+      logger.error(`Failed to export calendars: ${error}`);
+      return { success: false, error: String(error) };
     }
   });
 

@@ -81,6 +81,7 @@ export interface StoreState {
   // Auth
   isAuthenticated: boolean;
   isInitialized: boolean;
+  authError: { type: 'expired' | 'invalid'; reason?: string } | null;
 
   // Error handling
   lastError: string | null;
@@ -123,6 +124,34 @@ export interface StoreActions {
   toggleCalendarVisibility: (calendarId: number, isVisible: boolean) => Promise<boolean>;
   updateImportedCalendar: (calendarId: number, updates: { name?: string; color?: string }) => Promise<boolean>;
 
+  // User Calendar Events CRUD
+  createCalendarEvent: (data: {
+    title: string;
+    description?: string;
+    startAt: string;
+    endAt?: string;
+    allDay: boolean;
+    location?: string;
+    courseId?: number;
+  }) => Promise<{ success: boolean; id?: number }>;
+  updateCalendarEvent: (id: number, data: {
+    title?: string;
+    description?: string;
+    startAt?: string;
+    endAt?: string;
+    allDay?: boolean;
+    location?: string;
+  }) => Promise<boolean>;
+  deleteCalendarEvent: (id: number) => Promise<boolean>;
+  exportCalendarsBatch: (options: {
+    mode: 'all' | 'selected';
+    calendarIds?: number[];
+    courseIds?: number[];
+    includeUserEvents?: boolean;
+    consolidate?: boolean;
+    dateRange?: { start: string; end: string };
+  }) => Promise<{ success: boolean; content?: string; eventCount?: number }>;
+
   // Commands
   updateTargetGrade: (courseId: number, targetGrade: number) => Promise<boolean>;
   markTaskComplete: (taskId: number, isComplete: boolean) => Promise<boolean>;
@@ -146,6 +175,8 @@ export interface StoreActions {
 
   // Auth
   setAuthenticated: (authenticated: boolean) => void;
+  setAuthError: (error: { type: 'expired' | 'invalid'; reason?: string } | null) => void;
+  clearAuthError: () => void;
 
   // Internal
   handleSimulationChange: (event: import('../../shared/ipc-contract').SimulationChangeEvent) => void;

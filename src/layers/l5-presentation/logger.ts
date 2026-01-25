@@ -41,11 +41,11 @@ function sendLog(level: LogLevel, message: string, component?: string): void {
         console.info(fullMessage);
         break;
       case 'warn':
-        // eslint-disable-next-line no-console
+         
         console.warn(fullMessage);
         break;
       case 'error':
-        // eslint-disable-next-line no-console
+         
         console.error(fullMessage);
         break;
     }
