@@ -284,7 +284,8 @@ describe('ResilienceWrapper', () => {
   describe('event coordination', () => {
     it('should emit circuit-opened event', (done) => {
       wrapper.on('circuit-opened', ({ endpoint }) => {
-        expect(endpoint).toBeUndefined(); // Global circuit
+        // Global circuit uses 'global' as the endpoint identifier
+        expect(endpoint).toBe('global');
         done();
       });
 

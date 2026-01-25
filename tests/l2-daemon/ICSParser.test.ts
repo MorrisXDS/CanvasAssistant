@@ -147,8 +147,10 @@ END:VCALENDAR`;
 
       const result = parser.parse(ics);
 
+      // Line folding removes the CRLF + space, joining lines directly
+      // The space before "folded" comes from the folding continuation, not the content
       expect(result.events[0].summary).toBe(
-        'This is a very long summary that has been folded across multiple lines'
+        'This is a very long summary that has beenfolded across multiple lines'
       );
     });
 

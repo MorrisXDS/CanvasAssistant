@@ -238,24 +238,24 @@ describe('CanvasFieldMappings', () => {
 
   describe('field uniqueness', () => {
     it('should have no overlap between Canvas and local course fields', () => {
-      const canvasSet = new Set(COURSE_CANVAS_FIELDS);
-      const localSet = new Set(COURSE_LOCAL_FIELDS);
+      const canvasSet = new Set<string>(COURSE_CANVAS_FIELDS);
+      const localSet = new Set<string>(COURSE_LOCAL_FIELDS);
 
       const overlap = [...canvasSet].filter((f) => localSet.has(f));
       expect(overlap).toEqual([]);
     });
 
     it('should have no overlap between Canvas and local task fields', () => {
-      const canvasSet = new Set(TASK_CANVAS_FIELDS);
-      const localSet = new Set(TASK_LOCAL_FIELDS);
+      const canvasSet = new Set<string>(TASK_CANVAS_FIELDS);
+      const localSet = new Set<string>(TASK_LOCAL_FIELDS);
 
       const overlap = [...canvasSet].filter((f) => localSet.has(f));
       expect(overlap).toEqual([]);
     });
 
     it('should have no overlap between Canvas and local notification fields', () => {
-      const canvasSet = new Set(NOTIFICATION_CANVAS_FIELDS);
-      const localSet = new Set(NOTIFICATION_LOCAL_FIELDS);
+      const canvasSet = new Set<string>(NOTIFICATION_CANVAS_FIELDS);
+      const localSet = new Set<string>(NOTIFICATION_LOCAL_FIELDS);
 
       const overlap = [...canvasSet].filter((f) => localSet.has(f));
       expect(overlap).toEqual([]);
