@@ -4,34 +4,35 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import {
-  HashRouter,
-  Routes,
-  Route,
-  Navigate,
-} from 'react-router-dom';
+import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 
 import { useStore, subscribeToIpcEvents } from '../l5-presentation/store';
+import {
+  settingsManager,
+  STORAGE_KEYS,
+  type AppearanceSettings,
+  type FileExplorerSettings,
+  DEFAULT_APPEARANCE_SETTINGS,
+} from '../l5-presentation/settings';
 import { Layout } from './components/Layout';
 import { Dashboard } from './components/Dashboard';
 import { Onboarding } from './components/Onboarding';
 import { ReAuthModal } from './components/shared/ReAuthModal';
-import { AnnouncementDetail, AnnouncementsPage, CalendarPage, CourseDetail, CoursesPage, FilesPage, SettingsPage, TasksPage } from './components/pages';
+import {
+  AnnouncementDetail,
+  AnnouncementsPage,
+  CalendarPage,
+  CourseDetail,
+  CoursesPage,
+  FilesPage,
+  SettingsPage,
+  TasksPage,
+} from './components/pages';
 
 import './styles/global.css';
 
 // ============ Settings Preload ============
-// Apply saved settings immediately on app load
-
-const STORAGE_KEYS = {
-  APPEARANCE: 'appearanceSettings',
-  FILE_EXPLORER: 'fileExplorerSettings',
-};
-
-interface AppearanceSettings {
-  theme: 'light' | 'dark' | 'system';
-  sidebarCollapsed: boolean;
-}
+// Apply saved settings immediately on app load (before React renders)
 
 function applyTheme(theme: 'light' | 'dark' | 'system') {
   const root = document.documentElement;
@@ -44,51 +45,36 @@ function applyTheme(theme: 'light' | 'dark' | 'system') {
 }
 
 function initializeSettings() {
-  // Load and apply appearance settings
-  try {
-    const stored = localStorage.getItem(STORAGE_KEYS.APPEARANCE);
-    if (stored) {
-      const appearance: AppearanceSettings = JSON.parse(stored);
-      applyTheme(appearance.theme || 'system');
-    } else {
-      applyTheme('system');
-    }
-  } catch {
-    applyTheme('system');
-  }
+  // Initialize settings manager
+  settingsManager.initialize();
+
+  // Apply theme immediately
+  const appearance = settingsManager.get(STORAGE_KEYS.APPEARANCE) as
+    | AppearanceSettings
+    | undefined;
+  const theme = appearance?.theme ?? DEFAULT_APPEARANCE_SETTINGS.theme;
+  applyTheme(theme);
 
   // Listen for system theme changes if using 'system' theme
   const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
   mediaQuery.addEventListener('change', () => {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEYS.APPEARANCE);
-      if (stored) {
-        const appearance: AppearanceSettings = JSON.parse(stored);
-        if (appearance.theme === 'system') {
-          applyTheme('system');
-        }
-      } else {
-        applyTheme('system');
-      }
-    } catch {
+    const currentAppearance = settingsManager.get(STORAGE_KEYS.APPEARANCE) as
+      | AppearanceSettings
+      | undefined;
+    if (!currentAppearance?.theme || currentAppearance.theme === 'system') {
       applyTheme('system');
     }
   });
 
   // Restore custom download location if saved
-  try {
-    const fileSettings = localStorage.getItem(STORAGE_KEYS.FILE_EXPLORER);
-    if (fileSettings) {
-      const parsed = JSON.parse(fileSettings);
-      if (parsed.downloadLocation) {
-        // Async restore - don't block startup
-        window.api?.setFilesDirectory?.(parsed.downloadLocation).catch((err: Error) => {
-          console.warn('[App] Failed to restore download location:', err);
-        });
-      }
-    }
-  } catch {
-    // Ignore errors in download location restoration
+  const fileSettings = settingsManager.get(STORAGE_KEYS.FILE_EXPLORER) as
+    | FileExplorerSettings
+    | undefined;
+  if (fileSettings?.downloadLocation) {
+    // Async restore - don't block startup
+    window.api?.setFilesDirectory?.(fileSettings.downloadLocation).catch((err: Error) => {
+      console.warn('[App] Failed to restore download location:', err);
+    });
   }
 }
 
@@ -113,8 +99,15 @@ function LoadingScreen() {
  * Main App with auth routing
  */
 function AppContent() {
-  const { isInitialized, isAuthenticated, authError, initialize, setAuthenticated, clearAuthError, refreshAll } =
-    useStore();
+  const {
+    isInitialized,
+    isAuthenticated,
+    authError,
+    initialize,
+    setAuthenticated,
+    clearAuthError,
+    refreshAll,
+  } = useStore();
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
 
   useEffect(() => {

@@ -28,6 +28,7 @@ export {
   // Urgency
   getUrgencyLevel,
   getUrgencyColor,
+  getBadgeUrgency,
 } from './formatters';
 
 // UI Text

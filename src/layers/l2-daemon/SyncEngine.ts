@@ -34,9 +34,13 @@ import {
   detectPolicyKeywords,
   calculatePolicyConfidence,
 } from './DataMappers';
-import { SyncConflictResolver, SyncConflict, ConflictResolution } from './SyncConflictResolver';
+import {
+  SyncConflictResolver,
+  SyncConflict,
+  ConflictResolution,
+} from './SyncConflictResolver';
 import { HtmlFileExtractor, ExtractedFileReference } from './HtmlFileExtractor';
-import { HtmlContentSync, HtmlContentSyncResult } from './HtmlContentSync';
+import { HtmlContentSync } from './HtmlContentSync';
 import { FileDownloadManager } from '../l0-utilities/FileDownloadManager';
 import { HtmlContentSyncConfig } from '../l0-utilities/AppConfig';
 import type { ComponentLogger } from '../l0-utilities/Logger';
@@ -155,7 +159,10 @@ export class SyncEngine extends EventEmitter {
   private diagnosticsEnabled: boolean = false;
   private diagnosticLog: SyncDiagnosticEntry[] = [];
   private pausedForConflicts: boolean = false;
-  private pendingConflictData: Map<string, { tableName: string; data: Record<string, unknown> }> = new Map();
+  private pendingConflictData: Map<
+    string,
+    { tableName: string; data: Record<string, unknown> }
+  > = new Map();
   private log: ComponentLogger | null;
 
   constructor(config: SyncEngineConfig) {
@@ -170,7 +177,9 @@ export class SyncEngine extends EventEmitter {
     this.log = config.logger ?? null;
 
     // Initialize HTML content sync if configured
-    this.log?.debug(`Init: htmlContentSyncConfig=${!!config.htmlContentSyncConfig}, downloadManager=${!!this.downloadManager}, filesBaseDir=${this.filesBaseDir}`);
+    this.log?.debug(
+      `Init: htmlContentSyncConfig=${!!config.htmlContentSyncConfig}, downloadManager=${!!this.downloadManager}, filesBaseDir=${this.filesBaseDir}`
+    );
     if (config.htmlContentSyncConfig && this.downloadManager && this.filesBaseDir) {
       this.htmlContentSync = new HtmlContentSync({
         db: this.db,
@@ -295,8 +304,8 @@ export class SyncEngine extends EventEmitter {
     );
 
     if (lastAttempt) {
-      const timeSinceLastAttempt = now.getTime() - new Date(lastAttempt.last_failure_at).getTime();
-      const daysSinceLastAttempt = timeSinceLastAttempt / (24 * 60 * 60 * 1000);
+      const timeSinceLastAttempt =
+        now.getTime() - new Date(lastAttempt.last_failure_at).getTime();
 
       if (timeSinceLastAttempt >= BACKOFF_CONFIG.MAX_DELAY_MS) {
         // Reset backoff - we've waited long enough
@@ -305,19 +314,16 @@ export class SyncEngine extends EventEmitter {
       }
     }
 
-    const inBackoff = now < nextRetry;
-    if (inBackoff) {
-      const minutesRemaining = (nextRetry.getTime() - now.getTime()) / (60 * 1000);
-    } else {
-    }
-
-    return inBackoff;
+    return now < nextRetry;
   }
 
   /**
    * Get backoff info for an endpoint (for logging/UI)
    */
-  getEndpointBackoffInfo(endpoint: string, courseId: number | null): EndpointBackoff | null {
+  getEndpointBackoffInfo(
+    endpoint: string,
+    courseId: number | null
+  ): EndpointBackoff | null {
     const row = this.db.executeReadOne<{
       endpoint: string;
       course_id: number | null;
@@ -356,6 +362,9 @@ export class SyncEngine extends EventEmitter {
     errorCode: string,
     errorMessage: string
   ): void {
+    // Skip if database is locked (non-critical operation)
+    if (this.db.isWriteLocked()) return;
+
     const existing = this.db.executeReadOne<{ failure_count: number }>(
       `SELECT failure_count FROM endpoint_backoff
        WHERE endpoint = ? AND (course_id = ? OR (course_id IS NULL AND ? IS NULL))`,
@@ -365,7 +374,9 @@ export class SyncEngine extends EventEmitter {
     const failureCount = existing ? existing.failure_count + 1 : 1;
 
     // Calculate delay with exponential backoff + jitter
-    let delayMs = BACKOFF_CONFIG.INITIAL_DELAY_MS * Math.pow(BACKOFF_CONFIG.MULTIPLIER, failureCount - 1);
+    let delayMs =
+      BACKOFF_CONFIG.INITIAL_DELAY_MS *
+      Math.pow(BACKOFF_CONFIG.MULTIPLIER, failureCount - 1);
     delayMs = Math.min(delayMs, BACKOFF_CONFIG.MAX_DELAY_MS);
 
     // Add jitter (±10%)
@@ -373,70 +384,86 @@ export class SyncEngine extends EventEmitter {
     delayMs = Math.round(delayMs * jitter);
 
     const nextRetryAt = new Date(Date.now() + delayMs);
-    const delayHours = delayMs / (60 * 60 * 1000);
 
+    try {
+      this.db.executeWrite(
+        `INSERT INTO endpoint_backoff (endpoint, course_id, failure_count, last_failure_at, next_retry_at, error_code, error_message)
+         VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?)
+         ON CONFLICT(endpoint, course_id) DO UPDATE SET
+           failure_count = excluded.failure_count,
+           last_failure_at = CURRENT_TIMESTAMP,
+           next_retry_at = excluded.next_retry_at,
+           error_code = excluded.error_code,
+           error_message = excluded.error_message`,
+        [
+          endpoint,
+          courseId,
+          failureCount,
+          nextRetryAt.toISOString(),
+          errorCode,
+          errorMessage,
+        ],
+        'endpoint_backoff'
+      );
 
-    this.db.executeWrite(
-      `INSERT INTO endpoint_backoff (endpoint, course_id, failure_count, last_failure_at, next_retry_at, error_code, error_message)
-       VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?)
-       ON CONFLICT(endpoint, course_id) DO UPDATE SET
-         failure_count = excluded.failure_count,
-         last_failure_at = CURRENT_TIMESTAMP,
-         next_retry_at = excluded.next_retry_at,
-         error_code = excluded.error_code,
-         error_message = excluded.error_message`,
-      [endpoint, courseId, failureCount, nextRetryAt.toISOString(), errorCode, errorMessage],
-      'endpoint_backoff'
-    );
-
-    this.emit('endpoint-backoff', {
-      endpoint,
-      courseId,
-      failureCount,
-      nextRetryAt,
-      delayMs,
-      errorCode,
-      errorMessage,
-    });
+      this.emit('endpoint-backoff', {
+        endpoint,
+        courseId,
+        failureCount,
+        nextRetryAt,
+        delayMs,
+        errorCode,
+        errorMessage,
+      });
+    } catch (err) {
+      // Silently ignore lock errors - backoff tracking is non-critical
+      if (!(err instanceof Error && err.message.includes('locked'))) throw err;
+    }
   }
 
   /**
    * Record a successful endpoint access (clears backoff)
    */
   private recordEndpointSuccess(endpoint: string, courseId: number | null): void {
-    const existing = this.db.executeReadOne<{ failure_count: number }>(
-      `SELECT failure_count FROM endpoint_backoff
-       WHERE endpoint = ? AND (course_id = ? OR (course_id IS NULL AND ? IS NULL))`,
-      [endpoint, courseId, courseId]
-    );
+    // Skip if database is locked (non-critical operation)
+    if (this.db.isWriteLocked()) return;
 
-    if (existing && existing.failure_count > 0) {
+    try {
+      this.db.executeWrite(
+        `UPDATE endpoint_backoff SET
+           failure_count = 0,
+           last_success_at = CURRENT_TIMESTAMP,
+           next_retry_at = CURRENT_TIMESTAMP
+         WHERE endpoint = ? AND (course_id = ? OR (course_id IS NULL AND ? IS NULL))`,
+        [endpoint, courseId, courseId],
+        'endpoint_backoff'
+      );
+    } catch (err) {
+      // Silently ignore lock errors - backoff tracking is non-critical
+      if (!(err instanceof Error && err.message.includes('locked'))) throw err;
     }
-
-    this.db.executeWrite(
-      `UPDATE endpoint_backoff SET
-         failure_count = 0,
-         last_success_at = CURRENT_TIMESTAMP,
-         next_retry_at = CURRENT_TIMESTAMP
-       WHERE endpoint = ? AND (course_id = ? OR (course_id IS NULL AND ? IS NULL))`,
-      [endpoint, courseId, courseId],
-      'endpoint_backoff'
-    );
   }
 
   /**
    * Reset backoff for an endpoint (called after 2+ days of waiting)
    */
   private resetEndpointBackoff(endpoint: string, courseId: number | null): void {
+    // Skip if database is locked (non-critical operation)
+    if (this.db.isWriteLocked()) return;
 
-    this.db.executeWrite(
-      `DELETE FROM endpoint_backoff
-       WHERE endpoint = ? AND (course_id = ? OR (course_id IS NULL AND ? IS NULL))`,
-      [endpoint, courseId, courseId],
-      'endpoint_backoff'
-    );
+    try {
+      this.db.executeWrite(
+        `DELETE FROM endpoint_backoff
+         WHERE endpoint = ? AND (course_id = ? OR (course_id IS NULL AND ? IS NULL))`,
+        [endpoint, courseId, courseId],
+        'endpoint_backoff'
+      );
 
-    this.emit('endpoint-backoff-reset', { endpoint, courseId });
+      this.emit('endpoint-backoff-reset', { endpoint, courseId });
+    } catch (err) {
+      // Silently ignore lock errors - backoff tracking is non-critical
+      if (!(err instanceof Error && err.message.includes('locked'))) throw err;
+    }
   }
 
   /**
@@ -475,7 +502,6 @@ export class SyncEngine extends EventEmitter {
     courseId: number | null,
     fetcher: () => Promise<T>
   ): Promise<{ data: T | null; skipped: boolean; error?: string }> {
-
     // Check if in backoff
     if (this.isEndpointInBackoff(endpoint, courseId)) {
       const info = this.getEndpointBackoffInfo(endpoint, courseId);
@@ -486,7 +512,11 @@ export class SyncEngine extends EventEmitter {
         nextRetryAt: info?.nextRetryAt,
         failureCount: info?.failureCount,
       });
-      return { data: null, skipped: true, error: `Skipped: in backoff until ${info?.nextRetryAt?.toISOString()}` };
+      return {
+        data: null,
+        skipped: true,
+        error: `Skipped: in backoff until ${info?.nextRetryAt?.toISOString()}`,
+      };
     }
 
     try {
@@ -499,13 +529,21 @@ export class SyncEngine extends EventEmitter {
       const status = (err as { status?: number })?.status;
       const errorMessage = (err as { message?: string })?.message || String(err);
 
-
       // Handle auth/access errors with backoff (401, 403, 404)
       // 404 can mean "page disabled for this course" - not a fatal error
       if (status === 401 || status === 403 || status === 404) {
         const errorCode = String(status);
-        this.recordEndpointFailure(endpoint, courseId, errorCode, errorMessage.slice(0, 200));
-        return { data: null, skipped: false, error: `Error ${errorCode}: ${errorMessage.slice(0, 100)}` };
+        this.recordEndpointFailure(
+          endpoint,
+          courseId,
+          errorCode,
+          errorMessage.slice(0, 200)
+        );
+        return {
+          data: null,
+          skipped: false,
+          error: `Error ${errorCode}: ${errorMessage.slice(0, 100)}`,
+        };
       }
 
       // Non-backoff error - rethrow (5xx server errors, network errors, etc.)
@@ -556,16 +594,18 @@ export class SyncEngine extends EventEmitter {
     const course = this.db.executeReadOne<{
       auto_assign_due_date: number | null;
       allow_guessed_override: number | null;
-    }>(
-      'SELECT auto_assign_due_date, allow_guessed_override FROM courses WHERE id = ?',
-      [courseId]
-    );
+    }>('SELECT auto_assign_due_date, allow_guessed_override FROM courses WHERE id = ?', [
+      courseId,
+    ]);
 
     const appDefaults = this.getSyncPreferences();
 
     // Per-course setting: NULL = inherit, 0 = disabled, 1 = enabled
     let autoAssignDueDate = appDefaults.autoAssignDueDate;
-    if (course?.auto_assign_due_date !== null && course?.auto_assign_due_date !== undefined) {
+    if (
+      course?.auto_assign_due_date !== null &&
+      course?.auto_assign_due_date !== undefined
+    ) {
       autoAssignDueDate = course.auto_assign_due_date === 1;
     }
 
@@ -620,7 +660,11 @@ export class SyncEngine extends EventEmitter {
       if (resolution.useCanvasValue) {
         const entityId = conflict.data.id as number;
         if (entityId) {
-          this.conflictResolver.clearFieldModified(conflict.tableName, entityId, result.field);
+          this.conflictResolver.clearFieldModified(
+            conflict.tableName,
+            entityId,
+            result.field
+          );
         }
       }
 
@@ -681,7 +725,32 @@ export class SyncEngine extends EventEmitter {
    * @param options Optional sync options to filter courses and content types
    */
   async syncAll(options?: SyncOptions): Promise<FullSyncResult> {
-    this.log?.debug(`syncAll called, htmlContentSync=${!!this.htmlContentSync}, filesBaseDir=${this.filesBaseDir}`);
+    this.log?.debug(
+      `syncAll called, htmlContentSync=${!!this.htmlContentSync}, filesBaseDir=${this.filesBaseDir}`
+    );
+
+    // Skip sync if database is locked (e.g., during app reset)
+    if (this.db.isWriteLocked()) {
+      this.log?.debug('Sync skipped: database is locked for writes');
+      const skippedResult: SyncResult = {
+        success: true,
+        entity: '',
+        count: 0,
+        errors: [],
+        duration: 0,
+      };
+      return {
+        courses: { ...skippedResult, entity: 'courses' },
+        tasks: { ...skippedResult, entity: 'tasks' },
+        announcements: { ...skippedResult, entity: 'announcements' },
+        modules: { ...skippedResult, entity: 'modules' },
+        pages: { ...skippedResult, entity: 'pages' },
+        folders: { ...skippedResult, entity: 'folders' },
+        files: { ...skippedResult, entity: 'files' },
+        totalDuration: 0,
+        errors: [],
+      };
+    }
 
     // Acquire mutex lock atomically - prevents race condition between check and set
     const release = await this.acquireSyncMutex();
@@ -733,7 +802,12 @@ export class SyncEngine extends EventEmitter {
         () =>
           this.client.getAll<CanvasCourse>('/courses', {
             enrollment_state: 'active',
-            include: ['total_scores', 'current_grading_period_scores', 'syllabus_body', 'term'],
+            include: [
+              'total_scores',
+              'current_grading_period_scores',
+              'syllabus_body',
+              'term',
+            ],
           }),
         10
       );
@@ -766,9 +840,10 @@ export class SyncEngine extends EventEmitter {
 
               // Subtract buffer days from end_at to get actual course end
               const endDate = new Date(course.term.end_at);
-              const adjustedEndDate = new Date(endDate.getTime() - DAYS_BUFFER * 24 * 60 * 60 * 1000);
+              const adjustedEndDate = new Date(
+                endDate.getTime() - DAYS_BUFFER * 24 * 60 * 60 * 1000
+              );
               const isCurrent = adjustedEndDate > now;
-
 
               if (isCurrent) {
                 currentTermIds.add(termId);
@@ -776,19 +851,17 @@ export class SyncEngine extends EventEmitter {
             }
           }
 
-
           if (currentTermIds.size > 0) {
-            coursesToSync = fetched.courses.filter((c) =>
-              c.term && currentTermIds.has(c.term.id)
+            coursesToSync = fetched.courses.filter(
+              (c) => c.term && currentTermIds.has(c.term.id)
             );
-          } else {
           }
         } else {
           // Specific term selected - filter by term ID
           const selectedTermId = parseInt(termSelection, 10);
           if (!isNaN(selectedTermId)) {
-            coursesToSync = fetched.courses.filter((c) =>
-              c.term && c.term.id === selectedTermId
+            coursesToSync = fetched.courses.filter(
+              (c) => c.term && c.term.id === selectedTermId
             );
           }
         }
@@ -796,7 +869,6 @@ export class SyncEngine extends EventEmitter {
 
       // Fetch data for each course in parallel
       for (const course of coursesToSync) {
-
         const canvasCourseId = course.id;
 
         // Build fetch promises
@@ -804,23 +876,26 @@ export class SyncEngine extends EventEmitter {
 
         // Tasks (assignments)
         fetchPromises.push(
-          this.rateLimiter.enqueue(
-            () => this.client.getAll<CanvasAssignment>(
-              `/courses/${canvasCourseId}/assignments`,
-              { order_by: 'due_at' }
-            ),
-            5
-          ).then((data) => { fetched.tasks.set(canvasCourseId, data); })
+          this.rateLimiter
+            .enqueue(
+              () =>
+                this.client.getAll<CanvasAssignment>(
+                  `/courses/${canvasCourseId}/assignments`,
+                  { order_by: 'due_at' }
+                ),
+              5
+            )
+            .then((data) => {
+              fetched.tasks.set(canvasCourseId, data);
+            })
         );
 
         // Modules (with backoff tracking)
         fetchPromises.push(
           (async () => {
             const endpoint = `/courses/${canvasCourseId}/modules`;
-            const result = await this.fetchWithBackoff(
-              endpoint,
-              canvasCourseId,
-              () => this.rateLimiter.enqueue(
+            const result = await this.fetchWithBackoff(endpoint, canvasCourseId, () =>
+              this.rateLimiter.enqueue(
                 () => this.client.getAll<CanvasModule>(endpoint, { include: ['items'] }),
                 3
               )
@@ -834,10 +909,8 @@ export class SyncEngine extends EventEmitter {
         fetchPromises.push(
           (async () => {
             const endpoint = `/courses/${canvasCourseId}/pages`;
-            const result = await this.fetchWithBackoff(
-              endpoint,
-              canvasCourseId,
-              () => this.rateLimiter.enqueue(
+            const result = await this.fetchWithBackoff(endpoint, canvasCourseId, () =>
+              this.rateLimiter.enqueue(
                 () => this.client.getAll<CanvasPage>(endpoint, { 'include[]': 'body' }),
                 2
               )
@@ -853,12 +926,15 @@ export class SyncEngine extends EventEmitter {
             // This handles courses where pages list is disabled but front_page exists
             try {
               const frontPageResponse = await this.rateLimiter.enqueue(
-                () => this.client.get<CanvasPage>(`/courses/${canvasCourseId}/front_page`),
+                () =>
+                  this.client.get<CanvasPage>(`/courses/${canvasCourseId}/front_page`),
                 2
               );
               if (frontPageResponse.data) {
                 fetched.pages.set(canvasCourseId, [frontPageResponse.data]);
-                this.log?.debug(`Fetched front_page for course ${canvasCourseId} (pages list unavailable)`);
+                this.log?.debug(
+                  `Fetched front_page for course ${canvasCourseId} (pages list unavailable)`
+                );
               } else {
                 fetched.pages.set(canvasCourseId, []);
               }
@@ -872,13 +948,18 @@ export class SyncEngine extends EventEmitter {
         // Announcements (if enabled)
         if (syncAnnouncements) {
           fetchPromises.push(
-            this.rateLimiter.enqueue(
-              () => this.client.getAll<CanvasAnnouncement>(
-                `/courses/${canvasCourseId}/discussion_topics`,
-                { only_announcements: true }
-              ),
-              3
-            ).then((data) => { fetched.announcements.set(canvasCourseId, data); })
+            this.rateLimiter
+              .enqueue(
+                () =>
+                  this.client.getAll<CanvasAnnouncement>(
+                    `/courses/${canvasCourseId}/discussion_topics`,
+                    { only_announcements: true }
+                  ),
+                3
+              )
+              .then((data) => {
+                fetched.announcements.set(canvasCourseId, data);
+              })
           );
         }
 
@@ -887,10 +968,8 @@ export class SyncEngine extends EventEmitter {
           fetchPromises.push(
             (async () => {
               const endpoint = `/courses/${canvasCourseId}/folders`;
-              const result = await this.fetchWithBackoff(
-                endpoint,
-                canvasCourseId,
-                () => this.rateLimiter.enqueue(
+              const result = await this.fetchWithBackoff(endpoint, canvasCourseId, () =>
+                this.rateLimiter.enqueue(
                   () => this.client.getAll<CanvasFolder>(endpoint),
                   2
                 )
@@ -903,10 +982,8 @@ export class SyncEngine extends EventEmitter {
           fetchPromises.push(
             (async () => {
               const endpoint = `/courses/${canvasCourseId}/files`;
-              const result = await this.fetchWithBackoff(
-                endpoint,
-                canvasCourseId,
-                () => this.rateLimiter.enqueue(
+              const result = await this.fetchWithBackoff(endpoint, canvasCourseId, () =>
+                this.rateLimiter.enqueue(
                   () => this.client.getAll<CanvasFile>(endpoint),
                   2
                 )
@@ -921,10 +998,15 @@ export class SyncEngine extends EventEmitter {
         const results = await Promise.allSettled(fetchPromises);
 
         // Log any failures but continue with successful fetches
-        const failures = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
+        const failures = results.filter(
+          (r): r is PromiseRejectedResult => r.status === 'rejected'
+        );
         if (failures.length > 0) {
           for (const failure of failures) {
-            const reason = failure.reason instanceof Error ? failure.reason.message : String(failure.reason);
+            const reason =
+              failure.reason instanceof Error
+                ? failure.reason.message
+                : String(failure.reason);
             errors.push(`Course ${canvasCourseId} fetch: ${reason}`);
           }
         }
@@ -933,20 +1015,32 @@ export class SyncEngine extends EventEmitter {
       // Summary of fetched data
 
       this.emit('sync-phase', { phase: 'fetch', status: 'complete' });
-
     } catch (fetchError) {
       // FETCH FAILED - Abort without writing anything
       this.releaseSyncMutex();
-      const message = fetchError instanceof Error ? fetchError.message : String(fetchError);
+      const message =
+        fetchError instanceof Error ? fetchError.message : String(fetchError);
       errors.push(`Fetch failed: ${message}`);
 
       this.emit('sync-error', { type: 'fetch', error: message });
       this.emit('sync-aborted', { reason: 'fetch_failed', error: message });
 
       return {
-        courses: { success: false, entity: 'courses', count: 0, errors: [`Fetch failed: ${message}`], duration: Date.now() - startTime },
+        courses: {
+          success: false,
+          entity: 'courses',
+          count: 0,
+          errors: [`Fetch failed: ${message}`],
+          duration: Date.now() - startTime,
+        },
         tasks: { success: false, entity: 'tasks', count: 0, errors: [], duration: 0 },
-        announcements: { success: false, entity: 'announcements', count: 0, errors: [], duration: 0 },
+        announcements: {
+          success: false,
+          entity: 'announcements',
+          count: 0,
+          errors: [],
+          duration: 0,
+        },
         modules: { success: false, entity: 'modules', count: 0, errors: [], duration: 0 },
         pages: { success: false, entity: 'pages', count: 0, errors: [], duration: 0 },
         folders: { success: false, entity: 'folders', count: 0, errors: [], duration: 0 },
@@ -970,6 +1064,30 @@ export class SyncEngine extends EventEmitter {
     };
 
     try {
+      // Check if database was locked during fetch phase (e.g., app reset occurred)
+      if (this.db.isWriteLocked()) {
+        this.log?.debug('Sync aborted before commit: database is locked for writes');
+        this.releaseSyncMutex();
+        const skippedResult: SyncResult = {
+          success: true,
+          entity: '',
+          count: 0,
+          errors: [],
+          duration: Date.now() - startTime,
+        };
+        return {
+          courses: { ...skippedResult, entity: 'courses' },
+          tasks: { ...skippedResult, entity: 'tasks' },
+          announcements: { ...skippedResult, entity: 'announcements' },
+          modules: { ...skippedResult, entity: 'modules' },
+          pages: { ...skippedResult, entity: 'pages' },
+          folders: { ...skippedResult, entity: 'folders' },
+          files: { ...skippedResult, entity: 'files' },
+          totalDuration: Date.now() - startTime,
+          errors: [],
+        };
+      }
+
       this.emit('sync-phase', { phase: 'commit', status: 'started' });
 
       const baseUrl = this.client.getBaseUrl();
@@ -977,7 +1095,10 @@ export class SyncEngine extends EventEmitter {
       // Single atomic transaction for all writes
       this.db.transaction(() => {
         // --- Write Enrollment Terms ---
-        const termsMap = new Map<number, { id: number; name: string; start_at: string | null; end_at: string | null }>();
+        const termsMap = new Map<
+          number,
+          { id: number; name: string; start_at: string | null; end_at: string | null }
+        >();
         for (const course of fetched.courses) {
           if (course.term) {
             if (!termsMap.has(course.term.id)) {
@@ -988,7 +1109,10 @@ export class SyncEngine extends EventEmitter {
                 end_at: course.term.end_at,
               });
             }
-          } else if (course.enrollment_term_id && !termsMap.has(course.enrollment_term_id)) {
+          } else if (
+            course.enrollment_term_id &&
+            !termsMap.has(course.enrollment_term_id)
+          ) {
             termsMap.set(course.enrollment_term_id, {
               id: course.enrollment_term_id,
               name: `Semester ${course.enrollment_term_id}`,
@@ -1016,15 +1140,24 @@ export class SyncEngine extends EventEmitter {
             [localCourse.external_id]
           );
 
-          const { autoResolved, conflicts, preservedFields } = this.conflictResolver.detectConflicts(
-            'course', 'courses', existing?.id as number || 0,
-            localCourse.external_id, localCourse.name, existing, localCourse
-          );
+          const { autoResolved, conflicts, preservedFields } =
+            this.conflictResolver.detectConflicts(
+              'course',
+              'courses',
+              (existing?.id as number) || 0,
+              localCourse.external_id,
+              localCourse.name,
+              existing,
+              localCourse
+            );
 
           if (conflicts.length > 0) {
             this.emit('sync-conflicts', { entity: 'course', conflicts });
             for (const conflict of conflicts) {
-              this.pendingConflictData.set(conflict.id, { tableName: 'courses', data: { ...localCourse, id: existing?.id } });
+              this.pendingConflictData.set(conflict.id, {
+                tableName: 'courses',
+                data: { ...localCourse, id: existing?.id },
+              });
             }
           }
 
@@ -1050,8 +1183,9 @@ export class SyncEngine extends EventEmitter {
           counts.courses++;
         }
 
-        // --- Build course ID lookup ---
+        // --- Build course ID and name lookup ---
         const courseIdMap = new Map<number, number>(); // canvasId -> localId
+        const courseNameMap = new Map<number, string>(); // canvasId -> courseName
         for (const course of fetched.courses) {
           const row = this.db.executeReadOne<{ id: number }>(
             'SELECT id FROM courses WHERE external_id = ?',
@@ -1060,6 +1194,7 @@ export class SyncEngine extends EventEmitter {
           if (row) {
             courseIdMap.set(course.id, row.id);
           }
+          courseNameMap.set(course.id, course.name);
         }
 
         // --- Write Tasks ---
@@ -1072,7 +1207,9 @@ export class SyncEngine extends EventEmitter {
 
           // Get per-course settings
           const courseSettings = this.getCourseSettings(localCourseId);
-          this.log?.debug(`[syncAll] Course ${localCourseId} settings: autoAssignDueDate=${courseSettings.autoAssignDueDate}, allowGuessedOverride=${courseSettings.allowGuessedOverride}`);
+          this.log?.debug(
+            `[syncAll] Course ${localCourseId} settings: autoAssignDueDate=${courseSettings.autoAssignDueDate}, allowGuessedOverride=${courseSettings.allowGuessedOverride}`
+          );
 
           for (const assignment of assignments) {
             const localTask = mapAssignment(assignment, localCourseId);
@@ -1081,11 +1218,21 @@ export class SyncEngine extends EventEmitter {
               [localTask.external_id]
             );
 
-            const { autoResolved, conflicts, preservedFields } = this.conflictResolver.detectConflicts(
-              'task', 'tasks', existing?.id as number || 0,
-              localTask.external_id, localTask.title, existing, localTask,
-              { allowGuessedOverride: courseSettings.allowGuessedOverride }
-            );
+            const { autoResolved, conflicts, preservedFields } =
+              this.conflictResolver.detectConflicts(
+                'task',
+                'tasks',
+                (existing?.id as number) || 0,
+                localTask.external_id,
+                localTask.title,
+                existing,
+                localTask,
+                {
+                  allowGuessedOverride: courseSettings.allowGuessedOverride,
+                  courseName: courseNameMap.get(canvasCourseId),
+                  courseId: localCourseId,
+                }
+              );
 
             if (conflicts.length > 0) {
               this.emit('sync-conflicts', { entity: 'task', conflicts });
@@ -1114,20 +1261,29 @@ export class SyncEngine extends EventEmitter {
 
             // Auto-assign due date for tasks without one (if setting enabled)
             // User can override this value and it will be preserved
-            this.log?.debug(`Task "${localTask.title}": autoAssignDueDate=${courseSettings.autoAssignDueDate}, due_at=${finalData.due_at}, type=${typeof finalData.due_at}`);
+            this.log?.debug(
+              `Task "${localTask.title}": autoAssignDueDate=${courseSettings.autoAssignDueDate}, due_at=${finalData.due_at}, type=${typeof finalData.due_at}`
+            );
             if (courseSettings.autoAssignDueDate && !finalData.due_at) {
               // Check if existing record has a user-set due date (in local_modified_fields or field_sources)
               const existingModified = existing?.local_modified_fields as string | null;
               const modifiedFields = existingModified ? JSON.parse(existingModified) : [];
-              const fieldSources = existing?.field_sources ? JSON.parse(existing.field_sources as string) : {};
-              const userSetDueDate = modifiedFields.includes('due_at') || fieldSources.due_at === 'user';
+              const fieldSources = existing?.field_sources
+                ? JSON.parse(existing.field_sources as string)
+                : {};
+              const userSetDueDate =
+                modifiedFields.includes('due_at') || fieldSources.due_at === 'user';
 
-              this.log?.debug(`Task "${localTask.title}": userSetDueDate=${userSetDueDate}, assigning todayEndTime=${todayEndTime}`);
+              this.log?.debug(
+                `Task "${localTask.title}": userSetDueDate=${userSetDueDate}, assigning todayEndTime=${todayEndTime}`
+              );
               if (!userSetDueDate) {
                 // No user override - auto-assign today's end time
                 autoAssignedDueDate = true;
                 finalData.due_at = todayEndTime;
-                this.log?.debug(`Task "${localTask.title}": Assigned due_at=${finalData.due_at}`);
+                this.log?.debug(
+                  `Task "${localTask.title}": Assigned due_at=${finalData.due_at}`
+                );
               } else if (existing?.due_at) {
                 // User has set their own due date - preserve it
                 finalData.due_at = existing.due_at;
@@ -1143,7 +1299,12 @@ export class SyncEngine extends EventEmitter {
                 [localTask.external_id]
               );
               if (row) {
-                this.conflictResolver.setFieldSource('tasks', row.id, 'due_at', 'guessed');
+                this.conflictResolver.setFieldSource(
+                  'tasks',
+                  row.id,
+                  'due_at',
+                  'guessed'
+                );
               }
             }
 
@@ -1165,8 +1326,18 @@ export class SyncEngine extends EventEmitter {
           if (!localCourseId) continue;
 
           for (const announcement of announcements) {
-            const mapped = mapAnnouncement(announcement, localCourseId, baseUrl, String(canvasCourseId));
-            this.db.upsert('notifications', mapped.notification, ['source_type', 'source_id'], false);
+            const mapped = mapAnnouncement(
+              announcement,
+              localCourseId,
+              baseUrl,
+              String(canvasCourseId)
+            );
+            this.db.upsert(
+              'notifications',
+              mapped.notification,
+              ['source_type', 'source_id'],
+              false
+            );
             counts.announcements++;
 
             // Handle attachments
@@ -1184,8 +1355,17 @@ export class SyncEngine extends EventEmitter {
                    ON CONFLICT(notification_id, external_id) DO UPDATE SET
                      display_name = excluded.display_name, filename = excluded.filename, url = excluded.url,
                      size_bytes = excluded.size_bytes, content_type = excluded.content_type`,
-                  [notificationRow.id, attachment.course_id, attachment.external_id, attachment.display_name,
-                   attachment.filename, attachment.url, attachment.size_bytes, attachment.content_type, 'pending'],
+                  [
+                    notificationRow.id,
+                    attachment.course_id,
+                    attachment.external_id,
+                    attachment.display_name,
+                    attachment.filename,
+                    attachment.url,
+                    attachment.size_bytes,
+                    attachment.content_type,
+                    'pending',
+                  ],
                   'notification_attachments'
                 );
               }
@@ -1194,7 +1374,6 @@ export class SyncEngine extends EventEmitter {
         }
 
         // --- Write Modules and Module Items ---
-        let totalModuleItems = 0;
         for (const [canvasCourseId, modules] of fetched.modules) {
           const localCourseId = courseIdMap.get(canvasCourseId);
           if (!localCourseId) continue;
@@ -1215,12 +1394,9 @@ export class SyncEngine extends EventEmitter {
               for (const item of module.items) {
                 const localItem = mapModuleItem(item, insertedModule.id);
                 this.db.upsert('module_items', localItem);
-                totalModuleItems++;
               }
             }
           }
-        }
-        if (totalModuleItems > 0) {
         }
 
         // --- Write Pages ---
@@ -1259,7 +1435,10 @@ export class SyncEngine extends EventEmitter {
 
           // Build folder path lookup
           const folderPathMap = new Map<number, string>();
-          const dbFolders = this.db.executeRead<{ external_id: string; folder_path: string | null }>(
+          const dbFolders = this.db.executeRead<{
+            external_id: string;
+            folder_path: string | null;
+          }>(
             'SELECT external_id, folder_path FROM resources WHERE course_id = ? AND type = ?',
             [localCourseId, 'folder']
           );
@@ -1271,13 +1450,20 @@ export class SyncEngine extends EventEmitter {
             const folderPath = folderPathMap.get(file.folder_id) ?? null;
             const localFile = mapFile(file, localCourseId, null, folderPath);
 
-            // Check existing record
-            const existing = this.db.executeReadOne<{ id: number; local_path: string | null }>(
-              'SELECT id, local_path FROM resources WHERE external_id = ?',
-              [String(file.id)]
-            );
+            // Check existing record (preserved for potential future use)
+            const _existing = this.db.executeReadOne<{
+              id: number;
+              local_path: string | null;
+            }>('SELECT id, local_path FROM resources WHERE external_id = ?', [
+              String(file.id),
+            ]);
 
-            this.db.upsert('resources', localFile as Record<string, unknown>, 'external_id', true);
+            this.db.upsert(
+              'resources',
+              localFile as Record<string, unknown>,
+              'external_id',
+              true
+            );
             counts.files++;
           }
         }
@@ -1295,20 +1481,56 @@ export class SyncEngine extends EventEmitter {
       });
 
       this.emit('sync-phase', { phase: 'commit', status: 'complete' });
-
     } catch (commitError) {
       // COMMIT FAILED - Transaction automatically rolled back
       this.releaseSyncMutex();
-      const message = commitError instanceof Error ? commitError.message : String(commitError);
+      const message =
+        commitError instanceof Error ? commitError.message : String(commitError);
+
+      // If database was locked (e.g., during app reset), treat as graceful skip, not error
+      if (message.includes('Database is locked for writes')) {
+        this.log?.debug('Sync aborted during commit: database is locked for writes');
+        const skippedResult: SyncResult = {
+          success: true,
+          entity: '',
+          count: 0,
+          errors: [],
+          duration: Date.now() - startTime,
+        };
+        return {
+          courses: { ...skippedResult, entity: 'courses' },
+          tasks: { ...skippedResult, entity: 'tasks' },
+          announcements: { ...skippedResult, entity: 'announcements' },
+          modules: { ...skippedResult, entity: 'modules' },
+          pages: { ...skippedResult, entity: 'pages' },
+          folders: { ...skippedResult, entity: 'folders' },
+          files: { ...skippedResult, entity: 'files' },
+          totalDuration: Date.now() - startTime,
+          errors: [],
+        };
+      }
+
       errors.push(`Commit failed (rolled back): ${message}`);
 
       this.emit('sync-error', { type: 'commit', error: message });
       this.emit('sync-rollback', { reason: 'commit_failed', error: message });
 
       return {
-        courses: { success: false, entity: 'courses', count: 0, errors: [`Commit failed: ${message}`], duration: Date.now() - startTime },
+        courses: {
+          success: false,
+          entity: 'courses',
+          count: 0,
+          errors: [`Commit failed: ${message}`],
+          duration: Date.now() - startTime,
+        },
         tasks: { success: false, entity: 'tasks', count: 0, errors: [], duration: 0 },
-        announcements: { success: false, entity: 'announcements', count: 0, errors: [], duration: 0 },
+        announcements: {
+          success: false,
+          entity: 'announcements',
+          count: 0,
+          errors: [],
+          duration: 0,
+        },
         modules: { success: false, entity: 'modules', count: 0, errors: [], duration: 0 },
         pages: { success: false, entity: 'pages', count: 0, errors: [], duration: 0 },
         folders: { success: false, entity: 'folders', count: 0, errors: [], duration: 0 },
@@ -1353,12 +1575,18 @@ export class SyncEngine extends EventEmitter {
       }
     }
 
-    this.emit('sync-phase', { phase: 'file-refs', status: 'complete', counts: fileRefCounts });
+    this.emit('sync-phase', {
+      phase: 'file-refs',
+      status: 'complete',
+      counts: fileRefCounts,
+    });
 
     // ============ PHASE 4: HTML CONTENT REGISTRATION ============
     // Register HTML content items (pages, assignments, announcements) as downloadable resources
     // Actual download happens when user requests it from Files panel
-    this.log?.debug(`Phase 4: htmlContentSync=${!!this.htmlContentSync}, filesBaseDir=${this.filesBaseDir}`);
+    this.log?.debug(
+      `Phase 4: htmlContentSync=${!!this.htmlContentSync}, filesBaseDir=${this.filesBaseDir}`
+    );
 
     const htmlSyncCounts = {
       itemsRegistered: 0,
@@ -1373,7 +1601,9 @@ export class SyncEngine extends EventEmitter {
       if (options?.courseIds && options.courseIds.length > 0) {
         const courseIdSet = new Set(options.courseIds);
         coursesForFileSync = fetched.courses.filter((c) => courseIdSet.has(c.id));
-        this.log?.debug(`Files sync filtered to ${coursesForFileSync.length} courses based on courseIds selection`);
+        this.log?.debug(
+          `Files sync filtered to ${coursesForFileSync.length} courses based on courseIds selection`
+        );
       }
 
       for (const course of coursesForFileSync) {
@@ -1391,23 +1621,69 @@ export class SyncEngine extends EventEmitter {
           htmlSyncCounts.resourcesFound += htmlResult.resourcesFound;
 
           if (htmlResult.errors.length > 0) {
-            errors.push(...htmlResult.errors.map(e => `HTML sync: ${e}`));
+            errors.push(...htmlResult.errors.map((e) => `HTML sync: ${e}`));
           }
         }
       }
 
-      this.emit('sync-phase', { phase: 'html-content', status: 'complete', counts: htmlSyncCounts });
+      this.emit('sync-phase', {
+        phase: 'html-content',
+        status: 'complete',
+        counts: htmlSyncCounts,
+      });
     }
 
     // ============ SUCCESS ============
     const result: FullSyncResult = {
-      courses: { success: true, entity: 'courses', count: counts.courses, errors: [], duration: 0 },
-      tasks: { success: true, entity: 'tasks', count: counts.tasks, errors: [], duration: 0 },
-      announcements: { success: true, entity: 'announcements', count: counts.announcements, errors: [], duration: 0 },
-      modules: { success: true, entity: 'modules', count: counts.modules, errors: [], duration: 0 },
-      pages: { success: true, entity: 'pages', count: counts.pages, errors: [], duration: 0 },
-      folders: { success: true, entity: 'folders', count: counts.folders, errors: [], duration: 0 },
-      files: { success: true, entity: 'files', count: counts.files, errors: [], duration: 0 },
+      courses: {
+        success: true,
+        entity: 'courses',
+        count: counts.courses,
+        errors: [],
+        duration: 0,
+      },
+      tasks: {
+        success: true,
+        entity: 'tasks',
+        count: counts.tasks,
+        errors: [],
+        duration: 0,
+      },
+      announcements: {
+        success: true,
+        entity: 'announcements',
+        count: counts.announcements,
+        errors: [],
+        duration: 0,
+      },
+      modules: {
+        success: true,
+        entity: 'modules',
+        count: counts.modules,
+        errors: [],
+        duration: 0,
+      },
+      pages: {
+        success: true,
+        entity: 'pages',
+        count: counts.pages,
+        errors: [],
+        duration: 0,
+      },
+      folders: {
+        success: true,
+        entity: 'folders',
+        count: counts.folders,
+        errors: [],
+        duration: 0,
+      },
+      files: {
+        success: true,
+        entity: 'files',
+        count: counts.files,
+        errors: [],
+        duration: 0,
+      },
       totalDuration: Date.now() - startTime,
       errors,
     };
@@ -1431,7 +1707,12 @@ export class SyncEngine extends EventEmitter {
         () =>
           this.client.getAll<CanvasCourse>('/courses', {
             enrollment_state: 'active',
-            include: ['total_scores', 'current_grading_period_scores', 'syllabus_body', 'term'],
+            include: [
+              'total_scores',
+              'current_grading_period_scores',
+              'syllabus_body',
+              'term',
+            ],
           }),
         10 // High priority
       );
@@ -1440,11 +1721,13 @@ export class SyncEngine extends EventEmitter {
 
       this.db.transaction(() => {
         // Extract enrollment terms from courses (Canvas includes term data with include[]=term)
-        const termsMap = new Map<number, { id: number; name: string; start_at: string | null; end_at: string | null }>();
+        const termsMap = new Map<
+          number,
+          { id: number; name: string; start_at: string | null; end_at: string | null }
+        >();
 
         this.log?.debug('Processing courses for term extraction...');
         for (const course of courses) {
-
           if (course.term) {
             if (!termsMap.has(course.term.id)) {
               termsMap.set(course.term.id, {
@@ -1467,7 +1750,9 @@ export class SyncEngine extends EventEmitter {
           }
         }
 
-        this.log?.debug(`Terms extracted: ${JSON.stringify(Array.from(termsMap.values()))}`);
+        this.log?.debug(
+          `Terms extracted: ${JSON.stringify(Array.from(termsMap.values()))}`
+        );
 
         // Upsert enrollment terms with full data
         for (const [termId, term] of termsMap) {
@@ -1491,15 +1776,16 @@ export class SyncEngine extends EventEmitter {
             );
 
             // Detect conflicts
-            const { autoResolved, conflicts, preservedFields } = this.conflictResolver.detectConflicts(
-              'course',
-              'courses',
-              existing?.id as number || 0,
-              localCourse.external_id,
-              localCourse.name,
-              existing,
-              localCourse
-            );
+            const { autoResolved, conflicts, preservedFields } =
+              this.conflictResolver.detectConflicts(
+                'course',
+                'courses',
+                (existing?.id as number) || 0,
+                localCourse.external_id,
+                localCourse.name,
+                existing,
+                localCourse
+              );
 
             if (conflicts.length > 0) {
               // Emit conflicts for UI to handle
@@ -1547,9 +1833,15 @@ export class SyncEngine extends EventEmitter {
                 entity: 'course',
                 externalId: localCourse.external_id,
                 action: existing ? 'update' : 'insert',
-                preservedFields: preservedFields.length > 0 ?
-                  Object.fromEntries(preservedFields.map(f => [f, { before: existing?.[f], after: finalData[f] }])) :
-                  undefined,
+                preservedFields:
+                  preservedFields.length > 0
+                    ? Object.fromEntries(
+                        preservedFields.map((f) => [
+                          f,
+                          { before: existing?.[f], after: finalData[f] },
+                        ])
+                      )
+                    : undefined,
               });
             }
 
@@ -1566,7 +1858,6 @@ export class SyncEngine extends EventEmitter {
           }
         }
       });
-
 
       // Update sync metadata
       this.updateSyncMetadata('/courses');
@@ -1593,7 +1884,6 @@ export class SyncEngine extends EventEmitter {
     }
   }
 
-
   /**
    * Sync tasks (assignments) for a specific course
    *
@@ -1612,13 +1902,19 @@ export class SyncEngine extends EventEmitter {
     const courseSettings = this.getCourseSettings(localCourseId);
     const todayEndTime = this.getTodayEndTime();
 
+    // Get course name for conflict display
+    const courseRow = this.db.executeReadOne<{ name: string }>(
+      'SELECT name FROM courses WHERE id = ?',
+      [localCourseId]
+    );
+    const courseName = courseRow?.name;
+
     try {
       const assignments = await this.rateLimiter.enqueue(
         () =>
-          this.client.getAll<CanvasAssignment>(
-            `/courses/${canvasCourseId}/assignments`,
-            { order_by: 'due_at' }
-          ),
+          this.client.getAll<CanvasAssignment>(`/courses/${canvasCourseId}/assignments`, {
+            order_by: 'due_at',
+          }),
         5 // Medium priority
       );
 
@@ -1679,16 +1975,21 @@ export class SyncEngine extends EventEmitter {
               );
 
               // Detect conflicts
-              const { autoResolved, conflicts, preservedFields } = this.conflictResolver.detectConflicts(
-                'task',
-                'tasks',
-                existing?.id as number || 0,
-                localTask.external_id,
-                localTask.title,
-                existing,
-                localTask,
-                { allowGuessedOverride: courseSettings.allowGuessedOverride }
-              );
+              const { autoResolved, conflicts, preservedFields } =
+                this.conflictResolver.detectConflicts(
+                  'task',
+                  'tasks',
+                  (existing?.id as number) || 0,
+                  localTask.external_id,
+                  localTask.title,
+                  existing,
+                  localTask,
+                  {
+                    allowGuessedOverride: courseSettings.allowGuessedOverride,
+                    courseName,
+                    courseId: localCourseId,
+                  }
+                );
 
               if (conflicts.length > 0) {
                 // Emit conflicts for UI to handle
@@ -1732,20 +2033,31 @@ export class SyncEngine extends EventEmitter {
 
               // Auto-assign due date for tasks without one (if setting enabled)
               // User can override this value and it will be preserved
-              this.log?.debug(`[syncTasks] Task "${localTask.title}": autoAssignDueDate=${courseSettings.autoAssignDueDate}, due_at=${finalData.due_at}, type=${typeof finalData.due_at}`);
+              this.log?.debug(
+                `[syncTasks] Task "${localTask.title}": autoAssignDueDate=${courseSettings.autoAssignDueDate}, due_at=${finalData.due_at}, type=${typeof finalData.due_at}`
+              );
               if (courseSettings.autoAssignDueDate && !finalData.due_at) {
                 // Check if existing record has a user-set due date (in local_modified_fields or field_sources)
                 const existingModified = existing?.local_modified_fields as string | null;
-                const modifiedFields = existingModified ? JSON.parse(existingModified) : [];
-                const fieldSources = existing?.field_sources ? JSON.parse(existing.field_sources as string) : {};
-                const userSetDueDate = modifiedFields.includes('due_at') || fieldSources.due_at === 'user';
+                const modifiedFields = existingModified
+                  ? JSON.parse(existingModified)
+                  : [];
+                const fieldSources = existing?.field_sources
+                  ? JSON.parse(existing.field_sources as string)
+                  : {};
+                const userSetDueDate =
+                  modifiedFields.includes('due_at') || fieldSources.due_at === 'user';
 
-                this.log?.debug(`[syncTasks] Task "${localTask.title}": userSetDueDate=${userSetDueDate}, assigning todayEndTime=${todayEndTime}`);
+                this.log?.debug(
+                  `[syncTasks] Task "${localTask.title}": userSetDueDate=${userSetDueDate}, assigning todayEndTime=${todayEndTime}`
+                );
                 if (!userSetDueDate) {
                   // No user override - auto-assign today's end time
                   autoAssignedDueDate = true;
                   finalData.due_at = todayEndTime;
-                  this.log?.debug(`[syncTasks] Task "${localTask.title}": Assigned due_at=${finalData.due_at}`);
+                  this.log?.debug(
+                    `[syncTasks] Task "${localTask.title}": Assigned due_at=${finalData.due_at}`
+                  );
                 } else if (existing?.due_at) {
                   // User has set their own due date - preserve it
                   finalData.due_at = existing.due_at;
@@ -1762,7 +2074,12 @@ export class SyncEngine extends EventEmitter {
                   [localTask.external_id]
                 );
                 if (row) {
-                  this.conflictResolver.setFieldSource('tasks', row.id, 'due_at', 'guessed');
+                  this.conflictResolver.setFieldSource(
+                    'tasks',
+                    row.id,
+                    'due_at',
+                    'guessed'
+                  );
                 }
               }
 
@@ -1772,16 +2089,24 @@ export class SyncEngine extends EventEmitter {
                   entity: 'task',
                   externalId: localTask.external_id,
                   action: existing ? 'update' : 'insert',
-                  preservedFields: preservedFields.length > 0 ?
-                    Object.fromEntries(preservedFields.map(f => [f, { before: existing?.[f], after: finalData[f] }])) :
-                    undefined,
+                  preservedFields:
+                    preservedFields.length > 0
+                      ? Object.fromEntries(
+                          preservedFields.map((f) => [
+                            f,
+                            { before: existing?.[f], after: finalData[f] },
+                          ])
+                        )
+                      : undefined,
                 });
               }
             }
 
             count++;
           } catch (error) {
-            errors.push(`Task ${assignment.id}: ${error instanceof Error ? error.message : String(error)}`);
+            errors.push(
+              `Task ${assignment.id}: ${error instanceof Error ? error.message : String(error)}`
+            );
           }
         }
       });
@@ -1815,7 +2140,10 @@ export class SyncEngine extends EventEmitter {
   /**
    * Sync announcements for a specific course
    */
-  async syncAnnouncements(canvasCourseId: number, localCourseId: number): Promise<SyncResult> {
+  async syncAnnouncements(
+    canvasCourseId: number,
+    localCourseId: number
+  ): Promise<SyncResult> {
     const startTime = Date.now();
     const errors: string[] = [];
     let count = 0;
@@ -1843,7 +2171,12 @@ export class SyncEngine extends EventEmitter {
             );
 
             // Insert notification
-            this.db.upsert('notifications', mapped.notification, ['source_type', 'source_id'], false);
+            this.db.upsert(
+              'notifications',
+              mapped.notification,
+              ['source_type', 'source_id'],
+              false
+            );
             count++;
 
             // Get the notification ID for attachments and policy tracking
@@ -1929,7 +2262,9 @@ export class SyncEngine extends EventEmitter {
 
               // If policy-related, create policy_announcement record
               if (mapped.notification.is_policy_related) {
-                const detection = detectPolicyKeywords(announcement.title + ' ' + announcement.message);
+                const detection = detectPolicyKeywords(
+                  announcement.title + ' ' + announcement.message
+                );
                 const confidence = calculatePolicyConfidence(
                   announcement.title + ' ' + announcement.message,
                   detection.keywords
@@ -1967,7 +2302,9 @@ export class SyncEngine extends EventEmitter {
               }
             }
           } catch (error) {
-            errors.push(`Announcement ${announcement.id}: ${error instanceof Error ? error.message : String(error)}`);
+            errors.push(
+              `Announcement ${announcement.id}: ${error instanceof Error ? error.message : String(error)}`
+            );
           }
         }
       });
@@ -1983,7 +2320,9 @@ export class SyncEngine extends EventEmitter {
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      errors.push(`Failed to sync announcements for course ${canvasCourseId}: ${message}`);
+      errors.push(
+        `Failed to sync announcements for course ${canvasCourseId}: ${message}`
+      );
       return {
         success: false,
         entity: 'announcements',
@@ -2004,10 +2343,8 @@ export class SyncEngine extends EventEmitter {
     const endpoint = `/courses/${canvasCourseId}/modules`;
 
     try {
-      const result = await this.fetchWithBackoff(
-        endpoint,
-        canvasCourseId,
-        () => this.rateLimiter.enqueue(
+      const result = await this.fetchWithBackoff(endpoint, canvasCourseId, () =>
+        this.rateLimiter.enqueue(
           () => this.client.getAll<CanvasModule>(endpoint, { include: ['items'] }),
           3
         )
@@ -2026,7 +2363,10 @@ export class SyncEngine extends EventEmitter {
       const modules = result.data;
 
       // First pass: upsert modules
-      const modulesWithItems: Array<{ canvasModule: typeof modules[0]; localModuleId: number }> = [];
+      const modulesWithItems: Array<{
+        canvasModule: (typeof modules)[0];
+        localModuleId: number;
+      }> = [];
 
       this.db.transaction(() => {
         for (const module of modules) {
@@ -2041,16 +2381,20 @@ export class SyncEngine extends EventEmitter {
             );
 
             if (insertedModule && (module.items?.length || module.items_count > 0)) {
-              modulesWithItems.push({ canvasModule: module, localModuleId: insertedModule.id });
+              modulesWithItems.push({
+                canvasModule: module,
+                localModuleId: insertedModule.id,
+              });
             }
           } catch (error) {
-            errors.push(`Module ${module.id}: ${error instanceof Error ? error.message : String(error)}`);
+            errors.push(
+              `Module ${module.id}: ${error instanceof Error ? error.message : String(error)}`
+            );
           }
         }
       });
 
       // Second pass: sync module items (outside transaction, properly awaited)
-      let totalItemsSynced = 0;
       for (const { canvasModule, localModuleId } of modulesWithItems) {
         // Use embedded items if available (from include: ['items'])
         if (canvasModule.items && canvasModule.items.length > 0) {
@@ -2058,7 +2402,6 @@ export class SyncEngine extends EventEmitter {
             for (const item of canvasModule.items!) {
               const localItem = mapModuleItem(item, localModuleId);
               this.db.upsert('module_items', localItem);
-              totalItemsSynced++;
             }
           });
         } else {
@@ -2066,9 +2409,6 @@ export class SyncEngine extends EventEmitter {
           await this.syncModuleItems(canvasCourseId, canvasModule.id, localModuleId);
         }
       }
-
-      // Single summary line
-      const sample = modules[0];
 
       this.updateSyncMetadata(`/courses/${canvasCourseId}/modules`);
 
@@ -2114,7 +2454,10 @@ export class SyncEngine extends EventEmitter {
         this.db.upsert('module_items', localItem);
       }
     } catch (error) {
-      this.log?.error(`Failed to sync items for module ${canvasModuleId}`, error instanceof Error ? error : new Error(String(error)));
+      this.log?.error(
+        `Failed to sync items for module ${canvasModuleId}`,
+        error instanceof Error ? error : new Error(String(error))
+      );
     }
   }
 
@@ -2131,10 +2474,8 @@ export class SyncEngine extends EventEmitter {
     try {
       // Sync course pages (with backoff tracking)
       // Include body content for HTML extraction
-      const result = await this.fetchWithBackoff(
-        endpoint,
-        canvasCourseId,
-        () => this.rateLimiter.enqueue(
+      const result = await this.fetchWithBackoff(endpoint, canvasCourseId, () =>
+        this.rateLimiter.enqueue(
           () => this.client.getAll<CanvasPage>(endpoint, { 'include[]': 'body' }),
           2
         )
@@ -2153,7 +2494,9 @@ export class SyncEngine extends EventEmitter {
           );
           if (frontPageResponse.data) {
             pages = [frontPageResponse.data];
-            this.log?.debug(`Fetched front_page for course ${canvasCourseId} (pages list unavailable)`);
+            this.log?.debug(
+              `Fetched front_page for course ${canvasCourseId} (pages list unavailable)`
+            );
           }
         } catch {
           // No front page available
@@ -2178,7 +2521,9 @@ export class SyncEngine extends EventEmitter {
             this.db.upsert('course_pages', localPage);
             count++;
           } catch (error) {
-            errors.push(`Page ${page.url}: ${error instanceof Error ? error.message : String(error)}`);
+            errors.push(
+              `Page ${page.url}: ${error instanceof Error ? error.message : String(error)}`
+            );
           }
         }
       });
@@ -2215,16 +2560,10 @@ export class SyncEngine extends EventEmitter {
     let count = 0;
     const endpoint = `/courses/${canvasCourseId}/folders`;
 
-
     try {
       // Fetch all folders for the course (with backoff tracking)
-      const result = await this.fetchWithBackoff(
-        endpoint,
-        canvasCourseId,
-        () => this.rateLimiter.enqueue(
-          () => this.client.getAll<CanvasFolder>(endpoint),
-          2
-        )
+      const result = await this.fetchWithBackoff(endpoint, canvasCourseId, () =>
+        this.rateLimiter.enqueue(() => this.client.getAll<CanvasFolder>(endpoint), 2)
       );
 
       if (result.skipped || !result.data) {
@@ -2246,7 +2585,9 @@ export class SyncEngine extends EventEmitter {
             this.db.upsert('resources', localFolder as Record<string, unknown>);
             count++;
           } catch (error) {
-            errors.push(`Folder ${folder.name}: ${error instanceof Error ? error.message : String(error)}`);
+            errors.push(
+              `Folder ${folder.name}: ${error instanceof Error ? error.message : String(error)}`
+            );
           }
         }
       });
@@ -2283,21 +2624,18 @@ export class SyncEngine extends EventEmitter {
     let count = 0;
     const endpoint = `/courses/${canvasCourseId}/files`;
 
-
     try {
       // Fetch all files for the course (with backoff tracking)
-      const result = await this.fetchWithBackoff(
-        endpoint,
-        canvasCourseId,
-        () => this.rateLimiter.enqueue(
-          () => this.client.getAll<CanvasFile>(endpoint),
-          2
-        )
+      const result = await this.fetchWithBackoff(endpoint, canvasCourseId, () =>
+        this.rateLimiter.enqueue(() => this.client.getAll<CanvasFile>(endpoint), 2)
       );
 
       if (result.skipped || !result.data) {
         // Fallback: extract files from module items
-        const fallbackResult = await this.syncFilesFromModules(canvasCourseId, localCourseId);
+        const fallbackResult = await this.syncFilesFromModules(
+          canvasCourseId,
+          localCourseId
+        );
         return {
           success: fallbackResult.success,
           entity: 'files',
@@ -2312,7 +2650,10 @@ export class SyncEngine extends EventEmitter {
       // Build a lookup map from Canvas folder_id to folder_path
       // Folders should be synced before files
       const folderPathMap = new Map<number, string>();
-      const dbFolders = this.db.executeRead<{ external_id: string; folder_path: string | null }>(
+      const dbFolders = this.db.executeRead<{
+        external_id: string;
+        folder_path: string | null;
+      }>(
         'SELECT external_id, folder_path FROM resources WHERE course_id = ? AND type = ?',
         [localCourseId, 'folder']
       );
@@ -2353,10 +2694,17 @@ export class SyncEngine extends EventEmitter {
             }
 
             // local_path is not in localFile data, so it won't be overwritten on sync
-            this.db.upsert('resources', localFile as Record<string, unknown>, 'external_id', true);
+            this.db.upsert(
+              'resources',
+              localFile as Record<string, unknown>,
+              'external_id',
+              true
+            );
             count++;
           } catch (error) {
-            errors.push(`File ${file.display_name}: ${error instanceof Error ? error.message : String(error)}`);
+            errors.push(
+              `File ${file.display_name}: ${error instanceof Error ? error.message : String(error)}`
+            );
           }
         }
       });
@@ -2408,7 +2756,6 @@ export class SyncEngine extends EventEmitter {
         [localCourseId]
       );
 
-
       if (fileItems.length === 0) {
         return { success: true, count: 0, errors: [] };
       }
@@ -2432,7 +2779,12 @@ export class SyncEngine extends EventEmitter {
             // Map and store the file
             const localFile = mapFile(file, localCourseId, null, 'Modules');
 
-            this.db.upsert('resources', localFile as Record<string, unknown>, 'external_id', true);
+            this.db.upsert(
+              'resources',
+              localFile as Record<string, unknown>,
+              'external_id',
+              true
+            );
             count++;
           }
         } catch (error) {
@@ -2478,12 +2830,14 @@ export class SyncEngine extends EventEmitter {
       );
       const internalFolderId = folder?.id ?? null;
 
-      const cachedFiles = internalFolderId ? this.db.executeRead<{ id: number }>(
-        `SELECT id FROM resources
+      const cachedFiles = internalFolderId
+        ? this.db.executeRead<{ id: number }>(
+            `SELECT id FROM resources
          WHERE course_id = ? AND type = 'file'
          AND parent_folder_id = ?`,
-        [localCourseId, internalFolderId]
-      ) : [];
+            [localCourseId, internalFolderId]
+          )
+        : [];
 
       return {
         success: true,
@@ -2545,10 +2899,17 @@ export class SyncEngine extends EventEmitter {
               });
             }
 
-            this.db.upsert('resources', localFile as Record<string, unknown>, 'external_id', true);
+            this.db.upsert(
+              'resources',
+              localFile as Record<string, unknown>,
+              'external_id',
+              true
+            );
             count++;
           } catch (error) {
-            errors.push(`File ${file.display_name}: ${error instanceof Error ? error.message : String(error)}`);
+            errors.push(
+              `File ${file.display_name}: ${error instanceof Error ? error.message : String(error)}`
+            );
           }
         }
       });
@@ -2571,12 +2932,14 @@ export class SyncEngine extends EventEmitter {
       );
       const internalFolderId = folder?.id ?? null;
 
-      const cachedFiles = internalFolderId ? this.db.executeRead<{ id: number }>(
-        `SELECT id FROM resources
+      const cachedFiles = internalFolderId
+        ? this.db.executeRead<{ id: number }>(
+            `SELECT id FROM resources
          WHERE course_id = ? AND type = 'file'
          AND parent_folder_id = ?`,
-        [localCourseId, internalFolderId]
-      ) : [];
+            [localCourseId, internalFolderId]
+          )
+        : [];
 
       if (cachedFiles.length > 0) {
         return {
@@ -2615,10 +2978,34 @@ export class SyncEngine extends EventEmitter {
     if (!courseResult.success) {
       return {
         course: courseResult,
-        tasks: { success: false, entity: 'tasks', count: 0, errors: ['Course sync failed'], duration: 0 },
-        announcements: { success: false, entity: 'announcements', count: 0, errors: ['Course sync failed'], duration: 0 },
-        modules: { success: false, entity: 'modules', count: 0, errors: ['Course sync failed'], duration: 0 },
-        pages: { success: false, entity: 'pages', count: 0, errors: ['Course sync failed'], duration: 0 },
+        tasks: {
+          success: false,
+          entity: 'tasks',
+          count: 0,
+          errors: ['Course sync failed'],
+          duration: 0,
+        },
+        announcements: {
+          success: false,
+          entity: 'announcements',
+          count: 0,
+          errors: ['Course sync failed'],
+          duration: 0,
+        },
+        modules: {
+          success: false,
+          entity: 'modules',
+          count: 0,
+          errors: ['Course sync failed'],
+          duration: 0,
+        },
+        pages: {
+          success: false,
+          entity: 'pages',
+          count: 0,
+          errors: ['Course sync failed'],
+          duration: 0,
+        },
       };
     }
 
@@ -2631,10 +3018,34 @@ export class SyncEngine extends EventEmitter {
     if (!localCourse) {
       return {
         course: courseResult,
-        tasks: { success: false, entity: 'tasks', count: 0, errors: ['Course not found'], duration: 0 },
-        announcements: { success: false, entity: 'announcements', count: 0, errors: ['Course not found'], duration: 0 },
-        modules: { success: false, entity: 'modules', count: 0, errors: ['Course not found'], duration: 0 },
-        pages: { success: false, entity: 'pages', count: 0, errors: ['Course not found'], duration: 0 },
+        tasks: {
+          success: false,
+          entity: 'tasks',
+          count: 0,
+          errors: ['Course not found'],
+          duration: 0,
+        },
+        announcements: {
+          success: false,
+          entity: 'announcements',
+          count: 0,
+          errors: ['Course not found'],
+          duration: 0,
+        },
+        modules: {
+          success: false,
+          entity: 'modules',
+          count: 0,
+          errors: ['Course not found'],
+          duration: 0,
+        },
+        pages: {
+          success: false,
+          entity: 'pages',
+          count: 0,
+          errors: ['Course not found'],
+          duration: 0,
+        },
       };
     }
 
@@ -2655,10 +3066,22 @@ export class SyncEngine extends EventEmitter {
       duration: 0,
     });
 
-    const tasks = results[0].status === 'fulfilled' ? results[0].value : makeFailedResult('tasks', results[0].reason);
-    const announcements = results[1].status === 'fulfilled' ? results[1].value : makeFailedResult('announcements', results[1].reason);
-    const modules = results[2].status === 'fulfilled' ? results[2].value : makeFailedResult('modules', results[2].reason);
-    const pages = results[3].status === 'fulfilled' ? results[3].value : makeFailedResult('pages', results[3].reason);
+    const tasks =
+      results[0].status === 'fulfilled'
+        ? results[0].value
+        : makeFailedResult('tasks', results[0].reason);
+    const announcements =
+      results[1].status === 'fulfilled'
+        ? results[1].value
+        : makeFailedResult('announcements', results[1].reason);
+    const modules =
+      results[2].status === 'fulfilled'
+        ? results[2].value
+        : makeFailedResult('modules', results[2].reason);
+    const pages =
+      results[3].status === 'fulfilled'
+        ? results[3].value
+        : makeFailedResult('pages', results[3].reason);
 
     return { course: courseResult, tasks, announcements, modules, pages };
   }
@@ -2684,14 +3107,18 @@ export class SyncEngine extends EventEmitter {
       const localCourse = mapCourse(response.data, baseUrl, defaultTargetGrade);
 
       // For existing courses, preserve their target_grade and target_grade_source
-      const existing = this.db.executeReadOne<{ target_grade: number; target_grade_source: string }>(
-        'SELECT target_grade, target_grade_source FROM courses WHERE external_id = ?',
-        [localCourse.external_id]
-      );
+      const existing = this.db.executeReadOne<{
+        target_grade: number;
+        target_grade_source: string;
+      }>('SELECT target_grade, target_grade_source FROM courses WHERE external_id = ?', [
+        localCourse.external_id,
+      ]);
       if (existing) {
         // Keep existing target grade settings
         localCourse.target_grade = existing.target_grade;
-        localCourse.target_grade_source = existing.target_grade_source as 'default' | 'manual';
+        localCourse.target_grade_source = existing.target_grade_source as
+          | 'default'
+          | 'manual';
       }
 
       this.db.upsert('courses', localCourse);
@@ -2745,7 +3172,9 @@ export class SyncEngine extends EventEmitter {
    * Get last sync time for all endpoints
    */
   getAllSyncMetadata(): SyncMetadata[] {
-    return this.db.executeRead<SyncMetadata>('SELECT * FROM sync_metadata ORDER BY last_synced_at DESC');
+    return this.db.executeRead<SyncMetadata>(
+      'SELECT * FROM sync_metadata ORDER BY last_synced_at DESC'
+    );
   }
 
   /**
@@ -2787,7 +3216,9 @@ export class SyncEngine extends EventEmitter {
   /**
    * Extract file references from page HTML content and store them
    */
-  async extractPageFileRefs(localCourseId: number): Promise<{ count: number; errors: string[] }> {
+  async extractPageFileRefs(
+    localCourseId: number
+  ): Promise<{ count: number; errors: string[] }> {
     const errors: string[] = [];
     let count = 0;
 
@@ -2812,7 +3243,9 @@ export class SyncEngine extends EventEmitter {
             this.storeContentFileReference(localCourseId, 'page', page.external_id, ref);
             count++;
           } catch (error) {
-            errors.push(`Page ${page.title}: ${error instanceof Error ? error.message : String(error)}`);
+            errors.push(
+              `Page ${page.title}: ${error instanceof Error ? error.message : String(error)}`
+            );
           }
         }
       }
@@ -2828,7 +3261,9 @@ export class SyncEngine extends EventEmitter {
   /**
    * Extract file references from assignment descriptions
    */
-  async extractAssignmentFileRefs(localCourseId: number): Promise<{ count: number; errors: string[] }> {
+  async extractAssignmentFileRefs(
+    localCourseId: number
+  ): Promise<{ count: number; errors: string[] }> {
     const errors: string[] = [];
     let count = 0;
 
@@ -2850,10 +3285,17 @@ export class SyncEngine extends EventEmitter {
         const refs = this.htmlFileExtractor.extract(task.description);
         for (const ref of refs) {
           try {
-            this.storeContentFileReference(localCourseId, 'assignment', task.external_id, ref);
+            this.storeContentFileReference(
+              localCourseId,
+              'assignment',
+              task.external_id,
+              ref
+            );
             count++;
           } catch (error) {
-            errors.push(`Assignment ${task.title}: ${error instanceof Error ? error.message : String(error)}`);
+            errors.push(
+              `Assignment ${task.title}: ${error instanceof Error ? error.message : String(error)}`
+            );
           }
         }
       }
@@ -2869,7 +3311,9 @@ export class SyncEngine extends EventEmitter {
   /**
    * Extract file references from syllabus body
    */
-  async extractSyllabusFileRefs(localCourseId: number): Promise<{ count: number; errors: string[] }> {
+  async extractSyllabusFileRefs(
+    localCourseId: number
+  ): Promise<{ count: number; errors: string[] }> {
     const errors: string[] = [];
     let count = 0;
 
@@ -2880,10 +3324,9 @@ export class SyncEngine extends EventEmitter {
         external_id: string;
         syllabus_body: string | null;
         code: string;
-      }>(
-        'SELECT id, external_id, syllabus_body, code FROM courses WHERE id = ?',
-        [localCourseId]
-      );
+      }>('SELECT id, external_id, syllabus_body, code FROM courses WHERE id = ?', [
+        localCourseId,
+      ]);
 
       if (!course?.syllabus_body) {
         return { count: 0, errors: [] };
@@ -2892,10 +3335,17 @@ export class SyncEngine extends EventEmitter {
       const refs = this.htmlFileExtractor.extract(course.syllabus_body);
       for (const ref of refs) {
         try {
-          this.storeContentFileReference(localCourseId, 'syllabus', course.external_id, ref);
+          this.storeContentFileReference(
+            localCourseId,
+            'syllabus',
+            course.external_id,
+            ref
+          );
           count++;
         } catch (error) {
-          errors.push(`Syllabus: ${error instanceof Error ? error.message : String(error)}`);
+          errors.push(
+            `Syllabus: ${error instanceof Error ? error.message : String(error)}`
+          );
         }
       }
 
@@ -2910,7 +3360,9 @@ export class SyncEngine extends EventEmitter {
   /**
    * Extract file references from announcement HTML content
    */
-  async extractAnnouncementFileRefs(localCourseId: number): Promise<{ count: number; errors: string[] }> {
+  async extractAnnouncementFileRefs(
+    localCourseId: number
+  ): Promise<{ count: number; errors: string[] }> {
     const errors: string[] = [];
     let count = 0;
 
@@ -2932,10 +3384,17 @@ export class SyncEngine extends EventEmitter {
         const refs = this.htmlFileExtractor.extract(announcement.message_html);
         for (const ref of refs) {
           try {
-            this.storeContentFileReference(localCourseId, 'announcement', announcement.source_id, ref);
+            this.storeContentFileReference(
+              localCourseId,
+              'announcement',
+              announcement.source_id,
+              ref
+            );
             count++;
           } catch (error) {
-            errors.push(`Announcement ${announcement.title}: ${error instanceof Error ? error.message : String(error)}`);
+            errors.push(
+              `Announcement ${announcement.title}: ${error instanceof Error ? error.message : String(error)}`
+            );
           }
         }
       }
@@ -2952,13 +3411,15 @@ export class SyncEngine extends EventEmitter {
    * Extract file references from module items with type='File'
    * These items have content_id (Canvas file ID) and url (API endpoint)
    */
-  async extractModuleFileRefs(localCourseId: number): Promise<{ count: number; errors: string[] }> {
+  async extractModuleFileRefs(
+    localCourseId: number
+  ): Promise<{ count: number; errors: string[] }> {
     const errors: string[] = [];
     let count = 0;
 
     try {
       // Debug: Check what's in module_items for this course
-      const allItems = this.db.executeRead<{ item_type: string; cnt: number }>(
+      const _allItems = this.db.executeRead<{ item_type: string; cnt: number }>(
         `SELECT mi.item_type, COUNT(*) as cnt
          FROM module_items mi
          JOIN modules m ON mi.module_id = m.id
@@ -2982,11 +3443,6 @@ export class SyncEngine extends EventEmitter {
          WHERE m.course_id = ? AND mi.item_type = 'File' AND mi.content_id IS NOT NULL`,
         [localCourseId]
       );
-
-      // Only log if there are items or file refs found
-      if (allItems.length > 0 || fileItems.length > 0) {
-        const typeSummary = allItems.map(i => `${i.item_type}:${i.cnt}`).join(',') || 'none';
-      }
 
       if (fileItems.length === 0) {
         return { count: 0, errors: [] };
@@ -3054,7 +3510,9 @@ export class SyncEngine extends EventEmitter {
   /**
    * Fetch files that were discovered in HTML but not in resources table
    */
-  async fetchMissingFileReferences(localCourseId: number): Promise<{ count: number; errors: string[] }> {
+  async fetchMissingFileReferences(
+    localCourseId: number
+  ): Promise<{ count: number; errors: string[] }> {
     const errors: string[] = [];
     let count = 0;
 
@@ -3083,7 +3541,6 @@ export class SyncEngine extends EventEmitter {
         [localCourseId]
       );
 
-
       // Fetch each missing file from Canvas API
       for (const ref of pendingRefs) {
         try {
@@ -3097,13 +3554,30 @@ export class SyncEngine extends EventEmitter {
           const file = response?.data;
           if (file) {
             // Determine context type and folder path based on source
-            const contextType = ref.source_type as 'page' | 'assignment' | 'syllabus' | 'module' | 'announcement';
+            const contextType = ref.source_type as
+              | 'page'
+              | 'assignment'
+              | 'syllabus'
+              | 'module'
+              | 'announcement';
             const contextFolder = this.getContextFolder(contextType, ref.source_id);
 
             // Map and store the file
-            const localFile = mapFile(file, localCourseId, null, contextFolder, contextType, ref.source_id);
+            const localFile = mapFile(
+              file,
+              localCourseId,
+              null,
+              contextFolder,
+              contextType,
+              ref.source_id
+            );
 
-            const result = this.db.upsert('resources', localFile as Record<string, unknown>, 'external_id', true);
+            this.db.upsert(
+              'resources',
+              localFile as Record<string, unknown>,
+              'external_id',
+              true
+            );
 
             // Get the resource ID and update the file reference
             const resourceRow = this.db.executeReadOne<{ id: number }>(
@@ -3192,7 +3666,12 @@ export class SyncEngine extends EventEmitter {
       this.extractModuleFileRefs(localCourseId),
     ]);
 
-    const total = pages.count + assignments.count + syllabus.count + announcements.count + modules.count;
+    const total =
+      pages.count +
+      assignments.count +
+      syllabus.count +
+      announcements.count +
+      modules.count;
 
     return { pages, assignments, syllabus, announcements, modules, total };
   }
@@ -3200,7 +3679,10 @@ export class SyncEngine extends EventEmitter {
   /**
    * Check if a file needs to be updated based on remote timestamp
    */
-  fileNeedsUpdate(existing: { remote_updated_at: string | null } | null, canvasFile: CanvasFile): boolean {
+  fileNeedsUpdate(
+    existing: { remote_updated_at: string | null } | null,
+    canvasFile: CanvasFile
+  ): boolean {
     if (!existing) return true;
     if (!existing.remote_updated_at) return true;
 

@@ -20,7 +20,6 @@ import {
   SimulationChangeEvent,
   DbCommitEvent,
   DisplayCalendarEvent,
-  EnrollmentTerm,
   SyncResultSummary,
   SyncConflictItem,
 } from './types';
@@ -261,7 +260,9 @@ export const useStore = create<Store>()(
 
                 // Subtract buffer days from end_at to get actual course end
                 const endDate = new Date(term.endAt);
-                const adjustedEndDate = new Date(endDate.getTime() - DAYS_BUFFER * 24 * 60 * 60 * 1000);
+                const adjustedEndDate = new Date(
+                  endDate.getTime() - DAYS_BUFFER * 24 * 60 * 60 * 1000
+                );
                 const isCurrent = adjustedEndDate > now;
 
                 // console.debug(`[Store] Term "${term.name}" (${termIdNum}): end_at=${term.endAt}, adjusted=${adjustedEndDate.toISOString()}, isCurrent=${isCurrent}`);
@@ -274,9 +275,10 @@ export const useStore = create<Store>()(
               // console.debug('[Store] Current semester IDs:', Array.from(currentTermIds));
 
               if (currentTermIds.size > 0) {
-                const beforeCount = courses.length;
-                courses = courses.filter((c: Course) =>
-                  c.enrollmentTermId !== null && currentTermIds.has(c.enrollmentTermId)
+                const _beforeCount = courses.length;
+                courses = courses.filter(
+                  (c: Course) =>
+                    c.enrollmentTermId !== null && currentTermIds.has(c.enrollmentTermId)
                 );
                 // console.debug(`[Store] Filtered ${beforeCount} -> ${courses.length} courses`);
               } else {
@@ -287,7 +289,9 @@ export const useStore = create<Store>()(
               // Specific semester selected - filter by term external_id
               const selectedTermId = parseInt(semesterSelection, 10);
               if (!isNaN(selectedTermId)) {
-                courses = courses.filter((c: Course) => c.enrollmentTermId === selectedTermId);
+                courses = courses.filter(
+                  (c: Course) => c.enrollmentTermId === selectedTermId
+                );
                 // console.debug('[Store] Filtering by semester:', selectedTermId, 'Courses after filter:', courses.length);
               }
             }
@@ -316,10 +320,7 @@ export const useStore = create<Store>()(
             tasks = await api.getTasks(courseId);
             // Update only tasks for this course
             set((state) => ({
-              tasks: [
-                ...state.tasks.filter((t) => t.courseId !== courseId),
-                ...tasks,
-              ],
+              tasks: [...state.tasks.filter((t) => t.courseId !== courseId), ...tasks],
             }));
           } else {
             // Fetch tasks only for visible courses (filter at source)
@@ -386,7 +387,8 @@ export const useStore = create<Store>()(
        * Uses Promise.allSettled to ensure partial failures don't block other refreshes
        */
       refreshAll: async () => {
-        const { fetchCourses, fetchTasks, fetchNotifications, fetchImportedCalendars } = get();
+        const { fetchCourses, fetchTasks, fetchNotifications, fetchImportedCalendars } =
+          get();
         // Fetch courses FIRST since tasks filtering depends on courses being loaded
         await fetchCourses();
         // Then fetch everything else in parallel - use allSettled to handle partial failures
@@ -397,7 +399,9 @@ export const useStore = create<Store>()(
         ]);
 
         // Log any unexpected failures (individual fetch methods already handle their own errors)
-        const failures = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
+        const failures = results.filter(
+          (r): r is PromiseRejectedResult => r.status === 'rejected'
+        );
         if (failures.length > 0) {
           for (const failure of failures) {
             console.error('[Store] Unexpected refresh failure:', failure.reason);
@@ -453,7 +457,11 @@ export const useStore = create<Store>()(
       /**
        * Import an ICS file
        */
-      importICSFile: async (content: string, filename: string, options?: { name?: string; color?: string }) => {
+      importICSFile: async (
+        content: string,
+        filename: string,
+        options?: { name?: string; color?: string }
+      ) => {
         const api = getApi();
         if (!api) {
           console.warn('[Store] No API available for importICSFile');
@@ -499,8 +507,12 @@ export const useStore = create<Store>()(
           const result = await api.deleteImportedCalendar(calendarId);
           if (result.success) {
             set((state) => ({
-              importedCalendars: state.importedCalendars.filter((c) => c.id !== calendarId),
-              calendarEvents: state.calendarEvents.filter((e) => e.importedCalendarId !== calendarId),
+              importedCalendars: state.importedCalendars.filter(
+                (c) => c.id !== calendarId
+              ),
+              calendarEvents: state.calendarEvents.filter(
+                (e) => e.importedCalendarId !== calendarId
+              ),
             }));
           }
           return result.success;
@@ -536,7 +548,10 @@ export const useStore = create<Store>()(
       /**
        * Update calendar metadata
        */
-      updateImportedCalendar: async (calendarId: number, updates: { name?: string; color?: string }) => {
+      updateImportedCalendar: async (
+        calendarId: number,
+        updates: { name?: string; color?: string }
+      ) => {
         const api = getApi();
         if (!api) return false;
 
@@ -609,14 +624,17 @@ export const useStore = create<Store>()(
       /**
        * Update a calendar event
        */
-      updateCalendarEvent: async (id: number, data: {
-        title?: string;
-        description?: string;
-        startAt?: string;
-        endAt?: string;
-        allDay?: boolean;
-        location?: string;
-      }) => {
+      updateCalendarEvent: async (
+        id: number,
+        data: {
+          title?: string;
+          description?: string;
+          startAt?: string;
+          endAt?: string;
+          allDay?: boolean;
+          location?: string;
+        }
+      ) => {
         const api = getApi();
         if (!api) return false;
 
@@ -630,7 +648,9 @@ export const useStore = create<Store>()(
                   ? {
                       ...e,
                       ...(data.title !== undefined && { title: data.title }),
-                      ...(data.description !== undefined && { description: data.description }),
+                      ...(data.description !== undefined && {
+                        description: data.description,
+                      }),
                       ...(data.startAt !== undefined && { startAt: data.startAt }),
                       ...(data.endAt !== undefined && { endAt: data.endAt }),
                       ...(data.allDay !== undefined && { allDay: data.allDay }),
@@ -704,7 +724,10 @@ export const useStore = create<Store>()(
         if (!api) return false;
 
         try {
-          const result = await api.dispatch('UpdateTargetGrade', { courseId, targetGrade });
+          const result = await api.dispatch('UpdateTargetGrade', {
+            courseId,
+            targetGrade,
+          });
           if (result.success) {
             // Mark optimistic update to skip db:commit refresh
             markOptimisticUpdate('courses');
@@ -740,7 +763,11 @@ export const useStore = create<Store>()(
             set((state) => ({
               tasks: state.tasks.map((t) =>
                 t.id === taskId
-                  ? { ...t, isCompleted: isComplete, completedAt: isComplete ? new Date().toISOString() : null }
+                  ? {
+                      ...t,
+                      isCompleted: isComplete,
+                      completedAt: isComplete ? new Date().toISOString() : null,
+                    }
                   : t
               ),
             }));
@@ -840,11 +867,16 @@ export const useStore = create<Store>()(
         // Set initial sync state with message
         const getSyncMessage = (phase: string) => {
           switch (phase) {
-            case 'courses': return 'Syncing courses...';
-            case 'tasks': return 'Syncing assignments...';
-            case 'notifications': return 'Syncing announcements...';
-            case 'files': return 'Syncing files...';
-            default: return 'Syncing...';
+            case 'courses':
+              return 'Syncing courses...';
+            case 'tasks':
+              return 'Syncing assignments...';
+            case 'notifications':
+              return 'Syncing announcements...';
+            case 'files':
+              return 'Syncing files...';
+            default:
+              return 'Syncing...';
           }
         };
 
@@ -871,22 +903,30 @@ export const useStore = create<Store>()(
             // Parse the sync result into a summary for display
             const syncResult = result.result;
             const summary: SyncResultSummary = {
-              courses: syncResult?.courses ? {
-                synced: syncResult.courses.synced || 0,
-                new: syncResult.courses.inserted || 0,
-              } : undefined,
-              tasks: syncResult?.tasks ? {
-                synced: syncResult.tasks.synced || 0,
-                new: syncResult.tasks.inserted || 0,
-              } : undefined,
-              announcements: syncResult?.notifications ? {
-                synced: syncResult.notifications.synced || 0,
-                new: syncResult.notifications.inserted || 0,
-              } : undefined,
-              files: syncResult?.files ? {
-                synced: syncResult.files.synced || 0,
-                new: syncResult.files.inserted || 0,
-              } : undefined,
+              courses: syncResult?.courses
+                ? {
+                    synced: syncResult.courses.synced || 0,
+                    new: syncResult.courses.inserted || 0,
+                  }
+                : undefined,
+              tasks: syncResult?.tasks
+                ? {
+                    synced: syncResult.tasks.synced || 0,
+                    new: syncResult.tasks.inserted || 0,
+                  }
+                : undefined,
+              announcements: syncResult?.notifications
+                ? {
+                    synced: syncResult.notifications.synced || 0,
+                    new: syncResult.notifications.inserted || 0,
+                  }
+                : undefined,
+              files: syncResult?.files
+                ? {
+                    synced: syncResult.files.synced || 0,
+                    new: syncResult.files.inserted || 0,
+                  }
+                : undefined,
               errors: syncResult?.errors || [],
               timestamp,
             };
@@ -902,7 +942,12 @@ export const useStore = create<Store>()(
             // Return the full result including sync summary
             return { success: true, result: result.result, summary };
           } else {
-            set({ syncStatus: 'error', syncMessage: null, isAutoSync: false, lastError: result.error });
+            set({
+              syncStatus: 'error',
+              syncMessage: null,
+              isAutoSync: false,
+              lastError: result.error,
+            });
             return { success: false, error: result.error };
           }
         } catch (error) {
@@ -985,9 +1030,21 @@ export const useStore = create<Store>()(
         }
 
         // Queue the refresh with debouncing
-        const { fetchCourses, fetchTasks, fetchNotifications, fetchImportedCalendars, refreshAll } = get();
+        const {
+          fetchCourses,
+          fetchTasks,
+          fetchNotifications,
+          fetchImportedCalendars,
+          refreshAll,
+        } = get();
         queueCommitRefresh(event.table, () => {
-          processPendingCommits(fetchCourses, fetchTasks, fetchNotifications, fetchImportedCalendars, refreshAll);
+          processPendingCommits(
+            fetchCourses,
+            fetchTasks,
+            fetchNotifications,
+            fetchImportedCalendars,
+            refreshAll
+          );
         });
       },
 
@@ -1006,18 +1063,31 @@ export const useStore = create<Store>()(
       },
 
       /**
-       * Add sync conflicts from sync engine
+       * Add sync conflicts from sync engine (merges with existing, no duplicates)
        */
       addSyncConflicts: (conflicts) => {
-        set((state) => ({
-          syncConflicts: [...state.syncConflicts, ...conflicts],
-        }));
+        set((state) => {
+          const existingMap = new Map(state.syncConflicts.map((c) => [c.id, c]));
+
+          // Merge new conflicts - update existing or add new
+          for (const conflict of conflicts) {
+            existingMap.set(conflict.id, conflict);
+          }
+
+          return { syncConflicts: Array.from(existingMap.values()) };
+        });
       },
 
       /**
        * Resolve a single sync conflict
        */
-      resolveSyncConflict: async (conflictId, useCanvasValue, rememberChoice, rememberForAll) => {
+      resolveSyncConflict: async (
+        conflictId,
+        useCanvasValue,
+        rememberChoice,
+        rememberForAll,
+        expiresAt
+      ) => {
         const api = getApi();
         if (!api) return;
 
@@ -1027,6 +1097,7 @@ export const useStore = create<Store>()(
             useCanvasValue,
             rememberChoice,
             rememberForAll,
+            expiresAt,
           });
 
           // Remove the resolved conflict from state
@@ -1105,18 +1176,20 @@ export function subscribeToIpcEvents(): () => void {
     useStore.getState().addSyncConflicts(conflicts);
   });
 
-  const unsubAuthExpired = api.onAuthExpired?.((data: { reason: string }) => {
-    useStore.getState().setAuthError({ type: 'expired', reason: data.reason });
-  }) || (() => {});
+  const unsubAuthExpired =
+    api.onAuthExpired?.((data: { reason: string }) => {
+      useStore.getState().setAuthError({ type: 'expired', reason: data.reason });
+    }) || (() => {});
 
-  const unsubAppReset = api.onAppReset?.((data: { tokenDeleted: boolean; clearLocalStorage: boolean }) => {
-    // Handle app reset from main process - clear localStorage and reload
-    if (data.clearLocalStorage) {
-      localStorage.clear();
-    }
-    // Reload to go back to login/onboarding
-    window.location.reload();
-  }) || (() => {});
+  const unsubAppReset =
+    api.onAppReset?.((data: { tokenDeleted: boolean; clearLocalStorage: boolean }) => {
+      // Handle app reset from main process - clear localStorage and reload
+      if (data.clearLocalStorage) {
+        localStorage.clear();
+      }
+      // Reload to go back to login/onboarding
+      window.location.reload();
+    }) || (() => {});
 
   return () => {
     unsubSimulation();
@@ -1132,14 +1205,19 @@ export function subscribeToIpcEvents(): () => void {
  * Memoized course grades calculation
  * Uses a cache to avoid O(courses × tasks) on every render
  */
-const courseGradesCache = new Map<string, { earned: number; trend: number; assessed: number }>();
+const courseGradesCache = new Map<
+  string,
+  { earned: number; trend: number; assessed: number }
+>();
 let lastTasksHash = '';
 
-function computeTasksHash(tasks: { courseId: number; weight: number; grade: number | null }[]): string {
+function computeTasksHash(
+  tasks: { courseId: number; weight: number; grade: number | null }[]
+): string {
   // Simple hash based on task courseId and grades - changes trigger recalculation
   return tasks
-    .filter(t => t.weight > 0)
-    .map(t => `${t.courseId}:${t.grade}:${t.weight}`)
+    .filter((t) => t.weight > 0)
+    .map((t) => `${t.courseId}:${t.grade}:${t.weight}`)
     .join('|');
 }
 
@@ -1187,8 +1265,7 @@ export const selectors = {
   /**
    * Get visible (non-hidden) courses
    */
-  visibleCourses: (state: StoreState) =>
-    state.courses.filter((c) => !c.isHidden),
+  visibleCourses: (state: StoreState) => state.courses.filter((c) => !c.isHidden),
 
   /**
    * Get tasks for a specific course
@@ -1261,7 +1338,8 @@ export const selectors = {
    * Get all course grades (memoized)
    */
   allCourseGrades: (state: StoreState) => {
-    const grades: Record<number, { earned: number; trend: number; assessed: number }> = {};
+    const grades: Record<number, { earned: number; trend: number; assessed: number }> =
+      {};
     for (const course of state.courses) {
       grades[course.id] = getCachedCourseGrades(course.id, state.tasks);
     }

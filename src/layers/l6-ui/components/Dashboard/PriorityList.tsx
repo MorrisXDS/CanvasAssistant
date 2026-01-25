@@ -7,6 +7,7 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PartyPopper } from 'lucide-react';
 import { Card, Badge, BadgeVariant } from '../shared';
+import { formatDueDate } from '../../constants';
 import type { PriorityItem } from '../../../l5-presentation/types';
 
 export interface PriorityListProps {
@@ -20,19 +21,6 @@ function urgencyToVariant(urgency: PriorityItem['urgencyLevel']): BadgeVariant {
   return urgency;
 }
 
-function formatDueDate(dueAt: string | null, daysUntilDue: number | null): string {
-  if (!dueAt) return 'No due date';
-
-  if (daysUntilDue === null) return 'No due date';
-  if (daysUntilDue < 0) return `${Math.abs(daysUntilDue)}d overdue`;
-  if (daysUntilDue === 0) return 'Due today';
-  if (daysUntilDue === 1) return 'Due tomorrow';
-  if (daysUntilDue <= 7) return `Due in ${daysUntilDue} days`;
-
-  const date = new Date(dueAt);
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-}
-
 export function PriorityList({
   items,
   totalPendingTasks,
@@ -42,7 +30,8 @@ export function PriorityList({
   const navigate = useNavigate();
   const displayItems = items.slice(0, maxItems);
   // Use totalPendingTasks if provided, otherwise fall back to items length
-  const hasPendingTasks = totalPendingTasks !== undefined ? totalPendingTasks > 0 : items.length > 0;
+  const hasPendingTasks =
+    totalPendingTasks !== undefined ? totalPendingTasks > 0 : items.length > 0;
 
   return (
     <Card
@@ -50,10 +39,7 @@ export function PriorityList({
       title="Upcoming Courseworks"
       headerAction={
         items.length > 0 && (
-          <button
-            style={styles.viewAll}
-            onClick={() => navigate('/tasks')}
-          >
+          <button style={styles.viewAll} onClick={() => navigate('/tasks')}>
             View all ({totalPendingTasks ?? items.length})
           </button>
         )
@@ -62,7 +48,11 @@ export function PriorityList({
     >
       {!hasPendingTasks ? (
         <div style={styles.emptyState}>
-          <PartyPopper size={32} color="var(--color-success)" style={{ marginBottom: 'var(--space-2)' }} />
+          <PartyPopper
+            size={32}
+            color="var(--color-success)"
+            style={{ marginBottom: 'var(--space-2)' }}
+          />
           <span style={styles.emptyText}>All caught up!</span>
           <span style={styles.emptySubtext}>No pending tasks</span>
         </div>

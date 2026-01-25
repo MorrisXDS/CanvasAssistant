@@ -60,8 +60,7 @@ const api = {
   getFileReferences: (notificationId: number) =>
     ipcRenderer.invoke('data:getFileReferences', notificationId),
 
-  getPolicies: (courseId: number) =>
-    ipcRenderer.invoke('data:getPolicies', courseId),
+  getPolicies: (courseId: number) => ipcRenderer.invoke('data:getPolicies', courseId),
 
   getGradeHistory: (courseId: number) =>
     ipcRenderer.invoke('data:getGradeHistory', courseId),
@@ -84,8 +83,7 @@ const api = {
   downloadResource: (resourceId: number) =>
     ipcRenderer.invoke('resource:download', resourceId),
 
-  openResource: (resourceId: number) =>
-    ipcRenderer.invoke('resource:open', resourceId),
+  openResource: (resourceId: number) => ipcRenderer.invoke('resource:open', resourceId),
 
   showResourceInFolder: (resourceId: number) =>
     ipcRenderer.invoke('resource:showInFolder', resourceId),
@@ -98,13 +96,15 @@ const api = {
 
   selectFilesDirectory: () => ipcRenderer.invoke('files:selectDirectory'),
 
-  setFilesDirectory: (newPath: string) => ipcRenderer.invoke('files:setDirectory', newPath),
+  setFilesDirectory: (newPath: string) =>
+    ipcRenderer.invoke('files:setDirectory', newPath),
 
   clearFilesSync: () => ipcRenderer.invoke('files:clearSync'),
 
   // ============ Course Pages ============
 
-  getPagesByCourse: (courseId: number) => ipcRenderer.invoke('pages:getByCourse', courseId),
+  getPagesByCourse: (courseId: number) =>
+    ipcRenderer.invoke('pages:getByCourse', courseId),
 
   getPage: (pageId: number) => ipcRenderer.invoke('pages:get', pageId),
 
@@ -147,8 +147,10 @@ const api = {
   toggleCalendarVisibility: (calendarId: number, isVisible: boolean) =>
     ipcRenderer.invoke('calendar:toggleVisibility', calendarId, isVisible),
 
-  updateImportedCalendar: (calendarId: number, updates: { name?: string; color?: string }) =>
-    ipcRenderer.invoke('calendar:updateCalendar', calendarId, updates),
+  updateImportedCalendar: (
+    calendarId: number,
+    updates: { name?: string; color?: string }
+  ) => ipcRenderer.invoke('calendar:updateCalendar', calendarId, updates),
 
   getCalendarEventsForRange: (params: {
     startDate: string;
@@ -166,17 +168,19 @@ const api = {
     courseId?: number;
   }) => ipcRenderer.invoke('calendar:createEvent', data),
 
-  updateCalendarEvent: (id: number, data: {
-    title?: string;
-    description?: string;
-    startAt?: string;
-    endAt?: string;
-    allDay?: boolean;
-    location?: string;
-  }) => ipcRenderer.invoke('calendar:updateEvent', id, data),
+  updateCalendarEvent: (
+    id: number,
+    data: {
+      title?: string;
+      description?: string;
+      startAt?: string;
+      endAt?: string;
+      allDay?: boolean;
+      location?: string;
+    }
+  ) => ipcRenderer.invoke('calendar:updateEvent', id, data),
 
-  deleteCalendarEvent: (id: number) =>
-    ipcRenderer.invoke('calendar:deleteEvent', id),
+  deleteCalendarEvent: (id: number) => ipcRenderer.invoke('calendar:deleteEvent', id),
 
   exportCalendarsBatch: (options: {
     mode: 'all' | 'selected';
@@ -222,25 +226,20 @@ const api = {
   actOnRecommendation: (recommendationId: number) =>
     ipcRenderer.invoke('intelligence:actOnRecommendation', recommendationId),
 
-  getRecommendationStats: () =>
-    ipcRenderer.invoke('intelligence:getRecommendationStats'),
+  getRecommendationStats: () => ipcRenderer.invoke('intelligence:getRecommendationStats'),
 
   // ============ Intelligence - Insights ============
 
-  getActiveInsights: () =>
-    ipcRenderer.invoke('intelligence:getActiveInsights'),
+  getActiveInsights: () => ipcRenderer.invoke('intelligence:getActiveInsights'),
 
-  generateInsights: () =>
-    ipcRenderer.invoke('intelligence:generateInsights'),
+  generateInsights: () => ipcRenderer.invoke('intelligence:generateInsights'),
 
   acknowledgeInsight: (insightId: number) =>
     ipcRenderer.invoke('intelligence:acknowledgeInsight', insightId),
 
-  acknowledgeAllInsights: () =>
-    ipcRenderer.invoke('intelligence:acknowledgeAllInsights'),
+  acknowledgeAllInsights: () => ipcRenderer.invoke('intelligence:acknowledgeAllInsights'),
 
-  getInsightStats: () =>
-    ipcRenderer.invoke('intelligence:getInsightStats'),
+  getInsightStats: () => ipcRenderer.invoke('intelligence:getInsightStats'),
 
   // ============ Intelligence - Workload ============
 
@@ -283,8 +282,7 @@ const api = {
     return result.hasCredential;
   },
 
-  storeCredential: (token: string) =>
-    ipcRenderer.invoke('credentials:store', token),
+  storeCredential: (token: string) => ipcRenderer.invoke('credentials:store', token),
 
   deleteCredential: () => ipcRenderer.invoke('credentials:delete'),
 
@@ -297,8 +295,7 @@ const api = {
 
   getUserProfile: () => ipcRenderer.invoke('canvas:getUserProfile'),
 
-  connectCanvas: (baseUrl: string) =>
-    ipcRenderer.invoke('canvas:connect', baseUrl),
+  connectCanvas: (baseUrl: string) => ipcRenderer.invoke('canvas:connect', baseUrl),
 
   validateToken: (token: string, baseUrl: string) =>
     ipcRenderer.invoke('canvas:validateToken', token, baseUrl),
@@ -324,10 +321,8 @@ const api = {
     forceRefresh?: boolean;
   }) => ipcRenderer.invoke('sync:folderFiles', params),
 
-  syncFolderByPath: (params: {
-    courseId: number;
-    folderPath: string;
-  }) => ipcRenderer.invoke('sync:folderByPath', params),
+  syncFolderByPath: (params: { courseId: number; folderPath: string }) =>
+    ipcRenderer.invoke('sync:folderByPath', params),
 
   // ============ Sync Conflicts ============
 
@@ -338,6 +333,7 @@ const api = {
     useCanvasValue: boolean;
     rememberChoice: boolean;
     rememberForAll: boolean;
+    expiresAt?: string | null;
   }) => ipcRenderer.invoke('sync:resolveConflict', resolution),
 
   resolveAllSyncConflicts: (useCanvasValues: boolean) =>
@@ -350,16 +346,17 @@ const api = {
 
   // ============ Auto-Sync Preferences ============
 
-  getAutoSyncPreferences: () =>
-    ipcRenderer.invoke('sync:getAutoSyncPreferences'),
+  getAutoSyncPreferences: () => ipcRenderer.invoke('sync:getAutoSyncPreferences'),
 
-  setAutoSyncPreferences: (prefs: { autoSyncEnabled: boolean; autoSyncInterval: number; autoAssignDueDate?: boolean }) =>
-    ipcRenderer.invoke('sync:setAutoSyncPreferences', prefs),
+  setAutoSyncPreferences: (prefs: {
+    autoSyncEnabled: boolean;
+    autoSyncInterval: number;
+    autoAssignDueDate?: boolean;
+  }) => ipcRenderer.invoke('sync:setAutoSyncPreferences', prefs),
 
   // ============ Academic Settings ============
 
-  getDefaultTargetGrade: () =>
-    ipcRenderer.invoke('settings:getDefaultTargetGrade'),
+  getDefaultTargetGrade: () => ipcRenderer.invoke('settings:getDefaultTargetGrade'),
 
   setDefaultTargetGrade: (targetGrade: number) =>
     ipcRenderer.invoke('settings:setDefaultTargetGrade', targetGrade),
@@ -369,10 +366,13 @@ const api = {
   getCourseSettings: (courseId: number) =>
     ipcRenderer.invoke('course:getSettings', courseId),
 
-  updateCourseSettings: (courseId: number, settings: {
-    autoAssignDueDate?: number | null;
-    allowGuessedOverride?: number;
-  }) => ipcRenderer.invoke('course:updateSettings', courseId, settings),
+  updateCourseSettings: (
+    courseId: number,
+    settings: {
+      autoAssignDueDate?: number | null;
+      allowGuessedOverride?: number;
+    }
+  ) => ipcRenderer.invoke('course:updateSettings', courseId, settings),
 
   // ============ Data Export/Import ============
 
@@ -407,7 +407,9 @@ const api = {
 
   // ============ Event Listeners ============
 
-  onSimulationChanged: (callback: (event: SimulationChangeEvent) => void): (() => void) => {
+  onSimulationChanged: (
+    callback: (event: SimulationChangeEvent) => void
+  ): (() => void) => {
     const handler = (_event: IpcRendererEvent, data: SimulationChangeEvent) => {
       callback(data);
     };
@@ -431,19 +433,26 @@ const api = {
     return () => ipcRenderer.removeListener('sync:status', handler);
   },
 
-  onSyncConflicts: (callback: (conflicts: Array<{
-    id: string;
-    entity: 'course' | 'task' | 'notification';
-    entityId: number;
-    externalId: string;
-    entityName: string;
-    field: string;
-    fieldLabel: string;
-    localValue: unknown;
-    canvasValue: unknown;
-    timestamp: string;
-  }>) => void): (() => void) => {
-    const handler = (_event: IpcRendererEvent, conflicts: Parameters<typeof callback>[0]) => {
+  onSyncConflicts: (
+    callback: (
+      conflicts: Array<{
+        id: string;
+        entity: 'course' | 'task' | 'notification';
+        entityId: number;
+        externalId: string;
+        entityName: string;
+        field: string;
+        fieldLabel: string;
+        localValue: unknown;
+        canvasValue: unknown;
+        timestamp: string;
+      }>
+    ) => void
+  ): (() => void) => {
+    const handler = (
+      _event: IpcRendererEvent,
+      conflicts: Parameters<typeof callback>[0]
+    ) => {
       callback(conflicts);
     };
     ipcRenderer.on('sync:conflicts', handler);
@@ -458,8 +467,13 @@ const api = {
     return () => ipcRenderer.removeListener('auth:expired', handler);
   },
 
-  onAppReset: (callback: (data: { tokenDeleted: boolean; clearLocalStorage: boolean }) => void): (() => void) => {
-    const handler = (_event: IpcRendererEvent, data: { tokenDeleted: boolean; clearLocalStorage: boolean }) => {
+  onAppReset: (
+    callback: (data: { tokenDeleted: boolean; clearLocalStorage: boolean }) => void
+  ): (() => void) => {
+    const handler = (
+      _event: IpcRendererEvent,
+      data: { tokenDeleted: boolean; clearLocalStorage: boolean }
+    ) => {
       callback(data);
     };
     ipcRenderer.on('app:reset', handler);
@@ -479,5 +493,6 @@ declare global {
 
 // Only log in development mode
 if (process.env.NODE_ENV === 'development') {
+  // eslint-disable-next-line cross-platform/no-console-in-main, no-console -- intentional dev-only log
   console.log('Preload script loaded - IPC API exposed as window.api');
 }

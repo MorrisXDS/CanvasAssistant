@@ -261,8 +261,10 @@ export function formatGradeWithLetter(percentage: number | null): string {
  * formatFileSize(1024) // "1 KB"
  * formatFileSize(1048576) // "1 MB"
  * formatFileSize(1073741824) // "1 GB"
+ * formatFileSize(null) // ""
  */
-export function formatFileSize(bytes: number): string {
+export function formatFileSize(bytes: number | null): string {
+  if (bytes === null) return '';
   if (bytes === 0) return '0 B';
 
   const k = 1024;
@@ -327,7 +329,7 @@ export function pluralize(count: number, singular: string, plural?: string): str
 // =============================================================================
 
 /**
- * Get urgency level from days until due
+ * Get urgency level from days until due (for CSS color mapping)
  *
  * @param daysUntilDue - Days until due (negative if overdue)
  * @returns Urgency level string
@@ -341,6 +343,23 @@ export function getUrgencyLevel(
   if (daysUntilDue === 1) return 'warning'; // Due tomorrow
   if (daysUntilDue <= 3) return 'warning'; // Due soon
   return 'info';
+}
+
+/**
+ * Get badge urgency level from days until due (for Badge component)
+ *
+ * @param daysUntilDue - Days until due (negative if overdue)
+ * @returns Badge-compatible urgency level
+ */
+export function getBadgeUrgency(
+  daysUntilDue: number | null
+): 'critical' | 'high' | 'medium' | 'low' {
+  if (daysUntilDue === null) return 'low';
+  if (daysUntilDue < 0) return 'critical';
+  if (daysUntilDue <= 1) return 'critical';
+  if (daysUntilDue <= 3) return 'high';
+  if (daysUntilDue <= 7) return 'medium';
+  return 'low';
 }
 
 /**

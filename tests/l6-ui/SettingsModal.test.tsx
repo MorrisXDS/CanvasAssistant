@@ -108,6 +108,7 @@ Object.defineProperty(window, 'matchMedia', {
 
 // Import after mocks
 import { SettingsModal } from '../../src/layers/l6-ui/components/SettingsModal';
+import { SettingsManager } from '../../src/layers/l5-presentation/settings/SettingsManager';
 
 // Helper to find sidebar button by exact text match
 function findSidebarButton(container: HTMLElement, text: string): HTMLElement | null {
@@ -125,6 +126,8 @@ describe('SettingsModal', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     localStorageMock.clear();
+    // Reset the settings manager singleton to clear its cache
+    SettingsManager.resetInstance();
   });
 
   describe('Course Settings section', () => {
@@ -264,8 +267,10 @@ describe('SettingsModal', () => {
 
     it('loads saved URL from localStorage on mount', async () => {
       const savedUrl = 'https://saved.instructure.com';
+      // Set the canvas URL in localStorage (the mock's internal store)
       localStorageMock.setItem('canvasUrl', savedUrl);
-      localStorageMock.getItem.mockReturnValue(savedUrl);
+      // Reset settingsManager so it picks up the new localStorage value
+      SettingsManager.resetInstance();
 
       const { container } = render(<SettingsModal isOpen={true} onClose={jest.fn()} />);
 
@@ -283,8 +288,8 @@ describe('SettingsModal', () => {
     });
 
     it('does not overwrite user input when async operations complete', async () => {
-      // Setup: no saved URL
-      localStorageMock.getItem.mockReturnValue('');
+      // Setup: no saved URL - reset settingsManager to start fresh
+      SettingsManager.resetInstance();
 
       // Make hasCredential slow
       let resolveCredential: (value: boolean) => void;

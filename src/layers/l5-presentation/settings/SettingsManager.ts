@@ -8,7 +8,6 @@
  * - IPC propagation for main process settings
  */
 
-import { EventEmitter } from 'events';
 import {
   STORAGE_KEYS,
   SETTINGS_DEFAULTS,
@@ -17,11 +16,17 @@ import {
   StorageKey,
 } from './settingsSchema';
 
+// Browser-compatible event listener type
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type EventListener = (event: any) => void;
+
 // =============================================================================
 // TYPES
 // =============================================================================
 
-export interface SettingChangeEvent<K extends keyof SettingsTypeMap = keyof SettingsTypeMap> {
+export interface SettingChangeEvent<
+  K extends keyof SettingsTypeMap = keyof SettingsTypeMap,
+> {
   key: K;
   value: SettingsTypeMap[K];
   previousValue: SettingsTypeMap[K] | undefined;
@@ -44,14 +49,41 @@ export type SettingChangeCallback<K extends keyof SettingsTypeMap> = (
  *   settings.set(STORAGE_KEYS.APPEARANCE, { theme: 'dark', sidebarCollapsed: false });
  *   settings.onChange(STORAGE_KEYS.APPEARANCE, (event) => console.log('Theme changed:', event));
  */
-export class SettingsManager extends EventEmitter {
+export class SettingsManager {
   private static instance: SettingsManager | null = null;
   private cache: Map<string, unknown> = new Map();
   private initialized = false;
+  private listeners: Map<string, Set<EventListener>> = new Map();
 
   private constructor() {
-    super();
-    this.setMaxListeners(50); // Support many components subscribing
+    // Browser-compatible - no EventEmitter needed
+  }
+
+  // Event emitter methods (browser-compatible implementation)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private emit(eventName: string, event: any): void {
+    const listeners = this.listeners.get(eventName);
+    if (listeners) {
+      listeners.forEach((listener) => listener(event));
+    }
+  }
+
+  private on(eventName: string, listener: EventListener): void {
+    if (!this.listeners.has(eventName)) {
+      this.listeners.set(eventName, new Set());
+    }
+    this.listeners.get(eventName)!.add(listener);
+  }
+
+  private off(eventName: string, listener: EventListener): void {
+    const listeners = this.listeners.get(eventName);
+    if (listeners) {
+      listeners.delete(listener);
+    }
+  }
+
+  private removeAllListeners(): void {
+    this.listeners.clear();
   }
 
   /**
@@ -110,10 +142,7 @@ export class SettingsManager extends EventEmitter {
   /**
    * Set a setting value with validation and event emission
    */
-  set<K extends keyof SettingsTypeMap>(
-    key: K,
-    value: SettingsTypeMap[K]
-  ): boolean {
+  set<K extends keyof SettingsTypeMap>(key: K, value: SettingsTypeMap[K]): boolean {
     try {
       // Validate if schema exists
       const schema = SETTINGS_SCHEMAS[key];

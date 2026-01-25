@@ -21,6 +21,8 @@ export interface SyncConflict {
   localValue: unknown;
   canvasValue: unknown;
   timestamp: string;
+  courseName?: string; // Course name for task/notification conflicts
+  courseId?: number; // Course ID for task/notification conflicts
 }
 
 export interface ConflictResolution {
@@ -28,6 +30,7 @@ export interface ConflictResolution {
   useCanvasValue: boolean;
   rememberChoice: boolean; // Remember for this field on this entity
   rememberForAll: boolean; // Remember for this field on all entities of this type
+  expiresAt?: string | null; // ISO date when preference expires (null = never)
 }
 
 export interface SyncPreference {
@@ -36,6 +39,7 @@ export interface SyncPreference {
   field: string;
   preferCanvas: boolean;
   createdAt: string;
+  expiresAt: string | null; // ISO date when preference expires (null = never)
 }
 
 // Human-readable field labels
@@ -87,6 +91,8 @@ export class SyncConflictResolver extends EventEmitter {
         local_value: string;
         canvas_value: string;
         timestamp: string;
+        course_name: string | null;
+        course_id: number | null;
       }>('SELECT * FROM pending_sync_conflicts');
 
       for (const row of rows) {
@@ -101,6 +107,8 @@ export class SyncConflictResolver extends EventEmitter {
           localValue: JSON.parse(row.local_value),
           canvasValue: JSON.parse(row.canvas_value),
           timestamp: row.timestamp,
+          courseName: row.course_name || undefined,
+          courseId: row.course_id || undefined,
         };
         this.pendingConflicts.set(conflict.id, conflict);
 
@@ -126,8 +134,8 @@ export class SyncConflictResolver extends EventEmitter {
     try {
       this.db.executeWrite(
         `INSERT OR REPLACE INTO pending_sync_conflicts
-         (conflict_id, entity, entity_id, external_id, entity_name, field, field_label, local_value, canvas_value, timestamp)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (conflict_id, entity, entity_id, external_id, entity_name, field, field_label, local_value, canvas_value, timestamp, course_name, course_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           conflict.id,
           conflict.entity,
@@ -139,6 +147,8 @@ export class SyncConflictResolver extends EventEmitter {
           JSON.stringify(conflict.localValue),
           JSON.stringify(conflict.canvasValue),
           conflict.timestamp,
+          conflict.courseName || null,
+          conflict.courseId || null,
         ],
         'pending_sync_conflicts'
       );
@@ -174,7 +184,8 @@ export class SyncConflictResolver extends EventEmitter {
           entity_id as entityId,
           field,
           prefer_canvas as preferCanvas,
-          created_at as createdAt
+          created_at as createdAt,
+          expires_at as expiresAt
          FROM sync_preferences`
       );
       this.preferences = rows;
@@ -220,14 +231,41 @@ export class SyncConflictResolver extends EventEmitter {
         local_value TEXT NOT NULL,
         canvas_value TEXT NOT NULL,
         timestamp TEXT NOT NULL,
+        course_name TEXT,
+        course_id INTEGER,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )
     `);
 
+    // Add course columns if table was created without them
+    try {
+      this.db.exec('ALTER TABLE pending_sync_conflicts ADD COLUMN course_name TEXT');
+    } catch {
+      /* Column might already exist */
+    }
+    try {
+      this.db.exec('ALTER TABLE pending_sync_conflicts ADD COLUMN course_id INTEGER');
+    } catch {
+      /* Column might already exist */
+    }
+
     // Add prefer_canvas column if table was created without it
     try {
-      this.db.exec('ALTER TABLE sync_preferences ADD COLUMN prefer_canvas INTEGER NOT NULL DEFAULT 1');
-    } catch { /* Column might already exist */ }
+      this.db.exec(
+        'ALTER TABLE sync_preferences ADD COLUMN prefer_canvas INTEGER NOT NULL DEFAULT 1'
+      );
+    } catch {
+      /* Column might already exist */
+    }
+
+    // Add expires_at column for preference expiration
+    try {
+      this.db.exec(
+        'ALTER TABLE sync_preferences ADD COLUMN expires_at TEXT DEFAULT NULL'
+      );
+    } catch {
+      /* Column might already exist */
+    }
 
     // Note: local_modified_fields columns are now added via migration 49
     // Removed duplicate ALTER TABLE statements that caused migration errors
@@ -242,7 +280,16 @@ export class SyncConflictResolver extends EventEmitter {
   }
 
   /**
+   * Check if a preference has expired
+   */
+  private isPreferenceExpired(pref: SyncPreference): boolean {
+    if (!pref.expiresAt) return false; // No expiration = never expires
+    return new Date(pref.expiresAt) < new Date();
+  }
+
+  /**
    * Get user's saved preference for a conflict
+   * Returns null if preference has expired
    */
   getPreference(
     entity: 'course' | 'task' | 'notification',
@@ -251,15 +298,31 @@ export class SyncConflictResolver extends EventEmitter {
   ): SyncPreference | null {
     // First check for entity-specific preference
     const specific = this.preferences.find(
-      p => p.entity === entity && p.entityId === entityId && p.field === field
+      (p) => p.entity === entity && p.entityId === entityId && p.field === field
     );
-    if (specific) return specific;
+    if (specific) {
+      if (this.isPreferenceExpired(specific)) {
+        // Preference expired - delete it and return null
+        this.deletePreference(entity, entityId, field);
+        return null;
+      }
+      return specific;
+    }
 
     // Then check for global preference for this entity type + field
     const global = this.preferences.find(
-      p => p.entity === entity && p.entityId === null && p.field === field
+      (p) => p.entity === entity && p.entityId === null && p.field === field
     );
-    return global || null;
+    if (global) {
+      if (this.isPreferenceExpired(global)) {
+        // Preference expired - delete it and return null
+        this.deletePreference(entity, null, field);
+        return null;
+      }
+      return global;
+    }
+
+    return null;
   }
 
   /**
@@ -279,7 +342,7 @@ export class SyncConflictResolver extends EventEmitter {
     entityName: string,
     localRecord: Record<string, unknown> | undefined,
     canvasData: Record<string, unknown>,
-    options?: { allowGuessedOverride?: boolean }
+    options?: { allowGuessedOverride?: boolean; courseName?: string; courseId?: number }
   ): {
     autoResolved: Record<string, unknown>;
     conflicts: SyncConflict[];
@@ -302,14 +365,20 @@ export class SyncConflictResolver extends EventEmitter {
 
     // Get field sources (new tracking)
     const fieldSourcesStr = localRecord.field_sources as string | null;
-    const fieldSources: Record<string, 'canvas' | 'user' | 'guessed'> =
-      fieldSourcesStr ? JSON.parse(fieldSourcesStr) : {};
+    const fieldSources: Record<string, 'canvas' | 'user' | 'guessed'> = fieldSourcesStr
+      ? JSON.parse(fieldSourcesStr)
+      : {};
 
     // Check if guessed override is allowed (default true)
     const allowGuessedOverride = options?.allowGuessedOverride ?? true;
 
     for (const [field, canvasValue] of Object.entries(canvasData)) {
-      if (field === 'id' || field === 'external_id' || field === 'local_modified_fields' || field === 'field_sources') {
+      if (
+        field === 'id' ||
+        field === 'external_id' ||
+        field === 'local_modified_fields' ||
+        field === 'field_sources'
+      ) {
         continue;
       }
 
@@ -367,25 +436,45 @@ export class SyncConflictResolver extends EventEmitter {
         continue;
       }
 
-      // No preference - create conflict for user decision
-      const conflictId = `${entity}-${externalId}-${field}-${++this.conflictIdCounter}`;
-      const conflict: SyncConflict = {
-        id: conflictId,
-        entity,
-        entityId,
-        externalId,
-        entityName,
-        field,
-        fieldLabel: FIELD_LABELS[field] || field,
-        localValue,
-        canvasValue,
-        timestamp: new Date().toISOString(),
-      };
+      // No preference - check if conflict already exists for this entity/field
+      const existingConflict = Array.from(this.pendingConflicts.values()).find(
+        (c) => c.entity === entity && c.entityId === entityId && c.field === field
+      );
 
-      conflicts.push(conflict);
-      this.pendingConflicts.set(conflictId, conflict);
-      // Persist conflict to database so it survives app restart
-      this.savePendingConflict(conflict);
+      if (existingConflict) {
+        // Update existing conflict with new values
+        existingConflict.localValue = localValue;
+        existingConflict.canvasValue = canvasValue;
+        existingConflict.timestamp = new Date().toISOString();
+        existingConflict.entityName = entityName;
+        existingConflict.courseName = options?.courseName;
+        existingConflict.courseId = options?.courseId;
+        // Update in database
+        this.savePendingConflict(existingConflict);
+        conflicts.push(existingConflict);
+      } else {
+        // Create new conflict
+        const conflictId = `${entity}-${externalId}-${field}-${++this.conflictIdCounter}`;
+        const conflict: SyncConflict = {
+          id: conflictId,
+          entity,
+          entityId,
+          externalId,
+          entityName,
+          field,
+          fieldLabel: FIELD_LABELS[field] || field,
+          localValue,
+          canvasValue,
+          timestamp: new Date().toISOString(),
+          courseName: options?.courseName,
+          courseId: options?.courseId,
+        };
+
+        conflicts.push(conflict);
+        this.pendingConflicts.set(conflictId, conflict);
+        // Persist conflict to database so it survives app restart
+        this.savePendingConflict(conflict);
+      }
     }
 
     return { autoResolved, conflicts, preservedFields };
@@ -417,7 +506,9 @@ export class SyncConflictResolver extends EventEmitter {
   /**
    * Resolve a conflict with user's decision
    */
-  resolveConflict(resolution: ConflictResolution): { field: string; value: unknown } | null {
+  resolveConflict(
+    resolution: ConflictResolution
+  ): { field: string; value: unknown } | null {
     const conflict = this.pendingConflicts.get(resolution.conflictId);
     if (!conflict) return null;
 
@@ -429,6 +520,7 @@ export class SyncConflictResolver extends EventEmitter {
         field: conflict.field,
         preferCanvas: resolution.useCanvasValue,
         createdAt: new Date().toISOString(),
+        expiresAt: resolution.expiresAt ?? null,
       });
     }
 
@@ -445,7 +537,9 @@ export class SyncConflictResolver extends EventEmitter {
   /**
    * Resolve all pending conflicts with a batch decision
    */
-  resolveAllConflicts(useCanvasValues: boolean): Array<{ field: string; value: unknown }> {
+  resolveAllConflicts(
+    useCanvasValues: boolean
+  ): Array<{ field: string; value: unknown }> {
     const results: Array<{ field: string; value: unknown }> = [];
 
     for (const [id, conflict] of this.pendingConflicts) {
@@ -466,17 +560,26 @@ export class SyncConflictResolver extends EventEmitter {
    */
   private savePreference(pref: SyncPreference): void {
     this.db.executeWrite(
-      `INSERT INTO sync_preferences (entity, entity_id, field, prefer_canvas, created_at)
-       VALUES (?, ?, ?, ?, ?)
+      `INSERT INTO sync_preferences (entity, entity_id, field, prefer_canvas, created_at, expires_at)
+       VALUES (?, ?, ?, ?, ?, ?)
        ON CONFLICT(entity, entity_id, field) DO UPDATE SET
-         prefer_canvas = excluded.prefer_canvas`,
-      [pref.entity, pref.entityId, pref.field, pref.preferCanvas ? 1 : 0, pref.createdAt],
+         prefer_canvas = excluded.prefer_canvas,
+         expires_at = excluded.expires_at`,
+      [
+        pref.entity,
+        pref.entityId,
+        pref.field,
+        pref.preferCanvas ? 1 : 0,
+        pref.createdAt,
+        pref.expiresAt,
+      ],
       'sync_preferences'
     );
 
     // Update local cache
     const existing = this.preferences.findIndex(
-      p => p.entity === pref.entity && p.entityId === pref.entityId && p.field === pref.field
+      (p) =>
+        p.entity === pref.entity && p.entityId === pref.entityId && p.field === pref.field
     );
     if (existing >= 0) {
       this.preferences[existing] = pref;
@@ -488,11 +591,7 @@ export class SyncConflictResolver extends EventEmitter {
   /**
    * Mark a field as locally modified
    */
-  markFieldModified(
-    tableName: string,
-    entityId: number,
-    field: string
-  ): void {
+  markFieldModified(tableName: string, entityId: number, field: string): void {
     const record = this.db.executeReadOne<{ local_modified_fields: string | null }>(
       `SELECT local_modified_fields FROM ${tableName} WHERE id = ?`,
       [entityId]
@@ -513,11 +612,7 @@ export class SyncConflictResolver extends EventEmitter {
   /**
    * Clear a field's modified status (after user chooses to use Canvas value)
    */
-  clearFieldModified(
-    tableName: string,
-    entityId: number,
-    field: string
-  ): void {
+  clearFieldModified(tableName: string, entityId: number, field: string): void {
     const record = this.db.executeReadOne<{ local_modified_fields: string | null }>(
       `SELECT local_modified_fields FROM ${tableName} WHERE id = ?`,
       [entityId]
@@ -553,7 +648,7 @@ export class SyncConflictResolver extends EventEmitter {
     );
 
     this.preferences = this.preferences.filter(
-      p => !(p.entity === entity && p.entityId === entityId && p.field === field)
+      (p) => !(p.entity === entity && p.entityId === entityId && p.field === field)
     );
   }
 
@@ -563,6 +658,18 @@ export class SyncConflictResolver extends EventEmitter {
   clearAllPreferences(): void {
     this.db.executeWrite('DELETE FROM sync_preferences', [], 'sync_preferences');
     this.preferences = [];
+  }
+
+  /**
+   * Clear all pending conflicts (used during data reset)
+   */
+  clearAllPendingConflicts(): void {
+    this.db.executeWrite(
+      'DELETE FROM pending_sync_conflicts',
+      [],
+      'pending_sync_conflicts'
+    );
+    this.pendingConflicts.clear();
   }
 
   /**

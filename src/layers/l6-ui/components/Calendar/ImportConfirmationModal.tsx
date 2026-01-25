@@ -4,7 +4,17 @@
  */
 
 import React, { useState } from 'react';
-import { X, Calendar, AlertTriangle, Repeat, MapPin } from 'lucide-react';
+import {
+  X,
+  Calendar,
+  AlertTriangle,
+  Repeat,
+  MapPin,
+  ChevronDown,
+  ChevronUp,
+  Clock,
+  FileText,
+} from 'lucide-react';
 import type { ICSImportPreview, ParsedICSEvent } from '../../../l5-presentation/types';
 
 // Color palette for calendar selection
@@ -60,7 +70,7 @@ export function ImportConfirmationModal({
     });
   };
 
-  const formatTime = (date: Date | null) => {
+  const _formatTime = (date: Date | null) => {
     if (!date) return '';
     return new Date(date).toLocaleTimeString('en-US', {
       hour: 'numeric',
@@ -96,7 +106,8 @@ export function ImportConfirmationModal({
             <div style={styles.summaryItem}>
               <span style={styles.summaryLabel}>Date Range:</span>
               <span style={styles.summaryValue}>
-                {formatDate(preview.dateRange.start)} - {formatDate(preview.dateRange.end)}
+                {formatDate(preview.dateRange.start)} -{' '}
+                {formatDate(preview.dateRange.end)}
               </span>
             </div>
           )}
@@ -114,7 +125,9 @@ export function ImportConfirmationModal({
             <AlertTriangle size={16} color="var(--color-warning)" />
             <div style={styles.warningsList}>
               {preview.warnings.map((warning, i) => (
-                <div key={i} style={styles.warningItem}>{warning}</div>
+                <div key={i} style={styles.warningItem}>
+                  {warning}
+                </div>
               ))}
             </div>
           </div>
@@ -142,7 +155,10 @@ export function ImportConfirmationModal({
                 style={{
                   ...styles.colorOption,
                   backgroundColor: color,
-                  border: selectedColor === color ? '3px solid var(--text-primary)' : '3px solid transparent',
+                  border:
+                    selectedColor === color
+                      ? '3px solid var(--text-primary)'
+                      : '3px solid transparent',
                 }}
                 onClick={() => setSelectedColor(color)}
               />
@@ -151,19 +167,7 @@ export function ImportConfirmationModal({
         </div>
 
         {/* Events Preview */}
-        <div style={styles.eventsSection}>
-          <label style={styles.label}>Events Preview</label>
-          <div style={styles.eventsList}>
-            {preview.events.slice(0, 10).map((event, index) => (
-              <EventPreviewItem key={event.uid || index} event={event} color={selectedColor} />
-            ))}
-            {preview.events.length > 10 && (
-              <div style={styles.moreEvents}>
-                + {preview.events.length - 10} more events
-              </div>
-            )}
-          </div>
-        </div>
+        <EventsPreviewSection events={preview.events} color={selectedColor} />
 
         {/* Actions */}
         <div style={styles.actions}>
@@ -179,12 +183,144 @@ export function ImportConfirmationModal({
   );
 }
 
-function EventPreviewItem({ event, color }: { event: ParsedICSEvent; color: string }) {
+function EventsPreviewSection({
+  events,
+  color,
+}: {
+  events: ParsedICSEvent[];
+  color: string;
+}) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [expandedEventId, setExpandedEventId] = useState<string | null>(null);
+
+  const INITIAL_SHOW_COUNT = 5;
+  const displayedEvents = isExpanded ? events : events.slice(0, INITIAL_SHOW_COUNT);
+  const hasMoreEvents = events.length > INITIAL_SHOW_COUNT;
+
   return (
-    <div style={styles.eventItem}>
+    <div style={styles.eventsSection}>
+      <div style={styles.eventsHeader}>
+        <label style={styles.label}>Events Preview ({events.length} total)</label>
+        {hasMoreEvents && (
+          <button style={styles.expandToggle} onClick={() => setIsExpanded(!isExpanded)}>
+            {isExpanded ? (
+              <>
+                <ChevronUp size={14} />
+                Show less
+              </>
+            ) : (
+              <>
+                <ChevronDown size={14} />
+                Show all {events.length}
+              </>
+            )}
+          </button>
+        )}
+      </div>
+      <div
+        style={{
+          ...styles.eventsList,
+          maxHeight: isExpanded ? '400px' : '200px',
+        }}
+      >
+        {displayedEvents.map((event, index) => (
+          <EventPreviewItem
+            key={event.uid || index}
+            event={event}
+            color={color}
+            isExpanded={expandedEventId === event.uid}
+            onToggleExpand={() =>
+              setExpandedEventId(expandedEventId === event.uid ? null : event.uid)
+            }
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function EventPreviewItem({
+  event,
+  color,
+  isExpanded,
+  onToggleExpand,
+}: {
+  event: ParsedICSEvent;
+  color: string;
+  isExpanded: boolean;
+  onToggleExpand: () => void;
+}) {
+  const formatDateTime = (date: Date | null, includeTime: boolean) => {
+    if (!date) return 'Unknown';
+    const d = new Date(date);
+    const dateStr = d.toLocaleDateString('en-US', {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+    if (!includeTime) return dateStr;
+    const timeStr = d.toLocaleTimeString('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+    return `${dateStr} at ${timeStr}`;
+  };
+
+  const formatRRule = (rrule: string | null) => {
+    if (!rrule) return null;
+    // Parse common RRULE patterns
+    if (rrule.includes('FREQ=DAILY')) return 'Repeats daily';
+    if (rrule.includes('FREQ=WEEKLY')) {
+      const byday = rrule.match(/BYDAY=([A-Z,]+)/);
+      if (byday) {
+        const days = byday[1]
+          .split(',')
+          .map((d) => {
+            const map: Record<string, string> = {
+              MO: 'Mon',
+              TU: 'Tue',
+              WE: 'Wed',
+              TH: 'Thu',
+              FR: 'Fri',
+              SA: 'Sat',
+              SU: 'Sun',
+            };
+            return map[d] || d;
+          })
+          .join(', ');
+        return `Repeats weekly on ${days}`;
+      }
+      return 'Repeats weekly';
+    }
+    if (rrule.includes('FREQ=MONTHLY')) return 'Repeats monthly';
+    if (rrule.includes('FREQ=YEARLY')) return 'Repeats yearly';
+    return 'Recurring event';
+  };
+
+  return (
+    <div
+      style={{
+        ...styles.eventItem,
+        cursor: 'pointer',
+        backgroundColor: isExpanded ? 'var(--bg-hover)' : 'transparent',
+      }}
+      onClick={onToggleExpand}
+    >
       <div style={{ ...styles.eventColor, backgroundColor: color }} />
       <div style={styles.eventContent}>
-        <div style={styles.eventTitle}>{event.summary || 'Untitled Event'}</div>
+        <div style={styles.eventHeader}>
+          <div style={styles.eventTitle}>{event.summary || 'Untitled Event'}</div>
+          <ChevronDown
+            size={14}
+            style={{
+              color: 'var(--text-secondary)',
+              transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+              transition: 'transform 150ms ease',
+              flexShrink: 0,
+            }}
+          />
+        </div>
         <div style={styles.eventMeta}>
           {event.dtstart && (
             <span>
@@ -192,10 +328,11 @@ function EventPreviewItem({ event, color }: { event: ParsedICSEvent; color: stri
                 month: 'short',
                 day: 'numeric',
               })}
-              {!event.allDay && ` at ${new Date(event.dtstart).toLocaleTimeString('en-US', {
-                hour: 'numeric',
-                minute: '2-digit',
-              })}`}
+              {!event.allDay &&
+                ` at ${new Date(event.dtstart).toLocaleTimeString('en-US', {
+                  hour: 'numeric',
+                  minute: '2-digit',
+                })}`}
             </span>
           )}
           {event.rrule && (
@@ -206,10 +343,60 @@ function EventPreviewItem({ event, color }: { event: ParsedICSEvent; color: stri
           {event.location && (
             <span style={styles.locationMeta}>
               <MapPin size={12} />
-              {event.location}
+              {event.location.length > 20
+                ? event.location.slice(0, 20) + '...'
+                : event.location}
             </span>
           )}
         </div>
+
+        {/* Expanded Details */}
+        {isExpanded && (
+          <div style={styles.eventDetails}>
+            {/* Full date/time */}
+            <div style={styles.detailRow}>
+              <Clock size={14} color="var(--text-secondary)" />
+              <div style={styles.detailContent}>
+                <div>
+                  {event.allDay ? 'All day' : formatDateTime(event.dtstart, true)}
+                </div>
+                {event.dtend && !event.allDay && (
+                  <div style={styles.detailSecondary}>
+                    to {formatDateTime(event.dtend, true)}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Location */}
+            {event.location && (
+              <div style={styles.detailRow}>
+                <MapPin size={14} color="var(--text-secondary)" />
+                <span>{event.location}</span>
+              </div>
+            )}
+
+            {/* Recurring info */}
+            {event.rrule && (
+              <div style={styles.detailRow}>
+                <Repeat size={14} color="var(--color-blue)" />
+                <span>{formatRRule(event.rrule)}</span>
+              </div>
+            )}
+
+            {/* Description */}
+            {event.description && (
+              <div style={styles.detailRow}>
+                <FileText size={14} color="var(--text-secondary)" />
+                <div style={styles.description}>
+                  {event.description.length > 300
+                    ? event.description.slice(0, 300) + '...'
+                    : event.description}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -368,11 +555,32 @@ const styles: Record<string, React.CSSProperties> = {
     minHeight: 0,
   },
 
+  eventsHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 'var(--space-2)',
+  },
+
+  expandToggle: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-1)',
+    fontSize: 'var(--text-xs)',
+    color: 'var(--color-blue)',
+    background: 'none',
+    border: 'none',
+    cursor: 'pointer',
+    padding: 'var(--space-1) var(--space-2)',
+    borderRadius: 'var(--radius-sm)',
+  },
+
   eventsList: {
     maxHeight: '200px',
     overflowY: 'auto',
     border: '1px solid var(--border-default)',
     borderRadius: 'var(--radius-md)',
+    transition: 'max-height 200ms ease',
   },
 
   eventItem: {
@@ -381,6 +589,14 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 'var(--space-3)',
     padding: 'var(--space-3)',
     borderBottom: '1px solid var(--border-light)',
+    transition: 'background-color 150ms ease',
+  },
+
+  eventHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 'var(--space-2)',
   },
 
   eventColor: {
@@ -429,12 +645,38 @@ const styles: Record<string, React.CSSProperties> = {
     whiteSpace: 'nowrap',
   },
 
-  moreEvents: {
-    padding: 'var(--space-3)',
+  eventDetails: {
+    marginTop: 'var(--space-3)',
+    paddingTop: 'var(--space-3)',
+    borderTop: '1px solid var(--border-light)',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 'var(--space-2)',
+  },
+
+  detailRow: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: 'var(--space-2)',
+    fontSize: 'var(--text-sm)',
+    color: 'var(--text-primary)',
+  },
+
+  detailContent: {
+    flex: 1,
+  },
+
+  detailSecondary: {
+    color: 'var(--text-secondary)',
+    fontSize: 'var(--text-xs)',
+  },
+
+  description: {
+    flex: 1,
     fontSize: 'var(--text-sm)',
     color: 'var(--text-secondary)',
-    textAlign: 'center',
-    backgroundColor: 'var(--bg-app)',
+    lineHeight: '1.5',
+    whiteSpace: 'pre-wrap',
   },
 
   actions: {

@@ -3,7 +3,7 @@
  * Modal overlay for application settings
  */
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   X,
   Link,
@@ -34,55 +34,46 @@ import {
   Key,
 } from 'lucide-react';
 import { useStore } from '../../l5-presentation/store';
+import {
+  STORAGE_KEYS,
+  settingsManager,
+  DEFAULT_SYNC_PREFERENCES,
+  DEFAULT_APPEARANCE_SETTINGS,
+  DEFAULT_NOTIFICATION_SETTINGS,
+  DEFAULT_ACADEMIC_SETTINGS,
+  DEFAULT_FILE_EXPLORER_SETTINGS,
+  DEFAULT_COURSE_SETTINGS,
+  DEFAULT_CALENDAR_SETTINGS,
+  DEFAULT_CONTENT_SETTINGS,
+  type SyncPreferences,
+  type AppearanceSettings,
+  type NotificationSettings,
+  type AcademicSettings,
+  type FileExplorerSettings,
+  type CourseSettings,
+  type CalendarSettings,
+  type ContentSettings,
+} from '../../l5-presentation/settings';
 import type { Course } from '../../l5-presentation/types';
 import { ConfirmDialog } from './shared/ConfirmDialog';
 
 // Settings sections
-type SettingsSection = 'general' | 'dashboard' | 'canvas' | 'sync' | 'academic' | 'courses' | 'calendar' | 'files' | 'appearance' | 'notifications';
+type SettingsSection =
+  | 'general'
+  | 'dashboard'
+  | 'canvas'
+  | 'sync'
+  | 'academic'
+  | 'courses'
+  | 'calendar'
+  | 'files'
+  | 'appearance'
+  | 'notifications';
 
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
   isFullPage?: boolean;
-}
-
-interface SyncPreferences {
-  autoSyncEnabled: boolean;
-  autoSyncInterval: number;
-  syncFiles: boolean;
-  syncAnnouncements: boolean;
-  // Task defaults
-  autoAssignDueDate: boolean; // Auto-assign today 23:59 for tasks without due date
-  // HTML content sync
-  saveHtmlContent: boolean;
-  htmlUrlRewriting: 'local' | 'original';
-  downloadImages: boolean;
-  downloadLinkedFiles: boolean;
-}
-
-interface AppearanceSettings {
-  theme: 'light' | 'dark' | 'system';
-  sidebarCollapsed: boolean;
-}
-
-interface NotificationSettings {
-  enabled: boolean;
-  priorityAlerts: boolean;
-  syncStatus: boolean;
-  dueDateReminders: boolean;
-  gradeAlerts: boolean;
-  // Intelligence
-  workloadPredictions: boolean;
-  riskWarnings: boolean;
-  // Smart quiet mode
-  quietWhenUnplugged: boolean;
-  quietWhenFullscreen: boolean;
-  quietWhenBusy: boolean;
-}
-
-interface AcademicSettings {
-  defaultTargetGrade: number;
-  termSelection: 'auto' | 'all' | string; // 'auto', 'all', or term external_id
 }
 
 interface EnrollmentTerm {
@@ -93,29 +84,6 @@ interface EnrollmentTerm {
   endAt: string | null;
 }
 
-interface FileExplorerSettings {
-  defaultState: 'collapsed' | 'expanded' | 'remember';
-  defaultViewMode: 'list' | 'grid';
-  downloadLocation: string | null; // null = use default
-}
-
-interface CourseSettings {
-  defaultViewMode: 'grid' | 'list';
-  showHiddenByDefault: boolean;
-}
-
-interface CalendarSettings {
-  defaultViewMode: 'month' | 'week';
-}
-
-interface GeneralSettings {
-  landingPage: string;
-}
-
-interface ContentSettings {
-  linkBehavior: 'always-external' | 'prefer-local';
-}
-
 const LANDING_PAGE_OPTIONS = [
   { value: '/', label: 'Dashboard', icon: LayoutDashboard },
   { value: '/calendar', label: 'Calendar', icon: Calendar },
@@ -123,67 +91,7 @@ const LANDING_PAGE_OPTIONS = [
   { value: '/files', label: 'Files', icon: FolderOpen },
 ];
 
-const STORAGE_KEYS = {
-  SYNC_PREFS: 'syncPreferences',
-  APPEARANCE: 'appearanceSettings',
-  NOTIFICATIONS: 'notificationSettings',
-  ACADEMIC: 'academicSettings',
-  FILE_EXPLORER: 'fileExplorerSettings',
-  COURSES: 'courseSettings',
-  CALENDAR: 'calendarSettings',
-  CONTENT: 'contentSettings',
-  CANVAS_URL: 'canvasUrl',
-  LANDING_PAGE: 'landingPage',
-};
-
-function loadSettings<T extends object>(key: string, defaults: T): T {
-  try {
-    const stored = localStorage.getItem(key);
-    if (stored) {
-      const parsed = JSON.parse(stored);
-      // Merge with defaults, but only use stored values that are defined
-      // This ensures new default fields are applied to old stored settings
-      const result = { ...defaults };
-      for (const k of Object.keys(parsed)) {
-        if (parsed[k] !== undefined) {
-          (result as Record<string, unknown>)[k] = parsed[k];
-        }
-      }
-      return result;
-    }
-  } catch (e) {
-    console.error(`Failed to load ${key}:`, e);
-  }
-  return defaults;
-}
-
-function saveSettings<T>(key: string, value: T): void {
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-  } catch (e) {
-    console.error(`Failed to save ${key}:`, e);
-  }
-}
-
-// Apply theme to document and listen for system changes
-function applyTheme(theme: 'light' | 'dark' | 'system') {
-  const root = document.documentElement;
-
-  if (theme === 'system') {
-    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    root.setAttribute('data-theme', prefersDark ? 'dark' : 'light');
-  } else {
-    root.setAttribute('data-theme', theme);
-  }
-}
-
-// Dashboard layout settings constants
-const DASHBOARD_STORAGE_KEYS = {
-  SECTION_ORDER: 'dashboardSectionOrder',
-};
-
-const DEFAULT_DASHBOARD_ORDER = ['priority', 'notifications', 'recommendations', 'insights'];
-
+// Dashboard section labels for display
 const DASHBOARD_SECTION_LABELS: Record<string, string> = {
   priority: 'Upcoming Assignments',
   notifications: 'Recent Updates',
@@ -191,23 +99,28 @@ const DASHBOARD_SECTION_LABELS: Record<string, string> = {
   insights: 'Insights',
 };
 
+// Default order for dashboard sections (used for reset comparison)
+const LOCAL_DEFAULT_DASHBOARD_ORDER = [
+  'priority',
+  'notifications',
+  'recommendations',
+  'insights',
+];
+
 /**
  * Dashboard Settings Section - Interactive layout configuration
  */
 function DashboardSettingsSection() {
   const [sectionOrder, setSectionOrder] = React.useState<string[]>(() => {
-    try {
-      const stored = localStorage.getItem(DASHBOARD_STORAGE_KEYS.SECTION_ORDER);
-      if (stored) return JSON.parse(stored);
-    } catch {}
-    return [...DEFAULT_DASHBOARD_ORDER];
+    const stored = settingsManager.get(STORAGE_KEYS.DASHBOARD_SECTION_ORDER);
+    return stored?.length ? stored : [...LOCAL_DEFAULT_DASHBOARD_ORDER];
   });
 
   const [draggedItem, setDraggedItem] = React.useState<string | null>(null);
   const [dragOverItem, setDragOverItem] = React.useState<string | null>(null);
 
   const isCustomized = React.useMemo(() => {
-    return sectionOrder.some((id, i) => id !== DEFAULT_DASHBOARD_ORDER[i]);
+    return sectionOrder.some((id, i) => id !== LOCAL_DEFAULT_DASHBOARD_ORDER[i]);
   }, [sectionOrder]);
 
   const handleDragStart = (e: React.DragEvent, sectionId: string) => {
@@ -235,7 +148,7 @@ function DashboardSettingsSection() {
       newOrder[draggedIndex] = targetId;
       newOrder[targetIndex] = draggedItem;
       setSectionOrder(newOrder);
-      localStorage.setItem(DASHBOARD_STORAGE_KEYS.SECTION_ORDER, JSON.stringify(newOrder));
+      settingsManager.set(STORAGE_KEYS.DASHBOARD_SECTION_ORDER, newOrder);
     }
 
     setDraggedItem(null);
@@ -248,8 +161,8 @@ function DashboardSettingsSection() {
   };
 
   const handleReset = () => {
-    setSectionOrder([...DEFAULT_DASHBOARD_ORDER]);
-    localStorage.removeItem(DASHBOARD_STORAGE_KEYS.SECTION_ORDER);
+    setSectionOrder([...LOCAL_DEFAULT_DASHBOARD_ORDER]);
+    settingsManager.remove(STORAGE_KEYS.DASHBOARD_SECTION_ORDER);
   };
 
   return (
@@ -271,36 +184,68 @@ function DashboardSettingsSection() {
             style={{
               ...dashboardStyles.gridItem,
               opacity: draggedItem === sectionId ? 0.5 : 1,
-              borderColor: dragOverItem === sectionId ? 'var(--color-blue)' : 'var(--border-default)',
+              borderColor:
+                dragOverItem === sectionId
+                  ? 'var(--color-blue)'
+                  : 'var(--border-default)',
               borderWidth: dragOverItem === sectionId ? '2px' : '1px',
             }}
           >
-            <GripVertical size={14} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+            <GripVertical
+              size={14}
+              style={{ color: 'var(--text-muted)', flexShrink: 0 }}
+            />
             <span style={dashboardStyles.gridItemLabel}>
               {DASHBOARD_SECTION_LABELS[sectionId]}
             </span>
-            <span style={dashboardStyles.gridItemPosition}>
-              {index + 1}
-            </span>
+            <span style={dashboardStyles.gridItemPosition}>{index + 1}</span>
           </div>
         ))}
       </div>
 
       <div style={dashboardStyles.gridLegend}>
         <div style={dashboardStyles.legendItem}>
-          <div style={{ ...dashboardStyles.legendBox, backgroundColor: 'var(--color-blue-50)' }}>1</div>
+          <div
+            style={{
+              ...dashboardStyles.legendBox,
+              backgroundColor: 'var(--color-blue-50)',
+            }}
+          >
+            1
+          </div>
           <span>Top Left</span>
         </div>
         <div style={dashboardStyles.legendItem}>
-          <div style={{ ...dashboardStyles.legendBox, backgroundColor: 'var(--color-blue-50)' }}>2</div>
+          <div
+            style={{
+              ...dashboardStyles.legendBox,
+              backgroundColor: 'var(--color-blue-50)',
+            }}
+          >
+            2
+          </div>
           <span>Top Right</span>
         </div>
         <div style={dashboardStyles.legendItem}>
-          <div style={{ ...dashboardStyles.legendBox, backgroundColor: 'var(--color-blue-50)' }}>3</div>
+          <div
+            style={{
+              ...dashboardStyles.legendBox,
+              backgroundColor: 'var(--color-blue-50)',
+            }}
+          >
+            3
+          </div>
           <span>Bottom Left</span>
         </div>
         <div style={dashboardStyles.legendItem}>
-          <div style={{ ...dashboardStyles.legendBox, backgroundColor: 'var(--color-blue-50)' }}>4</div>
+          <div
+            style={{
+              ...dashboardStyles.legendBox,
+              backgroundColor: 'var(--color-blue-50)',
+            }}
+          >
+            4
+          </div>
           <span>Bottom Right</span>
         </div>
       </div>
@@ -443,7 +388,11 @@ const dashboardStyles: Record<string, React.CSSProperties> = {
   },
 };
 
-export function SettingsModal({ isOpen, onClose, isFullPage = false }: SettingsModalProps) {
+export function SettingsModal({
+  isOpen,
+  onClose,
+  isFullPage = false,
+}: SettingsModalProps) {
   const { courses, fetchCourses } = useStore();
   const [activeSection, setActiveSection] = useState<SettingsSection>('general');
 
@@ -473,50 +422,23 @@ export function SettingsModal({ isOpen, onClose, isFullPage = false }: SettingsM
   const [isReplacingToken, setIsReplacingToken] = useState(false);
 
   // Sync preferences
-  const [syncPrefs, setSyncPrefs] = useState<SyncPreferences>(() =>
-    loadSettings(STORAGE_KEYS.SYNC_PREFS, {
-      autoSyncEnabled: true,
-      autoSyncInterval: 30,
-      syncFiles: true,
-      syncAnnouncements: true,
-      autoAssignDueDate: false,
-      saveHtmlContent: true,
-      htmlUrlRewriting: 'local' as const,
-      downloadImages: true,
-      downloadLinkedFiles: true,
-    })
+  const [syncPrefs, setSyncPrefs] = useState<SyncPreferences>(
+    () => settingsManager.get(STORAGE_KEYS.SYNC_PREFS) ?? DEFAULT_SYNC_PREFERENCES
   );
 
   // Appearance settings
-  const [appearance, setAppearance] = useState<AppearanceSettings>(() =>
-    loadSettings(STORAGE_KEYS.APPEARANCE, {
-      theme: 'system' as const,
-      sidebarCollapsed: false,
-    })
+  const [appearance, setAppearance] = useState<AppearanceSettings>(
+    () => settingsManager.get(STORAGE_KEYS.APPEARANCE) ?? DEFAULT_APPEARANCE_SETTINGS
   );
 
   // Notification settings
-  const [notifications, setNotifications] = useState<NotificationSettings>(() =>
-    loadSettings(STORAGE_KEYS.NOTIFICATIONS, {
-      enabled: true,
-      priorityAlerts: true,
-      syncStatus: true,
-      dueDateReminders: true,
-      gradeAlerts: true,
-      workloadPredictions: true,
-      riskWarnings: true,
-      quietWhenUnplugged: true,
-      quietWhenFullscreen: true,
-      quietWhenBusy: true,
-    })
+  const [notifications, setNotifications] = useState<NotificationSettings>(
+    () => settingsManager.get(STORAGE_KEYS.NOTIFICATIONS) ?? DEFAULT_NOTIFICATION_SETTINGS
   );
 
   // Academic settings
-  const [academic, setAcademic] = useState<AcademicSettings>(() =>
-    loadSettings(STORAGE_KEYS.ACADEMIC, {
-      defaultTargetGrade: 85,
-      termSelection: 'auto',
-    })
+  const [academic, setAcademic] = useState<AcademicSettings>(
+    () => settingsManager.get(STORAGE_KEYS.ACADEMIC) ?? DEFAULT_ACADEMIC_SETTINGS
   );
 
   // Course-specific sync settings
@@ -531,54 +453,50 @@ export function SettingsModal({ isOpen, onClose, isFullPage = false }: SettingsM
   const [enrollmentTerms, setEnrollmentTerms] = useState<EnrollmentTerm[]>([]);
 
   // File explorer settings
-  const [fileExplorer, setFileExplorer] = useState<FileExplorerSettings>(() =>
-    loadSettings(STORAGE_KEYS.FILE_EXPLORER, {
-      defaultState: 'remember',
-      defaultViewMode: 'list',
-      downloadLocation: null,
-    })
+  const [fileExplorer, setFileExplorer] = useState<FileExplorerSettings>(
+    () =>
+      settingsManager.get(STORAGE_KEYS.FILE_EXPLORER) ?? DEFAULT_FILE_EXPLORER_SETTINGS
   );
 
   // Current download directory (fetched from main process)
   const [currentDownloadPath, setCurrentDownloadPath] = useState<string>('');
 
   // Course settings
-  const [courseSettings, setCourseSettings] = useState<CourseSettings>(() =>
-    loadSettings(STORAGE_KEYS.COURSES, {
-      defaultViewMode: 'grid',
-      showHiddenByDefault: false,
-    })
+  const [courseSettings, setCourseSettings] = useState<CourseSettings>(
+    () => settingsManager.get(STORAGE_KEYS.COURSES) ?? DEFAULT_COURSE_SETTINGS
   );
 
   // Calendar settings
-  const [calendarSettings, setCalendarSettings] = useState<CalendarSettings>(() =>
-    loadSettings(STORAGE_KEYS.CALENDAR, {
-      defaultViewMode: 'month',
-    })
+  const [calendarSettings, setCalendarSettings] = useState<CalendarSettings>(
+    () => settingsManager.get(STORAGE_KEYS.CALENDAR) ?? DEFAULT_CALENDAR_SETTINGS
   );
 
   // Content settings (link behavior)
-  const [contentSettings, setContentSettings] = useState<ContentSettings>(() =>
-    loadSettings(STORAGE_KEYS.CONTENT, {
-      linkBehavior: 'always-external',
-    })
+  const [contentSettings, setContentSettings] = useState<ContentSettings>(
+    () => settingsManager.get(STORAGE_KEYS.CONTENT) ?? DEFAULT_CONTENT_SETTINGS
   );
 
   // Landing page setting
-  const [landingPage, setLandingPage] = useState<string>(() => {
-    try {
-      return localStorage.getItem(STORAGE_KEYS.LANDING_PAGE) || '/';
-    } catch {
-      return '/';
-    }
-  });
+  const [landingPage, setLandingPage] = useState<string>(
+    () => settingsManager.get(STORAGE_KEYS.LANDING_PAGE) ?? '/'
+  );
 
   // Clear data confirmation dialog
   const [showClearDataConfirm, setShowClearDataConfirm] = useState(false);
   const [deleteTokenOnClear, setDeleteTokenOnClear] = useState(false);
 
-  // Apply theme on mount and listen for system preference changes
+  // Apply theme on change - settingsManager handles DOM updates
   useEffect(() => {
+    const applyTheme = (theme: 'light' | 'dark' | 'system') => {
+      const root = document.documentElement;
+      if (theme === 'system') {
+        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        root.setAttribute('data-theme', prefersDark ? 'dark' : 'light');
+      } else {
+        root.setAttribute('data-theme', theme);
+      }
+    };
+
     applyTheme(appearance.theme);
 
     if (appearance.theme === 'system') {
@@ -645,7 +563,7 @@ export function SettingsModal({ isOpen, onClose, isFullPage = false }: SettingsM
   const checkCanvasConnection = async () => {
     try {
       const hasCredential = await window.api.hasCredential();
-      const savedUrl = localStorage.getItem(STORAGE_KEYS.CANVAS_URL) || '';
+      const savedUrl = settingsManager.get(STORAGE_KEYS.CANVAS_URL) ?? '';
       // Only set URL on first initialization - don't overwrite user input
       if (!canvasUrlInitializedRef.current) {
         setCanvasUrl(savedUrl);
@@ -661,7 +579,7 @@ export function SettingsModal({ isOpen, onClose, isFullPage = false }: SettingsM
     try {
       await window.api.deleteCredential();
       setIsConnected(false);
-      localStorage.removeItem(STORAGE_KEYS.CANVAS_URL);
+      settingsManager.remove(STORAGE_KEYS.CANVAS_URL);
       setCanvasUrl('');
     } catch (e) {
       console.error('Failed to disconnect:', e);
@@ -686,7 +604,7 @@ export function SettingsModal({ isOpen, onClose, isFullPage = false }: SettingsM
       if (result.success) {
         setIsConnected(true);
         setCanvasUrl(normalizedUrl);
-        localStorage.setItem(STORAGE_KEYS.CANVAS_URL, normalizedUrl);
+        settingsManager.set(STORAGE_KEYS.CANVAS_URL, normalizedUrl);
       } else {
         setConnectionError(result.error || 'Failed to connect');
       }
@@ -813,10 +731,14 @@ export function SettingsModal({ isOpen, onClose, isFullPage = false }: SettingsM
   const updateSyncPrefs = async (updates: Partial<SyncPreferences>) => {
     const newPrefs = { ...syncPrefs, ...updates };
     setSyncPrefs(newPrefs);
-    saveSettings(STORAGE_KEYS.SYNC_PREFS, newPrefs);
+    settingsManager.set(STORAGE_KEYS.SYNC_PREFS, newPrefs);
 
     // Sync settings to backend that affect sync behavior
-    if ('autoSyncEnabled' in updates || 'autoSyncInterval' in updates || 'autoAssignDueDate' in updates) {
+    if (
+      'autoSyncEnabled' in updates ||
+      'autoSyncInterval' in updates ||
+      'autoAssignDueDate' in updates
+    ) {
       try {
         await window.api.setAutoSyncPreferences({
           autoSyncEnabled: newPrefs.autoSyncEnabled,
@@ -832,7 +754,10 @@ export function SettingsModal({ isOpen, onClose, isFullPage = false }: SettingsM
   // Data export/import handlers
   const [isExporting, setIsExporting] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
-  const [exportMessage, setExportMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [exportMessage, setExportMessage] = useState<{
+    type: 'success' | 'error';
+    text: string;
+  } | null>(null);
 
   const handleExportDatabase = async () => {
     setIsExporting(true);
@@ -840,12 +765,18 @@ export function SettingsModal({ isOpen, onClose, isFullPage = false }: SettingsM
     try {
       const result = await window.api.exportDatabase();
       if (result.success) {
-        setExportMessage({ type: 'success', text: `Database exported to ${result.data?.filePath}` });
+        setExportMessage({
+          type: 'success',
+          text: `Database exported to ${result.data?.filePath}`,
+        });
       } else {
         setExportMessage({ type: 'error', text: result.error || 'Export failed' });
       }
     } catch (e) {
-      setExportMessage({ type: 'error', text: e instanceof Error ? e.message : 'Export failed' });
+      setExportMessage({
+        type: 'error',
+        text: e instanceof Error ? e.message : 'Export failed',
+      });
     } finally {
       setIsExporting(false);
     }
@@ -865,7 +796,10 @@ export function SettingsModal({ isOpen, onClose, isFullPage = false }: SettingsM
         setExportMessage({ type: 'error', text: result.error || 'Import failed' });
       }
     } catch (e) {
-      setExportMessage({ type: 'error', text: e instanceof Error ? e.message : 'Import failed' });
+      setExportMessage({
+        type: 'error',
+        text: e instanceof Error ? e.message : 'Import failed',
+      });
     } finally {
       setIsImporting(false);
     }
@@ -885,7 +819,10 @@ export function SettingsModal({ isOpen, onClose, isFullPage = false }: SettingsM
         setExportMessage({ type: 'error', text: result.error || 'Export failed' });
       }
     } catch (e) {
-      setExportMessage({ type: 'error', text: e instanceof Error ? e.message : 'Export failed' });
+      setExportMessage({
+        type: 'error',
+        text: e instanceof Error ? e.message : 'Export failed',
+      });
     } finally {
       setIsExporting(false);
     }
@@ -908,7 +845,10 @@ export function SettingsModal({ isOpen, onClose, isFullPage = false }: SettingsM
         setExportMessage({ type: 'error', text: result.error || 'Import failed' });
       }
     } catch (e) {
-      setExportMessage({ type: 'error', text: e instanceof Error ? e.message : 'Import failed' });
+      setExportMessage({
+        type: 'error',
+        text: e instanceof Error ? e.message : 'Import failed',
+      });
     } finally {
       setIsImporting(false);
     }
@@ -917,29 +857,31 @@ export function SettingsModal({ isOpen, onClose, isFullPage = false }: SettingsM
   const updateAppearance = (updates: Partial<AppearanceSettings>) => {
     const newSettings = { ...appearance, ...updates };
     setAppearance(newSettings);
-    saveSettings(STORAGE_KEYS.APPEARANCE, newSettings);
-    if (updates.theme) {
-      applyTheme(updates.theme);
-    }
+    settingsManager.set(STORAGE_KEYS.APPEARANCE, newSettings);
+    // Theme is applied via the useEffect above
   };
 
   const updateNotifications = (updates: Partial<NotificationSettings>) => {
     const newSettings = { ...notifications, ...updates };
     setNotifications(newSettings);
-    saveSettings(STORAGE_KEYS.NOTIFICATIONS, newSettings);
+    settingsManager.set(STORAGE_KEYS.NOTIFICATIONS, newSettings);
   };
 
   const updateAcademic = async (updates: Partial<AcademicSettings>) => {
     const newSettings = { ...academic, ...updates };
     setAcademic(newSettings);
-    saveSettings(STORAGE_KEYS.ACADEMIC, newSettings);
+    settingsManager.set(STORAGE_KEYS.ACADEMIC, newSettings);
 
     // If defaultTargetGrade changed, propagate to courses via IPC
     if (updates.defaultTargetGrade !== undefined) {
       try {
-        const result = await window.api?.setDefaultTargetGrade(updates.defaultTargetGrade);
+        const result = await window.api?.setDefaultTargetGrade(
+          updates.defaultTargetGrade
+        );
         if (result?.success) {
-          console.debug(`[Settings] Default target grade propagated to ${result.data?.updatedCourses ?? 0} courses`);
+          console.debug(
+            `[Settings] Default target grade propagated to ${result.data?.updatedCourses ?? 0} courses`
+          );
         }
       } catch (error) {
         console.error('[Settings] Failed to propagate default target grade:', error);
@@ -966,10 +908,12 @@ export function SettingsModal({ isOpen, onClose, isFullPage = false }: SettingsM
   };
 
   // Update course-specific settings
-  const updateCourseSpecificSettings = async (updates: Partial<{
-    autoAssignDueDate: number | null;
-    allowGuessedOverride: number;
-  }>) => {
+  const updateCourseSpecificSettings = async (
+    updates: Partial<{
+      autoAssignDueDate: number | null;
+      allowGuessedOverride: number;
+    }>
+  ) => {
     if (!selectedCourseId) return;
 
     const newSettings = { ...perCourseSyncSettings, ...updates };
@@ -995,47 +939,40 @@ export function SettingsModal({ isOpen, onClose, isFullPage = false }: SettingsM
   const updateFileExplorer = (updates: Partial<FileExplorerSettings>) => {
     const newSettings = { ...fileExplorer, ...updates };
     setFileExplorer(newSettings);
-    saveSettings(STORAGE_KEYS.FILE_EXPLORER, newSettings);
+    settingsManager.set(STORAGE_KEYS.FILE_EXPLORER, newSettings);
   };
 
   const updateCourseSettings = (updates: Partial<CourseSettings>) => {
     const newSettings = { ...courseSettings, ...updates };
     setCourseSettings(newSettings);
-    saveSettings(STORAGE_KEYS.COURSES, newSettings);
+    settingsManager.set(STORAGE_KEYS.COURSES, newSettings);
   };
 
   const updateCalendarSettings = (updates: Partial<CalendarSettings>) => {
-    console.log('[SettingsModal] updateCalendarSettings called with:', updates);
     const newSettings = { ...calendarSettings, ...updates };
-    console.log('[SettingsModal] New calendarSettings:', newSettings);
     setCalendarSettings(newSettings);
-    saveSettings(STORAGE_KEYS.CALENDAR, newSettings);
+    settingsManager.set(STORAGE_KEYS.CALENDAR, newSettings);
     // Also clear the user's view mode preference so next time they open calendar, it uses the new default
     if (updates.defaultViewMode) {
-      console.log('[SettingsModal] Clearing viewMode:calendar to apply new default');
       localStorage.removeItem('viewMode:calendar');
     }
-    // Verify it was saved
-    const verify = localStorage.getItem(STORAGE_KEYS.CALENDAR);
-    console.log('[SettingsModal] Verified calendarSettings in localStorage:', verify);
   };
 
   const updateContentSettings = (updates: Partial<ContentSettings>) => {
     const newSettings = { ...contentSettings, ...updates };
     setContentSettings(newSettings);
-    saveSettings(STORAGE_KEYS.CONTENT, newSettings);
+    settingsManager.set(STORAGE_KEYS.CONTENT, newSettings);
   };
 
   const updateLandingPage = (path: string) => {
     setLandingPage(path);
-    try {
-      localStorage.setItem(STORAGE_KEYS.LANDING_PAGE, path);
-    } catch (e) {
-      console.error('Failed to save landing page:', e);
-    }
+    settingsManager.set(STORAGE_KEYS.LANDING_PAGE, path);
   };
 
-  const handleToggleCourseVisibility = async (courseId: number, currentlyHidden: boolean) => {
+  const handleToggleCourseVisibility = async (
+    courseId: number,
+    currentlyHidden: boolean
+  ) => {
     await window.api.dispatch('UpdateCoursePreferences', {
       courseId,
       preferences: { isHidden: !currentlyHidden },
@@ -1064,7 +1001,18 @@ export function SettingsModal({ isOpen, onClose, isFullPage = false }: SettingsM
     } catch {
       // ignore
     }
-    return ['general', 'dashboard', 'canvas', 'sync', 'academic', 'courses', 'calendar', 'files', 'appearance', 'notifications'];
+    return [
+      'general',
+      'dashboard',
+      'canvas',
+      'sync',
+      'academic',
+      'courses',
+      'calendar',
+      'files',
+      'appearance',
+      'notifications',
+    ];
   });
 
   const handleTabDragStart = useCallback((e: React.DragEvent, tabId: SettingsSection) => {
@@ -1072,28 +1020,34 @@ export function SettingsModal({ isOpen, onClose, isFullPage = false }: SettingsM
     setDraggedTab(tabId);
   }, []);
 
-  const handleTabDragOver = useCallback((e: React.DragEvent, tabId: SettingsSection) => {
-    e.preventDefault();
-    if (tabId !== draggedTab) setDragOverTab(tabId);
-  }, [draggedTab]);
+  const handleTabDragOver = useCallback(
+    (e: React.DragEvent, tabId: SettingsSection) => {
+      e.preventDefault();
+      if (tabId !== draggedTab) setDragOverTab(tabId);
+    },
+    [draggedTab]
+  );
 
-  const handleTabDrop = useCallback((e: React.DragEvent, targetTab: SettingsSection) => {
-    e.preventDefault();
-    if (!draggedTab || draggedTab === targetTab) {
+  const handleTabDrop = useCallback(
+    (e: React.DragEvent, targetTab: SettingsSection) => {
+      e.preventDefault();
+      if (!draggedTab || draggedTab === targetTab) {
+        setDraggedTab(null);
+        setDragOverTab(null);
+        return;
+      }
+      const newOrder = [...tabOrder];
+      const draggedIdx = newOrder.indexOf(draggedTab);
+      const targetIdx = newOrder.indexOf(targetTab);
+      newOrder[draggedIdx] = targetTab;
+      newOrder[targetIdx] = draggedTab;
+      setTabOrder(newOrder);
+      localStorage.setItem('settingsTabOrder', JSON.stringify(newOrder));
       setDraggedTab(null);
       setDragOverTab(null);
-      return;
-    }
-    const newOrder = [...tabOrder];
-    const draggedIdx = newOrder.indexOf(draggedTab);
-    const targetIdx = newOrder.indexOf(targetTab);
-    newOrder[draggedIdx] = targetTab;
-    newOrder[targetIdx] = draggedTab;
-    setTabOrder(newOrder);
-    localStorage.setItem('settingsTabOrder', JSON.stringify(newOrder));
-    setDraggedTab(null);
-    setDragOverTab(null);
-  }, [draggedTab, tabOrder]);
+    },
+    [draggedTab, tabOrder]
+  );
 
   if (!isOpen) return null;
 
@@ -1134,1127 +1088,1335 @@ export function SettingsModal({ isOpen, onClose, isFullPage = false }: SettingsM
         )}
       </div>
 
-        <div style={styles.content}>
-          {/* Sidebar */}
-          <nav style={styles.sidebar}>
-            {sections.map((section) => {
-              const Icon = section.icon;
-              const isActive = activeSection === section.id;
-              const isDragging = draggedTab === section.id;
-              const isDragOver = dragOverTab === section.id;
-              return (
-                <button
-                  key={section.id}
-                  draggable
-                  onDragStart={(e) => handleTabDragStart(e, section.id)}
-                  onDragEnd={() => { setDraggedTab(null); setDragOverTab(null); }}
-                  onDragOver={(e) => handleTabDragOver(e, section.id)}
-                  onDragLeave={() => setDragOverTab(null)}
-                  onDrop={(e) => handleTabDrop(e, section.id)}
-                  style={{
-                    ...styles.sidebarItem,
-                    ...(isActive ? styles.sidebarItemActive : {}),
-                    opacity: isDragging ? 0.5 : 1,
-                    boxShadow: isDragOver ? 'inset 0 0 0 2px var(--color-blue)' : 'none',
-                    transition: 'opacity 150ms ease, box-shadow 150ms ease, background-color var(--transition-fast)',
-                  }}
-                  onClick={() => setActiveSection(section.id)}
-                >
-                  <span style={styles.sidebarIcon}>
-                    <Icon size={18} />
-                  </span>
-                  <span>{section.label}</span>
-                </button>
-              );
-            })}
-          </nav>
+      <div style={styles.content}>
+        {/* Sidebar */}
+        <nav style={styles.sidebar}>
+          {sections.map((section) => {
+            const Icon = section.icon;
+            const isActive = activeSection === section.id;
+            const isDragging = draggedTab === section.id;
+            const isDragOver = dragOverTab === section.id;
+            return (
+              <button
+                key={section.id}
+                draggable
+                onDragStart={(e) => handleTabDragStart(e, section.id)}
+                onDragEnd={() => {
+                  setDraggedTab(null);
+                  setDragOverTab(null);
+                }}
+                onDragOver={(e) => handleTabDragOver(e, section.id)}
+                onDragLeave={() => setDragOverTab(null)}
+                onDrop={(e) => handleTabDrop(e, section.id)}
+                style={{
+                  ...styles.sidebarItem,
+                  ...(isActive ? styles.sidebarItemActive : {}),
+                  opacity: isDragging ? 0.5 : 1,
+                  boxShadow: isDragOver ? 'inset 0 0 0 2px var(--color-blue)' : 'none',
+                  transition:
+                    'opacity 150ms ease, box-shadow 150ms ease, background-color var(--transition-fast)',
+                }}
+                onClick={() => setActiveSection(section.id)}
+              >
+                <span style={styles.sidebarIcon}>
+                  <Icon size={18} />
+                </span>
+                <span>{section.label}</span>
+              </button>
+            );
+          })}
+        </nav>
 
-          {/* Main content - fixed height */}
-          <div style={styles.main}>
-            {activeSection === 'general' && (
-              <div style={styles.section}>
-                <h3 style={styles.sectionTitle}>General Settings</h3>
-                <p style={styles.sectionDesc}>
-                  Configure general application behavior.
-                </p>
+        {/* Main content - fixed height */}
+        <div style={styles.main}>
+          {activeSection === 'general' && (
+            <div style={styles.section}>
+              <h3 style={styles.sectionTitle}>General Settings</h3>
+              <p style={styles.sectionDesc}>Configure general application behavior.</p>
 
-                <div style={styles.field}>
-                  <label style={styles.label}>Landing page</label>
-                  <p style={styles.fieldDesc}>
-                    The page shown when the app launches.
-                  </p>
-                  <div style={styles.landingPageOptions}>
-                    {LANDING_PAGE_OPTIONS.map((option) => {
-                      const Icon = option.icon;
-                      const isActive = landingPage === option.value;
-                      return (
-                        <button
-                          key={option.value}
-                          style={{
-                            ...styles.landingPageOption,
-                            ...(isActive ? styles.landingPageOptionActive : {}),
-                          }}
-                          onClick={() => updateLandingPage(option.value)}
-                        >
-                          <Icon size={18} />
-                          <span>{option.label}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                <div style={styles.divider} />
-
-                <div style={styles.field}>
-                  <label style={styles.label}>Reset to Default Order</label>
-                  <p style={styles.fieldDesc}>
-                    Reset custom ordering for various UI elements. Drag-and-drop ordering is saved automatically.
-                  </p>
-                  <div style={styles.resetOrderGrid}>
-                    <button
-                      style={styles.resetOrderButton}
-                      onClick={() => {
-                        localStorage.removeItem('navItemOrder');
-                        window.location.reload();
-                      }}
-                    >
-                      <RotateCcw size={14} />
-                      Sidebar
-                    </button>
-                    <button
-                      style={styles.resetOrderButton}
-                      onClick={() => {
-                        localStorage.removeItem('dashboardSectionOrder');
-                        window.location.reload();
-                      }}
-                    >
-                      <RotateCcw size={14} />
-                      Dashboard
-                    </button>
-                    <button
-                      style={styles.resetOrderButton}
-                      onClick={() => {
-                        localStorage.removeItem('courseOrder');
-                        window.location.reload();
-                      }}
-                    >
-                      <RotateCcw size={14} />
-                      Courses
-                    </button>
-                    <button
-                      style={styles.resetOrderButton}
-                      onClick={() => {
-                        localStorage.removeItem('filesCourseOrder');
-                        localStorage.removeItem('folderOrder');
-                        window.location.reload();
-                      }}
-                    >
-                      <RotateCcw size={14} />
-                      Files
-                    </button>
-                    <button
-                      style={styles.resetOrderButton}
-                      onClick={() => {
-                        localStorage.removeItem('settingsTabOrder');
-                        window.location.reload();
-                      }}
-                    >
-                      <RotateCcw size={14} />
-                      Settings Tabs
-                    </button>
-                  </div>
-                </div>
-
-                <div style={styles.divider} />
-
-                <div style={styles.field}>
-                  <label style={styles.label}>
-                    <Database size={16} style={{ verticalAlign: 'middle', marginRight: '8px' }} />
-                    Data Export & Import
-                  </label>
-                  <p style={styles.fieldDesc}>
-                    Export your data for backup or import previously exported data.
-                  </p>
-                  <div style={styles.exportButtons}>
-                    <button
-                      style={styles.secondaryButton}
-                      onClick={handleExportDatabase}
-                      disabled={isExporting || isImporting}
-                    >
-                      {isExporting ? <Loader2 size={14} className="spin" /> : <Upload size={14} />}
-                      Export Database
-                    </button>
-                    <button
-                      style={styles.secondaryButton}
-                      onClick={handleImportDatabase}
-                      disabled={isExporting || isImporting}
-                    >
-                      {isImporting ? <Loader2 size={14} className="spin" /> : <Download size={14} />}
-                      Import Database
-                    </button>
-                    <button
-                      style={styles.secondaryButton}
-                      onClick={handleExportCourseData}
-                      disabled={isExporting || isImporting}
-                    >
-                      {isExporting ? <Loader2 size={14} className="spin" /> : <Upload size={14} />}
-                      Export Course Data (JSON)
-                    </button>
-                    <button
-                      style={styles.secondaryButton}
-                      onClick={handleImportCourseData}
-                      disabled={isExporting || isImporting}
-                    >
-                      {isImporting ? <Loader2 size={14} className="spin" /> : <Download size={14} />}
-                      Import Course Data (JSON)
-                    </button>
-                  </div>
-                  {exportMessage && (
-                    <div style={{
-                      ...styles.exportMessage,
-                      backgroundColor: exportMessage.type === 'success' ? 'var(--color-success-bg)' : 'var(--color-error-bg)',
-                      color: exportMessage.type === 'success' ? 'var(--color-success)' : 'var(--color-error)',
-                    }}>
-                      {exportMessage.text}
-                    </div>
-                  )}
-                </div>
-
-                <div style={styles.divider} />
-
-                <div style={styles.field}>
-                  <label style={styles.label}>Clear app data</label>
-                  <p style={styles.fieldDesc}>
-                    Delete all synced data (courses, tasks, files, announcements) and reset settings.
-                  </p>
-                  <label style={styles.checkboxLabel}>
-                    <input
-                      type="checkbox"
-                      checked={deleteTokenOnClear}
-                      onChange={(e) => setDeleteTokenOnClear(e.target.checked)}
-                      style={styles.checkbox}
-                    />
-                    Also delete Canvas API token (requires re-authentication)
-                  </label>
-                  <button
-                    style={styles.dangerButton}
-                    onClick={() => setShowClearDataConfirm(true)}
-                  >
-                    Clear All Data
-                  </button>
-                </div>
-
-                <ConfirmDialog
-                  isOpen={showClearDataConfirm}
-                  type="danger"
-                  title="Clear All App Data"
-                  message={deleteTokenOnClear
-                    ? "This will delete all synced data including courses, tasks, files, announcements, AND your Canvas API token. You will need to re-authenticate after this action. This action cannot be undone."
-                    : "This will delete all synced data including courses, tasks, files, and announcements. This action cannot be undone. Your Canvas connection will be preserved."}
-                  confirmText="Clear All Data"
-                  cancelText="Cancel"
-                  onCancel={() => {
-                    setShowClearDataConfirm(false);
-                    setDeleteTokenOnClear(false);
-                  }}
-                  onConfirm={async () => {
-                    setShowClearDataConfirm(false);
-                    try {
-                      // Clear database via IPC (optionally including token)
-                      // If deleteToken is true, main process sends app:reset event
-                      // which the store handles (clears localStorage + reloads)
-                      await window.api.clearAllData({ deleteToken: deleteTokenOnClear });
-
-                      if (!deleteTokenOnClear) {
-                        // Token preserved - manually clear localStorage but keep Canvas URL, then reload
-                        const savedCanvasUrl = localStorage.getItem('canvasUrl');
-                        localStorage.clear();
-                        if (savedCanvasUrl) {
-                          localStorage.setItem('canvasUrl', savedCanvasUrl);
-                        }
-                        window.location.reload();
-                      }
-                      // If deleteToken was true, the app:reset event handler will reload automatically
-                      setDeleteTokenOnClear(false);
-                    } catch (error) {
-                      console.error('Failed to clear data:', error);
-                    }
-                  }}
-                />
-              </div>
-            )}
-
-            {activeSection === 'dashboard' && (
-              <DashboardSettingsSection />
-            )}
-
-            {activeSection === 'canvas' && (
-              <div style={styles.section}>
-                <h3 style={styles.sectionTitle}>Canvas Connection</h3>
-                <p style={styles.sectionDesc}>
-                  Connect to your institution's Canvas LMS.
-                </p>
-
-                <div style={styles.field}>
-                  <label style={styles.label}>Canvas URL</label>
-                  <input
-                    type="text"
-                    value={canvasUrl}
-                    onChange={(e) => setCanvasUrl(e.target.value)}
-                    placeholder="https://your-institution.instructure.com"
-                    style={styles.input}
-                    disabled={isConnected}
-                  />
-                </div>
-
-                <div style={styles.statusRow}>
-                  <span style={styles.statusLabel}>Status:</span>
-                  {isConnected ? (
-                    <span style={styles.statusConnected}>
-                      <Check size={14} /> Connected
-                    </span>
-                  ) : (
-                    <span style={styles.statusDisconnected}>
-                      <AlertCircle size={14} /> Not Connected
-                    </span>
-                  )}
-                </div>
-
-                {connectionError && (
-                  <div style={styles.error}>{connectionError}</div>
-                )}
-
-                {tokenValidationResult.status && (
-                  <div style={{
-                    ...styles.validationResult,
-                    backgroundColor: tokenValidationResult.status === 'success'
-                      ? 'var(--color-success-bg)'
-                      : 'var(--color-error-bg)',
-                    color: tokenValidationResult.status === 'success'
-                      ? 'var(--color-success)'
-                      : 'var(--color-error)',
-                  }}>
-                    {tokenValidationResult.status === 'success' ? (
-                      <Check size={14} />
-                    ) : (
-                      <AlertCircle size={14} />
-                    )}
-                    {tokenValidationResult.message}
-                  </div>
-                )}
-
-                <div style={styles.buttonRow}>
-                  {isConnected ? (
-                    <>
+              <div style={styles.field}>
+                <label style={styles.label}>Landing page</label>
+                <p style={styles.fieldDesc}>The page shown when the app launches.</p>
+                <div style={styles.landingPageOptions}>
+                  {LANDING_PAGE_OPTIONS.map((option) => {
+                    const Icon = option.icon;
+                    const isActive = landingPage === option.value;
+                    return (
                       <button
-                        style={{
-                          ...styles.secondaryButton,
-                          opacity: isValidatingToken ? 0.6 : 1,
-                        }}
-                        onClick={handleValidateToken}
-                        disabled={isValidatingToken}
-                      >
-                        {isValidatingToken ? (
-                          <>
-                            <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
-                            Validating...
-                          </>
-                        ) : (
-                          <>
-                            <ShieldCheck size={14} />
-                            Validate Token
-                          </>
-                        )}
-                      </button>
-                      <button
-                        style={styles.secondaryButton}
-                        onClick={handleOpenTokenReplace}
-                      >
-                        <Key size={14} />
-                        Replace Token
-                      </button>
-                      <button style={styles.dangerButton} onClick={handleDisconnect}>
-                        Disconnect
-                      </button>
-                    </>
-                  ) : (
-                    <button
-                      style={{
-                        ...styles.primaryButton,
-                        opacity: isConnecting || !canvasUrl ? 0.6 : 1,
-                      }}
-                      onClick={handleReconnect}
-                      disabled={isConnecting || !canvasUrl}
-                    >
-                      {isConnecting ? (
-                        <>
-                          <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} />
-                          Connecting...
-                        </>
-                      ) : (
-                        'Connect'
-                      )}
-                    </button>
-                  )}
-                </div>
-
-                {/* Token Replacement Modal */}
-                {showTokenReplaceModal && (
-                  <div style={styles.tokenModalOverlay} onClick={() => setShowTokenReplaceModal(false)}>
-                    <div style={styles.tokenModal} onClick={(e) => e.stopPropagation()}>
-                      <div style={styles.tokenModalHeader}>
-                        <h4 style={styles.tokenModalTitle}>Replace Canvas Token</h4>
-                        <button
-                          style={styles.tokenModalClose}
-                          onClick={() => setShowTokenReplaceModal(false)}
-                        >
-                          <X size={18} />
-                        </button>
-                      </div>
-
-                      <p style={styles.tokenModalDesc}>
-                        Enter your new Canvas API token. You can generate one from your Canvas account settings.
-                      </p>
-
-                      <div style={styles.field}>
-                        <label style={styles.label}>New Access Token</label>
-                        <input
-                          type="password"
-                          value={newToken}
-                          onChange={(e) => {
-                            setNewToken(e.target.value);
-                            setNewTokenValidation({ valid: null, userName: null, error: null });
-                          }}
-                          placeholder="Enter your new Canvas access token"
-                          style={styles.input}
-                          autoFocus
-                        />
-                      </div>
-
-                      {newTokenValidation.error && (
-                        <div style={styles.error}>
-                          <AlertCircle size={14} /> {newTokenValidation.error}
-                        </div>
-                      )}
-
-                      {newTokenValidation.valid && (
-                        <div style={styles.tokenSuccess}>
-                          <Check size={14} />
-                          Token valid{newTokenValidation.userName && ` for ${newTokenValidation.userName}`}
-                        </div>
-                      )}
-
-                      <div style={styles.tokenModalButtons}>
-                        {!newTokenValidation.valid ? (
-                          <button
-                            style={{
-                              ...styles.primaryButton,
-                              opacity: isValidatingNewToken || !newToken ? 0.6 : 1,
-                            }}
-                            onClick={handleValidateNewToken}
-                            disabled={isValidatingNewToken || !newToken}
-                          >
-                            {isValidatingNewToken ? (
-                              <>
-                                <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
-                                Validating...
-                              </>
-                            ) : (
-                              <>
-                                <ShieldCheck size={14} />
-                                Validate Token
-                              </>
-                            )}
-                          </button>
-                        ) : (
-                          <button
-                            style={{
-                              ...styles.primaryButton,
-                              opacity: isReplacingToken ? 0.6 : 1,
-                            }}
-                            onClick={handleReplaceToken}
-                            disabled={isReplacingToken}
-                          >
-                            {isReplacingToken ? (
-                              <>
-                                <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
-                                Replacing...
-                              </>
-                            ) : (
-                              <>
-                                <Key size={14} />
-                                Replace Token
-                              </>
-                            )}
-                          </button>
-                        )}
-                        <button
-                          style={styles.cancelButton}
-                          onClick={() => setShowTokenReplaceModal(false)}
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {activeSection === 'sync' && (
-              <div style={styles.section}>
-                <h3 style={styles.sectionTitle}>Sync Preferences</h3>
-                <p style={styles.sectionDesc}>
-                  Configure automatic data synchronization.
-                </p>
-
-                <div style={styles.field}>
-                  <label style={styles.label}>Auto-sync interval</label>
-                  <p style={styles.fieldDescription}>
-                    How often to automatically sync data from Canvas in the background
-                  </p>
-                  <select
-                    value={syncPrefs.autoSyncInterval}
-                    onChange={(e) => {
-                      const interval = Number(e.target.value);
-                      updateSyncPrefs({
-                        autoSyncInterval: interval,
-                        autoSyncEnabled: interval > 0,
-                      });
-                    }}
-                    style={styles.select}
-                  >
-                    <option value={0}>Never (manual sync only)</option>
-                    <option value={15}>Every 15 minutes</option>
-                    <option value={30}>Every 30 minutes</option>
-                    <option value={60}>Every hour</option>
-                    <option value={120}>Every 2 hours</option>
-                  </select>
-                </div>
-
-                <div style={styles.divider} />
-                <div style={styles.subsectionTitle}>Data to sync</div>
-
-                <ToggleRow
-                  label="Files"
-                  description="Course files and folders"
-                  checked={syncPrefs.syncFiles}
-                  onChange={() => updateSyncPrefs({ syncFiles: !syncPrefs.syncFiles })}
-                />
-
-                <ToggleRow
-                  label="Announcements"
-                  description="Course announcements"
-                  checked={syncPrefs.syncAnnouncements}
-                  onChange={() => updateSyncPrefs({ syncAnnouncements: !syncPrefs.syncAnnouncements })}
-                />
-
-                <div style={styles.divider} />
-                <div style={styles.subsectionTitle}>Task defaults</div>
-
-                <ToggleRow
-                  label="Auto-assign due date"
-                  description="Set today 23:59 as due date for coursework without one. You can override this per task."
-                  checked={syncPrefs.autoAssignDueDate}
-                  onChange={() => updateSyncPrefs({ autoAssignDueDate: !syncPrefs.autoAssignDueDate })}
-                />
-
-                <div style={styles.divider} />
-                <div style={styles.subsectionTitle}>Offline content</div>
-
-                <ToggleRow
-                  label="Save HTML content"
-                  description="Download pages, assignments, and announcements as HTML files for offline viewing"
-                  checked={syncPrefs.saveHtmlContent}
-                  onChange={() => updateSyncPrefs({ saveHtmlContent: !syncPrefs.saveHtmlContent })}
-                />
-
-                {syncPrefs.saveHtmlContent && (
-                  <>
-                    <div style={styles.field}>
-                      <label style={styles.label}>URL handling</label>
-                      <p style={styles.fieldDesc}>
-                        How to handle links to images and files in HTML content.
-                      </p>
-                      <select
-                        value={syncPrefs.htmlUrlRewriting}
-                        onChange={(e) => updateSyncPrefs({ htmlUrlRewriting: e.target.value as 'local' | 'original' })}
-                        style={styles.select}
-                      >
-                        <option value="local">Rewrite for offline use (recommended)</option>
-                        <option value="original">Keep original Canvas URLs</option>
-                      </select>
-                    </div>
-
-                    <ToggleRow
-                      label="Download images"
-                      description="Download embedded images for offline access"
-                      checked={syncPrefs.downloadImages}
-                      onChange={() => updateSyncPrefs({ downloadImages: !syncPrefs.downloadImages })}
-                    />
-
-                    <ToggleRow
-                      label="Download linked files"
-                      description="Download files linked in content"
-                      checked={syncPrefs.downloadLinkedFiles}
-                      onChange={() => updateSyncPrefs({ downloadLinkedFiles: !syncPrefs.downloadLinkedFiles })}
-                    />
-                  </>
-                )}
-
-                <div style={styles.divider} />
-
-                <div style={styles.field}>
-                  <label style={styles.label}>Link click behavior</label>
-                  <p style={styles.fieldDesc}>
-                    How to handle clicks on links in announcements and course content.
-                  </p>
-                  <select
-                    value={contentSettings.linkBehavior}
-                    onChange={(e) => updateContentSettings({ linkBehavior: e.target.value as 'always-external' | 'prefer-local' })}
-                    style={styles.select}
-                  >
-                    <option value="always-external">Always open in browser</option>
-                    <option value="prefer-local">Open locally if downloaded, otherwise browser</option>
-                  </select>
-                </div>
-              </div>
-            )}
-
-            {activeSection === 'academic' && (
-              <div style={styles.section}>
-                <h3 style={styles.sectionTitle}>Academic Settings</h3>
-                <p style={styles.sectionDesc}>
-                  Configure grade targets and term preferences.
-                </p>
-
-                <div style={styles.field}>
-                  <label style={styles.label}>Default target grade</label>
-                  <p style={styles.fieldDesc}>
-                    Applied to new courses. Individual course targets can be overridden.
-                  </p>
-                  <div style={styles.gradeInputRow}>
-                    <input
-                      type="range"
-                      min="50"
-                      max="100"
-                      step="1"
-                      value={academic.defaultTargetGrade}
-                      onChange={(e) => updateAcademic({ defaultTargetGrade: Number(e.target.value) })}
-                      onKeyDown={(e) => {
-                        if (e.key === 'ArrowUp' || e.key === 'ArrowRight') {
-                          e.preventDefault();
-                          updateAcademic({ defaultTargetGrade: Math.min(100, academic.defaultTargetGrade + 1) });
-                        } else if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') {
-                          e.preventDefault();
-                          updateAcademic({ defaultTargetGrade: Math.max(50, academic.defaultTargetGrade - 1) });
-                        }
-                      }}
-                      style={styles.slider}
-                    />
-                    <span style={styles.gradeValue}>{academic.defaultTargetGrade}%</span>
-                  </div>
-                </div>
-
-                <div style={styles.divider} />
-
-                <div style={styles.field}>
-                  <label style={styles.label}>Semester selection</label>
-                  <p style={styles.fieldDesc}>
-                    Choose which semester's courses to display.
-                  </p>
-                  <select
-                    value={academic.termSelection}
-                    onChange={(e) => {
-                      console.debug('[Settings] Semester selection changed:', e.target.value);
-                      updateAcademic({ termSelection: e.target.value });
-                    }}
-                    style={styles.select}
-                  >
-                    <option value="auto">Auto-detect current semester</option>
-                    <option value="all">Show all semesters</option>
-                    {enrollmentTerms.length > 0 && (
-                      <optgroup label="Available Semesters">
-                        {enrollmentTerms.map((term) => (
-                          <option key={term.externalId} value={term.externalId}>
-                            {term.name}
-                          </option>
-                        ))}
-                      </optgroup>
-                    )}
-                  </select>
-                  {enrollmentTerms.length === 0 && (
-                    <p style={{ ...styles.fieldDesc, marginTop: 'var(--space-2)', color: 'var(--color-warning)' }}>
-                      No semesters found. Sync courses to load available semesters.
-                    </p>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {activeSection === 'courses' && (
-              <div style={styles.section}>
-                <h3 style={styles.sectionTitle}>Course Settings</h3>
-                <p style={styles.sectionDesc}>
-                  Configure course display, visibility, and per-course sync behavior.
-                </p>
-
-                {/* Display Settings */}
-                <div style={styles.settingsCard}>
-                  <div style={styles.subsectionTitle}>Display</div>
-                  <div style={styles.settingsCardContent}>
-                    <div style={styles.field}>
-                      <label style={styles.label}>Default view mode</label>
-                      <div style={styles.viewModeToggle}>
-                        <button
-                          style={{
-                            ...styles.viewModeBtn,
-                            backgroundColor: courseSettings.defaultViewMode === 'grid' ? 'var(--color-navy)' : 'transparent',
-                            color: courseSettings.defaultViewMode === 'grid' ? 'white' : 'var(--text-secondary)',
-                          }}
-                          onClick={() => updateCourseSettings({ defaultViewMode: 'grid' })}
-                        >
-                          Grid
-                        </button>
-                        <button
-                          style={{
-                            ...styles.viewModeBtn,
-                            backgroundColor: courseSettings.defaultViewMode === 'list' ? 'var(--color-navy)' : 'transparent',
-                            color: courseSettings.defaultViewMode === 'list' ? 'white' : 'var(--text-secondary)',
-                          }}
-                          onClick={() => updateCourseSettings({ defaultViewMode: 'list' })}
-                        >
-                          List
-                        </button>
-                      </div>
-                    </div>
-
-                    <ToggleRow
-                      label="Show hidden courses by default"
-                      description="Display hidden courses in the courses list"
-                      checked={courseSettings.showHiddenByDefault}
-                      onChange={() => updateCourseSettings({ showHiddenByDefault: !courseSettings.showHiddenByDefault })}
-                    />
-                  </div>
-                </div>
-
-                {/* Per-Course Sync Settings */}
-                <div style={styles.settingsCard}>
-                  <div style={styles.subsectionTitle}>Per-Course Sync</div>
-                  <div style={styles.settingsCardContent}>
-                    <div style={styles.field}>
-                      <label style={styles.label}>Select course to configure</label>
-                      <select
-                        style={styles.select}
-                        value={selectedCourseId || ''}
-                        onChange={(e) => handleCourseSelect(e.target.value ? Number(e.target.value) : null)}
-                      >
-                        <option value="">-- Select a course --</option>
-                        {courses
-                          .filter(c => !c.isHidden)
-                          .sort((a, b) => a.name.localeCompare(b.name))
-                          .map(course => (
-                            <option key={course.id} value={course.id}>
-                              {course.code} - {course.name}
-                            </option>
-                          ))}
-                      </select>
-                    </div>
-
-                    {selectedCourseId && !isLoadingCourseSettings && (
-                      <>
-                        <div style={styles.inlineSettingsDivider} />
-
-                        <div style={styles.field}>
-                          <label style={styles.label}>Auto-fill due dates</label>
-                          <p style={styles.fieldDesc}>
-                            Assign today 23:59 to tasks without due dates
-                          </p>
-                          <div style={styles.inlineRadioGroup}>
-                            <label style={styles.inlineRadioLabel}>
-                              <input
-                                type="radio"
-                                name="autoAssignDueDate"
-                                checked={perCourseSyncSettings.autoAssignDueDate === null}
-                                onChange={() => updateCourseSpecificSettings({ autoAssignDueDate: null })}
-                                style={styles.radio}
-                              />
-                              <span>Use default</span>
-                            </label>
-                            <label style={styles.inlineRadioLabel}>
-                              <input
-                                type="radio"
-                                name="autoAssignDueDate"
-                                checked={perCourseSyncSettings.autoAssignDueDate === 1}
-                                onChange={() => updateCourseSpecificSettings({ autoAssignDueDate: 1 })}
-                                style={styles.radio}
-                              />
-                              <span>Enabled</span>
-                            </label>
-                            <label style={styles.inlineRadioLabel}>
-                              <input
-                                type="radio"
-                                name="autoAssignDueDate"
-                                checked={perCourseSyncSettings.autoAssignDueDate === 0}
-                                onChange={() => updateCourseSpecificSettings({ autoAssignDueDate: 0 })}
-                                style={styles.radio}
-                              />
-                              <span>Disabled</span>
-                            </label>
-                          </div>
-                        </div>
-
-                        <div style={styles.inlineSettingsDivider} />
-
-                        <div style={styles.inlineToggle}>
-                          <div style={styles.inlineToggleText}>
-                            <span style={styles.inlineToggleLabel}>Allow Canvas to override auto-filled values</span>
-                            <span style={styles.inlineToggleDesc}>Canvas updates will replace estimated values silently</span>
-                          </div>
-                          <button
-                            style={{
-                              ...styles.toggleSwitch,
-                              backgroundColor: perCourseSyncSettings.allowGuessedOverride === 1 ? 'var(--color-blue)' : 'var(--bg-tertiary)',
-                            }}
-                            onClick={() => updateCourseSpecificSettings({
-                              allowGuessedOverride: perCourseSyncSettings.allowGuessedOverride === 1 ? 0 : 1
-                            })}
-                          >
-                            <div style={{
-                              ...styles.toggleKnob,
-                              transform: perCourseSyncSettings.allowGuessedOverride === 1 ? 'translateX(20px)' : 'translateX(0)',
-                            }} />
-                          </button>
-                        </div>
-                      </>
-                    )}
-
-                    {selectedCourseId && isLoadingCourseSettings && (
-                      <div style={styles.loadingRow}>
-                        <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} />
-                        Loading course settings...
-                      </div>
-                    )}
-
-                    {!selectedCourseId && (
-                      <p style={styles.fieldDesc}>
-                        Select a course above to configure its sync settings
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                {/* Course Visibility */}
-                <div style={styles.settingsCard}>
-                  <div style={styles.subsectionTitle}>Visibility</div>
-                  <p style={styles.fieldDesc}>
-                    Hidden courses won't appear in Dashboard, Tasks, or Announcements.
-                  </p>
-                  <div style={styles.courseList}>
-                    {courses.length === 0 ? (
-                      <p style={styles.emptyText}>No courses synced yet.</p>
-                    ) : (
-                      courses.map((course: Course) => (
-                        <div key={course.id} style={styles.courseRow}>
-                          <div style={styles.courseInfo}>
-                            <span
-                              style={{
-                                ...styles.courseDot,
-                                backgroundColor: course.color || 'var(--color-navy)',
-                              }}
-                            />
-                            <div style={styles.courseText}>
-                              <span style={styles.courseCode}>{course.code}</span>
-                              <span style={styles.courseName}>{course.name}</span>
-                            </div>
-                          </div>
-                          <button
-                            style={{
-                              ...styles.visibilityBtn,
-                              color: course.isHidden ? 'var(--text-muted)' : 'var(--color-success)',
-                            }}
-                            onClick={() => handleToggleCourseVisibility(course.id, course.isHidden)}
-                            title={course.isHidden ? 'Show course' : 'Hide course'}
-                          >
-                            {course.isHidden ? <EyeOff size={18} /> : <Eye size={18} />}
-                          </button>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {activeSection === 'calendar' && (
-              <div style={styles.section}>
-                <h3 style={styles.sectionTitle}>Calendar Settings</h3>
-                <p style={styles.sectionDesc}>
-                  Configure calendar display preferences.
-                </p>
-
-                <div style={styles.field}>
-                  <label style={styles.label}>Default view</label>
-                  <p style={styles.fieldDesc}>
-                    The view shown when opening the calendar page.
-                  </p>
-                  <div style={styles.viewModeToggle}>
-                    <button
-                      style={{
-                        ...styles.viewModeBtn,
-                        backgroundColor: calendarSettings.defaultViewMode === 'month' ? 'var(--color-navy)' : 'transparent',
-                        color: calendarSettings.defaultViewMode === 'month' ? 'white' : 'var(--text-secondary)',
-                      }}
-                      onClick={() => updateCalendarSettings({ defaultViewMode: 'month' })}
-                    >
-                      Month
-                    </button>
-                    <button
-                      style={{
-                        ...styles.viewModeBtn,
-                        backgroundColor: calendarSettings.defaultViewMode === 'week' ? 'var(--color-navy)' : 'transparent',
-                        color: calendarSettings.defaultViewMode === 'week' ? 'white' : 'var(--text-secondary)',
-                      }}
-                      onClick={() => updateCalendarSettings({ defaultViewMode: 'week' })}
-                    >
-                      Week
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {activeSection === 'files' && (
-              <div style={styles.section}>
-                <h3 style={styles.sectionTitle}>File Explorer</h3>
-                <p style={styles.sectionDesc}>
-                  Configure file browser behavior and defaults.
-                </p>
-
-                <div style={styles.field}>
-                  <label style={styles.label}>Download location</label>
-                  <p style={styles.fieldDesc}>
-                    Where downloaded files are stored on your computer.
-                  </p>
-                  <div style={styles.downloadLocationRow}>
-                    <div style={styles.downloadLocationPath}>
-                      {currentDownloadPath || 'Loading...'}
-                    </div>
-                    <button
-                      style={styles.changeLocationBtn}
-                      onClick={handleChangeDownloadLocation}
-                    >
-                      <FolderOpen size={14} />
-                      Change
-                    </button>
-                  </div>
-                </div>
-
-                <div style={styles.divider} />
-
-                <div style={styles.field}>
-                  <label style={styles.label}>Default folder state</label>
-                  <p style={styles.fieldDesc}>
-                    How folders appear when opening the Files page.
-                  </p>
-                  <div style={styles.radioGroup}>
-                    {[
-                      { value: 'collapsed', label: 'All Collapsed', desc: 'Start with all folders closed' },
-                      { value: 'expanded', label: 'All Expanded', desc: 'Start with all folders open' },
-                      { value: 'remember', label: 'Remember State', desc: 'Restore last session\'s state' },
-                    ].map((option) => (
-                      <label
                         key={option.value}
                         style={{
-                          ...styles.radioOption,
-                          borderColor: fileExplorer.defaultState === option.value ? 'var(--color-blue)' : 'var(--border-default)',
-                          backgroundColor: fileExplorer.defaultState === option.value ? 'rgba(0, 127, 163, 0.1)' : 'transparent',
+                          ...styles.landingPageOption,
+                          ...(isActive ? styles.landingPageOptionActive : {}),
                         }}
+                        onClick={() => updateLandingPage(option.value)}
                       >
-                        <input
-                          type="radio"
-                          name="defaultState"
-                          value={option.value}
-                          checked={fileExplorer.defaultState === option.value}
-                          onChange={() => updateFileExplorer({ defaultState: option.value as FileExplorerSettings['defaultState'] })}
-                          style={styles.radioInput}
-                        />
-                        <div>
-                          <div style={styles.radioLabel}>{option.label}</div>
-                          <div style={styles.radioDesc}>{option.desc}</div>
-                        </div>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-
-                <div style={styles.divider} />
-
-                <div style={styles.field}>
-                  <label style={styles.label}>Default view mode</label>
-                  <div style={styles.viewModeToggle}>
-                    <button
-                      style={{
-                        ...styles.viewModeBtn,
-                        backgroundColor: fileExplorer.defaultViewMode === 'list' ? 'var(--color-navy)' : 'transparent',
-                        color: fileExplorer.defaultViewMode === 'list' ? 'white' : 'var(--text-secondary)',
-                      }}
-                      onClick={() => updateFileExplorer({ defaultViewMode: 'list' })}
-                    >
-                      List
-                    </button>
-                    <button
-                      style={{
-                        ...styles.viewModeBtn,
-                        backgroundColor: fileExplorer.defaultViewMode === 'grid' ? 'var(--color-navy)' : 'transparent',
-                        color: fileExplorer.defaultViewMode === 'grid' ? 'white' : 'var(--text-secondary)',
-                      }}
-                      onClick={() => updateFileExplorer({ defaultViewMode: 'grid' })}
-                    >
-                      Grid
-                    </button>
-                  </div>
+                        <Icon size={18} />
+                        <span>{option.label}</span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
-            )}
 
+              <div style={styles.divider} />
 
-            {activeSection === 'appearance' && (
-              <div style={styles.section}>
-                <h3 style={styles.sectionTitle}>Appearance</h3>
-                <p style={styles.sectionDesc}>
-                  Customize the look and feel.
+              <div style={styles.field}>
+                <label style={styles.label}>Reset to Default Order</label>
+                <p style={styles.fieldDesc}>
+                  Reset custom ordering for various UI elements. Drag-and-drop ordering is
+                  saved automatically.
                 </p>
-
-                <div style={styles.field}>
-                  <label style={styles.label}>Theme</label>
-                  <div style={styles.themeOptions}>
-                    {themeOptions.map((option) => {
-                      const Icon = option.icon;
-                      const isActive = appearance.theme === option.value;
-                      return (
-                        <button
-                          key={option.value}
-                          style={{
-                            ...styles.themeOption,
-                            ...(isActive ? styles.themeOptionActive : {}),
-                          }}
-                          onClick={() => updateAppearance({ theme: option.value })}
-                        >
-                          <Icon size={18} />
-                          <span>{option.label}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
+                <div style={styles.resetOrderGrid}>
+                  <button
+                    style={styles.resetOrderButton}
+                    onClick={() => {
+                      localStorage.removeItem('navItemOrder');
+                      window.location.reload();
+                    }}
+                  >
+                    <RotateCcw size={14} />
+                    Sidebar
+                  </button>
+                  <button
+                    style={styles.resetOrderButton}
+                    onClick={() => {
+                      localStorage.removeItem('dashboardSectionOrder');
+                      window.location.reload();
+                    }}
+                  >
+                    <RotateCcw size={14} />
+                    Dashboard
+                  </button>
+                  <button
+                    style={styles.resetOrderButton}
+                    onClick={() => {
+                      localStorage.removeItem('courseOrder');
+                      window.location.reload();
+                    }}
+                  >
+                    <RotateCcw size={14} />
+                    Courses
+                  </button>
+                  <button
+                    style={styles.resetOrderButton}
+                    onClick={() => {
+                      localStorage.removeItem('filesCourseOrder');
+                      localStorage.removeItem('folderOrder');
+                      window.location.reload();
+                    }}
+                  >
+                    <RotateCcw size={14} />
+                    Files
+                  </button>
+                  <button
+                    style={styles.resetOrderButton}
+                    onClick={() => {
+                      localStorage.removeItem('settingsTabOrder');
+                      window.location.reload();
+                    }}
+                  >
+                    <RotateCcw size={14} />
+                    Settings Tabs
+                  </button>
                 </div>
-
-                <ToggleRow
-                  label="Collapsed sidebar by default"
-                  description="Start with sidebar collapsed on launch"
-                  checked={appearance.sidebarCollapsed}
-                  onChange={() => updateAppearance({ sidebarCollapsed: !appearance.sidebarCollapsed })}
-                />
               </div>
-            )}
 
-            {activeSection === 'notifications' && (
-              <div style={styles.section}>
-                <h3 style={styles.sectionTitle}>Notifications</h3>
-                <p style={styles.sectionDesc}>
-                  Configure alerts and smart notifications.
+              <div style={styles.divider} />
+
+              <div style={styles.field}>
+                <label style={styles.label}>
+                  <Database
+                    size={16}
+                    style={{ verticalAlign: 'middle', marginRight: '8px' }}
+                  />
+                  Data Export & Import
+                </label>
+                <p style={styles.fieldDesc}>
+                  Export your data for backup or import previously exported data.
                 </p>
-
-                <ToggleRow
-                  label="Enable notifications"
-                  description="Show desktop notifications"
-                  checked={notifications.enabled}
-                  onChange={() => updateNotifications({ enabled: !notifications.enabled })}
-                />
-
-                {notifications.enabled && (
-                  <>
-                    <div style={styles.divider} />
-                    <div style={styles.subsectionTitle}>Alert types</div>
-
-                    <ToggleRow
-                      label="Priority alerts"
-                      description="Intelligence flags high-priority or at-risk tasks"
-                      checked={notifications.priorityAlerts}
-                      onChange={() => updateNotifications({ priorityAlerts: !notifications.priorityAlerts })}
-                    />
-
-                    <ToggleRow
-                      label="Sync status"
-                      description="Notify on sync success or failure"
-                      checked={notifications.syncStatus}
-                      onChange={() => updateNotifications({ syncStatus: !notifications.syncStatus })}
-                    />
-
-                    <ToggleRow
-                      label="Due date reminders"
-                      description="Smart reminders before assignments are due"
-                      checked={notifications.dueDateReminders}
-                      onChange={() => updateNotifications({ dueDateReminders: !notifications.dueDateReminders })}
-                    />
-
-                    <ToggleRow
-                      label="Grade alerts"
-                      description="Notify when new grades are posted"
-                      checked={notifications.gradeAlerts}
-                      onChange={() => updateNotifications({ gradeAlerts: !notifications.gradeAlerts })}
-                    />
-
-                    <div style={styles.divider} />
-                    <div style={styles.subsectionTitle}>Intelligence alerts</div>
-
-                    <ToggleRow
-                      label="Workload predictions"
-                      description="AI predicts busy periods and suggests planning"
-                      checked={notifications.workloadPredictions}
-                      onChange={() => updateNotifications({ workloadPredictions: !notifications.workloadPredictions })}
-                    />
-
-                    <ToggleRow
-                      label="Risk warnings"
-                      description="Alert when predicted time exceeds remaining time"
-                      checked={notifications.riskWarnings}
-                      onChange={() => updateNotifications({ riskWarnings: !notifications.riskWarnings })}
-                    />
-
-                    <div style={styles.divider} />
-                    <div style={styles.subsectionTitle}>Smart quiet mode</div>
-                    <p style={styles.quietModeDesc}>
-                      Automatically suppress notifications when:
-                    </p>
-
-                    <ToggleRow
-                      label="Device unplugged"
-                      description="Pause when on battery power"
-                      checked={notifications.quietWhenUnplugged}
-                      onChange={() => updateNotifications({ quietWhenUnplugged: !notifications.quietWhenUnplugged })}
-                    />
-
-                    <ToggleRow
-                      label="Fullscreen mode"
-                      description="Pause during presentations or focus sessions"
-                      checked={notifications.quietWhenFullscreen}
-                      onChange={() => updateNotifications({ quietWhenFullscreen: !notifications.quietWhenFullscreen })}
-                    />
-
-                    <ToggleRow
-                      label="Busy or Exam status"
-                      description="Pause when inferred status is Busy or Exam"
-                      checked={notifications.quietWhenBusy}
-                      onChange={() => updateNotifications({ quietWhenBusy: !notifications.quietWhenBusy })}
-                    />
-                  </>
+                <div style={styles.exportButtons}>
+                  <button
+                    style={styles.secondaryButton}
+                    onClick={handleExportDatabase}
+                    disabled={isExporting || isImporting}
+                  >
+                    {isExporting ? (
+                      <Loader2 size={14} className="spin" />
+                    ) : (
+                      <Upload size={14} />
+                    )}
+                    Export Database
+                  </button>
+                  <button
+                    style={styles.secondaryButton}
+                    onClick={handleImportDatabase}
+                    disabled={isExporting || isImporting}
+                  >
+                    {isImporting ? (
+                      <Loader2 size={14} className="spin" />
+                    ) : (
+                      <Download size={14} />
+                    )}
+                    Import Database
+                  </button>
+                  <button
+                    style={styles.secondaryButton}
+                    onClick={handleExportCourseData}
+                    disabled={isExporting || isImporting}
+                  >
+                    {isExporting ? (
+                      <Loader2 size={14} className="spin" />
+                    ) : (
+                      <Upload size={14} />
+                    )}
+                    Export Course Data (JSON)
+                  </button>
+                  <button
+                    style={styles.secondaryButton}
+                    onClick={handleImportCourseData}
+                    disabled={isExporting || isImporting}
+                  >
+                    {isImporting ? (
+                      <Loader2 size={14} className="spin" />
+                    ) : (
+                      <Download size={14} />
+                    )}
+                    Import Course Data (JSON)
+                  </button>
+                </div>
+                {exportMessage && (
+                  <div
+                    style={{
+                      ...styles.exportMessage,
+                      backgroundColor:
+                        exportMessage.type === 'success'
+                          ? 'var(--color-success-bg)'
+                          : 'var(--color-error-bg)',
+                      color:
+                        exportMessage.type === 'success'
+                          ? 'var(--color-success)'
+                          : 'var(--color-error)',
+                    }}
+                  >
+                    {exportMessage.text}
+                  </div>
                 )}
               </div>
-            )}
-          </div>
+
+              <div style={styles.divider} />
+
+              <div style={styles.field}>
+                <label style={styles.label}>Clear app data</label>
+                <p style={styles.fieldDesc}>
+                  Delete all synced data (courses, tasks, files, announcements) and reset
+                  settings.
+                </p>
+                <label style={styles.checkboxLabel}>
+                  <input
+                    type="checkbox"
+                    checked={deleteTokenOnClear}
+                    onChange={(e) => setDeleteTokenOnClear(e.target.checked)}
+                    style={styles.checkbox}
+                  />
+                  Also delete Canvas API token (requires re-authentication)
+                </label>
+                <button
+                  style={styles.dangerButton}
+                  onClick={() => setShowClearDataConfirm(true)}
+                >
+                  Clear All Data
+                </button>
+              </div>
+
+              <ConfirmDialog
+                isOpen={showClearDataConfirm}
+                type="danger"
+                title="Clear All App Data"
+                message={
+                  deleteTokenOnClear
+                    ? 'This will delete all synced data including courses, tasks, files, announcements, AND your Canvas API token. You will need to re-authenticate after this action. This action cannot be undone.'
+                    : 'This will delete all synced data including courses, tasks, files, and announcements. This action cannot be undone. Your Canvas connection will be preserved.'
+                }
+                confirmText="Clear All Data"
+                cancelText="Cancel"
+                onCancel={() => {
+                  setShowClearDataConfirm(false);
+                  setDeleteTokenOnClear(false);
+                }}
+                onConfirm={async () => {
+                  setShowClearDataConfirm(false);
+                  try {
+                    // Clear database via IPC (optionally including token)
+                    // If deleteToken is true, main process sends app:reset event
+                    // which the store handles (clears localStorage + reloads)
+                    await window.api.clearAllData({ deleteToken: deleteTokenOnClear });
+
+                    if (!deleteTokenOnClear) {
+                      // Token preserved - manually clear localStorage but keep Canvas URL, then reload
+                      const savedCanvasUrl = localStorage.getItem('canvasUrl');
+                      localStorage.clear();
+                      if (savedCanvasUrl) {
+                        localStorage.setItem('canvasUrl', savedCanvasUrl);
+                      }
+                      window.location.reload();
+                    }
+                    // If deleteToken was true, the app:reset event handler will reload automatically
+                    setDeleteTokenOnClear(false);
+                  } catch (error) {
+                    console.error('Failed to clear data:', error);
+                  }
+                }}
+              />
+            </div>
+          )}
+
+          {activeSection === 'dashboard' && <DashboardSettingsSection />}
+
+          {activeSection === 'canvas' && (
+            <div style={styles.section}>
+              <h3 style={styles.sectionTitle}>Canvas Connection</h3>
+              <p style={styles.sectionDesc}>Connect to your institution's Canvas LMS.</p>
+
+              <div style={styles.field}>
+                <label style={styles.label}>Canvas URL</label>
+                <input
+                  type="text"
+                  value={canvasUrl}
+                  onChange={(e) => setCanvasUrl(e.target.value)}
+                  placeholder="https://your-institution.instructure.com"
+                  style={styles.input}
+                  disabled={isConnected}
+                />
+              </div>
+
+              <div style={styles.statusRow}>
+                <span style={styles.statusLabel}>Status:</span>
+                {isConnected ? (
+                  <span style={styles.statusConnected}>
+                    <Check size={14} /> Connected
+                  </span>
+                ) : (
+                  <span style={styles.statusDisconnected}>
+                    <AlertCircle size={14} /> Not Connected
+                  </span>
+                )}
+              </div>
+
+              {connectionError && <div style={styles.error}>{connectionError}</div>}
+
+              {tokenValidationResult.status && (
+                <div
+                  style={{
+                    ...styles.validationResult,
+                    backgroundColor:
+                      tokenValidationResult.status === 'success'
+                        ? 'var(--color-success-bg)'
+                        : 'var(--color-error-bg)',
+                    color:
+                      tokenValidationResult.status === 'success'
+                        ? 'var(--color-success)'
+                        : 'var(--color-error)',
+                  }}
+                >
+                  {tokenValidationResult.status === 'success' ? (
+                    <Check size={14} />
+                  ) : (
+                    <AlertCircle size={14} />
+                  )}
+                  {tokenValidationResult.message}
+                </div>
+              )}
+
+              <div style={styles.buttonRow}>
+                {isConnected ? (
+                  <>
+                    <button
+                      style={{
+                        ...styles.secondaryButton,
+                        opacity: isValidatingToken ? 0.6 : 1,
+                      }}
+                      onClick={handleValidateToken}
+                      disabled={isValidatingToken}
+                    >
+                      {isValidatingToken ? (
+                        <>
+                          <Loader2
+                            size={14}
+                            style={{ animation: 'spin 1s linear infinite' }}
+                          />
+                          Validating...
+                        </>
+                      ) : (
+                        <>
+                          <ShieldCheck size={14} />
+                          Validate Token
+                        </>
+                      )}
+                    </button>
+                    <button
+                      style={styles.secondaryButton}
+                      onClick={handleOpenTokenReplace}
+                    >
+                      <Key size={14} />
+                      Replace Token
+                    </button>
+                    <button style={styles.dangerButton} onClick={handleDisconnect}>
+                      Disconnect
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    style={{
+                      ...styles.primaryButton,
+                      opacity: isConnecting || !canvasUrl ? 0.6 : 1,
+                    }}
+                    onClick={handleReconnect}
+                    disabled={isConnecting || !canvasUrl}
+                  >
+                    {isConnecting ? (
+                      <>
+                        <Loader2
+                          size={16}
+                          style={{ animation: 'spin 1s linear infinite' }}
+                        />
+                        Connecting...
+                      </>
+                    ) : (
+                      'Connect'
+                    )}
+                  </button>
+                )}
+              </div>
+
+              {/* Token Replacement Modal */}
+              {showTokenReplaceModal && (
+                <div
+                  style={styles.tokenModalOverlay}
+                  onClick={() => setShowTokenReplaceModal(false)}
+                >
+                  <div style={styles.tokenModal} onClick={(e) => e.stopPropagation()}>
+                    <div style={styles.tokenModalHeader}>
+                      <h4 style={styles.tokenModalTitle}>Replace Canvas Token</h4>
+                      <button
+                        style={styles.tokenModalClose}
+                        onClick={() => setShowTokenReplaceModal(false)}
+                      >
+                        <X size={18} />
+                      </button>
+                    </div>
+
+                    <p style={styles.tokenModalDesc}>
+                      Enter your new Canvas API token. You can generate one from your
+                      Canvas account settings.
+                    </p>
+
+                    <div style={styles.field}>
+                      <label style={styles.label}>New Access Token</label>
+                      <input
+                        type="password"
+                        value={newToken}
+                        onChange={(e) => {
+                          setNewToken(e.target.value);
+                          setNewTokenValidation({
+                            valid: null,
+                            userName: null,
+                            error: null,
+                          });
+                        }}
+                        placeholder="Enter your new Canvas access token"
+                        style={styles.input}
+                        autoFocus
+                      />
+                    </div>
+
+                    {newTokenValidation.error && (
+                      <div style={styles.error}>
+                        <AlertCircle size={14} /> {newTokenValidation.error}
+                      </div>
+                    )}
+
+                    {newTokenValidation.valid && (
+                      <div style={styles.tokenSuccess}>
+                        <Check size={14} />
+                        Token valid
+                        {newTokenValidation.userName &&
+                          ` for ${newTokenValidation.userName}`}
+                      </div>
+                    )}
+
+                    <div style={styles.tokenModalButtons}>
+                      {!newTokenValidation.valid ? (
+                        <button
+                          style={{
+                            ...styles.primaryButton,
+                            opacity: isValidatingNewToken || !newToken ? 0.6 : 1,
+                          }}
+                          onClick={handleValidateNewToken}
+                          disabled={isValidatingNewToken || !newToken}
+                        >
+                          {isValidatingNewToken ? (
+                            <>
+                              <Loader2
+                                size={14}
+                                style={{ animation: 'spin 1s linear infinite' }}
+                              />
+                              Validating...
+                            </>
+                          ) : (
+                            <>
+                              <ShieldCheck size={14} />
+                              Validate Token
+                            </>
+                          )}
+                        </button>
+                      ) : (
+                        <button
+                          style={{
+                            ...styles.primaryButton,
+                            opacity: isReplacingToken ? 0.6 : 1,
+                          }}
+                          onClick={handleReplaceToken}
+                          disabled={isReplacingToken}
+                        >
+                          {isReplacingToken ? (
+                            <>
+                              <Loader2
+                                size={14}
+                                style={{ animation: 'spin 1s linear infinite' }}
+                              />
+                              Replacing...
+                            </>
+                          ) : (
+                            <>
+                              <Key size={14} />
+                              Replace Token
+                            </>
+                          )}
+                        </button>
+                      )}
+                      <button
+                        style={styles.cancelButton}
+                        onClick={() => setShowTokenReplaceModal(false)}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeSection === 'sync' && (
+            <div style={styles.section}>
+              <h3 style={styles.sectionTitle}>Sync Preferences</h3>
+              <p style={styles.sectionDesc}>Configure automatic data synchronization.</p>
+
+              <div style={styles.field}>
+                <label style={styles.label}>Auto-sync interval</label>
+                <p style={styles.fieldDescription}>
+                  How often to automatically sync data from Canvas in the background
+                </p>
+                <select
+                  value={syncPrefs.autoSyncInterval}
+                  onChange={(e) => {
+                    const interval = Number(e.target.value);
+                    updateSyncPrefs({
+                      autoSyncInterval: interval,
+                      autoSyncEnabled: interval > 0,
+                    });
+                  }}
+                  style={styles.select}
+                >
+                  <option value={0}>Never (manual sync only)</option>
+                  <option value={15}>Every 15 minutes</option>
+                  <option value={30}>Every 30 minutes</option>
+                  <option value={60}>Every hour</option>
+                  <option value={120}>Every 2 hours</option>
+                </select>
+              </div>
+
+              <div style={styles.divider} />
+              <div style={styles.subsectionTitle}>Data to sync</div>
+
+              <ToggleRow
+                label="Files"
+                description="Course files and folders"
+                checked={syncPrefs.syncFiles}
+                onChange={() => updateSyncPrefs({ syncFiles: !syncPrefs.syncFiles })}
+              />
+
+              <ToggleRow
+                label="Announcements"
+                description="Course announcements"
+                checked={syncPrefs.syncAnnouncements}
+                onChange={() =>
+                  updateSyncPrefs({ syncAnnouncements: !syncPrefs.syncAnnouncements })
+                }
+              />
+
+              <div style={styles.divider} />
+              <div style={styles.subsectionTitle}>Task defaults</div>
+
+              <ToggleRow
+                label="Auto-assign due date"
+                description="Set today 23:59 as due date for coursework without one. You can override this per task."
+                checked={syncPrefs.autoAssignDueDate}
+                onChange={() =>
+                  updateSyncPrefs({ autoAssignDueDate: !syncPrefs.autoAssignDueDate })
+                }
+              />
+
+              <div style={styles.divider} />
+              <div style={styles.subsectionTitle}>Offline content</div>
+
+              <ToggleRow
+                label="Save HTML content"
+                description="Download pages, assignments, and announcements as HTML files for offline viewing"
+                checked={syncPrefs.saveHtmlContent}
+                onChange={() =>
+                  updateSyncPrefs({ saveHtmlContent: !syncPrefs.saveHtmlContent })
+                }
+              />
+
+              {syncPrefs.saveHtmlContent && (
+                <>
+                  <div style={styles.field}>
+                    <label style={styles.label}>URL handling</label>
+                    <p style={styles.fieldDesc}>
+                      How to handle links to images and files in HTML content.
+                    </p>
+                    <select
+                      value={syncPrefs.htmlUrlRewriting}
+                      onChange={(e) =>
+                        updateSyncPrefs({
+                          htmlUrlRewriting: e.target.value as 'local' | 'original',
+                        })
+                      }
+                      style={styles.select}
+                    >
+                      <option value="local">Rewrite for offline use (recommended)</option>
+                      <option value="original">Keep original Canvas URLs</option>
+                    </select>
+                  </div>
+
+                  <ToggleRow
+                    label="Download images"
+                    description="Download embedded images for offline access"
+                    checked={syncPrefs.downloadImages}
+                    onChange={() =>
+                      updateSyncPrefs({ downloadImages: !syncPrefs.downloadImages })
+                    }
+                  />
+
+                  <ToggleRow
+                    label="Download linked files"
+                    description="Download files linked in content"
+                    checked={syncPrefs.downloadLinkedFiles}
+                    onChange={() =>
+                      updateSyncPrefs({
+                        downloadLinkedFiles: !syncPrefs.downloadLinkedFiles,
+                      })
+                    }
+                  />
+                </>
+              )}
+
+              <div style={styles.divider} />
+
+              <div style={styles.field}>
+                <label style={styles.label}>Link click behavior</label>
+                <p style={styles.fieldDesc}>
+                  How to handle clicks on links in announcements and course content.
+                </p>
+                <select
+                  value={contentSettings.linkBehavior}
+                  onChange={(e) =>
+                    updateContentSettings({
+                      linkBehavior: e.target.value as 'always-external' | 'prefer-local',
+                    })
+                  }
+                  style={styles.select}
+                >
+                  <option value="always-external">Always open in browser</option>
+                  <option value="prefer-local">
+                    Open locally if downloaded, otherwise browser
+                  </option>
+                </select>
+              </div>
+            </div>
+          )}
+
+          {activeSection === 'academic' && (
+            <div style={styles.section}>
+              <h3 style={styles.sectionTitle}>Academic Settings</h3>
+              <p style={styles.sectionDesc}>
+                Configure grade targets and term preferences.
+              </p>
+
+              <div style={styles.field}>
+                <label style={styles.label}>Default target grade</label>
+                <p style={styles.fieldDesc}>
+                  Applied to new courses. Individual course targets can be overridden.
+                </p>
+                <div style={styles.gradeInputRow}>
+                  <input
+                    type="range"
+                    min="50"
+                    max="100"
+                    step="1"
+                    value={academic.defaultTargetGrade}
+                    onChange={(e) =>
+                      updateAcademic({ defaultTargetGrade: Number(e.target.value) })
+                    }
+                    onKeyDown={(e) => {
+                      if (e.key === 'ArrowUp' || e.key === 'ArrowRight') {
+                        e.preventDefault();
+                        updateAcademic({
+                          defaultTargetGrade: Math.min(
+                            100,
+                            academic.defaultTargetGrade + 1
+                          ),
+                        });
+                      } else if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') {
+                        e.preventDefault();
+                        updateAcademic({
+                          defaultTargetGrade: Math.max(
+                            50,
+                            academic.defaultTargetGrade - 1
+                          ),
+                        });
+                      }
+                    }}
+                    style={styles.slider}
+                  />
+                  <span style={styles.gradeValue}>{academic.defaultTargetGrade}%</span>
+                </div>
+              </div>
+
+              <div style={styles.divider} />
+
+              <div style={styles.field}>
+                <label style={styles.label}>Semester selection</label>
+                <p style={styles.fieldDesc}>
+                  Choose which semester's courses to display.
+                </p>
+                <select
+                  value={academic.termSelection}
+                  onChange={(e) => {
+                    console.debug(
+                      '[Settings] Semester selection changed:',
+                      e.target.value
+                    );
+                    updateAcademic({ termSelection: e.target.value });
+                  }}
+                  style={styles.select}
+                >
+                  <option value="auto">Auto-detect current semester</option>
+                  <option value="all">Show all semesters</option>
+                  {enrollmentTerms.length > 0 && (
+                    <optgroup label="Available Semesters">
+                      {enrollmentTerms.map((term) => (
+                        <option key={term.externalId} value={term.externalId}>
+                          {term.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                </select>
+                {enrollmentTerms.length === 0 && (
+                  <p
+                    style={{
+                      ...styles.fieldDesc,
+                      marginTop: 'var(--space-2)',
+                      color: 'var(--color-warning)',
+                    }}
+                  >
+                    No semesters found. Sync courses to load available semesters.
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {activeSection === 'courses' && (
+            <div style={styles.section}>
+              <h3 style={styles.sectionTitle}>Course Settings</h3>
+              <p style={styles.sectionDesc}>
+                Configure course display, visibility, and per-course sync behavior.
+              </p>
+
+              {/* Display Settings */}
+              <div style={styles.settingsCard}>
+                <div style={styles.subsectionTitle}>Display</div>
+                <div style={styles.settingsCardContent}>
+                  <div style={styles.field}>
+                    <label style={styles.label}>Default view mode</label>
+                    <div style={styles.viewModeToggle}>
+                      <button
+                        style={{
+                          ...styles.viewModeBtn,
+                          backgroundColor:
+                            courseSettings.defaultViewMode === 'grid'
+                              ? 'var(--color-navy)'
+                              : 'transparent',
+                          color:
+                            courseSettings.defaultViewMode === 'grid'
+                              ? 'white'
+                              : 'var(--text-secondary)',
+                        }}
+                        onClick={() => updateCourseSettings({ defaultViewMode: 'grid' })}
+                      >
+                        Grid
+                      </button>
+                      <button
+                        style={{
+                          ...styles.viewModeBtn,
+                          backgroundColor:
+                            courseSettings.defaultViewMode === 'list'
+                              ? 'var(--color-navy)'
+                              : 'transparent',
+                          color:
+                            courseSettings.defaultViewMode === 'list'
+                              ? 'white'
+                              : 'var(--text-secondary)',
+                        }}
+                        onClick={() => updateCourseSettings({ defaultViewMode: 'list' })}
+                      >
+                        List
+                      </button>
+                    </div>
+                  </div>
+
+                  <ToggleRow
+                    label="Show hidden courses by default"
+                    description="Display hidden courses in the courses list"
+                    checked={courseSettings.showHiddenByDefault}
+                    onChange={() =>
+                      updateCourseSettings({
+                        showHiddenByDefault: !courseSettings.showHiddenByDefault,
+                      })
+                    }
+                  />
+                </div>
+              </div>
+
+              {/* Per-Course Sync Settings */}
+              <div style={styles.settingsCard}>
+                <div style={styles.subsectionTitle}>Per-Course Sync</div>
+                <div style={styles.settingsCardContent}>
+                  <div style={styles.field}>
+                    <label style={styles.label}>Select course to configure</label>
+                    <select
+                      style={styles.select}
+                      value={selectedCourseId || ''}
+                      onChange={(e) =>
+                        handleCourseSelect(e.target.value ? Number(e.target.value) : null)
+                      }
+                    >
+                      <option value="">-- Select a course --</option>
+                      {courses
+                        .filter((c) => !c.isHidden)
+                        .sort((a, b) => a.name.localeCompare(b.name))
+                        .map((course) => (
+                          <option key={course.id} value={course.id}>
+                            {course.code} - {course.name}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+
+                  {selectedCourseId && !isLoadingCourseSettings && (
+                    <>
+                      <div style={styles.inlineSettingsDivider} />
+
+                      <div style={styles.field}>
+                        <label style={styles.label}>Auto-fill due dates</label>
+                        <p style={styles.fieldDesc}>
+                          Assign today 23:59 to tasks without due dates
+                        </p>
+                        <div style={styles.inlineRadioGroup}>
+                          <label style={styles.inlineRadioLabel}>
+                            <input
+                              type="radio"
+                              name="autoAssignDueDate"
+                              checked={perCourseSyncSettings.autoAssignDueDate === null}
+                              onChange={() =>
+                                updateCourseSpecificSettings({ autoAssignDueDate: null })
+                              }
+                              style={styles.radio}
+                            />
+                            <span>Use default</span>
+                          </label>
+                          <label style={styles.inlineRadioLabel}>
+                            <input
+                              type="radio"
+                              name="autoAssignDueDate"
+                              checked={perCourseSyncSettings.autoAssignDueDate === 1}
+                              onChange={() =>
+                                updateCourseSpecificSettings({ autoAssignDueDate: 1 })
+                              }
+                              style={styles.radio}
+                            />
+                            <span>Enabled</span>
+                          </label>
+                          <label style={styles.inlineRadioLabel}>
+                            <input
+                              type="radio"
+                              name="autoAssignDueDate"
+                              checked={perCourseSyncSettings.autoAssignDueDate === 0}
+                              onChange={() =>
+                                updateCourseSpecificSettings({ autoAssignDueDate: 0 })
+                              }
+                              style={styles.radio}
+                            />
+                            <span>Disabled</span>
+                          </label>
+                        </div>
+                      </div>
+
+                      <div style={styles.inlineSettingsDivider} />
+
+                      <div style={styles.inlineToggle}>
+                        <div style={styles.inlineToggleText}>
+                          <span style={styles.inlineToggleLabel}>
+                            Allow Canvas to override auto-filled values
+                          </span>
+                          <span style={styles.inlineToggleDesc}>
+                            Canvas updates will replace estimated values silently
+                          </span>
+                        </div>
+                        <button
+                          style={{
+                            ...styles.toggleSwitch,
+                            backgroundColor:
+                              perCourseSyncSettings.allowGuessedOverride === 1
+                                ? 'var(--color-blue)'
+                                : 'var(--bg-tertiary)',
+                          }}
+                          onClick={() =>
+                            updateCourseSpecificSettings({
+                              allowGuessedOverride:
+                                perCourseSyncSettings.allowGuessedOverride === 1 ? 0 : 1,
+                            })
+                          }
+                        >
+                          <div
+                            style={{
+                              ...styles.toggleKnob,
+                              transform:
+                                perCourseSyncSettings.allowGuessedOverride === 1
+                                  ? 'translateX(20px)'
+                                  : 'translateX(0)',
+                            }}
+                          />
+                        </button>
+                      </div>
+                    </>
+                  )}
+
+                  {selectedCourseId && isLoadingCourseSettings && (
+                    <div style={styles.loadingRow}>
+                      <Loader2
+                        size={16}
+                        style={{ animation: 'spin 1s linear infinite' }}
+                      />
+                      Loading course settings...
+                    </div>
+                  )}
+
+                  {!selectedCourseId && (
+                    <p style={styles.fieldDesc}>
+                      Select a course above to configure its sync settings
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* Course Visibility */}
+              <div style={styles.settingsCard}>
+                <div style={styles.subsectionTitle}>Visibility</div>
+                <p style={styles.fieldDesc}>
+                  Hidden courses won't appear in Dashboard, Tasks, or Announcements.
+                </p>
+                <div style={styles.courseList}>
+                  {courses.length === 0 ? (
+                    <p style={styles.emptyText}>No courses synced yet.</p>
+                  ) : (
+                    courses.map((course: Course) => (
+                      <div key={course.id} style={styles.courseRow}>
+                        <div style={styles.courseInfo}>
+                          <span
+                            style={{
+                              ...styles.courseDot,
+                              backgroundColor: course.color || 'var(--color-navy)',
+                            }}
+                          />
+                          <div style={styles.courseText}>
+                            <span style={styles.courseCode}>{course.code}</span>
+                            <span style={styles.courseName}>{course.name}</span>
+                          </div>
+                        </div>
+                        <button
+                          style={{
+                            ...styles.visibilityBtn,
+                            color: course.isHidden
+                              ? 'var(--text-muted)'
+                              : 'var(--color-success)',
+                          }}
+                          onClick={() =>
+                            handleToggleCourseVisibility(course.id, course.isHidden)
+                          }
+                          title={course.isHidden ? 'Show course' : 'Hide course'}
+                        >
+                          {course.isHidden ? <EyeOff size={18} /> : <Eye size={18} />}
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeSection === 'calendar' && (
+            <div style={styles.section}>
+              <h3 style={styles.sectionTitle}>Calendar Settings</h3>
+              <p style={styles.sectionDesc}>Configure calendar display preferences.</p>
+
+              <div style={styles.field}>
+                <label style={styles.label}>Default view</label>
+                <p style={styles.fieldDesc}>
+                  The view shown when opening the calendar page.
+                </p>
+                <div style={styles.viewModeToggle}>
+                  <button
+                    style={{
+                      ...styles.viewModeBtn,
+                      backgroundColor:
+                        calendarSettings.defaultViewMode === 'month'
+                          ? 'var(--color-navy)'
+                          : 'transparent',
+                      color:
+                        calendarSettings.defaultViewMode === 'month'
+                          ? 'white'
+                          : 'var(--text-secondary)',
+                    }}
+                    onClick={() => updateCalendarSettings({ defaultViewMode: 'month' })}
+                  >
+                    Month
+                  </button>
+                  <button
+                    style={{
+                      ...styles.viewModeBtn,
+                      backgroundColor:
+                        calendarSettings.defaultViewMode === 'week'
+                          ? 'var(--color-navy)'
+                          : 'transparent',
+                      color:
+                        calendarSettings.defaultViewMode === 'week'
+                          ? 'white'
+                          : 'var(--text-secondary)',
+                    }}
+                    onClick={() => updateCalendarSettings({ defaultViewMode: 'week' })}
+                  >
+                    Week
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeSection === 'files' && (
+            <div style={styles.section}>
+              <h3 style={styles.sectionTitle}>File Explorer</h3>
+              <p style={styles.sectionDesc}>
+                Configure file browser behavior and defaults.
+              </p>
+
+              <div style={styles.field}>
+                <label style={styles.label}>Download location</label>
+                <p style={styles.fieldDesc}>
+                  Where downloaded files are stored on your computer.
+                </p>
+                <div style={styles.downloadLocationRow}>
+                  <div style={styles.downloadLocationPath}>
+                    {currentDownloadPath || 'Loading...'}
+                  </div>
+                  <button
+                    style={styles.changeLocationBtn}
+                    onClick={handleChangeDownloadLocation}
+                  >
+                    <FolderOpen size={14} />
+                    Change
+                  </button>
+                </div>
+              </div>
+
+              <div style={styles.divider} />
+
+              <div style={styles.field}>
+                <label style={styles.label}>Default folder state</label>
+                <p style={styles.fieldDesc}>
+                  How folders appear when opening the Files page.
+                </p>
+                <div style={styles.radioGroup}>
+                  {[
+                    {
+                      value: 'collapsed',
+                      label: 'All Collapsed',
+                      desc: 'Start with all folders closed',
+                    },
+                    {
+                      value: 'expanded',
+                      label: 'All Expanded',
+                      desc: 'Start with all folders open',
+                    },
+                    {
+                      value: 'remember',
+                      label: 'Remember State',
+                      desc: "Restore last session's state",
+                    },
+                  ].map((option) => (
+                    <label
+                      key={option.value}
+                      style={{
+                        ...styles.radioOption,
+                        borderColor:
+                          fileExplorer.defaultState === option.value
+                            ? 'var(--color-blue)'
+                            : 'var(--border-default)',
+                        backgroundColor:
+                          fileExplorer.defaultState === option.value
+                            ? 'rgba(0, 127, 163, 0.1)'
+                            : 'transparent',
+                      }}
+                    >
+                      <input
+                        type="radio"
+                        name="defaultState"
+                        value={option.value}
+                        checked={fileExplorer.defaultState === option.value}
+                        onChange={() =>
+                          updateFileExplorer({
+                            defaultState:
+                              option.value as FileExplorerSettings['defaultState'],
+                          })
+                        }
+                        style={styles.radioInput}
+                      />
+                      <div>
+                        <div style={styles.radioLabel}>{option.label}</div>
+                        <div style={styles.radioDesc}>{option.desc}</div>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div style={styles.divider} />
+
+              <div style={styles.field}>
+                <label style={styles.label}>Default view mode</label>
+                <div style={styles.viewModeToggle}>
+                  <button
+                    style={{
+                      ...styles.viewModeBtn,
+                      backgroundColor:
+                        fileExplorer.defaultViewMode === 'list'
+                          ? 'var(--color-navy)'
+                          : 'transparent',
+                      color:
+                        fileExplorer.defaultViewMode === 'list'
+                          ? 'white'
+                          : 'var(--text-secondary)',
+                    }}
+                    onClick={() => updateFileExplorer({ defaultViewMode: 'list' })}
+                  >
+                    List
+                  </button>
+                  <button
+                    style={{
+                      ...styles.viewModeBtn,
+                      backgroundColor:
+                        fileExplorer.defaultViewMode === 'grid'
+                          ? 'var(--color-navy)'
+                          : 'transparent',
+                      color:
+                        fileExplorer.defaultViewMode === 'grid'
+                          ? 'white'
+                          : 'var(--text-secondary)',
+                    }}
+                    onClick={() => updateFileExplorer({ defaultViewMode: 'grid' })}
+                  >
+                    Grid
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeSection === 'appearance' && (
+            <div style={styles.section}>
+              <h3 style={styles.sectionTitle}>Appearance</h3>
+              <p style={styles.sectionDesc}>Customize the look and feel.</p>
+
+              <div style={styles.field}>
+                <label style={styles.label}>Theme</label>
+                <div style={styles.themeOptions}>
+                  {themeOptions.map((option) => {
+                    const Icon = option.icon;
+                    const isActive = appearance.theme === option.value;
+                    return (
+                      <button
+                        key={option.value}
+                        style={{
+                          ...styles.themeOption,
+                          ...(isActive ? styles.themeOptionActive : {}),
+                        }}
+                        onClick={() => updateAppearance({ theme: option.value })}
+                      >
+                        <Icon size={18} />
+                        <span>{option.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <ToggleRow
+                label="Collapsed sidebar by default"
+                description="Start with sidebar collapsed on launch"
+                checked={appearance.sidebarCollapsed}
+                onChange={() =>
+                  updateAppearance({ sidebarCollapsed: !appearance.sidebarCollapsed })
+                }
+              />
+            </div>
+          )}
+
+          {activeSection === 'notifications' && (
+            <div style={styles.section}>
+              <h3 style={styles.sectionTitle}>Notifications</h3>
+              <p style={styles.sectionDesc}>Configure alerts and smart notifications.</p>
+
+              <ToggleRow
+                label="Enable notifications"
+                description="Show desktop notifications"
+                checked={notifications.enabled}
+                onChange={() => updateNotifications({ enabled: !notifications.enabled })}
+              />
+
+              {notifications.enabled && (
+                <>
+                  <div style={styles.divider} />
+                  <div style={styles.subsectionTitle}>Alert types</div>
+
+                  <ToggleRow
+                    label="Priority alerts"
+                    description="Intelligence flags high-priority or at-risk tasks"
+                    checked={notifications.priorityAlerts}
+                    onChange={() =>
+                      updateNotifications({
+                        priorityAlerts: !notifications.priorityAlerts,
+                      })
+                    }
+                  />
+
+                  <ToggleRow
+                    label="Sync status"
+                    description="Notify on sync success or failure"
+                    checked={notifications.syncStatus}
+                    onChange={() =>
+                      updateNotifications({ syncStatus: !notifications.syncStatus })
+                    }
+                  />
+
+                  <ToggleRow
+                    label="Due date reminders"
+                    description="Smart reminders before assignments are due"
+                    checked={notifications.dueDateReminders}
+                    onChange={() =>
+                      updateNotifications({
+                        dueDateReminders: !notifications.dueDateReminders,
+                      })
+                    }
+                  />
+
+                  <ToggleRow
+                    label="Grade alerts"
+                    description="Notify when new grades are posted"
+                    checked={notifications.gradeAlerts}
+                    onChange={() =>
+                      updateNotifications({ gradeAlerts: !notifications.gradeAlerts })
+                    }
+                  />
+
+                  <div style={styles.divider} />
+                  <div style={styles.subsectionTitle}>Intelligence alerts</div>
+
+                  <ToggleRow
+                    label="Workload predictions"
+                    description="AI predicts busy periods and suggests planning"
+                    checked={notifications.workloadPredictions}
+                    onChange={() =>
+                      updateNotifications({
+                        workloadPredictions: !notifications.workloadPredictions,
+                      })
+                    }
+                  />
+
+                  <ToggleRow
+                    label="Risk warnings"
+                    description="Alert when predicted time exceeds remaining time"
+                    checked={notifications.riskWarnings}
+                    onChange={() =>
+                      updateNotifications({ riskWarnings: !notifications.riskWarnings })
+                    }
+                  />
+
+                  <div style={styles.divider} />
+                  <div style={styles.subsectionTitle}>Smart quiet mode</div>
+                  <p style={styles.quietModeDesc}>
+                    Automatically suppress notifications when:
+                  </p>
+
+                  <ToggleRow
+                    label="Device unplugged"
+                    description="Pause when on battery power"
+                    checked={notifications.quietWhenUnplugged}
+                    onChange={() =>
+                      updateNotifications({
+                        quietWhenUnplugged: !notifications.quietWhenUnplugged,
+                      })
+                    }
+                  />
+
+                  <ToggleRow
+                    label="Fullscreen mode"
+                    description="Pause during presentations or focus sessions"
+                    checked={notifications.quietWhenFullscreen}
+                    onChange={() =>
+                      updateNotifications({
+                        quietWhenFullscreen: !notifications.quietWhenFullscreen,
+                      })
+                    }
+                  />
+
+                  <ToggleRow
+                    label="Busy or Exam status"
+                    description="Pause when inferred status is Busy or Exam"
+                    checked={notifications.quietWhenBusy}
+                    onChange={() =>
+                      updateNotifications({ quietWhenBusy: !notifications.quietWhenBusy })
+                    }
+                  />
+                </>
+              )}
+            </div>
+          )}
         </div>
+      </div>
     </>
   );
 

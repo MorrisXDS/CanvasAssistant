@@ -5,18 +5,10 @@
 
 import React, { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import {
-  ArrowLeft,
-  Clock,
-  AlertTriangle,
-  CheckCircle,
-  Circle,
-  Calendar,
-  Filter,
-  ChevronDown,
-} from 'lucide-react';
+import { ArrowLeft, Clock, AlertTriangle, CheckCircle, Circle } from 'lucide-react';
 import { Card, Badge, BadgeVariant } from '../shared';
 import { useStore } from '../../../l5-presentation/store';
+import { formatDueDate, getBadgeUrgency } from '../../constants';
 import type { Task, Course } from '../../../l5-presentation/types';
 
 type FilterType = 'all' | 'pending' | 'overdue' | 'completed';
@@ -41,39 +33,16 @@ function getDaysUntilDue(dueAt: string | null): number | null {
   return Math.round(diffMs / (1000 * 60 * 60 * 24));
 }
 
-function getUrgencyLevel(daysUntilDue: number | null): 'critical' | 'high' | 'medium' | 'low' {
-  if (daysUntilDue === null) return 'low';
-  if (daysUntilDue < 0) return 'critical';
-  if (daysUntilDue <= 1) return 'critical';
-  if (daysUntilDue <= 3) return 'high';
-  if (daysUntilDue <= 7) return 'medium';
-  return 'low';
-}
-
-function formatDueDate(dueAt: string | null, daysUntilDue: number | null): string {
-  if (!dueAt) return 'No due date';
-
-  if (daysUntilDue === null) return 'No due date';
-  if (daysUntilDue < 0) return `${Math.abs(daysUntilDue)}d overdue`;
-  if (daysUntilDue === 0) return 'Due today';
-  if (daysUntilDue === 1) return 'Due tomorrow';
-  if (daysUntilDue <= 7) return `Due in ${daysUntilDue} days`;
-
-  const date = new Date(dueAt);
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-}
-
 export function TasksPage() {
   const navigate = useNavigate();
   const { tasks, courses } = useStore();
   const [filter, setFilter] = useState<FilterType>('all');
-  const [showFilterDropdown, setShowFilterDropdown] = useState(false);
+  const [_showFilterDropdown, _setShowFilterDropdown] = useState(false);
 
-  const courseMap = useMemo(() => new Map(courses.map(c => [c.id, c])), [courses]);
+  const courseMap = useMemo(() => new Map(courses.map((c) => [c.id, c])), [courses]);
 
   // Process all tasks with course info
   const allTasks = useMemo(() => {
-    const now = new Date();
     const result: TaskWithCourse[] = [];
 
     for (const task of tasks) {
@@ -85,7 +54,7 @@ export function TasksPage() {
         task,
         course,
         daysUntilDue,
-        urgencyLevel: getUrgencyLevel(daysUntilDue),
+        urgencyLevel: getBadgeUrgency(daysUntilDue),
       });
     }
 
@@ -99,13 +68,17 @@ export function TasksPage() {
 
     switch (filter) {
       case 'pending':
-        filtered = allTasks.filter(t => !t.task.isCompleted && (!t.task.dueAt || new Date(t.task.dueAt) >= now));
+        filtered = allTasks.filter(
+          (t) => !t.task.isCompleted && (!t.task.dueAt || new Date(t.task.dueAt) >= now)
+        );
         break;
       case 'overdue':
-        filtered = allTasks.filter(t => !t.task.isCompleted && t.task.dueAt && new Date(t.task.dueAt) < now);
+        filtered = allTasks.filter(
+          (t) => !t.task.isCompleted && t.task.dueAt && new Date(t.task.dueAt) < now
+        );
         break;
       case 'completed':
-        filtered = allTasks.filter(t => t.task.isCompleted);
+        filtered = allTasks.filter((t) => t.task.isCompleted);
         break;
     }
 
@@ -127,9 +100,13 @@ export function TasksPage() {
     const now = new Date();
     return {
       all: allTasks.length,
-      pending: allTasks.filter(t => !t.task.isCompleted && (!t.task.dueAt || new Date(t.task.dueAt) >= now)).length,
-      overdue: allTasks.filter(t => !t.task.isCompleted && t.task.dueAt && new Date(t.task.dueAt) < now).length,
-      completed: allTasks.filter(t => t.task.isCompleted).length,
+      pending: allTasks.filter(
+        (t) => !t.task.isCompleted && (!t.task.dueAt || new Date(t.task.dueAt) >= now)
+      ).length,
+      overdue: allTasks.filter(
+        (t) => !t.task.isCompleted && t.task.dueAt && new Date(t.task.dueAt) < now
+      ).length,
+      completed: allTasks.filter((t) => t.task.isCompleted).length,
     };
   }, [allTasks]);
 
@@ -160,7 +137,7 @@ export function TasksPage() {
 
       {/* Filter Tabs */}
       <div style={styles.filterRow}>
-        {filterOptions.map(option => (
+        {filterOptions.map((option) => (
           <button
             key={option.value}
             style={{

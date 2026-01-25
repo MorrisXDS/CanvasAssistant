@@ -24,6 +24,7 @@ import {
   ScrollText,
 } from 'lucide-react';
 import styles from './FilesPage.module.css';
+import { formatFileSize } from '../../constants';
 
 // Types
 export interface FileAttachment {
@@ -73,7 +74,7 @@ export interface FilePage {
   published: boolean;
   lastSyncedAt: string | null;
   folderPath: string;
-  sizeBytes: null;  // Pages don't have a file size
+  sizeBytes: null; // Pages don't have a file size
   source: 'page';
 }
 
@@ -107,7 +108,10 @@ export type FileIconType =
   | 'generic';
 
 // Categorize file based on filename and folder path
-export function categorizeFile(filename: string, folderPath: string | null): ContentCategory {
+export function categorizeFile(
+  filename: string,
+  folderPath: string | null
+): ContentCategory {
   const lower = (filename + ' ' + (folderPath || '')).toLowerCase();
 
   if (/lecture|slides?|ppt|presentation/i.test(lower)) return 'Lecture Slides';
@@ -124,7 +128,10 @@ export function categorizeFile(filename: string, folderPath: string | null): Con
 }
 
 // Extract week/module context from folder path or filename
-export function extractModuleContext(folderPath: string | null, filename: string): string | null {
+export function extractModuleContext(
+  folderPath: string | null,
+  filename: string
+): string | null {
   const combined = (folderPath || '') + ' ' + filename;
 
   const weekMatch = combined.match(/week\s*(\d+)/i);
@@ -148,16 +155,26 @@ export function extractModuleContext(folderPath: string | null, filename: string
 // Get category color
 export function getCategoryColor(category: ContentCategory): string {
   switch (category) {
-    case 'Lecture Slides': return '#1976D2';
-    case 'Lab Manual': return '#7B1FA2';
-    case 'Assignment': return '#E65100';
-    case 'Tutorial': return '#00897B';
-    case 'Notes': return '#558B2F';
-    case 'Reading': return '#5D4037';
-    case 'Syllabus': return '#C62828';
-    case 'Solution': return '#00838F';
-    case 'Exam': return '#AD1457';
-    default: return '#616161';
+    case 'Lecture Slides':
+      return '#1976D2';
+    case 'Lab Manual':
+      return '#7B1FA2';
+    case 'Assignment':
+      return '#E65100';
+    case 'Tutorial':
+      return '#00897B';
+    case 'Notes':
+      return '#558B2F';
+    case 'Reading':
+      return '#5D4037';
+    case 'Syllabus':
+      return '#C62828';
+    case 'Solution':
+      return '#00838F';
+    case 'Exam':
+      return '#AD1457';
+    default:
+      return '#616161';
   }
 }
 
@@ -181,13 +198,8 @@ export function isFileDownloaded(file: FileItem): boolean {
   return file.localPath !== null;
 }
 
-// Format file size
-export function formatFileSize(bytes: number | null): string {
-  if (bytes === null) return '';
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
+// Re-export formatFileSize from constants for backwards compatibility
+export { formatFileSize } from '../../constants';
 
 // Determine file icon type based on content type and extension
 export function getFileIconType(file: FileItem): FileIconType {
@@ -196,11 +208,15 @@ export function getFileIconType(file: FileItem): FileIconType {
     return 'page';
   }
 
-  const contentType = 'contentType' in file ? file.contentType : ('mimeType' in file ? file.mimeType : null);
+  const contentType =
+    'contentType' in file ? file.contentType : 'mimeType' in file ? file.mimeType : null;
   const filename = getFileName(file);
   const ext = filename.split('.').pop()?.toLowerCase() || '';
 
-  if (contentType?.startsWith('image/') || ['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp'].includes(ext)) {
+  if (
+    contentType?.startsWith('image/') ||
+    ['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp'].includes(ext)
+  ) {
     return 'image';
   }
   if (contentType?.includes('pdf') || ext === 'pdf') {
@@ -235,17 +251,28 @@ export function getFileIcon(file: FileItem, size: number = 18): React.ReactNode 
   const iconType = getFileIconType(file);
 
   switch (iconType) {
-    case 'image': return <Image size={size} />;
-    case 'pdf': return <FileText size={size} />;
-    case 'spreadsheet': return <FileSpreadsheet size={size} />;
-    case 'presentation': return <Presentation size={size} />;
-    case 'document': return <FileText size={size} />;
-    case 'archive': return <Archive size={size} />;
-    case 'code': return <Code size={size} />;
-    case 'audio': return <Music size={size} />;
-    case 'video': return <Video size={size} />;
-    case 'page': return <ScrollText size={size} />;
-    default: return <File size={size} />;
+    case 'image':
+      return <Image size={size} />;
+    case 'pdf':
+      return <FileText size={size} />;
+    case 'spreadsheet':
+      return <FileSpreadsheet size={size} />;
+    case 'presentation':
+      return <Presentation size={size} />;
+    case 'document':
+      return <FileText size={size} />;
+    case 'archive':
+      return <Archive size={size} />;
+    case 'code':
+      return <Code size={size} />;
+    case 'audio':
+      return <Music size={size} />;
+    case 'video':
+      return <Video size={size} />;
+    case 'page':
+      return <ScrollText size={size} />;
+    default:
+      return <File size={size} />;
   }
 }
 
@@ -297,7 +324,8 @@ export function FileListItem({
 
   // Get metadata
   const filename = getFileName(file);
-  const folderPath = file.source === 'resource' ? (file as FileResource).folderPath : null;
+  const folderPath =
+    file.source === 'resource' ? (file as FileResource).folderPath : null;
   const category = categorizeFile(filename, folderPath);
   const moduleContext = extractModuleContext(folderPath, filename);
   const categoryColor = getCategoryColor(category);
@@ -320,7 +348,11 @@ export function FileListItem({
       className={styles.fileListItem}
       onDoubleClick={handleDoubleClick}
       onContextMenu={onContextMenu}
-      title={isDownloaded ? 'Double-click to open, right-click for options' : 'Double-click to download, right-click for options'}
+      title={
+        isDownloaded
+          ? 'Double-click to open, right-click for options'
+          : 'Double-click to download, right-click for options'
+      }
       role="row"
       tabIndex={0}
       onKeyDown={(e) => {
@@ -348,9 +380,7 @@ export function FileListItem({
         </button>
       )}
 
-      <div className={`${styles.fileIcon} ${iconClass}`}>
-        {getFileIcon(file, 16)}
-      </div>
+      <div className={`${styles.fileIcon} ${iconClass}`}>{getFileIcon(file, 16)}</div>
 
       <div className={styles.fileInfo}>
         <div className={styles.fileName}>{filename}</div>
@@ -404,16 +434,15 @@ export function FileListItem({
 
       <div className={styles.fileActions}>
         {isDownloading ? (
-          <Loader2
-            size={14}
-            className={styles.spinner}
-            color="var(--text-secondary)"
-          />
+          <Loader2 size={14} className={styles.spinner} color="var(--text-secondary)" />
         ) : isDownloaded ? (
           <>
             <button
               className={styles.fileActionButton}
-              onClick={(e) => { e.stopPropagation(); onOpen(); }}
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpen();
+              }}
               title="Open file"
               aria-label="Open file"
             >
@@ -422,7 +451,10 @@ export function FileListItem({
             {onShowInFolder && (
               <button
                 className={styles.fileActionButton}
-                onClick={(e) => { e.stopPropagation(); onShowInFolder(); }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onShowInFolder();
+                }}
                 title="Show in folder"
                 aria-label="Show in folder"
               >
@@ -433,7 +465,10 @@ export function FileListItem({
         ) : downloadStatus === 'failed' ? (
           <button
             className={styles.fileActionButton}
-            onClick={(e) => { e.stopPropagation(); onDownload(); }}
+            onClick={(e) => {
+              e.stopPropagation();
+              onDownload();
+            }}
             title="Retry download"
             aria-label="Retry download"
           >
@@ -442,7 +477,10 @@ export function FileListItem({
         ) : (
           <button
             className={styles.fileActionButton}
-            onClick={(e) => { e.stopPropagation(); onDownload(); }}
+            onClick={(e) => {
+              e.stopPropagation();
+              onDownload();
+            }}
             title="Download"
             aria-label="Download file"
           >

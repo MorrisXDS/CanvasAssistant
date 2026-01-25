@@ -30,9 +30,7 @@ import {
 export function useSetting<K extends keyof SettingsTypeMap>(
   key: K
 ): [SettingsTypeMap[K], (value: SettingsTypeMap[K]) => void] {
-  const [value, setValue] = useState<SettingsTypeMap[K]>(() =>
-    settingsManager.get(key)
-  );
+  const [value, setValue] = useState<SettingsTypeMap[K]>(() => settingsManager.get(key));
 
   // Subscribe to changes
   useEffect(() => {
@@ -67,7 +65,7 @@ export function useSetting<K extends keyof SettingsTypeMap>(
 export function useSettingUpdate<K extends keyof SettingsTypeMap>(
   key: K
 ): [SettingsTypeMap[K], (updates: Partial<SettingsTypeMap[K]>) => void] {
-  const [value, setValue] = useSetting(key);
+  const [value, _setValue] = useSetting(key);
 
   const update = useCallback(
     (updates: Partial<SettingsTypeMap[K]>) => {
@@ -123,10 +121,9 @@ export function useTheme(): UseThemeResult {
     return theme;
   }, [theme, systemPrefersDark]);
 
-  // Apply theme to DOM
+  // Apply theme to DOM using data-theme attribute (matches global.css selectors)
   useEffect(() => {
-    document.documentElement.classList.remove('light', 'dark');
-    document.documentElement.classList.add(effectiveTheme);
+    document.documentElement.setAttribute('data-theme', effectiveTheme);
   }, [effectiveTheme]);
 
   // Listen for system theme changes

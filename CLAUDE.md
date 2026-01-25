@@ -59,6 +59,14 @@ src/layers/
 - All React components: `src/layers/l6-ui/components/{Section}/*.tsx`
 - Tests mirror src: `tests/l{N}-{layer}/*.test.ts`
 
+### Application Paths (defined in `main.ts`)
+| Path | Location | Purpose |
+|------|----------|---------|
+| APP_DATA_DIR | `{userData}/CanvasAssistant` | App configuration and data |
+| DB_PATH | `{APP_DATA_DIR}/canvas.db` | Main SQLite database |
+| LOG_DIR | `{APP_DATA_DIR}/logs` | Application logs |
+| FILES_DIR | `{downloads}/CanvasAssistant` | Downloaded course files (user's Downloads folder) |
+
 ### Index Export Convention
 Each layer has `index.ts` that re-exports public API:
 ```typescript
@@ -253,3 +261,69 @@ Due to critical priority calculation bugs, L3 has additional requirements:
 ```
 
 **If tests fail after your changes**: FIX THE CODE OR TESTS. Do not commit failing tests.
+
+## 8. Centralized Modules (Avoid Boilerplate)
+
+To reduce code duplication and ensure consistency, use these centralized modules instead of creating local implementations.
+
+### Settings Module (`src/layers/l5-presentation/settings/`)
+**Purpose:** Single source of truth for application settings with type-safe access, validation, and change events.
+
+| Export | Usage |
+|--------|-------|
+| `STORAGE_KEYS` | All localStorage key constants |
+| `settingsManager` | Get/set settings with Zod validation |
+| `useSetting(key)` | React hook for single setting with reactive updates |
+| `useTheme()` | Theme management with automatic DOM updates |
+| `useSidebarState()` | Sidebar collapsed state hook |
+| `useNavOrder()` | Navigation item order hook |
+| `useLandingPage()` | Landing page preference hook |
+| `DEFAULT_*` constants | Default values for all setting types |
+
+```typescript
+// DO THIS
+import { STORAGE_KEYS, settingsManager, useSetting } from '@/layers/l5-presentation/settings';
+const [prefs, setPrefs] = useSetting(STORAGE_KEYS.SYNC_PREFS);
+
+// NOT THIS (creates duplicate keys and inconsistent storage)
+const STORAGE_KEY = 'syncPreferences';
+const prefs = JSON.parse(localStorage.getItem(STORAGE_KEY));
+```
+
+### Formatters (`src/layers/l6-ui/constants/formatters.ts`)
+**Purpose:** Centralized formatting utilities for consistent display across the app.
+
+| Function | Usage |
+|----------|-------|
+| `formatTimeAgo(dateStr)` | "2h ago", "3d ago" |
+| `formatDueDate(dueAt, daysUntilDue)` | "Due today", "Due in 3 days" |
+| `formatFileSize(bytes)` | "1.5 MB", "300 KB" |
+| `truncateText(text, maxLength)` | Truncate with ellipsis |
+| `getBadgeUrgency(daysUntilDue)` | Badge variant: 'critical', 'high', 'medium', 'low' |
+| `getLetterGrade(grade)` | UofT grading scale: "A+", "B-", etc. |
+
+```typescript
+// DO THIS
+import { formatTimeAgo, formatDueDate } from '@/layers/l6-ui/constants';
+
+// NOT THIS (creates inconsistent formatting)
+function formatTimeAgo(dateStr: string) { /* local implementation */ }
+```
+
+### UI Primitives (`src/layers/l6-ui/components/primitives/`)
+**Purpose:** Reusable UI building blocks for consistent styling.
+
+| Component | Usage |
+|-----------|-------|
+| `Modal` | Modal dialogs with header, content, footer slots |
+| `Button` | Standard button with variants (primary, secondary, danger) |
+| `Input` | Form input with label, error, help text |
+| `Select` | Dropdown select with options |
+
+### When Adding New Features
+
+1. **Before creating local helpers:** Check if a centralized version exists
+2. **Settings/preferences:** Always use `settingsManager` and `STORAGE_KEYS`
+3. **Date/time formatting:** Always use `formatters.ts` functions
+4. **UI components:** Check `primitives/` before creating custom modals/buttons
+5. **If no centralized version exists:** Consider adding to the appropriate module if it will be reused

@@ -37,7 +37,7 @@ export const STORAGE_KEYS = {
   CALENDAR_VIEW_MODE: 'calendarViewMode',
 } as const;
 
-export type StorageKey = typeof STORAGE_KEYS[keyof typeof STORAGE_KEYS];
+export type StorageKey = (typeof STORAGE_KEYS)[keyof typeof STORAGE_KEYS];
 
 // =============================================================================
 // ZOD SCHEMAS - Validation schemas for settings objects
@@ -166,6 +166,7 @@ export const DEFAULT_ACADEMIC_SETTINGS: AcademicSettings = {
 export const DEFAULT_FILE_EXPLORER_SETTINGS: FileExplorerSettings = {
   defaultState: 'remember',
   defaultViewMode: 'list',
+  // null = use system default ({USER_DOWNLOADS}/CanvasAssistant)
   downloadLocation: null,
 };
 
@@ -192,13 +193,7 @@ export const DEFAULT_DASHBOARD_ORDER = [
 ];
 
 // Nav item order (default sidebar navigation)
-export const DEFAULT_NAV_ORDER = [
-  '/',
-  '/calendar',
-  '/tasks',
-  '/courses',
-  '/files',
-];
+export const DEFAULT_NAV_ORDER = ['/', '/calendar', '/tasks', '/courses', '/files'];
 
 // =============================================================================
 // SETTINGS TYPE MAP - Maps storage keys to their types and defaults

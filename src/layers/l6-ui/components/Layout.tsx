@@ -3,7 +3,7 @@
  * Application shell with collapsible sidebar navigation
  */
 
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import {
@@ -23,17 +23,19 @@ import {
   GripVertical,
   type LucideIcon,
 } from 'lucide-react';
-import { useStore, SyncResultSummary } from '../../l5-presentation/store';
+import { useStore } from '../../l5-presentation/store';
+import type { EnrollmentTerm } from '../../../shared/ipc-contract';
+import {
+  useSidebarState,
+  useNavOrder,
+  useLandingPage,
+} from '../../l5-presentation/settings';
+import { formatTimeAgo } from '../constants';
 import { TitleBar } from './TitleBar';
 import { SyncResultToast, SyncConflictModal } from './shared';
 
 // Debug flag - set to true only when debugging layout issues
 const DEBUG_LAYOUT = false;
-
-// Storage keys
-const SIDEBAR_COLLAPSED_KEY = 'sidebarCollapsed';
-const NAV_ORDER_KEY = 'navItemOrder';
-const LANDING_PAGE_KEY = 'landingPage';
 
 /** Navigation item configuration */
 interface NavItem {
@@ -51,30 +53,11 @@ const defaultNavItems: NavItem[] = [
   { id: 'settings', path: '/settings', label: 'Settings', icon: Settings },
 ];
 
-// Load nav order from localStorage
-function loadNavOrder(): string[] | null {
-  try {
-    const stored = localStorage.getItem(NAV_ORDER_KEY);
-    return stored ? JSON.parse(stored) : null;
-  } catch {
-    return null;
-  }
-}
-
-// Save nav order to localStorage
-function saveNavOrder(order: string[]): void {
-  try {
-    localStorage.setItem(NAV_ORDER_KEY, JSON.stringify(order));
-  } catch (e) {
-    console.error('Failed to save nav order:', e);
-  }
-}
-
 // Get ordered nav items based on saved order
-function getOrderedNavItems(savedOrder: string[] | null): NavItem[] {
-  if (!savedOrder) return defaultNavItems;
+function getOrderedNavItems(savedOrder: string[]): NavItem[] {
+  if (!savedOrder || savedOrder.length === 0) return defaultNavItems;
 
-  const itemMap = new Map(defaultNavItems.map(item => [item.id, item]));
+  const itemMap = new Map(defaultNavItems.map((item) => [item.id, item]));
   const ordered: NavItem[] = [];
 
   // Add items in saved order
@@ -94,44 +77,6 @@ function getOrderedNavItems(savedOrder: string[] | null): NavItem[] {
   return ordered;
 }
 
-// Load landing page from localStorage
-export function loadLandingPage(): string {
-  try {
-    const stored = localStorage.getItem(LANDING_PAGE_KEY);
-    return stored || '/';
-  } catch {
-    return '/';
-  }
-}
-
-// Save landing page to localStorage
-export function saveLandingPage(path: string): void {
-  try {
-    localStorage.setItem(LANDING_PAGE_KEY, path);
-  } catch (e) {
-    console.error('Failed to save landing page:', e);
-  }
-}
-
-// Load sidebar state from localStorage
-function loadSidebarState(): boolean {
-  try {
-    const stored = localStorage.getItem(SIDEBAR_COLLAPSED_KEY);
-    return stored === 'true';
-  } catch {
-    return false;
-  }
-}
-
-// Save sidebar state to localStorage
-function saveSidebarState(collapsed: boolean): void {
-  try {
-    localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(collapsed));
-  } catch (e) {
-    console.error('Failed to save sidebar state:', e);
-  }
-}
-
 export function Layout() {
   const {
     syncStatus,
@@ -149,26 +94,87 @@ export function Layout() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Sidebar collapse state
-  const [isCollapsed, setIsCollapsed] = useState(() => loadSidebarState());
+  // Sidebar collapse state from settings
+  const { collapsed: isCollapsed, setCollapsed } = useSidebarState();
   const [lockAnimation, setLockAnimation] = useState<'lock' | 'unlock' | null>(null);
 
-  // Nav items with drag and drop
-  const [navItems, setNavItems] = useState<NavItem[]>(() => getOrderedNavItems(loadNavOrder()));
+  // Term end date for sync conflict expiration default
+  const [termEndDate, setTermEndDate] = useState<string | null>(null);
+
+  // Fetch term end date when sync conflicts modal opens
+  useEffect(() => {
+    if (syncConflicts.length > 0 && !termEndDate) {
+      // Get current term end date from enrollment terms
+      window.api
+        ?.getEnrollmentTerms?.()
+        .then((terms: EnrollmentTerm[]) => {
+          if (terms && terms.length > 0) {
+            const now = new Date();
+
+            // Find currently active terms (started and not yet ended)
+            const activeTerms = terms.filter((t: EnrollmentTerm) => {
+              if (!t.endAt) return false;
+              const endDate = new Date(t.endAt);
+              // Term must end in the future
+              if (endDate <= now) return false;
+              // If term has a start date, it must have started already
+              if (t.startAt) {
+                const startDate = new Date(t.startAt);
+                if (startDate > now) return false;
+              }
+              return true;
+            });
+
+            // Sort by latest end date (prefer the term that ends furthest in the future)
+            // This handles cases where multiple terms overlap - pick the main/longer one
+            const sortedTerms = activeTerms.sort(
+              (a: EnrollmentTerm, b: EnrollmentTerm) => {
+                if (!a.endAt || !b.endAt) return 0;
+                return new Date(b.endAt).getTime() - new Date(a.endAt).getTime();
+              }
+            );
+
+            if (sortedTerms.length > 0 && sortedTerms[0].endAt) {
+              setTermEndDate(sortedTerms[0].endAt);
+            } else {
+              // Fallback: find any term ending in the future
+              const futureTerms = terms
+                .filter((t: EnrollmentTerm) => t.endAt && new Date(t.endAt) > now)
+                .sort((a: EnrollmentTerm, b: EnrollmentTerm) => {
+                  if (!a.endAt || !b.endAt) return 0;
+                  return new Date(b.endAt).getTime() - new Date(a.endAt).getTime();
+                });
+              if (futureTerms.length > 0 && futureTerms[0].endAt) {
+                setTermEndDate(futureTerms[0].endAt);
+              }
+            }
+          }
+        })
+        .catch(() => {
+          // Ignore errors - term end date is optional
+        });
+    }
+  }, [syncConflicts.length, termEndDate]);
+
+  // Nav items with drag and drop - use settings hook
+  const { order: savedNavOrder, setOrder: saveNavOrder } = useNavOrder();
+  const navItems = useMemo(() => getOrderedNavItems(savedNavOrder), [savedNavOrder]);
   const [draggedItem, setDraggedItem] = useState<string | null>(null);
   const [dragOverItem, setDragOverItem] = useState<string | null>(null);
+
+  // Landing page from settings
+  const { landingPage } = useLandingPage();
 
   // Redirect to landing page on initial mount
   const hasRedirected = useRef(false);
   useEffect(() => {
     if (!hasRedirected.current && location.pathname === '/') {
-      const landingPage = loadLandingPage();
       if (landingPage !== '/') {
         navigate(landingPage, { replace: true });
       }
       hasRedirected.current = true;
     }
-  }, [location.pathname, navigate]);
+  }, [location.pathname, navigate, landingPage]);
 
   // Drag handlers for nav items
   const handleDragStart = (e: React.DragEvent, itemId: string) => {
@@ -204,15 +210,15 @@ export function Layout() {
     if (!draggedItem || draggedItem === targetId) return;
 
     const newItems = [...navItems];
-    const draggedIndex = newItems.findIndex(item => item.id === draggedItem);
-    const targetIndex = newItems.findIndex(item => item.id === targetId);
+    const draggedIndex = newItems.findIndex((item) => item.id === draggedItem);
+    const targetIndex = newItems.findIndex((item) => item.id === targetId);
 
     if (draggedIndex !== -1 && targetIndex !== -1) {
       // Remove dragged item and insert at target position
       const [removed] = newItems.splice(draggedIndex, 1);
       newItems.splice(targetIndex, 0, removed);
-      setNavItems(newItems);
-      saveNavOrder(newItems.map(item => item.id));
+      // Save new order via settings hook
+      saveNavOrder(newItems.map((item) => item.id));
     }
 
     setDraggedItem(null);
@@ -226,8 +232,6 @@ export function Layout() {
     avatarUrl: string | null;
   } | null>(null);
 
-
-
   // Profile dropdown state
   const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
   const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0, width: 0 });
@@ -238,8 +242,10 @@ export function Layout() {
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as Node;
-      const isOutsideButton = profileButtonRef.current && !profileButtonRef.current.contains(target);
-      const isOutsideDropdown = profileDropdownRef.current && !profileDropdownRef.current.contains(target);
+      const isOutsideButton =
+        profileButtonRef.current && !profileButtonRef.current.contains(target);
+      const isOutsideDropdown =
+        profileDropdownRef.current && !profileDropdownRef.current.contains(target);
       if (isOutsideButton && isOutsideDropdown) {
         setIsProfileDropdownOpen(false);
       }
@@ -266,8 +272,8 @@ export function Layout() {
     const newState = !isCollapsed;
     // Trigger animation: locking (expanded->collapsed) or unlocking (collapsed->expanded)
     setLockAnimation(newState ? 'unlock' : 'lock');
-    setIsCollapsed(newState);
-    saveSidebarState(newState);
+    // Update via settings hook
+    setCollapsed(newState);
     // Clear animation after it completes
     setTimeout(() => setLockAnimation(null), 500);
   };
@@ -285,9 +291,16 @@ export function Layout() {
           console.debug('[Layout] User profile response:', profile);
           if (profile) {
             setUserProfile(profile);
-            console.debug('[Layout] User profile set:', profile.name, 'avatar:', profile.avatarUrl ? 'yes' : 'no');
+            console.debug(
+              '[Layout] User profile set:',
+              profile.name,
+              'avatar:',
+              profile.avatarUrl ? 'yes' : 'no'
+            );
           } else {
-            console.warn('[Layout] User profile returned null - Canvas client may not be connected');
+            console.warn(
+              '[Layout] User profile returned null - Canvas client may not be connected'
+            );
           }
         } catch (error) {
           console.error('[Layout] Failed to fetch user profile:', error);
@@ -304,7 +317,10 @@ export function Layout() {
     if (!DEBUG_LAYOUT) return;
 
     const logDimensions = () => {
-      console.debug('[Layout] Window:', { width: window.innerWidth, height: window.innerHeight });
+      console.debug('[Layout] Window:', {
+        width: window.innerWidth,
+        height: window.innerHeight,
+      });
 
       if (containerRef.current) {
         const rect = containerRef.current.getBoundingClientRect();
@@ -344,27 +360,17 @@ export function Layout() {
     };
   }, []);
 
-  // Format time ago
-  const formatTimeAgo = (dateStr: string | null): string => {
-    if (!dateStr) return 'Never';
-    const date = new Date(dateStr);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-
-    if (diffMins < 1) return 'Just now';
-    if (diffMins < 60) return `${diffMins}m ago`;
-    const diffHours = Math.floor(diffMins / 60);
-    if (diffHours < 24) return `${diffHours}h ago`;
-    const diffDays = Math.floor(diffHours / 24);
-    return `${diffDays}d ago`;
-  };
-
   // Determine sync display based on actual state
   const getSyncDisplay = () => {
     if (syncStatus === 'syncing') {
       return {
-        icon: <Loader2 size={14} color="var(--color-info)" style={{ animation: 'spin 1s linear infinite' }} />,
+        icon: (
+          <Loader2
+            size={14}
+            color="var(--color-info)"
+            style={{ animation: 'spin 1s linear infinite' }}
+          />
+        ),
         text: 'Syncing...',
       };
     }
@@ -375,7 +381,7 @@ export function Layout() {
       };
     }
     // Check if we have any synced data
-    const hasData = courses.some(c => c.lastSyncedAt);
+    const hasData = courses.some((c) => c.lastSyncedAt);
     if (!hasData) {
       return {
         icon: <AlertCircle size={14} color="var(--color-warning)" />,
@@ -393,7 +399,11 @@ export function Layout() {
 
   // Debug: Log sidebar state changes
   useEffect(() => {
-    console.debug('[Layout] Sidebar state:', { isCollapsed, sidebarWidth, userProfile: userProfile?.name });
+    console.debug('[Layout] Sidebar state:', {
+      isCollapsed,
+      sidebarWidth,
+      userProfile: userProfile?.name,
+    });
   }, [isCollapsed, sidebarWidth, userProfile]);
 
   return (
@@ -439,9 +449,7 @@ export function Layout() {
                     <span style={styles.userName}>
                       {userProfile?.name || 'Canvas Student'}
                     </span>
-                    <span style={styles.userEmail}>
-                      {userProfile?.email || ''}
-                    </span>
+                    <span style={styles.userEmail}>{userProfile?.email || ''}</span>
                   </div>
                   <ChevronDown
                     size={16}
@@ -474,7 +482,9 @@ export function Layout() {
                   onDrop={(e) => handleDrop(e, item.id)}
                   style={{
                     position: 'relative',
-                    borderTop: isDragOver ? '2px solid var(--color-blue)' : '2px solid transparent',
+                    borderTop: isDragOver
+                      ? '2px solid var(--color-blue)'
+                      : '2px solid transparent',
                     transition: 'border-color 150ms ease',
                   }}
                 >
@@ -514,12 +524,8 @@ export function Layout() {
               backgroundColor: isCollapsed
                 ? 'rgba(255, 255, 255, 0.1)'
                 : 'rgba(59, 130, 246, 0.35)',
-              color: isCollapsed
-                ? 'rgba(255, 255, 255, 0.6)'
-                : '#60a5fa',
-              boxShadow: isCollapsed
-                ? 'none'
-                : '0 0 8px rgba(96, 165, 250, 0.4)',
+              color: isCollapsed ? 'rgba(255, 255, 255, 0.6)' : '#60a5fa',
+              boxShadow: isCollapsed ? 'none' : '0 0 8px rgba(96, 165, 250, 0.4)',
               transition: 'all 300ms ease',
             }}
             onClick={toggleSidebar}
@@ -530,11 +536,12 @@ export function Layout() {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                animation: lockAnimation === 'lock'
-                  ? 'lockShake 400ms ease-out'
-                  : lockAnimation === 'unlock'
-                    ? 'unlockWiggle 400ms ease-out'
-                    : 'none',
+                animation:
+                  lockAnimation === 'lock'
+                    ? 'lockShake 400ms ease-out'
+                    : lockAnimation === 'unlock'
+                      ? 'unlockWiggle 400ms ease-out'
+                      : 'none',
               }}
             >
               {isCollapsed ? <Unlock size={16} /> : <Lock size={16} />}
@@ -545,14 +552,18 @@ export function Layout() {
           <div style={styles.sidebarFooter}>
             <div style={styles.syncStatusCentered} title={syncDisplay.text}>
               {syncDisplay.icon}
-              <span style={{
-                ...styles.syncText,
-                opacity: isCollapsed ? 0 : 1,
-                width: isCollapsed ? 0 : 'auto',
-                overflow: 'hidden',
-                whiteSpace: 'nowrap',
-                transition: 'opacity 200ms ease, width 200ms ease',
-              }}>{syncDisplay.text}</span>
+              <span
+                style={{
+                  ...styles.syncText,
+                  opacity: isCollapsed ? 0 : 1,
+                  width: isCollapsed ? 0 : 'auto',
+                  overflow: 'hidden',
+                  whiteSpace: 'nowrap',
+                  transition: 'opacity 200ms ease, width 200ms ease',
+                }}
+              >
+                {syncDisplay.text}
+              </span>
             </div>
           </div>
         </aside>
@@ -569,8 +580,6 @@ export function Layout() {
         </main>
       </div>
 
-
-
       {/* Sync Result Toast */}
       <SyncResultToast
         result={lastSyncResult}
@@ -582,12 +591,14 @@ export function Layout() {
       <SyncConflictModal
         isOpen={syncConflicts.length > 0}
         conflicts={syncConflicts}
+        termEndDate={termEndDate}
         onResolve={(resolution) => {
           resolveSyncConflict(
             resolution.conflictId,
             resolution.useCanvasValue,
             resolution.rememberChoice,
-            resolution.rememberForAll
+            resolution.rememberForAll,
+            resolution.expiresAt
           );
         }}
         onResolveAll={(useCanvasValues) => {
@@ -597,35 +608,36 @@ export function Layout() {
       />
 
       {/* Profile Dropdown - rendered via portal to escape sidebar overflow */}
-      {isProfileDropdownOpen && createPortal(
-        <div
-          ref={profileDropdownRef}
-          style={{
-            position: 'fixed',
-            top: dropdownPosition.top,
-            left: dropdownPosition.left,
-            width: dropdownPosition.width,
-            backgroundColor: 'var(--bg-card)',
-            borderRadius: 'var(--radius-md)',
-            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
-            padding: 'var(--space-2)',
-            zIndex: 1000,
-          }}
-        >
-          <button
-            style={{ ...styles.dropdownItem, color: 'var(--color-error)' }}
-            onClick={async () => {
-              setIsProfileDropdownOpen(false);
-              await window.api.deleteCredential();
-              window.location.reload();
+      {isProfileDropdownOpen &&
+        createPortal(
+          <div
+            ref={profileDropdownRef}
+            style={{
+              position: 'fixed',
+              top: dropdownPosition.top,
+              left: dropdownPosition.left,
+              width: dropdownPosition.width,
+              backgroundColor: 'var(--bg-card)',
+              borderRadius: 'var(--radius-md)',
+              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+              padding: 'var(--space-2)',
+              zIndex: 1000,
             }}
           >
-            <LogOut size={16} />
-            <span>Log Out</span>
-          </button>
-        </div>,
-        document.body
-      )}
+            <button
+              style={{ ...styles.dropdownItem, color: 'var(--color-error)' }}
+              onClick={async () => {
+                setIsProfileDropdownOpen(false);
+                await window.api.deleteCredential();
+                window.location.reload();
+              }}
+            >
+              <LogOut size={16} />
+              <span>Log Out</span>
+            </button>
+          </div>,
+          document.body
+        )}
     </>
   );
 }
@@ -828,7 +840,6 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     flexDirection: 'column',
   },
-
 };
 
 export default Layout;
