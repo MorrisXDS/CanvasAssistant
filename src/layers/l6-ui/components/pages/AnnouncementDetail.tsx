@@ -6,6 +6,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
+import DOMPurify from 'dompurify';
 import {
   ArrowLeft,
   ExternalLink,
@@ -404,7 +405,11 @@ export function AnnouncementDetail() {
             <div
               className="announcement-content"
               style={styles.htmlContent}
-              dangerouslySetInnerHTML={{ __html: notification.messageHtml }}
+              dangerouslySetInnerHTML={{
+                __html: DOMPurify.sanitize(notification.messageHtml, {
+                  ADD_ATTR: ['target'], // Allow target="_blank" on links
+                }),
+              }}
               onClick={async (e) => {
                 // Intercept link clicks and handle based on user preference
                 const target = e.target as HTMLElement;
@@ -466,9 +471,10 @@ export function AnnouncementDetail() {
                       <div style={styles.attachmentName}>{attachment.displayName}</div>
                       <div style={styles.attachmentMeta}>
                         {formatFileSize(attachment.sizeBytes)}
-                        {/* eslint-disable-next-line cross-platform/no-hardcoded-path-separator -- MIME type separator, not path */}
+                        {/* eslint-disable cross-platform/no-hardcoded-path-separator -- MIME type separator, not path */}
                         {attachment.contentType &&
                           ` • ${attachment.contentType.split('/')[1]?.toUpperCase()}`}
+                        {/* eslint-enable cross-platform/no-hardcoded-path-separator */}
                       </div>
                     </div>
                     <div style={styles.attachmentActions}>

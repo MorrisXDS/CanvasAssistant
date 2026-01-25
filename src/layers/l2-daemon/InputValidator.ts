@@ -39,17 +39,24 @@ export const CanvasCourseSchema = z.object({
   name: z.string().optional().default('Unnamed Course'),
   course_code: z.string().optional().default(''),
   workflow_state: z.string().optional().default('available'),
-  enrollments: z.array(z.object({
-    type: z.string(),
-    computed_current_score: z.number().nullable().optional(),
-    computed_final_score: z.number().nullable().optional(),
-  })).optional().default([]),
-  term: z.object({
-    id: z.number(),
-    name: z.string(),
-    start_at: z.string().nullable().optional(),
-    end_at: z.string().nullable().optional(),
-  }).optional(),
+  enrollments: z
+    .array(
+      z.object({
+        type: z.string(),
+        computed_current_score: z.number().nullable().optional(),
+        computed_final_score: z.number().nullable().optional(),
+      })
+    )
+    .optional()
+    .default([]),
+  term: z
+    .object({
+      id: z.number(),
+      name: z.string(),
+      start_at: z.string().nullable().optional(),
+      end_at: z.string().nullable().optional(),
+    })
+    .optional(),
   start_at: z.string().nullable().optional(),
   end_at: z.string().nullable().optional(),
 });
@@ -135,11 +142,13 @@ export const CanvasAssignmentGroupSchema = z.object({
   name: z.string().optional().default(''),
   position: z.number().optional(),
   group_weight: z.number().optional(),
-  rules: z.object({
-    drop_lowest: z.number().optional(),
-    drop_highest: z.number().optional(),
-    never_drop: z.array(z.number()).optional(),
-  }).optional(),
+  rules: z
+    .object({
+      drop_lowest: z.number().optional(),
+      drop_highest: z.number().optional(),
+      never_drop: z.array(z.number()).optional(),
+    })
+    .optional(),
 });
 
 export type CanvasAssignmentGroup = z.infer<typeof CanvasAssignmentGroupSchema>;
@@ -168,7 +177,7 @@ export class InputValidator extends EventEmitter {
     // Apply defaults
     this.strictness = config?.strictness ?? 'lenient';
     this.logWarnings = config?.logWarnings ?? true;
-    this.htmlHandling = config?.htmlHandling ?? 'keep';
+    this.htmlHandling = config?.htmlHandling ?? 'sanitize';
 
     // Setup logger
     if (config && 'logger' in config && config.logger) {
@@ -204,7 +213,9 @@ export class InputValidator extends EventEmitter {
     );
 
     if (this.strictness === 'strict') {
-      this.log.error(`Validation failed${context ? ` (${context})` : ''}: ${errors.join(', ')}`);
+      this.log.error(
+        `Validation failed${context ? ` (${context})` : ''}: ${errors.join(', ')}`
+      );
       this.emit('validation-error', {
         context,
         errors,
@@ -218,7 +229,9 @@ export class InputValidator extends EventEmitter {
 
     // Lenient mode: try to get partial data
     if (this.logWarnings) {
-      this.log.warn(`Validation warnings${context ? ` (${context})` : ''}: ${errors.join(', ')}`);
+      this.log.warn(
+        `Validation warnings${context ? ` (${context})` : ''}: ${errors.join(', ')}`
+      );
     }
 
     this.emit('validation-warning', {
@@ -372,7 +385,10 @@ export class InputValidator extends EventEmitter {
    */
   private sanitizeHtml(html: string): string {
     // Remove script tags and their content
-    let sanitized = html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
+    let sanitized = html.replace(
+      /<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi,
+      ''
+    );
 
     // Remove event handlers
     sanitized = sanitized.replace(/\s*on\w+\s*=\s*"[^"]*"/gi, '');

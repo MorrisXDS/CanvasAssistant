@@ -5,6 +5,7 @@
 
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
+import DOMPurify from 'dompurify';
 import {
   X,
   Calendar,
@@ -12,12 +13,11 @@ import {
   Target,
   CheckCircle,
   Circle,
-  ExternalLink,
   Clock,
   Edit2,
   Trash2,
 } from 'lucide-react';
-import type { Task, Course } from '../../../l5-presentation/types';
+import type { Task } from '../../../l5-presentation/types';
 import type { CalendarEvent } from './CalendarGrid';
 
 interface TaskDetailModalProps {
@@ -41,7 +41,10 @@ function formatDate(dateStr: string | null): string {
   });
 }
 
-function getTimeUntilDue(dueAt: string | null): { text: string; urgency: 'overdue' | 'urgent' | 'soon' | 'normal' } {
+function getTimeUntilDue(dueAt: string | null): {
+  text: string;
+  urgency: 'overdue' | 'urgent' | 'soon' | 'normal';
+} {
   if (!dueAt) return { text: '', urgency: 'normal' };
 
   const now = new Date();
@@ -54,7 +57,10 @@ function getTimeUntilDue(dueAt: string | null): { text: string; urgency: 'overdu
       return { text: `${Math.round(hoursAgo)} hours overdue`, urgency: 'overdue' };
     }
     const daysAgo = Math.round(hoursAgo / 24);
-    return { text: `${daysAgo} day${daysAgo > 1 ? 's' : ''} overdue`, urgency: 'overdue' };
+    return {
+      text: `${daysAgo} day${daysAgo > 1 ? 's' : ''} overdue`,
+      urgency: 'overdue',
+    };
   }
 
   if (hoursUntil < 24) {
@@ -118,16 +124,14 @@ export function TaskDetailModal({
           <div
             style={{
               ...styles.colorIndicator,
-              backgroundColor: isTask ? (course?.color || '#007FA3') : (importedEvent?.color || '#6366F1'),
+              backgroundColor: isTask
+                ? course?.color || '#007FA3'
+                : importedEvent?.color || '#6366F1',
             }}
           />
           <div style={styles.headerContent}>
-            <h2 style={styles.title}>
-              {isTask ? task?.title : importedEvent?.title}
-            </h2>
-            {isTask && course && (
-              <span style={styles.courseCode}>{course.code}</span>
-            )}
+            <h2 style={styles.title}>{isTask ? task?.title : importedEvent?.title}</h2>
+            {isTask && course && <span style={styles.courseCode}>{course.code}</span>}
             {!isTask && importedEvent?.calendarName && (
               <span style={styles.courseCode}>{importedEvent.calendarName}</span>
             )}
@@ -157,18 +161,18 @@ export function TaskDetailModal({
                         timeUntil.urgency === 'overdue'
                           ? 'var(--color-error-bg)'
                           : timeUntil.urgency === 'urgent'
-                          ? 'var(--color-warning-bg)'
-                          : timeUntil.urgency === 'soon'
-                          ? 'var(--color-info-bg)'
-                          : 'var(--bg-app)',
+                            ? 'var(--color-warning-bg)'
+                            : timeUntil.urgency === 'soon'
+                              ? 'var(--color-info-bg)'
+                              : 'var(--bg-app)',
                       color:
                         timeUntil.urgency === 'overdue'
                           ? 'var(--color-error)'
                           : timeUntil.urgency === 'urgent'
-                          ? 'var(--color-warning)'
-                          : timeUntil.urgency === 'soon'
-                          ? 'var(--color-info)'
-                          : 'var(--text-secondary)',
+                            ? 'var(--color-warning)'
+                            : timeUntil.urgency === 'soon'
+                              ? 'var(--color-info)'
+                              : 'var(--text-secondary)',
                     }}
                   >
                     <Clock size={12} />
@@ -190,7 +194,9 @@ export function TaskDetailModal({
                     {task.grade !== null && (
                       <div style={styles.statItem}>
                         <span style={styles.statLabel}>Grade</span>
-                        <span style={{ ...styles.statValue, color: 'var(--color-success)' }}>
+                        <span
+                          style={{ ...styles.statValue, color: 'var(--color-success)' }}
+                        >
                           {task.grade.toFixed(1)}%
                         </span>
                       </div>
@@ -211,7 +217,11 @@ export function TaskDetailModal({
                   <div style={styles.descriptionLabel}>Description</div>
                   <div
                     style={styles.description}
-                    dangerouslySetInnerHTML={{ __html: task.description }}
+                    dangerouslySetInnerHTML={{
+                      __html: DOMPurify.sanitize(task.description, {
+                        ADD_ATTR: ['target'], // Allow target="_blank" on links
+                      }),
+                    }}
                   />
                 </div>
               )}
@@ -221,16 +231,16 @@ export function TaskDetailModal({
                 <button
                   style={{
                     ...styles.completeButton,
-                    backgroundColor: task.isCompleted ? 'var(--color-success-bg)' : 'var(--bg-app)',
-                    color: task.isCompleted ? 'var(--color-success)' : 'var(--text-secondary)',
+                    backgroundColor: task.isCompleted
+                      ? 'var(--color-success-bg)'
+                      : 'var(--bg-app)',
+                    color: task.isCompleted
+                      ? 'var(--color-success)'
+                      : 'var(--text-secondary)',
                   }}
                   onClick={handleToggleComplete}
                 >
-                  {task.isCompleted ? (
-                    <CheckCircle size={16} />
-                  ) : (
-                    <Circle size={16} />
-                  )}
+                  {task.isCompleted ? <CheckCircle size={16} /> : <Circle size={16} />}
                   {task.isCompleted ? 'Completed' : 'Mark as Complete'}
                 </button>
               </div>
@@ -271,45 +281,51 @@ export function TaskDetailModal({
         {/* Footer Actions */}
         <div style={styles.footer}>
           {/* Left side - Edit/Delete for editable events */}
-          {!isTask && importedEvent && (importedEvent.sourceType === 'user' || importedEvent.sourceType === 'imported') && (
-            <div style={styles.footerLeft}>
-              {showDeleteConfirm ? (
-                <div style={styles.deleteConfirm}>
-                  <span style={styles.deleteText}>Delete event?</span>
-                  <button
-                    style={styles.confirmDeleteButton}
-                    onClick={() => {
-                      onDelete?.();
-                      setShowDeleteConfirm(false);
-                    }}
-                  >
-                    Delete
-                  </button>
-                  <button
-                    style={styles.cancelDeleteButton}
-                    onClick={() => setShowDeleteConfirm(false)}
-                  >
-                    Cancel
-                  </button>
-                </div>
-              ) : (
-                <>
-                  {onEdit && (
-                    <button style={styles.editButton} onClick={onEdit}>
-                      <Edit2 size={14} />
-                      Edit
-                    </button>
-                  )}
-                  {onDelete && (
-                    <button style={styles.deleteButton} onClick={() => setShowDeleteConfirm(true)}>
-                      <Trash2 size={14} />
+          {!isTask &&
+            importedEvent &&
+            (importedEvent.sourceType === 'user' ||
+              importedEvent.sourceType === 'imported') && (
+              <div style={styles.footerLeft}>
+                {showDeleteConfirm ? (
+                  <div style={styles.deleteConfirm}>
+                    <span style={styles.deleteText}>Delete event?</span>
+                    <button
+                      style={styles.confirmDeleteButton}
+                      onClick={() => {
+                        onDelete?.();
+                        setShowDeleteConfirm(false);
+                      }}
+                    >
                       Delete
                     </button>
-                  )}
-                </>
-              )}
-            </div>
-          )}
+                    <button
+                      style={styles.cancelDeleteButton}
+                      onClick={() => setShowDeleteConfirm(false)}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    {onEdit && (
+                      <button style={styles.editButton} onClick={onEdit}>
+                        <Edit2 size={14} />
+                        Edit
+                      </button>
+                    )}
+                    {onDelete && (
+                      <button
+                        style={styles.deleteButton}
+                        onClick={() => setShowDeleteConfirm(true)}
+                      >
+                        <Trash2 size={14} />
+                        Delete
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
           <div style={styles.footerRight}>
             {isTask && course && (
               <button style={styles.primaryButton} onClick={handleGoToCourse}>

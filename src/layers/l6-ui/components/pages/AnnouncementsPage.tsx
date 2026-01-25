@@ -6,6 +6,7 @@
 
 import React, { useMemo, useState, useEffect } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
+import DOMPurify from 'dompurify';
 import {
   ArrowLeft,
   Megaphone,
@@ -19,12 +20,10 @@ import {
   Calendar,
   GraduationCap,
   X,
-  Filter,
   Search,
 } from 'lucide-react';
 import { Card } from '../shared';
 import { useStore } from '../../../l5-presentation/store';
-import type { Notification, Course } from '../../../l5-presentation/types';
 
 type ReadFilter = 'all' | 'unread' | 'dismissed';
 type IntentType = 'all' | 'urgent' | 'deadline' | 'grade' | 'informational';
@@ -34,17 +33,27 @@ function classifyIntent(title: string, message: string): IntentType {
   const text = `${title} ${message}`.toLowerCase();
 
   // Urgent: important, urgent, required, mandatory, action needed
-  if (/urgent|important|required|mandatory|action\s+needed|immediate|critical/i.test(text)) {
+  if (
+    /urgent|important|required|mandatory|action\s+needed|immediate|critical/i.test(text)
+  ) {
     return 'urgent';
   }
 
   // Deadline: due, deadline, submit, submission, by end of
-  if (/due\s+(date|by|on)|deadline|submit|submission|by\s+end\s+of|must\s+be\s+completed/i.test(text)) {
+  if (
+    /due\s+(date|by|on)|deadline|submit|submission|by\s+end\s+of|must\s+be\s+completed/i.test(
+      text
+    )
+  ) {
     return 'deadline';
   }
 
   // Grade: grade, score, mark, feedback, graded
-  if (/\bgrade[ds]?\b|\bscore[ds]?\b|\bmark[s]?\b|feedback|results?\s+(posted|available)/i.test(text)) {
+  if (
+    /\bgrade[ds]?\b|\bscore[ds]?\b|\bmark[s]?\b|feedback|results?\s+(posted|available)/i.test(
+      text
+    )
+  ) {
     return 'grade';
   }
 
@@ -52,19 +61,28 @@ function classifyIntent(title: string, message: string): IntentType {
   return 'informational';
 }
 
-const INTENT_CONFIG: Record<IntentType, { label: string; icon: React.ReactNode; color: string }> = {
+const INTENT_CONFIG: Record<
+  IntentType,
+  { label: string; icon: React.ReactNode; color: string }
+> = {
   all: { label: 'All Types', icon: <Megaphone size={14} />, color: 'var(--color-navy)' },
-  urgent: { label: 'Urgent', icon: <AlertTriangle size={14} />, color: 'var(--color-high)' },
-  deadline: { label: 'Deadline', icon: <Calendar size={14} />, color: 'var(--color-medium)' },
-  grade: { label: 'Grade', icon: <GraduationCap size={14} />, color: 'var(--color-success)' },
+  urgent: {
+    label: 'Urgent',
+    icon: <AlertTriangle size={14} />,
+    color: 'var(--color-high)',
+  },
+  deadline: {
+    label: 'Deadline',
+    icon: <Calendar size={14} />,
+    color: 'var(--color-medium)',
+  },
+  grade: {
+    label: 'Grade',
+    icon: <GraduationCap size={14} />,
+    color: 'var(--color-success)',
+  },
   informational: { label: 'Info', icon: <Info size={14} />, color: 'var(--color-blue)' },
 };
-
-interface AnnouncementWithCourse {
-  notification: Notification;
-  course: Course | null;
-  intent: IntentType;
-}
 
 function formatDate(dateStr: string): string {
   const date = new Date(dateStr);
@@ -85,9 +103,9 @@ function formatDate(dateStr: string): string {
 
 function stripHtml(html: string | null): string {
   if (!html) return '';
-  const tmp = document.createElement('div');
-  tmp.innerHTML = html;
-  return tmp.textContent || tmp.innerText || '';
+  // Sanitize HTML first to prevent XSS, then extract text content
+  const sanitized = DOMPurify.sanitize(html, { ALLOWED_TAGS: [] });
+  return sanitized;
 }
 
 export function AnnouncementsPage() {
@@ -115,37 +133,41 @@ export function AnnouncementsPage() {
     setSearchParams(newParams, { replace: true });
   }, [courseFilter, searchParams, setSearchParams]);
 
-  const courseMap = useMemo(() => new Map(courses.map(c => [c.id, c])), [courses]);
+  const courseMap = useMemo(() => new Map(courses.map((c) => [c.id, c])), [courses]);
 
   // Get visible courses (non-hidden) that have announcements
   const coursesWithAnnouncements = useMemo(() => {
-    const courseIds = new Set(notifications.map(n => n.courseId).filter(Boolean));
-    return courses.filter(c => !c.isHidden && courseIds.has(c.id));
+    const courseIds = new Set(notifications.map((n) => n.courseId).filter(Boolean));
+    return courses.filter((c) => !c.isHidden && courseIds.has(c.id));
   }, [notifications, courses]);
 
   // Get set of visible course IDs (non-hidden courses that appear in dashboard)
   const visibleCourseIds = useMemo(() => {
-    return new Set(courses.filter(c => !c.isHidden).map(c => c.id));
+    return new Set(courses.filter((c) => !c.isHidden).map((c) => c.id));
   }, [courses]);
 
   // Process announcements - only from visible (dashboard) courses
   const allAnnouncements = useMemo(() => {
     return notifications
-      .filter(n => !n.courseId || visibleCourseIds.has(n.courseId)) // Include if no course or course is visible
-      .map(notification => ({
+      .filter((n) => !n.courseId || visibleCourseIds.has(n.courseId)) // Include if no course or course is visible
+      .map((notification) => ({
         notification,
-        course: notification.courseId ? courseMap.get(notification.courseId) || null : null,
+        course: notification.courseId
+          ? courseMap.get(notification.courseId) || null
+          : null,
         intent: classifyIntent(notification.title, notification.message),
       }))
-      .sort((a, b) =>
-        new Date(b.notification.publishedAt).getTime() - new Date(a.notification.publishedAt).getTime()
+      .sort(
+        (a, b) =>
+          new Date(b.notification.publishedAt).getTime() -
+          new Date(a.notification.publishedAt).getTime()
       );
   }, [notifications, courseMap, visibleCourseIds]);
 
   // Apply all filters (intersection mode)
   const filteredAnnouncements = useMemo(() => {
     const query = searchQuery.toLowerCase().trim();
-    return allAnnouncements.filter(a => {
+    return allAnnouncements.filter((a) => {
       // Read status filter
       if (readFilter === 'unread' && a.notification.dismissedAt) return false;
       if (readFilter === 'dismissed' && !a.notification.dismissedAt) return false;
@@ -162,7 +184,12 @@ export function AnnouncementsPage() {
         const message = a.notification.message.toLowerCase();
         const courseName = a.course?.name?.toLowerCase() || '';
         const courseCode = a.course?.code?.toLowerCase() || '';
-        if (!title.includes(query) && !message.includes(query) && !courseName.includes(query) && !courseCode.includes(query)) {
+        if (
+          !title.includes(query) &&
+          !message.includes(query) &&
+          !courseName.includes(query) &&
+          !courseCode.includes(query)
+        ) {
           return false;
         }
       }
@@ -172,15 +199,18 @@ export function AnnouncementsPage() {
   }, [allAnnouncements, readFilter, intentFilter, courseFilter, searchQuery]);
 
   // Stats for filter badges
-  const stats = useMemo(() => ({
-    all: allAnnouncements.length,
-    unread: allAnnouncements.filter(a => !a.notification.dismissedAt).length,
-    dismissed: allAnnouncements.filter(a => a.notification.dismissedAt).length,
-  }), [allAnnouncements]);
+  const stats = useMemo(
+    () => ({
+      all: allAnnouncements.length,
+      unread: allAnnouncements.filter((a) => !a.notification.dismissedAt).length,
+      dismissed: allAnnouncements.filter((a) => a.notification.dismissedAt).length,
+    }),
+    [allAnnouncements]
+  );
 
   // Intent counts (for current read + course filters)
   const intentCounts = useMemo(() => {
-    const filtered = allAnnouncements.filter(a => {
+    const filtered = allAnnouncements.filter((a) => {
       if (readFilter === 'unread' && a.notification.dismissedAt) return false;
       if (readFilter === 'dismissed' && !a.notification.dismissedAt) return false;
       if (courseFilter !== null && a.notification.courseId !== courseFilter) return false;
@@ -188,10 +218,10 @@ export function AnnouncementsPage() {
     });
     return {
       all: filtered.length,
-      urgent: filtered.filter(a => a.intent === 'urgent').length,
-      deadline: filtered.filter(a => a.intent === 'deadline').length,
-      grade: filtered.filter(a => a.intent === 'grade').length,
-      informational: filtered.filter(a => a.intent === 'informational').length,
+      urgent: filtered.filter((a) => a.intent === 'urgent').length,
+      deadline: filtered.filter((a) => a.intent === 'deadline').length,
+      grade: filtered.filter((a) => a.intent === 'grade').length,
+      informational: filtered.filter((a) => a.intent === 'informational').length,
     };
   }, [allAnnouncements, readFilter, courseFilter]);
 
@@ -208,12 +238,26 @@ export function AnnouncementsPage() {
     setSearchQuery('');
   };
 
-  const hasActiveFilters = readFilter !== 'all' || intentFilter !== 'all' || courseFilter !== null || searchQuery.trim() !== '';
+  const hasActiveFilters =
+    readFilter !== 'all' ||
+    intentFilter !== 'all' ||
+    courseFilter !== null ||
+    searchQuery.trim() !== '';
 
-  const readOptions: { value: ReadFilter; label: string; count: number; icon: React.ReactNode }[] = [
+  const readOptions: {
+    value: ReadFilter;
+    label: string;
+    count: number;
+    icon: React.ReactNode;
+  }[] = [
     { value: 'all', label: 'All', count: stats.all, icon: <Megaphone size={14} /> },
     { value: 'unread', label: 'Unread', count: stats.unread, icon: <Bell size={14} /> },
-    { value: 'dismissed', label: 'Read', count: stats.dismissed, icon: <BellOff size={14} /> },
+    {
+      value: 'dismissed',
+      label: 'Read',
+      count: stats.dismissed,
+      icon: <BellOff size={14} />,
+    },
   ];
 
   return (
@@ -244,10 +288,7 @@ export function AnnouncementsPage() {
           style={styles.searchInput}
         />
         {searchQuery && (
-          <button
-            style={styles.searchClear}
-            onClick={() => setSearchQuery('')}
-          >
+          <button style={styles.searchClear} onClick={() => setSearchQuery('')}>
             <X size={16} />
           </button>
         )}
@@ -259,7 +300,7 @@ export function AnnouncementsPage() {
         <div style={styles.filterGroup}>
           <span style={styles.filterLabel}>Status</span>
           <div style={styles.filterChips}>
-            {readOptions.map(option => (
+            {readOptions.map((option) => (
               <button
                 key={option.value}
                 style={{
@@ -280,16 +321,18 @@ export function AnnouncementsPage() {
         <div style={styles.filterGroup}>
           <span style={styles.filterLabel}>Type</span>
           <div style={styles.filterChips}>
-            {(Object.keys(INTENT_CONFIG) as IntentType[]).map(intent => (
+            {(Object.keys(INTENT_CONFIG) as IntentType[]).map((intent) => (
               <button
                 key={intent}
                 style={{
                   ...styles.filterChip,
-                  ...(intentFilter === intent ? {
-                    ...styles.filterChipActive,
-                    backgroundColor: INTENT_CONFIG[intent].color,
-                    borderColor: INTENT_CONFIG[intent].color,
-                  } : {}),
+                  ...(intentFilter === intent
+                    ? {
+                        ...styles.filterChipActive,
+                        backgroundColor: INTENT_CONFIG[intent].color,
+                        borderColor: INTENT_CONFIG[intent].color,
+                      }
+                    : {}),
                 }}
                 onClick={() => setIntentFilter(intent)}
               >
@@ -317,16 +360,18 @@ export function AnnouncementsPage() {
               >
                 All Courses
               </button>
-              {coursesWithAnnouncements.map(course => (
+              {coursesWithAnnouncements.map((course) => (
                 <button
                   key={course.id}
                   style={{
                     ...styles.filterChip,
-                    ...(courseFilter === course.id ? {
-                      ...styles.filterChipActive,
-                      backgroundColor: course.color || 'var(--color-navy)',
-                      borderColor: course.color || 'var(--color-navy)',
-                    } : {}),
+                    ...(courseFilter === course.id
+                      ? {
+                          ...styles.filterChipActive,
+                          backgroundColor: course.color || 'var(--color-navy)',
+                          borderColor: course.color || 'var(--color-navy)',
+                        }
+                      : {}),
                   }}
                   onClick={() => setCourseFilter(course.id)}
                 >
@@ -353,7 +398,11 @@ export function AnnouncementsPage() {
             <Megaphone size={32} color="var(--text-muted)" />
             <span style={styles.emptyText}>
               No announcements match your filters
-              {hasActiveFilters && <button style={styles.clearInlineBtn} onClick={clearFilters}>Clear filters</button>}
+              {hasActiveFilters && (
+                <button style={styles.clearInlineBtn} onClick={clearFilters}>
+                  Clear filters
+                </button>
+              )}
             </span>
           </div>
         ) : (
@@ -411,12 +460,13 @@ export function AnnouncementsPage() {
                       <Clock size={12} />
                       {formatDate(item.notification.publishedAt)}
                     </span>
-                    {item.notification.attachments && item.notification.attachments.length > 0 && (
-                      <span style={styles.attachmentBadge}>
-                        <Paperclip size={12} />
-                        {item.notification.attachments.length}
-                      </span>
-                    )}
+                    {item.notification.attachments &&
+                      item.notification.attachments.length > 0 && (
+                        <span style={styles.attachmentBadge}>
+                          <Paperclip size={12} />
+                          {item.notification.attachments.length}
+                        </span>
+                      )}
                   </div>
                   <div style={styles.announcementTitle}>{item.notification.title}</div>
                   <div style={styles.announcementPreview}>

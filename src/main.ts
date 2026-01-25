@@ -672,139 +672,190 @@ function registerIpcHandlers(): void {
 
   // Data fetching handlers for L5 store
   ipcMain.handle('data:getEnrollmentTerms', () => {
-    const rows = database.executeRead<{
-      id: number;
-      external_id: string;
-      name: string;
-      start_at: string | null;
-      end_at: string | null;
-    }>('SELECT * FROM enrollment_terms ORDER BY start_at DESC');
+    try {
+      const rows = database.executeRead<{
+        id: number;
+        external_id: string;
+        name: string;
+        start_at: string | null;
+        end_at: string | null;
+      }>('SELECT * FROM enrollment_terms ORDER BY start_at DESC');
 
-    return rows.map((row) => ({
-      id: row.id,
-      externalId: row.external_id,
-      name: row.name,
-      startAt: row.start_at,
-      endAt: row.end_at,
-    }));
+      return rows.map((row) => ({
+        id: row.id,
+        externalId: row.external_id,
+        name: row.name,
+        startAt: row.start_at,
+        endAt: row.end_at,
+      }));
+    } catch (error) {
+      logger.error(`Failed to get enrollment terms: ${error}`);
+      throw error;
+    }
   });
 
   ipcMain.handle('data:getCourses', () => {
-    const rows = database.executeRead<{
-      id: number;
-      external_id: string;
-      code: string;
-      name: string;
-      target_grade: number;
-      assessed_grade: number | null;
-      current_grade: number | null;
-      color: string | null;
-      nickname: string | null;
-      is_hidden: number;
-      last_synced_at: string | null;
-      enrollment_term_id: number | null;
-    }>('SELECT * FROM courses ORDER BY name');
+    try {
+      const rows = database.executeRead<{
+        id: number;
+        external_id: string;
+        code: string;
+        name: string;
+        target_grade: number;
+        assessed_grade: number | null;
+        current_grade: number | null;
+        color: string | null;
+        nickname: string | null;
+        is_hidden: number;
+        last_synced_at: string | null;
+        enrollment_term_id: number | null;
+      }>('SELECT * FROM courses ORDER BY name');
 
-    return rows.map((row) => ({
-      id: row.id,
-      externalId: row.external_id,
-      code: row.code,
-      name: row.name,
-      targetGrade: row.target_grade,
-      assessedGrade: row.assessed_grade,
-      currentGrade: row.current_grade,
-      color: row.color,
-      nickname: row.nickname,
-      isHidden: Boolean(row.is_hidden),
-      lastSyncedAt: row.last_synced_at,
-      enrollmentTermId: row.enrollment_term_id,
-    }));
+      return rows.map((row) => ({
+        id: row.id,
+        externalId: row.external_id,
+        code: row.code,
+        name: row.name,
+        targetGrade: row.target_grade,
+        assessedGrade: row.assessed_grade,
+        currentGrade: row.current_grade,
+        color: row.color,
+        nickname: row.nickname,
+        isHidden: Boolean(row.is_hidden),
+        lastSyncedAt: row.last_synced_at,
+        enrollmentTermId: row.enrollment_term_id,
+      }));
+    } catch (error) {
+      logger.error(`Failed to get courses: ${error}`);
+      throw error;
+    }
   });
 
   ipcMain.handle(
     'data:getTasks',
     (_event, options?: { courseIds?: number[] } | number) => {
-      // Support both old API (single courseId) and new API (courseIds array)
-      let sql: string;
-      let params: number[] = [];
+      try {
+        // Support both old API (single courseId) and new API (courseIds array)
+        let sql: string;
+        let params: number[] = [];
 
-      if (typeof options === 'number') {
-        // Legacy: single courseId
-        sql = 'SELECT * FROM tasks WHERE course_id = ? ORDER BY priority_score DESC';
-        params = [options];
-      } else if (options?.courseIds && options.courseIds.length > 0) {
-        // New: array of courseIds - filter at source for bandwidth efficiency
-        const placeholders = options.courseIds.map(() => '?').join(', ');
-        sql = `SELECT * FROM tasks WHERE course_id IN (${placeholders}) ORDER BY priority_score DESC`;
-        params = options.courseIds;
-      } else {
-        // No filter - return all tasks
-        sql = 'SELECT * FROM tasks ORDER BY priority_score DESC';
+        if (typeof options === 'number') {
+          // Legacy: single courseId
+          sql = 'SELECT * FROM tasks WHERE course_id = ? ORDER BY priority_score DESC';
+          params = [options];
+        } else if (options?.courseIds && options.courseIds.length > 0) {
+          // New: array of courseIds - filter at source for bandwidth efficiency
+          const placeholders = options.courseIds.map(() => '?').join(', ');
+          sql = `SELECT * FROM tasks WHERE course_id IN (${placeholders}) ORDER BY priority_score DESC`;
+          params = options.courseIds;
+        } else {
+          // No filter - return all tasks
+          sql = 'SELECT * FROM tasks ORDER BY priority_score DESC';
+        }
+
+        const rows = database.executeRead<{
+          id: number;
+          external_id: string;
+          course_id: number;
+          title: string;
+          description: string | null;
+          due_at: string | null;
+          weight: number;
+          grade: number | null;
+          points_possible: number | null;
+          priority_score: number;
+          is_completed: number;
+          completed_at: string | null;
+          submission_status: string | null;
+        }>(sql, params);
+
+        return rows.map((row) => ({
+          id: row.id,
+          externalId: row.external_id,
+          courseId: row.course_id,
+          title: row.title,
+          description: row.description,
+          dueAt: row.due_at,
+          weight: row.weight,
+          grade: row.grade,
+          pointsPossible: row.points_possible,
+          priorityScore: row.priority_score,
+          isCompleted: Boolean(row.is_completed),
+          completedAt: row.completed_at,
+          submissionStatus: row.submission_status,
+        }));
+      } catch (error) {
+        logger.error(`Failed to get tasks: ${error}`);
+        throw error;
       }
-
-      const rows = database.executeRead<{
-        id: number;
-        external_id: string;
-        course_id: number;
-        title: string;
-        description: string | null;
-        due_at: string | null;
-        weight: number;
-        grade: number | null;
-        points_possible: number | null;
-        priority_score: number;
-        is_completed: number;
-        completed_at: string | null;
-        submission_status: string | null;
-      }>(sql, params);
-
-      return rows.map((row) => ({
-        id: row.id,
-        externalId: row.external_id,
-        courseId: row.course_id,
-        title: row.title,
-        description: row.description,
-        dueAt: row.due_at,
-        weight: row.weight,
-        grade: row.grade,
-        pointsPossible: row.points_possible,
-        priorityScore: row.priority_score,
-        isCompleted: Boolean(row.is_completed),
-        completedAt: row.completed_at,
-        submissionStatus: row.submission_status,
-      }));
     }
   );
 
   ipcMain.handle(
     'data:getNotifications',
     (_event, options?: { courseIds?: number[] }) => {
-      // Filter by courseIds if provided, always include system notifications (course_id is null)
-      let sql: string;
-      let params: number[] = [];
+      try {
+        // Filter by courseIds if provided, always include system notifications (course_id is null)
+        let sql: string;
+        let params: number[] = [];
 
-      if (options?.courseIds && options.courseIds.length > 0) {
-        // Filter by courseIds - keeps system notifications + notifications from specified courses
-        const placeholders = options.courseIds.map(() => '?').join(', ');
-        sql = `
+        if (options?.courseIds && options.courseIds.length > 0) {
+          // Filter by courseIds - keeps system notifications + notifications from specified courses
+          const placeholders = options.courseIds.map(() => '?').join(', ');
+          sql = `
         SELECT n.* FROM notifications n
         LEFT JOIN courses c ON n.course_id = c.id
         WHERE (n.course_id IS NULL OR n.course_id IN (${placeholders}))
           AND (n.course_id IS NULL OR c.id IS NOT NULL)
         ORDER BY n.published_at DESC
       `;
-        params = options.courseIds;
-      } else {
-        // No filter - return all notifications from synced courses
-        sql = `
+          params = options.courseIds;
+        } else {
+          // No filter - return all notifications from synced courses
+          sql = `
         SELECT n.* FROM notifications n
         LEFT JOIN courses c ON n.course_id = c.id
         WHERE n.course_id IS NULL OR c.id IS NOT NULL
         ORDER BY n.published_at DESC
       `;
-      }
+        }
 
-      const rows = database.executeRead<{
+        const rows = database.executeRead<{
+          id: number;
+          source_type: string;
+          source_id: string;
+          course_id: number | null;
+          title: string;
+          message: string;
+          message_html: string | null;
+          published_at: string;
+          dismissed_at: string | null;
+          url: string | null;
+        }>(sql, params);
+
+        return rows.map((row) => ({
+          id: row.id,
+          sourceType: row.source_type,
+          sourceId: row.source_id,
+          courseId: row.course_id,
+          title: row.title,
+          message: row.message,
+          messageHtml: row.message_html,
+          publishedAt: row.published_at,
+          dismissedAt: row.dismissed_at,
+          url: row.url,
+        }));
+      } catch (error) {
+        logger.error(`Failed to get notifications: ${error}`);
+        throw error;
+      }
+    }
+  );
+
+  // Get a single notification by ID
+  ipcMain.handle('data:getNotification', (_event, notificationId: number) => {
+    try {
+      const row = database.executeReadOne<{
         id: number;
         source_type: string;
         source_id: string;
@@ -815,9 +866,11 @@ function registerIpcHandlers(): void {
         published_at: string;
         dismissed_at: string | null;
         url: string | null;
-      }>(sql, params);
+      }>('SELECT * FROM notifications WHERE id = ?', [notificationId]);
 
-      return rows.map((row) => ({
+      if (!row) return null;
+
+      return {
         id: row.id,
         sourceType: row.source_type,
         sourceId: row.source_id,
@@ -828,147 +881,135 @@ function registerIpcHandlers(): void {
         publishedAt: row.published_at,
         dismissedAt: row.dismissed_at,
         url: row.url,
-      }));
+      };
+    } catch (error) {
+      logger.error(`Failed to get notification: ${error}`);
+      throw error;
     }
-  );
-
-  // Get a single notification by ID
-  ipcMain.handle('data:getNotification', (_event, notificationId: number) => {
-    const row = database.executeReadOne<{
-      id: number;
-      source_type: string;
-      source_id: string;
-      course_id: number | null;
-      title: string;
-      message: string;
-      message_html: string | null;
-      published_at: string;
-      dismissed_at: string | null;
-      url: string | null;
-    }>('SELECT * FROM notifications WHERE id = ?', [notificationId]);
-
-    if (!row) return null;
-
-    return {
-      id: row.id,
-      sourceType: row.source_type,
-      sourceId: row.source_id,
-      courseId: row.course_id,
-      title: row.title,
-      message: row.message,
-      messageHtml: row.message_html,
-      publishedAt: row.published_at,
-      dismissedAt: row.dismissed_at,
-      url: row.url,
-    };
   });
 
   // Get a single course by ID
   ipcMain.handle('data:getCourse', (_event, courseId: number) => {
-    const row = database.executeReadOne<{
-      id: number;
-      external_id: string;
-      code: string;
-      name: string;
-      target_grade: number;
-      assessed_grade: number | null;
-      current_grade: number | null;
-      total_weight: number;
-      color: string | null;
-      nickname: string | null;
-      is_hidden: number;
-      syllabus_body: string | null;
-      last_synced_at: string | null;
-    }>('SELECT * FROM courses WHERE id = ?', [courseId]);
+    try {
+      const row = database.executeReadOne<{
+        id: number;
+        external_id: string;
+        code: string;
+        name: string;
+        target_grade: number;
+        assessed_grade: number | null;
+        current_grade: number | null;
+        total_weight: number;
+        color: string | null;
+        nickname: string | null;
+        is_hidden: number;
+        syllabus_body: string | null;
+        last_synced_at: string | null;
+      }>('SELECT * FROM courses WHERE id = ?', [courseId]);
 
-    if (!row) return null;
+      if (!row) return null;
 
-    return {
-      id: row.id,
-      externalId: row.external_id,
-      code: row.code,
-      name: row.name,
-      targetGrade: row.target_grade,
-      assessedGrade: row.assessed_grade,
-      currentGrade: row.current_grade,
-      totalWeight: row.total_weight,
-      color: row.color,
-      nickname: row.nickname,
-      isHidden: Boolean(row.is_hidden),
-      syllabusBody: row.syllabus_body,
-      lastSyncedAt: row.last_synced_at,
-    };
+      return {
+        id: row.id,
+        externalId: row.external_id,
+        code: row.code,
+        name: row.name,
+        targetGrade: row.target_grade,
+        assessedGrade: row.assessed_grade,
+        currentGrade: row.current_grade,
+        totalWeight: row.total_weight,
+        color: row.color,
+        nickname: row.nickname,
+        isHidden: Boolean(row.is_hidden),
+        syllabusBody: row.syllabus_body,
+        lastSyncedAt: row.last_synced_at,
+      };
+    } catch (error) {
+      logger.error(`Failed to get course: ${error}`);
+      throw error;
+    }
   });
 
   // Get policies for a course
   ipcMain.handle('data:getPolicies', (_event, courseId: number) => {
-    const rows = database.executeRead<{
-      id: number;
-      course_id: number;
-      policy_type: string;
-      policy_name: string;
-      policy_config: string;
-      raw_text: string | null;
-      is_user_verified: number;
-      is_active: number;
-      created_at: string;
-      updated_at: string;
-    }>(
-      'SELECT * FROM course_policies WHERE course_id = ? AND is_active = 1 ORDER BY policy_type, policy_name',
-      [courseId]
-    );
+    try {
+      const rows = database.executeRead<{
+        id: number;
+        course_id: number;
+        policy_type: string;
+        policy_name: string;
+        policy_config: string;
+        raw_text: string | null;
+        is_user_verified: number;
+        is_active: number;
+        created_at: string;
+        updated_at: string;
+      }>(
+        'SELECT * FROM course_policies WHERE course_id = ? AND is_active = 1 ORDER BY policy_type, policy_name',
+        [courseId]
+      );
 
-    return rows.map((row) => ({
-      id: row.id,
-      courseId: row.course_id,
-      policyType: row.policy_type,
-      policyName: row.policy_name,
-      policyConfig: JSON.parse(row.policy_config || '{}'),
-      rawText: row.raw_text,
-      isUserVerified: Boolean(row.is_user_verified),
-      isActive: Boolean(row.is_active),
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-    }));
+      return rows.map((row) => ({
+        id: row.id,
+        courseId: row.course_id,
+        policyType: row.policy_type,
+        policyName: row.policy_name,
+        policyConfig: JSON.parse(row.policy_config || '{}'),
+        rawText: row.raw_text,
+        isUserVerified: Boolean(row.is_user_verified),
+        isActive: Boolean(row.is_active),
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      }));
+    } catch (error) {
+      logger.error(`Failed to get policies: ${error}`);
+      throw error;
+    }
   });
 
   // Get grade history for a course
   ipcMain.handle('data:getGradeHistory', (_event, courseId: number) => {
-    const rows = database.executeRead<{
-      id: number;
-      course_id: number;
-      grade: number;
-      recorded_at: string;
-    }>(
-      'SELECT * FROM grade_history WHERE course_id = ? ORDER BY recorded_at DESC LIMIT 30',
-      [courseId]
-    );
+    try {
+      const rows = database.executeRead<{
+        id: number;
+        course_id: number;
+        grade: number;
+        recorded_at: string;
+      }>(
+        'SELECT * FROM grade_history WHERE course_id = ? ORDER BY recorded_at DESC LIMIT 30',
+        [courseId]
+      );
 
-    return rows.map((row) => ({
-      id: row.id,
-      courseId: row.course_id,
-      grade: row.grade,
-      recordedAt: row.recorded_at,
-    }));
+      return rows.map((row) => ({
+        id: row.id,
+        courseId: row.course_id,
+        grade: row.grade,
+        recordedAt: row.recorded_at,
+      }));
+    } catch (error) {
+      logger.error(`Failed to get grade history: ${error}`);
+      throw error;
+    }
   });
 
   // Get all files (resources + notification attachments)
   ipcMain.handle('data:getFiles', () => {
-    // Get resources (files synced from Canvas)
-    const resources = database.executeRead<{
-      id: number;
-      external_id: string;
-      course_id: number;
-      parent_folder_id: number | null;
-      folder_path: string | null;
-      type: string;
-      title: string;
-      url: string | null;
-      local_path: string | null;
-      size_bytes: number | null;
-      mime_type: string | null;
-      synced_at: string | null;
-    }>(`
+    try {
+      // Get resources (files synced from Canvas)
+      const resources = database.executeRead<{
+        id: number;
+        external_id: string;
+        course_id: number;
+        parent_folder_id: number | null;
+        folder_path: string | null;
+        type: string;
+        title: string;
+        url: string | null;
+        local_path: string | null;
+        size_bytes: number | null;
+        mime_type: string | null;
+        synced_at: string | null;
+      }>(`
       SELECT r.*, c.code as course_code, c.name as course_name
       FROM resources r
       JOIN courses c ON r.course_id = c.id
@@ -976,24 +1017,24 @@ function registerIpcHandlers(): void {
       ORDER BY r.course_id, r.folder_path, r.title
     `);
 
-    // Get notification attachments
-    const attachments = database.executeRead<{
-      id: number;
-      notification_id: number;
-      course_id: number;
-      external_id: string;
-      display_name: string;
-      filename: string;
-      url: string;
-      size_bytes: number | null;
-      content_type: string | null;
-      local_path: string | null;
-      download_status: string;
-      downloaded_at: string | null;
-      course_code: string;
-      course_name: string;
-      notification_title: string;
-    }>(`
+      // Get notification attachments
+      const attachments = database.executeRead<{
+        id: number;
+        notification_id: number;
+        course_id: number;
+        external_id: string;
+        display_name: string;
+        filename: string;
+        url: string;
+        size_bytes: number | null;
+        content_type: string | null;
+        local_path: string | null;
+        download_status: string;
+        downloaded_at: string | null;
+        course_code: string;
+        course_name: string;
+        notification_title: string;
+      }>(`
       SELECT
         na.*,
         c.code as course_code,
@@ -1005,20 +1046,20 @@ function registerIpcHandlers(): void {
       ORDER BY na.course_id, na.display_name
     `);
 
-    // Get pages from course_pages with module info
-    const pages = database.executeRead<{
-      id: number;
-      external_id: string | null;
-      course_id: number;
-      page_type: string;
-      title: string;
-      url_slug: string | null;
-      body_html: string | null;
-      is_front_page: number;
-      published: number;
-      last_synced_at: string | null;
-      module_name: string | null;
-    }>(`
+      // Get pages from course_pages with module info
+      const pages = database.executeRead<{
+        id: number;
+        external_id: string | null;
+        course_id: number;
+        page_type: string;
+        title: string;
+        url_slug: string | null;
+        body_html: string | null;
+        is_front_page: number;
+        published: number;
+        last_synced_at: string | null;
+        module_name: string | null;
+      }>(`
       SELECT
         cp.*,
         m.name as module_name
@@ -1030,64 +1071,68 @@ function registerIpcHandlers(): void {
       ORDER BY cp.course_id, m.position, cp.title
     `);
 
-    const downloadedResources = resources.filter((r) => r.local_path !== null).length;
-    const downloadedAttachments = attachments.filter(
-      (a) => a.download_status === 'completed'
-    ).length;
-    logger.info(
-      `Found ${resources.length} resources (${downloadedResources} downloaded), ${attachments.length} attachments (${downloadedAttachments} downloaded), and ${pages.length} pages`
-    );
+      const downloadedResources = resources.filter((r) => r.local_path !== null).length;
+      const downloadedAttachments = attachments.filter(
+        (a) => a.download_status === 'completed'
+      ).length;
+      logger.info(
+        `Found ${resources.length} resources (${downloadedResources} downloaded), ${attachments.length} attachments (${downloadedAttachments} downloaded), and ${pages.length} pages`
+      );
 
-    return {
-      resources: resources.map((r) => ({
-        id: r.id,
-        externalId: r.external_id,
-        courseId: r.course_id,
-        parentFolderId: r.parent_folder_id,
-        folderPath: r.folder_path,
-        type: r.type,
-        title: r.title,
-        url: r.url,
-        localPath: r.local_path,
-        sizeBytes: r.size_bytes,
-        mimeType: r.mime_type,
-        syncedAt: r.synced_at,
-        source: 'resource' as const,
-      })),
-      attachments: attachments.map((a) => ({
-        id: a.id,
-        notificationId: a.notification_id,
-        courseId: a.course_id,
-        externalId: a.external_id,
-        displayName: a.display_name,
-        filename: a.filename,
-        url: a.url,
-        sizeBytes: a.size_bytes,
-        contentType: a.content_type,
-        localPath: a.local_path,
-        downloadStatus: a.download_status,
-        downloadedAt: a.downloaded_at,
-        courseCode: a.course_code,
-        courseName: a.course_name,
-        notificationTitle: a.notification_title,
-        source: 'attachment' as const,
-      })),
-      pages: pages.map((p) => ({
-        id: p.id,
-        externalId: p.external_id,
-        courseId: p.course_id,
-        pageType: p.page_type,
-        title: p.title,
-        urlSlug: p.url_slug,
-        hasContent: !!p.body_html,
-        isFrontPage: p.is_front_page === 1,
-        published: p.published === 1,
-        lastSyncedAt: p.last_synced_at,
-        folderPath: p.module_name || (p.is_front_page ? 'Front Page' : 'Pages'),
-        sizeBytes: null, // Pages don't have a file size
-        source: 'page' as const,
-      })),
-    };
+      return {
+        resources: resources.map((r) => ({
+          id: r.id,
+          externalId: r.external_id,
+          courseId: r.course_id,
+          parentFolderId: r.parent_folder_id,
+          folderPath: r.folder_path,
+          type: r.type,
+          title: r.title,
+          url: r.url,
+          localPath: r.local_path,
+          sizeBytes: r.size_bytes,
+          mimeType: r.mime_type,
+          syncedAt: r.synced_at,
+          source: 'resource' as const,
+        })),
+        attachments: attachments.map((a) => ({
+          id: a.id,
+          notificationId: a.notification_id,
+          courseId: a.course_id,
+          externalId: a.external_id,
+          displayName: a.display_name,
+          filename: a.filename,
+          url: a.url,
+          sizeBytes: a.size_bytes,
+          contentType: a.content_type,
+          localPath: a.local_path,
+          downloadStatus: a.download_status,
+          downloadedAt: a.downloaded_at,
+          courseCode: a.course_code,
+          courseName: a.course_name,
+          notificationTitle: a.notification_title,
+          source: 'attachment' as const,
+        })),
+        pages: pages.map((p) => ({
+          id: p.id,
+          externalId: p.external_id,
+          courseId: p.course_id,
+          pageType: p.page_type,
+          title: p.title,
+          urlSlug: p.url_slug,
+          hasContent: !!p.body_html,
+          isFrontPage: p.is_front_page === 1,
+          published: p.published === 1,
+          lastSyncedAt: p.last_synced_at,
+          folderPath: p.module_name || (p.is_front_page ? 'Front Page' : 'Pages'),
+          sizeBytes: null, // Pages don't have a file size
+          source: 'page' as const,
+        })),
+      };
+    } catch (error) {
+      logger.error(`Failed to get files: ${error}`);
+      throw error;
+    }
   });
 
   // Get announcements for a specific course
@@ -2563,12 +2608,13 @@ function registerIpcHandlers(): void {
         const escapeICS = (text: string | null | undefined): string => {
           if (!text) return '';
           // Escape special ICS characters (backslash, semicolon, comma, newline)
-          // eslint-disable-next-line cross-platform/no-hardcoded-path-separator -- ICS text escaping, not path
+          /* eslint-disable cross-platform/no-hardcoded-path-separator -- ICS text escaping, not path */
           return text
             .replace(/\\/g, '\\\\')
             .replace(/;/g, '\\;')
             .replace(/,/g, '\\,')
             .replace(/\n/g, '\\n');
+          /* eslint-enable cross-platform/no-hardcoded-path-separator */
         };
 
         // Build date range filter
@@ -3537,7 +3583,7 @@ function registerIpcHandlers(): void {
         },
       };
     } catch (_e) {
-      return { success: false, error: String(e) };
+      return { success: false, error: String(_e) };
     }
   });
 
@@ -3578,7 +3624,7 @@ function registerIpcHandlers(): void {
 
         return { success: true };
       } catch (_e) {
-        return { success: false, error: String(e) };
+        return { success: false, error: String(_e) };
       }
     }
   );
@@ -4488,7 +4534,7 @@ app.on('quit', () => {
     clearTimeout(closeTimeout);
   } catch (_e) {
     clearTimeout(closeTimeout);
-    logger.error('Database close failed:', e as Error);
+    logger.error('Database close failed:', _e as Error);
   }
 
   logger.close();
