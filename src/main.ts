@@ -27,10 +27,13 @@ import {
 import crypto from 'crypto';
 
 // L3 - Intelligence
+import { PriorityEngine } from './layers/l3-intelligence/PriorityEngine';
 import { PriorityOrchestrator } from './layers/l3-intelligence/orchestration/PriorityOrchestrator';
 import { RecommendationOrchestrator } from './layers/l3-intelligence/orchestration/RecommendationOrchestrator';
 import { InsightOrchestrator } from './layers/l3-intelligence/orchestration/InsightOrchestrator';
 import { WorkloadOrchestrator } from './layers/l3-intelligence/orchestration/WorkloadOrchestrator';
+import { BehaviorTrackingOrchestrator } from './layers/l3-intelligence/orchestration/BehaviorTrackingOrchestrator';
+import { AdaptiveLearningOrchestrator } from './layers/l3-intelligence/orchestration/AdaptiveLearningOrchestrator';
 
 // L4 - Controller
 import { CommandDispatcher } from './layers/l4-controller';
@@ -100,10 +103,13 @@ const migrationRunner = new MigrationRunner(database);
 // Initialize Layer 4 controller (after database is ready)
 // Note: CommandDispatcher is initialized lazily after database.initialize()
 let commandDispatcher: CommandDispatcher | null = null;
+let priorityEngine: PriorityEngine | null = null;
 let priorityOrchestrator: PriorityOrchestrator | null = null;
 let recommendationOrchestrator: RecommendationOrchestrator | null = null;
 let insightOrchestrator: InsightOrchestrator | null = null;
 let workloadOrchestrator: WorkloadOrchestrator | null = null;
+let behaviorTrackingOrchestrator: BehaviorTrackingOrchestrator | null = null;
+let adaptiveLearningOrchestrator: AdaptiveLearningOrchestrator | null = null;
 
 // Initialize Layer 2 daemon components (lazy-init for CanvasClient/SyncEngine)
 const rateLimiter = new RateLimiter({ maxConcurrent: 3, minDelayMs: 100 });
@@ -248,6 +254,44 @@ async function initializeCanvasClient(token: string, baseUrl: string): Promise<b
     syncEngine.on('sync-error', ({ type, error }) => {
       metricsCollector.increment(`sync.${type}.errors`);
       logger.error(`Sync error in ${type}: ${error}`);
+      // Forward to renderer so UI can show specific error details
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('sync:error', { type, error });
+      }
+    });
+
+    // Forward granular entity errors to renderer for detailed error display
+    syncEngine.on('sync-entity-error', ({ entity, externalId, error, courseName }) => {
+      metricsCollector.increment(`sync.entity.${entity}.errors`);
+      logger.warn(`Sync entity error: ${entity} (${externalId}): ${error}`);
+      // Forward to renderer for granular error display
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('sync:entityError', { entity, externalId, error, courseName });
+      }
+    });
+
+    // Forward sync progress for UI updates
+    syncEngine.on('sync-progress', (progress) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('sync:progress', progress);
+      }
+    });
+
+    // Forward sync phase changes
+    syncEngine.on('sync-phase', ({ phase, status }) => {
+      logger.info(`Sync phase ${phase}: ${status}`);
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('sync:phase', { phase, status });
+      }
+    });
+
+    // Forward sync aborted events
+    syncEngine.on('sync-aborted', ({ reason, error }) => {
+      logger.error(`Sync aborted: ${reason} - ${error}`);
+      metricsCollector.increment('sync.aborted');
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('sync:aborted', { reason, error });
+      }
     });
 
     // Forward sync conflicts to renderer for user resolution
@@ -256,6 +300,18 @@ async function initializeCanvasClient(token: string, baseUrl: string): Promise<b
         logger.info(`Sync conflicts detected: ${conflicts.length} ${entity} conflict(s)`);
         mainWindow.webContents.send('sync:conflicts', conflicts);
         metricsCollector.increment(`sync.conflicts.${entity}`);
+      }
+    });
+
+    // Start background token validation to detect expired/revoked tokens
+    credentialManager.startBackgroundValidation();
+
+    // Listen for token invalidation events
+    credentialManager.on('token-invalid', ({ reason }) => {
+      logger.warn(`Token invalid: ${reason}`);
+      metricsCollector.increment('canvas.token.invalid');
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('auth:expired', { reason });
       }
     });
 
@@ -362,6 +418,7 @@ function registerIpcHandlers(): void {
     if (success) {
       canvasClient = null;
       syncEngine = null;
+      credentialManager.stopBackgroundValidation();
       metricsCollector.increment('credentials.deleted');
     }
     return { success };
@@ -1137,129 +1194,144 @@ function registerIpcHandlers(): void {
 
   // Get announcements for a specific course
   ipcMain.handle('data:getCourseNotifications', (_event, courseId: number) => {
-    const rows = database.executeRead<{
-      id: number;
-      source_type: string;
-      source_id: string;
-      course_id: number | null;
-      title: string;
-      message: string;
-      message_html: string | null;
-      published_at: string;
-      dismissed_at: string | null;
-      url: string | null;
-    }>('SELECT * FROM notifications WHERE course_id = ? ORDER BY published_at DESC', [
-      courseId,
-    ]);
+    try {
+      const rows = database.executeRead<{
+        id: number;
+        source_type: string;
+        source_id: string;
+        course_id: number | null;
+        title: string;
+        message: string;
+        message_html: string | null;
+        published_at: string;
+        dismissed_at: string | null;
+        url: string | null;
+      }>('SELECT * FROM notifications WHERE course_id = ? ORDER BY published_at DESC', [
+        courseId,
+      ]);
 
-    return rows.map((row) => ({
-      id: row.id,
-      sourceType: row.source_type,
-      sourceId: row.source_id,
-      courseId: row.course_id,
-      title: row.title,
-      message: row.message,
-      messageHtml: row.message_html,
-      publishedAt: row.published_at,
-      dismissedAt: row.dismissed_at,
-      url: row.url,
-    }));
+      return rows.map((row) => ({
+        id: row.id,
+        sourceType: row.source_type,
+        sourceId: row.source_id,
+        courseId: row.course_id,
+        title: row.title,
+        message: row.message,
+        messageHtml: row.message_html,
+        publishedAt: row.published_at,
+        dismissedAt: row.dismissed_at,
+        url: row.url,
+      }));
+    } catch (error) {
+      logger.error(`Failed to get course notifications: ${error}`);
+      throw error;
+    }
   });
 
   // Get attachments for a notification
   ipcMain.handle('data:getAttachments', (_event, notificationId: number) => {
-    const rows = database.executeRead<{
-      id: number;
-      notification_id: number;
-      external_id: string;
-      display_name: string;
-      filename: string;
-      url: string;
-      size_bytes: number | null;
-      content_type: string | null;
-      local_path: string | null;
-      download_status: string;
-      downloaded_at: string | null;
-    }>(
-      'SELECT * FROM notification_attachments WHERE notification_id = ? ORDER BY display_name',
-      [notificationId]
-    );
+    try {
+      const rows = database.executeRead<{
+        id: number;
+        notification_id: number;
+        external_id: string;
+        display_name: string;
+        filename: string;
+        url: string;
+        size_bytes: number | null;
+        content_type: string | null;
+        local_path: string | null;
+        download_status: string;
+        downloaded_at: string | null;
+      }>(
+        'SELECT * FROM notification_attachments WHERE notification_id = ? ORDER BY display_name',
+        [notificationId]
+      );
 
-    return rows.map((row) => ({
-      id: row.id,
-      notificationId: row.notification_id,
-      externalId: row.external_id,
-      displayName: row.display_name,
-      filename: row.filename,
-      url: row.url,
-      sizeBytes: row.size_bytes,
-      contentType: row.content_type,
-      localPath: row.local_path,
-      downloadStatus: row.download_status,
-      downloadedAt: row.downloaded_at,
-    }));
+      return rows.map((row) => ({
+        id: row.id,
+        notificationId: row.notification_id,
+        externalId: row.external_id,
+        displayName: row.display_name,
+        filename: row.filename,
+        url: row.url,
+        sizeBytes: row.size_bytes,
+        contentType: row.content_type,
+        localPath: row.local_path,
+        downloadStatus: row.download_status,
+        downloadedAt: row.downloaded_at,
+      }));
+    } catch (error) {
+      logger.error(`Failed to get attachments: ${error}`);
+      throw error;
+    }
   });
 
   // Get file references for a notification (with attachment details if linked)
   ipcMain.handle('data:getFileReferences', (_event, notificationId: number) => {
-    const rows = database.executeRead<{
-      id: number;
-      notification_id: number;
-      attachment_id: number | null;
-      start_position: number;
-      end_position: number;
-      matched_text: string;
-      original_url: string | null;
-      // Joined attachment fields
-      att_id: number | null;
-      att_external_id: string | null;
-      att_display_name: string | null;
-      att_filename: string | null;
-      att_url: string | null;
-      att_size_bytes: number | null;
-      att_content_type: string | null;
-      att_local_path: string | null;
-      att_download_status: string | null;
-      att_downloaded_at: string | null;
-    }>(
-      `SELECT
-        fr.id, fr.notification_id, fr.attachment_id, fr.start_position, fr.end_position,
-        fr.matched_text, fr.original_url,
-        a.id as att_id, a.external_id as att_external_id, a.display_name as att_display_name,
-        a.filename as att_filename, a.url as att_url, a.size_bytes as att_size_bytes,
-        a.content_type as att_content_type, a.local_path as att_local_path,
-        a.download_status as att_download_status, a.downloaded_at as att_downloaded_at
-      FROM announcement_file_references fr
-      LEFT JOIN notification_attachments a ON fr.attachment_id = a.id
-      WHERE fr.notification_id = ?
-      ORDER BY fr.start_position`,
-      [notificationId]
-    );
+    try {
+      const rows = database.executeRead<{
+        id: number;
+        notification_id: number;
+        attachment_id: number | null;
+        start_position: number;
+        end_position: number;
+        matched_text: string;
+        original_url: string | null;
+        // Joined attachment fields
+        att_id: number | null;
+        att_external_id: string | null;
+        att_display_name: string | null;
+        att_filename: string | null;
+        att_url: string | null;
+        att_size_bytes: number | null;
+        att_content_type: string | null;
+        att_local_path: string | null;
+        att_download_status: string | null;
+        att_downloaded_at: string | null;
+      }>(
+        `SELECT
+          fr.id, fr.notification_id, fr.attachment_id, fr.start_position, fr.end_position,
+          fr.matched_text, fr.original_url,
+          a.id as att_id, a.external_id as att_external_id, a.display_name as att_display_name,
+          a.filename as att_filename, a.url as att_url, a.size_bytes as att_size_bytes,
+          a.content_type as att_content_type, a.local_path as att_local_path,
+          a.download_status as att_download_status, a.downloaded_at as att_downloaded_at
+        FROM announcement_file_references fr
+        LEFT JOIN notification_attachments a ON fr.attachment_id = a.id
+        WHERE fr.notification_id = ?
+        ORDER BY fr.start_position`,
+        [notificationId]
+      );
 
-    return rows.map((row) => ({
-      id: row.id,
-      notificationId: row.notification_id,
-      attachmentId: row.attachment_id,
-      startPosition: row.start_position,
-      endPosition: row.end_position,
-      matchedText: row.matched_text,
-      originalUrl: row.original_url,
-      attachment: row.att_id
-        ? {
-            id: row.att_id,
-            notificationId: row.notification_id,
-            externalId: row.att_external_id!,
-            displayName: row.att_display_name!,
-            filename: row.att_filename!,
-            url: row.att_url!,
-            sizeBytes: row.att_size_bytes,
-            contentType: row.att_content_type,
-            localPath: row.att_local_path,
-            downloadStatus: row.att_download_status,
-            downloadedAt: row.att_downloaded_at,
-          }
-        : undefined,
-    }));
+      return rows.map((row) => ({
+        id: row.id,
+        notificationId: row.notification_id,
+        attachmentId: row.attachment_id,
+        startPosition: row.start_position,
+        endPosition: row.end_position,
+        matchedText: row.matched_text,
+        originalUrl: row.original_url,
+        attachment: row.att_id
+          ? {
+              id: row.att_id,
+              notificationId: row.notification_id,
+              externalId: row.att_external_id!,
+              displayName: row.att_display_name!,
+              filename: row.att_filename!,
+              url: row.att_url!,
+              sizeBytes: row.att_size_bytes,
+              contentType: row.att_content_type,
+              localPath: row.att_local_path,
+              downloadStatus: row.att_download_status,
+              downloadedAt: row.att_downloaded_at,
+            }
+          : undefined,
+      }));
+    } catch (error) {
+      logger.error(`Failed to get file references: ${error}`);
+      throw error;
+    }
   });
 
   // Download an attachment
@@ -1457,13 +1529,48 @@ function registerIpcHandlers(): void {
   // Set the download directory (persists via localStorage on renderer side)
   ipcMain.handle('files:setDirectory', (_event, newPath: string) => {
     try {
-      // Validate the path exists or can be created
-      if (!fs.existsSync(newPath)) {
-        fs.mkdirSync(newPath, { recursive: true });
+      // Validate input
+      if (!newPath || typeof newPath !== 'string') {
+        return { success: false, error: 'Invalid path' };
       }
 
-      fileDownloadManager.updateBaseDir(newPath);
-      logger.info(`Download directory changed to: ${newPath}`);
+      // Normalize and resolve the path to prevent traversal attacks
+      const resolvedPath = path.resolve(newPath);
+
+      // Check for null bytes (path injection)
+      if (newPath.includes('\0') || resolvedPath.includes('\0')) {
+        logger.warn(`Rejected path with null byte: ${newPath}`);
+        return { success: false, error: 'Invalid path characters' };
+      }
+
+      // Prevent setting to system-critical directories
+      const criticalPaths = [
+        process.env.SystemRoot || 'C:\\Windows',
+        process.env.ProgramFiles || 'C:\\Program Files',
+        process.env.ProgramData || 'C:\\ProgramData',
+        '/etc',
+        '/usr',
+        '/bin',
+        '/sbin',
+        '/var',
+        '/System',
+      ].map((p) => path.resolve(p).toLowerCase());
+
+      const resolvedLower = resolvedPath.toLowerCase();
+      for (const critical of criticalPaths) {
+        if (resolvedLower === critical || resolvedLower.startsWith(critical + path.sep)) {
+          logger.warn(`Rejected attempt to set files directory to system path: ${newPath}`);
+          return { success: false, error: 'Cannot use system directory' };
+        }
+      }
+
+      // Validate the path exists or can be created
+      if (!fs.existsSync(resolvedPath)) {
+        fs.mkdirSync(resolvedPath, { recursive: true });
+      }
+
+      fileDownloadManager.updateBaseDir(resolvedPath);
+      logger.info(`Download directory changed to: ${resolvedPath}`);
       return { success: true };
     } catch (error) {
       logger.error(`Failed to set download directory: ${error}`);
@@ -1662,6 +1769,9 @@ function registerIpcHandlers(): void {
         syncEngine.stop();
         logger.info('Sync engine stopped');
       }
+
+      // Stop background token validation
+      credentialManager.stopBackgroundValidation();
 
       await credentialManager.delete();
       canvasClient = null;
@@ -3322,6 +3432,196 @@ function registerIpcHandlers(): void {
     }
   );
 
+  ipcMain.handle(
+    'intelligence:getNeglectedCourses',
+    (_event, params?: { windowDays?: number }) => {
+      if (!workloadOrchestrator) {
+        return [];
+      }
+      try {
+        return workloadOrchestrator.getNeglectedCourses(params?.windowDays ?? 14);
+      } catch (error) {
+        logger.error('Failed to get neglected courses', error as Error);
+        return [];
+      }
+    }
+  );
+
+  ipcMain.handle(
+    'intelligence:getDeadlineClusters',
+    (_event, params?: { windowHours?: number }) => {
+      if (!workloadOrchestrator) {
+        return [];
+      }
+      try {
+        return workloadOrchestrator.getDeadlineClusters(params?.windowHours ?? 48);
+      } catch (error) {
+        logger.error('Failed to get deadline clusters', error as Error);
+        return [];
+      }
+    }
+  );
+
+  ipcMain.handle('intelligence:getCourseBalanceScore', () => {
+    if (!workloadOrchestrator) {
+      return 0;
+    }
+    try {
+      return workloadOrchestrator.getCourseBalanceScore();
+    } catch (error) {
+      logger.error('Failed to get course balance score', error as Error);
+      return 0;
+    }
+  });
+
+  ipcMain.handle(
+    'intelligence:getWorkloadSnapshots',
+    (_event, params?: { days?: number }) => {
+      if (!workloadOrchestrator) {
+        return [];
+      }
+      try {
+        return workloadOrchestrator.getHistoricalSnapshots(params?.days ?? 30);
+      } catch (error) {
+        logger.error('Failed to get workload snapshots', error as Error);
+        return [];
+      }
+    }
+  );
+
+  // ============ Intelligence - Behavior Tracking ============
+
+  ipcMain.handle('intelligence:getWeeklyRhythm', () => {
+    if (!behaviorTrackingOrchestrator) {
+      return null;
+    }
+    try {
+      const rhythm = behaviorTrackingOrchestrator.getWeeklyRhythm();
+      return {
+        productiveDays: rhythm.productiveDays,
+        productiveHours: rhythm.productiveHours,
+        peakDay: rhythm.peakDay,
+        peakHour: rhythm.peakHour,
+        sampleSize: rhythm.sampleSize,
+        confidence: rhythm.confidence,
+      };
+    } catch (error) {
+      logger.error('Failed to get weekly rhythm', error as Error);
+      return null;
+    }
+  });
+
+  ipcMain.handle('intelligence:getCoursePerformance', () => {
+    if (!behaviorTrackingOrchestrator) {
+      return [];
+    }
+    try {
+      return behaviorTrackingOrchestrator.getCoursePerformance();
+    } catch (error) {
+      logger.error('Failed to get course performance', error as Error);
+      return [];
+    }
+  });
+
+  ipcMain.handle('intelligence:getStrugglePatterns', () => {
+    if (!behaviorTrackingOrchestrator) {
+      return [];
+    }
+    try {
+      return behaviorTrackingOrchestrator.getStrugglePatterns();
+    } catch (error) {
+      logger.error('Failed to get struggle patterns', error as Error);
+      return [];
+    }
+  });
+
+  ipcMain.handle('intelligence:getCompletionTiming', () => {
+    if (!behaviorTrackingOrchestrator) {
+      return null;
+    }
+    try {
+      return behaviorTrackingOrchestrator.getCompletionTiming();
+    } catch (error) {
+      logger.error('Failed to get completion timing', error as Error);
+      return null;
+    }
+  });
+
+  ipcMain.handle('intelligence:getBehaviorEventCount', () => {
+    if (!behaviorTrackingOrchestrator) {
+      return 0;
+    }
+    try {
+      return behaviorTrackingOrchestrator.getEventCount();
+    } catch (error) {
+      logger.error('Failed to get behavior event count', error as Error);
+      return 0;
+    }
+  });
+
+  // ============ Intelligence - Adaptive Learning ============
+
+  ipcMain.handle('intelligence:getAdaptiveWeights', () => {
+    if (!adaptiveLearningOrchestrator) {
+      return null;
+    }
+    try {
+      return adaptiveLearningOrchestrator.getCachedWeights();
+    } catch (error) {
+      logger.error('Failed to get adaptive weights', error as Error);
+      return null;
+    }
+  });
+
+  ipcMain.handle('intelligence:getWeightAdjustments', () => {
+    if (!adaptiveLearningOrchestrator) {
+      return [];
+    }
+    try {
+      return adaptiveLearningOrchestrator.getWeightAdjustments();
+    } catch (error) {
+      logger.error('Failed to get weight adjustments', error as Error);
+      return [];
+    }
+  });
+
+  ipcMain.handle('intelligence:getAdaptiveSummary', () => {
+    if (!adaptiveLearningOrchestrator) {
+      return [];
+    }
+    try {
+      return adaptiveLearningOrchestrator.getSummary();
+    } catch (error) {
+      logger.error('Failed to get adaptive summary', error as Error);
+      return [];
+    }
+  });
+
+  ipcMain.handle('intelligence:getAdaptiveStatistics', () => {
+    if (!adaptiveLearningOrchestrator) {
+      return null;
+    }
+    try {
+      return adaptiveLearningOrchestrator.getStatistics();
+    } catch (error) {
+      logger.error('Failed to get adaptive statistics', error as Error);
+      return null;
+    }
+  });
+
+  ipcMain.handle('intelligence:recalculateAdaptiveWeights', () => {
+    if (!adaptiveLearningOrchestrator) {
+      return { success: false, error: 'Adaptive learning not initialized' };
+    }
+    try {
+      const weights = adaptiveLearningOrchestrator.recalculateWeights();
+      return { success: true, data: weights };
+    } catch (error) {
+      logger.error('Failed to recalculate adaptive weights', error as Error);
+      return { success: false, error: 'Failed to recalculate weights' };
+    }
+  });
+
   // ============ Sync Conflict Handlers ============
 
   ipcMain.handle('sync:getPendingConflicts', () => {
@@ -4385,8 +4685,11 @@ app.whenReady().then(async () => {
       logger.info(`Auto-completed ${autoCompleteResult.changes} graded tasks`);
     }
 
-    // Initialize L4 CommandDispatcher now that database is ready
-    commandDispatcher = new CommandDispatcher({ db: database });
+    // Initialize L3 PriorityEngine for simulation support
+    priorityEngine = new PriorityEngine(database);
+
+    // Initialize L4 CommandDispatcher with PriorityEngine for grade simulations
+    commandDispatcher = new CommandDispatcher({ db: database, priorityEngine });
 
     // Initialize L3 PriorityOrchestrator
     priorityOrchestrator = new PriorityOrchestrator(database, {
@@ -4410,7 +4713,19 @@ app.whenReady().then(async () => {
       defaultLookAheadDays: 14,
     });
 
-    logger.info('L3 Intelligence orchestrators initialized');
+    behaviorTrackingOrchestrator = new BehaviorTrackingOrchestrator(database, {
+      refreshIntervalMs: 60 * 60 * 1000, // 1 hour
+      maxEventAgeDays: 180,
+      autoRefresh: true,
+    });
+
+    adaptiveLearningOrchestrator = new AdaptiveLearningOrchestrator(database, {
+      recalculateIntervalMs: 24 * 60 * 60 * 1000, // 24 hours
+      minSampleSize: 10,
+      autoRecalculate: true,
+    });
+
+    logger.info('L3 Intelligence orchestrators initialized (including behavior tracking and adaptive learning)');
 
     // Forward sync requests from CommandDispatcher to SyncEngine
     commandDispatcher.on('sync-requested', async (event) => {
@@ -4428,9 +4743,79 @@ app.whenReady().then(async () => {
       }
     });
 
-    // Track command metrics
-    commandDispatcher.on('command-completed', ({ command }) => {
+    // Track command metrics and behavior events
+    commandDispatcher.on('command-completed', ({ command, params, result }) => {
       metricsCollector.increment(`command.${command}.executed`);
+
+      // Track task completions for behavior analysis and adaptive learning
+      if (command === 'MarkTaskComplete' && result?.success && params?.isComplete) {
+        try {
+          const taskId = params.taskId as number;
+
+          // Get task details for tracking
+          const task = database.executeReadOne<{
+            id: number;
+            course_id: number;
+            task_type: string | null;
+            due_at: string | null;
+            points_possible: number | null;
+            grade: number | null;
+          }>('SELECT id, course_id, task_type, due_at, points_possible, grade FROM tasks WHERE id = ?', [taskId]);
+
+          if (task) {
+            const completedAt = new Date();
+            const dueAt = task.due_at ? new Date(task.due_at) : null;
+            const wasLate = dueAt ? completedAt > dueAt : false;
+            const daysBeforeDue = dueAt
+              ? Math.round((dueAt.getTime() - completedAt.getTime()) / (1000 * 60 * 60 * 24))
+              : null;
+
+            // Record to behavior tracking
+            if (behaviorTrackingOrchestrator) {
+              behaviorTrackingOrchestrator.recordCompletionEvent(
+                task.id,
+                task.course_id,
+                task.task_type || 'assignment',
+                completedAt,
+                {
+                  dueAt: dueAt ?? undefined,
+                  pointsPossible: task.points_possible ?? undefined,
+                  scoreAchieved: task.grade ?? undefined,
+                }
+              );
+            }
+
+            // Record to adaptive learning (simplified - without full priority factors)
+            // Note: Full integration would require storing priority factors at task completion time
+            if (adaptiveLearningOrchestrator) {
+              const defaultFactors = {
+                urgency: 50,
+                weight: task.points_possible ? Math.min(50, task.points_possible / 2) : 10,
+                courseGap: 15,
+                policyAdjustment: 0,
+                dependency: 0,
+                taskTypeBoost: 0,
+                lockTimeUrgency: 0,
+                graceTokenFactor: 0,
+                submissionFactor: 0,
+              };
+              adaptiveLearningOrchestrator.recordOutcome(
+                task.id,
+                task.course_id,
+                task.task_type || 'assignment',
+                50, // Placeholder priority score
+                defaultFactors,
+                wasLate,
+                daysBeforeDue
+              );
+            }
+
+            logger.debug(`Recorded task completion for behavior tracking: task ${taskId}`);
+          }
+        } catch (error) {
+          logger.warn(`Failed to track task completion for behavior analysis: ${error}`);
+        }
+      }
     });
 
     // Forward simulation state changes to renderer

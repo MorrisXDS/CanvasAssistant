@@ -24,6 +24,11 @@ import type { CanvasClient } from '../l2-daemon/CanvasClient';
 import type { SyncEngine } from '../l2-daemon/SyncEngine';
 import type { PriorityEngine } from '../l3-intelligence/PriorityEngine';
 import type { PriorityOrchestrator } from '../l3-intelligence/orchestration/PriorityOrchestrator';
+import type { RecommendationOrchestrator } from '../l3-intelligence/orchestration/RecommendationOrchestrator';
+import type { InsightOrchestrator } from '../l3-intelligence/orchestration/InsightOrchestrator';
+import type { WorkloadOrchestrator } from '../l3-intelligence/orchestration/WorkloadOrchestrator';
+import type { BehaviorTrackingOrchestrator } from '../l3-intelligence/orchestration/BehaviorTrackingOrchestrator';
+import type { AdaptiveLearningOrchestrator } from '../l3-intelligence/orchestration/AdaptiveLearningOrchestrator';
 import type { GradeCalculationService } from '../l3-intelligence/domain/GradeCalculationService';
 import type { GraceTokenService } from '../l3-intelligence/domain/GraceTokenService';
 import type { CommandDispatcher } from '../l4-controller/CommandDispatcher';
@@ -56,6 +61,11 @@ export type ServiceToken =
   // L3 Intelligence
   | 'priorityEngine'
   | 'priorityOrchestrator'
+  | 'recommendationOrchestrator'
+  | 'insightOrchestrator'
+  | 'workloadOrchestrator'
+  | 'behaviorTrackingOrchestrator'
+  | 'adaptiveLearningOrchestrator'
   | 'gradeCalculationService'
   | 'graceTokenService'
   // L4 Controller
@@ -89,6 +99,11 @@ export interface ServiceDefinitions {
   // L3 Intelligence
   priorityEngine: PriorityEngine;
   priorityOrchestrator: PriorityOrchestrator;
+  recommendationOrchestrator: RecommendationOrchestrator;
+  insightOrchestrator: InsightOrchestrator;
+  workloadOrchestrator: WorkloadOrchestrator;
+  behaviorTrackingOrchestrator: BehaviorTrackingOrchestrator;
+  adaptiveLearningOrchestrator: AdaptiveLearningOrchestrator;
   gradeCalculationService: GradeCalculationService;
   graceTokenService: GraceTokenService;
   // L4 Controller

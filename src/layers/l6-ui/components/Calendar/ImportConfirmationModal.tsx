@@ -16,18 +16,8 @@ import {
   FileText,
 } from 'lucide-react';
 import type { ICSImportPreview, ParsedICSEvent } from '../../../l5-presentation/types';
-
-// Color palette for calendar selection
-const CALENDAR_COLORS = [
-  '#6366F1', // Indigo
-  '#EC4899', // Pink
-  '#10B981', // Emerald
-  '#F59E0B', // Amber
-  '#3B82F6', // Blue
-  '#8B5CF6', // Violet
-  '#EF4444', // Red
-  '#14B8A6', // Teal
-];
+import { CALENDAR_COLORS } from '../../constants';
+import { ColorPicker } from '../primitives';
 
 interface ImportConfirmationModalProps {
   isOpen: boolean;
@@ -43,7 +33,7 @@ export function ImportConfirmationModal({
   onCancel,
 }: ImportConfirmationModalProps) {
   const [calendarName, setCalendarName] = useState(preview?.calendarName || '');
-  const [selectedColor, setSelectedColor] = useState(CALENDAR_COLORS[0]);
+  const [selectedColor, setSelectedColor] = useState<string>(CALENDAR_COLORS[0]);
 
   // Update name when preview changes
   React.useEffect(() => {
@@ -148,22 +138,13 @@ export function ImportConfirmationModal({
         {/* Color Picker */}
         <div style={styles.formGroup}>
           <label style={styles.label}>Calendar Color</label>
-          <div style={styles.colorPicker}>
-            {CALENDAR_COLORS.map((color) => (
-              <button
-                key={color}
-                style={{
-                  ...styles.colorOption,
-                  backgroundColor: color,
-                  border:
-                    selectedColor === color
-                      ? '3px solid var(--text-primary)'
-                      : '3px solid transparent',
-                }}
-                onClick={() => setSelectedColor(color)}
-              />
-            ))}
-          </div>
+          <ColorPicker
+            value={selectedColor}
+            onChange={setSelectedColor}
+            presets={CALENDAR_COLORS}
+            allowCustom={true}
+            swatchSize={28}
+          />
         </div>
 
         {/* Events Preview */}

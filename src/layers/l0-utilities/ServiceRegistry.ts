@@ -280,6 +280,49 @@ export class ServiceRegistry extends EventEmitter {
       });
     });
 
+    this.register('recommendationOrchestrator', () => {
+      const { RecommendationOrchestrator } = require('../l3-intelligence/orchestration/RecommendationOrchestrator');
+      const db = this.get('database');
+      return new RecommendationOrchestrator(db, {
+        refreshIntervalMs: 30 * 60 * 1000, // 30 minutes
+        autoRefresh: true,
+      });
+    });
+
+    this.register('insightOrchestrator', () => {
+      const { InsightOrchestrator } = require('../l3-intelligence/orchestration/InsightOrchestrator');
+      const db = this.get('database');
+      return new InsightOrchestrator(db, {
+        refreshIntervalMs: 6 * 60 * 60 * 1000, // 6 hours
+        autoRefresh: true,
+      });
+    });
+
+    this.register('workloadOrchestrator', () => {
+      const { WorkloadOrchestrator } = require('../l3-intelligence/orchestration/WorkloadOrchestrator');
+      const db = this.get('database');
+      return new WorkloadOrchestrator(db, {
+        defaultAvailableHoursPerDay: 4,
+        defaultLookAheadDays: 14,
+      });
+    });
+
+    this.register('behaviorTrackingOrchestrator', () => {
+      const { BehaviorTrackingOrchestrator } = require('../l3-intelligence/orchestration/BehaviorTrackingOrchestrator');
+      const db = this.get('database');
+      return new BehaviorTrackingOrchestrator(db, {
+        autoRefresh: true,
+      });
+    });
+
+    this.register('adaptiveLearningOrchestrator', () => {
+      const { AdaptiveLearningOrchestrator } = require('../l3-intelligence/orchestration/AdaptiveLearningOrchestrator');
+      const db = this.get('database');
+      return new AdaptiveLearningOrchestrator(db, {
+        autoRefresh: true,
+      });
+    });
+
     this.register('gradeCalculationService', () => {
       const { GradeCalculationService } = require('../l3-intelligence/domain/GradeCalculationService');
       return new GradeCalculationService();

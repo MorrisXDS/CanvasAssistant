@@ -3,7 +3,7 @@
  * Course glossary with grid/list view toggle and pin functionality
  */
 
-import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { FixedSizeList as VirtualList } from 'react-window';
 import {
@@ -23,28 +23,10 @@ import {
 } from 'lucide-react';
 import { useStore, getCachedCourseGrades } from '../../../l5-presentation/store';
 import { Card } from '../shared';
+import { ColorPickerPopup } from '../primitives';
 import { useCourseDragDrop } from './useCourseDragDrop';
-import { formatTimeAgo } from '../../constants';
+import { formatTimeAgo, COURSE_COLORS, getCourseColor } from '../../constants';
 import type { Course } from '../../../l5-presentation/types';
-
-// Course color palette
-const COURSE_COLORS = [
-  '#007FA3',
-  '#E53935',
-  '#43A047',
-  '#FB8C00',
-  '#8E24AA',
-  '#1E88E5',
-  '#D81B60',
-  '#00ACC1',
-  '#7CB342',
-  '#6D4C41',
-];
-
-function getCourseColor(courseId: number, existingColor: string | null): string {
-  if (existingColor) return existingColor;
-  return COURSE_COLORS[courseId % COURSE_COLORS.length];
-}
 
 function getShortCode(code: string): string {
   // Stop before a letter followed by a digit and then space/end (e.g., "H1 " or "Y1")
@@ -756,7 +738,7 @@ function CourseGridCard({
   showColorPicker,
   colorPickerValue,
   onColorChange,
-  onColorInputChange,
+  onColorInputChange: _onColorInputChange,
   onColorPickerClose,
   isDragging,
   isDragOver,
@@ -767,24 +749,6 @@ function CourseGridCard({
   onDrop,
 }: CourseCardProps) {
   const color = getCourseColor(course.id, course.color);
-  const colorPickerRef = useRef<HTMLDivElement>(null);
-
-  // Close color picker when clicking outside
-  useEffect(() => {
-    if (!showColorPicker) return;
-
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        colorPickerRef.current &&
-        !colorPickerRef.current.contains(event.target as Node)
-      ) {
-        onColorPickerClose?.();
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [showColorPicker, onColorPickerClose]);
 
   return (
     <div
@@ -813,72 +777,16 @@ function CourseGridCard({
         onClick={(e) => onColorClick?.(course.id, color, e)}
         title="Click to change color"
       >
-        {showColorPicker && (
-          <div
-            ref={colorPickerRef}
-            style={styles.colorPickerPopup}
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Preset colors */}
-            <div style={styles.colorPresets}>
-              {COURSE_COLORS.map((presetColor) => (
-                <button
-                  key={presetColor}
-                  style={{
-                    ...styles.colorPresetBtn,
-                    backgroundColor: presetColor,
-                    border:
-                      colorPickerValue === presetColor
-                        ? '2px solid var(--text-primary)'
-                        : '2px solid transparent',
-                  }}
-                  onClick={() => onColorChange?.(course.id, presetColor)}
-                  title={presetColor}
-                />
-              ))}
-            </div>
-            {/* Custom HEX input */}
-            <div style={styles.hexInputRow}>
-              <span style={styles.hexLabel}>HEX</span>
-              <input
-                type="text"
-                value={colorPickerValue || color}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  if (val.match(/^#?[0-9A-Fa-f]{0,6}$/)) {
-                    onColorInputChange?.(val);
-                  }
-                }}
-                onBlur={(e) => {
-                  let val = e.target.value.trim();
-                  if (!val.startsWith('#')) val = '#' + val;
-                  if (val.match(/^#[0-9A-Fa-f]{6}$/)) {
-                    onColorChange?.(course.id, val.toUpperCase());
-                  }
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    let val = (e.target as HTMLInputElement).value.trim();
-                    if (!val.startsWith('#')) val = '#' + val;
-                    if (val.match(/^#[0-9A-Fa-f]{6}$/)) {
-                      onColorChange?.(course.id, val.toUpperCase());
-                    }
-                  }
-                }}
-                style={styles.hexInput}
-                placeholder="#007FA3"
-                maxLength={7}
-              />
-              <input
-                type="color"
-                value={colorPickerValue || color}
-                onChange={(e) => onColorChange?.(course.id, e.target.value.toUpperCase())}
-                style={styles.nativeColorPicker}
-                title="Use color picker"
-              />
-            </div>
-          </div>
-        )}
+        <ColorPickerPopup
+          isOpen={showColorPicker || false}
+          onClose={() => onColorPickerClose?.()}
+          value={colorPickerValue || color}
+          onChange={(newColor) => onColorChange?.(course.id, newColor)}
+          presets={COURSE_COLORS}
+          allowCustom={true}
+          swatchSize={24}
+          position="bottom-left"
+        />
       </div>
 
       {/* Use display: contents to allow children to participate in parent grid */}
@@ -1003,28 +911,10 @@ function CourseListItem({
   showColorPicker,
   colorPickerValue,
   onColorChange,
-  onColorInputChange,
+  onColorInputChange: _onColorInputChange,
   onColorPickerClose,
 }: CourseListItemProps) {
   const color = getCourseColor(course.id, course.color);
-  const colorPickerRef = useRef<HTMLDivElement>(null);
-
-  // Close color picker when clicking outside
-  useEffect(() => {
-    if (!showColorPicker) return;
-
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        colorPickerRef.current &&
-        !colorPickerRef.current.contains(event.target as Node)
-      ) {
-        onColorPickerClose?.();
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [showColorPicker, onColorPickerClose]);
 
   return (
     <div
@@ -1047,72 +937,16 @@ function CourseListItem({
           onClick={(e) => onColorClick?.(course.id, color, e)}
           title="Click to change color"
         />
-        {showColorPicker && (
-          <div
-            ref={colorPickerRef}
-            style={styles.colorPickerPopupList}
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Preset colors */}
-            <div style={styles.colorPresets}>
-              {COURSE_COLORS.map((presetColor) => (
-                <button
-                  key={presetColor}
-                  style={{
-                    ...styles.colorPresetBtn,
-                    backgroundColor: presetColor,
-                    border:
-                      colorPickerValue === presetColor
-                        ? '2px solid var(--text-primary)'
-                        : '2px solid transparent',
-                  }}
-                  onClick={() => onColorChange?.(course.id, presetColor)}
-                  title={presetColor}
-                />
-              ))}
-            </div>
-            {/* Custom HEX input */}
-            <div style={styles.hexInputRow}>
-              <span style={styles.hexLabel}>HEX</span>
-              <input
-                type="text"
-                value={colorPickerValue || color}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  if (val.match(/^#?[0-9A-Fa-f]{0,6}$/)) {
-                    onColorInputChange?.(val);
-                  }
-                }}
-                onBlur={(e) => {
-                  let val = e.target.value.trim();
-                  if (!val.startsWith('#')) val = '#' + val;
-                  if (val.match(/^#[0-9A-Fa-f]{6}$/)) {
-                    onColorChange?.(course.id, val.toUpperCase());
-                  }
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    let val = (e.target as HTMLInputElement).value.trim();
-                    if (!val.startsWith('#')) val = '#' + val;
-                    if (val.match(/^#[0-9A-Fa-f]{6}$/)) {
-                      onColorChange?.(course.id, val.toUpperCase());
-                    }
-                  }
-                }}
-                style={styles.hexInput}
-                placeholder="#007FA3"
-                maxLength={7}
-              />
-              <input
-                type="color"
-                value={colorPickerValue || color}
-                onChange={(e) => onColorChange?.(course.id, e.target.value.toUpperCase())}
-                style={styles.nativeColorPicker}
-                title="Use color picker"
-              />
-            </div>
-          </div>
-        )}
+        <ColorPickerPopup
+          isOpen={showColorPicker || false}
+          onClose={() => onColorPickerClose?.()}
+          value={colorPickerValue || color}
+          onChange={(newColor) => onColorChange?.(course.id, newColor)}
+          presets={COURSE_COLORS}
+          allowCustom={true}
+          swatchSize={24}
+          position="bottom-left"
+        />
       </div>
 
       {/* Course info */}

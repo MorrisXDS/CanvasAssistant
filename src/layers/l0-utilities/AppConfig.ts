@@ -519,7 +519,7 @@ export const DEFAULT_APP_CONFIG: AppConfigData = {
     inputValidator: {
       strictness: 'lenient',
       logWarnings: true,
-      htmlHandling: 'keep',
+      htmlHandling: 'sanitize',
     },
   },
 

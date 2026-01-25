@@ -3,8 +3,6 @@
  * Determines folder types based on name patterns and provides colors
  */
 
-import React from 'react';
-
 // Folder type definitions
 export type FolderType =
   | 'announcements'
@@ -269,19 +267,8 @@ export function buildFolderTree(
   return root;
 }
 
-// Course color palette
-export const COURSE_COLORS = [
-  '#007FA3', '#E53935', '#43A047', '#FB8C00', '#8E24AA',
-  '#1E88E5', '#D81B60', '#00ACC1', '#7CB342', '#6D4C41',
-];
-
-/**
- * Get course color by ID
- */
-export function getCourseColor(courseId: number, existingColor: string | null): string {
-  if (existingColor) return existingColor;
-  return COURSE_COLORS[courseId % COURSE_COLORS.length];
-}
+// Re-export colors from centralized module
+export { COURSE_COLORS, getCourseColor } from '../../constants/colors';
 
 /**
  * Extract short code from course code

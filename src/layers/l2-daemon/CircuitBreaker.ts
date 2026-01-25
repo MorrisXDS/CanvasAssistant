@@ -55,6 +55,49 @@ interface EndpointCircuit {
  * - Exponential backoff for reset timeout
  * - Configurable failure threshold
  */
+/**
+ * Error codes considered transient (should trigger circuit breaker)
+ * These are errors that may resolve with retry after a delay
+ */
+const TRANSIENT_ERROR_CODES = new Set([
+  'ECONNREFUSED',
+  'ECONNRESET',
+  'ETIMEDOUT',
+  'ENOTFOUND',
+  'ENETUNREACH',
+  'EHOSTUNREACH',
+  'EAI_AGAIN',
+  'EPIPE',
+  'ECONNABORTED',
+]);
+
+/**
+ * HTTP status codes that are transient (server errors)
+ * 5xx errors may resolve with retry; 4xx errors are client issues
+ */
+const TRANSIENT_HTTP_CODES = new Set([
+  500, // Internal Server Error
+  502, // Bad Gateway
+  503, // Service Unavailable
+  504, // Gateway Timeout
+  429, // Too Many Requests (rate limited - will resolve)
+]);
+
+/**
+ * HTTP status codes that should NOT trigger circuit breaker
+ * These are client errors or auth issues that won't improve with retry
+ */
+const NON_TRANSIENT_HTTP_CODES = new Set([
+  400, // Bad Request
+  401, // Unauthorized (auth issue)
+  403, // Forbidden (permission issue)
+  404, // Not Found
+  405, // Method Not Allowed
+  409, // Conflict
+  410, // Gone
+  422, // Unprocessable Entity
+]);
+
 export class CircuitBreaker extends EventEmitter {
   private readonly enabled: boolean;
   private readonly failureThreshold: number;
@@ -158,7 +201,7 @@ export class CircuitBreaker extends EventEmitter {
       this.recordSuccess(endpoint);
       return result;
     } catch (error) {
-      this.recordFailure(endpoint);
+      this.recordFailure(endpoint, error);
       throw error;
     }
   }
@@ -185,10 +228,94 @@ export class CircuitBreaker extends EventEmitter {
   }
 
   /**
-   * Record a failed request
+   * Check if an error is transient (should trigger circuit breaker)
+   *
+   * Transient errors are those that may resolve with retry:
+   * - Network errors (connection refused, timeout, etc.)
+   * - Server errors (5xx status codes)
+   * - Rate limiting (429)
+   *
+   * Non-transient errors should NOT trigger circuit breaker:
+   * - Client errors (4xx status codes)
+   * - Authentication errors (401)
+   * - Permission errors (403)
    */
-  recordFailure(endpoint?: string): void {
+  isTransientError(error: unknown): boolean {
+    if (!error) return true; // Assume transient if no error info
+
+    // Check for axios-style error with response status
+    if (typeof error === 'object' && error !== null) {
+      const err = error as Record<string, unknown>;
+
+      // Check HTTP status code
+      if ('response' in err && typeof err.response === 'object' && err.response !== null) {
+        const response = err.response as Record<string, unknown>;
+        if ('status' in response && typeof response.status === 'number') {
+          const status = response.status;
+          if (NON_TRANSIENT_HTTP_CODES.has(status)) {
+            this.log.debug(`Non-transient HTTP error: ${status}`);
+            return false;
+          }
+          if (TRANSIENT_HTTP_CODES.has(status)) {
+            return true;
+          }
+        }
+      }
+
+      // Check for status directly on error
+      if ('status' in err && typeof err.status === 'number') {
+        const status = err.status;
+        if (NON_TRANSIENT_HTTP_CODES.has(status)) {
+          this.log.debug(`Non-transient HTTP error: ${status}`);
+          return false;
+        }
+        if (TRANSIENT_HTTP_CODES.has(status)) {
+          return true;
+        }
+      }
+
+      // Check for network error codes
+      if ('code' in err && typeof err.code === 'string') {
+        if (TRANSIENT_ERROR_CODES.has(err.code)) {
+          return true;
+        }
+        // ENOENT, EACCES, etc. are not transient
+        if (err.code.startsWith('E')) {
+          this.log.debug(`Non-transient error code: ${err.code}`);
+          return false;
+        }
+      }
+
+      // Check for timeout errors
+      if ('code' in err && err.code === 'ECONNABORTED') {
+        return true;
+      }
+      if ('message' in err && typeof err.message === 'string') {
+        const msg = err.message.toLowerCase();
+        if (msg.includes('timeout') || msg.includes('timed out')) {
+          return true;
+        }
+      }
+    }
+
+    // Default to transient for unknown errors
+    return true;
+  }
+
+  /**
+   * Record a failed request
+   *
+   * @param endpoint - Optional endpoint identifier
+   * @param error - Optional error to classify (if not transient, won't count as failure)
+   */
+  recordFailure(endpoint?: string, error?: unknown): void {
     if (!this.enabled) return;
+
+    // Check if error is transient - only transient errors should open circuits
+    if (error !== undefined && !this.isTransientError(error)) {
+      this.log.debug(`Ignoring non-transient error for circuit breaker`);
+      return;
+    }
 
     const circuit = this.getCircuit(endpoint);
     const circuitName = endpoint || 'global';
@@ -215,7 +342,7 @@ export class CircuitBreaker extends EventEmitter {
     name: string,
     fromHalfOpen: boolean
   ): void {
-    const previousState = circuit.state;
+    const _previousState = circuit.state;
     circuit.state = 'open';
 
     // Calculate reset timeout with optional exponential backoff

@@ -26,7 +26,8 @@ describe('InputValidator', () => {
       validator = new InputValidator();
 
       expect(validator.getStrictness()).toBe('lenient');
-      expect(validator.getHtmlHandling()).toBe('keep');
+      // Default is 'sanitize' for security - strips script tags, event handlers, javascript: URLs
+      expect(validator.getHtmlHandling()).toBe('sanitize');
     });
 
     it('should accept custom options', () => {

@@ -7,10 +7,21 @@
  * - FormField - Form input wrapper
  * - EmptyState - Empty state display
  * - StatusMessage - Alert/message display
+ * - ColorPicker - Color selection component
  */
 
 // Modal
 export { Modal, type ModalSize } from './Modal';
+
+// Color Picker
+export {
+  ColorPicker,
+  ColorPickerPopup,
+  ColorSwatch,
+  type ColorPickerProps,
+  type ColorPickerPopupProps,
+  type ColorSwatchProps,
+} from './ColorPicker';
 
 // Button
 export {

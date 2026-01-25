@@ -128,6 +128,9 @@ export function calculateGraceTokenFactor(
   const hoursOverdue = (now.getTime() - task.dueAt.getTime()) / (1000 * 60 * 60);
   if (hoursOverdue <= 0) return 0; // Not overdue
 
+  // Guard against division by zero
+  if (policy.hoursPerToken <= 0) return 0;
+
   const tokensNeeded = Math.ceil(hoursOverdue / policy.hoursPerToken);
 
   if (tokensNeeded > policy.maxTokensPerTask) {

@@ -12,20 +12,16 @@ import {
   TrendingUp,
   Calendar,
   FileText,
-  Bell,
   Shield,
   CheckCircle,
   Circle,
   Clock,
-  AlertTriangle,
-  ExternalLink,
   ChevronRight,
   Megaphone,
   Edit3,
   Save,
   X,
   Settings,
-  Palette,
   EyeOff,
   Eye,
   Plus,
@@ -39,12 +35,8 @@ import { Card, PolicyForm, ConfirmDialog } from '../shared';
 import type { PolicyFormData } from '../shared';
 import { useStore } from '../../../l5-presentation/store';
 import type { Task, Notification } from '../../../l5-presentation/types';
-
-// Course color palette
-const COURSE_COLORS = [
-  '#007FA3', '#E53935', '#43A047', '#FB8C00', '#8E24AA',
-  '#1E88E5', '#D81B60', '#00ACC1', '#7CB342', '#6D4C41',
-];
+import { COURSE_COLORS, getCourseColor } from '../../constants';
+import { ColorPicker } from '../primitives';
 
 // Task types for coursework
 const TASK_TYPES = [
@@ -64,11 +56,6 @@ const TASK_TYPES = [
   { value: 'lab_report', label: 'Lab Report' },
   { value: 'reading_response', label: 'Reading Response' },
 ];
-
-function getCourseColor(courseId: number, existingColor: string | null): string {
-  if (existingColor) return existingColor;
-  return COURSE_COLORS[courseId % COURSE_COLORS.length];
-}
 
 function getShortCode(code: string): string {
   // Stop before a letter followed by a digit and then space/end (e.g., "H1 " or "Y1")
@@ -928,19 +915,13 @@ export function CourseDetail() {
                 <div style={styles.settingsGrid}>
                   <div style={styles.settingsField}>
                     <label style={styles.settingsLabel}>Color</label>
-                    <div style={styles.colorPicker}>
-                      {COURSE_COLORS.map((color) => (
-                        <button
-                          key={color}
-                          style={{
-                            ...styles.colorOption,
-                            backgroundColor: color,
-                            border: selectedColor === color ? '3px solid var(--text-primary)' : '3px solid transparent',
-                          }}
-                          onClick={() => setSelectedColor(color)}
-                        />
-                      ))}
-                    </div>
+                    <ColorPicker
+                      value={selectedColor || getCourseColor(course.id, course.color)}
+                      onChange={setSelectedColor}
+                      presets={COURSE_COLORS}
+                      allowCustom={true}
+                      swatchSize={24}
+                    />
                   </div>
                   <div style={styles.settingsField}>
                     <label style={styles.settingsLabel}>Visibility</label>

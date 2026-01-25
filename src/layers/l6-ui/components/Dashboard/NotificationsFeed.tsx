@@ -8,27 +8,8 @@ import { useNavigate } from 'react-router-dom';
 import { Megaphone, Bell, Inbox, X } from 'lucide-react';
 import { Card } from '../shared';
 import { useStore } from '../../../l5-presentation/store';
-import { formatTimeAgo, truncateText } from '../../constants';
+import { formatTimeAgo, truncateText, getCourseColor } from '../../constants';
 import type { Notification } from '../../../l5-presentation/types';
-
-// Course color palette (same as Calendar)
-const COURSE_COLORS = [
-  '#007FA3',
-  '#E53935',
-  '#43A047',
-  '#FB8C00',
-  '#8E24AA',
-  '#1E88E5',
-  '#D81B60',
-  '#00ACC1',
-  '#7CB342',
-  '#6D4C41',
-];
-
-function getCourseColor(courseId: number, existingColor: string | null): string {
-  if (existingColor) return existingColor;
-  return COURSE_COLORS[courseId % COURSE_COLORS.length];
-}
 
 function getShortCode(code: string): string {
   // Split on course level suffix (H1, H5, Y1, etc.) or whitespace

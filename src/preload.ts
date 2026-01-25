@@ -255,6 +255,17 @@ const api = {
   getClusteringScore: (windowDays?: number) =>
     ipcRenderer.invoke('intelligence:getClusteringScore', { windowDays }),
 
+  getNeglectedCourses: (windowDays?: number) =>
+    ipcRenderer.invoke('intelligence:getNeglectedCourses', { windowDays }),
+
+  getDeadlineClusters: (windowHours?: number) =>
+    ipcRenderer.invoke('intelligence:getDeadlineClusters', { windowHours }),
+
+  getCourseBalanceScore: () => ipcRenderer.invoke('intelligence:getCourseBalanceScore'),
+
+  getWorkloadSnapshots: (days?: number) =>
+    ipcRenderer.invoke('intelligence:getWorkloadSnapshots', { days }),
+
   // ============ System ============
 
   getSystemState: () => ipcRenderer.invoke('system:state'),
@@ -463,6 +474,103 @@ const api = {
     };
     ipcRenderer.on('sync:conflicts', handler);
     return () => ipcRenderer.removeListener('sync:conflicts', handler);
+  },
+
+  /**
+   * Listen for sync errors with type and error message
+   */
+  onSyncError: (
+    callback: (data: { type: string; error: string }) => void
+  ): (() => void) => {
+    const handler = (
+      _event: IpcRendererEvent,
+      data: { type: string; error: string }
+    ) => {
+      callback(data);
+    };
+    ipcRenderer.on('sync:error', handler);
+    return () => ipcRenderer.removeListener('sync:error', handler);
+  },
+
+  /**
+   * Listen for granular entity-level sync errors
+   */
+  onSyncEntityError: (
+    callback: (data: {
+      entity: string;
+      externalId: string;
+      error: string;
+      courseName?: string;
+    }) => void
+  ): (() => void) => {
+    const handler = (
+      _event: IpcRendererEvent,
+      data: { entity: string; externalId: string; error: string; courseName?: string }
+    ) => {
+      callback(data);
+    };
+    ipcRenderer.on('sync:entityError', handler);
+    return () => ipcRenderer.removeListener('sync:entityError', handler);
+  },
+
+  /**
+   * Listen for sync progress updates
+   */
+  onSyncProgress: (
+    callback: (data: {
+      syncId: string;
+      phase: string;
+      totalCourses: number;
+      completedCourses: number;
+      currentCourse?: string;
+    }) => void
+  ): (() => void) => {
+    const handler = (
+      _event: IpcRendererEvent,
+      data: {
+        syncId: string;
+        phase: string;
+        totalCourses: number;
+        completedCourses: number;
+        currentCourse?: string;
+      }
+    ) => {
+      callback(data);
+    };
+    ipcRenderer.on('sync:progress', handler);
+    return () => ipcRenderer.removeListener('sync:progress', handler);
+  },
+
+  /**
+   * Listen for sync phase changes
+   */
+  onSyncPhase: (
+    callback: (data: { phase: string; status: string }) => void
+  ): (() => void) => {
+    const handler = (
+      _event: IpcRendererEvent,
+      data: { phase: string; status: string }
+    ) => {
+      callback(data);
+    };
+    ipcRenderer.on('sync:phase', handler);
+    return () => ipcRenderer.removeListener('sync:phase', handler);
+  },
+
+  /**
+   * Listen for sync aborted events
+   */
+  onSyncAborted: (
+    callback: (data: { reason: string; error: string }) => void
+  ): (() => void) => {
+    const handler = (
+      _event: IpcRendererEvent,
+      data: { reason: string; error: string }
+    ) => {
+      callback(data);
+    };
+    ipcRenderer.on('sync:aborted', handler);
+    return () => ipcRenderer.removeListener('sync:aborted', handler);
   },
 
   onAuthExpired: (callback: (data: { reason: string }) => void): (() => void) => {

@@ -175,18 +175,19 @@ export class MessageProbationService {
       ? new Date(now.getTime() + groundingHours * 60 * 60 * 1000)
       : null;
 
+    // Keep the existing quiet_period_start - don't reset on each display
+    // The quiet period should track from the first display in this sequence
+    // Only reset when checkQuietPeriodReset() determines enough time has passed
     this.db.executeWrite(
       `UPDATE message_display_history
        SET display_count = ?,
            last_shown_at = ?,
-           grounded_until = ?,
-           quiet_period_start = ?
+           grounded_until = ?
        WHERE message_type = ? AND content_hash = ?`,
       [
         newCount,
         now.toISOString(),
         groundedUntil?.toISOString() ?? null,
-        now.toISOString(), // Reset quiet period on each display
         messageType,
         contentHash,
       ],
