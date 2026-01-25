@@ -10,6 +10,7 @@ export interface RateLimiterConfig {
   maxBackoffMs?: number; // Max backoff cap (default: 16000ms)
   warningThreshold?: number; // Rate limit warning threshold (default: 10)
   autoResumeDelayMs?: number; // Auto-resume delay after warning (default: 5000ms)
+  maxPauseDurationMs?: number; // Max pause duration before forced resume (default: 60000ms)
   maxQueueSize?: number; // Max queue size before rejecting (default: 100)
   requestTimeoutMs?: number; // Max time a request can wait in queue (default: 60000ms = 1 min)
   staleCleanupIntervalMs?: number; // Interval to clean stale requests (default: 10000ms)
@@ -74,10 +75,12 @@ export class RateLimiter extends EventEmitter {
   private readonly maxBackoffMs: number;
   private readonly warningThreshold: number;
   private readonly autoResumeDelayMs: number;
+  private readonly maxPauseDurationMs: number;
   private readonly maxQueueSize: number;
   private readonly requestTimeoutMs: number;
   private readonly staleCleanupIntervalMs: number;
   private staleCleanupInterval: NodeJS.Timeout | null = null;
+  private pausedAt: number | null = null; // Track when pause started
 
   // Adaptive throttling constants
   private static readonly CANVAS_RATE_LIMIT_MAX = 700; // Canvas default max
@@ -102,12 +105,14 @@ export class RateLimiter extends EventEmitter {
     this.maxBackoffMs = config.maxBackoffMs ?? 16000;
     this.warningThreshold = config.warningThreshold ?? 10;
     this.autoResumeDelayMs = config.autoResumeDelayMs ?? 5000;
+    this.maxPauseDurationMs = (config as RateLimiterConfig).maxPauseDurationMs ?? 60000; // 1 minute max pause
     this.maxQueueSize = (config as RateLimiterConfig).maxQueueSize ?? 100;
     this.requestTimeoutMs = (config as RateLimiterConfig).requestTimeoutMs ?? 60000; // 1 minute default
-    this.staleCleanupIntervalMs = (config as RateLimiterConfig).staleCleanupIntervalMs ?? 10000; // 10 seconds
+    this.staleCleanupIntervalMs =
+      (config as RateLimiterConfig).staleCleanupIntervalMs ?? 10000; // 10 seconds
     this.log = (config as RateLimiterConfig).logger ?? null;
 
-    // Start stale request cleanup interval
+    // Start stale request cleanup interval (also acts as pause watchdog)
     this.startStaleCleanup();
   }
 
@@ -127,6 +132,7 @@ export class RateLimiter extends EventEmitter {
 
   /**
    * Remove requests that have been queued longer than requestTimeoutMs
+   * Also acts as watchdog for stuck pauses - forces resume if paused too long
    * Rejects their promises with a timeout error
    */
   private cleanupStaleRequests(): void {
@@ -134,13 +140,30 @@ export class RateLimiter extends EventEmitter {
     const staleThreshold = now - this.requestTimeoutMs;
     let cleanedCount = 0;
 
+    // Watchdog: Force resume if paused for too long (prevents stuck state)
+    if (this.isPaused && this.pausedAt !== null) {
+      const pauseDuration = now - this.pausedAt;
+      if (pauseDuration > this.maxPauseDurationMs) {
+        this.log?.debug(
+          ` WATCHDOG: forcing resume after ${pauseDuration}ms pause (max=${this.maxPauseDurationMs}ms)`
+        );
+        this.emit('watchdog-resume', {
+          pauseDuration,
+          maxPauseDurationMs: this.maxPauseDurationMs,
+        });
+        this.resume();
+      }
+    }
+
     // Filter out stale requests
     this.queue = this.queue.filter((request) => {
       if (request.createdAt < staleThreshold) {
         // Request has timed out - reject it
         cleanedCount++;
         this.log?.debug(` TIMEOUT: ${request.id} waited ${now - request.createdAt}ms`);
-        request.reject(new Error(`Request timeout: waited ${now - request.createdAt}ms in queue`));
+        request.reject(
+          new Error(`Request timeout: waited ${now - request.createdAt}ms in queue`)
+        );
         return false; // Remove from queue
       }
       return true; // Keep in queue
@@ -155,10 +178,7 @@ export class RateLimiter extends EventEmitter {
    * Add a request to the queue
    * @throws Error if queue is full and no lower-priority request can be evicted
    */
-  enqueue<T>(
-    execute: () => Promise<T>,
-    priority: number = 0
-  ): Promise<T> {
+  enqueue<T>(execute: () => Promise<T>, priority: number = 0): Promise<T> {
     return new Promise((resolve, reject) => {
       // Check queue size limit
       if (this.queue.length >= this.maxQueueSize) {
@@ -166,8 +186,12 @@ export class RateLimiter extends EventEmitter {
         const evicted = this.tryEvictLowerPriority(priority);
 
         if (!evicted) {
-          this.log?.debug(` QUEUE FULL: ${this.queue.length}/${this.maxQueueSize}, no lower priority to evict`);
-          const error = new Error(`Queue full: exceeded max size of ${this.maxQueueSize}`);
+          this.log?.debug(
+            ` QUEUE FULL: ${this.queue.length}/${this.maxQueueSize}, no lower priority to evict`
+          );
+          const error = new Error(
+            `Queue full: exceeded max size of ${this.maxQueueSize}`
+          );
           this.emit('queue-full', {
             queueLength: this.queue.length,
             maxQueueSize: this.maxQueueSize,
@@ -188,16 +212,16 @@ export class RateLimiter extends EventEmitter {
       };
 
       // Insert by priority (higher priority first)
-      const insertIndex = this.queue.findIndex(
-        (r) => r.priority < priority
-      );
+      const insertIndex = this.queue.findIndex((r) => r.priority < priority);
       if (insertIndex === -1) {
         this.queue.push(request as QueuedRequest<unknown>);
       } else {
         this.queue.splice(insertIndex, 0, request as QueuedRequest<unknown>);
       }
 
-      this.log?.debug(` ENQUEUE: ${request.id}, priority=${priority}, queue_length=${this.queue.length}, active=${this.activeRequests}`);
+      this.log?.debug(
+        ` ENQUEUE: ${request.id}, priority=${priority}, queue_length=${this.queue.length}, active=${this.activeRequests}`
+      );
       this.emit('queued', { id: request.id, queueLength: this.queue.length });
       this.processQueue();
     });
@@ -231,8 +255,14 @@ export class RateLimiter extends EventEmitter {
     if (lowestPriorityIdx >= 0 && incomingPriority > lowestPriority) {
       const evicted = this.queue[lowestPriorityIdx];
       this.queue.splice(lowestPriorityIdx, 1);
-      this.log?.debug(` EVICTED: ${evicted.id} (priority=${evicted.priority}) for higher priority request`);
-      evicted.reject(new Error(`Request evicted: lower priority (${evicted.priority}) replaced by higher priority (${incomingPriority})`));
+      this.log?.debug(
+        ` EVICTED: ${evicted.id} (priority=${evicted.priority}) for higher priority request`
+      );
+      evicted.reject(
+        new Error(
+          `Request evicted: lower priority (${evicted.priority}) replaced by higher priority (${incomingPriority})`
+        )
+      );
       this.emit('request-evicted', {
         evictedId: evicted.id,
         evictedPriority: evicted.priority,
@@ -253,7 +283,9 @@ export class RateLimiter extends EventEmitter {
       return;
     }
     if (this.activeRequests >= this.maxConcurrent) {
-      this.log?.debug(` AT CAPACITY: ${this.activeRequests}/${this.maxConcurrent} active, waiting...`);
+      this.log?.debug(
+        ` AT CAPACITY: ${this.activeRequests}/${this.maxConcurrent} active, waiting...`
+      );
       return;
     }
     if (this.queue.length === 0) return;
@@ -262,7 +294,9 @@ export class RateLimiter extends EventEmitter {
     if (!request) return;
 
     this.activeRequests++;
-    this.log?.debug(` START: ${request.id}, active=${this.activeRequests}/${this.maxConcurrent}, queue=${this.queue.length}`);
+    this.log?.debug(
+      ` START: ${request.id}, active=${this.activeRequests}/${this.maxConcurrent}, queue=${this.queue.length}`
+    );
     this.emit('request-start', { id: request.id, active: this.activeRequests });
 
     try {
@@ -271,7 +305,9 @@ export class RateLimiter extends EventEmitter {
       const duration = Date.now() - startTime;
       this.activeRequests--;
       request.resolve(result);
-      this.log?.debug(` COMPLETE: ${request.id} in ${duration}ms, active=${this.activeRequests}`);
+      this.log?.debug(
+        ` COMPLETE: ${request.id} in ${duration}ms, active=${this.activeRequests}`
+      );
       this.emit('request-complete', { id: request.id, active: this.activeRequests });
     } catch (error) {
       this.activeRequests--;
@@ -297,7 +333,9 @@ export class RateLimiter extends EventEmitter {
     const isRateLimited = this.isRateLimitError(error);
     const isRetryable = this.isRetryableError(error);
 
-    this.log?.debug(` HANDLE ERROR: ${request.id}, isRateLimited=${isRateLimited}, isRetryable=${isRetryable}, retries=${request.retries}/${this.maxRetries}`);
+    this.log?.debug(
+      ` HANDLE ERROR: ${request.id}, isRateLimited=${isRateLimited}, isRetryable=${isRetryable}, retries=${request.retries}/${this.maxRetries}`
+    );
 
     if (isRateLimited) {
       // Pause all requests and retry with backoff
@@ -328,7 +366,9 @@ export class RateLimiter extends EventEmitter {
 
     if (isRetryable && request.retries < this.maxRetries) {
       const backoff = this.calculateBackoff(request.retries);
-      this.log?.debug(` RETRY: ${request.id}, attempt=${request.retries + 1}/${this.maxRetries}, backoff=${backoff}ms`);
+      this.log?.debug(
+        ` RETRY: ${request.id}, attempt=${request.retries + 1}/${this.maxRetries}, backoff=${backoff}ms`
+      );
       this.emit('retry', {
         id: request.id,
         attempt: request.retries + 1,
@@ -432,6 +472,7 @@ export class RateLimiter extends EventEmitter {
    */
   pause(): void {
     this.isPaused = true;
+    this.pausedAt = Date.now();
     this.emit('paused');
   }
 
@@ -440,6 +481,7 @@ export class RateLimiter extends EventEmitter {
    */
   resume(): void {
     this.isPaused = false;
+    this.pausedAt = null;
     this.emit('resumed');
     this.processQueue();
   }
@@ -520,27 +562,31 @@ export class RateLimiter extends EventEmitter {
       return RateLimiter.ADAPTIVE_DELAY_HIGH_MS;
     } else if (remaining > RateLimiter.ADAPTIVE_THRESHOLD_MED) {
       // Linear interpolation between high and medium thresholds
-      const ratio = (remaining - RateLimiter.ADAPTIVE_THRESHOLD_MED) /
+      const ratio =
+        (remaining - RateLimiter.ADAPTIVE_THRESHOLD_MED) /
         (RateLimiter.ADAPTIVE_THRESHOLD_HIGH - RateLimiter.ADAPTIVE_THRESHOLD_MED);
       return Math.round(
         RateLimiter.ADAPTIVE_DELAY_MED_MS +
-        (RateLimiter.ADAPTIVE_DELAY_HIGH_MS - RateLimiter.ADAPTIVE_DELAY_MED_MS) * ratio
+          (RateLimiter.ADAPTIVE_DELAY_HIGH_MS - RateLimiter.ADAPTIVE_DELAY_MED_MS) * ratio
       );
     } else if (remaining > RateLimiter.ADAPTIVE_THRESHOLD_LOW) {
       // Linear interpolation between medium and low thresholds
-      const ratio = (remaining - RateLimiter.ADAPTIVE_THRESHOLD_LOW) /
+      const ratio =
+        (remaining - RateLimiter.ADAPTIVE_THRESHOLD_LOW) /
         (RateLimiter.ADAPTIVE_THRESHOLD_MED - RateLimiter.ADAPTIVE_THRESHOLD_LOW);
       return Math.round(
         RateLimiter.ADAPTIVE_DELAY_LOW_MS +
-        (RateLimiter.ADAPTIVE_DELAY_MED_MS - RateLimiter.ADAPTIVE_DELAY_LOW_MS) * ratio
+          (RateLimiter.ADAPTIVE_DELAY_MED_MS - RateLimiter.ADAPTIVE_DELAY_LOW_MS) * ratio
       );
     } else if (remaining > this.warningThreshold) {
       // Below low threshold but not yet critical
-      const ratio = (remaining - this.warningThreshold) /
+      const ratio =
+        (remaining - this.warningThreshold) /
         (RateLimiter.ADAPTIVE_THRESHOLD_LOW - this.warningThreshold);
       return Math.round(
         RateLimiter.ADAPTIVE_DELAY_CRITICAL_MS +
-        (RateLimiter.ADAPTIVE_DELAY_LOW_MS - RateLimiter.ADAPTIVE_DELAY_CRITICAL_MS) * ratio
+          (RateLimiter.ADAPTIVE_DELAY_LOW_MS - RateLimiter.ADAPTIVE_DELAY_CRITICAL_MS) *
+            ratio
       );
     } else {
       // Critical - use maximum delay
@@ -562,7 +608,10 @@ export class RateLimiter extends EventEmitter {
     }
 
     // Otherwise use default, scaled by how close we are to 0
-    const urgencyFactor = Math.max(1, (this.warningThreshold - remaining) / this.warningThreshold);
+    const urgencyFactor = Math.max(
+      1,
+      (this.warningThreshold - remaining) / this.warningThreshold
+    );
     return Math.round(this.autoResumeDelayMs * urgencyFactor);
   }
 

@@ -55,16 +55,8 @@ function initializeSettings() {
   const theme = appearance?.theme ?? DEFAULT_APPEARANCE_SETTINGS.theme;
   applyTheme(theme);
 
-  // Listen for system theme changes if using 'system' theme
-  const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-  mediaQuery.addEventListener('change', () => {
-    const currentAppearance = settingsManager.get(STORAGE_KEYS.APPEARANCE) as
-      | AppearanceSettings
-      | undefined;
-    if (!currentAppearance?.theme || currentAppearance.theme === 'system') {
-      applyTheme('system');
-    }
-  });
+  // Note: System theme change listener is set up in useSystemThemeListener()
+  // to ensure proper cleanup and avoid memory leaks
 
   // Restore custom download location if saved
   const fileSettings = settingsManager.get(STORAGE_KEYS.FILE_EXPLORER) as
@@ -80,6 +72,27 @@ function initializeSettings() {
 
 // Initialize settings immediately (before React renders)
 initializeSettings();
+
+/**
+ * Hook to listen for system theme changes with proper cleanup
+ */
+function useSystemThemeListener() {
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+
+    const handleChange = () => {
+      const currentAppearance = settingsManager.get(STORAGE_KEYS.APPEARANCE) as
+        | AppearanceSettings
+        | undefined;
+      if (!currentAppearance?.theme || currentAppearance.theme === 'system') {
+        applyTheme('system');
+      }
+    };
+
+    mediaQuery.addEventListener('change', handleChange);
+    return () => mediaQuery.removeEventListener('change', handleChange);
+  }, []);
+}
 
 /**
  * Loading Screen
@@ -109,6 +122,9 @@ function AppContent() {
     refreshAll,
   } = useStore();
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+
+  // Listen for system theme changes with proper cleanup
+  useSystemThemeListener();
 
   useEffect(() => {
     // Initialize store (checks auth, loads data)

@@ -14,6 +14,8 @@ export interface DatabaseConfig {
   idleCheckpointMs?: number;
   /** WAL file size threshold for checkpoint in bytes (default: 100MB) */
   walCheckpointThreshold?: number;
+  /** Maximum time writes can be locked in ms (default: 30 seconds) */
+  maxWriteLockDurationMs?: number;
 }
 
 export interface CommitEvent {
@@ -37,6 +39,7 @@ const DEFAULT_CACHE_SIZE_KB = 64000; // 64MB
 const DEFAULT_MMAP_SIZE_BYTES = 268435456; // 256MB
 const DEFAULT_IDLE_CHECKPOINT_MS = 5 * 60 * 1000; // 5 minutes
 const DEFAULT_WAL_CHECKPOINT_THRESHOLD = 100 * 1024 * 1024; // 100MB
+const DEFAULT_MAX_WRITE_LOCK_DURATION_MS = 30 * 1000; // 30 seconds
 
 // SQL identifier validation - prevents SQL injection via table/column names
 const VALID_SQL_IDENTIFIER = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
@@ -47,7 +50,9 @@ const VALID_SQL_IDENTIFIER = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
  */
 function validateSqlIdentifier(name: string, type: 'table' | 'column'): void {
   if (!VALID_SQL_IDENTIFIER.test(name)) {
-    throw new Error(`Invalid ${type} name: "${name}". Must match pattern ${VALID_SQL_IDENTIFIER}`);
+    throw new Error(
+      `Invalid ${type} name: "${name}". Must match pattern ${VALID_SQL_IDENTIFIER}`
+    );
   }
 }
 
@@ -68,6 +73,9 @@ export class Database extends EventEmitter {
 
   // Write lock - prevents further writes after app reset
   private writeLocked: boolean = false;
+  private writeLockStartTime: number | null = null;
+  private writeLockWatchdog: NodeJS.Timeout | null = null;
+  private readonly maxWriteLockDurationMs: number;
 
   constructor(config: DatabaseConfig) {
     super();
@@ -78,7 +86,10 @@ export class Database extends EventEmitter {
     this.mmapSizeBytes = config.performance?.mmapSizeBytes ?? DEFAULT_MMAP_SIZE_BYTES;
     this.walMode = config.performance?.walMode ?? true;
     this.idleCheckpointMs = config.idleCheckpointMs ?? DEFAULT_IDLE_CHECKPOINT_MS;
-    this.walCheckpointThreshold = config.walCheckpointThreshold ?? DEFAULT_WAL_CHECKPOINT_THRESHOLD;
+    this.walCheckpointThreshold =
+      config.walCheckpointThreshold ?? DEFAULT_WAL_CHECKPOINT_THRESHOLD;
+    this.maxWriteLockDurationMs =
+      config.maxWriteLockDurationMs ?? DEFAULT_MAX_WRITE_LOCK_DURATION_MS;
 
     // Ensure directory exists
     const dbDir = path.dirname(this.dbPath);
@@ -158,18 +169,37 @@ export class Database extends EventEmitter {
    */
   recordMigration(version: number, description: string): void {
     this.db
-      .prepare(
-        'INSERT INTO schema_version (version, description) VALUES (?, ?)'
-      )
+      .prepare('INSERT INTO schema_version (version, description) VALUES (?, ?)')
       .run(version, description);
   }
 
   /**
    * Lock the database to prevent further writes.
    * Used during app reset to prevent stray writes from in-flight operations.
+   * Includes a watchdog that automatically releases the lock after maxWriteLockDurationMs.
    */
   lockWrites(): void {
     this.writeLocked = true;
+    this.writeLockStartTime = Date.now();
+
+    // Clear any existing watchdog
+    if (this.writeLockWatchdog) {
+      clearTimeout(this.writeLockWatchdog);
+    }
+
+    // Set up watchdog to auto-release lock after max duration
+    this.writeLockWatchdog = setTimeout(() => {
+      if (this.writeLocked) {
+        const lockDuration = Date.now() - (this.writeLockStartTime ?? Date.now());
+        this.emit('write-lock-timeout', {
+          lockDuration,
+          maxDuration: this.maxWriteLockDurationMs,
+        });
+        this.unlockWrites();
+      }
+    }, this.maxWriteLockDurationMs);
+
+    this.emit('write-lock-acquired');
   }
 
   /**
@@ -180,11 +210,29 @@ export class Database extends EventEmitter {
   }
 
   /**
+   * Get how long the write lock has been held (0 if not locked)
+   */
+  getWriteLockDuration(): number {
+    if (!this.writeLocked || this.writeLockStartTime === null) {
+      return 0;
+    }
+    return Date.now() - this.writeLockStartTime;
+  }
+
+  /**
    * Unlock the database to allow writes again.
    * Called when re-connecting after an app reset.
    */
   unlockWrites(): void {
+    // Clear watchdog timer
+    if (this.writeLockWatchdog) {
+      clearTimeout(this.writeLockWatchdog);
+      this.writeLockWatchdog = null;
+    }
+
     this.writeLocked = false;
+    this.writeLockStartTime = null;
+    this.emit('write-lock-released');
   }
 
   /**
@@ -279,10 +327,12 @@ export class Database extends EventEmitter {
     // Validate identifiers to prevent SQL injection
     validateSqlIdentifier(tableName, 'table');
     const columns = Object.keys(data);
-    columns.forEach(col => validateSqlIdentifier(col, 'column'));
-    const conflictColArray = Array.isArray(conflictColumns) ? conflictColumns : [conflictColumns];
-    conflictColArray.forEach(col => validateSqlIdentifier(col, 'column'));
-    preserveColumns.forEach(col => validateSqlIdentifier(col, 'column'));
+    columns.forEach((col) => validateSqlIdentifier(col, 'column'));
+    const conflictColArray = Array.isArray(conflictColumns)
+      ? conflictColumns
+      : [conflictColumns];
+    conflictColArray.forEach((col) => validateSqlIdentifier(col, 'column'));
+    preserveColumns.forEach((col) => validateSqlIdentifier(col, 'column'));
     const values = Object.values(data);
     const placeholders = columns.map(() => '?').join(', ');
     const conflictClause = conflictColArray.join(', ');
@@ -333,10 +383,12 @@ export class Database extends EventEmitter {
     // Validate identifiers to prevent SQL injection
     validateSqlIdentifier(tableName, 'table');
     const columns = Object.keys(data);
-    columns.forEach(col => validateSqlIdentifier(col, 'column'));
-    const conflictColArray = Array.isArray(conflictColumns) ? conflictColumns : [conflictColumns];
-    conflictColArray.forEach(col => validateSqlIdentifier(col, 'column'));
-    updateColumns.forEach(col => validateSqlIdentifier(col, 'column'));
+    columns.forEach((col) => validateSqlIdentifier(col, 'column'));
+    const conflictColArray = Array.isArray(conflictColumns)
+      ? conflictColumns
+      : [conflictColumns];
+    conflictColArray.forEach((col) => validateSqlIdentifier(col, 'column'));
+    updateColumns.forEach((col) => validateSqlIdentifier(col, 'column'));
 
     const values = Object.values(data);
     const placeholders = columns.map(() => '?').join(', ');
@@ -344,8 +396,10 @@ export class Database extends EventEmitter {
 
     // Only update the specified columns (Canvas-provided data)
     const updates = updateColumns
-      .filter(col => !conflictColArray.includes(col) && col !== 'id' && columns.includes(col))
-      .map(col => `${col} = excluded.${col}`);
+      .filter(
+        (col) => !conflictColArray.includes(col) && col !== 'id' && columns.includes(col)
+      )
+      .map((col) => `${col} = excluded.${col}`);
 
     // Always update updated_at
     updates.push('updated_at = CURRENT_TIMESTAMP');
@@ -363,9 +417,7 @@ export class Database extends EventEmitter {
   /**
    * Detect SQL operation type from query
    */
-  private detectOperation(
-    sql: string
-  ): 'INSERT' | 'UPDATE' | 'DELETE' {
+  private detectOperation(sql: string): 'INSERT' | 'UPDATE' | 'DELETE' {
     const upperSql = sql.trim().toUpperCase();
     if (upperSql.startsWith('INSERT')) return 'INSERT';
     if (upperSql.startsWith('UPDATE')) return 'UPDATE';
@@ -470,7 +522,7 @@ export class Database extends EventEmitter {
           threshold: this.walCheckpointThreshold,
         });
       }
-    } catch (error) {
+    } catch {
       // Ignore errors - WAL file may not exist
     }
   }
@@ -511,6 +563,11 @@ export class Database extends EventEmitter {
     if (this.walCheckInterval) {
       clearInterval(this.walCheckInterval);
       this.walCheckInterval = null;
+    }
+    // Clear write lock watchdog
+    if (this.writeLockWatchdog) {
+      clearTimeout(this.writeLockWatchdog);
+      this.writeLockWatchdog = null;
     }
 
     // Checkpoint before close to ensure all data is written
