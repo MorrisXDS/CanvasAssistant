@@ -369,4 +369,225 @@ describe('RateLimiter', () => {
       testLimiter.stop();
     });
   });
+
+  describe('Watchdog - pause timeout', () => {
+    it('should force resume if paused longer than maxPauseDurationMs', async () => {
+      // Create limiter with short max pause duration
+      const watchdogLimiter = new RateLimiter({
+        maxConcurrent: 2,
+        minDelayMs: 10,
+        maxPauseDurationMs: 50, // 50ms max pause
+        staleCleanupIntervalMs: 20, // Check every 20ms
+      });
+
+      const watchdogHandler = jest.fn();
+      const resumedHandler = jest.fn();
+      watchdogLimiter.on('watchdog-resume', watchdogHandler);
+      watchdogLimiter.on('resumed', resumedHandler);
+
+      // Pause the limiter
+      watchdogLimiter.pause();
+      expect(watchdogLimiter.getStatus().isPaused).toBe(true);
+
+      // Wait for watchdog to kick in (20ms interval + 50ms max pause)
+      await new Promise((r) => setTimeout(r, 100));
+
+      // Should have been force-resumed
+      expect(watchdogLimiter.getStatus().isPaused).toBe(false);
+      expect(watchdogHandler).toHaveBeenCalledWith(
+        expect.objectContaining({
+          maxPauseDurationMs: 50,
+        })
+      );
+
+      watchdogLimiter.stop();
+    });
+
+    it('should not force resume if paused within maxPauseDurationMs', async () => {
+      const watchdogLimiter = new RateLimiter({
+        maxConcurrent: 2,
+        minDelayMs: 10,
+        maxPauseDurationMs: 500, // 500ms max pause
+        staleCleanupIntervalMs: 20,
+      });
+
+      const watchdogHandler = jest.fn();
+      watchdogLimiter.on('watchdog-resume', watchdogHandler);
+
+      // Pause and immediately resume
+      watchdogLimiter.pause();
+      watchdogLimiter.resume();
+
+      // Wait a bit
+      await new Promise((r) => setTimeout(r, 50));
+
+      // Watchdog should not have been triggered
+      expect(watchdogHandler).not.toHaveBeenCalled();
+
+      watchdogLimiter.stop();
+    });
+  });
+
+  describe('Stale request cleanup', () => {
+    it('should reject requests that exceed requestTimeoutMs', async () => {
+      const staleLimiter = new RateLimiter({
+        maxConcurrent: 2,
+        minDelayMs: 10,
+        requestTimeoutMs: 50, // 50ms timeout
+        staleCleanupIntervalMs: 20, // Check every 20ms
+      });
+
+      const staleHandler = jest.fn();
+      staleLimiter.on('stale-cleaned', staleHandler);
+
+      // Pause to prevent processing
+      staleLimiter.pause();
+
+      // Queue a request
+      const promise = staleLimiter.enqueue(async () => 'result');
+
+      // Wait for timeout + cleanup interval
+      await new Promise((r) => setTimeout(r, 100));
+
+      // Request should have been rejected
+      await expect(promise).rejects.toThrow('Request timeout');
+
+      expect(staleHandler).toHaveBeenCalledWith(
+        expect.objectContaining({
+          cleanedCount: 1,
+        })
+      );
+
+      staleLimiter.stop();
+    });
+  });
+
+  describe('Queue size limits', () => {
+    it('should reject when queue is full', async () => {
+      const smallQueueLimiter = new RateLimiter({
+        maxConcurrent: 1,
+        minDelayMs: 10,
+        maxQueueSize: 2,
+      });
+
+      const queueFullHandler = jest.fn();
+      smallQueueLimiter.on('queue-full', queueFullHandler);
+
+      // Pause to prevent processing
+      smallQueueLimiter.pause();
+
+      // Fill the queue
+      smallQueueLimiter.enqueue(async () => 'a', 1);
+      smallQueueLimiter.enqueue(async () => 'b', 1);
+
+      // Third request should be rejected
+      await expect(smallQueueLimiter.enqueue(async () => 'c', 1)).rejects.toThrow('Queue full');
+
+      expect(queueFullHandler).toHaveBeenCalledWith(
+        expect.objectContaining({
+          queueLength: 2,
+          maxQueueSize: 2,
+        })
+      );
+
+      smallQueueLimiter.stop();
+    });
+
+    it('should evict lower priority request when queue is full', async () => {
+      const smallQueueLimiter = new RateLimiter({
+        maxConcurrent: 1,
+        minDelayMs: 10,
+        maxQueueSize: 2,
+      });
+
+      const evictedHandler = jest.fn();
+      smallQueueLimiter.on('request-evicted', evictedHandler);
+
+      // Pause to prevent processing
+      smallQueueLimiter.pause();
+
+      // Fill queue with low priority requests
+      const low1 = smallQueueLimiter.enqueue(async () => 'low1', 1);
+      smallQueueLimiter.enqueue(async () => 'low2', 1);
+
+      // Add high priority - should evict one low priority
+      const highPromise = smallQueueLimiter.enqueue(async () => 'high', 10);
+
+      // Low priority request should have been evicted
+      expect(evictedHandler).toHaveBeenCalledWith(
+        expect.objectContaining({
+          evictedPriority: 1,
+          incomingPriority: 10,
+        })
+      );
+
+      await expect(low1).rejects.toThrow('evicted');
+
+      smallQueueLimiter.resume();
+      const result = await highPromise;
+      expect(result).toBe('high');
+
+      smallQueueLimiter.stop();
+    });
+  });
+
+  describe('Adaptive throttling', () => {
+    it('should emit rate-limit-updated with adaptive delay', () => {
+      const updateHandler = jest.fn();
+      limiter.on('rate-limit-updated', updateHandler);
+
+      limiter.updateRateLimitFromHeaders({ remaining: 300 });
+
+      expect(updateHandler).toHaveBeenCalledWith(
+        expect.objectContaining({
+          remaining: 300,
+          adaptiveDelayMs: expect.any(Number),
+        })
+      );
+
+      const status = limiter.getStatus();
+      expect(status.adaptiveDelayMs).toBeGreaterThan(0);
+    });
+
+    it('should increase delay as quota decreases', () => {
+      // High quota - low delay
+      limiter.updateRateLimitFromHeaders({ remaining: 600 });
+      const highQuotaDelay = limiter.getStatus().adaptiveDelayMs;
+
+      // Low quota - higher delay
+      limiter.updateRateLimitFromHeaders({ remaining: 100 });
+      const lowQuotaDelay = limiter.getStatus().adaptiveDelayMs;
+
+      expect(lowQuotaDelay).toBeGreaterThan(highQuotaDelay);
+    });
+
+    it('should emit rate-limit-warning when below threshold', () => {
+      const warningHandler = jest.fn();
+      limiter.on('rate-limit-warning', warningHandler);
+
+      limiter.updateRateLimitFromHeaders({ remaining: 5 });
+
+      expect(warningHandler).toHaveBeenCalledWith(
+        expect.objectContaining({
+          remaining: 5,
+          adaptiveDelayMs: expect.any(Number),
+        })
+      );
+    });
+  });
+
+  describe('Start state', () => {
+    it('should start in unpaused state', () => {
+      const freshLimiter = new RateLimiter();
+      expect(freshLimiter.getStatus().isPaused).toBe(false);
+      freshLimiter.stop();
+    });
+
+    it('should start with empty queue', () => {
+      const freshLimiter = new RateLimiter();
+      expect(freshLimiter.getStatus().queueLength).toBe(0);
+      expect(freshLimiter.getStatus().activeRequests).toBe(0);
+      freshLimiter.stop();
+    });
+  });
 });
