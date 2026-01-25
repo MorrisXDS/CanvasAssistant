@@ -66,6 +66,9 @@ export class Database extends EventEmitter {
   private lastWriteTime: number = 0;
   private walCheckInterval: NodeJS.Timeout | null = null;
 
+  // Write lock - prevents further writes after app reset
+  private writeLocked: boolean = false;
+
   constructor(config: DatabaseConfig) {
     super();
     this.dbPath = config.dbPath;
@@ -162,9 +165,35 @@ export class Database extends EventEmitter {
   }
 
   /**
+   * Lock the database to prevent further writes.
+   * Used during app reset to prevent stray writes from in-flight operations.
+   */
+  lockWrites(): void {
+    this.writeLocked = true;
+  }
+
+  /**
+   * Check if database writes are locked
+   */
+  isWriteLocked(): boolean {
+    return this.writeLocked;
+  }
+
+  /**
+   * Unlock the database to allow writes again.
+   * Called when re-connecting after an app reset.
+   */
+  unlockWrites(): void {
+    this.writeLocked = false;
+  }
+
+  /**
    * Execute SQL within a transaction with commit event emission
    */
   transaction<T>(fn: () => T): T {
+    if (this.writeLocked) {
+      throw new Error('Database is locked for writes');
+    }
     return this.db.transaction(fn)();
   }
 
@@ -176,6 +205,9 @@ export class Database extends EventEmitter {
     params: unknown[] = [],
     tableName?: string
   ): { changes: number; lastInsertRowid: number } {
+    if (this.writeLocked) {
+      throw new Error('Database is locked for writes');
+    }
     const stmt = this.db.prepare(sql);
     const result = stmt.run(...params);
 

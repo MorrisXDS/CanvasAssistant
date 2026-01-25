@@ -151,7 +151,6 @@ export function Layout() {
 
   // Sidebar collapse state
   const [isCollapsed, setIsCollapsed] = useState(() => loadSidebarState());
-  const [isSidebarHovered, setIsSidebarHovered] = useState(false);
   const [lockAnimation, setLockAnimation] = useState<'lock' | 'unlock' | null>(null);
 
   // Nav items with drag and drop
@@ -219,9 +218,6 @@ export function Layout() {
     setDraggedItem(null);
     setDragOverItem(null);
   };
-
-  // Effective collapsed state: collapsed unless hovered
-  const effectiveCollapsed = isCollapsed && !isSidebarHovered;
 
   // User profile state (will be populated from Canvas API)
   const [userProfile, setUserProfile] = useState<{
@@ -393,7 +389,7 @@ export function Layout() {
   };
 
   const syncDisplay = getSyncDisplay();
-  const sidebarWidth = effectiveCollapsed ? 64 : 220;
+  const sidebarWidth = isCollapsed ? 64 : 220;
 
   // Debug: Log sidebar state changes
   useEffect(() => {
@@ -404,15 +400,13 @@ export function Layout() {
     <>
       <TitleBar sidebarWidth={sidebarWidth} onSidebarToggle={toggleSidebar} />
       <div ref={containerRef} style={styles.container}>
-        {/* Sidebar - double-click to toggle, hover to temporarily expand */}
+        {/* Sidebar - double-click to toggle */}
         <aside
           style={{
             ...styles.sidebar,
             width: `${sidebarWidth}px`,
           }}
           onDoubleClick={toggleSidebar}
-          onMouseEnter={() => setIsSidebarHovered(true)}
-          onMouseLeave={() => setIsSidebarHovered(false)}
         >
           {/* User Profile / Logo - clickable for dropdown */}
           <div style={{ position: 'relative' }}>
@@ -426,7 +420,7 @@ export function Layout() {
                 width: '100%',
               }}
               onClick={handleProfileClick}
-              title={effectiveCollapsed ? 'Profile menu' : undefined}
+              title={isCollapsed ? 'Profile menu' : undefined}
             >
               {userProfile?.avatarUrl ? (
                 <img
@@ -439,7 +433,7 @@ export function Layout() {
                   <User size={20} />
                 </div>
               )}
-              {!effectiveCollapsed && (
+              {!isCollapsed && (
                 <>
                   <div style={styles.profileInfo}>
                     <span style={styles.userName}>
@@ -489,14 +483,14 @@ export function Layout() {
                     style={({ isActive }) => ({
                       ...styles.navLink,
                       ...(isActive ? styles.navLinkActive : {}),
-                      justifyContent: effectiveCollapsed ? 'center' : 'flex-start',
-                      paddingLeft: effectiveCollapsed ? 0 : 'var(--space-3)',
-                      paddingRight: effectiveCollapsed ? 0 : 'var(--space-5)',
+                      justifyContent: isCollapsed ? 'center' : 'flex-start',
+                      paddingLeft: isCollapsed ? 0 : 'var(--space-3)',
+                      paddingRight: isCollapsed ? 0 : 'var(--space-5)',
                       opacity: isDragging ? 0.5 : 1,
                     })}
-                    title={effectiveCollapsed ? item.label : undefined}
+                    title={isCollapsed ? item.label : undefined}
                   >
-                    {!effectiveCollapsed && (
+                    {!isCollapsed && (
                       <GripVertical
                         size={14}
                         style={{
@@ -506,7 +500,7 @@ export function Layout() {
                       />
                     )}
                     <Icon size={18} style={{ flexShrink: 0 }} />
-                    {!effectiveCollapsed && <span>{item.label}</span>}
+                    {!isCollapsed && <span>{item.label}</span>}
                   </NavLink>
                 </div>
               );
@@ -551,9 +545,14 @@ export function Layout() {
           <div style={styles.sidebarFooter}>
             <div style={styles.syncStatusCentered} title={syncDisplay.text}>
               {syncDisplay.icon}
-              {!effectiveCollapsed && (
-                <span style={styles.syncText}>{syncDisplay.text}</span>
-              )}
+              <span style={{
+                ...styles.syncText,
+                opacity: isCollapsed ? 0 : 1,
+                width: isCollapsed ? 0 : 'auto',
+                overflow: 'hidden',
+                whiteSpace: 'nowrap',
+                transition: 'opacity 200ms ease, width 200ms ease',
+              }}>{syncDisplay.text}</span>
             </div>
           </div>
         </aside>

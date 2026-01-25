@@ -223,6 +223,26 @@ export class SyncEngine extends EventEmitter {
   }
 
   /**
+   * Get the user's default target grade from user_preferences.
+   * Used when creating new courses to apply the correct default.
+   * @returns Default target grade (80 if not set)
+   */
+  private getDefaultTargetGrade(): number {
+    try {
+      const prefs = this.db.executeReadOne<{ value: string }>(
+        "SELECT value FROM user_preferences WHERE key = 'academicSettings'"
+      );
+      if (prefs?.value) {
+        const settings = JSON.parse(prefs.value);
+        return settings.defaultTargetGrade ?? 80;
+      }
+    } catch {
+      // Fall through to default
+    }
+    return 80;
+  }
+
+  /**
    * Acquire the sync mutex lock atomically.
    * Returns a release function that must be called when done.
    * This prevents race conditions between concurrent syncAll() calls.
@@ -498,6 +518,74 @@ export class SyncEngine extends EventEmitter {
    */
   getConflictResolver(): SyncConflictResolver {
     return this.conflictResolver;
+  }
+
+  /**
+   * Get sync preferences from user_preferences table
+   */
+  private getSyncPreferences(): { autoAssignDueDate: boolean } {
+    try {
+      const prefs = this.db.executeReadOne<{ value: string }>(
+        "SELECT value FROM user_preferences WHERE key = 'syncPreferences'"
+      );
+      this.log?.debug(`[getSyncPreferences] Raw DB result: ${JSON.stringify(prefs)}`);
+      if (prefs?.value) {
+        const parsed = JSON.parse(prefs.value);
+        this.log?.debug(`[getSyncPreferences] Parsed: ${JSON.stringify(parsed)}`);
+        return {
+          autoAssignDueDate: parsed.autoAssignDueDate ?? false,
+        };
+      }
+      this.log?.debug('[getSyncPreferences] No prefs found, using defaults');
+    } catch (e) {
+      this.log?.debug(`[getSyncPreferences] Error: ${e}`);
+      // Use defaults
+    }
+    return { autoAssignDueDate: false };
+  }
+
+  /**
+   * Get per-course settings for sync behavior
+   * @param courseId - Local course ID
+   * @returns Course-specific settings or defaults
+   */
+  private getCourseSettings(courseId: number): {
+    autoAssignDueDate: boolean; // Resolved value (per-course or app default)
+    allowGuessedOverride: boolean;
+  } {
+    const course = this.db.executeReadOne<{
+      auto_assign_due_date: number | null;
+      allow_guessed_override: number | null;
+    }>(
+      'SELECT auto_assign_due_date, allow_guessed_override FROM courses WHERE id = ?',
+      [courseId]
+    );
+
+    const appDefaults = this.getSyncPreferences();
+
+    // Per-course setting: NULL = inherit, 0 = disabled, 1 = enabled
+    let autoAssignDueDate = appDefaults.autoAssignDueDate;
+    if (course?.auto_assign_due_date !== null && course?.auto_assign_due_date !== undefined) {
+      autoAssignDueDate = course.auto_assign_due_date === 1;
+    }
+
+    // Allow guessed override defaults to true
+    const allowGuessedOverride = course?.allow_guessed_override !== 0;
+
+    return { autoAssignDueDate, allowGuessedOverride };
+  }
+
+  /**
+   * Get today's end time (23:59:00) as ISO string in local timezone
+   * Format: YYYY-MM-DDTHH:MM:SS (no Z suffix to indicate local time)
+   */
+  private getTodayEndTime(): string {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    // Return as local time without timezone indicator
+    return `${year}-${month}-${day}T23:59:00`;
   }
 
   /**
@@ -920,8 +1008,9 @@ export class SyncEngine extends EventEmitter {
         }
 
         // --- Write Courses ---
+        const defaultTargetGrade = this.getDefaultTargetGrade();
         for (const course of fetched.courses) {
-          const localCourse = mapCourse(course, baseUrl);
+          const localCourse = mapCourse(course, baseUrl, defaultTargetGrade);
           const existing = this.db.executeReadOne<Record<string, unknown>>(
             'SELECT * FROM courses WHERE external_id = ?',
             [localCourse.external_id]
@@ -949,6 +1038,12 @@ export class SyncEngine extends EventEmitter {
                 finalData[field] = existing[field];
               }
             }
+            // IMPORTANT: Keep local values for conflicting fields until user resolves
+            for (const conflict of conflicts) {
+              if (existing[conflict.field] !== undefined) {
+                finalData[conflict.field] = existing[conflict.field];
+              }
+            }
           }
 
           this.db.upsert('courses', finalData, 'external_id', true, preservedFields);
@@ -968,9 +1063,16 @@ export class SyncEngine extends EventEmitter {
         }
 
         // --- Write Tasks ---
+        const todayEndTime = this.getTodayEndTime();
+        this.log?.info(`[syncAll] Task sync starting: todayEndTime=${todayEndTime}`);
+
         for (const [canvasCourseId, assignments] of fetched.tasks) {
           const localCourseId = courseIdMap.get(canvasCourseId);
           if (!localCourseId) continue;
+
+          // Get per-course settings
+          const courseSettings = this.getCourseSettings(localCourseId);
+          this.log?.debug(`[syncAll] Course ${localCourseId} settings: autoAssignDueDate=${courseSettings.autoAssignDueDate}, allowGuessedOverride=${courseSettings.allowGuessedOverride}`);
 
           for (const assignment of assignments) {
             const localTask = mapAssignment(assignment, localCourseId);
@@ -981,7 +1083,8 @@ export class SyncEngine extends EventEmitter {
 
             const { autoResolved, conflicts, preservedFields } = this.conflictResolver.detectConflicts(
               'task', 'tasks', existing?.id as number || 0,
-              localTask.external_id, localTask.title, existing, localTask
+              localTask.external_id, localTask.title, existing, localTask,
+              { allowGuessedOverride: courseSettings.allowGuessedOverride }
             );
 
             if (conflicts.length > 0) {
@@ -998,9 +1101,52 @@ export class SyncEngine extends EventEmitter {
                   finalData[field] = existing[field];
                 }
               }
+              // IMPORTANT: Keep local values for conflicting fields until user resolves
+              for (const conflict of conflicts) {
+                if (existing[conflict.field] !== undefined) {
+                  finalData[conflict.field] = existing[conflict.field];
+                }
+              }
+            }
+
+            // Track if we auto-assigned the due date (for field_sources)
+            let autoAssignedDueDate = false;
+
+            // Auto-assign due date for tasks without one (if setting enabled)
+            // User can override this value and it will be preserved
+            this.log?.debug(`Task "${localTask.title}": autoAssignDueDate=${courseSettings.autoAssignDueDate}, due_at=${finalData.due_at}, type=${typeof finalData.due_at}`);
+            if (courseSettings.autoAssignDueDate && !finalData.due_at) {
+              // Check if existing record has a user-set due date (in local_modified_fields or field_sources)
+              const existingModified = existing?.local_modified_fields as string | null;
+              const modifiedFields = existingModified ? JSON.parse(existingModified) : [];
+              const fieldSources = existing?.field_sources ? JSON.parse(existing.field_sources as string) : {};
+              const userSetDueDate = modifiedFields.includes('due_at') || fieldSources.due_at === 'user';
+
+              this.log?.debug(`Task "${localTask.title}": userSetDueDate=${userSetDueDate}, assigning todayEndTime=${todayEndTime}`);
+              if (!userSetDueDate) {
+                // No user override - auto-assign today's end time
+                autoAssignedDueDate = true;
+                finalData.due_at = todayEndTime;
+                this.log?.debug(`Task "${localTask.title}": Assigned due_at=${finalData.due_at}`);
+              } else if (existing?.due_at) {
+                // User has set their own due date - preserve it
+                finalData.due_at = existing.due_at;
+              }
             }
 
             this.db.upsert('tasks', finalData, 'external_id', true, preservedFields);
+
+            // Update field_sources if we auto-assigned the due date
+            if (autoAssignedDueDate) {
+              const row = this.db.executeReadOne<{ id: number }>(
+                'SELECT id FROM tasks WHERE external_id = ?',
+                [localTask.external_id]
+              );
+              if (row) {
+                this.conflictResolver.setFieldSource('tasks', row.id, 'due_at', 'guessed');
+              }
+            }
+
             counts.tasks++;
           }
 
@@ -1333,9 +1479,10 @@ export class SyncEngine extends EventEmitter {
           );
         }
 
+        const defaultTargetGrade = this.getDefaultTargetGrade();
         for (const course of courses) {
           try {
-            const localCourse = mapCourse(course, baseUrl);
+            const localCourse = mapCourse(course, baseUrl, defaultTargetGrade);
 
             // Get existing record
             const existing = this.db.executeReadOne<Record<string, unknown>>(
@@ -1380,6 +1527,13 @@ export class SyncEngine extends EventEmitter {
               for (const field of preservedFields) {
                 if (existing[field] !== undefined) {
                   finalData[field] = existing[field];
+                }
+              }
+
+              // IMPORTANT: Keep local values for conflicting fields until user resolves
+              for (const conflict of conflicts) {
+                if (existing[conflict.field] !== undefined) {
+                  finalData[conflict.field] = existing[conflict.field];
                 }
               }
             }
@@ -1453,6 +1607,10 @@ export class SyncEngine extends EventEmitter {
     const startTime = Date.now();
     const errors: string[] = [];
     let count = 0;
+
+    // Get per-course settings for auto-assign due date and field override
+    const courseSettings = this.getCourseSettings(localCourseId);
+    const todayEndTime = this.getTodayEndTime();
 
     try {
       const assignments = await this.rateLimiter.enqueue(
@@ -1528,7 +1686,8 @@ export class SyncEngine extends EventEmitter {
                 localTask.external_id,
                 localTask.title,
                 existing,
-                localTask
+                localTask,
+                { allowGuessedOverride: courseSettings.allowGuessedOverride }
               );
 
               if (conflicts.length > 0) {
@@ -1559,10 +1718,53 @@ export class SyncEngine extends EventEmitter {
                     finalData[field] = existing[field];
                   }
                 }
+
+                // IMPORTANT: Keep local values for conflicting fields until user resolves
+                for (const conflict of conflicts) {
+                  if (existing[conflict.field] !== undefined) {
+                    finalData[conflict.field] = existing[conflict.field];
+                  }
+                }
+              }
+
+              // Track if we auto-assigned the due date (for field_sources)
+              let autoAssignedDueDate = false;
+
+              // Auto-assign due date for tasks without one (if setting enabled)
+              // User can override this value and it will be preserved
+              this.log?.debug(`[syncTasks] Task "${localTask.title}": autoAssignDueDate=${courseSettings.autoAssignDueDate}, due_at=${finalData.due_at}, type=${typeof finalData.due_at}`);
+              if (courseSettings.autoAssignDueDate && !finalData.due_at) {
+                // Check if existing record has a user-set due date (in local_modified_fields or field_sources)
+                const existingModified = existing?.local_modified_fields as string | null;
+                const modifiedFields = existingModified ? JSON.parse(existingModified) : [];
+                const fieldSources = existing?.field_sources ? JSON.parse(existing.field_sources as string) : {};
+                const userSetDueDate = modifiedFields.includes('due_at') || fieldSources.due_at === 'user';
+
+                this.log?.debug(`[syncTasks] Task "${localTask.title}": userSetDueDate=${userSetDueDate}, assigning todayEndTime=${todayEndTime}`);
+                if (!userSetDueDate) {
+                  // No user override - auto-assign today's end time
+                  autoAssignedDueDate = true;
+                  finalData.due_at = todayEndTime;
+                  this.log?.debug(`[syncTasks] Task "${localTask.title}": Assigned due_at=${finalData.due_at}`);
+                } else if (existing?.due_at) {
+                  // User has set their own due date - preserve it
+                  finalData.due_at = existing.due_at;
+                }
               }
 
               // Upsert the task
               this.db.upsert('tasks', finalData, 'external_id', true, preservedFields);
+
+              // Update field_sources if we auto-assigned the due date
+              if (autoAssignedDueDate) {
+                const row = this.db.executeReadOne<{ id: number }>(
+                  'SELECT id FROM tasks WHERE external_id = ?',
+                  [localTask.external_id]
+                );
+                if (row) {
+                  this.conflictResolver.setFieldSource('tasks', row.id, 'due_at', 'guessed');
+                }
+              }
 
               // Log diagnostic
               if (this.diagnosticsEnabled) {
@@ -2269,12 +2471,19 @@ export class SyncEngine extends EventEmitter {
 
     if (!isOnline && !options.forceRefresh) {
       // Offline mode: return cached files for this folder
-      const cachedFiles = this.db.executeRead<{ id: number }>(
+      // First resolve Canvas folder ID to internal folder ID
+      const folder = this.db.executeReadOne<{ id: number }>(
+        'SELECT id FROM resources WHERE external_id = ? AND course_id = ?',
+        [String(canvasFolderId), localCourseId]
+      );
+      const internalFolderId = folder?.id ?? null;
+
+      const cachedFiles = internalFolderId ? this.db.executeRead<{ id: number }>(
         `SELECT id FROM resources
          WHERE course_id = ? AND type = 'file'
-         AND folder_id = ?`,
-        [localCourseId, String(canvasFolderId)]
-      );
+         AND parent_folder_id = ?`,
+        [localCourseId, internalFolderId]
+      ) : [];
 
       return {
         success: true,
@@ -2355,12 +2564,19 @@ export class SyncEngine extends EventEmitter {
       const message = error instanceof Error ? error.message : String(error);
 
       // On API error, try to return cached data
-      const cachedFiles = this.db.executeRead<{ id: number }>(
+      // First resolve Canvas folder ID to internal folder ID
+      const folder = this.db.executeReadOne<{ id: number }>(
+        'SELECT id FROM resources WHERE external_id = ? AND course_id = ?',
+        [String(canvasFolderId), localCourseId]
+      );
+      const internalFolderId = folder?.id ?? null;
+
+      const cachedFiles = internalFolderId ? this.db.executeRead<{ id: number }>(
         `SELECT id FROM resources
          WHERE course_id = ? AND type = 'file'
-         AND folder_id = ?`,
-        [localCourseId, String(canvasFolderId)]
-      );
+         AND parent_folder_id = ?`,
+        [localCourseId, internalFolderId]
+      ) : [];
 
       if (cachedFiles.length > 0) {
         return {
@@ -2464,7 +2680,20 @@ export class SyncEngine extends EventEmitter {
       );
 
       const baseUrl = this.client.getBaseUrl();
-      const localCourse = mapCourse(response.data, baseUrl);
+      const defaultTargetGrade = this.getDefaultTargetGrade();
+      const localCourse = mapCourse(response.data, baseUrl, defaultTargetGrade);
+
+      // For existing courses, preserve their target_grade and target_grade_source
+      const existing = this.db.executeReadOne<{ target_grade: number; target_grade_source: string }>(
+        'SELECT target_grade, target_grade_source FROM courses WHERE external_id = ?',
+        [localCourse.external_id]
+      );
+      if (existing) {
+        // Keep existing target grade settings
+        localCourse.target_grade = existing.target_grade;
+        localCourse.target_grade_source = existing.target_grade_source as 'default' | 'manual';
+      }
+
       this.db.upsert('courses', localCourse);
 
       return {

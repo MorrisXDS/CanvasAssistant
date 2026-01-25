@@ -196,6 +196,16 @@ async function initializeCanvasClient(token: string, baseUrl: string): Promise<b
     logger.info(`Canvas client initialized for user: ${validation.user?.name}`);
     metricsCollector.increment('canvas.auth.success');
 
+    // Listen for auth errors (token expiration/invalidation)
+    canvasClient.on('auth-error', (error) => {
+      logger.warn(`Canvas auth error detected: ${error.message}`);
+      metricsCollector.increment('canvas.auth.expired');
+      // Notify renderer to show re-auth modal
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('auth:expired', { reason: error.message });
+      }
+    });
+
     // Initialize sync engine with HTML content sync
     syncEngine = new SyncEngine({
       client: canvasClient,
@@ -210,6 +220,7 @@ async function initializeCanvasClient(token: string, baseUrl: string): Promise<b
         downloadLinkedFiles: true,
         maxConcurrentDownloads: 3,
       },
+      logger: logger.child('SyncEngine'),
     });
 
     // Forward sync events to metrics
@@ -351,6 +362,12 @@ function registerIpcHandlers(): void {
     const token = await credentialManager.retrieve();
     if (!token) {
       return { success: false, error: 'No credentials stored' };
+    }
+
+    // Unlock database in case it was locked from a previous reset
+    if (database.isWriteLocked()) {
+      database.unlockWrites();
+      logger.info('Database unlocked for new connection');
     }
 
     const success = await initializeCanvasClient(token, baseUrl);
@@ -1373,69 +1390,116 @@ function registerIpcHandlers(): void {
     }
   });
 
-  // Clear all app data (preserves Canvas API token)
-  ipcMain.handle('data:clearAll', () => {
-    logger.info('Clearing all app data (preserving credentials)');
-    try {
-      database.transaction(() => {
-        // Clear all data tables in dependency order (children first, parents last)
-        // Tables with foreign keys to other tables must be deleted before their parents
+  /**
+   * Reset all application state - clears database, files, credentials, and in-memory clients.
+   * This is the single source of truth for full app reset.
+   */
+  async function resetAppState(options: { deleteToken: boolean }): Promise<void> {
+    const { deleteToken } = options;
 
-        // Intelligence/analytics tables (reference tasks/courses)
-        database.executeWrite('DELETE FROM message_display_history', [], 'message_display_history');
-        database.executeWrite('DELETE FROM field_notification_suppressions', [], 'field_notification_suppressions');
-        database.executeWrite('DELETE FROM adaptive_weight_adjustments', [], 'adaptive_weight_adjustments');
-        database.executeWrite('DELETE FROM user_insights', [], 'user_insights');
-        database.executeWrite('DELETE FROM recommendations', [], 'recommendations');
-        database.executeWrite('DELETE FROM workload_snapshots', [], 'workload_snapshots');
-        database.executeWrite('DELETE FROM effort_estimations', [], 'effort_estimations');
-        database.executeWrite('DELETE FROM user_behavior_patterns', [], 'user_behavior_patterns');
-        database.executeWrite('DELETE FROM task_completion_events', [], 'task_completion_events');
+    // 1. Clear all database tables in dependency order (children first, parents last)
+    database.transaction(() => {
+      // Intelligence/analytics tables (reference tasks/courses)
+      database.executeWrite('DELETE FROM message_display_history', [], 'message_display_history');
+      database.executeWrite('DELETE FROM field_notification_suppressions', [], 'field_notification_suppressions');
+      database.executeWrite('DELETE FROM adaptive_weight_adjustments', [], 'adaptive_weight_adjustments');
+      database.executeWrite('DELETE FROM user_insights', [], 'user_insights');
+      database.executeWrite('DELETE FROM recommendations', [], 'recommendations');
+      database.executeWrite('DELETE FROM workload_snapshots', [], 'workload_snapshots');
+      database.executeWrite('DELETE FROM effort_estimations', [], 'effort_estimations');
+      database.executeWrite('DELETE FROM user_behavior_patterns', [], 'user_behavior_patterns');
+      database.executeWrite('DELETE FROM task_completion_events', [], 'task_completion_events');
 
-        // Content/file reference tables (reference resources/courses)
-        database.executeWrite('DELETE FROM html_exports', [], 'html_exports');
-        database.executeWrite('DELETE FROM content_file_references', [], 'content_file_references');
+      // Content/file reference tables (reference resources/courses)
+      database.executeWrite('DELETE FROM html_exports', [], 'html_exports');
+      database.executeWrite('DELETE FROM content_file_references', [], 'content_file_references');
 
-        // Policy-related child tables
-        database.executeWrite('DELETE FROM grade_replacements', [], 'grade_replacements');
-        database.executeWrite('DELETE FROM weight_transfers', [], 'weight_transfers');
-        database.executeWrite('DELETE FROM grace_token_usage', [], 'grace_token_usage');
-        database.executeWrite('DELETE FROM policy_rules', [], 'policy_rules');
-        database.executeWrite('DELETE FROM grace_tokens', [], 'grace_tokens');
-        database.executeWrite('DELETE FROM course_task_groups', [], 'course_task_groups');
-        database.executeWrite('DELETE FROM global_task_types', [], 'global_task_types');
+      // Policy-related child tables
+      database.executeWrite('DELETE FROM grade_replacements', [], 'grade_replacements');
+      database.executeWrite('DELETE FROM weight_transfers', [], 'weight_transfers');
+      database.executeWrite('DELETE FROM grace_token_usage', [], 'grace_token_usage');
+      database.executeWrite('DELETE FROM policy_rules', [], 'policy_rules');
+      database.executeWrite('DELETE FROM grace_tokens', [], 'grace_tokens');
+      database.executeWrite('DELETE FROM course_task_groups', [], 'course_task_groups');
+      database.executeWrite('DELETE FROM global_task_types', [], 'global_task_types');
 
-        // Module-related tables
-        database.executeWrite('DELETE FROM module_items', [], 'module_items');
-        database.executeWrite('DELETE FROM modules', [], 'modules');
+      // Module-related tables
+      database.executeWrite('DELETE FROM module_items', [], 'module_items');
+      database.executeWrite('DELETE FROM modules', [], 'modules');
 
-        // Notification-related tables
-        database.executeWrite('DELETE FROM policy_announcements', [], 'policy_announcements');
-        database.executeWrite('DELETE FROM announcement_file_references', [], 'announcement_file_references');
-        database.executeWrite('DELETE FROM notification_attachments', [], 'notification_attachments');
-        database.executeWrite('DELETE FROM notifications', [], 'notifications');
+      // Notification-related tables
+      database.executeWrite('DELETE FROM policy_announcements', [], 'policy_announcements');
+      database.executeWrite('DELETE FROM announcement_file_references', [], 'announcement_file_references');
+      database.executeWrite('DELETE FROM notification_attachments', [], 'notification_attachments');
+      database.executeWrite('DELETE FROM notifications', [], 'notifications');
 
-        // Course-related tables
-        database.executeWrite('DELETE FROM grade_history', [], 'grade_history');
-        database.executeWrite('DELETE FROM course_pages', [], 'course_pages');
-        database.executeWrite('DELETE FROM course_policies', [], 'course_policies');
-        database.executeWrite('DELETE FROM resources', [], 'resources');
-        database.executeWrite('DELETE FROM calendar_events', [], 'calendar_events');
-        database.executeWrite('DELETE FROM imported_calendars', [], 'imported_calendars');
-        database.executeWrite('DELETE FROM tasks', [], 'tasks');
-        database.executeWrite('DELETE FROM courses', [], 'courses');
+      // Course-related tables
+      database.executeWrite('DELETE FROM grade_history', [], 'grade_history');
+      database.executeWrite('DELETE FROM course_pages', [], 'course_pages');
+      database.executeWrite('DELETE FROM course_policies', [], 'course_policies');
+      database.executeWrite('DELETE FROM resources', [], 'resources');
+      database.executeWrite('DELETE FROM calendar_events', [], 'calendar_events');
+      database.executeWrite('DELETE FROM imported_calendars', [], 'imported_calendars');
+      database.executeWrite('DELETE FROM tasks', [], 'tasks');
+      database.executeWrite('DELETE FROM courses', [], 'courses');
 
-        // Top-level tables
-        database.executeWrite('DELETE FROM enrollment_terms', [], 'enrollment_terms');
-        database.executeWrite('DELETE FROM user_preferences', [], 'user_preferences');
-        database.executeWrite('DELETE FROM sync_metadata', [], 'sync_metadata');
-        database.executeWrite('DELETE FROM endpoint_backoff', [], 'endpoint_backoff');
-        database.executeWrite('DELETE FROM sync_preferences', [], 'sync_preferences');
-        database.executeWrite('DELETE FROM field_modifications', [], 'field_modifications');
+      // Top-level tables
+      database.executeWrite('DELETE FROM enrollment_terms', [], 'enrollment_terms');
+      database.executeWrite('DELETE FROM user_preferences', [], 'user_preferences');
+      database.executeWrite('DELETE FROM sync_metadata', [], 'sync_metadata');
+      database.executeWrite('DELETE FROM endpoint_backoff', [], 'endpoint_backoff');
+      database.executeWrite('DELETE FROM sync_preferences', [], 'sync_preferences');
+      database.executeWrite('DELETE FROM field_modifications', [], 'field_modifications');
+    });
+
+    // 2. Delete all downloaded files
+    if (fs.existsSync(FILES_DIR)) {
+      try {
+        fs.rmSync(FILES_DIR, { recursive: true, force: true });
+        fs.mkdirSync(FILES_DIR, { recursive: true }); // Recreate empty directory
+        logger.info('Downloaded files deleted');
+      } catch (err) {
+        logger.error(`Failed to delete files directory: ${err}`);
+      }
+    }
+
+    // 3. Delete credential and reset in-memory clients if requested
+    if (deleteToken) {
+      // Stop any ongoing sync operations first
+      if (syncEngine) {
+        await syncEngine.cancelPendingSync();
+        syncEngine.stop();
+        logger.info('Sync engine stopped');
+      }
+
+      await credentialManager.delete();
+      canvasClient = null;
+      syncEngine = null;
+
+      // Lock database to prevent any stray writes from in-flight operations
+      database.lockWrites();
+      logger.info('Canvas API token deleted, clients reset, and database locked');
+    }
+
+    // 4. Notify renderer to handle its side (clear localStorage, redirect to login)
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('app:reset', {
+        tokenDeleted: deleteToken,
+        clearLocalStorage: deleteToken // Clear all localStorage when token deleted
       });
-      logger.info('All app data cleared successfully');
-      metricsCollector.increment('data.cleared');
-      return { success: true };
+    }
+
+    logger.info(`App state reset complete (tokenDeleted: ${deleteToken})`);
+    metricsCollector.increment('data.cleared');
+  }
+
+  // Clear all app data (optionally including Canvas API token)
+  ipcMain.handle('data:clearAll', async (_event, options?: { deleteToken?: boolean }) => {
+    const deleteToken = options?.deleteToken ?? false;
+    logger.info(`Clearing all app data (deleteToken: ${deleteToken})`);
+    try {
+      await resetAppState({ deleteToken });
+      return { success: true, tokenDeleted: deleteToken };
     } catch (error) {
       logger.error(`Failed to clear all data: ${error}`);
       return { success: false, error: String(error) };
@@ -2572,24 +2636,28 @@ function registerIpcHandlers(): void {
     }
 
     try {
+      // Get the conflict BEFORE resolving (since resolving removes it from pending list)
+      const conflict = syncEngine.getConflictResolver().getPendingConflicts()
+        .find(c => c.id === resolution.conflictId);
+
+      if (!conflict) {
+        return { success: false, error: 'Conflict not found' };
+      }
+
       const result = syncEngine.getConflictResolver().resolveConflict(resolution);
       if (result) {
         // Apply the resolution to the database
-        const conflict = syncEngine.getConflictResolver().getPendingConflicts()
-          .find(c => c.id === resolution.conflictId);
-        if (conflict) {
-          const tableName = conflict.entity === 'course' ? 'courses' :
-                           conflict.entity === 'task' ? 'tasks' : 'notifications';
-          database.executeWrite(
-            `UPDATE ${tableName} SET ${result.field} = ? WHERE id = ?`,
-            [result.value, conflict.entityId],
-            tableName
-          );
+        const tableName = conflict.entity === 'course' ? 'courses' :
+                         conflict.entity === 'task' ? 'tasks' : 'notifications';
+        database.executeWrite(
+          `UPDATE ${tableName} SET ${result.field} = ? WHERE id = ?`,
+          [result.value, conflict.entityId],
+          tableName
+        );
 
-          // Clear the modified flag if using Canvas value
-          if (resolution.useCanvasValue) {
-            syncEngine.getConflictResolver().clearFieldModified(tableName, conflict.entityId, result.field);
-          }
+        // Clear the modified flag if using Canvas value
+        if (resolution.useCanvasValue) {
+          syncEngine.getConflictResolver().clearFieldModified(tableName, conflict.entityId, result.field);
         }
       }
       return { success: true };
@@ -2668,13 +2736,13 @@ function registerIpcHandlers(): void {
       if (prefs?.value) {
         return JSON.parse(prefs.value);
       }
-      return { autoSyncEnabled: true, autoSyncInterval: 15 };
+      return { autoSyncEnabled: true, autoSyncInterval: 15, autoAssignDueDate: false };
     } catch (e) {
-      return { autoSyncEnabled: true, autoSyncInterval: 15 };
+      return { autoSyncEnabled: true, autoSyncInterval: 15, autoAssignDueDate: false };
     }
   });
 
-  ipcMain.handle('sync:setAutoSyncPreferences', (_event, prefs: { autoSyncEnabled: boolean; autoSyncInterval: number }) => {
+  ipcMain.handle('sync:setAutoSyncPreferences', (_event, prefs: { autoSyncEnabled: boolean; autoSyncInterval: number; autoAssignDueDate?: boolean }) => {
     try {
       database.executeWrite(
         `INSERT INTO user_preferences (key, value) VALUES ('syncPreferences', ?)
@@ -2695,6 +2763,116 @@ function registerIpcHandlers(): void {
     } catch (error) {
       logger.error('Failed to save auto-sync preferences:', error as Error);
       return { success: false, error: String(error) };
+    }
+  });
+
+  // ============ Academic Settings Handlers ============
+
+  ipcMain.handle('settings:getDefaultTargetGrade', () => {
+    try {
+      const prefs = database.executeReadOne<{ value: string }>(
+        "SELECT value FROM user_preferences WHERE key = 'academicSettings'"
+      );
+      if (prefs?.value) {
+        const settings = JSON.parse(prefs.value);
+        return { defaultTargetGrade: settings.defaultTargetGrade ?? 85 };
+      }
+      return { defaultTargetGrade: 85 };
+    } catch (e) {
+      return { defaultTargetGrade: 85 };
+    }
+  });
+
+  ipcMain.handle('settings:setDefaultTargetGrade', (_event, targetGrade: number) => {
+    try {
+      // Get existing settings and merge
+      const existing = database.executeReadOne<{ value: string }>(
+        "SELECT value FROM user_preferences WHERE key = 'academicSettings'"
+      );
+      const settings = existing?.value ? JSON.parse(existing.value) : {};
+      settings.defaultTargetGrade = targetGrade;
+
+      // Save to user_preferences
+      database.executeWrite(
+        `INSERT INTO user_preferences (key, value) VALUES ('academicSettings', ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+        [JSON.stringify(settings)],
+        'user_preferences'
+      );
+
+      // Update all courses with target_grade_source = 'default' to the new value
+      const { CourseRepository } = require('./layers/l1-persistence/repositories');
+      const courseRepo = new CourseRepository(database);
+      const updatedCount = courseRepo.updateDefaultTargetGrades(targetGrade);
+
+      logger.info(`Default target grade updated to ${targetGrade}%, propagated to ${updatedCount} courses`);
+      return { success: true, data: { updatedCourses: updatedCount } };
+    } catch (error) {
+      logger.error('Failed to save default target grade:', error as Error);
+      return { success: false, error: String(error) };
+    }
+  });
+
+  // ============ Course Settings Handlers ============
+
+  ipcMain.handle('course:getSettings', (_event, courseId: number) => {
+    try {
+      const course = database.executeReadOne<{
+        auto_assign_due_date: number | null;
+        allow_guessed_override: number | null;
+      }>(
+        'SELECT auto_assign_due_date, allow_guessed_override FROM courses WHERE id = ?',
+        [courseId]
+      );
+
+      if (!course) {
+        return { success: false, error: 'Course not found' };
+      }
+
+      return {
+        success: true,
+        data: {
+          autoAssignDueDate: course.auto_assign_due_date, // null = inherit, 0 = off, 1 = on
+          allowGuessedOverride: course.allow_guessed_override ?? 1, // default 1
+        },
+      };
+    } catch (e) {
+      return { success: false, error: String(e) };
+    }
+  });
+
+  ipcMain.handle('course:updateSettings', (_event, courseId: number, settings: {
+    autoAssignDueDate?: number | null;
+    allowGuessedOverride?: number;
+  }) => {
+    try {
+      const updates: string[] = [];
+      const values: (number | null)[] = [];
+
+      if ('autoAssignDueDate' in settings) {
+        updates.push('auto_assign_due_date = ?');
+        values.push(settings.autoAssignDueDate ?? null);
+      }
+
+      if ('allowGuessedOverride' in settings) {
+        updates.push('allow_guessed_override = ?');
+        values.push(settings.allowGuessedOverride ?? 1);
+      }
+
+      if (updates.length === 0) {
+        return { success: true };
+      }
+
+      values.push(courseId);
+      database.executeWrite(
+        `UPDATE courses SET ${updates.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+        values,
+        'courses'
+      );
+
+      return { success: true };
+    } catch (e) {
+      return { success: false, error: String(e) };
     }
   });
 
@@ -2728,6 +2906,74 @@ function registerIpcHandlers(): void {
       return { success: true, data: { filePath: result.filePath } };
     } catch (error) {
       logger.error('Failed to export database:', error as Error);
+      return { success: false, error: String(error) };
+    }
+  });
+
+  ipcMain.handle('data:importDatabase', async () => {
+    if (!mainWindow) {
+      return { success: false, error: 'No window available' };
+    }
+
+    const result = await dialog.showOpenDialog(mainWindow, {
+      properties: ['openFile'],
+      filters: [
+        { name: 'SQLite Database', extensions: ['db'] },
+        { name: 'All Files', extensions: ['*'] },
+      ],
+    });
+
+    if (result.canceled || !result.filePaths.length) {
+      return { success: false, error: 'Import cancelled' };
+    }
+
+    const importPath = result.filePaths[0];
+
+    try {
+      // Verify it's a valid SQLite database by checking the magic bytes
+      const fd = fs.openSync(importPath, 'r');
+      const buffer = Buffer.alloc(16);
+      fs.readSync(fd, buffer, 0, 16, 0);
+      fs.closeSync(fd);
+
+      const sqliteMagic = 'SQLite format 3\0';
+      if (buffer.toString('utf8', 0, 16) !== sqliteMagic) {
+        return { success: false, error: 'Invalid database file. Not a valid SQLite database.' };
+      }
+
+      // Close current database connection
+      database.close();
+
+      // Backup current database before replacing
+      const backupPath = `${DB_PATH}.backup-${Date.now()}`;
+      if (fs.existsSync(DB_PATH)) {
+        fs.copyFileSync(DB_PATH, backupPath);
+      }
+
+      // Remove WAL and SHM files if they exist
+      const walPath = `${DB_PATH}-wal`;
+      const shmPath = `${DB_PATH}-shm`;
+      if (fs.existsSync(walPath)) fs.unlinkSync(walPath);
+      if (fs.existsSync(shmPath)) fs.unlinkSync(shmPath);
+
+      // Copy imported database to replace current
+      fs.copyFileSync(importPath, DB_PATH);
+
+      logger.info(`Database imported from: ${importPath}`);
+      logger.info(`Previous database backed up to: ${backupPath}`);
+      metricsCollector.increment('data.import.database');
+
+      // Notify user that app needs restart
+      return {
+        success: true,
+        data: {
+          filePath: importPath,
+          backupPath,
+          requiresRestart: true,
+        }
+      };
+    } catch (error) {
+      logger.error('Failed to import database:', error as Error);
       return { success: false, error: String(error) };
     }
   });
@@ -3182,8 +3428,9 @@ function startAutoSync(): void {
     // Use defaults
   }
 
-  if (!autoSyncEnabled) {
-    logger.info('Auto-sync is disabled');
+  // Check if auto-sync is disabled (either by flag or by interval=0 meaning "never")
+  if (!autoSyncEnabled || autoSyncIntervalMs <= 0) {
+    logger.info('Auto-sync is disabled (manual sync only)');
     return;
   }
 

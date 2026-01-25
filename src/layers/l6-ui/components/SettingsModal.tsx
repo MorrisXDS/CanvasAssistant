@@ -25,12 +25,13 @@ import {
   Paintbrush,
   Bell,
   Database,
-  FileJson,
-  HardDrive,
   GripVertical,
   RotateCcw,
   LayoutGrid,
   Upload,
+  Download,
+  ShieldCheck,
+  Key,
 } from 'lucide-react';
 import { useStore } from '../../l5-presentation/store';
 import type { Course } from '../../l5-presentation/types';
@@ -50,6 +51,8 @@ interface SyncPreferences {
   autoSyncInterval: number;
   syncFiles: boolean;
   syncAnnouncements: boolean;
+  // Task defaults
+  autoAssignDueDate: boolean; // Auto-assign today 23:59 for tasks without due date
   // HTML content sync
   saveHtmlContent: boolean;
   htmlUrlRewriting: 'local' | 'original';
@@ -109,6 +112,10 @@ interface GeneralSettings {
   landingPage: string;
 }
 
+interface ContentSettings {
+  linkBehavior: 'always-external' | 'prefer-local';
+}
+
 const LANDING_PAGE_OPTIONS = [
   { value: '/', label: 'Dashboard', icon: LayoutDashboard },
   { value: '/calendar', label: 'Calendar', icon: Calendar },
@@ -124,6 +131,7 @@ const STORAGE_KEYS = {
   FILE_EXPLORER: 'fileExplorerSettings',
   COURSES: 'courseSettings',
   CALENDAR: 'calendarSettings',
+  CONTENT: 'contentSettings',
   CANVAS_URL: 'canvasUrl',
   LANDING_PAGE: 'landingPage',
 };
@@ -441,9 +449,28 @@ export function SettingsModal({ isOpen, onClose, isFullPage = false }: SettingsM
 
   // Canvas connection state
   const [canvasUrl, setCanvasUrl] = useState('');
+  const canvasUrlInitializedRef = React.useRef(false);
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
+
+  // Token validation state
+  const [isValidatingToken, setIsValidatingToken] = useState(false);
+  const [tokenValidationResult, setTokenValidationResult] = useState<{
+    status: 'success' | 'error' | null;
+    message: string | null;
+  }>({ status: null, message: null });
+
+  // Token replacement modal state
+  const [showTokenReplaceModal, setShowTokenReplaceModal] = useState(false);
+  const [newToken, setNewToken] = useState('');
+  const [isValidatingNewToken, setIsValidatingNewToken] = useState(false);
+  const [newTokenValidation, setNewTokenValidation] = useState<{
+    valid: boolean | null;
+    userName: string | null;
+    error: string | null;
+  }>({ valid: null, userName: null, error: null });
+  const [isReplacingToken, setIsReplacingToken] = useState(false);
 
   // Sync preferences
   const [syncPrefs, setSyncPrefs] = useState<SyncPreferences>(() =>
@@ -452,6 +479,7 @@ export function SettingsModal({ isOpen, onClose, isFullPage = false }: SettingsM
       autoSyncInterval: 30,
       syncFiles: true,
       syncAnnouncements: true,
+      autoAssignDueDate: false,
       saveHtmlContent: true,
       htmlUrlRewriting: 'local' as const,
       downloadImages: true,
@@ -486,10 +514,18 @@ export function SettingsModal({ isOpen, onClose, isFullPage = false }: SettingsM
   // Academic settings
   const [academic, setAcademic] = useState<AcademicSettings>(() =>
     loadSettings(STORAGE_KEYS.ACADEMIC, {
-      defaultTargetGrade: 80,
+      defaultTargetGrade: 85,
       termSelection: 'auto',
     })
   );
+
+  // Course-specific sync settings
+  const [selectedCourseId, setSelectedCourseId] = useState<number | null>(null);
+  const [perCourseSyncSettings, setPerCourseSyncSettings] = useState<{
+    autoAssignDueDate: number | null; // null = inherit, 0 = off, 1 = on
+    allowGuessedOverride: number;
+  }>({ autoAssignDueDate: null, allowGuessedOverride: 1 });
+  const [isLoadingCourseSettings, setIsLoadingCourseSettings] = useState(false);
 
   // Enrollment terms loaded from database
   const [enrollmentTerms, setEnrollmentTerms] = useState<EnrollmentTerm[]>([]);
@@ -521,6 +557,13 @@ export function SettingsModal({ isOpen, onClose, isFullPage = false }: SettingsM
     })
   );
 
+  // Content settings (link behavior)
+  const [contentSettings, setContentSettings] = useState<ContentSettings>(() =>
+    loadSettings(STORAGE_KEYS.CONTENT, {
+      linkBehavior: 'always-external',
+    })
+  );
+
   // Landing page setting
   const [landingPage, setLandingPage] = useState<string>(() => {
     try {
@@ -532,6 +575,7 @@ export function SettingsModal({ isOpen, onClose, isFullPage = false }: SettingsM
 
   // Clear data confirmation dialog
   const [showClearDataConfirm, setShowClearDataConfirm] = useState(false);
+  const [deleteTokenOnClear, setDeleteTokenOnClear] = useState(false);
 
   // Apply theme on mount and listen for system preference changes
   useEffect(() => {
@@ -551,6 +595,9 @@ export function SettingsModal({ isOpen, onClose, isFullPage = false }: SettingsM
       checkCanvasConnection();
       fetchEnrollmentTerms();
       fetchDownloadDirectory();
+    } else {
+      // Reset initialization flag when modal closes so URL loads fresh on next open
+      canvasUrlInitializedRef.current = false;
     }
   }, [isOpen]);
 
@@ -599,7 +646,11 @@ export function SettingsModal({ isOpen, onClose, isFullPage = false }: SettingsM
     try {
       const hasCredential = await window.api.hasCredential();
       const savedUrl = localStorage.getItem(STORAGE_KEYS.CANVAS_URL) || '';
-      setCanvasUrl(savedUrl);
+      // Only set URL on first initialization - don't overwrite user input
+      if (!canvasUrlInitializedRef.current) {
+        setCanvasUrl(savedUrl);
+        canvasUrlInitializedRef.current = true;
+      }
       setIsConnected(hasCredential && !!savedUrl);
     } catch {
       setIsConnected(false);
@@ -617,14 +668,25 @@ export function SettingsModal({ isOpen, onClose, isFullPage = false }: SettingsM
     }
   };
 
+  // Normalize Canvas URL (add https:// if missing, remove trailing slashes)
+  const normalizeUrl = (url: string): string => {
+    let normalized = url.trim();
+    if (!normalized.startsWith('http://') && !normalized.startsWith('https://')) {
+      normalized = 'https://' + normalized;
+    }
+    return normalized.replace(/\/+$/, '');
+  };
+
   const handleReconnect = async () => {
     setIsConnecting(true);
     setConnectionError(null);
     try {
-      const result = await window.api.connectCanvas(canvasUrl);
+      const normalizedUrl = normalizeUrl(canvasUrl);
+      const result = await window.api.connectCanvas(normalizedUrl);
       if (result.success) {
         setIsConnected(true);
-        localStorage.setItem(STORAGE_KEYS.CANVAS_URL, canvasUrl);
+        setCanvasUrl(normalizedUrl);
+        localStorage.setItem(STORAGE_KEYS.CANVAS_URL, normalizedUrl);
       } else {
         setConnectionError(result.error || 'Failed to connect');
       }
@@ -635,20 +697,134 @@ export function SettingsModal({ isOpen, onClose, isFullPage = false }: SettingsM
     }
   };
 
+  // Validate the current token
+  const handleValidateToken = async () => {
+    if (!canvasUrl) return;
+    setIsValidatingToken(true);
+    setTokenValidationResult({ status: null, message: null });
+    try {
+      // Get the stored token and validate it
+      const normalizedUrl = normalizeUrl(canvasUrl);
+      const result = await window.api.connectCanvas(normalizedUrl);
+      if (result.success) {
+        setTokenValidationResult({
+          status: 'success',
+          message: 'Token is valid and working',
+        });
+      } else {
+        setTokenValidationResult({
+          status: 'error',
+          message: result.error || 'Token validation failed',
+        });
+      }
+    } catch (e) {
+      setTokenValidationResult({
+        status: 'error',
+        message: e instanceof Error ? e.message : 'Validation failed',
+      });
+    } finally {
+      setIsValidatingToken(false);
+    }
+  };
+
+  // Open token replacement modal
+  const handleOpenTokenReplace = () => {
+    setNewToken('');
+    setNewTokenValidation({ valid: null, userName: null, error: null });
+    setShowTokenReplaceModal(true);
+  };
+
+  // Validate new token before replacement
+  const handleValidateNewToken = async () => {
+    if (!newToken || !canvasUrl) return;
+    setIsValidatingNewToken(true);
+    setNewTokenValidation({ valid: null, userName: null, error: null });
+    try {
+      const normalizedUrl = normalizeUrl(canvasUrl);
+      const result = await window.api.validateToken(newToken, normalizedUrl);
+      if (result.valid) {
+        setNewTokenValidation({
+          valid: true,
+          userName: result.user?.name || null,
+          error: null,
+        });
+      } else {
+        setNewTokenValidation({
+          valid: false,
+          userName: null,
+          error: result.error || 'Invalid token',
+        });
+      }
+    } catch (e) {
+      setNewTokenValidation({
+        valid: false,
+        userName: null,
+        error: e instanceof Error ? e.message : 'Validation failed',
+      });
+    } finally {
+      setIsValidatingNewToken(false);
+    }
+  };
+
+  // Replace the token
+  const handleReplaceToken = async () => {
+    if (!newTokenValidation.valid || !newToken) return;
+    setIsReplacingToken(true);
+    try {
+      // Store the new token
+      const storeResult = await window.api.storeCredential(newToken);
+      if (storeResult.success) {
+        // Reinitialize the connection with the new token
+        const normalizedUrl = normalizeUrl(canvasUrl);
+        const connectResult = await window.api.connectCanvas(normalizedUrl);
+        if (connectResult.success) {
+          setShowTokenReplaceModal(false);
+          setNewToken('');
+          setNewTokenValidation({ valid: null, userName: null, error: null });
+          setTokenValidationResult({
+            status: 'success',
+            message: 'Token replaced successfully',
+          });
+        } else {
+          setNewTokenValidation({
+            valid: false,
+            userName: null,
+            error: connectResult.error || 'Failed to reconnect with new token',
+          });
+        }
+      } else {
+        setNewTokenValidation({
+          valid: false,
+          userName: null,
+          error: 'Failed to store new token',
+        });
+      }
+    } catch (e) {
+      setNewTokenValidation({
+        valid: false,
+        userName: null,
+        error: e instanceof Error ? e.message : 'Replacement failed',
+      });
+    } finally {
+      setIsReplacingToken(false);
+    }
+  };
+
   const updateSyncPrefs = async (updates: Partial<SyncPreferences>) => {
     const newPrefs = { ...syncPrefs, ...updates };
     setSyncPrefs(newPrefs);
     saveSettings(STORAGE_KEYS.SYNC_PREFS, newPrefs);
 
-    // Sync auto-sync settings to backend
-    if ('autoSyncEnabled' in updates || 'autoSyncInterval' in updates) {
+    // Sync settings to backend that affect sync behavior
+    if ('autoSyncEnabled' in updates || 'autoSyncInterval' in updates || 'autoAssignDueDate' in updates) {
       try {
         await window.api.setAutoSyncPreferences({
           autoSyncEnabled: newPrefs.autoSyncEnabled,
           autoSyncInterval: newPrefs.autoSyncInterval,
+          autoAssignDueDate: newPrefs.autoAssignDueDate,
         });
       } catch (e) {
-        console.error('Failed to sync auto-sync preferences:', e);
+        console.error('Failed to sync preferences:', e);
       }
     }
   };
@@ -672,6 +848,26 @@ export function SettingsModal({ isOpen, onClose, isFullPage = false }: SettingsM
       setExportMessage({ type: 'error', text: e instanceof Error ? e.message : 'Export failed' });
     } finally {
       setIsExporting(false);
+    }
+  };
+
+  const handleImportDatabase = async () => {
+    setIsImporting(true);
+    setExportMessage(null);
+    try {
+      const result = await window.api.importDatabase();
+      if (result.success) {
+        setExportMessage({
+          type: 'success',
+          text: `Database imported successfully. Please restart the app to apply changes. Previous database backed up.`,
+        });
+      } else {
+        setExportMessage({ type: 'error', text: result.error || 'Import failed' });
+      }
+    } catch (e) {
+      setExportMessage({ type: 'error', text: e instanceof Error ? e.message : 'Import failed' });
+    } finally {
+      setIsImporting(false);
     }
   };
 
@@ -733,10 +929,67 @@ export function SettingsModal({ isOpen, onClose, isFullPage = false }: SettingsM
     saveSettings(STORAGE_KEYS.NOTIFICATIONS, newSettings);
   };
 
-  const updateAcademic = (updates: Partial<AcademicSettings>) => {
+  const updateAcademic = async (updates: Partial<AcademicSettings>) => {
     const newSettings = { ...academic, ...updates };
     setAcademic(newSettings);
     saveSettings(STORAGE_KEYS.ACADEMIC, newSettings);
+
+    // If defaultTargetGrade changed, propagate to courses via IPC
+    if (updates.defaultTargetGrade !== undefined) {
+      try {
+        const result = await window.api?.setDefaultTargetGrade(updates.defaultTargetGrade);
+        if (result?.success) {
+          console.debug(`[Settings] Default target grade propagated to ${result.data?.updatedCourses ?? 0} courses`);
+        }
+      } catch (error) {
+        console.error('[Settings] Failed to propagate default target grade:', error);
+      }
+    }
+  };
+
+  // Load course-specific settings when a course is selected
+  const loadCourseSpecificSettings = async (courseId: number) => {
+    setIsLoadingCourseSettings(true);
+    try {
+      const result = await window.api?.getCourseSettings(courseId);
+      if (result?.success) {
+        setPerCourseSyncSettings({
+          autoAssignDueDate: result.data.autoAssignDueDate,
+          allowGuessedOverride: result.data.allowGuessedOverride,
+        });
+      }
+    } catch (error) {
+      console.error('[Settings] Failed to load course settings:', error);
+    } finally {
+      setIsLoadingCourseSettings(false);
+    }
+  };
+
+  // Update course-specific settings
+  const updateCourseSpecificSettings = async (updates: Partial<{
+    autoAssignDueDate: number | null;
+    allowGuessedOverride: number;
+  }>) => {
+    if (!selectedCourseId) return;
+
+    const newSettings = { ...perCourseSyncSettings, ...updates };
+    setPerCourseSyncSettings(newSettings);
+
+    try {
+      await window.api?.updateCourseSettings(selectedCourseId, updates);
+    } catch (error) {
+      console.error('[Settings] Failed to update course settings:', error);
+    }
+  };
+
+  // Handle course selection change
+  const handleCourseSelect = (courseId: number | null) => {
+    setSelectedCourseId(courseId);
+    if (courseId) {
+      loadCourseSpecificSettings(courseId);
+    } else {
+      setPerCourseSyncSettings({ autoAssignDueDate: null, allowGuessedOverride: 1 });
+    }
   };
 
   const updateFileExplorer = (updates: Partial<FileExplorerSettings>) => {
@@ -765,6 +1018,12 @@ export function SettingsModal({ isOpen, onClose, isFullPage = false }: SettingsM
     // Verify it was saved
     const verify = localStorage.getItem(STORAGE_KEYS.CALENDAR);
     console.log('[SettingsModal] Verified calendarSettings in localStorage:', verify);
+  };
+
+  const updateContentSettings = (updates: Partial<ContentSettings>) => {
+    const newSettings = { ...contentSettings, ...updates };
+    setContentSettings(newSettings);
+    saveSettings(STORAGE_KEYS.CONTENT, newSettings);
   };
 
   const updateLandingPage = (path: string) => {
@@ -862,21 +1121,9 @@ export function SettingsModal({ isOpen, onClose, isFullPage = false }: SettingsM
     { value: 'system' as const, label: 'System', icon: Monitor },
   ];
 
-  // Wrapper component based on mode
-  const Wrapper = isFullPage
-    ? ({ children }: { children: React.ReactNode }) => (
-        <div style={styles.fullPage}>{children}</div>
-      )
-    : ({ children }: { children: React.ReactNode }) => (
-        <div style={styles.overlay} onClick={onClose}>
-          <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
-            {children}
-          </div>
-        </div>
-      );
-
-  return (
-    <Wrapper>
+  // Content shared between full page and modal modes
+  const content = (
+    <>
       {/* Header */}
       <div style={isFullPage ? styles.pageHeader : styles.header}>
         <h2 style={isFullPage ? styles.pageTitle : styles.title}>Settings</h2>
@@ -1035,15 +1282,23 @@ export function SettingsModal({ isOpen, onClose, isFullPage = false }: SettingsM
                       onClick={handleExportDatabase}
                       disabled={isExporting || isImporting}
                     >
-                      {isExporting ? <Loader2 size={14} className="spin" /> : <HardDrive size={14} />}
-                      Export Database Backup
+                      {isExporting ? <Loader2 size={14} className="spin" /> : <Upload size={14} />}
+                      Export Database
+                    </button>
+                    <button
+                      style={styles.secondaryButton}
+                      onClick={handleImportDatabase}
+                      disabled={isExporting || isImporting}
+                    >
+                      {isImporting ? <Loader2 size={14} className="spin" /> : <Download size={14} />}
+                      Import Database
                     </button>
                     <button
                       style={styles.secondaryButton}
                       onClick={handleExportCourseData}
                       disabled={isExporting || isImporting}
                     >
-                      {isExporting ? <Loader2 size={14} className="spin" /> : <FileJson size={14} />}
+                      {isExporting ? <Loader2 size={14} className="spin" /> : <Upload size={14} />}
                       Export Course Data (JSON)
                     </button>
                     <button
@@ -1051,7 +1306,7 @@ export function SettingsModal({ isOpen, onClose, isFullPage = false }: SettingsM
                       onClick={handleImportCourseData}
                       disabled={isExporting || isImporting}
                     >
-                      {isImporting ? <Loader2 size={14} className="spin" /> : <Upload size={14} />}
+                      {isImporting ? <Loader2 size={14} className="spin" /> : <Download size={14} />}
                       Import Course Data (JSON)
                     </button>
                   </div>
@@ -1072,8 +1327,16 @@ export function SettingsModal({ isOpen, onClose, isFullPage = false }: SettingsM
                   <label style={styles.label}>Clear app data</label>
                   <p style={styles.fieldDesc}>
                     Delete all synced data (courses, tasks, files, announcements) and reset settings.
-                    Your Canvas connection will be preserved.
                   </p>
+                  <label style={styles.checkboxLabel}>
+                    <input
+                      type="checkbox"
+                      checked={deleteTokenOnClear}
+                      onChange={(e) => setDeleteTokenOnClear(e.target.checked)}
+                      style={styles.checkbox}
+                    />
+                    Also delete Canvas API token (requires re-authentication)
+                  </label>
                   <button
                     style={styles.dangerButton}
                     onClick={() => setShowClearDataConfirm(true)}
@@ -1086,23 +1349,34 @@ export function SettingsModal({ isOpen, onClose, isFullPage = false }: SettingsM
                   isOpen={showClearDataConfirm}
                   type="danger"
                   title="Clear All App Data"
-                  message="This will delete all synced data including courses, tasks, files, and announcements. This action cannot be undone. Your Canvas connection will be preserved."
+                  message={deleteTokenOnClear
+                    ? "This will delete all synced data including courses, tasks, files, announcements, AND your Canvas API token. You will need to re-authenticate after this action. This action cannot be undone."
+                    : "This will delete all synced data including courses, tasks, files, and announcements. This action cannot be undone. Your Canvas connection will be preserved."}
                   confirmText="Clear All Data"
                   cancelText="Cancel"
-                  onCancel={() => setShowClearDataConfirm(false)}
+                  onCancel={() => {
+                    setShowClearDataConfirm(false);
+                    setDeleteTokenOnClear(false);
+                  }}
                   onConfirm={async () => {
                     setShowClearDataConfirm(false);
                     try {
-                      // Clear database via IPC
-                      await window.api.clearAllData();
-                      // Clear localStorage (except Canvas URL)
-                      const savedCanvasUrl = localStorage.getItem('canvasUrl');
-                      localStorage.clear();
-                      if (savedCanvasUrl) {
-                        localStorage.setItem('canvasUrl', savedCanvasUrl);
+                      // Clear database via IPC (optionally including token)
+                      // If deleteToken is true, main process sends app:reset event
+                      // which the store handles (clears localStorage + reloads)
+                      await window.api.clearAllData({ deleteToken: deleteTokenOnClear });
+
+                      if (!deleteTokenOnClear) {
+                        // Token preserved - manually clear localStorage but keep Canvas URL, then reload
+                        const savedCanvasUrl = localStorage.getItem('canvasUrl');
+                        localStorage.clear();
+                        if (savedCanvasUrl) {
+                          localStorage.setItem('canvasUrl', savedCanvasUrl);
+                        }
+                        window.location.reload();
                       }
-                      // Reload the app
-                      window.location.reload();
+                      // If deleteToken was true, the app:reset event handler will reload automatically
+                      setDeleteTokenOnClear(false);
                     } catch (error) {
                       console.error('Failed to clear data:', error);
                     }
@@ -1151,11 +1425,59 @@ export function SettingsModal({ isOpen, onClose, isFullPage = false }: SettingsM
                   <div style={styles.error}>{connectionError}</div>
                 )}
 
+                {tokenValidationResult.status && (
+                  <div style={{
+                    ...styles.validationResult,
+                    backgroundColor: tokenValidationResult.status === 'success'
+                      ? 'var(--color-success-bg)'
+                      : 'var(--color-error-bg)',
+                    color: tokenValidationResult.status === 'success'
+                      ? 'var(--color-success)'
+                      : 'var(--color-error)',
+                  }}>
+                    {tokenValidationResult.status === 'success' ? (
+                      <Check size={14} />
+                    ) : (
+                      <AlertCircle size={14} />
+                    )}
+                    {tokenValidationResult.message}
+                  </div>
+                )}
+
                 <div style={styles.buttonRow}>
                   {isConnected ? (
-                    <button style={styles.dangerButton} onClick={handleDisconnect}>
-                      Disconnect
-                    </button>
+                    <>
+                      <button
+                        style={{
+                          ...styles.secondaryButton,
+                          opacity: isValidatingToken ? 0.6 : 1,
+                        }}
+                        onClick={handleValidateToken}
+                        disabled={isValidatingToken}
+                      >
+                        {isValidatingToken ? (
+                          <>
+                            <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
+                            Validating...
+                          </>
+                        ) : (
+                          <>
+                            <ShieldCheck size={14} />
+                            Validate Token
+                          </>
+                        )}
+                      </button>
+                      <button
+                        style={styles.secondaryButton}
+                        onClick={handleOpenTokenReplace}
+                      >
+                        <Key size={14} />
+                        Replace Token
+                      </button>
+                      <button style={styles.dangerButton} onClick={handleDisconnect}>
+                        Disconnect
+                      </button>
+                    </>
                   ) : (
                     <button
                       style={{
@@ -1176,6 +1498,107 @@ export function SettingsModal({ isOpen, onClose, isFullPage = false }: SettingsM
                     </button>
                   )}
                 </div>
+
+                {/* Token Replacement Modal */}
+                {showTokenReplaceModal && (
+                  <div style={styles.tokenModalOverlay} onClick={() => setShowTokenReplaceModal(false)}>
+                    <div style={styles.tokenModal} onClick={(e) => e.stopPropagation()}>
+                      <div style={styles.tokenModalHeader}>
+                        <h4 style={styles.tokenModalTitle}>Replace Canvas Token</h4>
+                        <button
+                          style={styles.tokenModalClose}
+                          onClick={() => setShowTokenReplaceModal(false)}
+                        >
+                          <X size={18} />
+                        </button>
+                      </div>
+
+                      <p style={styles.tokenModalDesc}>
+                        Enter your new Canvas API token. You can generate one from your Canvas account settings.
+                      </p>
+
+                      <div style={styles.field}>
+                        <label style={styles.label}>New Access Token</label>
+                        <input
+                          type="password"
+                          value={newToken}
+                          onChange={(e) => {
+                            setNewToken(e.target.value);
+                            setNewTokenValidation({ valid: null, userName: null, error: null });
+                          }}
+                          placeholder="Enter your new Canvas access token"
+                          style={styles.input}
+                          autoFocus
+                        />
+                      </div>
+
+                      {newTokenValidation.error && (
+                        <div style={styles.error}>
+                          <AlertCircle size={14} /> {newTokenValidation.error}
+                        </div>
+                      )}
+
+                      {newTokenValidation.valid && (
+                        <div style={styles.tokenSuccess}>
+                          <Check size={14} />
+                          Token valid{newTokenValidation.userName && ` for ${newTokenValidation.userName}`}
+                        </div>
+                      )}
+
+                      <div style={styles.tokenModalButtons}>
+                        {!newTokenValidation.valid ? (
+                          <button
+                            style={{
+                              ...styles.primaryButton,
+                              opacity: isValidatingNewToken || !newToken ? 0.6 : 1,
+                            }}
+                            onClick={handleValidateNewToken}
+                            disabled={isValidatingNewToken || !newToken}
+                          >
+                            {isValidatingNewToken ? (
+                              <>
+                                <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
+                                Validating...
+                              </>
+                            ) : (
+                              <>
+                                <ShieldCheck size={14} />
+                                Validate Token
+                              </>
+                            )}
+                          </button>
+                        ) : (
+                          <button
+                            style={{
+                              ...styles.primaryButton,
+                              opacity: isReplacingToken ? 0.6 : 1,
+                            }}
+                            onClick={handleReplaceToken}
+                            disabled={isReplacingToken}
+                          >
+                            {isReplacingToken ? (
+                              <>
+                                <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
+                                Replacing...
+                              </>
+                            ) : (
+                              <>
+                                <Key size={14} />
+                                Replace Token
+                              </>
+                            )}
+                          </button>
+                        )}
+                        <button
+                          style={styles.cancelButton}
+                          onClick={() => setShowTokenReplaceModal(false)}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -1186,28 +1609,29 @@ export function SettingsModal({ isOpen, onClose, isFullPage = false }: SettingsM
                   Configure automatic data synchronization.
                 </p>
 
-                <ToggleRow
-                  label="Auto-sync"
-                  description="Sync data automatically in the background"
-                  checked={syncPrefs.autoSyncEnabled}
-                  onChange={() => updateSyncPrefs({ autoSyncEnabled: !syncPrefs.autoSyncEnabled })}
-                />
-
-                {syncPrefs.autoSyncEnabled && (
-                  <div style={styles.field}>
-                    <label style={styles.label}>Sync interval</label>
-                    <select
-                      value={syncPrefs.autoSyncInterval}
-                      onChange={(e) => updateSyncPrefs({ autoSyncInterval: Number(e.target.value) })}
-                      style={styles.select}
-                    >
-                      <option value={15}>Every 15 minutes</option>
-                      <option value={30}>Every 30 minutes</option>
-                      <option value={60}>Every hour</option>
-                      <option value={120}>Every 2 hours</option>
-                    </select>
-                  </div>
-                )}
+                <div style={styles.field}>
+                  <label style={styles.label}>Auto-sync interval</label>
+                  <p style={styles.fieldDescription}>
+                    How often to automatically sync data from Canvas in the background
+                  </p>
+                  <select
+                    value={syncPrefs.autoSyncInterval}
+                    onChange={(e) => {
+                      const interval = Number(e.target.value);
+                      updateSyncPrefs({
+                        autoSyncInterval: interval,
+                        autoSyncEnabled: interval > 0,
+                      });
+                    }}
+                    style={styles.select}
+                  >
+                    <option value={0}>Never (manual sync only)</option>
+                    <option value={15}>Every 15 minutes</option>
+                    <option value={30}>Every 30 minutes</option>
+                    <option value={60}>Every hour</option>
+                    <option value={120}>Every 2 hours</option>
+                  </select>
+                </div>
 
                 <div style={styles.divider} />
                 <div style={styles.subsectionTitle}>Data to sync</div>
@@ -1224,6 +1648,16 @@ export function SettingsModal({ isOpen, onClose, isFullPage = false }: SettingsM
                   description="Course announcements"
                   checked={syncPrefs.syncAnnouncements}
                   onChange={() => updateSyncPrefs({ syncAnnouncements: !syncPrefs.syncAnnouncements })}
+                />
+
+                <div style={styles.divider} />
+                <div style={styles.subsectionTitle}>Task defaults</div>
+
+                <ToggleRow
+                  label="Auto-assign due date"
+                  description="Set today 23:59 as due date for coursework without one. You can override this per task."
+                  checked={syncPrefs.autoAssignDueDate}
+                  onChange={() => updateSyncPrefs({ autoAssignDueDate: !syncPrefs.autoAssignDueDate })}
                 />
 
                 <div style={styles.divider} />
@@ -1268,6 +1702,23 @@ export function SettingsModal({ isOpen, onClose, isFullPage = false }: SettingsM
                     />
                   </>
                 )}
+
+                <div style={styles.divider} />
+
+                <div style={styles.field}>
+                  <label style={styles.label}>Link click behavior</label>
+                  <p style={styles.fieldDesc}>
+                    How to handle clicks on links in announcements and course content.
+                  </p>
+                  <select
+                    value={contentSettings.linkBehavior}
+                    onChange={(e) => updateContentSettings({ linkBehavior: e.target.value as 'always-external' | 'prefer-local' })}
+                    style={styles.select}
+                  >
+                    <option value="always-external">Always open in browser</option>
+                    <option value="prefer-local">Open locally if downloaded, otherwise browser</option>
+                  </select>
+                </div>
               </div>
             )}
 
@@ -1288,9 +1739,18 @@ export function SettingsModal({ isOpen, onClose, isFullPage = false }: SettingsM
                       type="range"
                       min="50"
                       max="100"
-                      step="5"
+                      step="1"
                       value={academic.defaultTargetGrade}
                       onChange={(e) => updateAcademic({ defaultTargetGrade: Number(e.target.value) })}
+                      onKeyDown={(e) => {
+                        if (e.key === 'ArrowUp' || e.key === 'ArrowRight') {
+                          e.preventDefault();
+                          updateAcademic({ defaultTargetGrade: Math.min(100, academic.defaultTargetGrade + 1) });
+                        } else if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') {
+                          e.preventDefault();
+                          updateAcademic({ defaultTargetGrade: Math.max(50, academic.defaultTargetGrade - 1) });
+                        }
+                      }}
                       style={styles.slider}
                     />
                     <span style={styles.gradeValue}>{academic.defaultTargetGrade}%</span>
@@ -1337,79 +1797,192 @@ export function SettingsModal({ isOpen, onClose, isFullPage = false }: SettingsM
               <div style={styles.section}>
                 <h3 style={styles.sectionTitle}>Course Settings</h3>
                 <p style={styles.sectionDesc}>
-                  Configure course display and visibility.
+                  Configure course display, visibility, and per-course sync behavior.
                 </p>
 
-                <div style={styles.field}>
-                  <label style={styles.label}>Default view mode</label>
-                  <div style={styles.viewModeToggle}>
-                    <button
-                      style={{
-                        ...styles.viewModeBtn,
-                        backgroundColor: courseSettings.defaultViewMode === 'grid' ? 'var(--color-navy)' : 'transparent',
-                        color: courseSettings.defaultViewMode === 'grid' ? 'white' : 'var(--text-secondary)',
-                      }}
-                      onClick={() => updateCourseSettings({ defaultViewMode: 'grid' })}
-                    >
-                      Grid
-                    </button>
-                    <button
-                      style={{
-                        ...styles.viewModeBtn,
-                        backgroundColor: courseSettings.defaultViewMode === 'list' ? 'var(--color-navy)' : 'transparent',
-                        color: courseSettings.defaultViewMode === 'list' ? 'white' : 'var(--text-secondary)',
-                      }}
-                      onClick={() => updateCourseSettings({ defaultViewMode: 'list' })}
-                    >
-                      List
-                    </button>
+                {/* Display Settings */}
+                <div style={styles.settingsCard}>
+                  <div style={styles.subsectionTitle}>Display</div>
+                  <div style={styles.settingsCardContent}>
+                    <div style={styles.field}>
+                      <label style={styles.label}>Default view mode</label>
+                      <div style={styles.viewModeToggle}>
+                        <button
+                          style={{
+                            ...styles.viewModeBtn,
+                            backgroundColor: courseSettings.defaultViewMode === 'grid' ? 'var(--color-navy)' : 'transparent',
+                            color: courseSettings.defaultViewMode === 'grid' ? 'white' : 'var(--text-secondary)',
+                          }}
+                          onClick={() => updateCourseSettings({ defaultViewMode: 'grid' })}
+                        >
+                          Grid
+                        </button>
+                        <button
+                          style={{
+                            ...styles.viewModeBtn,
+                            backgroundColor: courseSettings.defaultViewMode === 'list' ? 'var(--color-navy)' : 'transparent',
+                            color: courseSettings.defaultViewMode === 'list' ? 'white' : 'var(--text-secondary)',
+                          }}
+                          onClick={() => updateCourseSettings({ defaultViewMode: 'list' })}
+                        >
+                          List
+                        </button>
+                      </div>
+                    </div>
+
+                    <ToggleRow
+                      label="Show hidden courses by default"
+                      description="Display hidden courses in the courses list"
+                      checked={courseSettings.showHiddenByDefault}
+                      onChange={() => updateCourseSettings({ showHiddenByDefault: !courseSettings.showHiddenByDefault })}
+                    />
                   </div>
                 </div>
 
-                <ToggleRow
-                  label="Show hidden courses by default"
-                  description="Display hidden courses in the courses list"
-                  checked={courseSettings.showHiddenByDefault}
-                  onChange={() => updateCourseSettings({ showHiddenByDefault: !courseSettings.showHiddenByDefault })}
-                />
+                {/* Per-Course Sync Settings */}
+                <div style={styles.settingsCard}>
+                  <div style={styles.subsectionTitle}>Per-Course Sync</div>
+                  <div style={styles.settingsCardContent}>
+                    <div style={styles.field}>
+                      <label style={styles.label}>Select course to configure</label>
+                      <select
+                        style={styles.select}
+                        value={selectedCourseId || ''}
+                        onChange={(e) => handleCourseSelect(e.target.value ? Number(e.target.value) : null)}
+                      >
+                        <option value="">-- Select a course --</option>
+                        {courses
+                          .filter(c => !c.isHidden)
+                          .sort((a, b) => a.name.localeCompare(b.name))
+                          .map(course => (
+                            <option key={course.id} value={course.id}>
+                              {course.code} - {course.name}
+                            </option>
+                          ))}
+                      </select>
+                    </div>
 
-                <div style={styles.divider} />
-                <div style={styles.subsectionTitle}>Course Visibility</div>
-                <p style={styles.fieldDesc}>
-                  Hidden courses won't appear in Dashboard, Tasks, or Announcements.
-                </p>
+                    {selectedCourseId && !isLoadingCourseSettings && (
+                      <>
+                        <div style={styles.inlineSettingsDivider} />
 
-                <div style={styles.courseList}>
-                  {courses.length === 0 ? (
-                    <p style={styles.emptyText}>No courses synced yet.</p>
-                  ) : (
-                    courses.map((course: Course) => (
-                      <div key={course.id} style={styles.courseRow}>
-                        <div style={styles.courseInfo}>
-                          <span
-                            style={{
-                              ...styles.courseDot,
-                              backgroundColor: course.color || 'var(--color-navy)',
-                            }}
-                          />
-                          <div style={styles.courseText}>
-                            <span style={styles.courseCode}>{course.code}</span>
-                            <span style={styles.courseName}>{course.name}</span>
+                        <div style={styles.field}>
+                          <label style={styles.label}>Auto-fill due dates</label>
+                          <p style={styles.fieldDesc}>
+                            Assign today 23:59 to tasks without due dates
+                          </p>
+                          <div style={styles.inlineRadioGroup}>
+                            <label style={styles.inlineRadioLabel}>
+                              <input
+                                type="radio"
+                                name="autoAssignDueDate"
+                                checked={perCourseSyncSettings.autoAssignDueDate === null}
+                                onChange={() => updateCourseSpecificSettings({ autoAssignDueDate: null })}
+                                style={styles.radio}
+                              />
+                              <span>Use default</span>
+                            </label>
+                            <label style={styles.inlineRadioLabel}>
+                              <input
+                                type="radio"
+                                name="autoAssignDueDate"
+                                checked={perCourseSyncSettings.autoAssignDueDate === 1}
+                                onChange={() => updateCourseSpecificSettings({ autoAssignDueDate: 1 })}
+                                style={styles.radio}
+                              />
+                              <span>Enabled</span>
+                            </label>
+                            <label style={styles.inlineRadioLabel}>
+                              <input
+                                type="radio"
+                                name="autoAssignDueDate"
+                                checked={perCourseSyncSettings.autoAssignDueDate === 0}
+                                onChange={() => updateCourseSpecificSettings({ autoAssignDueDate: 0 })}
+                                style={styles.radio}
+                              />
+                              <span>Disabled</span>
+                            </label>
                           </div>
                         </div>
-                        <button
-                          style={{
-                            ...styles.visibilityBtn,
-                            color: course.isHidden ? 'var(--text-muted)' : 'var(--color-success)',
-                          }}
-                          onClick={() => handleToggleCourseVisibility(course.id, course.isHidden)}
-                          title={course.isHidden ? 'Show course' : 'Hide course'}
-                        >
-                          {course.isHidden ? <EyeOff size={18} /> : <Eye size={18} />}
-                        </button>
+
+                        <div style={styles.inlineSettingsDivider} />
+
+                        <div style={styles.inlineToggle}>
+                          <div style={styles.inlineToggleText}>
+                            <span style={styles.inlineToggleLabel}>Allow Canvas to override auto-filled values</span>
+                            <span style={styles.inlineToggleDesc}>Canvas updates will replace estimated values silently</span>
+                          </div>
+                          <button
+                            style={{
+                              ...styles.toggleSwitch,
+                              backgroundColor: perCourseSyncSettings.allowGuessedOverride === 1 ? 'var(--color-blue)' : 'var(--bg-tertiary)',
+                            }}
+                            onClick={() => updateCourseSpecificSettings({
+                              allowGuessedOverride: perCourseSyncSettings.allowGuessedOverride === 1 ? 0 : 1
+                            })}
+                          >
+                            <div style={{
+                              ...styles.toggleKnob,
+                              transform: perCourseSyncSettings.allowGuessedOverride === 1 ? 'translateX(20px)' : 'translateX(0)',
+                            }} />
+                          </button>
+                        </div>
+                      </>
+                    )}
+
+                    {selectedCourseId && isLoadingCourseSettings && (
+                      <div style={styles.loadingRow}>
+                        <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} />
+                        Loading course settings...
                       </div>
-                    ))
-                  )}
+                    )}
+
+                    {!selectedCourseId && (
+                      <p style={styles.fieldDesc}>
+                        Select a course above to configure its sync settings
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Course Visibility */}
+                <div style={styles.settingsCard}>
+                  <div style={styles.subsectionTitle}>Visibility</div>
+                  <p style={styles.fieldDesc}>
+                    Hidden courses won't appear in Dashboard, Tasks, or Announcements.
+                  </p>
+                  <div style={styles.courseList}>
+                    {courses.length === 0 ? (
+                      <p style={styles.emptyText}>No courses synced yet.</p>
+                    ) : (
+                      courses.map((course: Course) => (
+                        <div key={course.id} style={styles.courseRow}>
+                          <div style={styles.courseInfo}>
+                            <span
+                              style={{
+                                ...styles.courseDot,
+                                backgroundColor: course.color || 'var(--color-navy)',
+                              }}
+                            />
+                            <div style={styles.courseText}>
+                              <span style={styles.courseCode}>{course.code}</span>
+                              <span style={styles.courseName}>{course.name}</span>
+                            </div>
+                          </div>
+                          <button
+                            style={{
+                              ...styles.visibilityBtn,
+                              color: course.isHidden ? 'var(--text-muted)' : 'var(--color-success)',
+                            }}
+                            onClick={() => handleToggleCourseVisibility(course.id, course.isHidden)}
+                            title={course.isHidden ? 'Show course' : 'Hide course'}
+                          >
+                            {course.isHidden ? <EyeOff size={18} /> : <Eye size={18} />}
+                          </button>
+                        </div>
+                      ))
+                    )}
+                  </div>
                 </div>
               </div>
             )}
@@ -1546,6 +2119,7 @@ export function SettingsModal({ isOpen, onClose, isFullPage = false }: SettingsM
               </div>
             )}
 
+
             {activeSection === 'appearance' && (
               <div style={styles.section}>
                 <h3 style={styles.sectionTitle}>Appearance</h3>
@@ -1681,7 +2255,20 @@ export function SettingsModal({ isOpen, onClose, isFullPage = false }: SettingsM
             )}
           </div>
         </div>
-    </Wrapper>
+    </>
+  );
+
+  // Render with appropriate wrapper based on mode
+  if (isFullPage) {
+    return <div style={styles.fullPage}>{content}</div>;
+  }
+
+  return (
+    <div style={styles.overlay} onClick={onClose}>
+      <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+        {content}
+      </div>
+    </div>
   );
 }
 
@@ -1863,10 +2450,12 @@ const styles: Record<string, React.CSSProperties> = {
   },
 
   subsectionTitle: {
-    fontSize: 'var(--text-sm)',
+    fontSize: 'var(--text-xs)',
     fontWeight: 'var(--font-semibold)',
-    color: 'var(--text-primary)',
-    marginTop: 'var(--space-1)',
+    textTransform: 'uppercase' as const,
+    letterSpacing: '0.05em',
+    color: 'var(--text-secondary)',
+    marginTop: 'var(--space-2)',
   },
 
   quietModeDesc: {
@@ -2061,6 +2650,22 @@ const styles: Record<string, React.CSSProperties> = {
     marginBottom: 'var(--space-2)',
   },
 
+  checkboxLabel: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-2)',
+    fontSize: 'var(--text-sm)',
+    color: 'var(--text-secondary)',
+    cursor: 'pointer',
+    marginBottom: 'var(--space-3)',
+  },
+
+  checkbox: {
+    width: '16px',
+    height: '16px',
+    cursor: 'pointer',
+  },
+
   gradeInputRow: {
     display: 'flex',
     alignItems: 'center',
@@ -2138,6 +2743,69 @@ const styles: Record<string, React.CSSProperties> = {
   },
 
   // Course settings styles
+  settingsCard: {
+    backgroundColor: 'var(--bg-app)',
+    borderRadius: 'var(--radius-md)',
+    border: '1px solid var(--border-default)',
+    padding: 'var(--space-3)',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 'var(--space-2)',
+  },
+
+  settingsCardContent: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 'var(--space-3)',
+    paddingLeft: 'var(--space-1)',
+  },
+
+  inlineSettingsDivider: {
+    height: '1px',
+    backgroundColor: 'var(--border-muted)',
+    margin: '0',
+  },
+
+  inlineRadioGroup: {
+    display: 'flex',
+    gap: 'var(--space-4)',
+    flexWrap: 'wrap',
+  },
+
+  inlineRadioLabel: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-2)',
+    fontSize: 'var(--text-sm)',
+    color: 'var(--text-primary)',
+    cursor: 'pointer',
+  },
+
+  inlineToggle: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 'var(--space-3)',
+  },
+
+  inlineToggleText: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '2px',
+    flex: 1,
+  },
+
+  inlineToggleLabel: {
+    fontSize: 'var(--text-sm)',
+    fontWeight: 'var(--font-medium)',
+    color: 'var(--text-primary)',
+  },
+
+  inlineToggleDesc: {
+    fontSize: 'var(--text-xs)',
+    color: 'var(--text-muted)',
+  },
+
   courseList: {
     display: 'flex',
     flexDirection: 'column',
@@ -2147,6 +2815,7 @@ const styles: Record<string, React.CSSProperties> = {
     border: '1px solid var(--border-default)',
     borderRadius: 'var(--radius-md)',
     padding: 'var(--space-2)',
+    backgroundColor: 'var(--bg-card)',
   },
 
   courseRow: {
@@ -2335,6 +3004,124 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
     transition: 'all var(--transition-fast)',
     flexShrink: 0,
+  },
+
+  // Token validation and replacement styles
+  validationResult: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-2)',
+    padding: 'var(--space-2) var(--space-3)',
+    borderRadius: 'var(--radius-md)',
+    fontSize: 'var(--text-sm)',
+  },
+
+  tokenModalOverlay: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 10001,
+  },
+
+  tokenModal: {
+    backgroundColor: 'var(--bg-card)',
+    borderRadius: 'var(--radius-lg)',
+    width: 'min(450px, 90vw)',
+    padding: 'var(--space-5)',
+    boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+  },
+
+  tokenModalHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 'var(--space-3)',
+  },
+
+  tokenModalTitle: {
+    margin: 0,
+    fontSize: 'var(--text-lg)',
+    fontWeight: 'var(--font-semibold)',
+    color: 'var(--text-primary)',
+  },
+
+  tokenModalClose: {
+    background: 'none',
+    border: 'none',
+    padding: 'var(--space-1)',
+    cursor: 'pointer',
+    color: 'var(--text-secondary)',
+    borderRadius: 'var(--radius-sm)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  tokenModalDesc: {
+    margin: '0 0 var(--space-4) 0',
+    fontSize: 'var(--text-sm)',
+    color: 'var(--text-secondary)',
+    lineHeight: 'var(--leading-relaxed)',
+  },
+
+  tokenSuccess: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-2)',
+    padding: 'var(--space-2) var(--space-3)',
+    backgroundColor: 'var(--color-success-bg)',
+    color: 'var(--color-success)',
+    borderRadius: 'var(--radius-md)',
+    fontSize: 'var(--text-sm)',
+    marginBottom: 'var(--space-3)',
+  },
+
+  tokenModalButtons: {
+    display: 'flex',
+    gap: 'var(--space-2)',
+    marginTop: 'var(--space-4)',
+  },
+
+  cancelButton: {
+    padding: 'var(--space-2) var(--space-4)',
+    backgroundColor: 'transparent',
+    border: '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-md)',
+    fontSize: 'var(--text-sm)',
+    color: 'var(--text-secondary)',
+    cursor: 'pointer',
+  },
+
+  // Course settings specific styles (radioGroup and radioLabel already defined above)
+  radio: {
+    width: '16px',
+    height: '16px',
+    cursor: 'pointer',
+  },
+
+  loadingRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-2)',
+    fontSize: 'var(--text-sm)',
+    color: 'var(--text-secondary)',
+    padding: 'var(--space-4) 0',
+  },
+
+  emptyState: {
+    padding: 'var(--space-6)',
+    textAlign: 'center',
+    color: 'var(--text-muted)',
+    fontSize: 'var(--text-sm)',
+    backgroundColor: 'var(--bg-app)',
+    borderRadius: 'var(--radius-md)',
+    marginTop: 'var(--space-4)',
   },
 };
 
