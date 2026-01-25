@@ -93,6 +93,35 @@ export interface SyncOptions {
   syncAnnouncements?: boolean;
   /** Specific course IDs to sync (if provided, only these courses are synced) */
   courseIds?: number[];
+  /** Resume from an incomplete sync checkpoint */
+  resumeFromCheckpoint?: boolean;
+}
+
+/**
+ * Checkpoint data for resumable sync
+ */
+export interface SyncCheckpoint {
+  syncId: string;
+  startedAt: string;
+  phase: 'fetch' | 'commit' | 'completed' | 'failed';
+  options: SyncOptions;
+  /** Canvas course IDs that have been fully fetched */
+  fetchedCourseIds: number[];
+  /** Cached fetch data for already-fetched courses */
+  fetchedData: {
+    courses: CanvasCourse[];
+    tasks: Record<number, CanvasAssignment[]>;
+    announcements: Record<number, CanvasAnnouncement[]>;
+    modules: Record<number, CanvasModule[]>;
+    pages: Record<number, CanvasPage[]>;
+    folders: Record<number, CanvasFolder[]>;
+    files: Record<number, CanvasFile[]>;
+  };
+  totalCourses: number;
+  completedCourses: number;
+  lastError?: string;
+  errorCount: number;
+  lastUpdatedAt: string;
 }
 
 export interface SyncMetadata {
@@ -277,6 +306,334 @@ export class SyncEngine extends EventEmitter {
       this.syncMutexRelease();
       this.syncMutexRelease = null;
     }
+  }
+
+  // ============ CHECKPOINT METHODS ============
+
+  /**
+   * Generate a unique sync ID
+   */
+  private generateSyncId(): string {
+    return `sync-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+  }
+
+  /**
+   * Create a new sync checkpoint
+   */
+  private createCheckpoint(
+    syncId: string,
+    options: SyncOptions,
+    totalCourses: number
+  ): void {
+    try {
+      this.db.executeWrite(
+        `INSERT INTO sync_checkpoints (sync_id, phase, options_json, total_courses)
+         VALUES (?, 'fetch', ?, ?)`,
+        [syncId, JSON.stringify(options), totalCourses],
+        'sync_checkpoints'
+      );
+      this.log?.debug(`Created sync checkpoint: ${syncId}`);
+    } catch (error) {
+      this.log?.error(
+        'Failed to create sync checkpoint',
+        error instanceof Error ? error : undefined
+      );
+    }
+  }
+
+  /**
+   * Update checkpoint with fetched course data
+   */
+  private updateCheckpointProgress(
+    syncId: string,
+    courseId: number,
+    fetchedData: {
+      tasks?: CanvasAssignment[];
+      announcements?: CanvasAnnouncement[];
+      modules?: CanvasModule[];
+      pages?: CanvasPage[];
+      folders?: CanvasFolder[];
+      files?: CanvasFile[];
+    }
+  ): void {
+    try {
+      // Get current checkpoint
+      const checkpoint = this.db.executeReadOne<{
+        fetched_course_ids: string;
+        fetched_data_json: string | null;
+        completed_courses: number;
+      }>(
+        'SELECT fetched_course_ids, fetched_data_json, completed_courses FROM sync_checkpoints WHERE sync_id = ?',
+        [syncId]
+      );
+
+      if (!checkpoint) return;
+
+      // Parse existing data
+      const fetchedCourseIds: number[] = JSON.parse(
+        checkpoint.fetched_course_ids || '[]'
+      );
+      const existingData = checkpoint.fetched_data_json
+        ? JSON.parse(checkpoint.fetched_data_json)
+        : {
+            tasks: {},
+            announcements: {},
+            modules: {},
+            pages: {},
+            folders: {},
+            files: {},
+          };
+
+      // Add new course data
+      if (!fetchedCourseIds.includes(courseId)) {
+        fetchedCourseIds.push(courseId);
+      }
+
+      if (fetchedData.tasks) existingData.tasks[courseId] = fetchedData.tasks;
+      if (fetchedData.announcements)
+        existingData.announcements[courseId] = fetchedData.announcements;
+      if (fetchedData.modules) existingData.modules[courseId] = fetchedData.modules;
+      if (fetchedData.pages) existingData.pages[courseId] = fetchedData.pages;
+      if (fetchedData.folders) existingData.folders[courseId] = fetchedData.folders;
+      if (fetchedData.files) existingData.files[courseId] = fetchedData.files;
+
+      // Update checkpoint
+      this.db.executeWrite(
+        `UPDATE sync_checkpoints
+         SET fetched_course_ids = ?,
+             fetched_data_json = ?,
+             completed_courses = ?,
+             last_updated_at = CURRENT_TIMESTAMP
+         WHERE sync_id = ?`,
+        [
+          JSON.stringify(fetchedCourseIds),
+          JSON.stringify(existingData),
+          fetchedCourseIds.length,
+          syncId,
+        ],
+        'sync_checkpoints'
+      );
+    } catch (error) {
+      this.log?.error(
+        'Failed to update checkpoint progress',
+        error instanceof Error ? error : undefined
+      );
+    }
+  }
+
+  /**
+   * Update checkpoint with courses data (after initial course fetch)
+   */
+  private updateCheckpointCourses(syncId: string, courses: CanvasCourse[]): void {
+    try {
+      const checkpoint = this.db.executeReadOne<{ fetched_data_json: string | null }>(
+        'SELECT fetched_data_json FROM sync_checkpoints WHERE sync_id = ?',
+        [syncId]
+      );
+
+      const existingData = checkpoint?.fetched_data_json
+        ? JSON.parse(checkpoint.fetched_data_json)
+        : {
+            courses: [],
+            tasks: {},
+            announcements: {},
+            modules: {},
+            pages: {},
+            folders: {},
+            files: {},
+          };
+
+      existingData.courses = courses;
+
+      this.db.executeWrite(
+        `UPDATE sync_checkpoints
+         SET fetched_data_json = ?,
+             last_updated_at = CURRENT_TIMESTAMP
+         WHERE sync_id = ?`,
+        [JSON.stringify(existingData), syncId],
+        'sync_checkpoints'
+      );
+    } catch (error) {
+      this.log?.error(
+        'Failed to update checkpoint courses',
+        error instanceof Error ? error : undefined
+      );
+    }
+  }
+
+  /**
+   * Mark checkpoint as entering commit phase
+   */
+  private markCheckpointCommitting(syncId: string): void {
+    try {
+      this.db.executeWrite(
+        `UPDATE sync_checkpoints SET phase = 'commit', last_updated_at = CURRENT_TIMESTAMP WHERE sync_id = ?`,
+        [syncId],
+        'sync_checkpoints'
+      );
+    } catch (error) {
+      this.log?.error(
+        'Failed to mark checkpoint as committing',
+        error instanceof Error ? error : undefined
+      );
+    }
+  }
+
+  /**
+   * Mark checkpoint as completed and clean up
+   */
+  private completeCheckpoint(syncId: string): void {
+    try {
+      this.db.executeWrite(
+        `UPDATE sync_checkpoints
+         SET phase = 'completed',
+             completed_at = CURRENT_TIMESTAMP,
+             last_updated_at = CURRENT_TIMESTAMP
+         WHERE sync_id = ?`,
+        [syncId],
+        'sync_checkpoints'
+      );
+
+      // Clean up old completed checkpoints (keep last 5)
+      this.db.executeWrite(
+        `DELETE FROM sync_checkpoints
+         WHERE phase = 'completed'
+         AND id NOT IN (
+           SELECT id FROM sync_checkpoints
+           WHERE phase = 'completed'
+           ORDER BY completed_at DESC
+           LIMIT 5
+         )`,
+        [],
+        'sync_checkpoints'
+      );
+
+      this.log?.debug(`Completed sync checkpoint: ${syncId}`);
+    } catch (error) {
+      this.log?.error(
+        'Failed to complete checkpoint',
+        error instanceof Error ? error : undefined
+      );
+    }
+  }
+
+  /**
+   * Mark checkpoint as failed
+   */
+  private failCheckpoint(syncId: string, errorMessage: string): void {
+    try {
+      this.db.executeWrite(
+        `UPDATE sync_checkpoints
+         SET phase = 'failed',
+             last_error = ?,
+             error_count = error_count + 1,
+             last_updated_at = CURRENT_TIMESTAMP
+         WHERE sync_id = ?`,
+        [errorMessage, syncId],
+        'sync_checkpoints'
+      );
+    } catch (err) {
+      this.log?.error(
+        'Failed to mark checkpoint as failed',
+        err instanceof Error ? err : undefined
+      );
+    }
+  }
+
+  /**
+   * Get the most recent incomplete checkpoint that can be resumed
+   */
+  getIncompleteCheckpoint(): SyncCheckpoint | null {
+    try {
+      const row = this.db.executeReadOne<{
+        sync_id: string;
+        started_at: string;
+        phase: string;
+        options_json: string;
+        fetched_course_ids: string;
+        fetched_data_json: string | null;
+        total_courses: number;
+        completed_courses: number;
+        last_error: string | null;
+        error_count: number;
+        last_updated_at: string;
+      }>(
+        `SELECT * FROM sync_checkpoints
+         WHERE phase IN ('fetch', 'commit')
+         AND error_count < 3
+         AND started_at > datetime('now', '-1 hour')
+         ORDER BY started_at DESC
+         LIMIT 1`
+      );
+
+      if (!row) return null;
+
+      const fetchedData = row.fetched_data_json
+        ? JSON.parse(row.fetched_data_json)
+        : {
+            courses: [],
+            tasks: {},
+            announcements: {},
+            modules: {},
+            pages: {},
+            folders: {},
+            files: {},
+          };
+
+      return {
+        syncId: row.sync_id,
+        startedAt: row.started_at,
+        phase: row.phase as SyncCheckpoint['phase'],
+        options: JSON.parse(row.options_json || '{}'),
+        fetchedCourseIds: JSON.parse(row.fetched_course_ids || '[]'),
+        fetchedData: {
+          courses: fetchedData.courses || [],
+          tasks: fetchedData.tasks || {},
+          announcements: fetchedData.announcements || {},
+          modules: fetchedData.modules || {},
+          pages: fetchedData.pages || {},
+          folders: fetchedData.folders || {},
+          files: fetchedData.files || {},
+        },
+        totalCourses: row.total_courses,
+        completedCourses: row.completed_courses,
+        lastError: row.last_error || undefined,
+        errorCount: row.error_count,
+        lastUpdatedAt: row.last_updated_at,
+      };
+    } catch (error) {
+      this.log?.error(
+        'Failed to get incomplete checkpoint',
+        error instanceof Error ? error : undefined
+      );
+      return null;
+    }
+  }
+
+  /**
+   * Clear all incomplete checkpoints (for manual reset)
+   */
+  clearIncompleteCheckpoints(): void {
+    try {
+      this.db.executeWrite(
+        `UPDATE sync_checkpoints SET phase = 'failed', last_error = 'Manually cleared' WHERE phase IN ('fetch', 'commit')`,
+        [],
+        'sync_checkpoints'
+      );
+      this.log?.debug('Cleared incomplete checkpoints');
+    } catch (error) {
+      this.log?.error(
+        'Failed to clear incomplete checkpoints',
+        error instanceof Error ? error : undefined
+      );
+    }
+  }
+
+  /**
+   * Check if there's an incomplete sync that can be resumed
+   */
+  hasResumableSync(): boolean {
+    return this.getIncompleteCheckpoint() !== null;
   }
 
   /**
@@ -767,8 +1124,31 @@ export class SyncEngine extends EventEmitter {
     const syncCanvasFiles = options?.syncCanvasFiles ?? true;
     const syncAnnouncements = options?.syncAnnouncements ?? true;
     const termSelection = options?.termSelection ?? 'all';
+    const resumeFromCheckpoint = options?.resumeFromCheckpoint ?? false;
 
-    this.emit('sync-start', { type: 'full' });
+    // Check for resumable checkpoint
+    let checkpoint: SyncCheckpoint | null = null;
+    let syncId: string;
+
+    if (resumeFromCheckpoint) {
+      checkpoint = this.getIncompleteCheckpoint();
+      if (checkpoint) {
+        syncId = checkpoint.syncId;
+        this.log?.info(
+          `Resuming sync from checkpoint: ${syncId}, phase: ${checkpoint.phase}, progress: ${checkpoint.completedCourses}/${checkpoint.totalCourses}`
+        );
+        this.emit('sync-resume', { syncId, checkpoint });
+      } else {
+        syncId = this.generateSyncId();
+        this.log?.debug('No resumable checkpoint found, starting fresh sync');
+      }
+    } else {
+      syncId = this.generateSyncId();
+      // Clear any old incomplete checkpoints when starting fresh
+      this.clearIncompleteCheckpoints();
+    }
+
+    this.emit('sync-start', { type: 'full', syncId, resuming: !!checkpoint });
 
     // ============ PHASE 1: FETCH ALL DATA ============
     // Collect all data from Canvas API before writing anything
@@ -794,23 +1174,65 @@ export class SyncEngine extends EventEmitter {
       files: new Map(),
     };
 
+    // If resuming, restore fetched data from checkpoint
+    const alreadyFetchedCourseIds = new Set<number>();
+    if (checkpoint && checkpoint.phase === 'fetch') {
+      // Restore courses
+      fetched.courses = checkpoint.fetchedData.courses;
+
+      // Restore per-course data
+      for (const [courseIdStr, tasks] of Object.entries(checkpoint.fetchedData.tasks)) {
+        const courseId = parseInt(courseIdStr, 10);
+        fetched.tasks.set(courseId, tasks as CanvasAssignment[]);
+        alreadyFetchedCourseIds.add(courseId);
+      }
+      for (const [courseIdStr, announcements] of Object.entries(
+        checkpoint.fetchedData.announcements
+      )) {
+        fetched.announcements.set(
+          parseInt(courseIdStr, 10),
+          announcements as CanvasAnnouncement[]
+        );
+      }
+      for (const [courseIdStr, modules] of Object.entries(
+        checkpoint.fetchedData.modules
+      )) {
+        fetched.modules.set(parseInt(courseIdStr, 10), modules as CanvasModule[]);
+      }
+      for (const [courseIdStr, pages] of Object.entries(checkpoint.fetchedData.pages)) {
+        fetched.pages.set(parseInt(courseIdStr, 10), pages as CanvasPage[]);
+      }
+      for (const [courseIdStr, folders] of Object.entries(
+        checkpoint.fetchedData.folders
+      )) {
+        fetched.folders.set(parseInt(courseIdStr, 10), folders as CanvasFolder[]);
+      }
+      for (const [courseIdStr, files] of Object.entries(checkpoint.fetchedData.files)) {
+        fetched.files.set(parseInt(courseIdStr, 10), files as CanvasFile[]);
+      }
+
+      this.log?.debug(`Restored ${alreadyFetchedCourseIds.size} courses from checkpoint`);
+    }
+
     try {
       this.emit('sync-phase', { phase: 'fetch', status: 'started' });
 
-      // Fetch courses first
-      fetched.courses = await this.rateLimiter.enqueue(
-        () =>
-          this.client.getAll<CanvasCourse>('/courses', {
-            enrollment_state: 'active',
-            include: [
-              'total_scores',
-              'current_grading_period_scores',
-              'syllabus_body',
-              'term',
-            ],
-          }),
-        10
-      );
+      // Fetch courses first (unless resuming with courses already fetched)
+      if (!checkpoint || fetched.courses.length === 0) {
+        fetched.courses = await this.rateLimiter.enqueue(
+          () =>
+            this.client.getAll<CanvasCourse>('/courses', {
+              enrollment_state: 'active',
+              include: [
+                'total_scores',
+                'current_grading_period_scores',
+                'syllabus_body',
+                'term',
+              ],
+            }),
+          10
+        );
+      }
 
       // Filter courses based on term selection
       let coursesToSync = fetched.courses;
@@ -867,9 +1289,29 @@ export class SyncEngine extends EventEmitter {
         }
       }
 
-      // Fetch data for each course in parallel
+      // Create checkpoint if starting fresh
+      if (!checkpoint) {
+        this.createCheckpoint(syncId, options || {}, coursesToSync.length);
+        this.updateCheckpointCourses(syncId, fetched.courses);
+      }
+
+      // Emit progress for resumable tracking
+      this.emit('sync-progress', {
+        syncId,
+        phase: 'fetch',
+        totalCourses: coursesToSync.length,
+        completedCourses: alreadyFetchedCourseIds.size,
+      });
+
+      // Fetch data for each course
       for (const course of coursesToSync) {
         const canvasCourseId = course.id;
+
+        // Skip courses already fetched from checkpoint
+        if (alreadyFetchedCourseIds.has(canvasCourseId)) {
+          this.log?.debug(`Skipping already-fetched course ${canvasCourseId}`);
+          continue;
+        }
 
         // Build fetch promises
         const fetchPromises: Promise<void>[] = [];
@@ -1008,15 +1450,44 @@ export class SyncEngine extends EventEmitter {
                 ? failure.reason.message
                 : String(failure.reason);
             errors.push(`Course ${canvasCourseId} fetch: ${reason}`);
+            this.emit('sync-entity-error', {
+              entity: 'course',
+              externalId: String(canvasCourseId),
+              error: reason,
+            });
           }
         }
+
+        // Save checkpoint after each course is fetched
+        this.updateCheckpointProgress(syncId, canvasCourseId, {
+          tasks: fetched.tasks.get(canvasCourseId),
+          announcements: fetched.announcements.get(canvasCourseId),
+          modules: fetched.modules.get(canvasCourseId),
+          pages: fetched.pages.get(canvasCourseId),
+          folders: fetched.folders.get(canvasCourseId),
+          files: fetched.files.get(canvasCourseId),
+        });
+
+        // Emit progress
+        const completedCount = alreadyFetchedCourseIds.size + fetched.tasks.size;
+        this.emit('sync-progress', {
+          syncId,
+          phase: 'fetch',
+          totalCourses: coursesToSync.length,
+          completedCourses: completedCount,
+          currentCourse: course.name || course.course_code,
+        });
       }
 
       // Summary of fetched data
 
       this.emit('sync-phase', { phase: 'fetch', status: 'complete' });
     } catch (fetchError) {
-      // FETCH FAILED - Abort without writing anything
+      // FETCH FAILED - Mark checkpoint as failed
+      this.failCheckpoint(
+        syncId,
+        fetchError instanceof Error ? fetchError.message : String(fetchError)
+      );
       this.releaseSyncMutex();
       const message =
         fetchError instanceof Error ? fetchError.message : String(fetchError);
@@ -1089,6 +1560,9 @@ export class SyncEngine extends EventEmitter {
       }
 
       this.emit('sync-phase', { phase: 'commit', status: 'started' });
+
+      // Mark checkpoint as entering commit phase
+      this.markCheckpointCommitting(syncId);
 
       const baseUrl = this.client.getBaseUrl();
 
@@ -1483,9 +1957,12 @@ export class SyncEngine extends EventEmitter {
       this.emit('sync-phase', { phase: 'commit', status: 'complete' });
     } catch (commitError) {
       // COMMIT FAILED - Transaction automatically rolled back
-      this.releaseSyncMutex();
       const message =
         commitError instanceof Error ? commitError.message : String(commitError);
+
+      // Mark checkpoint as failed
+      this.failCheckpoint(syncId, message);
+      this.releaseSyncMutex();
 
       // If database was locked (e.g., during app reset), treat as graceful skip, not error
       if (message.includes('Database is locked for writes')) {
@@ -1687,6 +2164,9 @@ export class SyncEngine extends EventEmitter {
       totalDuration: Date.now() - startTime,
       errors,
     };
+
+    // Mark sync checkpoint as completed
+    this.completeCheckpoint(syncId);
 
     this.emit('sync-complete', result);
     return result;

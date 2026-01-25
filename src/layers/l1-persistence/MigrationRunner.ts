@@ -25,8 +25,7 @@ export class MigrationRunner {
 
   constructor(db: Database, migrationsPath?: string) {
     this.db = db;
-    this.migrationsPath =
-      migrationsPath || path.join(process.cwd(), 'migrations');
+    this.migrationsPath = migrationsPath || path.join(process.cwd(), 'migrations');
   }
 
   /**
@@ -43,13 +42,13 @@ export class MigrationRunner {
       return;
     }
 
-    const files = fs.readdirSync(this.migrationsPath).filter((f) =>
-      f.match(/^\d{3}_.*\.(ts|js)$/)
-    );
+    const files = fs
+      .readdirSync(this.migrationsPath)
+      .filter((f) => f.match(/^\d{3}_.*\.(ts|js)$/));
 
     for (const file of files) {
       const filePath = path.join(this.migrationsPath, file);
-       
+
       const migration = require(filePath);
       if (migration.default) {
         this.migrations.push(migration.default);
@@ -80,8 +79,7 @@ export class MigrationRunner {
         this.runMigration(migration);
         applied++;
       } catch (error) {
-        const message =
-          error instanceof Error ? error.message : String(error);
+        const message = error instanceof Error ? error.message : String(error);
         errors.push(`Migration ${migration.version}: ${message}`);
         break; // Stop on first error
       }
@@ -122,9 +120,7 @@ export class MigrationRunner {
 
     for (const migration of toRollback) {
       if (!migration.down) {
-        errors.push(
-          `Migration ${migration.version} has no rollback SQL`
-        );
+        errors.push(`Migration ${migration.version} has no rollback SQL`);
         break;
       }
 
@@ -132,15 +128,13 @@ export class MigrationRunner {
         this.db.transaction(() => {
           this.db.exec(migration.down!);
           // Use parameterized query to prevent SQL injection
-          this.db.executeWrite(
-            'DELETE FROM schema_version WHERE version = ?',
-            [migration.version]
-          );
+          this.db.executeWrite('DELETE FROM schema_version WHERE version = ?', [
+            migration.version,
+          ]);
         });
         rolledBack++;
       } catch (error) {
-        const message =
-          error instanceof Error ? error.message : String(error);
+        const message = error instanceof Error ? error.message : String(error);
         errors.push(`Rollback ${migration.version}: ${message}`);
         break;
       }
@@ -672,7 +666,8 @@ export const coreMigrations: Migration[] = [
   },
   {
     version: 23,
-    description: 'Create course_task_groups table for course-specific task categorization',
+    description:
+      'Create course_task_groups table for course-specific task categorization',
     up: `
       CREATE TABLE course_task_groups (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -984,7 +979,8 @@ export const coreMigrations: Migration[] = [
   },
   {
     version: 34,
-    description: 'Add announcement_file_references table for tracking file mentions in announcements',
+    description:
+      'Add announcement_file_references table for tracking file mentions in announcements',
     up: `
       -- Table to map file references in announcement messages to attachments
       CREATE TABLE IF NOT EXISTS announcement_file_references (
@@ -1045,7 +1041,8 @@ export const coreMigrations: Migration[] = [
   },
   {
     version: 37,
-    description: 'Create endpoint_backoff table for tracking auth failures with exponential backoff',
+    description:
+      'Create endpoint_backoff table for tracking auth failures with exponential backoff',
     up: `
       CREATE TABLE endpoint_backoff (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1071,7 +1068,8 @@ export const coreMigrations: Migration[] = [
   },
   {
     version: 38,
-    description: 'Create sync_preferences table for remembering user sync conflict choices',
+    description:
+      'Create sync_preferences table for remembering user sync conflict choices',
     up: `
       CREATE TABLE IF NOT EXISTS sync_preferences (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1112,7 +1110,8 @@ export const coreMigrations: Migration[] = [
   },
   {
     version: 40,
-    description: 'Add content_file_references, html_exports tables and resource version tracking',
+    description:
+      'Add content_file_references, html_exports tables and resource version tracking',
     up: `
       -- Table to track file references extracted from HTML content (pages, assignments, syllabus, etc.)
       CREATE TABLE IF NOT EXISTS content_file_references (
@@ -1364,7 +1363,8 @@ export const coreMigrations: Migration[] = [
   },
   {
     version: 44,
-    description: 'Create field_notification_suppressions table for data completeness alerts',
+    description:
+      'Create field_notification_suppressions table for data completeness alerts',
     up: `
       CREATE TABLE field_notification_suppressions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1384,7 +1384,8 @@ export const coreMigrations: Migration[] = [
   },
   {
     version: 45,
-    description: 'Create message_display_history table for duplicate prevention with probation',
+    description:
+      'Create message_display_history table for duplicate prevention with probation',
     up: `
       -- Track display history for insights/recommendations to prevent duplicates
       CREATE TABLE message_display_history (
@@ -1587,6 +1588,42 @@ export const coreMigrations: Migration[] = [
       -- Reverting CASCADE requires table rebuild (complex)
       -- This down migration just ensures the schema remains valid
       SELECT 1;
+    `,
+  },
+  {
+    version: 51,
+    description: 'Add sync_checkpoints table for resumable sync',
+    up: `
+      -- Track sync progress for resumable partial syncs
+      CREATE TABLE IF NOT EXISTS sync_checkpoints (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        sync_id TEXT UNIQUE NOT NULL,
+        started_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        phase TEXT CHECK(phase IN ('fetch', 'commit', 'completed', 'failed')) DEFAULT 'fetch',
+        options_json TEXT,
+        -- Course IDs that have been fully fetched
+        fetched_course_ids TEXT DEFAULT '[]',
+        -- Cached fetch data for courses (JSON)
+        fetched_data_json TEXT,
+        -- Progress tracking
+        total_courses INTEGER DEFAULT 0,
+        completed_courses INTEGER DEFAULT 0,
+        -- Error tracking
+        last_error TEXT,
+        error_count INTEGER DEFAULT 0,
+        -- Timestamps
+        last_updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        completed_at DATETIME
+      );
+
+      -- Index for finding incomplete syncs
+      CREATE INDEX IF NOT EXISTS idx_sync_checkpoints_phase ON sync_checkpoints(phase);
+      CREATE INDEX IF NOT EXISTS idx_sync_checkpoints_started ON sync_checkpoints(started_at);
+    `,
+    down: `
+      DROP INDEX IF EXISTS idx_sync_checkpoints_phase;
+      DROP INDEX IF EXISTS idx_sync_checkpoints_started;
+      DROP TABLE IF EXISTS sync_checkpoints;
     `,
   },
 ];
