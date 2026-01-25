@@ -1855,6 +1855,12 @@ export class SyncEngine extends EventEmitter {
               action: 'error',
               error: errorMsg,
             });
+            // Emit granular error event for this specific course
+            this.emit('sync-entity-error', {
+              entity: 'course',
+              externalId: String(course.id),
+              error: errorMsg,
+            });
           }
         }
       });
@@ -1862,7 +1868,7 @@ export class SyncEngine extends EventEmitter {
       // Update sync metadata
       this.updateSyncMetadata('/courses');
 
-      this.emit('sync-entity-complete', { entity: 'courses', count });
+      this.emit('sync-entity-complete', { entity: 'courses', count, errors });
 
       return {
         success: errors.length === 0,
@@ -1874,6 +1880,11 @@ export class SyncEngine extends EventEmitter {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       errors.push(`Failed to sync courses: ${message}`);
+      this.emit('sync-entity-error', {
+        entity: 'courses',
+        error: message,
+        fatal: true,
+      });
       return {
         success: false,
         entity: 'courses',
@@ -2104,9 +2115,14 @@ export class SyncEngine extends EventEmitter {
 
             count++;
           } catch (error) {
-            errors.push(
-              `Task ${assignment.id}: ${error instanceof Error ? error.message : String(error)}`
-            );
+            const errorMsg = error instanceof Error ? error.message : String(error);
+            errors.push(`Task ${assignment.id}: ${errorMsg}`);
+            this.emit('sync-entity-error', {
+              entity: 'task',
+              externalId: String(assignment.id),
+              courseId: canvasCourseId,
+              error: errorMsg,
+            });
           }
         }
       });
@@ -2116,6 +2132,13 @@ export class SyncEngine extends EventEmitter {
       this.autoCompleteGradedTasks(localCourseId);
 
       this.updateSyncMetadata(`/courses/${canvasCourseId}/assignments`);
+
+      this.emit('sync-entity-complete', {
+        entity: 'tasks',
+        count,
+        errors,
+        courseId: canvasCourseId,
+      });
 
       return {
         success: errors.length === 0,
@@ -2127,6 +2150,12 @@ export class SyncEngine extends EventEmitter {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       errors.push(`Failed to sync tasks for course ${canvasCourseId}: ${message}`);
+      this.emit('sync-entity-error', {
+        entity: 'tasks',
+        courseId: canvasCourseId,
+        error: message,
+        fatal: true,
+      });
       return {
         success: false,
         entity: 'tasks',
@@ -2302,14 +2331,26 @@ export class SyncEngine extends EventEmitter {
               }
             }
           } catch (error) {
-            errors.push(
-              `Announcement ${announcement.id}: ${error instanceof Error ? error.message : String(error)}`
-            );
+            const errorMsg = error instanceof Error ? error.message : String(error);
+            errors.push(`Announcement ${announcement.id}: ${errorMsg}`);
+            this.emit('sync-entity-error', {
+              entity: 'announcement',
+              externalId: String(announcement.id),
+              courseId: canvasCourseId,
+              error: errorMsg,
+            });
           }
         }
       });
 
       this.updateSyncMetadata(`/courses/${canvasCourseId}/discussion_topics`);
+
+      this.emit('sync-entity-complete', {
+        entity: 'announcements',
+        count,
+        errors,
+        courseId: canvasCourseId,
+      });
 
       return {
         success: errors.length === 0,
@@ -2323,6 +2364,12 @@ export class SyncEngine extends EventEmitter {
       errors.push(
         `Failed to sync announcements for course ${canvasCourseId}: ${message}`
       );
+      this.emit('sync-entity-error', {
+        entity: 'announcements',
+        courseId: canvasCourseId,
+        error: message,
+        fatal: true,
+      });
       return {
         success: false,
         entity: 'announcements',

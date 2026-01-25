@@ -19,19 +19,26 @@ import {
   X,
   Eye,
   EyeOff,
-  Palette,
   GripVertical,
-  RotateCcw,
 } from 'lucide-react';
 import { useStore, getCachedCourseGrades } from '../../../l5-presentation/store';
-import { Card, Badge } from '../shared';
+import { Card } from '../shared';
 import { useCourseDragDrop } from './useCourseDragDrop';
+import { formatTimeAgo } from '../../constants';
 import type { Course } from '../../../l5-presentation/types';
 
 // Course color palette
 const COURSE_COLORS = [
-  '#007FA3', '#E53935', '#43A047', '#FB8C00', '#8E24AA',
-  '#1E88E5', '#D81B60', '#00ACC1', '#7CB342', '#6D4C41',
+  '#007FA3',
+  '#E53935',
+  '#43A047',
+  '#FB8C00',
+  '#8E24AA',
+  '#1E88E5',
+  '#D81B60',
+  '#00ACC1',
+  '#7CB342',
+  '#6D4C41',
 ];
 
 function getCourseColor(courseId: number, existingColor: string | null): string {
@@ -95,7 +102,10 @@ function savePinnedCourses(pinned: Set<number>): void {
 }
 
 // Load course settings from localStorage
-function loadCourseSettings(): { defaultViewMode: ViewMode; showHiddenByDefault: boolean } {
+function loadCourseSettings(): {
+  defaultViewMode: ViewMode;
+  showHiddenByDefault: boolean;
+} {
   try {
     const stored = localStorage.getItem('courseSettings');
     if (stored) {
@@ -145,7 +155,9 @@ export function CoursesPage() {
     setViewModeState(mode);
     saveViewMode('courses', mode);
   };
-  const [pinnedCourses, setPinnedCourses] = useState<Set<number>>(() => loadPinnedCourses());
+  const [pinnedCourses, setPinnedCourses] = useState<Set<number>>(() =>
+    loadPinnedCourses()
+  );
 
   // Drag-and-drop reordering
   const courseIds = useMemo(() => courses.map((c) => c.id), [courses]);
@@ -158,8 +170,8 @@ export function CoursesPage() {
     handleDragLeave,
     handleDragEnd,
     handleDrop,
-    resetOrder,
-    hasCustomOrder,
+    resetOrder: _resetOrder,
+    hasCustomOrder: _hasCustomOrder,
   } = useCourseDragDrop(courseIds);
 
   // Color picker state
@@ -171,7 +183,9 @@ export function CoursesPage() {
   const [gradeFilter, setGradeFilter] = useState<GradeFilter>('all');
   const [prefixFilter, setPrefixFilter] = useState<string>('all');
   const [typeFilter, setTypeFilter] = useState<string>('all');
-  const [showHidden, setShowHidden] = useState(() => loadCourseSettings().showHiddenByDefault);
+  const [showHidden, setShowHidden] = useState(
+    () => loadCourseSettings().showHiddenByDefault
+  );
   const [showFilters, setShowFilters] = useState(false);
 
   // Get unique prefixes and types from visible courses (respects showHidden toggle)
@@ -197,19 +211,28 @@ export function CoursesPage() {
   // Reset filters when selected option is no longer available
   useEffect(() => {
     if (prefixFilter !== 'all' && !availablePrefixes.includes(prefixFilter)) {
-      console.debug('[CoursesPage] Resetting prefix filter - option no longer available:', prefixFilter);
+      console.debug(
+        '[CoursesPage] Resetting prefix filter - option no longer available:',
+        prefixFilter
+      );
       setPrefixFilter('all');
     }
     if (typeFilter !== 'all' && !availableTypes.includes(typeFilter)) {
-      console.debug('[CoursesPage] Resetting type filter - option no longer available:', typeFilter);
+      console.debug(
+        '[CoursesPage] Resetting type filter - option no longer available:',
+        typeFilter
+      );
       setTypeFilter('all');
     }
   }, [availablePrefixes, availableTypes, prefixFilter, typeFilter]);
 
   // Navigate to course detail - memoized to prevent unnecessary re-renders
-  const handleCourseClick = useCallback((courseId: number) => {
-    navigate(`/course/${courseId}`);
-  }, [navigate]);
+  const handleCourseClick = useCallback(
+    (courseId: number) => {
+      navigate(`/course/${courseId}`);
+    },
+    [navigate]
+  );
 
   // Save pinned courses when they change
   useEffect(() => {
@@ -231,7 +254,11 @@ export function CoursesPage() {
   };
 
   // Open color picker for a course
-  const openColorPicker = (courseId: number, currentColor: string, e: React.MouseEvent) => {
+  const openColorPicker = (
+    courseId: number,
+    currentColor: string,
+    e: React.MouseEvent
+  ) => {
     e.stopPropagation();
     setColorPickerCourseId(courseId);
     setCustomColor(currentColor);
@@ -249,14 +276,26 @@ export function CoursesPage() {
 
   // Toggle course hidden status
   const handleToggleHide = async (courseId: number, currentlyHidden: boolean) => {
-    console.debug('[CoursesPage] Toggling hide for course:', courseId, 'from', currentlyHidden, 'to', !currentlyHidden);
+    console.debug(
+      '[CoursesPage] Toggling hide for course:',
+      courseId,
+      'from',
+      currentlyHidden,
+      'to',
+      !currentlyHidden
+    );
     const result = await window.api.dispatch('UpdateCoursePreferences', {
       courseId,
       preferences: { isHidden: !currentlyHidden },
     });
     console.debug('[CoursesPage] Dispatch result:', result);
     await fetchCourses();
-    console.debug('[CoursesPage] Courses after fetchCourses:', courses.length, 'hidden:', courses.filter(c => c.isHidden).length);
+    console.debug(
+      '[CoursesPage] Courses after fetchCourses:',
+      courses.length,
+      'hidden:',
+      courses.filter((c) => c.isHidden).length
+    );
   };
 
   // Close color picker
@@ -321,11 +360,25 @@ export function CoursesPage() {
     });
 
     return result;
-  }, [courses, pinnedCourses, searchQuery, gradeFilter, prefixFilter, typeFilter, showHidden, sortByCustomOrder]);
+  }, [
+    courses,
+    pinnedCourses,
+    searchQuery,
+    gradeFilter,
+    prefixFilter,
+    typeFilter,
+    showHidden,
+    sortByCustomOrder,
+  ]);
 
   const pinnedCount = filteredCourses.filter((c) => pinnedCourses.has(c.id)).length;
   const hiddenCount = courses.filter((c) => c.isHidden).length;
-  const hasActiveFilters = searchQuery || gradeFilter !== 'all' || prefixFilter !== 'all' || typeFilter !== 'all' || showHidden;
+  const hasActiveFilters =
+    searchQuery ||
+    gradeFilter !== 'all' ||
+    prefixFilter !== 'all' ||
+    typeFilter !== 'all' ||
+    showHidden;
 
   // Clear all filters
   const clearFilters = () => {
@@ -343,7 +396,8 @@ export function CoursesPage() {
         <div style={styles.headerLeft}>
           <h1 style={styles.title}>Courses</h1>
           <p style={styles.subtitle}>
-            {filteredCourses.length} of {courses.length} course{courses.length !== 1 ? 's' : ''}
+            {filteredCourses.length} of {courses.length} course
+            {courses.length !== 1 ? 's' : ''}
             {pinnedCount > 0 && ` • ${pinnedCount} pinned`}
             {hiddenCount > 0 && !showHidden && ` • ${hiddenCount} hidden`}
           </p>
@@ -371,8 +425,12 @@ export function CoursesPage() {
           <button
             style={{
               ...styles.filterButton,
-              backgroundColor: hasActiveFilters ? 'var(--color-navy-light)' : 'var(--bg-card)',
-              borderColor: hasActiveFilters ? 'var(--color-navy)' : 'var(--border-default)',
+              backgroundColor: hasActiveFilters
+                ? 'var(--color-navy-light)'
+                : 'var(--bg-card)',
+              borderColor: hasActiveFilters
+                ? 'var(--color-navy)'
+                : 'var(--border-default)',
               color: hasActiveFilters ? 'var(--color-navy)' : 'var(--text-secondary)',
             }}
             onClick={() => setShowFilters(!showFilters)}
@@ -386,7 +444,8 @@ export function CoursesPage() {
             <button
               style={{
                 ...styles.viewButton,
-                backgroundColor: viewMode === 'grid' ? 'var(--color-navy)' : 'transparent',
+                backgroundColor:
+                  viewMode === 'grid' ? 'var(--color-navy)' : 'transparent',
                 color: viewMode === 'grid' ? 'white' : 'var(--text-secondary)',
               }}
               onClick={() => setViewMode('grid')}
@@ -397,7 +456,8 @@ export function CoursesPage() {
             <button
               style={{
                 ...styles.viewButton,
-                backgroundColor: viewMode === 'list' ? 'var(--color-navy)' : 'transparent',
+                backgroundColor:
+                  viewMode === 'list' ? 'var(--color-navy)' : 'transparent',
                 color: viewMode === 'list' ? 'white' : 'var(--text-secondary)',
               }}
               onClick={() => setViewMode('list')}
@@ -423,7 +483,9 @@ export function CoursesPage() {
               >
                 <option value="all">All</option>
                 {availablePrefixes.map((prefix) => (
-                  <option key={prefix} value={prefix}>{prefix}</option>
+                  <option key={prefix} value={prefix}>
+                    {prefix}
+                  </option>
                 ))}
               </select>
             </div>
@@ -437,9 +499,13 @@ export function CoursesPage() {
                 <button
                   style={{
                     ...styles.filterChip,
-                    backgroundColor: typeFilter === 'all' ? 'var(--color-navy)' : 'var(--bg-app)',
+                    backgroundColor:
+                      typeFilter === 'all' ? 'var(--color-navy)' : 'var(--bg-app)',
                     color: typeFilter === 'all' ? 'white' : 'var(--text-secondary)',
-                    borderColor: typeFilter === 'all' ? 'var(--color-navy)' : 'var(--border-default)',
+                    borderColor:
+                      typeFilter === 'all'
+                        ? 'var(--color-navy)'
+                        : 'var(--border-default)',
                   }}
                   onClick={() => setTypeFilter('all')}
                 >
@@ -450,9 +516,13 @@ export function CoursesPage() {
                     key={type}
                     style={{
                       ...styles.filterChip,
-                      backgroundColor: typeFilter === type ? 'var(--color-navy)' : 'var(--bg-app)',
+                      backgroundColor:
+                        typeFilter === type ? 'var(--color-navy)' : 'var(--bg-app)',
                       color: typeFilter === type ? 'white' : 'var(--text-secondary)',
-                      borderColor: typeFilter === type ? 'var(--color-navy)' : 'var(--border-default)',
+                      borderColor:
+                        typeFilter === type
+                          ? 'var(--color-navy)'
+                          : 'var(--border-default)',
                     }}
                     onClick={() => setTypeFilter(type)}
                   >
@@ -467,20 +537,32 @@ export function CoursesPage() {
           <div style={styles.filterGroup}>
             <label style={styles.filterLabel}>Grade</label>
             <div style={styles.filterChips}>
-              {(['all', 'on-track', 'at-risk', 'behind'] as GradeFilter[]).map((filter) => (
-                <button
-                  key={filter}
-                  style={{
-                    ...styles.filterChip,
-                    backgroundColor: gradeFilter === filter ? 'var(--color-navy)' : 'var(--bg-app)',
-                    color: gradeFilter === filter ? 'white' : 'var(--text-secondary)',
-                    borderColor: gradeFilter === filter ? 'var(--color-navy)' : 'var(--border-default)',
-                  }}
-                  onClick={() => setGradeFilter(filter)}
-                >
-                  {filter === 'all' ? 'All' : filter === 'on-track' ? 'On Track' : filter === 'at-risk' ? 'At Risk' : 'Behind'}
-                </button>
-              ))}
+              {(['all', 'on-track', 'at-risk', 'behind'] as GradeFilter[]).map(
+                (filter) => (
+                  <button
+                    key={filter}
+                    style={{
+                      ...styles.filterChip,
+                      backgroundColor:
+                        gradeFilter === filter ? 'var(--color-navy)' : 'var(--bg-app)',
+                      color: gradeFilter === filter ? 'white' : 'var(--text-secondary)',
+                      borderColor:
+                        gradeFilter === filter
+                          ? 'var(--color-navy)'
+                          : 'var(--border-default)',
+                    }}
+                    onClick={() => setGradeFilter(filter)}
+                  >
+                    {filter === 'all'
+                      ? 'All'
+                      : filter === 'on-track'
+                        ? 'On Track'
+                        : filter === 'at-risk'
+                          ? 'At Risk'
+                          : 'Behind'}
+                  </button>
+                )
+              )}
             </div>
           </div>
 
@@ -513,7 +595,11 @@ export function CoursesPage() {
       {courses.length === 0 ? (
         <Card padding="lg">
           <div style={styles.emptyState}>
-            <BookOpen size={64} color="var(--color-navy)" style={{ marginBottom: 'var(--space-4)' }} />
+            <BookOpen
+              size={64}
+              color="var(--color-navy)"
+              style={{ marginBottom: 'var(--space-4)' }}
+            />
             <h2 style={styles.emptyTitle}>No Courses Found</h2>
             <p style={styles.emptyText}>
               Sync with Canvas to load your enrolled courses.
@@ -524,11 +610,13 @@ export function CoursesPage() {
         /* No results after filtering */
         <Card padding="lg">
           <div style={styles.emptyState}>
-            <Search size={48} color="var(--text-muted)" style={{ marginBottom: 'var(--space-4)' }} />
+            <Search
+              size={48}
+              color="var(--text-muted)"
+              style={{ marginBottom: 'var(--space-4)' }}
+            />
             <h2 style={styles.emptyTitle}>No Courses Match</h2>
-            <p style={styles.emptyText}>
-              Try adjusting your search or filters.
-            </p>
+            <p style={styles.emptyText}>Try adjusting your search or filters.</p>
             <button style={styles.clearFiltersLarge} onClick={clearFilters}>
               Clear Filters
             </button>
@@ -552,7 +640,9 @@ export function CoursesPage() {
                 onClick={() => handleCourseClick(course.id)}
                 onColorClick={openColorPicker}
                 showColorPicker={colorPickerCourseId === course.id}
-                colorPickerValue={colorPickerCourseId === course.id ? customColor : undefined}
+                colorPickerValue={
+                  colorPickerCourseId === course.id ? customColor : undefined
+                }
                 onColorChange={handleColorChange}
                 onColorInputChange={setCustomColor}
                 onColorPickerClose={closeColorPicker}
@@ -588,7 +678,9 @@ export function CoursesPage() {
                   onClick={() => handleCourseClick(course.id)}
                   onColorClick={openColorPicker}
                   showColorPicker={colorPickerCourseId === course.id}
-                  colorPickerValue={colorPickerCourseId === course.id ? customColor : undefined}
+                  colorPickerValue={
+                    colorPickerCourseId === course.id ? customColor : undefined
+                  }
                   onColorChange={handleColorChange}
                   onColorInputChange={setCustomColor}
                   onColorPickerClose={closeColorPicker}
@@ -682,7 +774,10 @@ function CourseGridCard({
     if (!showColorPicker) return;
 
     const handleClickOutside = (event: MouseEvent) => {
-      if (colorPickerRef.current && !colorPickerRef.current.contains(event.target as Node)) {
+      if (
+        colorPickerRef.current &&
+        !colorPickerRef.current.contains(event.target as Node)
+      ) {
         onColorPickerClose?.();
       }
     };
@@ -709,12 +804,21 @@ function CourseGridCard({
     >
       {/* Color accent bar - click to change color */}
       <div
-        style={{ ...styles.colorBar, backgroundColor: color, cursor: 'pointer', position: 'relative' }}
+        style={{
+          ...styles.colorBar,
+          backgroundColor: color,
+          cursor: 'pointer',
+          position: 'relative',
+        }}
         onClick={(e) => onColorClick?.(course.id, color, e)}
         title="Click to change color"
       >
         {showColorPicker && (
-          <div ref={colorPickerRef} style={styles.colorPickerPopup} onClick={(e) => e.stopPropagation()}>
+          <div
+            ref={colorPickerRef}
+            style={styles.colorPickerPopup}
+            onClick={(e) => e.stopPropagation()}
+          >
             {/* Preset colors */}
             <div style={styles.colorPresets}>
               {COURSE_COLORS.map((presetColor) => (
@@ -723,7 +827,10 @@ function CourseGridCard({
                   style={{
                     ...styles.colorPresetBtn,
                     backgroundColor: presetColor,
-                    border: colorPickerValue === presetColor ? '2px solid var(--text-primary)' : '2px solid transparent',
+                    border:
+                      colorPickerValue === presetColor
+                        ? '2px solid var(--text-primary)'
+                        : '2px solid transparent',
                   }}
                   onClick={() => onColorChange?.(course.id, presetColor)}
                   title={presetColor}
@@ -811,9 +918,7 @@ function CourseGridCard({
         </div>
 
         {/* Course name - Grid row 2 */}
-        <h3 style={styles.gridCourseName}>
-          {course.nickname || course.name}
-        </h3>
+        <h3 style={styles.gridCourseName}>{course.nickname || course.name}</h3>
 
         {/* Full code - Grid row 3 (flex spacer) */}
         <span style={styles.fullCode}>{course.code}</span>
@@ -836,8 +941,8 @@ function CourseGridCard({
                       trend >= course.targetGrade
                         ? 'var(--color-success)'
                         : trend >= course.targetGrade - 10
-                        ? 'var(--color-medium)'
-                        : 'var(--color-high)',
+                          ? 'var(--color-medium)'
+                          : 'var(--color-high)',
                   }}
                 >
                   {earned.toFixed(1)}%
@@ -852,8 +957,8 @@ function CourseGridCard({
                       trend >= course.targetGrade
                         ? 'var(--color-success)'
                         : trend >= course.targetGrade - 10
-                        ? 'var(--color-medium)'
-                        : 'var(--color-high)',
+                          ? 'var(--color-medium)'
+                          : 'var(--color-high)',
                   }}
                 >
                   {trend.toFixed(1)}%
@@ -866,14 +971,12 @@ function CourseGridCard({
         {/* Footer row - Grid row 5: Sync time + Drag handle */}
         <div style={styles.cardFooter}>
           <div style={styles.syncTime}>
-            {course.lastSyncedAt ? `Synced ${new Date(course.lastSyncedAt).toLocaleDateString()}` : '\u00A0'}
+            {course.lastSyncedAt
+              ? `Synced ${formatTimeAgo(course.lastSyncedAt)}`
+              : '\u00A0'}
           </div>
           {/* Drag handle */}
-          <div
-            style={styles.dragHandle}
-            title="Drag to reorder"
-            data-drag-handle
-          >
+          <div style={styles.dragHandle} title="Drag to reorder" data-drag-handle>
             <GripVertical size={14} />
           </div>
         </div>
@@ -911,7 +1014,10 @@ function CourseListItem({
     if (!showColorPicker) return;
 
     const handleClickOutside = (event: MouseEvent) => {
-      if (colorPickerRef.current && !colorPickerRef.current.contains(event.target as Node)) {
+      if (
+        colorPickerRef.current &&
+        !colorPickerRef.current.contains(event.target as Node)
+      ) {
         onColorPickerClose?.();
       }
     };
@@ -932,12 +1038,21 @@ function CourseListItem({
       {/* Color indicator - click to change color */}
       <div style={{ position: 'relative' }}>
         <button
-          style={{ ...styles.listColorDot, backgroundColor: color, cursor: 'pointer', border: 'none' }}
+          style={{
+            ...styles.listColorDot,
+            backgroundColor: color,
+            cursor: 'pointer',
+            border: 'none',
+          }}
           onClick={(e) => onColorClick?.(course.id, color, e)}
           title="Click to change color"
         />
         {showColorPicker && (
-          <div ref={colorPickerRef} style={styles.colorPickerPopupList} onClick={(e) => e.stopPropagation()}>
+          <div
+            ref={colorPickerRef}
+            style={styles.colorPickerPopupList}
+            onClick={(e) => e.stopPropagation()}
+          >
             {/* Preset colors */}
             <div style={styles.colorPresets}>
               {COURSE_COLORS.map((presetColor) => (
@@ -946,7 +1061,10 @@ function CourseListItem({
                   style={{
                     ...styles.colorPresetBtn,
                     backgroundColor: presetColor,
-                    border: colorPickerValue === presetColor ? '2px solid var(--text-primary)' : '2px solid transparent',
+                    border:
+                      colorPickerValue === presetColor
+                        ? '2px solid var(--text-primary)'
+                        : '2px solid transparent',
                   }}
                   onClick={() => onColorChange?.(course.id, presetColor)}
                   title={presetColor}
@@ -1005,9 +1123,7 @@ function CourseListItem({
           </span>
           <span style={styles.listFullCode}>{course.code}</span>
         </div>
-        <h3 style={styles.listCourseName}>
-          {course.nickname || course.name}
-        </h3>
+        <h3 style={styles.listCourseName}>{course.nickname || course.name}</h3>
       </div>
 
       {/* Grades */}
@@ -1027,8 +1143,8 @@ function CourseListItem({
                     trend >= course.targetGrade
                       ? 'var(--color-success)'
                       : trend >= course.targetGrade - 10
-                      ? 'var(--color-medium)'
-                      : 'var(--color-high)',
+                        ? 'var(--color-medium)'
+                        : 'var(--color-high)',
                 }}
               >
                 {earned.toFixed(1)}%
@@ -1043,8 +1159,8 @@ function CourseListItem({
                     trend >= course.targetGrade
                       ? 'var(--color-success)'
                       : trend >= course.targetGrade - 10
-                      ? 'var(--color-medium)'
-                      : 'var(--color-high)',
+                        ? 'var(--color-medium)'
+                        : 'var(--color-high)',
                 }}
               >
                 {trend.toFixed(1)}%
@@ -1131,7 +1247,9 @@ function VirtualizedListItem({
         onClick={() => data.handleCourseClick(course.id)}
         onColorClick={data.openColorPicker}
         showColorPicker={data.colorPickerCourseId === course.id}
-        colorPickerValue={data.colorPickerCourseId === course.id ? data.customColor : undefined}
+        colorPickerValue={
+          data.colorPickerCourseId === course.id ? data.customColor : undefined
+        }
         onColorChange={data.handleColorChange}
         onColorInputChange={data.setCustomColor}
         onColorPickerClose={data.closeColorPicker}
@@ -1491,7 +1609,8 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: 'clamp(12px, 1.5vw, 20px) clamp(12px, 1.5vw, 20px) clamp(6px, 0.8vw, 12px) clamp(12px, 1.5vw, 20px)',
+    padding:
+      'clamp(12px, 1.5vw, 20px) clamp(12px, 1.5vw, 20px) clamp(6px, 0.8vw, 12px) clamp(12px, 1.5vw, 20px)',
   },
 
   courseCodeBadge: {
@@ -1562,7 +1681,8 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: '0 clamp(12px, 1.5vw, 20px) clamp(12px, 1.5vw, 20px) clamp(12px, 1.5vw, 20px)',
+    padding:
+      '0 clamp(12px, 1.5vw, 20px) clamp(12px, 1.5vw, 20px) clamp(12px, 1.5vw, 20px)',
   },
 
   syncTime: {
