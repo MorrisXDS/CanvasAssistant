@@ -46,3 +46,43 @@ export {
   computeCourseDetailViewModel,
   useCourseDetailViewModel,
 } from './viewModels';
+
+// Settings
+export {
+  // Keys
+  STORAGE_KEYS,
+  // Types
+  type StorageKey,
+  type SyncPreferences,
+  type AppearanceSettings,
+  type NotificationSettings,
+  type AcademicSettings,
+  type FileExplorerSettings,
+  type CourseSettings,
+  type CalendarSettings,
+  type ContentSettings,
+  type SettingsTypeMap,
+  // Defaults
+  DEFAULT_SYNC_PREFERENCES,
+  DEFAULT_APPEARANCE_SETTINGS,
+  DEFAULT_NOTIFICATION_SETTINGS,
+  DEFAULT_ACADEMIC_SETTINGS,
+  DEFAULT_FILE_EXPLORER_SETTINGS,
+  DEFAULT_COURSE_SETTINGS,
+  DEFAULT_CALENDAR_SETTINGS,
+  DEFAULT_CONTENT_SETTINGS,
+  DEFAULT_DASHBOARD_ORDER,
+  DEFAULT_NAV_ORDER,
+  // Manager
+  SettingsManager,
+  settingsManager,
+  // Hooks
+  useSetting,
+  useSettingUpdate,
+  useTheme,
+  useSidebarState,
+  useNavOrder,
+  useDashboardOrder,
+  useLandingPage,
+  useSettingsManager,
+} from './settings';

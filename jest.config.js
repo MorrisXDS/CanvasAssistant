@@ -41,7 +41,10 @@ module.exports = {
     {
       displayName: 'jsdom',
       testEnvironment: 'jsdom',
-      testMatch: ['<rootDir>/tests/l6-ui/**/*.test.tsx'],
+      testMatch: [
+        '<rootDir>/tests/l6-ui/**/*.test.tsx',
+        '<rootDir>/tests/l6-ui/**/*.test.ts',
+      ],
       transform: {
         '^.+\\.tsx?$': ['ts-jest', { tsconfig: 'tsconfig.test.json' }],
       },
