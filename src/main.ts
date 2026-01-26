@@ -5206,7 +5206,8 @@ function registerIpcHandlers(): void {
                 syllabus.change_detected_at || syllabus.changeDetectedAt,
               marked_at: syllabus.marked_at || syllabus.markedAt,
             },
-            'course_id'
+            'course_id',
+            false // course_syllabuses table has no updated_at column
           );
           syllabusesImported++;
         }
@@ -5266,7 +5267,8 @@ function registerIpcHandlers(): void {
               hours_extended: usage.hours_extended || usage.hoursExtended,
               used_at: usage.used_at || usage.usedAt,
             },
-            ['grace_token_id', 'task_id']
+            ['grace_token_id', 'task_id'],
+            false // grace_token_usage table has no updated_at column
           );
           graceTokenUsageImported++;
         }
