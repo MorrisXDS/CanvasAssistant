@@ -12,6 +12,8 @@ import { QuickStats, StatItem } from './QuickStats';
 import { TaskListModal, TaskWithCourse } from './TaskListModal';
 import { GradeBreakdownModal } from './GradeBreakdownModal';
 import { UnifiedDashboardGrid } from './UnifiedDashboardGrid';
+import { TaskContextMenu } from '../Course/TaskContextMenu';
+import type { Task } from '../../../l5-presentation/types';
 
 // Debug flag - set to true only when debugging layout issues
 const DEBUG_LAYOUT = false;
@@ -19,7 +21,10 @@ const DEBUG_LAYOUT = false;
 export function Dashboard() {
   const pageRef = useRef<HTMLDivElement>(null);
   const mainRowRef = useRef<HTMLElement>(null);
-  const [windowSize, setWindowSize] = useState({ width: window.innerWidth, height: window.innerHeight });
+  const [_windowSize, setWindowSize] = useState({
+    width: window.innerWidth,
+    height: window.innerHeight,
+  });
 
   // Debug: Log window and container dimensions using ResizeObserver
   useEffect(() => {
@@ -91,7 +96,10 @@ export function Dashboard() {
   const [showGradeModal, setShowGradeModal] = useState(false);
 
   // Compute task lists with course info for modals
-  const courseMap = useMemo(() => new Map(state.courses.map(c => [c.id, c])), [state.courses]);
+  const courseMap = useMemo(
+    () => new Map(state.courses.map((c) => [c.id, c])),
+    [state.courses]
+  );
 
   const { pendingTasks, overdueTasks } = useMemo(() => {
     const now = new Date();
@@ -109,7 +117,9 @@ export function Dashboard() {
         const due = new Date(task.dueAt);
         const nowDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
         const dueDate = new Date(due.getFullYear(), due.getMonth(), due.getDate());
-        daysUntilDue = Math.round((dueDate.getTime() - nowDate.getTime()) / (1000 * 60 * 60 * 24));
+        daysUntilDue = Math.round(
+          (dueDate.getTime() - nowDate.getTime()) / (1000 * 60 * 60 * 24)
+        );
       }
 
       const taskWithCourse: TaskWithCourse = { task, course, daysUntilDue };
@@ -170,9 +180,10 @@ export function Dashboard() {
       label: 'Overdue Tasks',
       value: viewModel.stats.overdueTasks,
       icon: 'overdue',
-      trend: viewModel.stats.overdueTasks > 0
-        ? { direction: 'warning', value: `${viewModel.stats.overdueTasks}` }
-        : undefined,
+      trend:
+        viewModel.stats.overdueTasks > 0
+          ? { direction: 'warning', value: `${viewModel.stats.overdueTasks}` }
+          : undefined,
       action: 'overdue',
     },
     {
@@ -185,13 +196,75 @@ export function Dashboard() {
     },
   ];
 
+  // Context menu state
+  const [contextMenu, setContextMenu] = useState<{
+    task: Task & { isOptional?: boolean };
+    position: { x: number; y: number };
+  } | null>(null);
 
   const handleTaskClick = (taskId: number) => {
     // Find the task to get its course ID
-    const task = state.tasks.find(t => t.id === taskId);
+    const task = state.tasks.find((t) => t.id === taskId);
     if (task) {
       navigate(`/course/${task.courseId}?highlightTask=${taskId}`);
     }
+  };
+
+  const handleTaskDoubleClick = (taskId: number) => {
+    // Navigate to course detail with task highlight
+    const task = state.tasks.find((t) => t.id === taskId);
+    if (task) {
+      navigate(`/course/${task.courseId}?highlightTask=${taskId}`);
+    }
+  };
+
+  const handleTaskContextMenu = (e: React.MouseEvent, task: Task) => {
+    e.preventDefault();
+    setContextMenu({
+      task: { ...task, isOptional: task.isOptional ?? false },
+      position: { x: e.clientX, y: e.clientY },
+    });
+  };
+
+  const handleToggleComplete = async () => {
+    if (!contextMenu) return;
+    const api = window.api;
+    if (!api?.dispatch) return;
+    try {
+      await api.dispatch('MarkTaskComplete', {
+        taskId: contextMenu.task.id,
+        isComplete: !contextMenu.task.isCompleted,
+      });
+    } catch (error) {
+      console.error('Failed to toggle task complete:', error);
+    }
+  };
+
+  const handleDuplicateTask = async () => {
+    if (!contextMenu) return;
+    const api = window.api;
+    if (!api?.dispatch) return;
+    try {
+      await api.dispatch('DuplicateTask', { taskId: contextMenu.task.id });
+    } catch (error) {
+      console.error('Failed to duplicate task:', error);
+    }
+  };
+
+  const handleDeleteTask = async () => {
+    if (!contextMenu) return;
+    const api = window.api;
+    if (!api?.dispatch) return;
+    try {
+      await api.dispatch('DeleteTask', { taskId: contextMenu.task.id, force: true });
+    } catch (error) {
+      console.error('Failed to delete task:', error);
+    }
+  };
+
+  const handleOpenInCanvas = () => {
+    if (!contextMenu) return;
+    navigate(`/course/${contextMenu.task.courseId}?highlightTask=${contextMenu.task.id}`);
   };
 
   const handleDismissNotification = async (notificationId: number) => {
@@ -199,9 +272,8 @@ export function Dashboard() {
   };
 
   // Get sync message from state
-  const syncButtonText = state.syncStatus === 'syncing'
-    ? (state.syncMessage || 'Syncing...')
-    : 'Sync Now';
+  const syncButtonText =
+    state.syncStatus === 'syncing' ? state.syncMessage || 'Syncing...' : 'Sync Now';
 
   return (
     <div ref={pageRef} style={styles.page}>
@@ -209,10 +281,7 @@ export function Dashboard() {
       {state.isAutoSync && state.syncStatus === 'syncing' && (
         <div style={styles.autoSyncBanner}>
           <div style={styles.autoSyncContent}>
-            <RefreshCw
-              size={14}
-              style={{ animation: 'spin 1s linear infinite' }}
-            />
+            <RefreshCw size={14} style={{ animation: 'spin 1s linear infinite' }} />
             <span>Auto syncing in progress...</span>
           </div>
           <button
@@ -264,7 +333,8 @@ export function Dashboard() {
             size={16}
             style={{
               marginRight: 'var(--space-2)',
-              animation: state.syncStatus === 'syncing' ? 'spin 1s linear infinite' : 'none',
+              animation:
+                state.syncStatus === 'syncing' ? 'spin 1s linear infinite' : 'none',
             }}
           />
           {syncButtonText}
@@ -282,9 +352,13 @@ export function Dashboard() {
         <section ref={mainRowRef}>
           <UnifiedDashboardGrid
             priorityItems={viewModel.priorityQueue}
-            totalPendingTasks={viewModel.stats.upcomingTasks + viewModel.stats.overdueTasks}
+            totalPendingTasks={
+              viewModel.stats.upcomingTasks + viewModel.stats.overdueTasks
+            }
             notifications={state.notifications}
             onTaskClick={handleTaskClick}
+            onTaskDoubleClick={handleTaskDoubleClick}
+            onTaskContextMenu={handleTaskContextMenu}
             onDismissNotification={handleDismissNotification}
           />
         </section>
@@ -311,6 +385,37 @@ export function Dashboard() {
         courseSummaries={viewModel.courseSummaries}
         averageGrade={viewModel.stats.averageGrade}
       />
+
+      {/* Task Context Menu */}
+      {contextMenu && (
+        <TaskContextMenu
+          task={contextMenu.task}
+          position={contextMenu.position}
+          onClose={() => setContextMenu(null)}
+          onEdit={() => {
+            navigate(
+              `/course/${contextMenu.task.courseId}?highlightTask=${contextMenu.task.id}`
+            );
+            setContextMenu(null);
+          }}
+          onDuplicate={() => {
+            handleDuplicateTask();
+            setContextMenu(null);
+          }}
+          onToggleComplete={() => {
+            handleToggleComplete();
+            setContextMenu(null);
+          }}
+          onOpenInCanvas={() => {
+            handleOpenInCanvas();
+            setContextMenu(null);
+          }}
+          onDelete={() => {
+            handleDeleteTask();
+            setContextMenu(null);
+          }}
+        />
+      )}
     </div>
   );
 }

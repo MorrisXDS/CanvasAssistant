@@ -5,11 +5,12 @@
 
 import React, { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Clock, AlertTriangle, CheckCircle, Circle } from 'lucide-react';
+import { ArrowLeft, Clock, AlertTriangle, CheckCircle } from 'lucide-react';
 import { Card, Badge, BadgeVariant } from '../shared';
 import { useStore } from '../../../l5-presentation/store';
 import { formatDueDate, getBadgeUrgency } from '../../constants';
 import type { Task, Course } from '../../../l5-presentation/types';
+import { TaskContextMenu } from '../Course/TaskContextMenu';
 
 type FilterType = 'all' | 'pending' | 'overdue' | 'completed';
 
@@ -110,8 +111,66 @@ export function TasksPage() {
     };
   }, [allTasks]);
 
-  const handleTaskClick = (task: Task, course: Course) => {
+  // Context menu state
+  const [contextMenu, setContextMenu] = useState<{
+    task: Task & { isOptional?: boolean };
+    course: Course;
+    position: { x: number; y: number };
+  } | null>(null);
+
+  const handleTaskDoubleClick = (task: Task, course: Course) => {
     navigate(`/course/${course.id}?highlightTask=${task.id}`);
+  };
+
+  const handleTaskContextMenu = (e: React.MouseEvent, task: Task, course: Course) => {
+    e.preventDefault();
+    setContextMenu({
+      task: { ...task, isOptional: task.isOptional ?? false },
+      course,
+      position: { x: e.clientX, y: e.clientY },
+    });
+  };
+
+  const handleToggleComplete = async () => {
+    if (!contextMenu) return;
+    const api = window.api;
+    if (!api?.dispatch) return;
+    try {
+      await api.dispatch('MarkTaskComplete', {
+        taskId: contextMenu.task.id,
+        isComplete: !contextMenu.task.isCompleted,
+      });
+    } catch (error) {
+      console.error('Failed to toggle task complete:', error);
+    }
+  };
+
+  const handleDuplicateTask = async () => {
+    if (!contextMenu) return;
+    const api = window.api;
+    if (!api?.dispatch) return;
+    try {
+      await api.dispatch('DuplicateTask', { taskId: contextMenu.task.id });
+    } catch (error) {
+      console.error('Failed to duplicate task:', error);
+    }
+  };
+
+  const handleDeleteTask = async () => {
+    if (!contextMenu) return;
+    const api = window.api;
+    if (!api?.dispatch) return;
+    try {
+      await api.dispatch('DeleteTask', { taskId: contextMenu.task.id, force: true });
+    } catch (error) {
+      console.error('Failed to delete task:', error);
+    }
+  };
+
+  const handleOpenInCanvas = () => {
+    if (!contextMenu) return;
+    // Navigate to course detail with task highlight
+    navigate(`/course/${contextMenu.course.id}?highlightTask=${contextMenu.task.id}`);
   };
 
   const filterOptions: { value: FilterType; label: string; count: number }[] = [
@@ -170,14 +229,16 @@ export function TasksPage() {
                   ...styles.taskItem,
                   borderTop: index === 0 ? 'none' : '1px solid var(--border-light)',
                   opacity: item.task.isCompleted ? 0.7 : 1,
+                  cursor: 'pointer',
                 }}
-                onClick={() => handleTaskClick(item.task, item.course)}
+                onDoubleClick={() => handleTaskDoubleClick(item.task, item.course)}
+                onContextMenu={(e) => handleTaskContextMenu(e, item.task, item.course)}
                 role="button"
                 tabIndex={0}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
+                  if (e.key === 'Enter') {
                     e.preventDefault();
-                    handleTaskClick(item.task, item.course);
+                    handleTaskDoubleClick(item.task, item.course);
                   }
                 }}
               >
@@ -197,12 +258,15 @@ export function TasksPage() {
                   }}
                 />
 
-                {/* Completion indicator */}
+                {/* Submission status indicator */}
                 <div style={styles.statusIcon}>
-                  {item.task.isCompleted ? (
-                    <CheckCircle size={20} color="var(--color-success)" />
-                  ) : (
-                    <Circle size={20} color="var(--text-muted)" />
+                  {(item.task.submissionStatus === 'submitted' ||
+                    item.task.submissionStatus === 'graded') && (
+                    <CheckCircle
+                      size={18}
+                      color="var(--color-success)"
+                      style={{ animation: 'fadeIn 0.3s ease-out' }}
+                    />
                   )}
                 </div>
 
@@ -248,6 +312,37 @@ export function TasksPage() {
           </div>
         )}
       </Card>
+
+      {/* Task Context Menu */}
+      {contextMenu && (
+        <TaskContextMenu
+          task={contextMenu.task}
+          position={contextMenu.position}
+          onClose={() => setContextMenu(null)}
+          onEdit={() => {
+            navigate(
+              `/course/${contextMenu.course.id}?highlightTask=${contextMenu.task.id}`
+            );
+            setContextMenu(null);
+          }}
+          onDuplicate={() => {
+            handleDuplicateTask();
+            setContextMenu(null);
+          }}
+          onToggleComplete={() => {
+            handleToggleComplete();
+            setContextMenu(null);
+          }}
+          onOpenInCanvas={() => {
+            handleOpenInCanvas();
+            setContextMenu(null);
+          }}
+          onDelete={() => {
+            handleDeleteTask();
+            setContextMenu(null);
+          }}
+        />
+      )}
     </div>
   );
 }

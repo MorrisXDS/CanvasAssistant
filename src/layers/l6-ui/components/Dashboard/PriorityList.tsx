@@ -5,15 +5,18 @@
 
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { PartyPopper } from 'lucide-react';
+import { PartyPopper, CheckCircle } from 'lucide-react';
 import { Card, Badge, BadgeVariant } from '../shared';
 import { formatDueDate } from '../../constants';
 import type { PriorityItem } from '../../../l5-presentation/types';
+import type { Task } from '../../../l5-presentation/types';
 
 export interface PriorityListProps {
   items: PriorityItem[];
   totalPendingTasks?: number;
   onTaskClick?: (taskId: number) => void;
+  onTaskDoubleClick?: (taskId: number) => void;
+  onTaskContextMenu?: (e: React.MouseEvent, task: Task) => void;
   maxItems?: number;
 }
 
@@ -25,6 +28,8 @@ export function PriorityList({
   items,
   totalPendingTasks,
   onTaskClick,
+  onTaskDoubleClick,
+  onTaskContextMenu,
   maxItems = 10,
 }: PriorityListProps) {
   const navigate = useNavigate();
@@ -32,6 +37,23 @@ export function PriorityList({
   // Use totalPendingTasks if provided, otherwise fall back to items length
   const hasPendingTasks =
     totalPendingTasks !== undefined ? totalPendingTasks > 0 : items.length > 0;
+
+  // Handle double-click to navigate and expand
+  const handleDoubleClick = (taskId: number) => {
+    if (onTaskDoubleClick) {
+      onTaskDoubleClick(taskId);
+    } else if (onTaskClick) {
+      onTaskClick(taskId);
+    }
+  };
+
+  // Handle context menu
+  const handleContextMenu = (e: React.MouseEvent, task: Task) => {
+    e.preventDefault();
+    if (onTaskContextMenu) {
+      onTaskContextMenu(e, task);
+    }
+  };
 
   return (
     <Card
@@ -69,11 +91,12 @@ export function PriorityList({
                 ...styles.listItem,
                 borderTop: index === 0 ? 'none' : '1px solid var(--border-light)',
               }}
-              onClick={() => onTaskClick?.(item.task.id)}
+              onDoubleClick={() => handleDoubleClick(item.task.id)}
+              onContextMenu={(e) => handleContextMenu(e, item.task)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
+                if (e.key === 'Enter') {
                   e.preventDefault();
-                  onTaskClick?.(item.task.id);
+                  handleDoubleClick(item.task.id);
                 }
               }}
               role="button"
@@ -93,6 +116,24 @@ export function PriorityList({
                           : 'var(--color-low)',
                 }}
               />
+
+              {/* Submission status indicator */}
+              {(item.task.submissionStatus === 'submitted' ||
+                item.task.submissionStatus === 'graded') && (
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    marginRight: 'var(--space-2)',
+                  }}
+                >
+                  <CheckCircle
+                    size={16}
+                    color="var(--color-success)"
+                    style={{ animation: 'fadeIn 0.3s ease-out' }}
+                  />
+                </div>
+              )}
 
               {/* Content */}
               <div style={styles.content}>

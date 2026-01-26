@@ -10,7 +10,7 @@ import { PriorityList } from './PriorityList';
 import { NotificationsFeed } from './NotificationsFeed';
 import { RecommendationsCard } from './RecommendationsCard';
 import { InsightsCard } from './InsightsCard';
-import type { PriorityItem } from '../../../l5-presentation/types';
+import type { PriorityItem, Task } from '../../../l5-presentation/types';
 import type { Notification } from '../../../l5-presentation/types';
 
 // Section configuration
@@ -31,6 +31,8 @@ export interface UnifiedDashboardGridProps {
   totalPendingTasks: number;
   notifications: Notification[];
   onTaskClick: (taskId: number) => void;
+  onTaskDoubleClick?: (taskId: number) => void;
+  onTaskContextMenu?: (e: React.MouseEvent, task: Task) => void;
   onDismissNotification: (id: number) => void;
 }
 
@@ -39,6 +41,8 @@ export function UnifiedDashboardGrid({
   totalPendingTasks,
   notifications,
   onTaskClick,
+  onTaskDoubleClick,
+  onTaskContextMenu,
   onDismissNotification,
 }: UnifiedDashboardGridProps) {
   const {
@@ -61,6 +65,8 @@ export function UnifiedDashboardGrid({
             items={priorityItems}
             totalPendingTasks={totalPendingTasks}
             onTaskClick={onTaskClick}
+            onTaskDoubleClick={onTaskDoubleClick}
+            onTaskContextMenu={onTaskContextMenu}
             maxItems={6}
           />
         );
@@ -83,14 +89,14 @@ export function UnifiedDashboardGrid({
 
   // Get section config by ID
   const getSectionConfig = (id: string): SectionConfig | undefined => {
-    return SECTIONS.find(s => s.id === id);
+    return SECTIONS.find((s) => s.id === id);
   };
 
   return (
     <div style={styles.wrapper}>
       {/* 2x2 Grid */}
       <div style={styles.grid}>
-        {sectionOrder.map(sectionId => {
+        {sectionOrder.map((sectionId) => {
           const config = getSectionConfig(sectionId);
           if (!config) return null;
 

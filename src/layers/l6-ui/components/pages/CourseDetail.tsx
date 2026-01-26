@@ -14,7 +14,6 @@ import {
   FileText,
   Shield,
   CheckCircle,
-  Circle,
   Clock,
   ChevronRight,
   Megaphone,
@@ -25,7 +24,6 @@ import {
   EyeOff,
   Eye,
   Plus,
-  Copy,
   Trash2,
   ChevronDown,
   Download,
@@ -384,7 +382,7 @@ export function CourseDetail() {
     const api = window.api;
     if (!api?.dispatch) return;
 
-    setSettingsLoading(true);
+    _setSettingsLoading(true);
     try {
       const result = await api.dispatch('SetCourseSyllabus', { courseId, resourceId });
       if (result.success && result.data) {
@@ -403,7 +401,7 @@ export function CourseDetail() {
     } catch (error) {
       console.error('Failed to set syllabus:', error);
     } finally {
-      setSettingsLoading(false);
+      _setSettingsLoading(false);
     }
   };
 
@@ -1941,8 +1939,8 @@ function TaskItem({
   editGrade,
   editTaskType,
   onToggleExpand,
-  onToggleComplete,
-  onDuplicate,
+  onToggleComplete: _onToggleComplete,
+  onDuplicate: _onDuplicate,
   onStartEdit,
   onCancelEdit,
   onSaveEdit,
@@ -1956,12 +1954,27 @@ function TaskItem({
   onContextMenu,
   taskRef,
 }: TaskItemProps) {
+  const [isHovered, setIsHovered] = React.useState(false);
+
+  // Determine if task is submitted (submitted or graded status)
+  const isSubmitted =
+    task.submissionStatus === 'submitted' || task.submissionStatus === 'graded';
+
   // Get display label for task type
   const _getTaskTypeLabel = (typeValue: string | null): string => {
     if (!typeValue) return '';
     const found = TASK_TYPES.find((t) => t.value === typeValue);
     return found ? found.label : typeValue;
   };
+
+  // Handle double-click to expand for editing
+  const handleDoubleClick = () => {
+    if (!isExpanded) {
+      onToggleExpand();
+    }
+    onStartEdit();
+  };
+
   return (
     <div
       ref={taskRef}
@@ -1973,6 +1986,8 @@ function TaskItem({
         borderRadius: isHighlighted ? 'var(--radius-md)' : undefined,
       }}
       onContextMenu={onContextMenu}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
     >
       {/* Task Row */}
       <div
@@ -1980,31 +1995,33 @@ function TaskItem({
           ...styles.taskItem,
           opacity: isCompleted ? 0.7 : 1,
           backgroundColor: isExpanded ? 'var(--bg-app)' : 'transparent',
+          cursor: 'pointer',
         }}
+        onDoubleClick={handleDoubleClick}
       >
-        <button
-          className="task-checkbox"
-          onClick={(e) => {
-            e.stopPropagation();
-            onToggleComplete();
+        {/* Submission status indicator */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: '24px',
+            minWidth: '24px',
+            marginRight: 'var(--space-2)',
           }}
-          title={isCompleted ? 'Mark incomplete' : 'Mark complete'}
         >
-          {isCompleted ? (
+          {isSubmitted && (
             <CheckCircle
-              size={20}
+              size={18}
               color="var(--color-success)"
-              style={{ transition: 'transform 0.2s ease' }}
-            />
-          ) : (
-            <Circle
-              size={20}
-              color="var(--text-muted)"
-              style={{ transition: 'transform 0.2s ease' }}
+              className="task-submitted-icon"
+              style={{
+                animation: 'fadeIn 0.3s ease-out',
+              }}
             />
           )}
-        </button>
-        <div style={styles.taskInfo} onClick={onToggleExpand}>
+        </div>
+        <div style={styles.taskInfo}>
           <div
             style={{
               ...styles.taskTitle,
@@ -2041,18 +2058,21 @@ function TaskItem({
             )}
           </div>
         </div>
-        <div style={styles.taskActions}>
+        <div
+          style={{
+            ...styles.taskActions,
+            opacity: isHovered || isExpanded ? 1 : 0,
+            transition: 'opacity 0.15s ease',
+          }}
+        >
           <button
             style={styles.taskActionBtn}
             onClick={(e) => {
               e.stopPropagation();
-              onDuplicate();
+              onToggleExpand();
             }}
-            title="Duplicate task"
+            title={isExpanded ? 'Collapse' : 'Expand'}
           >
-            <Copy size={14} />
-          </button>
-          <button style={styles.taskActionBtn} onClick={onToggleExpand}>
             {isExpanded ? (
               <ChevronDown size={16} color="var(--text-muted)" />
             ) : (
