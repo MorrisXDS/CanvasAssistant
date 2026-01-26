@@ -81,75 +81,78 @@ export function ImportConfirmationModal({
           </button>
         </div>
 
-        {/* Summary */}
-        <div style={styles.summary}>
-          <div style={styles.summaryItem}>
-            <span style={styles.summaryLabel}>File:</span>
-            <span style={styles.summaryValue}>{preview.filename}</span>
-          </div>
-          <div style={styles.summaryItem}>
-            <span style={styles.summaryLabel}>Events:</span>
-            <span style={styles.summaryValue}>{preview.events.length}</span>
-          </div>
-          {preview.dateRange && (
+        {/* Scrollable body */}
+        <div style={styles.body}>
+          {/* Summary */}
+          <div style={styles.summary}>
             <div style={styles.summaryItem}>
-              <span style={styles.summaryLabel}>Date Range:</span>
-              <span style={styles.summaryValue}>
-                {formatDate(preview.dateRange.start)} -{' '}
-                {formatDate(preview.dateRange.end)}
-              </span>
+              <span style={styles.summaryLabel}>File:</span>
+              <span style={styles.summaryValue}>{preview.filename}</span>
             </div>
-          )}
-          {preview.hasRecurringEvents && (
-            <div style={styles.recurringBadge}>
-              <Repeat size={14} />
-              Contains recurring events
+            <div style={styles.summaryItem}>
+              <span style={styles.summaryLabel}>Events:</span>
+              <span style={styles.summaryValue}>{preview.events.length}</span>
             </div>
-          )}
-        </div>
-
-        {/* Warnings */}
-        {preview.warnings.length > 0 && (
-          <div style={styles.warnings}>
-            <AlertTriangle size={16} color="var(--color-warning)" />
-            <div style={styles.warningsList}>
-              {preview.warnings.map((warning, i) => (
-                <div key={i} style={styles.warningItem}>
-                  {warning}
-                </div>
-              ))}
-            </div>
+            {preview.dateRange && (
+              <div style={styles.summaryItem}>
+                <span style={styles.summaryLabel}>Date Range:</span>
+                <span style={styles.summaryValue}>
+                  {formatDate(preview.dateRange.start)} -{' '}
+                  {formatDate(preview.dateRange.end)}
+                </span>
+              </div>
+            )}
+            {preview.hasRecurringEvents && (
+              <div style={styles.recurringBadge}>
+                <Repeat size={14} />
+                Contains recurring events
+              </div>
+            )}
           </div>
-        )}
 
-        {/* Calendar Name */}
-        <div style={styles.formGroup}>
-          <label style={styles.label}>Calendar Name</label>
-          <input
-            type="text"
-            value={calendarName}
-            onChange={(e) => setCalendarName(e.target.value)}
-            style={styles.input}
-            placeholder="Enter calendar name"
-          />
+          {/* Warnings */}
+          {preview.warnings.length > 0 && (
+            <div style={styles.warnings}>
+              <AlertTriangle size={16} color="var(--color-warning)" />
+              <div style={styles.warningsList}>
+                {preview.warnings.map((warning, i) => (
+                  <div key={i} style={styles.warningItem}>
+                    {warning}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Calendar Name */}
+          <div style={styles.formGroup}>
+            <label style={styles.label}>Calendar Name</label>
+            <input
+              type="text"
+              value={calendarName}
+              onChange={(e) => setCalendarName(e.target.value)}
+              style={styles.input}
+              placeholder="Enter calendar name"
+            />
+          </div>
+
+          {/* Color Picker */}
+          <div style={styles.formGroup}>
+            <label style={styles.label}>Calendar Color</label>
+            <ColorPicker
+              value={selectedColor}
+              onChange={setSelectedColor}
+              presets={CALENDAR_COLORS}
+              allowCustom={true}
+              swatchSize={28}
+            />
+          </div>
+
+          {/* Events Preview */}
+          <EventsPreviewSection events={preview.events} color={selectedColor} />
         </div>
 
-        {/* Color Picker */}
-        <div style={styles.formGroup}>
-          <label style={styles.label}>Calendar Color</label>
-          <ColorPicker
-            value={selectedColor}
-            onChange={setSelectedColor}
-            presets={CALENDAR_COLORS}
-            allowCustom={true}
-            swatchSize={28}
-          />
-        </div>
-
-        {/* Events Preview */}
-        <EventsPreviewSection events={preview.events} color={selectedColor} />
-
-        {/* Actions */}
+        {/* Actions - pinned at bottom */}
         <div style={styles.actions}>
           <button style={styles.cancelButton} onClick={onCancel}>
             Cancel
@@ -411,6 +414,12 @@ const styles: Record<string, React.CSSProperties> = {
     boxShadow: 'var(--shadow-lg)',
   },
 
+  body: {
+    flex: 1,
+    minHeight: 0,
+    overflowY: 'auto',
+  },
+
   header: {
     display: 'flex',
     alignItems: 'center',
@@ -534,8 +543,6 @@ const styles: Record<string, React.CSSProperties> = {
 
   eventsSection: {
     padding: '0 var(--space-6) var(--space-4)',
-    flex: 1,
-    minHeight: 0,
   },
 
   eventsHeader: {
