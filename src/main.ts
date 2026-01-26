@@ -5035,17 +5035,25 @@ function registerIpcHandlers(): void {
         return courseIdMap.get(oldId) ?? oldId; // Fall back to original if not in map
       };
 
-      // Import tasks
+      // Build ID mappings for tasks, resources, and policies
+      const taskIdMap = new Map<number, number>();
+      const resourceIdMap = new Map<number, number>();
+      const policyIdMap = new Map<number, number>();
+
+      // Import tasks and build mapping
       if (Array.isArray(importData.tasks)) {
         for (const task of importData.tasks) {
           const oldCourseId = task.course_id || task.courseId;
           const newCourseId = mapCourseId(oldCourseId);
           if (!newCourseId) continue; // Skip if no valid course
 
+          const externalId = task.external_id || task.externalId;
+          const oldId = task.id;
+
           database.upsert(
             'tasks',
             {
-              external_id: task.external_id || task.externalId,
+              external_id: externalId,
               course_id: newCourseId,
               title: task.title,
               description: task.description,
@@ -5070,6 +5078,17 @@ function registerIpcHandlers(): void {
             },
             'external_id'
           );
+
+          // Get the actual ID from database for mapping
+          if (oldId && externalId) {
+            const dbTask = database.executeReadOne<{ id: number }>(
+              'SELECT id FROM tasks WHERE external_id = ?',
+              [externalId]
+            );
+            if (dbTask) {
+              taskIdMap.set(oldId, dbTask.id);
+            }
+          }
           tasksImported++;
         }
       }
@@ -5131,19 +5150,23 @@ function registerIpcHandlers(): void {
         }
       }
 
-      // Import policies
+      // Import policies and build ID mapping
       if (Array.isArray(importData.policies)) {
         for (const policy of importData.policies) {
           const oldCourseId = policy.course_id || policy.courseId;
           const newCourseId = mapCourseId(oldCourseId);
           if (!newCourseId) continue; // Skip if no valid course
 
+          const oldId = policy.id;
+          const policyType = policy.policy_type || policy.policyType;
+          const policyName = policy.policy_name || policy.policyName || 'imported';
+
           database.upsert(
             'course_policies',
             {
               course_id: newCourseId,
-              policy_type: policy.policy_type || policy.policyType,
-              policy_name: policy.policy_name || policy.policyName || 'imported',
+              policy_type: policyType,
+              policy_name: policyName,
               policy_config:
                 policy.policy_config ||
                 policy.policyConfig ||
@@ -5152,21 +5175,35 @@ function registerIpcHandlers(): void {
             },
             ['course_id', 'policy_type', 'policy_name']
           );
+
+          // Get the actual ID from database for mapping
+          if (oldId) {
+            const dbPolicy = database.executeReadOne<{ id: number }>(
+              'SELECT id FROM course_policies WHERE course_id = ? AND policy_type = ? AND policy_name = ?',
+              [newCourseId, policyType, policyName]
+            );
+            if (dbPolicy) {
+              policyIdMap.set(oldId, dbPolicy.id);
+            }
+          }
           policiesImported++;
         }
       }
 
-      // Import resources (without local paths)
+      // Import resources (without local paths) and build ID mapping
       if (Array.isArray(importData.resources)) {
         for (const resource of importData.resources) {
           const oldCourseId = resource.course_id || resource.courseId;
           const newCourseId = mapCourseId(oldCourseId);
           if (!newCourseId) continue; // Skip if no valid course
 
+          const externalId = resource.external_id || resource.externalId;
+          const oldId = resource.id;
+
           database.upsert(
             'resources',
             {
-              external_id: resource.external_id || resource.externalId,
+              external_id: externalId,
               course_id: newCourseId,
               folder_path: resource.folder_path || resource.folderPath,
               type: resource.type,
@@ -5177,6 +5214,17 @@ function registerIpcHandlers(): void {
             },
             'external_id'
           );
+
+          // Get the actual ID from database for mapping
+          if (oldId && externalId) {
+            const dbResource = database.executeReadOne<{ id: number }>(
+              'SELECT id FROM resources WHERE external_id = ?',
+              [externalId]
+            );
+            if (dbResource) {
+              resourceIdMap.set(oldId, dbResource.id);
+            }
+          }
           resourcesImported++;
         }
       }
@@ -5189,12 +5237,16 @@ function registerIpcHandlers(): void {
           const newCourseId = mapCourseId(oldCourseId);
           if (!newCourseId) continue;
 
-          // Note: resource_id may not be valid if resources weren't imported
+          // Map resource_id to new ID, skip if resource doesn't exist
+          const oldResourceId = syllabus.resource_id || syllabus.resourceId;
+          const newResourceId = oldResourceId ? resourceIdMap.get(oldResourceId) : null;
+          if (!newResourceId) continue; // Skip if resource wasn't imported
+
           database.upsert(
             'course_syllabuses',
             {
               course_id: newCourseId,
-              resource_id: syllabus.resource_id || syllabus.resourceId,
+              resource_id: newResourceId,
               source_type: syllabus.source_type || syllabus.sourceType || 'resource',
               resource_updated_at:
                 syllabus.resource_updated_at || syllabus.resourceUpdatedAt,
@@ -5224,13 +5276,18 @@ function registerIpcHandlers(): void {
           const newCourseId = mapCourseId(oldCourseId);
           if (!newCourseId) continue;
 
+          // Map policy_id to new ID, skip if policy doesn't exist
+          const oldPolicyId = token.policy_id || token.policyId;
+          const newPolicyId = oldPolicyId ? policyIdMap.get(oldPolicyId) : null;
+          if (!newPolicyId) continue; // Skip if policy wasn't imported
+
           const oldId = token.id;
 
           database.upsert(
             'grace_tokens',
             {
               course_id: newCourseId,
-              policy_id: token.policy_id || token.policyId,
+              policy_id: newPolicyId,
               total_tokens: token.total_tokens || token.totalTokens,
               tokens_remaining: token.tokens_remaining || token.tokensRemaining,
               hours_per_token: token.hours_per_token ?? token.hoursPerToken ?? 24,
@@ -5243,7 +5300,7 @@ function registerIpcHandlers(): void {
           // Get the actual ID from database to map usage records
           const dbToken = database.executeReadOne<{ id: number }>(
             'SELECT id FROM grace_tokens WHERE course_id = ? AND policy_id = ?',
-            [newCourseId, token.policy_id || token.policyId]
+            [newCourseId, newPolicyId]
           );
           if (dbToken && oldId) {
             graceTokenIdMap.set(oldId, dbToken.id);
@@ -5258,11 +5315,16 @@ function registerIpcHandlers(): void {
           const newTokenId = graceTokenIdMap.get(oldTokenId);
           if (!newTokenId) continue;
 
+          // Map task_id to new ID, skip if task doesn't exist
+          const oldTaskId = usage.task_id || usage.taskId;
+          const newTaskId = oldTaskId ? taskIdMap.get(oldTaskId) : null;
+          if (!newTaskId) continue; // Skip if task wasn't imported
+
           database.upsert(
             'grace_token_usage',
             {
               grace_token_id: newTokenId,
-              task_id: usage.task_id || usage.taskId,
+              task_id: newTaskId,
               tokens_used: usage.tokens_used || usage.tokensUsed,
               hours_extended: usage.hours_extended || usage.hoursExtended,
               used_at: usage.used_at || usage.usedAt,
