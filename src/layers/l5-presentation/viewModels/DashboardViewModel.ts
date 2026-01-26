@@ -81,7 +81,11 @@ function getEffectiveGrade(task: Task, state: StoreState): number | null {
 /**
  * Calculate simulated assessed grade for a course
  */
-function calculateEffectiveAssessedGrade(course: Course, tasks: Task[], state: StoreState): number | null {
+function calculateEffectiveAssessedGrade(
+  course: Course,
+  tasks: Task[],
+  state: StoreState
+): number | null {
   const courseTasks = tasks.filter((t) => t.courseId === course.id);
 
   let weightedSum = 0;
@@ -102,7 +106,7 @@ function calculateEffectiveAssessedGrade(course: Course, tasks: Task[], state: S
  * Create priority items from tasks
  */
 function createPriorityItems(state: StoreState): PriorityItem[] {
-  const { tasks, courses, simulation } = state;
+  const { tasks, courses } = state;
   const courseMap = new Map(courses.map((c) => [c.id, c]));
 
   return tasks
@@ -120,7 +124,16 @@ function createPriorityItems(state: StoreState): PriorityItem[] {
       };
     })
     .filter((item): item is PriorityItem => item !== null)
-    .sort((a, b) => b.task.priorityScore - a.task.priorityScore);
+    .sort((a, b) => {
+      // Primary sort: by priority score (descending)
+      const scoreDiff = b.task.priorityScore - a.task.priorityScore;
+      if (scoreDiff !== 0) return scoreDiff;
+
+      // Secondary sort: by due date (ascending - earliest first)
+      const aDue = a.task.dueAt ? new Date(a.task.dueAt).getTime() : Infinity;
+      const bDue = b.task.dueAt ? new Date(b.task.dueAt).getTime() : Infinity;
+      return aDue - bDue;
+    });
 }
 
 /**
@@ -148,10 +161,15 @@ function createCourseSummaries(state: StoreState): CourseSummary[] {
         return due < now;
       }).length;
 
-      const effectiveAssessedGrade = calculateEffectiveAssessedGrade(course, tasks, state);
-      const targetDelta = effectiveAssessedGrade !== null
-        ? Math.max(0, course.targetGrade - effectiveAssessedGrade)
-        : course.targetGrade;
+      const effectiveAssessedGrade = calculateEffectiveAssessedGrade(
+        course,
+        tasks,
+        state
+      );
+      const targetDelta =
+        effectiveAssessedGrade !== null
+          ? Math.max(0, course.targetGrade - effectiveAssessedGrade)
+          : course.targetGrade;
 
       return {
         course,
@@ -168,7 +186,10 @@ function createCourseSummaries(state: StoreState): CourseSummary[] {
 /**
  * Calculate dashboard statistics
  */
-function calculateStats(state: StoreState, courseSummaries: CourseSummary[]): DashboardStats {
+function calculateStats(
+  state: StoreState,
+  courseSummaries: CourseSummary[]
+): DashboardStats {
   const { tasks, simulation } = state;
   const now = new Date();
 
@@ -189,9 +210,10 @@ function calculateStats(state: StoreState, courseSummaries: CourseSummary[]): Da
     .map((s) => s.effectiveAssessedGrade)
     .filter((g): g is number => g !== null);
 
-  const averageGrade = gradesWithValues.length > 0
-    ? gradesWithValues.reduce((a, b) => a + b, 0) / gradesWithValues.length
-    : null;
+  const averageGrade =
+    gradesWithValues.length > 0
+      ? gradesWithValues.reduce((a, b) => a + b, 0) / gradesWithValues.length
+      : null;
 
   return {
     totalCourses: courseSummaries.length,
