@@ -22,6 +22,7 @@ import {
   DAY_NAMES,
   INSIGHT_EXPIRATION,
   INSIGHT_THRESHOLDS,
+  WORKLOAD_THRESHOLDS,
   HIGH_VALUE_TASK_TYPES,
 } from './Constants';
 
@@ -33,7 +34,8 @@ export function generateDeadlinePatternInsight(
   events: TaskCompletionEvent[],
   currentTime: Date
 ): Insight | null {
-  if (events.length < 10) return null; // Need enough data
+  // #14: Use constant instead of magic number
+  if (events.length < INSIGHT_THRESHOLDS.MIN_EVENTS_FOR_PATTERN) return null; // Need enough data
 
   // Group late submissions by day of week
   const lateByDay: Map<number, number> = new Map();
@@ -100,8 +102,11 @@ export function generateCourseStruggleInsight(
   coursePerformance: CoursePerformance[],
   currentTime: Date
 ): Insight | null {
+  // #14: Use constants instead of magic numbers
   // Find courses with high struggle scores
-  const strugglingCourses = coursePerformance.filter((c) => c.struggleScore >= 50);
+  const strugglingCourses = coursePerformance.filter(
+    (c) => c.struggleScore >= INSIGHT_THRESHOLDS.STRUGGLE_WARNING
+  );
 
   if (strugglingCourses.length === 0) return null;
 
@@ -110,8 +115,8 @@ export function generateCourseStruggleInsight(
   const worst = strugglingCourses[0];
 
   let severity: InsightSeverity = 'info';
-  if (worst.struggleScore >= 70) severity = 'critical';
-  else if (worst.struggleScore >= 60) severity = 'warning';
+  if (worst.struggleScore >= INSIGHT_THRESHOLDS.STRUGGLE_CRITICAL) severity = 'critical';
+  else if (worst.struggleScore >= 60) severity = 'warning'; // Between warning and critical
 
   const latePercent = Math.round(worst.lateRate * 100);
 
@@ -185,8 +190,10 @@ export function generateWorkloadWarningInsight(
   tasks: TaskForPriority[],
   currentTime: Date
 ): Insight | null {
+  // #14: Use constants instead of magic numbers
   // Check for high clustering
-  if (workload.clusteringScore < 0.5) return null;
+  if (workload.clusteringScore < WORKLOAD_THRESHOLDS.CLUSTERING_SCORE_WARNING)
+    return null;
 
   // Find the peak day details
   if (!workload.peakDay) return null;
@@ -198,18 +205,26 @@ export function generateWorkloadWarningInsight(
     return taskDate === peakDate;
   });
 
-  if (peakTasks.length < 3) return null;
+  if (peakTasks.length < INSIGHT_THRESHOLDS.MIN_TASKS_FOR_PEAK) return null;
 
   const daysUntilPeak = Math.ceil(
     (workload.peakDay.getTime() - currentTime.getTime()) / (1000 * 60 * 60 * 24)
   );
 
-  if (daysUntilPeak < 0 || daysUntilPeak > 7) return null;
+  if (daysUntilPeak < 0 || daysUntilPeak > INSIGHT_THRESHOLDS.DAYS_UNTIL_PEAK_LIMIT)
+    return null;
 
   let severity: InsightSeverity = 'info';
-  if (peakTasks.length >= 5 || (peakTasks.length >= 4 && daysUntilPeak <= 2)) {
+  if (
+    peakTasks.length >= INSIGHT_THRESHOLDS.CRITICAL_WORKLOAD_TASKS ||
+    (peakTasks.length >= INSIGHT_THRESHOLDS.WARNING_WORKLOAD_TASKS &&
+      daysUntilPeak <= INSIGHT_THRESHOLDS.CRITICAL_WORKLOAD_DAYS)
+  ) {
     severity = 'critical';
-  } else if (peakTasks.length >= 4 || daysUntilPeak <= 2) {
+  } else if (
+    peakTasks.length >= INSIGHT_THRESHOLDS.WARNING_WORKLOAD_TASKS ||
+    daysUntilPeak <= INSIGHT_THRESHOLDS.CRITICAL_WORKLOAD_DAYS
+  ) {
     severity = 'warning';
   }
 

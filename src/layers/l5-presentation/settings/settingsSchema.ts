@@ -33,9 +33,37 @@ export const STORAGE_KEYS = {
 
   // Dashboard layout
   DASHBOARD_SECTION_ORDER: 'dashboardSectionOrder',
+  DASHBOARD_COLLAPSED_SECTIONS: 'dashboardCollapsedSections',
 
   // Calendar view
   CALENDAR_VIEW_MODE: 'calendarViewMode',
+  CALENDAR_FILTER_TAGS: 'calendarFilterTags',
+
+  // Course page settings (#12)
+  PINNED_COURSES: 'pinnedCourses',
+  COURSES_VIEW_MODE: 'coursesViewMode',
+  SHOW_HIDDEN_COURSES: 'showHiddenCourses',
+  COURSE_SORT_BY: 'courseSortBy',
+
+  // Course detail page
+  COURSE_DETAIL_SECTION_ORDER: 'courseDetailSectionOrder',
+  COURSE_DETAIL_COLLAPSED_SECTIONS: 'courseDetailCollapsedSections',
+  TASK_GROUP_ORDER_PREFIX: 'taskGroupOrder:', // + courseId
+
+  // Files page settings
+  FILES_VIEW_MODE: 'filesViewMode',
+  FILES_COLLAPSED_COURSES: 'filesCollapsedCourses',
+  FILES_COLLAPSED_FOLDERS: 'filesCollapsedFolders',
+  FILES_SORT_KEY: 'filesSortKey',
+  FILES_SORT_ORDER: 'filesSortOrder',
+  FILES_SELECTED_COURSE: 'filesSelectedCourse',
+  FILES_FILTER_MODE: 'filesFilterMode',
+
+  // Announcement settings
+  ANNOUNCEMENT_SORT_ORDER: 'announcementSortOrder',
+
+  // Onboarding
+  ONBOARDING_COMPLETED: 'onboardingCompleted',
 
   // AI/Intelligence settings
   AI_CONFIG: 'aiConfig',
@@ -274,6 +302,25 @@ export interface SettingsTypeMap {
   [STORAGE_KEYS.NAV_ORDER]: string[];
   [STORAGE_KEYS.DASHBOARD_SECTION_ORDER]: string[];
   [STORAGE_KEYS.CALENDAR_VIEW_MODE]: 'month' | 'week';
+  // New keys added in #12
+  [STORAGE_KEYS.DASHBOARD_COLLAPSED_SECTIONS]: string[];
+  [STORAGE_KEYS.CALENDAR_FILTER_TAGS]: string[];
+  [STORAGE_KEYS.PINNED_COURSES]: number[];
+  [STORAGE_KEYS.COURSES_VIEW_MODE]: 'grid' | 'list';
+  [STORAGE_KEYS.SHOW_HIDDEN_COURSES]: boolean;
+  [STORAGE_KEYS.COURSE_SORT_BY]: string;
+  [STORAGE_KEYS.COURSE_DETAIL_SECTION_ORDER]: string[];
+  [STORAGE_KEYS.COURSE_DETAIL_COLLAPSED_SECTIONS]: string[];
+  [STORAGE_KEYS.TASK_GROUP_ORDER_PREFIX]: string; // Prefix for dynamic keys
+  [STORAGE_KEYS.FILES_VIEW_MODE]: 'list' | 'grid';
+  [STORAGE_KEYS.FILES_COLLAPSED_COURSES]: number[];
+  [STORAGE_KEYS.FILES_COLLAPSED_FOLDERS]: string[];
+  [STORAGE_KEYS.FILES_SORT_KEY]: string;
+  [STORAGE_KEYS.FILES_SORT_ORDER]: 'asc' | 'desc';
+  [STORAGE_KEYS.FILES_SELECTED_COURSE]: number | null;
+  [STORAGE_KEYS.FILES_FILTER_MODE]: string;
+  [STORAGE_KEYS.ANNOUNCEMENT_SORT_ORDER]: 'asc' | 'desc';
+  [STORAGE_KEYS.ONBOARDING_COMPLETED]: boolean;
 }
 
 export const SETTINGS_DEFAULTS: Partial<SettingsTypeMap> = {

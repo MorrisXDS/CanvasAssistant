@@ -183,6 +183,9 @@ export class SyncEngine extends EventEmitter {
   private isSyncing: boolean = false;
   private syncMutex: Promise<void> = Promise.resolve();
   private syncMutexRelease: (() => void) | null = null;
+  // Abort controller for cancelling in-flight operations
+  private abortController: AbortController | null = null;
+  private isAborted: boolean = false;
   // Store event handler references for cleanup
   private rateLimitedHandler: ((info: unknown) => void) | null = null;
   private diagnosticsEnabled: boolean = false;
@@ -234,6 +237,111 @@ export class SyncEngine extends EventEmitter {
 
     // Ensure backoff table exists
     this.ensureBackoffTable();
+
+    // Ensure pending sync data table exists and load any persisted conflicts
+    this.ensurePendingSyncDataTable();
+    this.loadPersistedConflictData();
+  }
+
+  /**
+   * Ensure the pending_sync_data table exists for crash-safe conflict resolution
+   */
+  private ensurePendingSyncDataTable(): void {
+    try {
+      this.db.exec(`
+        CREATE TABLE IF NOT EXISTS pending_sync_data (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          conflict_id TEXT UNIQUE NOT NULL,
+          table_name TEXT NOT NULL,
+          entity_id INTEGER,
+          data_json TEXT NOT NULL,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+    } catch {
+      // Table may already exist from migration
+    }
+  }
+
+  /**
+   * Load persisted conflict data from database on startup
+   * This recovers state after a crash during sync pause for conflict resolution
+   */
+  private loadPersistedConflictData(): void {
+    try {
+      const rows = this.db.executeRead<{
+        conflict_id: string;
+        table_name: string;
+        data_json: string;
+      }>('SELECT conflict_id, table_name, data_json FROM pending_sync_data');
+
+      for (const row of rows) {
+        try {
+          const data = JSON.parse(row.data_json);
+          this.pendingConflictData.set(row.conflict_id, {
+            tableName: row.table_name,
+            data,
+          });
+        } catch {
+          // Skip invalid JSON entries
+        }
+      }
+
+      if (rows.length > 0) {
+        this.log?.info(
+          `Loaded ${rows.length} pending conflict data entries from database`
+        );
+        this.pausedForConflicts = this.conflictResolver.getPendingConflicts().length > 0;
+      }
+    } catch (err) {
+      this.log?.debug(`Failed to load persisted conflict data: ${err}`);
+    }
+  }
+
+  /**
+   * Persist conflict data to database for crash safety
+   */
+  private persistConflictData(
+    conflictId: string,
+    tableName: string,
+    data: Record<string, unknown>
+  ): void {
+    try {
+      this.db.executeWrite(
+        `INSERT OR REPLACE INTO pending_sync_data (conflict_id, table_name, data_json)
+         VALUES (?, ?, ?)`,
+        [conflictId, tableName, JSON.stringify(data)],
+        'pending_sync_data'
+      );
+    } catch (err) {
+      this.log?.debug(`Failed to persist conflict data: ${err}`);
+    }
+  }
+
+  /**
+   * Remove conflict data from database after resolution
+   */
+  private removePersistedConflictData(conflictId: string): void {
+    try {
+      this.db.executeWrite(
+        'DELETE FROM pending_sync_data WHERE conflict_id = ?',
+        [conflictId],
+        'pending_sync_data'
+      );
+    } catch (err) {
+      this.log?.debug(`Failed to remove persisted conflict data: ${err}`);
+    }
+  }
+
+  /**
+   * Clear all persisted conflict data (used when resolving all conflicts)
+   */
+  private clearAllPersistedConflictData(): void {
+    try {
+      this.db.executeWrite('DELETE FROM pending_sync_data', [], 'pending_sync_data');
+    } catch (err) {
+      this.log?.debug(`Failed to clear persisted conflict data: ${err}`);
+    }
   }
 
   /**
@@ -1026,6 +1134,8 @@ export class SyncEngine extends EventEmitter {
       }
 
       this.pendingConflictData.delete(resolution.conflictId);
+      // Remove from database for crash safety
+      this.removePersistedConflictData(resolution.conflictId);
     }
 
     // Check if all conflicts are resolved
@@ -1041,6 +1151,8 @@ export class SyncEngine extends EventEmitter {
   resolveAllConflicts(useCanvasValues: boolean): void {
     this.conflictResolver.resolveAllConflicts(useCanvasValues);
     this.pendingConflictData.clear();
+    // Clear all persisted conflict data from database
+    this.clearAllPersistedConflictData();
     this.pausedForConflicts = false;
     this.emit('conflicts-resolved');
   }
@@ -1117,6 +1229,11 @@ export class SyncEngine extends EventEmitter {
     }
     this.isSyncing = true;
     this.syncMutexRelease = release;
+
+    // Initialize abort controller for this sync session
+    this.abortController = new AbortController();
+    this.isAborted = false;
+
     const startTime = Date.now();
     const errors: string[] = [];
 
@@ -1482,6 +1599,9 @@ export class SyncEngine extends EventEmitter {
       // Summary of fetched data
 
       this.emit('sync-phase', { phase: 'fetch', status: 'complete' });
+
+      // Check for abort before commit phase
+      this.checkAborted();
     } catch (fetchError) {
       // FETCH FAILED - Mark checkpoint as failed
       this.failCheckpoint(
@@ -1628,10 +1748,13 @@ export class SyncEngine extends EventEmitter {
           if (conflicts.length > 0) {
             this.emit('sync-conflicts', { entity: 'course', conflicts });
             for (const conflict of conflicts) {
+              const conflictData = { ...localCourse, id: existing?.id };
               this.pendingConflictData.set(conflict.id, {
                 tableName: 'courses',
-                data: { ...localCourse, id: existing?.id },
+                data: conflictData,
               });
+              // Persist to database for crash safety
+              this.persistConflictData(conflict.id, 'courses', conflictData);
             }
           }
 
@@ -2016,7 +2139,32 @@ export class SyncEngine extends EventEmitter {
         errors,
       };
     } finally {
+      // Clean up abort controller
+      this.abortController = null;
       this.releaseSyncMutex();
+    }
+
+    // Check if we were aborted before continuing to file refs phase
+    if (this.isAborted) {
+      this.log?.info('Sync aborted before file reference extraction');
+      const abortedResult: SyncResult = {
+        success: false,
+        entity: '',
+        count: 0,
+        errors: ['Sync aborted'],
+        duration: 0,
+      };
+      return {
+        courses: { ...abortedResult, entity: 'courses' },
+        tasks: { ...abortedResult, entity: 'tasks' },
+        announcements: { ...abortedResult, entity: 'announcements' },
+        modules: { ...abortedResult, entity: 'modules' },
+        pages: { ...abortedResult, entity: 'pages' },
+        folders: { ...abortedResult, entity: 'folders' },
+        files: { ...abortedResult, entity: 'files' },
+        totalDuration: Date.now() - startTime,
+        errors: [...errors, 'Sync aborted'],
+      };
     }
 
     // ============ PHASE 3: EXTRACT FILE REFERENCES ============
@@ -2188,7 +2336,9 @@ export class SyncEngine extends EventEmitter {
         resource_id: number;
         resource_updated_at: string | null;
         change_detected_at: string | null;
-      }>('SELECT id, course_id, resource_id, resource_updated_at, change_detected_at FROM course_syllabuses');
+      }>(
+        'SELECT id, course_id, resource_id, resource_updated_at, change_detected_at FROM course_syllabuses'
+      );
 
       for (const syllabus of syllabuses) {
         // Get current resource updated_at
@@ -2203,7 +2353,11 @@ export class SyncEngine extends EventEmitter {
         const currentUpdatedAt = resource.remote_updated_at;
         const recordedUpdatedAt = syllabus.resource_updated_at;
 
-        if (currentUpdatedAt && recordedUpdatedAt && currentUpdatedAt !== recordedUpdatedAt) {
+        if (
+          currentUpdatedAt &&
+          recordedUpdatedAt &&
+          currentUpdatedAt !== recordedUpdatedAt
+        ) {
           // Syllabus file has changed - set change_detected_at if not already set
           if (!syllabus.change_detected_at) {
             this.db.executeWrite(
@@ -2222,7 +2376,7 @@ export class SyncEngine extends EventEmitter {
           }
         }
       }
-    } catch (err) {
+    } catch (_err) {
       // Non-critical - log and continue
       // Silently ignore errors to not disrupt sync flow
     }
@@ -2329,10 +2483,13 @@ export class SyncEngine extends EventEmitter {
 
               // Store pending data for when conflicts are resolved
               for (const conflict of conflicts) {
+                const conflictData = { ...localCourse, id: existing?.id };
                 this.pendingConflictData.set(conflict.id, {
                   tableName: 'courses',
-                  data: { ...localCourse, id: existing?.id },
+                  data: conflictData,
                 });
+                // Persist to database for crash safety
+                this.persistConflictData(conflict.id, 'courses', conflictData);
               }
             }
 
@@ -2544,10 +2701,13 @@ export class SyncEngine extends EventEmitter {
 
                 // Store pending data for when conflicts are resolved
                 for (const conflict of conflicts) {
+                  const conflictData = { ...localTask, id: existing?.id };
                   this.pendingConflictData.set(conflict.id, {
                     tableName: 'tasks',
-                    data: { ...localTask, id: existing?.id },
+                    data: conflictData,
                   });
+                  // Persist to database for crash safety
+                  this.persistConflictData(conflict.id, 'tasks', conflictData);
                 }
               }
 
@@ -4305,6 +4465,39 @@ export class SyncEngine extends EventEmitter {
     }
     this.rateLimiter.stop();
     this.releaseSyncMutex();
+  }
+
+  /**
+   * Abort the current sync operation immediately
+   * Use this for emergency shutdown or crash recovery
+   */
+  abort(): void {
+    if (this.abortController) {
+      this.abortController.abort();
+      this.abortController = null;
+    }
+    this.isAborted = true;
+    this.emit('sync-aborted', { reason: 'manual_abort', error: null });
+    this.log?.info('[SyncEngine] Sync aborted');
+    this.releaseSyncMutex();
+  }
+
+  /**
+   * Check if sync has been aborted
+   * Call this at key points during sync to enable early termination
+   */
+  private checkAborted(): void {
+    if (this.isAborted) {
+      throw new Error('Sync aborted');
+    }
+  }
+
+  /**
+   * Get the current abort signal for passing to fetch/async operations
+   * Returns null if no sync is in progress
+   */
+  getAbortSignal(): AbortSignal | null {
+    return this.abortController?.signal ?? null;
   }
 
   /**

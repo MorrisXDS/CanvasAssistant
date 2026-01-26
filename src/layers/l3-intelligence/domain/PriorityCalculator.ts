@@ -47,17 +47,19 @@ export function calculateTaskTypeBoost(taskType: string): number {
 
 /**
  * Calculate urgency score based on time until due date
- * When due time is unknown, assumes midnight (start of day) for most urgency
+ * When due time is unknown, assumes end of day (23:59:59) for less artificial urgency
+ * User decision: End of day is more reasonable than midnight start which inflates priority
  */
 export function calculateUrgencyScore(task: TaskForPriority, now: Date): number {
   if (!task.dueAt) return 30; // Medium urgency for no due date
 
-  // Get effective due time - use actual time or midnight if time unknown
+  // Get effective due time - use actual time or end of day if time unknown
   let effectiveDueAt = task.dueAt;
   if (!task.dueTimeKnown) {
-    // Time unknown - assume midnight (start of day) for urgency
+    // Time unknown - assume end of day (23:59:59) per user decision
+    // This prevents artificially inflated priority scores for tasks with unknown times
     effectiveDueAt = new Date(task.dueAt);
-    effectiveDueAt.setHours(0, 0, 0, 0);
+    effectiveDueAt.setHours(23, 59, 59, 0);
   }
 
   const msUntilDue = effectiveDueAt.getTime() - now.getTime();
@@ -285,6 +287,7 @@ export function calculateFinalScore(factors: PriorityFactors): number {
 
 /**
  * Format relative time for display
+ * Fixed boundary issue (#27): Use "~1 day" for 20-24 hours instead of "23 hours"
  */
 function formatRelativeTime(date: Date, now: Date): string {
   const diff = date.getTime() - now.getTime();
@@ -293,6 +296,10 @@ function formatRelativeTime(date: Date, now: Date): string {
 
   if (days >= 1) {
     return `${Math.floor(days)} day${Math.floor(days) !== 1 ? 's' : ''}`;
+  }
+  // Use "~1 day" for 20-24 hours to avoid confusing "23 hours" display
+  if (hours >= 20) {
+    return '~1 day';
   }
   return `${Math.floor(hours)} hour${Math.floor(hours) !== 1 ? 's' : ''}`;
 }
@@ -477,9 +484,19 @@ function buildSubmissionWindows(
  * - Grade = totalPointsEarned / totalPointsPossible * 100
  * - If task skipped: newGrade = currentPointsEarned / (currentPointsPossible + taskPoints)
  * - If task aced: newGrade = (currentPointsEarned + taskPoints) / (currentPointsPossible + taskPoints)
+ *
+ * Note: currentGrade null means "no grade yet" (semantically different from 0%)
  */
 function buildGradeImpact(task: TaskForPriority, course: CourseForPriority): GradeImpact {
-  const currentGrade = course.currentGrade ?? 0;
+  // Fix #28: Distinguish null (no grade yet) from 0 (actual zero grade)
+  // Fix #16: Guard against NaN values
+  const rawCurrentGrade = course.currentGrade;
+  const currentGrade =
+    rawCurrentGrade === null ||
+    rawCurrentGrade === undefined ||
+    Number.isNaN(rawCurrentGrade)
+      ? 0
+      : rawCurrentGrade;
   const targetGrade = course.targetGrade;
   const taskWeight = task.weight;
   const taskPoints = task.pointsPossible ?? 0;

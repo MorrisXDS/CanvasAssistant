@@ -4,18 +4,14 @@
  * Uses repositories for data access and domain services for grade calculation.
  */
 
-import {
-  Command,
-  CommandContext,
-  CommandResult,
-  MarkTaskCompleteParams,
-} from '../types';
+import { Command, CommandContext, CommandResult, MarkTaskCompleteParams } from '../types';
 import { TaskRepository, CourseRepository } from '../../l1-persistence/repositories';
 import { GradeCalculationService } from '../../l3-intelligence/domain';
 
-export class MarkTaskCompleteCommand
-  implements Command<MarkTaskCompleteParams, { previousState: boolean; completedAt: Date | null }>
-{
+export class MarkTaskCompleteCommand implements Command<
+  MarkTaskCompleteParams,
+  { previousState: boolean; completedAt: Date | null }
+> {
   readonly name = 'MarkTaskComplete';
 
   private readonly gradeService = new GradeCalculationService();
@@ -70,9 +66,11 @@ export class MarkTaskCompleteCommand
         data: { previousState, completedAt },
       };
     } catch (error) {
+      // Fix #22: Proper error coercion to avoid [object Object]
+      const errorMessage = error instanceof Error ? error.message : String(error);
       return {
         success: false,
-        error: `Failed to mark task complete: ${error}`,
+        error: `Failed to mark task complete: ${errorMessage}`,
       };
     }
   }

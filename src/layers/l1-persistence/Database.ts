@@ -39,7 +39,7 @@ const DEFAULT_CACHE_SIZE_KB = 64000; // 64MB
 const DEFAULT_MMAP_SIZE_BYTES = 268435456; // 256MB
 const DEFAULT_IDLE_CHECKPOINT_MS = 5 * 60 * 1000; // 5 minutes
 const DEFAULT_WAL_CHECKPOINT_THRESHOLD = 100 * 1024 * 1024; // 100MB
-const DEFAULT_MAX_WRITE_LOCK_DURATION_MS = 30 * 1000; // 30 seconds
+const DEFAULT_MAX_WRITE_LOCK_DURATION_MS = 60 * 1000; // 60 seconds - increased from 30s to handle long reset operations (#8)
 
 // SQL identifier validation - prevents SQL injection via table/column names
 const VALID_SQL_IDENTIFIER = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
@@ -549,6 +549,178 @@ export class Database extends EventEmitter {
 
     const end = process.hrtime.bigint();
     return Number(end - start) / 1_000_000; // Convert to milliseconds
+  }
+
+  /**
+   * Check database integrity
+   * Uses quick_check for fast validation, falls back to full integrity_check if issues found
+   *
+   * @returns Object with ok status and any error messages
+   */
+  checkIntegrity(): { ok: boolean; errors: string[] } {
+    const errors: string[] = [];
+
+    try {
+      // Quick check is faster and catches most corruption
+      const quickResult = this.db.pragma('quick_check') as Array<{ quick_check: string }>;
+
+      // SQLite returns 'ok' if no issues found
+      if (quickResult.length === 1 && quickResult[0].quick_check === 'ok') {
+        return { ok: true, errors: [] };
+      }
+
+      // If quick_check found issues, run full integrity_check for details
+      const fullResult = this.db.pragma('integrity_check') as Array<{
+        integrity_check: string;
+      }>;
+
+      for (const row of fullResult) {
+        if (row.integrity_check !== 'ok') {
+          errors.push(row.integrity_check);
+        }
+      }
+
+      // If we got here but have no specific errors, add the quick_check results
+      if (errors.length === 0) {
+        for (const row of quickResult) {
+          if (row.quick_check !== 'ok') {
+            errors.push(row.quick_check);
+          }
+        }
+      }
+
+      this.emit('integrity-check', {
+        ok: errors.length === 0,
+        errors,
+        timestamp: new Date().toISOString(),
+      });
+
+      return { ok: errors.length === 0, errors };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      errors.push(`Integrity check failed: ${errorMessage}`);
+      return { ok: false, errors };
+    }
+  }
+
+  /**
+   * Perform WAL recovery - forces checkpoint to recover from incomplete transactions
+   * Should be called after crash detection to ensure WAL changes are applied
+   *
+   * @returns Object with success status and any error message
+   */
+  recoverWal(): { success: boolean; error?: string; walSizeBeforeBytes?: number } {
+    const walPath = `${this.dbPath}-wal`;
+    let walSizeBeforeBytes: number | undefined;
+
+    try {
+      // Check if WAL file exists
+      if (!fs.existsSync(walPath)) {
+        return { success: true }; // No WAL file, nothing to recover
+      }
+
+      // Get WAL size before recovery
+      try {
+        const stats = fs.statSync(walPath);
+        walSizeBeforeBytes = stats.size;
+      } catch {
+        // Ignore stat errors
+      }
+
+      // Force a truncating checkpoint to apply all WAL changes
+      const result = this.db.pragma('wal_checkpoint(TRUNCATE)') as Array<{
+        busy: number;
+        log: number;
+        checkpointed: number;
+      }>;
+
+      this.emit('wal-recovery', {
+        success: true,
+        walSizeBeforeBytes,
+        result: result[0],
+        timestamp: new Date().toISOString(),
+      });
+
+      return { success: true, walSizeBeforeBytes };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      this.emit('wal-recovery', {
+        success: false,
+        error: errorMessage,
+        walSizeBeforeBytes,
+        timestamp: new Date().toISOString(),
+      });
+      return { success: false, error: errorMessage, walSizeBeforeBytes };
+    }
+  }
+
+  /**
+   * Export all data to JSON for backup before reset
+   *
+   * @returns Object mapping table names to their data
+   */
+  exportAllData(): Record<string, unknown[]> {
+    const data: Record<string, unknown[]> = {};
+
+    // Get list of all tables (excluding SQLite internal tables)
+    const tables = this.db
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%'"
+      )
+      .all() as Array<{ name: string }>;
+
+    for (const { name } of tables) {
+      try {
+        data[name] = this.db.prepare(`SELECT * FROM ${name}`).all();
+      } catch {
+        // Skip tables that can't be read
+        data[name] = [];
+      }
+    }
+
+    return data;
+  }
+
+  /**
+   * Get the underlying database file size and WAL size
+   */
+  getDatabaseStats(): {
+    dbSizeBytes: number;
+    walSizeBytes: number;
+    shmSizeBytes: number;
+  } {
+    const walPath = `${this.dbPath}-wal`;
+    const shmPath = `${this.dbPath}-shm`;
+
+    let dbSizeBytes = 0;
+    let walSizeBytes = 0;
+    let shmSizeBytes = 0;
+
+    try {
+      if (fs.existsSync(this.dbPath)) {
+        dbSizeBytes = fs.statSync(this.dbPath).size;
+      }
+    } catch {
+      // Ignore
+    }
+
+    try {
+      if (fs.existsSync(walPath)) {
+        walSizeBytes = fs.statSync(walPath).size;
+      }
+    } catch {
+      // Ignore
+    }
+
+    try {
+      if (fs.existsSync(shmPath)) {
+        shmSizeBytes = fs.statSync(shmPath).size;
+      }
+    } catch {
+      // Ignore
+    }
+
+    return { dbSizeBytes, walSizeBytes, shmSizeBytes };
   }
 
   /**

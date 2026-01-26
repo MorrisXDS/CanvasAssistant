@@ -67,6 +67,8 @@ export class RateLimiter extends EventEmitter {
   private processingInterval: NodeJS.Timeout | null = null;
   private autoResumeTimeout: NodeJS.Timeout | null = null;
   private log: ComponentLogger | null;
+  // Guard to prevent multiple processQueue instances from running concurrently (#19)
+  private isProcessing: boolean = false;
 
   private readonly maxConcurrent: number;
   private readonly minDelayMs: number;
@@ -276,8 +278,14 @@ export class RateLimiter extends EventEmitter {
 
   /**
    * Process the request queue
+   * Uses a guard to prevent multiple concurrent processing loops (#19)
    */
   private async processQueue(): Promise<void> {
+    // Guard: Only one processQueue loop should run at a time
+    if (this.isProcessing) {
+      return;
+    }
+
     if (this.isPaused) {
       this.log?.debug(` PAUSED: not processing queue`);
       return;
@@ -290,36 +298,47 @@ export class RateLimiter extends EventEmitter {
     }
     if (this.queue.length === 0) return;
 
-    const request = this.queue.shift();
-    if (!request) return;
-
-    this.activeRequests++;
-    this.log?.debug(
-      ` START: ${request.id}, active=${this.activeRequests}/${this.maxConcurrent}, queue=${this.queue.length}`
-    );
-    this.emit('request-start', { id: request.id, active: this.activeRequests });
+    // Mark as processing to prevent concurrent loops
+    this.isProcessing = true;
 
     try {
-      const startTime = Date.now();
-      const result = await request.execute();
-      const duration = Date.now() - startTime;
-      this.activeRequests--;
-      request.resolve(result);
+      const request = this.queue.shift();
+      if (!request) {
+        this.isProcessing = false;
+        return;
+      }
+
+      this.activeRequests++;
       this.log?.debug(
-        ` COMPLETE: ${request.id} in ${duration}ms, active=${this.activeRequests}`
+        ` START: ${request.id}, active=${this.activeRequests}/${this.maxConcurrent}, queue=${this.queue.length}`
       );
-      this.emit('request-complete', { id: request.id, active: this.activeRequests });
-    } catch (error) {
-      this.activeRequests--;
-      this.log?.debug(` ERROR: ${request.id} - ${error}`);
-      await this.handleRequestError(request, error);
+      this.emit('request-start', { id: request.id, active: this.activeRequests });
+
+      try {
+        const startTime = Date.now();
+        const result = await request.execute();
+        const duration = Date.now() - startTime;
+        this.activeRequests--;
+        request.resolve(result);
+        this.log?.debug(
+          ` COMPLETE: ${request.id} in ${duration}ms, active=${this.activeRequests}`
+        );
+        this.emit('request-complete', { id: request.id, active: this.activeRequests });
+      } catch (error) {
+        this.activeRequests--;
+        this.log?.debug(` ERROR: ${request.id} - ${error}`);
+        await this.handleRequestError(request, error);
+      }
+
+      // Use adaptive delay based on rate limit remaining, with minDelayMs as floor
+      const effectiveDelay = Math.max(this.minDelayMs, this.adaptiveDelayMs);
+      await this.delay(effectiveDelay);
+    } finally {
+      // Release guard before continuing
+      this.isProcessing = false;
     }
 
-    // Use adaptive delay based on rate limit remaining, with minDelayMs as floor
-    const effectiveDelay = Math.max(this.minDelayMs, this.adaptiveDelayMs);
-    await this.delay(effectiveDelay);
-
-    // Continue processing
+    // Continue processing (will re-acquire guard)
     this.processQueue();
   }
 
@@ -668,5 +687,9 @@ export class RateLimiter extends EventEmitter {
       clearInterval(this.staleCleanupInterval);
       this.staleCleanupInterval = null;
     }
+    // Reset processing guard (#19)
+    this.isProcessing = false;
+    // Remove all listeners to prevent memory leaks (#20)
+    this.removeAllListeners();
   }
 }

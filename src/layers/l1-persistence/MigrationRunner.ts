@@ -1844,4 +1844,195 @@ export const coreMigrations: Migration[] = [
       UPDATE tasks SET due_time_known = 1 WHERE due_at IS NOT NULL;
     `,
   },
+  {
+    version: 63,
+    description: 'Create pending_downloads table for crash recovery',
+    up: `
+      -- Track download queue for crash recovery
+      -- On app quit: save queued downloads
+      -- On app startup: restore pending downloads
+      CREATE TABLE IF NOT EXISTS pending_downloads (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        resource_id TEXT NOT NULL,
+        course_code TEXT NOT NULL,
+        url TEXT NOT NULL,
+        filename TEXT NOT NULL,
+        context_folder TEXT,
+        folder_path TEXT,
+        expected_size INTEGER,
+        priority INTEGER DEFAULT 0,
+        status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'in_progress', 'failed')),
+        retry_count INTEGER DEFAULT 0,
+        error_message TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(resource_id)
+      );
+
+      CREATE INDEX idx_pending_downloads_status ON pending_downloads(status);
+      CREATE INDEX idx_pending_downloads_priority ON pending_downloads(priority DESC);
+    `,
+    down: `
+      DROP INDEX IF EXISTS idx_pending_downloads_priority;
+      DROP INDEX IF EXISTS idx_pending_downloads_status;
+      DROP TABLE IF EXISTS pending_downloads;
+    `,
+  },
+  {
+    version: 64,
+    description: 'Create pending_sync_data table for crash-safe conflict resolution',
+    up: `
+      -- Store pending conflict data in database instead of memory
+      -- Prevents data loss if app crashes during sync pause for conflict resolution
+      CREATE TABLE IF NOT EXISTS pending_sync_data (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        conflict_id TEXT UNIQUE NOT NULL,
+        table_name TEXT NOT NULL,
+        entity_id INTEGER,
+        data_json TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE INDEX idx_pending_sync_data_conflict ON pending_sync_data(conflict_id);
+    `,
+    down: `
+      DROP INDEX IF EXISTS idx_pending_sync_data_conflict;
+      DROP TABLE IF EXISTS pending_sync_data;
+    `,
+  },
+  {
+    version: 65,
+    description: 'Add ON DELETE CASCADE to tables missing it',
+    up: `
+      -- calendar_events: Add CASCADE for course_id
+      -- Note: parent_event_id self-reference already handled
+      CREATE TABLE calendar_events_v65 (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        external_id TEXT UNIQUE,
+        source_type TEXT CHECK(source_type IN ('canvas', 'user', 'imported')),
+        course_id INTEGER,
+        imported_calendar_id INTEGER REFERENCES imported_calendars(id) ON DELETE CASCADE,
+        title TEXT NOT NULL,
+        description TEXT,
+        start_at DATETIME NOT NULL,
+        end_at DATETIME,
+        all_day BOOLEAN DEFAULT FALSE,
+        location TEXT,
+        uid TEXT,
+        recurrence_rule TEXT,
+        recurrence_exception_dates TEXT,
+        parent_event_id INTEGER,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        deleted_at DATETIME,
+        FOREIGN KEY(course_id) REFERENCES courses(id) ON DELETE CASCADE,
+        FOREIGN KEY(parent_event_id) REFERENCES calendar_events_v65(id) ON DELETE CASCADE
+      );
+
+      INSERT INTO calendar_events_v65 SELECT * FROM calendar_events;
+      DROP TABLE calendar_events;
+      ALTER TABLE calendar_events_v65 RENAME TO calendar_events;
+
+      CREATE INDEX idx_calendar_events_start ON calendar_events(start_at);
+      CREATE INDEX idx_calendar_events_imported_calendar ON calendar_events(imported_calendar_id);
+      CREATE INDEX idx_calendar_events_uid ON calendar_events(uid);
+
+      -- resources: Add CASCADE for course_id
+      CREATE TABLE resources_v65 (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        external_id TEXT UNIQUE NOT NULL,
+        course_id INTEGER NOT NULL,
+        parent_folder_id INTEGER,
+        type TEXT CHECK(type IN ('file', 'folder', 'external_url', 'page')),
+        title TEXT NOT NULL,
+        url TEXT,
+        local_path TEXT,
+        size_bytes INTEGER,
+        mime_type TEXT,
+        unlock_at DATETIME,
+        synced_at DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        folder_path TEXT,
+        remote_updated_at TEXT,
+        context_type TEXT CHECK(context_type IN ('page', 'assignment', 'syllabus', 'module', 'announcement', 'files')),
+        context_id TEXT,
+        FOREIGN KEY(course_id) REFERENCES courses(id) ON DELETE CASCADE,
+        FOREIGN KEY(parent_folder_id) REFERENCES resources_v65(id) ON DELETE SET NULL
+      );
+
+      INSERT INTO resources_v65 SELECT * FROM resources;
+      DROP TABLE resources;
+      ALTER TABLE resources_v65 RENAME TO resources;
+
+      CREATE INDEX idx_resources_course ON resources(course_id);
+      CREATE INDEX idx_resources_folder_path ON resources(folder_path);
+      CREATE INDEX idx_resources_remote_updated ON resources(remote_updated_at);
+      CREATE INDEX idx_resources_context ON resources(context_type, context_id);
+
+      -- grade_history: Add CASCADE for course_id
+      CREATE TABLE grade_history_v65 (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        course_id INTEGER NOT NULL,
+        grade REAL NOT NULL,
+        recorded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(course_id) REFERENCES courses(id) ON DELETE CASCADE
+      );
+
+      INSERT INTO grade_history_v65 SELECT * FROM grade_history;
+      DROP TABLE grade_history;
+      ALTER TABLE grade_history_v65 RENAME TO grade_history;
+
+      CREATE INDEX idx_grade_history_course ON grade_history(course_id);
+
+      -- course_pages: Add CASCADE for course_id
+      CREATE TABLE course_pages_v65 (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        external_id TEXT UNIQUE,
+        course_id INTEGER NOT NULL,
+        page_type TEXT CHECK(page_type IN ('syllabus', 'landing', 'content', 'module_item')),
+        title TEXT NOT NULL,
+        url_slug TEXT,
+        body_html TEXT,
+        body_text TEXT,
+        is_front_page BOOLEAN DEFAULT FALSE,
+        published BOOLEAN DEFAULT TRUE,
+        last_synced_at DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(course_id) REFERENCES courses(id) ON DELETE CASCADE
+      );
+
+      INSERT INTO course_pages_v65 SELECT * FROM course_pages;
+      DROP TABLE course_pages;
+      ALTER TABLE course_pages_v65 RENAME TO course_pages;
+
+      CREATE INDEX idx_course_pages_course ON course_pages(course_id);
+      CREATE INDEX idx_course_pages_type ON course_pages(page_type);
+
+      -- modules: Add CASCADE for course_id
+      CREATE TABLE modules_v65 (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        external_id TEXT UNIQUE NOT NULL,
+        course_id INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        position INTEGER,
+        unlock_at DATETIME,
+        require_sequential_progress BOOLEAN DEFAULT FALSE,
+        published BOOLEAN DEFAULT TRUE,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(course_id) REFERENCES courses(id) ON DELETE CASCADE
+      );
+
+      INSERT INTO modules_v65 SELECT * FROM modules;
+      DROP TABLE modules;
+      ALTER TABLE modules_v65 RENAME TO modules;
+
+      CREATE INDEX idx_modules_course ON modules(course_id);
+    `,
+    down: `
+      -- Complex reversal - not easily reversible
+      SELECT 1;
+    `,
+  },
 ];

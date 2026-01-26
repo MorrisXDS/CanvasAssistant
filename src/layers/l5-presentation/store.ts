@@ -17,7 +17,6 @@ import {
   Course,
   Task,
   Notification,
-  Policy,
   SimulationChangeEvent,
   DbCommitEvent,
   DisplayCalendarEvent,
@@ -35,15 +34,22 @@ export type { SyncResultSummary } from './types';
  * This handles concurrent commands correctly (multiple updates = multiple skips).
  */
 const recentOptimisticUpdates = new Map<string, number>();
+// Track timeout IDs for cleanup to prevent memory leaks
+const optimisticUpdateTimeouts = new Map<string, Set<ReturnType<typeof setTimeout>>>();
 const OPTIMISTIC_UPDATE_WINDOW_MS = 1000; // Auto-cleanup window
 
 function markOptimisticUpdate(table: string): void {
   const current = recentOptimisticUpdates.get(table) || 0;
   recentOptimisticUpdates.set(table, current + 1);
 
+  // Track timeout for this table
+  if (!optimisticUpdateTimeouts.has(table)) {
+    optimisticUpdateTimeouts.set(table, new Set());
+  }
+
   // Auto-decrement after window expires in case db:commit never arrives
   // This prevents memory leaks and stale skip state
-  setTimeout(() => {
+  const timeoutId = setTimeout(() => {
     const count = recentOptimisticUpdates.get(table) || 0;
     if (count > 0) {
       recentOptimisticUpdates.set(table, count - 1);
@@ -51,7 +57,18 @@ function markOptimisticUpdate(table: string): void {
     if (recentOptimisticUpdates.get(table) === 0) {
       recentOptimisticUpdates.delete(table);
     }
+    // Clean up timeout reference
+    const timeouts = optimisticUpdateTimeouts.get(table);
+    if (timeouts) {
+      timeouts.delete(timeoutId);
+      if (timeouts.size === 0) {
+        optimisticUpdateTimeouts.delete(table);
+      }
+    }
   }, OPTIMISTIC_UPDATE_WINDOW_MS);
+
+  // Store timeout ID for potential cleanup
+  optimisticUpdateTimeouts.get(table)!.add(timeoutId);
 }
 
 function shouldSkipRefresh(table: string): boolean {
@@ -101,7 +118,8 @@ function processPendingCommits(
   pendingCommits.clear();
 
   // If too many different tables changed, just refresh all
-  if (tables.size > 4) {
+  // Increased from 5 to 10 tables to reduce unnecessary full refreshes (#24)
+  if (tables.size > 10) {
     refreshAll();
     return;
   }
@@ -241,11 +259,16 @@ export const useStore = create<Store>()(
                 semesterSelection = settings.termSelection || 'auto';
                 // Migrate to database
                 if (api.setTermSelection) {
-                  const valueToSet = semesterSelection === 'all' || semesterSelection === 'auto'
-                    ? semesterSelection
-                    : parseInt(semesterSelection, 10);
-                  api.setTermSelection(valueToSet).catch(() => {
-                    // Ignore migration errors
+                  const valueToSet =
+                    semesterSelection === 'all' || semesterSelection === 'auto'
+                      ? semesterSelection
+                      : parseInt(semesterSelection, 10);
+                  api.setTermSelection(valueToSet).catch((err: unknown) => {
+                    // Log migration errors instead of swallowing them (#23)
+                    console.warn(
+                      '[Store] Failed to migrate term selection to database:',
+                      err
+                    );
                   });
                 }
               } catch (parseError) {
@@ -444,8 +467,13 @@ export const useStore = create<Store>()(
       refreshAll: async () => {
         console.debug('[Store] refreshAll: starting');
         const startTime = Date.now();
-        const { fetchCourses, fetchTasks, fetchNotifications, fetchPolicies, fetchImportedCalendars } =
-          get();
+        const {
+          fetchCourses,
+          fetchTasks,
+          fetchNotifications,
+          fetchPolicies,
+          fetchImportedCalendars,
+        } = get();
         try {
           // Fetch courses FIRST since tasks filtering depends on courses being loaded
           await fetchCourses();
@@ -1228,19 +1256,23 @@ export function subscribeToIpcEvents(): () => void {
     useStore.getState().handleDbCommit(event);
   });
 
-  const unsubSyncStatus = api.onSyncStatus((status: 'idle' | 'syncing' | 'error') => {
-    console.debug(`[Store] sync:status received: ${status}`);
-    useStore.setState({ syncStatus: status });
-    // Update lastSyncedAt when sync completes successfully
-    if (status === 'idle') {
-      useStore.setState({ lastSyncedAt: new Date().toISOString() });
-      // Refresh data after sync - fire and handle errors
-      useStore
-        .getState()
-        .refreshAll()
-        .catch((err) => console.error('[Store] refreshAll failed after sync:status idle:', err));
+  const unsubSyncStatus = api.onSyncStatus(
+    async (status: 'idle' | 'syncing' | 'error') => {
+      console.debug(`[Store] sync:status received: ${status}`);
+      useStore.setState({ syncStatus: status });
+      // Update lastSyncedAt when sync completes successfully
+      if (status === 'idle') {
+        useStore.setState({ lastSyncedAt: new Date().toISOString() });
+        // Refresh data after sync - await to ensure UI updates before processing other events
+        // This fixes IPC event ordering race where db:commit events could arrive out of order
+        try {
+          await useStore.getState().refreshAll();
+        } catch (err) {
+          console.error('[Store] refreshAll failed after sync:status idle:', err);
+        }
+      }
     }
-  });
+  );
 
   const unsubSyncConflicts = api.onSyncConflicts((conflicts: SyncConflictItem[]) => {
     useStore.getState().addSyncConflicts(conflicts);
@@ -1263,13 +1295,15 @@ export function subscribeToIpcEvents(): () => void {
 
   // Listen for file status changes from FileWatcher (deletions, additions)
   const unsubFileStatus =
-    api.onFileStatusChanged?.((data: { type: 'deleted' | 'added'; resourceId?: number; path: string }) => {
-      console.debug(`[Store] file-status-changed: ${data.type} ${data.path}`);
-      // Files aren't stored in zustand - components fetch them directly
-      // Just broadcast an event so components can refetch if needed
-      // The store will emit a custom event that FilesPage can listen to
-      window.dispatchEvent(new CustomEvent('file-status-changed', { detail: data }));
-    }) || (() => {});
+    api.onFileStatusChanged?.(
+      (data: { type: 'deleted' | 'added'; resourceId?: number; path: string }) => {
+        console.debug(`[Store] file-status-changed: ${data.type} ${data.path}`);
+        // Files aren't stored in zustand - components fetch them directly
+        // Just broadcast an event so components can refetch if needed
+        // The store will emit a custom event that FilesPage can listen to
+        window.dispatchEvent(new CustomEvent('file-status-changed', { detail: data }));
+      }
+    ) || (() => {});
 
   return () => {
     unsubSimulation();

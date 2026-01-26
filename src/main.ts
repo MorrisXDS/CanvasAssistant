@@ -63,7 +63,33 @@ const LOG_DIR = path.join(APP_DATA_DIR, 'logs');
 const FILES_DIR = path.join(process.cwd(), 'Downloads');
 const CREDENTIAL_FILE = path.join(APP_DATA_DIR, '.credentials');
 const CRASH_FLAG_FILE = path.join(APP_DATA_DIR, '.crash_flag');
+const CRASH_HISTORY_FILE = path.join(APP_DATA_DIR, '.crash_history');
 const _SESSION_STATE_FILE = path.join(APP_DATA_DIR, '.session_state');
+
+// Crash history and recovery state
+interface CrashHistoryEntry {
+  timestamp: string;
+  reason: string;
+}
+interface CrashHistory {
+  crashes: CrashHistoryEntry[];
+  lastCleanExit: string | null;
+  safeMode: boolean;
+}
+const CRASH_LOOP_THRESHOLD = 3; // Number of crashes to trigger safe mode
+const CRASH_LOOP_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
+const SAFE_MODE_CLEAR_DELAY_MS = 5 * 60 * 1000; // 5 minutes of stable runtime to clear safe mode
+
+let safeModeEnabled = false;
+let safeModeTimer: NodeJS.Timeout | null = null;
+let lastCrashInfo: CrashHistoryEntry | null = null;
+
+// Database corruption state
+interface DatabaseCorruptionInfo {
+  errors: string[];
+  canContinue: boolean;
+}
+let databaseCorruptionDetected: DatabaseCorruptionInfo | null = null;
 
 // Auto-sync state
 let autoSyncInterval: NodeJS.Timeout | null = null;
@@ -253,6 +279,59 @@ function createWindow() {
     logger.info('Loading production build');
     mainWindow.loadFile(path.join(__dirname, 'renderer/index.html'));
   }
+
+  // Send recovery status once window is ready
+  mainWindow.webContents.on('did-finish-load', () => {
+    const recoveryStatus = getRecoveryStatus();
+    if (recoveryStatus.safeMode || recoveryStatus.lastCrash) {
+      mainWindow?.webContents.send('app:recovery-status', recoveryStatus);
+    }
+
+    // Send database corruption notification if detected during startup
+    if (databaseCorruptionDetected) {
+      mainWindow?.webContents.send('app:database-corruption', databaseCorruptionDetected);
+    }
+  });
+
+  // Handle renderer process crash
+  mainWindow.webContents.on('render-process-gone', (_event, details) => {
+    logger.error(
+      `Renderer process crashed: reason=${details.reason}, exitCode=${details.exitCode}`
+    );
+    metricsCollector.increment('renderer.crash');
+
+    // Write crash info for recovery
+    writeCrashFlag(`renderer_crash: ${details.reason}`);
+
+    // Attempt to reload the window after a short delay
+    if (details.reason !== 'killed' && details.reason !== 'clean-exit') {
+      setTimeout(() => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          logger.info('Attempting to reload renderer after crash...');
+          mainWindow.loadURL(
+            process.env.NODE_ENV === 'development'
+              ? 'http://localhost:5173'
+              : `file://${path.join(__dirname, 'renderer/index.html')}`
+          );
+        }
+      }, 1000);
+    }
+  });
+
+  // Handle renderer unresponsive
+  mainWindow.webContents.on('unresponsive', () => {
+    logger.warn('Renderer process is unresponsive');
+    metricsCollector.increment('renderer.unresponsive');
+
+    // Could show dialog offering to reload, but for now just log
+    // The system will recover automatically if it becomes responsive again
+  });
+
+  // Handle renderer becomes responsive again
+  mainWindow.webContents.on('responsive', () => {
+    logger.info('Renderer process became responsive again');
+    metricsCollector.increment('renderer.recovered');
+  });
 
   mainWindow.on('closed', () => {
     logger.info('Main window closed');
@@ -453,6 +532,13 @@ async function initializeCanvasClient(token: string, baseUrl: string): Promise<b
       metricsCollector.increment('sync.full.completed');
       metricsCollector.recordTiming('sync.full.duration', result.totalDuration);
       logger.info(`Sync completed in ${result.totalDuration}ms`);
+
+      // Invalidate VisibleDataProvider cache so new courses appear immediately (#9)
+      // This ensures priority calculations and UI see the updated course list
+      if (visibleDataProvider) {
+        visibleDataProvider.invalidateCache();
+        logger.debug('VisibleDataProvider cache invalidated after sync');
+      }
     });
 
     syncEngine.on('sync-error', ({ type, error }) => {
@@ -5367,41 +5453,263 @@ function registerIpcHandlers(): void {
     const crashCheck = checkCrashFlag();
     return crashCheck.crashed ? crashCheck.data : null;
   });
+
+  // Get current recovery status (safe mode, crash info)
+  ipcMain.handle('app:getRecoveryStatus', () => {
+    return getRecoveryStatus();
+  });
+
+  // Manually exit safe mode (user dismisses recovery banner)
+  ipcMain.handle('app:exitSafeMode', () => {
+    clearSafeMode();
+    // Try to start auto-sync now that safe mode is cleared
+    startAutoSync();
+    return { success: true };
+  });
+
+  // Clear last crash info (user acknowledges crash notification)
+  ipcMain.handle('app:dismissCrashNotification', () => {
+    lastCrashInfo = null;
+    return { success: true };
+  });
+
+  // Handle database corruption response
+  ipcMain.handle('app:handleCorruption', async (_event, action: string) => {
+    logger.info(`User chose corruption action: ${action}`);
+
+    if (action === 'export') {
+      // Export data before reset
+      try {
+        const exportData = database.exportAllData();
+        const exportPath = path.join(
+          APP_DATA_DIR,
+          `backup_${new Date().toISOString().replace(/[:.]/g, '-')}.json`
+        );
+        fs.writeFileSync(exportPath, JSON.stringify(exportData, null, 2));
+        logger.info(`Database exported to ${exportPath}`);
+        return { success: true, exportPath };
+      } catch (error) {
+        logger.error('Failed to export database:', error as Error);
+        return { success: false, error: 'Failed to export data' };
+      }
+    }
+
+    if (action === 'reset') {
+      // Close database and delete it for fresh start
+      try {
+        database.close();
+        // Delete database files
+        const dbFiles = [DB_PATH, `${DB_PATH}-wal`, `${DB_PATH}-shm`];
+        for (const file of dbFiles) {
+          if (fs.existsSync(file)) {
+            fs.unlinkSync(file);
+            logger.info(`Deleted ${file}`);
+          }
+        }
+        logger.info('Database reset complete - app will restart');
+        // Restart the app
+        app.relaunch();
+        app.exit(0);
+        return { success: true };
+      } catch (error) {
+        logger.error('Failed to reset database:', error as Error);
+        return { success: false, error: 'Failed to reset database' };
+      }
+    }
+
+    if (action === 'continue') {
+      // User chose to continue with potentially corrupted database
+      databaseCorruptionDetected = null;
+      logger.warn('User chose to continue with corrupted database');
+      return { success: true };
+    }
+
+    return { success: false, error: 'Unknown action' };
+  });
+
+  // Handle renderer error reports (from React error boundaries)
+  ipcMain.handle(
+    'app:reportError',
+    (
+      _event,
+      errorInfo: {
+        message: string;
+        stack?: string;
+        componentStack?: string;
+        timestamp: string;
+      }
+    ) => {
+      logger.error(
+        `Renderer error: ${errorInfo.message}`,
+        errorInfo.stack ? new Error(errorInfo.stack) : undefined
+      );
+      metricsCollector.increment('renderer.error_reported');
+
+      // Record in crash history as a soft error (doesn't trigger safe mode)
+      const history = loadCrashHistory();
+      history.crashes.push({
+        timestamp: errorInfo.timestamp,
+        reason: `renderer_error: ${errorInfo.message.substring(0, 100)}`,
+      });
+
+      // Keep only recent crashes
+      const cutoff = Date.now() - CRASH_LOOP_WINDOW_MS * 2;
+      history.crashes = history.crashes.filter(
+        (c) => new Date(c.timestamp).getTime() > cutoff
+      );
+
+      saveCrashHistory(history);
+
+      return { success: true };
+    }
+  );
 }
 
 // ============ Crash Protection ============
 
 /**
- * Write crash flag to disk on unexpected exit
+ * Load crash history from disk
  */
-function writeCrashFlag(reason: string): void {
+function loadCrashHistory(): CrashHistory {
   try {
-    const crashData = {
-      timestamp: new Date().toISOString(),
-      reason,
-      pid: process.pid,
-      platform: process.platform,
-    };
+    if (fs.existsSync(CRASH_HISTORY_FILE)) {
+      return JSON.parse(fs.readFileSync(CRASH_HISTORY_FILE, 'utf-8'));
+    }
+  } catch (_e) {
+    // Ignore parse errors, return default
+  }
+  return { crashes: [], lastCleanExit: null, safeMode: false };
+}
+
+/**
+ * Save crash history to disk
+ */
+function saveCrashHistory(history: CrashHistory): void {
+  try {
     if (!fs.existsSync(APP_DATA_DIR)) {
       fs.mkdirSync(APP_DATA_DIR, { recursive: true });
     }
-    fs.writeFileSync(CRASH_FLAG_FILE, JSON.stringify(crashData, null, 2));
+    fs.writeFileSync(CRASH_HISTORY_FILE, JSON.stringify(history, null, 2));
   } catch (_e) {
     // Cannot log, just ignore
   }
 }
 
 /**
- * Clear crash flag on clean exit
+ * Check if crash loop detected (3+ crashes in 10 minutes)
+ */
+function checkCrashLoop(): { inLoop: boolean; crashCount: number } {
+  const history = loadCrashHistory();
+  const now = Date.now();
+
+  // Count crashes within the window
+  const recentCrashes = history.crashes.filter((crash) => {
+    const crashTime = new Date(crash.timestamp).getTime();
+    return now - crashTime < CRASH_LOOP_WINDOW_MS;
+  });
+
+  const inLoop = recentCrashes.length >= CRASH_LOOP_THRESHOLD;
+
+  if (inLoop && !history.safeMode) {
+    // Enter safe mode
+    history.safeMode = true;
+    saveCrashHistory(history);
+  }
+
+  return { inLoop, crashCount: recentCrashes.length };
+}
+
+/**
+ * Record a crash in history and write crash flag
+ */
+function writeCrashFlag(reason: string): void {
+  try {
+    const timestamp = new Date().toISOString();
+    const crashData = {
+      timestamp,
+      reason,
+      pid: process.pid,
+      platform: process.platform,
+    };
+
+    if (!fs.existsSync(APP_DATA_DIR)) {
+      fs.mkdirSync(APP_DATA_DIR, { recursive: true });
+    }
+
+    // Write immediate crash flag
+    fs.writeFileSync(CRASH_FLAG_FILE, JSON.stringify(crashData, null, 2));
+
+    // Also record in crash history (skip session_start as it's not a real crash)
+    if (reason !== 'session_start') {
+      const history = loadCrashHistory();
+      history.crashes.push({ timestamp, reason });
+
+      // Keep only crashes within the window + a buffer
+      const cutoff = Date.now() - CRASH_LOOP_WINDOW_MS * 2;
+      history.crashes = history.crashes.filter(
+        (c) => new Date(c.timestamp).getTime() > cutoff
+      );
+
+      saveCrashHistory(history);
+    }
+  } catch (_e) {
+    // Cannot log, just ignore
+  }
+}
+
+/**
+ * Clear crash flag and record clean exit
  */
 function clearCrashFlag(): void {
   try {
     if (fs.existsSync(CRASH_FLAG_FILE)) {
       fs.unlinkSync(CRASH_FLAG_FILE);
     }
+
+    // Record clean exit in history
+    const history = loadCrashHistory();
+    history.lastCleanExit = new Date().toISOString();
+    saveCrashHistory(history);
   } catch (_e) {
     // Ignore
   }
+}
+
+/**
+ * Clear safe mode after stable runtime
+ */
+function clearSafeMode(): void {
+  const history = loadCrashHistory();
+  if (history.safeMode) {
+    history.safeMode = false;
+    history.crashes = []; // Clear crash history on successful recovery
+    saveCrashHistory(history);
+    safeModeEnabled = false;
+    logger.info('Safe mode cleared after stable runtime');
+
+    // Notify renderer
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('app:recovery-status', {
+        safeMode: false,
+        lastCrash: null,
+        message: 'App has been stable - safe mode disabled',
+      });
+    }
+  }
+}
+
+/**
+ * Start safe mode clear timer - clears after 5 minutes of stable runtime
+ */
+function startSafeModeClearTimer(): void {
+  if (safeModeTimer) {
+    clearTimeout(safeModeTimer);
+  }
+
+  safeModeTimer = setTimeout(() => {
+    clearSafeMode();
+    safeModeTimer = null;
+  }, SAFE_MODE_CLEAR_DELAY_MS);
 }
 
 /**
@@ -5420,6 +5728,36 @@ function checkCrashFlag(): {
     // Ignore
   }
   return { crashed: false };
+}
+
+/**
+ * Get current recovery status for renderer
+ */
+function getRecoveryStatus(): {
+  safeMode: boolean;
+  lastCrash: CrashHistoryEntry | null;
+  crashCount: number;
+  message: string | null;
+} {
+  const history = loadCrashHistory();
+  const recentCrashes = history.crashes.filter((crash) => {
+    const crashTime = new Date(crash.timestamp).getTime();
+    return Date.now() - crashTime < CRASH_LOOP_WINDOW_MS;
+  });
+
+  let message: string | null = null;
+  if (safeModeEnabled) {
+    message = `Auto-sync disabled due to ${recentCrashes.length} recent crashes. Manual sync is still available.`;
+  } else if (lastCrashInfo) {
+    message = 'App recovered from previous crash.';
+  }
+
+  return {
+    safeMode: safeModeEnabled,
+    lastCrash: lastCrashInfo,
+    crashCount: recentCrashes.length,
+    message,
+  };
 }
 
 /**
@@ -5461,6 +5799,102 @@ process.on('unhandledRejection', (reason, _promise) => {
   // Don't exit on unhandled rejection, just log
 });
 
+// ============ Download Queue Persistence ============
+
+interface PendingDownloadRow {
+  id: number;
+  resource_id: string;
+  course_code: string;
+  url: string;
+  filename: string;
+  context_folder: string | null;
+  folder_path: string | null;
+  expected_size: number | null;
+  priority: number;
+  status: string;
+  retry_count: number;
+}
+
+/**
+ * Save pending downloads to database for crash recovery
+ */
+function savePendingDownloads(): void {
+  try {
+    const pending = fileDownloadManager.getPendingDownloads();
+    const active = fileDownloadManager.getActiveDownloadRequests();
+
+    if (pending.length === 0 && active.length === 0) {
+      // Clear any stale pending downloads
+      database.executeWrite('DELETE FROM pending_downloads', [], 'pending_downloads');
+      return;
+    }
+
+    logger.info(`Saving ${pending.length} pending + ${active.length} active downloads`);
+
+    // Clear existing pending downloads
+    database.executeWrite('DELETE FROM pending_downloads', [], 'pending_downloads');
+
+    // Save pending downloads
+    for (const request of pending) {
+      database.executeWrite(
+        `INSERT INTO pending_downloads (resource_id, course_code, url, filename, context_folder, folder_path, expected_size, status)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')`,
+        [
+          request.id,
+          request.courseCode,
+          request.url,
+          request.filename,
+          request.contextFolder || null,
+          request.folderPath || null,
+          request.expectedSize || null,
+        ],
+        'pending_downloads'
+      );
+    }
+
+    logger.info('Pending downloads saved successfully');
+  } catch (error) {
+    logger.error('Failed to save pending downloads:', error as Error);
+  }
+}
+
+/**
+ * Restore pending downloads from database on startup
+ */
+function restorePendingDownloads(): void {
+  try {
+    const rows = database.executeRead<PendingDownloadRow>(
+      "SELECT * FROM pending_downloads WHERE status IN ('pending', 'in_progress') ORDER BY priority DESC"
+    );
+
+    if (rows.length === 0) {
+      return;
+    }
+
+    logger.info(`Found ${rows.length} pending downloads to restore`);
+
+    const requests = rows.map((row) => ({
+      id: row.resource_id,
+      url: row.url,
+      courseCode: row.course_code,
+      filename: row.filename,
+      contextFolder: row.context_folder || undefined,
+      folderPath: row.folder_path || undefined,
+      expectedSize: row.expected_size || undefined,
+    }));
+
+    // Clear the persisted queue since we're restoring it
+    database.executeWrite('DELETE FROM pending_downloads', [], 'pending_downloads');
+
+    // Restore to download manager
+    fileDownloadManager.restoreDownloads(requests);
+
+    logger.info(`Restored ${requests.length} pending downloads`);
+  } catch (error) {
+    logger.error('Failed to restore pending downloads:', error as Error);
+  }
+}
+
 // ============ Auto-Sync ============
 
 /**
@@ -5468,6 +5902,14 @@ process.on('unhandledRejection', (reason, _promise) => {
  */
 function startAutoSync(): void {
   stopAutoSync(); // Clear any existing interval
+
+  // Check if safe mode is enabled (crash loop detected)
+  if (safeModeEnabled) {
+    logger.warn(
+      'Safe mode enabled - auto-sync disabled. Manual sync is still available.'
+    );
+    return;
+  }
 
   // Load sync preferences from localStorage equivalent (read from DB user_preferences)
   let autoSyncEnabled = true;
@@ -5493,6 +5935,9 @@ function startAutoSync(): void {
   }
 
   logger.info(`Auto-sync enabled, interval: ${autoSyncIntervalMs / 60000} minutes`);
+
+  // Start safe mode clear timer if we successfully started auto-sync
+  startSafeModeClearTimer();
 
   autoSyncInterval = setInterval(async () => {
     if (!syncEngine || !systemMonitor.getState().canSync) {
@@ -5616,19 +6061,61 @@ app.whenReady().then(async () => {
   logger.info(`Platform: ${process.platform}, Electron: ${process.versions.electron}`);
   logger.info(`Data directory: ${APP_DATA_DIR}`);
 
-  // Check for previous crash
+  // Check for previous crash and crash loop
   const crashCheck = checkCrashFlag();
   if (crashCheck.crashed && crashCheck.data) {
     logger.warn(
       `Previous session crashed at ${crashCheck.data.timestamp}: ${crashCheck.data.reason}`
     );
     metricsCollector.increment('app.crash_recovery');
+
+    // Store last crash info for recovery UI
+    lastCrashInfo = {
+      timestamp: crashCheck.data.timestamp,
+      reason: crashCheck.data.reason,
+    };
+
     // Clear the crash flag since we've detected it
     clearCrashFlag();
   }
 
+  // Check for crash loop (3+ crashes in 10 minutes)
+  const crashLoopCheck = checkCrashLoop();
+  if (crashLoopCheck.inLoop) {
+    safeModeEnabled = true;
+    logger.warn(
+      `Crash loop detected: ${crashLoopCheck.crashCount} crashes in last 10 minutes. Entering safe mode (auto-sync disabled).`
+    );
+    metricsCollector.increment('app.safe_mode_entered');
+  } else {
+    // Start timer to clear safe mode after stable runtime
+    const history = loadCrashHistory();
+    if (history.safeMode) {
+      safeModeEnabled = true;
+      logger.info('Resuming in safe mode from previous session');
+      startSafeModeClearTimer();
+    }
+  }
+
   // Write crash flag - will be cleared on clean exit
   writeCrashFlag('session_start');
+
+  // If previous session crashed, perform WAL recovery before initializing
+  if (crashCheck.crashed) {
+    logger.info('Previous session crashed - performing WAL recovery...');
+    const walRecovery = database.recoverWal();
+    if (walRecovery.success) {
+      if (walRecovery.walSizeBeforeBytes) {
+        logger.info(
+          `WAL recovery successful, recovered ${walRecovery.walSizeBeforeBytes} bytes`
+        );
+      } else {
+        logger.info('WAL recovery complete (no pending changes)');
+      }
+    } else {
+      logger.warn(`WAL recovery warning: ${walRecovery.error}`);
+    }
+  }
 
   // Initialize database and run migrations
   try {
@@ -5643,6 +6130,26 @@ app.whenReady().then(async () => {
       logger.warn(`Migration errors: ${migrationResult.errors.join(', ')}`);
     }
     metricsCollector.increment('database.initialized');
+
+    // If previous session crashed, check database integrity
+    if (crashCheck.crashed) {
+      logger.info('Running database integrity check after crash...');
+      const integrityCheck = database.checkIntegrity();
+      if (!integrityCheck.ok) {
+        logger.error(
+          `Database integrity check failed: ${integrityCheck.errors.join(', ')}`
+        );
+        metricsCollector.increment('database.corruption_detected');
+        // Store corruption info for UI notification
+        // The window will be notified once it's created
+        databaseCorruptionDetected = {
+          errors: integrityCheck.errors,
+          canContinue: integrityCheck.errors.length < 5, // Can continue if only minor issues
+        };
+      } else {
+        logger.info('Database integrity check passed');
+      }
+    }
 
     // Clean HTML from all notification messages to ensure layer isolation
     // htmlToPlainText is safe on already-plain text
@@ -6086,6 +6593,13 @@ app.whenReady().then(async () => {
     }
   }
 
+  // Restore any pending downloads from previous session (if database available)
+  try {
+    restorePendingDownloads();
+  } catch (error) {
+    logger.error('Failed to restore pending downloads', error as Error);
+  }
+
   createWindow();
 
   // Create system tray icon
@@ -6146,10 +6660,55 @@ app.whenReady().then(async () => {
   });
 });
 
-// Handle before-quit to set quitting flag
-app.on('before-quit', () => {
+// Track if we've already started graceful shutdown
+let gracefulShutdownInProgress = false;
+let shutdownAcknowledged = false;
+const GRACEFUL_SHUTDOWN_TIMEOUT_MS = 3000; // 3 seconds
+
+// IPC handler for shutdown acknowledgment (must be registered before use)
+ipcMain.on('app:shutdown-acknowledged', () => {
+  shutdownAcknowledged = true;
+  logger.info('Renderer acknowledged shutdown');
+});
+
+// Handle before-quit to coordinate graceful shutdown
+app.on('before-quit', async (event) => {
   logger.info('Application preparing to quit...');
   isQuitting = true;
+
+  // Only do graceful shutdown once
+  if (gracefulShutdownInProgress) {
+    return;
+  }
+  gracefulShutdownInProgress = true;
+
+  // Notify renderer of impending shutdown (give it time to save state)
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    event.preventDefault(); // Prevent immediate quit
+
+    logger.info('Notifying renderer of shutdown...');
+    mainWindow.webContents.send('app:shutdown-requested', {
+      gracePeriodMs: GRACEFUL_SHUTDOWN_TIMEOUT_MS,
+    });
+
+    // Wait for acknowledgment or timeout
+    const startTime = Date.now();
+    while (
+      !shutdownAcknowledged &&
+      Date.now() - startTime < GRACEFUL_SHUTDOWN_TIMEOUT_MS
+    ) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+
+    if (shutdownAcknowledged) {
+      logger.info('Graceful shutdown: renderer acknowledged');
+    } else {
+      logger.warn('Graceful shutdown: timed out waiting for renderer');
+    }
+
+    // Now actually quit
+    app.quit();
+  }
 });
 
 app.on('window-all-closed', () => {
@@ -6177,6 +6736,22 @@ app.on('quit', () => {
   // Stop auto-sync scheduler
   stopAutoSync();
 
+  // Abort any in-flight sync operations
+  if (syncEngine) {
+    try {
+      syncEngine.abort();
+      logger.info('Sync engine aborted');
+    } catch (error) {
+      logger.error('Failed to abort sync engine', error as Error);
+    }
+  }
+
+  // Clear safe mode timer if running
+  if (safeModeTimer) {
+    clearTimeout(safeModeTimer);
+    safeModeTimer = null;
+  }
+
   // Clear crash flag on clean exit
   clearCrashFlag();
 
@@ -6200,6 +6775,9 @@ app.on('quit', () => {
   metricsCollector.stop();
   housekeepingManager.stop();
   circuitBreaker.stop();
+
+  // Save pending downloads for recovery
+  savePendingDownloads();
 
   // Close database with timeout protection
   const closeTimeout = setTimeout(() => {
