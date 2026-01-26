@@ -18,6 +18,13 @@ export {
   Migration,
   coreMigrations,
 } from './MigrationRunner';
+export {
+  VisibleDataProvider,
+  VisibleDataProviderConfig,
+  TermSelection,
+  VisibleCourseRow,
+  VisibleTaskRow,
+} from './VisibleDataProvider';
 
 // Repositories
 export {
@@ -29,10 +36,6 @@ export {
 } from './repositories';
 
 export type {
-  CourseRow,
-  TaskRow,
-  PolicyRow,
-  NotificationRow,
   CourseUpdates,
   TaskUpdates,
   CreateTaskParams,
@@ -42,6 +45,36 @@ export type {
   CreatePolicyParams,
   NotificationUpdates,
 } from './repositories';
+
+// Centralized database row types (single source of truth)
+export type {
+  // Core entity rows
+  CourseRow,
+  CourseRowMinimal,
+  CourseRowSyllabusOnly,
+  TaskRow,
+  TaskRowMinimal,
+  TaskRowWithPriority,
+  TaskRowWithFieldSources,
+  PolicyRow,
+  PolicyRowMinimal,
+  NotificationRow,
+  // Grace token rows
+  GraceTokenRowMinimal,
+  GraceTokenRow,
+  // Intelligence layer rows
+  InsightRow,
+  RecommendationRow,
+  WorkloadSnapshotRow,
+  CompletionEventRow,
+  BehaviorPatternRow,
+  WeightAdjustmentRow,
+  CourseSyllabusRow,
+  // Content analysis rows
+  ContentAnalysisRow,
+  CoursePageRow,
+  ResourceRow,
+} from './DatabaseRowTypes';
 
 // Re-export types for convenience
 export type { Database as SQLiteDatabase } from 'better-sqlite3';

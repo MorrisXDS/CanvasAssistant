@@ -13,8 +13,14 @@ export * from './Icon';
 
 export { TaskTypeSelector } from './TaskTypeSelector';
 
-export { PolicyForm } from './PolicyForm';
-export type { PolicyFormData, PolicyType } from './PolicyForm';
+export { PolicyModal } from './PolicyModal';
+export type { PolicyModalData } from './PolicyModal';
+
+export { PolicyTypeSelector, POLICY_TYPES } from './PolicyTypeSelector';
+export type { PolicyType } from './PolicyTypeSelector';
+
+export { PolicyConfigForm } from './PolicyConfigForm';
+export type { PolicyConfigFormData } from './PolicyConfigForm';
 
 export { ConfirmDialog } from './ConfirmDialog';
 
@@ -41,3 +47,9 @@ export type { AccordionProps, AccordionItemProps, AccordionSectionProps } from '
 
 export { Dropdown, DropdownSection, DropdownSubmenu, DropdownItem } from './Dropdown';
 export type { DropdownProps, DropdownSectionProps, DropdownSubmenuProps, DropdownItemProps } from './Dropdown';
+
+export { PolicyBadge } from './PolicyBadge';
+export type { PolicyBadgeProps, PolicyBadgeData, PolicyBadgeVariant, PolicyType as PolicyBadgeType } from './PolicyBadge';
+
+export { PolicyBadgeGroup } from './PolicyBadgeGroup';
+export type { PolicyBadgeGroupProps } from './PolicyBadgeGroup';

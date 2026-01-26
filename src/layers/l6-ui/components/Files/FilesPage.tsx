@@ -306,6 +306,19 @@ export function FilesPage() {
     fetchFiles();
   }, [fetchFiles]);
 
+  // Listen for file status changes from FileWatcher (via store)
+  useEffect(() => {
+    const handleFileStatusChanged = () => {
+      console.debug('[FilesPage] file-status-changed event received, refetching files');
+      fetchFiles();
+    };
+
+    window.addEventListener('file-status-changed', handleFileStatusChanged);
+    return () => {
+      window.removeEventListener('file-status-changed', handleFileStatusChanged);
+    };
+  }, [fetchFiles]);
+
   // Handle 'expanded' default state
   useEffect(() => {
     if (explorerSettings.defaultState === 'expanded' && !hasAppliedDefaultExpand && !loading) {
@@ -895,34 +908,51 @@ export function FilesPage() {
     }
   };
 
-  const handleOpenInCanvas = (file: FileItem) => {
+  const handleDeleteLocal = async (file: FileItem) => {
+    const api = window.api;
+    if (!api?.deleteResourceLocal) return;
+
+    // Only resources can be deleted (not pages or attachments for now)
+    if (file.source !== 'resource') return;
+
+    try {
+      const result = await api.deleteResourceLocal(file.id);
+      if (!result.success) {
+        console.error('Delete failed:', result.error);
+      }
+      // UI will refresh via file-status-changed event from FileWatcher
+    } catch (error) {
+      console.error('Failed to delete local copy:', error);
+    }
+  };
+
+  const handleOpenInCanvas = async (file: FileItem) => {
     const api = window.api;
     if (!api) return;
 
-    // Construct Canvas URL based on file type
-    // Note: This requires the Canvas base URL, which we'll approximate
-    let canvasUrl: string | null = null;
-
-    if (file.source === 'resource') {
-      // Canvas file URL
-      const resource = file as FileResource;
-      if (resource.url) {
-        api.openExternal(resource.url);
-      }
-    } else if (file.source === 'page') {
-      // Page URL - need to fetch from backend
-      const page = file as FilePage;
-      api.getPage(page.id).then((result) => {
+    try {
+      if (file.source === 'resource') {
+        // Get Canvas URL from backend
+        const result = await api.getResourceCanvasUrl(file.id, 'resource');
         if (result?.success && result.data?.canvasUrl) {
           api.openExternal(result.data.canvasUrl);
         }
-      });
-    } else if (file.source === 'attachment') {
-      // Attachment URL
-      const attachment = file as FileAttachment;
-      if (attachment.url) {
-        api.openExternal(attachment.url);
+      } else if (file.source === 'page') {
+        // Page URL - need to fetch from backend
+        const page = file as FilePage;
+        const result = await api.getPage(page.id);
+        if (result?.success && result.data?.canvasUrl) {
+          api.openExternal(result.data.canvasUrl);
+        }
+      } else if (file.source === 'attachment') {
+        // Get Canvas URL from backend
+        const result = await api.getResourceCanvasUrl(file.id, 'attachment');
+        if (result?.success && result.data?.canvasUrl) {
+          api.openExternal(result.data.canvasUrl);
+        }
       }
+    } catch (err) {
+      console.error('Failed to open in Canvas:', err);
     }
   };
 
@@ -1387,6 +1417,7 @@ export function FilesPage() {
           onShowInFolder={() => handleShowInFolder(contextMenu.file)}
           onCopyPath={() => handleCopyPath(contextMenu.file)}
           onOpenInCanvas={() => handleOpenInCanvas(contextMenu.file)}
+          onDeleteLocal={() => handleDeleteLocal(contextMenu.file)}
           onShowProperties={() => handleShowProperties(contextMenu.file)}
         />
       )}

@@ -28,9 +28,11 @@ const mockDb = {
   executeWrite: jest.fn(),
 };
 
-// Mock FileDownloadManager
+// Mock FileDownloadManager with EventEmitter methods
 const mockDownloadManager = {
   queueDownloads: jest.fn(),
+  on: jest.fn(),
+  off: jest.fn(),
 };
 
 describe('HtmlContentSync', () => {
@@ -218,18 +220,20 @@ describe('HtmlContentSync', () => {
 
       const rewritten = sync.rewriteUrls(html, resources, './assets');
 
-      expect(rewritten).toContain('./image_456.png');
+      // Should use canvas-file:// protocol with Canvas file ID
+      expect(rewritten).toContain('canvas-file://456/image_456.png');
       expect(rewritten).not.toContain('/courses/100/files/456/preview');
     });
 
     it('should replace all occurrences of the same URL', () => {
       const html = `
-        <img src="/logo.png">
-        <div style="background: url('/logo.png')">
+        <img src="/files/789/preview">
+        <div style="background: url('/files/789/preview')">
       `;
       const resources: ExtractedResource[] = [
         {
-          originalUrl: '/logo.png',
+          originalUrl: '/files/789/preview',
+          canvasFileId: '789',
           type: 'image',
           filename: 'logo.png',
           attribute: 'src',
@@ -238,21 +242,21 @@ describe('HtmlContentSync', () => {
 
       const rewritten = sync.rewriteUrls(html, resources, './');
 
-      const matches = rewritten.match(/\.\/logo\.png/g);
+      const matches = rewritten.match(/canvas-file:\/\/789\/logo\.png/g);
       expect(matches?.length).toBe(2);
     });
 
     it('should handle multiple different resources', () => {
-      const html = '<img src="/img1.png"><img src="/img2.png">';
+      const html = '<img src="/files/111/preview"><img src="/files/222/preview">';
       const resources: ExtractedResource[] = [
-        { originalUrl: '/img1.png', type: 'image', filename: 'img1.png', attribute: 'src' },
-        { originalUrl: '/img2.png', type: 'image', filename: 'img2.png', attribute: 'src' },
+        { originalUrl: '/files/111/preview', canvasFileId: '111', type: 'image', filename: 'img1.png', attribute: 'src' },
+        { originalUrl: '/files/222/preview', canvasFileId: '222', type: 'image', filename: 'img2.png', attribute: 'src' },
       ];
 
       const rewritten = sync.rewriteUrls(html, resources, './');
 
-      expect(rewritten).toContain('./img1.png');
-      expect(rewritten).toContain('./img2.png');
+      expect(rewritten).toContain('canvas-file://111/img1.png');
+      expect(rewritten).toContain('canvas-file://222/img2.png');
     });
   });
 
@@ -855,8 +859,8 @@ describe('HtmlContentSync', () => {
       await syncWithRewriting.downloadHtmlItem('html-page-123', '/base');
 
       const writtenContent = (fs.writeFileSync as jest.Mock).mock.calls[0][1];
-      // URL should be rewritten to local path
-      expect(writtenContent).toContain('./');
+      // URL should be rewritten to canvas-file:// protocol
+      expect(writtenContent).toContain('canvas-file://100/');
     });
   });
 

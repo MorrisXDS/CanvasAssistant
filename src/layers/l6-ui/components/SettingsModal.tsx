@@ -485,6 +485,12 @@ export function SettingsModal({
   const [showClearDataConfirm, setShowClearDataConfirm] = useState(false);
   const [deleteTokenOnClear, setDeleteTokenOnClear] = useState(false);
 
+  // Window behavior settings (minimize to tray)
+  const [windowBehavior, setWindowBehavior] = useState<{
+    closeAction: 'quit' | 'minimize-to-tray' | null;
+    showTrayIcon: boolean;
+  }>({ closeAction: null, showTrayIcon: true });
+
   // Apply theme on change - settingsManager handles DOM updates
   useEffect(() => {
     const applyTheme = (theme: 'light' | 'dark' | 'system') => {
@@ -513,11 +519,36 @@ export function SettingsModal({
       checkCanvasConnection();
       fetchEnrollmentTerms();
       fetchDownloadDirectory();
+      fetchWindowBehavior();
     } else {
       // Reset initialization flag when modal closes so URL loads fresh on next open
       canvasUrlInitializedRef.current = false;
     }
   }, [isOpen]);
+
+  // Fetch window behavior settings from main process
+  const fetchWindowBehavior = async () => {
+    try {
+      const settings = await window.api.getWindowBehavior();
+      setWindowBehavior(settings);
+    } catch (error) {
+      console.error('[Settings] Failed to fetch window behavior:', error);
+    }
+  };
+
+  // Update window behavior settings in main process
+  const updateWindowBehavior = async (updates: Partial<{
+    closeAction: 'quit' | 'minimize-to-tray' | null;
+    showTrayIcon: boolean;
+  }>) => {
+    const newSettings = { ...windowBehavior, ...updates };
+    setWindowBehavior(newSettings);
+    try {
+      await window.api.setWindowBehavior(newSettings);
+    } catch (error) {
+      console.error('[Settings] Failed to update window behavior:', error);
+    }
+  };
 
   // Fetch current download directory
   const fetchDownloadDirectory = async () => {
@@ -887,6 +918,23 @@ export function SettingsModal({
         console.error('[Settings] Failed to propagate default target grade:', error);
       }
     }
+
+    // If termSelection changed, propagate to database via VisibleDataProvider
+    if (updates.termSelection !== undefined) {
+      try {
+        const value = updates.termSelection === 'all' || updates.termSelection === 'auto'
+          ? updates.termSelection
+          : parseInt(updates.termSelection, 10);
+        const result = await window.api?.setTermSelection(value);
+        if (result?.success) {
+          console.debug(`[Settings] Term selection propagated to database: ${value}`);
+          // Trigger re-fetch of courses to apply new filter
+          useStore.getState().fetchCourses();
+        }
+      } catch (error) {
+        console.error('[Settings] Failed to propagate term selection:', error);
+      }
+    }
   };
 
   // Load course-specific settings when a course is selected
@@ -1156,6 +1204,29 @@ export function SettingsModal({
                     );
                   })}
                 </div>
+              </div>
+
+              <div style={styles.divider} />
+
+              <div style={styles.field}>
+                <label style={styles.label}>Close button behavior</label>
+                <p style={styles.fieldDesc}>
+                  Choose what happens when you click the close button.
+                </p>
+                <select
+                  style={styles.select}
+                  value={windowBehavior.closeAction ?? ''}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    updateWindowBehavior({
+                      closeAction: value === '' ? null : (value as 'quit' | 'minimize-to-tray'),
+                    });
+                  }}
+                >
+                  <option value="">Ask every time (not set)</option>
+                  <option value="minimize-to-tray">Minimize to system tray</option>
+                  <option value="quit">Quit application</option>
+                </select>
               </div>
 
               <div style={styles.divider} />

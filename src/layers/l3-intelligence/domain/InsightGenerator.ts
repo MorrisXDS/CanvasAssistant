@@ -18,26 +18,12 @@ import {
   WorkloadDistribution,
   TaskForPriority,
 } from '../types';
-
-/**
- * Default insight expiration in hours
- *
- * All insights are based on observable data (submission timing, grades, due dates).
- */
-const INSIGHT_EXPIRATION: Record<InsightType, number> = {
-  deadline_pattern: 168, // 1 week
-  course_struggle: 168, // 1 week
-  productivity_window: 336, // 2 weeks
-  workload_warning: 48, // 2 days
-  streak: 24, // 1 day
-  improvement: 168, // 1 week
-  data_completeness: 168, // 1 week
-  grade_at_risk: 72, // 3 days
-  grade_trend: 168, // 1 week
-  crunch_period: 48, // 2 days
-  unset_weight: 168, // 1 week
-  guessed_due_date: 168, // 1 week
-};
+import {
+  DAY_NAMES,
+  INSIGHT_EXPIRATION,
+  INSIGHT_THRESHOLDS,
+  HIGH_VALUE_TASK_TYPES,
+} from './Constants';
 
 /**
  * Generate deadline pattern insight
@@ -70,24 +56,13 @@ export function generateDeadlinePatternInsight(
   // Find day with highest late rate
   let worstDay = -1;
   let worstRate = 0;
-  const dayNames = [
-    'Sunday',
-    'Monday',
-    'Tuesday',
-    'Wednesday',
-    'Thursday',
-    'Friday',
-    'Saturday',
-  ];
 
   for (let i = 0; i < 7; i++) {
     const total = totalByDay.get(i) || 0;
     const late = lateByDay.get(i) || 0;
-    if (total >= 3) {
-      // Need at least 3 samples
+    if (total >= INSIGHT_THRESHOLDS.MIN_EVENTS_PER_DAY) {
       const rate = late / total;
-      if (rate > worstRate && rate >= 0.3) {
-        // At least 30% late
+      if (rate > worstRate && rate >= INSIGHT_THRESHOLDS.LATE_RATE_PATTERN) {
         worstRate = rate;
         worstDay = i;
       }
@@ -96,7 +71,7 @@ export function generateDeadlinePatternInsight(
 
   if (worstDay === -1) return null;
 
-  const dayName = dayNames[worstDay];
+  const dayName = DAY_NAMES[worstDay];
   const percentLate = Math.round(worstRate * 100);
 
   return {
@@ -167,18 +142,9 @@ export function generateProductivityWindowInsight(
   rhythm: WeeklyRhythm,
   currentTime: Date
 ): Insight | null {
-  if (rhythm.sampleSize < 15) return null; // Need enough data
+  if (rhythm.sampleSize < INSIGHT_THRESHOLDS.MIN_EVENTS_FOR_RHYTHM) return null;
 
-  const dayNames = [
-    'Sunday',
-    'Monday',
-    'Tuesday',
-    'Wednesday',
-    'Thursday',
-    'Friday',
-    'Saturday',
-  ];
-  const peakDayName = dayNames[rhythm.peakDay];
+  const peakDayName = DAY_NAMES[rhythm.peakDay];
 
   // Format peak hour
   const formatHour = (hour: number) => {
@@ -583,18 +549,6 @@ export function generateCrunchPeriodInsight(
 // ============================================================================
 
 /**
- * High-value task types that should have weights set
- */
-const HIGH_VALUE_TASK_TYPES = [
-  'exam',
-  'midterm',
-  'final',
-  'final_exam',
-  'termtest',
-  'project',
-];
-
-/**
  * Generate unset weight insight
  * Reminds user about tasks missing weight information
  */
@@ -611,7 +565,7 @@ export function generateUnsetWeightInsight(
 
   // Check if any are high-value types (more urgent)
   const hasHighValue = unsetTasks.some((t) =>
-    HIGH_VALUE_TASK_TYPES.includes(t.taskType?.toLowerCase() || '')
+    (HIGH_VALUE_TASK_TYPES as readonly string[]).includes(t.taskType?.toLowerCase() || '')
   );
 
   const severity: InsightSeverity = hasHighValue ? 'warning' : 'info';

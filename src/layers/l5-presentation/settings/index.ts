@@ -20,6 +20,8 @@ export {
   CourseSettingsSchema,
   CalendarSettingsSchema,
   ContentSettingsSchema,
+  AIConfigSchema,
+  WindowBehaviorSettingsSchema,
   // TypeScript types
   type StorageKey,
   type SyncPreferences,
@@ -30,6 +32,8 @@ export {
   type CourseSettings,
   type CalendarSettings,
   type ContentSettings,
+  type AIConfig,
+  type WindowBehaviorSettings,
   type SettingsValue,
   type SettingsTypeMap,
   // Default values
@@ -41,6 +45,8 @@ export {
   DEFAULT_COURSE_SETTINGS,
   DEFAULT_CALENDAR_SETTINGS,
   DEFAULT_CONTENT_SETTINGS,
+  DEFAULT_AI_CONFIG,
+  DEFAULT_WINDOW_BEHAVIOR_SETTINGS,
   DEFAULT_DASHBOARD_ORDER,
   DEFAULT_NAV_ORDER,
   SETTINGS_DEFAULTS,

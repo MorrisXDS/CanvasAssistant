@@ -12,6 +12,12 @@
 import { EventEmitter } from 'events';
 import { Database } from '../../l1-persistence/Database';
 import { VisibleDataProvider } from '../../l1-persistence/VisibleDataProvider';
+import type {
+  InsightRow,
+  TaskRowWithFieldSources,
+  CourseRowMinimal,
+  CompletionEventRow,
+} from '../../l1-persistence/DatabaseRowTypes';
 import {
   generateAllInsights,
   getInsightIcon,
@@ -24,6 +30,7 @@ import {
 import { analyzeWorkloadDistribution } from '../domain/WorkloadAnalyzer';
 import { batchEstimateEffort } from '../domain/EffortEstimator';
 import { MessageProbationService } from '../domain/MessageProbationService';
+import { ORCHESTRATOR_DEFAULTS } from '../domain/Constants';
 import {
   Insight,
   InsightType,
@@ -34,53 +41,6 @@ import {
   CourseForPriority,
   EffortEstimate,
 } from '../types';
-
-/**
- * Raw insight from database
- */
-interface InsightRow {
-  id: number;
-  insight_type: string;
-  title: string;
-  description: string;
-  severity: string;
-  data_json: string;
-  acknowledged_at: string | null;
-  expires_at: string | null;
-  created_at: string;
-}
-
-/**
- * Raw task from database
- */
-interface TaskRow {
-  id: number;
-  course_id: number;
-  title: string;
-  due_at: string | null;
-  unlock_at: string | null;
-  lock_at: string | null;
-  points_possible: number | null;
-  weight: number | null;
-  is_completed: number;
-  grade: number | null;
-  task_type: string | null;
-  task_group_id: number | null;
-  submission_status: string | null;
-  field_sources: string | null;
-}
-
-/**
- * Raw course from database
- */
-interface CourseRow {
-  id: number;
-  code: string;
-  name: string;
-  current_grade: number | null;
-  target_grade: number;
-  total_weight: number;
-}
 
 /**
  * Configuration for InsightOrchestrator
@@ -95,9 +55,7 @@ export interface InsightOrchestratorConfig {
 }
 
 const DEFAULT_CONFIG: Required<InsightOrchestratorConfig> = {
-  refreshIntervalMs: 6 * 60 * 60 * 1000, // 6 hours
-  maxStoredInsights: 50,
-  autoRefresh: true,
+  ...ORCHESTRATOR_DEFAULTS.INSIGHT,
 };
 
 /**
@@ -174,22 +132,9 @@ export class InsightOrchestrator extends EventEmitter {
    * Fetch completion events from database
    */
   private fetchCompletionEvents(): TaskCompletionEvent[] {
-    const rows = this.db.executeRead<{
-      id: number;
-      task_id: number;
-      course_id: number;
-      task_type: string;
-      started_at: string | null;
-      completed_at: string;
-      due_at: string | null;
-      time_to_complete_minutes: number | null;
-      day_of_week: number;
-      hour_of_day: number;
-      days_before_due: number | null;
-      was_late: number;
-      score_achieved: number | null;
-      points_possible: number | null;
-    }>(`SELECT * FROM task_completion_events ORDER BY completed_at DESC`);
+    const rows = this.db.executeRead<CompletionEventRow>(
+      `SELECT * FROM task_completion_events ORDER BY completed_at DESC`
+    );
 
     return rows.map((row) => ({
       id: row.id,
@@ -232,7 +177,7 @@ export class InsightOrchestrator extends EventEmitter {
 
     sql += ` ORDER BY due_at ASC`;
 
-    const rows = this.db.executeRead<TaskRow>(sql);
+    const rows = this.db.executeRead<TaskRowWithFieldSources>(sql);
 
     return rows.map((row) => {
       let fieldSources: Record<string, 'canvas' | 'user' | 'guessed'> | undefined;
@@ -283,7 +228,7 @@ export class InsightOrchestrator extends EventEmitter {
       return [];
     }
 
-    const rows = this.db.executeRead<CourseRow>(sql);
+    const rows = this.db.executeRead<CourseRowMinimal>(sql);
 
     return rows.map((row) => ({
       id: row.id,

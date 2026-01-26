@@ -79,6 +79,7 @@ export class TaskSyncStrategy extends BaseSyncStrategy {
         () =>
           this.client.getAll<CanvasAssignment>(`/courses/${canvasCourseId}/assignments`, {
             order_by: 'due_at',
+            'include[]': 'submission',
           }),
         5 // Medium priority
       );

@@ -1323,7 +1323,7 @@ export class SyncEngine extends EventEmitter {
               () =>
                 this.client.getAll<CanvasAssignment>(
                   `/courses/${canvasCourseId}/assignments`,
-                  { order_by: 'due_at' }
+                  { order_by: 'due_at', 'include[]': 'submission' }
                 ),
               5
             )
@@ -2168,8 +2168,64 @@ export class SyncEngine extends EventEmitter {
     // Mark sync checkpoint as completed
     this.completeCheckpoint(syncId);
 
+    // Check for syllabus changes after files are synced
+    await this.checkSyllabusChanges();
+
     this.emit('sync-complete', result);
     return result;
+  }
+
+  /**
+   * Check for syllabus file changes and update change_detected_at if needed.
+   * Called after sync completes to detect when syllabus files have been modified.
+   */
+  private async checkSyllabusChanges(): Promise<void> {
+    try {
+      // Get all designated syllabuses with their current resource info
+      const syllabuses = this.db.executeRead<{
+        id: number;
+        course_id: number;
+        resource_id: number;
+        resource_updated_at: string | null;
+        change_detected_at: string | null;
+      }>('SELECT id, course_id, resource_id, resource_updated_at, change_detected_at FROM course_syllabuses');
+
+      for (const syllabus of syllabuses) {
+        // Get current resource updated_at
+        const resource = this.db.executeReadOne<{ remote_updated_at: string | null }>(
+          'SELECT remote_updated_at FROM resources WHERE id = ?',
+          [syllabus.resource_id]
+        );
+
+        if (!resource) continue;
+
+        // Check if file was modified since we last recorded
+        const currentUpdatedAt = resource.remote_updated_at;
+        const recordedUpdatedAt = syllabus.resource_updated_at;
+
+        if (currentUpdatedAt && recordedUpdatedAt && currentUpdatedAt !== recordedUpdatedAt) {
+          // Syllabus file has changed - set change_detected_at if not already set
+          if (!syllabus.change_detected_at) {
+            this.db.executeWrite(
+              `UPDATE course_syllabuses
+               SET change_detected_at = CURRENT_TIMESTAMP,
+                   resource_updated_at = ?
+               WHERE id = ?`,
+              [currentUpdatedAt, syllabus.id],
+              'course_syllabuses'
+            );
+
+            this.emit('syllabus-changed', {
+              courseId: syllabus.course_id,
+              resourceId: syllabus.resource_id,
+            });
+          }
+        }
+      }
+    } catch (err) {
+      // Non-critical - log and continue
+      // Silently ignore errors to not disrupt sync flow
+    }
   }
 
   /**

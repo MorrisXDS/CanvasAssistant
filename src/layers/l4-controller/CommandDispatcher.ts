@@ -17,6 +17,7 @@ import {
   createSimulationContext,
 } from './types';
 import { Database } from '../l1-persistence/Database';
+import { VisibleDataProvider } from '../l1-persistence/VisibleDataProvider';
 import { PriorityEngine } from '../l3-intelligence/PriorityEngine';
 import { SimulationManager } from './SimulationManager';
 
@@ -36,10 +37,14 @@ import { DuplicateTaskCommand } from './commands/DuplicateTaskCommand';
 import { UpdateTaskCommand } from './commands/UpdateTaskCommand';
 import { DeleteTaskCommand } from './commands/DeleteTaskCommand';
 import { DeletePolicyCommand } from './commands/DeletePolicyCommand';
+import { SetCourseSyllabusCommand } from './commands/SetCourseSyllabusCommand';
+import { MarkSyllabusReviewedCommand } from './commands/MarkSyllabusReviewedCommand';
+import { RemoveCourseSyllabusCommand } from './commands/RemoveCourseSyllabusCommand';
 
 export interface CommandDispatcherOptions {
   db: Database;
   priorityEngine?: PriorityEngine;
+  visibleDataProvider?: VisibleDataProvider;
 }
 
 /**
@@ -60,7 +65,10 @@ export type CommandName =
   | 'DuplicateTask'
   | 'UpdateTask'
   | 'DeleteTask'
-  | 'DeletePolicy';
+  | 'DeletePolicy'
+  | 'SetCourseSyllabus'
+  | 'MarkSyllabusReviewed'
+  | 'RemoveCourseSyllabus';
 
 /**
  * CommandDispatcher manages command execution
@@ -90,6 +98,7 @@ export class CommandDispatcher extends EventEmitter {
     this.context = {
       db: options.db,
       priorityEngine: options.priorityEngine,
+      visibleDataProvider: options.visibleDataProvider,
       simulationContext,
     };
 
@@ -142,6 +151,9 @@ export class CommandDispatcher extends EventEmitter {
     this.register(new UpdateTaskCommand());
     this.register(new DeleteTaskCommand());
     this.register(new DeletePolicyCommand());
+    this.register(new SetCourseSyllabusCommand());
+    this.register(new MarkSyllabusReviewedCommand());
+    this.register(new RemoveCourseSyllabusCommand());
   }
 
   /**

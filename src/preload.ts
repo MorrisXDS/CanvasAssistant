@@ -62,10 +62,25 @@ const api = {
 
   getPolicies: (courseId: number) => ipcRenderer.invoke('data:getPolicies', courseId),
 
+  getAllPolicies: (options?: { courseIds?: number[] }) =>
+    ipcRenderer.invoke('data:getAllPolicies', options),
+
+  getCourseSyllabus: (courseId: number) =>
+    ipcRenderer.invoke('data:getCourseSyllabus', courseId),
+
+  getCourseFiles: (courseId: number) =>
+    ipcRenderer.invoke('data:getCourseFiles', courseId),
+
   getGradeHistory: (courseId: number) =>
     ipcRenderer.invoke('data:getGradeHistory', courseId),
 
   getFiles: () => ipcRenderer.invoke('data:getFiles'),
+
+  getResourceCanvasUrl: (resourceId: number, source: 'resource' | 'attachment') =>
+    ipcRenderer.invoke('data:getResourceCanvasUrl', resourceId, source),
+
+  getTaskCanvasUrl: (taskId: number) =>
+    ipcRenderer.invoke('data:getTaskCanvasUrl', taskId),
 
   // ============ Attachments ============
 
@@ -87,6 +102,9 @@ const api = {
 
   showResourceInFolder: (resourceId: number) =>
     ipcRenderer.invoke('resource:showInFolder', resourceId),
+
+  deleteResourceLocal: (resourceId: number) =>
+    ipcRenderer.invoke('resource:deleteLocal', resourceId),
 
   // ============ Files Directory ============
 
@@ -241,6 +259,14 @@ const api = {
 
   getInsightStats: () => ipcRenderer.invoke('intelligence:getInsightStats'),
 
+  // ============ Intelligence - Suppression (Never Show Again) ============
+
+  suppressRecommendation: (id: number) =>
+    ipcRenderer.invoke('intelligence:suppressRecommendation', id),
+
+  suppressInsight: (id: number) =>
+    ipcRenderer.invoke('intelligence:suppressInsight', id),
+
   // ============ Intelligence - Workload ============
 
   getWorkloadDistribution: (params?: { startDate?: string; endDate?: string }) =>
@@ -361,6 +387,10 @@ const api = {
   deleteSyncPreference: (entity: string, entityId: number | null, field: string) =>
     ipcRenderer.invoke('sync:deleteSyncPreference', entity, entityId, field),
 
+  // ============ Last Sync Time ============
+
+  getLastSyncTime: () => ipcRenderer.invoke('sync:getLastSyncTime') as Promise<string | null>,
+
   // ============ Auto-Sync Preferences ============
 
   getAutoSyncPreferences: () => ipcRenderer.invoke('sync:getAutoSyncPreferences'),
@@ -377,6 +407,15 @@ const api = {
 
   setDefaultTargetGrade: (targetGrade: number) =>
     ipcRenderer.invoke('settings:setDefaultTargetGrade', targetGrade),
+
+  // ============ Visibility Settings ============
+
+  getTermSelection: () => ipcRenderer.invoke('settings:getTermSelection'),
+
+  setTermSelection: (value: 'all' | 'auto' | number) =>
+    ipcRenderer.invoke('settings:setTermSelection', value),
+
+  getVisibleCourseIds: () => ipcRenderer.invoke('visibility:getVisibleCourseIds'),
 
   // ============ Course Settings ============
 
@@ -411,6 +450,21 @@ const api = {
   windowMaximize: () => ipcRenderer.send('window:maximize'),
 
   windowClose: () => ipcRenderer.send('window:close'),
+
+  windowHide: () => ipcRenderer.send('window:hide'),
+
+  // ============ Window Behavior Settings ============
+
+  getWindowBehavior: () =>
+    ipcRenderer.invoke('settings:getWindowBehavior') as Promise<{
+      closeAction: 'quit' | 'minimize-to-tray' | null;
+      showTrayIcon: boolean;
+    }>,
+
+  setWindowBehavior: (settings: {
+    closeAction: 'quit' | 'minimize-to-tray' | null;
+    showTrayIcon: boolean;
+  }) => ipcRenderer.invoke('settings:setWindowBehavior', settings),
 
   // ============ Shell ============
 
@@ -448,6 +502,27 @@ const api = {
     };
     ipcRenderer.on('sync:status', handler);
     return () => ipcRenderer.removeListener('sync:status', handler);
+  },
+
+  /**
+   * Listen for file status changes (deletions, additions from FileWatcher)
+   */
+  onFileStatusChanged: (
+    callback: (data: {
+      type: 'deleted' | 'added';
+      resourceId?: number;
+      externalId?: string;
+      path: string;
+    }) => void
+  ): (() => void) => {
+    const handler = (
+      _event: IpcRendererEvent,
+      data: Parameters<typeof callback>[0]
+    ) => {
+      callback(data);
+    };
+    ipcRenderer.on('file-status-changed', handler);
+    return () => ipcRenderer.removeListener('file-status-changed', handler);
   },
 
   onSyncConflicts: (

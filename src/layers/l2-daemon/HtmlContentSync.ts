@@ -201,6 +201,8 @@ export class HtmlContentSync extends EventEmitter {
 
   /**
    * Extract a filename from a URL
+   * Note: For Canvas file URLs like /files/123/download, the filename is not in the URL.
+   * Use lookupFilenameByCanvasId() to get the actual filename after extraction.
    */
   private extractFilename(url: string, type: ExtractedResource['type']): string {
     try {
@@ -214,6 +216,27 @@ export class HtmlContentSync extends EventEmitter {
 
         // Remove query parameters from filename
         filename = filename.split('?')[0];
+
+        this.log?.debug(`extractFilename: url="${url}" lastSegment="${filename}"`);
+
+        // Canvas URLs may end in:
+        // - 'download' or 'preview' (not real filenames)
+        // - A numeric ID like '41584900' (Canvas file ID, not actual filename)
+        // Use the file ID as a placeholder so we can look up the actual name later
+        const isCanvasPlaceholder =
+          filename === 'download' ||
+          filename === 'preview' ||
+          /^\d+$/.test(filename); // Pure numeric = likely Canvas file ID
+
+        if (isCanvasPlaceholder) {
+          // Find the file ID in the URL (e.g., /files/12345/download or /files/12345)
+          const fileIdMatch = pathname.match(/\/files\/(\d+)/);
+          if (fileIdMatch) {
+            // Return a placeholder with the file ID - we'll resolve the actual name later
+            this.log?.debug(`extractFilename: Created placeholder canvas_file_${fileIdMatch[1]}`);
+            return `canvas_file_${fileIdMatch[1]}`;
+          }
+        }
 
         // If no extension, add one based on type
         if (!path.extname(filename)) {
@@ -231,6 +254,62 @@ export class HtmlContentSync extends EventEmitter {
     const timestamp = Date.now();
     const ext = this.getDefaultExtension(type);
     return `resource_${timestamp}${ext}`;
+  }
+
+  /**
+   * Look up the actual filename for a Canvas file ID from the resources table
+   */
+  private lookupFilenameByCanvasId(canvasFileId: string): string | null {
+    this.log?.debug(`lookupFilenameByCanvasId: Looking up file ID "${canvasFileId}"`);
+
+    const resource = this.db.executeReadOne<{ title: string; local_path: string | null }>(
+      `SELECT title, local_path FROM resources WHERE external_id = ?`,
+      [canvasFileId]
+    );
+
+    if (resource) {
+      this.log?.debug(
+        `lookupFilenameByCanvasId: Found resource title="${resource.title}" local_path="${resource.local_path}"`
+      );
+      // Prefer local_path filename if available (it has the original extension)
+      if (resource.local_path) {
+        return path.basename(resource.local_path);
+      }
+      // Fall back to title
+      return this.sanitizeFilename(resource.title);
+    }
+
+    this.log?.debug(`lookupFilenameByCanvasId: No resource found for file ID "${canvasFileId}"`);
+    return null;
+  }
+
+  /**
+   * Resolve placeholder filenames to actual names from the database
+   */
+  private resolveResourceFilenames(resources: ExtractedResource[]): ExtractedResource[] {
+    this.log?.debug(`resolveResourceFilenames: Processing ${resources.length} resources`);
+
+    return resources.map((resource) => {
+      this.log?.debug(
+        `resolveResourceFilenames: filename="${resource.filename}" canvasFileId="${resource.canvasFileId}" originalUrl="${resource.originalUrl}"`
+      );
+
+      // Check if filename is a placeholder (canvas_file_12345)
+      const placeholderMatch = resource.filename.match(/^canvas_file_(\d+)$/);
+      if (placeholderMatch && resource.canvasFileId) {
+        const actualFilename = this.lookupFilenameByCanvasId(resource.canvasFileId);
+        if (actualFilename) {
+          this.log?.debug(`resolveResourceFilenames: Resolved to "${actualFilename}"`);
+          return { ...resource, filename: actualFilename };
+        }
+        // If not found in DB, keep the placeholder but add proper extension
+        const ext = this.getDefaultExtension(resource.type);
+        const fallbackFilename = `file_${resource.canvasFileId}${ext}`;
+        this.log?.debug(`resolveResourceFilenames: Using fallback "${fallbackFilename}"`);
+        return { ...resource, filename: fallbackFilename };
+      }
+      return resource;
+    });
   }
 
   /**
@@ -290,21 +369,93 @@ export class HtmlContentSync extends EventEmitter {
   }
 
   /**
-   * Rewrite URLs in HTML to point to local files
+   * Rewrite URLs in HTML to use canvas-file:// protocol
+   * This protocol is handled by Electron and automatically falls back to Canvas URL
+   * if the local file doesn't exist.
+   *
+   * URL format: canvas-file://{canvasFileId}/{filename}
+   *
+   * @param html - The HTML content to rewrite
+   * @param resources - Extracted resources with Canvas file IDs
+   * @param _htmlFolder - Unused (kept for API compatibility)
    */
-  rewriteUrls(html: string, resources: ExtractedResource[], basePath: string): string {
+  rewriteUrls(html: string, resources: ExtractedResource[], _htmlFolder: string): string {
     let rewrittenHtml = html;
 
     for (const resource of resources) {
-      // Create local path for resource
-      const localPath = path.join(basePath, resource.filename);
-      const relativePath = `./${resource.filename}`;
+      let newUrl: string;
+
+      if (resource.canvasFileId) {
+        // Use canvas-file:// protocol which handles local/network fallback
+        // Format: canvas-file://{canvasFileId}/{filename}
+        newUrl = `canvas-file://${resource.canvasFileId}/${encodeURIComponent(resource.filename)}`;
+      } else {
+        // No Canvas file ID - keep original URL
+        this.log?.debug(`rewriteUrls: No Canvas file ID for ${resource.originalUrl}, keeping original`);
+        continue;
+      }
+
+      this.log?.debug(`rewriteUrls: ${resource.originalUrl} -> ${newUrl}`);
 
       // Replace all occurrences of the original URL
-      rewrittenHtml = rewrittenHtml.split(resource.originalUrl).join(relativePath);
+      rewrittenHtml = rewrittenHtml.split(resource.originalUrl).join(newUrl);
     }
 
     return rewrittenHtml;
+  }
+
+  /**
+   * Calculate relative path from source folder to target folder + filename
+   * @param sourceFolder - Folder where the HTML is (e.g., "Pages")
+   * @param targetFolder - Folder where the file is (e.g., "Lecture Notes" or "" for root)
+   * @param filename - The filename
+   */
+  private calculateRelativePath(sourceFolder: string, targetFolder: string, filename: string): string {
+    // Normalize folders (handle empty/null as root)
+    const source = sourceFolder || '';
+    const target = targetFolder || '';
+
+    if (source === target) {
+      // Same folder
+      return `./${filename}`;
+    }
+
+    // Split into path segments
+    const sourceParts = source ? source.split(/[/\\]/).filter(Boolean) : [];
+    const targetParts = target ? target.split(/[/\\]/).filter(Boolean) : [];
+
+    // Find common prefix
+    let commonLength = 0;
+    while (
+      commonLength < sourceParts.length &&
+      commonLength < targetParts.length &&
+      sourceParts[commonLength] === targetParts[commonLength]
+    ) {
+      commonLength++;
+    }
+
+    // Build relative path
+    // Go up for each remaining source segment
+    const upCount = sourceParts.length - commonLength;
+    const ups = Array(upCount).fill('..').join('/');
+
+    // Go down into remaining target segments
+    const downs = targetParts.slice(commonLength).join('/');
+
+    // Combine
+    let relativePath = '';
+    if (ups) {
+      relativePath = ups;
+      if (downs) {
+        relativePath += '/' + downs;
+      }
+    } else if (downs) {
+      relativePath = './' + downs;
+    } else {
+      relativePath = '.';
+    }
+
+    return relativePath + '/' + filename;
   }
 
   /**
@@ -408,6 +559,7 @@ export class HtmlContentSync extends EventEmitter {
 
   /**
    * Create download requests for resources
+   * Skips files that are already downloaded via normal sync
    */
   createDownloadRequests(
     resources: ExtractedResource[],
@@ -416,18 +568,47 @@ export class HtmlContentSync extends EventEmitter {
     const folder = this.getContentFolder(item);
     const requests: DownloadRequest[] = [];
 
+    this.log?.info(`createDownloadRequests: Processing ${resources.length} resources for ${item.sourceType}-${item.sourceId}`);
+
     for (const resource of resources) {
+      this.log?.info(`createDownloadRequests: Checking resource: filename="${resource.filename}" canvasFileId="${resource.canvasFileId}" type="${resource.type}" url="${resource.originalUrl}"`);
+
       // Skip non-downloadable resources (external embeds, etc.)
       if (resource.type === 'embed' && !resource.originalUrl.includes(this.baseUrl)) {
+        this.log?.info(`createDownloadRequests: Skipping - external embed`);
         continue;
       }
 
       // Skip if not configured to download this type
       if (resource.type === 'image' && !this.config.downloadImages) {
+        this.log?.info(`createDownloadRequests: Skipping - images disabled`);
         continue;
       }
       if (resource.type === 'file' && !this.config.downloadLinkedFiles) {
+        this.log?.info(`createDownloadRequests: Skipping - linked files disabled`);
         continue;
+      }
+
+      // Check if file is already downloaded via normal sync
+      if (resource.canvasFileId) {
+        this.log?.info(`createDownloadRequests: Looking up canvasFileId="${resource.canvasFileId}" in DB`);
+        const existingFile = this.db.executeReadOne<{ local_path: string | null }>(
+          'SELECT local_path FROM resources WHERE external_id = ?',
+          [resource.canvasFileId]
+        );
+
+        this.log?.info(`createDownloadRequests: DB lookup result: ${JSON.stringify(existingFile)}`);
+
+        if (existingFile?.local_path) {
+          const fileExists = fs.existsSync(existingFile.local_path);
+          this.log?.info(`createDownloadRequests: local_path="${existingFile.local_path}" exists on disk: ${fileExists}`);
+          if (fileExists) {
+            this.log?.info(`createDownloadRequests: SKIPPING ${resource.filename} - already downloaded`);
+            continue; // File already exists, skip download
+          }
+        }
+      } else {
+        this.log?.info(`createDownloadRequests: No canvasFileId for this resource`);
       }
 
       // Build full URL if relative
@@ -436,8 +617,11 @@ export class HtmlContentSync extends EventEmitter {
         url = new URL(url, this.baseUrl).toString();
       }
 
+      const requestId = `${item.sourceType}-${item.sourceId}-${resource.filename}`;
+      this.log?.info(`createDownloadRequests: ADDING to download queue: id="${requestId}" filename="${resource.filename}" url="${url}"`);
+
       requests.push({
-        id: `${item.sourceType}-${item.sourceId}-${resource.filename}`,
+        id: requestId,
         url,
         courseCode: item.courseCode,
         filename: resource.filename,
@@ -446,6 +630,7 @@ export class HtmlContentSync extends EventEmitter {
       });
     }
 
+    this.log?.info(`createDownloadRequests: Total requests queued: ${requests.length}`);
     return requests;
   }
 
@@ -730,7 +915,11 @@ export class HtmlContentSync extends EventEmitter {
     };
 
     // Extract and optionally rewrite URLs
-    const resources = this.extractResources(htmlContent);
+    let resources = this.extractResources(htmlContent);
+
+    // Resolve placeholder filenames (canvas_file_12345) to actual filenames from database
+    resources = this.resolveResourceFilenames(resources);
+
     let htmlToSave = htmlContent;
 
     if (this.config.urlRewriting === 'local' && resources.length > 0) {
@@ -749,16 +938,49 @@ export class HtmlContentSync extends EventEmitter {
         'resources'
       );
 
-      // Queue embedded resource downloads
-      if (resources.length > 0) {
-        const downloadRequests = this.createDownloadRequests(resources, item);
-        if (downloadRequests.length > 0) {
-          this.downloadManager.queueDownloads(downloadRequests);
-        }
-      }
+      // Note: Embedded resources (linked files in HTML) are NOT registered separately.
+      // The canvas-file:// protocol handles on-demand downloads using the original
+      // Canvas file ID. When a user clicks a link, the protocol handler:
+      // 1. Looks up the resource by Canvas file ID
+      // 2. Downloads from Canvas if not local
+      // 3. Saves to the course folder and updates local_path
+      // 4. Serves the file inline
+      // This avoids duplicate entries in the Files page.
     }
 
     return saveResult;
+  }
+
+  /**
+   * Get MIME type from file extension
+   */
+  private getMimeTypeFromExtension(ext: string): string {
+    const mimeTypes: Record<string, string> = {
+      '.pdf': 'application/pdf',
+      '.doc': 'application/msword',
+      '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      '.xls': 'application/vnd.ms-excel',
+      '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      '.ppt': 'application/vnd.ms-powerpoint',
+      '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      '.png': 'image/png',
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.gif': 'image/gif',
+      '.svg': 'image/svg+xml',
+      '.webp': 'image/webp',
+      '.mp4': 'video/mp4',
+      '.mp3': 'audio/mpeg',
+      '.wav': 'audio/wav',
+      '.zip': 'application/zip',
+      '.txt': 'text/plain',
+      '.html': 'text/html',
+      '.css': 'text/css',
+      '.js': 'application/javascript',
+      '.json': 'application/json',
+      '.xml': 'application/xml',
+    };
+    return mimeTypes[ext] || 'application/octet-stream';
   }
 }
 

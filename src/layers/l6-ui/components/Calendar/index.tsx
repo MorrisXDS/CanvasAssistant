@@ -26,25 +26,7 @@ import { CalendarManagerPanel } from './CalendarManagerPanel';
 import { TaskDetailModal } from './TaskDetailModal';
 import { EventFormModal } from './EventFormModal';
 import type { ICSImportPreview, Task, DisplayCalendarEvent } from '../../../l5-presentation/types';
-
-// Distinct color palette for courses
-const COURSE_COLORS = [
-  '#007FA3', // Teal (primary)
-  '#E53935', // Red
-  '#43A047', // Green
-  '#FB8C00', // Orange
-  '#8E24AA', // Purple
-  '#1E88E5', // Blue
-  '#D81B60', // Pink
-  '#00ACC1', // Cyan
-  '#7CB342', // Light green
-  '#6D4C41', // Brown
-];
-
-function getCourseColor(courseId: number, existingColor: string | null): string {
-  if (existingColor) return existingColor;
-  return COURSE_COLORS[courseId % COURSE_COLORS.length];
-}
+import { getCourseColor } from '../../constants';
 
 // ICS utilities
 function formatICSDate(date: Date): string {

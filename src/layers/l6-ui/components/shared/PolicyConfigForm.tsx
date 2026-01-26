@@ -1,24 +1,36 @@
 /**
- * PolicyForm - Comprehensive policy configuration form
+ * PolicyConfigForm - Policy-specific configuration form (Step 2 of policy modal)
  *
- * Supports all policy types:
- * - Late Penalty (with hard cutoff, min grade, applicable types)
- * - Grace Tokens (with applicable types)
- * - Drop Lowest (with category selection)
- * - Weight Transfer (source/target selection)
- * - Grade Replacement (if_higher, best_of)
+ * Renders the correct form fields based on the selected policy type.
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Info, ArrowDown } from 'lucide-react';
-import { TaskTypeSelector } from './TaskTypeSelector';
+import type { PolicyType } from './PolicyTypeSelector';
 
-export type PolicyType =
-  | 'late_penalty'
-  | 'grace_tokens'
-  | 'drop_lowest'
-  | 'weight_transfer'
-  | 'grade_replacement';
+// Task types for grace token filtering
+const GRACE_TOKEN_TASK_TYPES = [
+  { value: 'assignment', label: 'Assignment' },
+  { value: 'quiz', label: 'Quiz' },
+  { value: 'homework', label: 'Homework' },
+  { value: 'lab', label: 'Lab' },
+  { value: 'project', label: 'Project' },
+  { value: 'essay', label: 'Essay' },
+  { value: 'problem_set', label: 'Problem Set' },
+  { value: 'discussion', label: 'Discussion' },
+  { value: 'exam', label: 'Exam' },
+  { value: 'midterm', label: 'Midterm' },
+  { value: 'final', label: 'Final' },
+];
+
+// Task group/category types for drop lowest
+const CATEGORY_TYPES = [
+  { value: 'quiz', label: 'Quiz' },
+  { value: 'assignment', label: 'Assignment' },
+  { value: 'homework', label: 'Homework' },
+  { value: 'lab', label: 'Lab' },
+  { value: 'problem_set', label: 'Problem Set' },
+];
 
 interface Task {
   id: number;
@@ -32,122 +44,89 @@ interface TaskGroup {
   displayName: string;
 }
 
-interface PolicyFormProps {
-  courseId: number;
+export interface PolicyConfigFormData {
+  policyName: string;
+  config: Record<string, unknown>;
+}
+
+interface PolicyConfigFormProps {
+  policyType: PolicyType;
   initialData?: {
-    id?: number;
-    policyType: PolicyType;
-    policyName: string;
-    config: Record<string, unknown>;
-    applicableTypes?: string[];
-    excludedTypes?: string[];
+    policyName?: string;
+    config?: Record<string, unknown>;
   };
   tasks?: Task[];
   taskGroups?: TaskGroup[];
-  onSave: (data: PolicyFormData) => void;
-  onCancel: () => void;
+  existingPolicyNames?: string[];
+  onValidChange: (isValid: boolean, data: PolicyConfigFormData) => void;
 }
 
-export interface PolicyFormData {
-  policyType: PolicyType;
-  policyName: string;
-  config: Record<string, unknown>;
-  applicableTypes: string[];
-  excludedTypes: string[];
-}
-
-const POLICY_TYPE_OPTIONS: { value: PolicyType; label: string; description: string }[] = [
-  {
-    value: 'late_penalty',
-    label: 'Late Penalty',
-    description: 'Deduct points for late submissions',
-  },
-  {
-    value: 'grace_tokens',
-    label: 'Grace Tokens',
-    description: 'Allow deadline extensions using tokens',
-  },
-  {
-    value: 'drop_lowest',
-    label: 'Drop Lowest',
-    description: 'Drop the lowest grade(s) in a category',
-  },
-  {
-    value: 'weight_transfer',
-    label: 'Weight Transfer',
-    description: 'Move weight from one task to another',
-  },
-  {
-    value: 'grade_replacement',
-    label: 'Grade Replacement',
-    description: 'Replace grade with another if higher',
-  },
-];
-
-export function PolicyForm({
-  courseId,
+export function PolicyConfigForm({
+  policyType,
   initialData,
   tasks = [],
   taskGroups = [],
-  onSave,
-  onCancel,
-}: PolicyFormProps) {
-  const [policyType, setPolicyType] = useState<PolicyType>(
-    initialData?.policyType || 'late_penalty'
-  );
+  existingPolicyNames = [],
+  onValidChange,
+}: PolicyConfigFormProps) {
+  // Common fields
   const [policyName, setPolicyName] = useState(initialData?.policyName || '');
-  const [applicableTypes, setApplicableTypes] = useState<string[]>(
-    initialData?.applicableTypes || []
-  );
-  const [excludedTypes, setExcludedTypes] = useState<string[]>(
-    initialData?.excludedTypes || []
-  );
+  const [nameError, setNameError] = useState<string | null>(null);
 
   // Late Penalty Config
   const [penaltyType, setPenaltyType] = useState<string>(
     (initialData?.config?.penalty_type as string) || 'percentage_per_day'
   );
   const [penaltyValue, setPenaltyValue] = useState(
-    String(initialData?.config?.penalty_value || '10')
+    String(initialData?.config?.penalty_value ?? '10')
   );
   const [gracePeriodHours, setGracePeriodHours] = useState(
-    String(initialData?.config?.grace_period_hours || '0')
+    String(initialData?.config?.grace_period_hours ?? '0')
   );
   const [hardCutoffDays, setHardCutoffDays] = useState(
-    String(initialData?.config?.hard_cutoff_days || '')
+    String(initialData?.config?.hard_cutoff_days ?? '')
   );
   const [minGrade, setMinGrade] = useState(
-    String(initialData?.config?.min_grade || '0')
+    String(initialData?.config?.min_grade ?? '0')
   );
 
   // Grace Token Config
+  const [graceTokenTaskType, setGraceTokenTaskType] = useState(
+    (initialData?.config?.task_type as string) || ''
+  );
   const [totalTokens, setTotalTokens] = useState(
-    String(initialData?.config?.total_tokens || '3')
+    String(initialData?.config?.total_tokens ?? '3')
   );
   const [hoursPerToken, setHoursPerToken] = useState(
-    String(initialData?.config?.hours_per_token || '24')
+    String(initialData?.config?.hours_per_token ?? '24')
   );
   const [maxTokensPerTask, setMaxTokensPerTask] = useState(
-    String(initialData?.config?.max_tokens_per_task || '2')
+    initialData?.config?.max_tokens_per_task === null || initialData?.config?.max_tokens_per_task === undefined
+      ? ''
+      : String(initialData?.config?.max_tokens_per_task)
   );
 
   // Drop Lowest Config
   const [dropCount, setDropCount] = useState(
-    String(initialData?.config?.drop_count || '1')
+    String(initialData?.config?.drop_count ?? '1')
   );
   const [dropCategory, setDropCategory] = useState(
     (initialData?.config?.category as string) || ''
   );
   const [minSubmissions, setMinSubmissions] = useState(
-    String(initialData?.config?.min_submissions || '1')
+    String(initialData?.config?.min_submissions ?? '1')
   );
 
-  // Weight Transfer Config
-  const [sourceType, setSourceType] = useState<'task' | 'group'>('task');
+  // Weight Transfer / Grade Replacement Config
+  const [sourceType, setSourceType] = useState<'task' | 'group'>(
+    initialData?.config?.source_group_id ? 'group' : 'task'
+  );
   const [sourceId, setSourceId] = useState(
     String(initialData?.config?.source_task_id || initialData?.config?.source_group_id || '')
   );
-  const [targetType, setTargetType] = useState<'task' | 'group'>('task');
+  const [targetType, setTargetType] = useState<'task' | 'group'>(
+    initialData?.config?.target_group_id ? 'group' : 'task'
+  );
   const [targetId, setTargetId] = useState(
     String(initialData?.config?.target_task_id || initialData?.config?.target_group_id || '')
   );
@@ -155,7 +134,7 @@ export function PolicyForm({
     (initialData?.config?.transfer_type as 'full' | 'partial' | 'conditional') || 'full'
   );
   const [transferPercent, setTransferPercent] = useState(
-    String(initialData?.config?.transfer_percent || '100')
+    String(initialData?.config?.transfer_percent ?? '100')
   );
   const [conditionType, setConditionType] = useState<'missed' | 'lower' | 'always'>(
     (initialData?.config?.condition_type as 'missed' | 'lower' | 'always') || 'missed'
@@ -166,10 +145,39 @@ export function PolicyForm({
     (initialData?.config?.replacement_type as 'if_higher' | 'always' | 'best_of') || 'if_higher'
   );
   const [replacementRatio, setReplacementRatio] = useState(
-    String(initialData?.config?.replacement_ratio || '1.0')
+    String(initialData?.config?.replacement_ratio ?? '1.0')
   );
 
-  const handleSubmit = () => {
+  // Auto-generate policy name for grace tokens when task type changes
+  useEffect(() => {
+    if (policyType === 'grace_tokens' && graceTokenTaskType && !initialData?.policyName) {
+      const typeLabel = GRACE_TOKEN_TASK_TYPES.find(t => t.value === graceTokenTaskType)?.label || graceTokenTaskType;
+      setPolicyName(`Grace Tokens - ${typeLabel}`);
+    }
+  }, [graceTokenTaskType, policyType, initialData?.policyName]);
+
+  // Validate policy name
+  useEffect(() => {
+    if (policyName.trim() === '') {
+      setNameError(null);
+      return;
+    }
+
+    // Check for duplicates (case-insensitive)
+    const isDuplicate = existingPolicyNames.some(
+      name => name.toLowerCase() === policyName.trim().toLowerCase() &&
+        name.toLowerCase() !== initialData?.policyName?.toLowerCase()
+    );
+
+    if (isDuplicate) {
+      setNameError('A policy with this name already exists');
+    } else {
+      setNameError(null);
+    }
+  }, [policyName, existingPolicyNames, initialData?.policyName]);
+
+  // Build and validate form data
+  const formData = useMemo((): PolicyConfigFormData => {
     let config: Record<string, unknown> = {};
 
     switch (policyType) {
@@ -185,9 +193,11 @@ export function PolicyForm({
 
       case 'grace_tokens':
         config = {
+          task_type: graceTokenTaskType,
           total_tokens: parseInt(totalTokens) || 3,
+          tokens_used: (initialData?.config?.tokens_used as number) || 0,
           hours_per_token: parseInt(hoursPerToken) || 24,
-          max_tokens_per_task: parseInt(maxTokensPerTask) || 2,
+          max_tokens_per_task: maxTokensPerTask === '' ? null : (parseInt(maxTokensPerTask) || null),
         };
         break;
 
@@ -227,54 +237,63 @@ export function PolicyForm({
         break;
     }
 
-    onSave({
-      policyType,
-      policyName: policyName.trim() || POLICY_TYPE_OPTIONS.find(p => p.value === policyType)?.label || '',
+    return {
+      policyName: policyName.trim(),
       config,
-      applicableTypes,
-      excludedTypes,
-    });
-  };
+    };
+  }, [
+    policyType, policyName, penaltyType, penaltyValue, gracePeriodHours, hardCutoffDays, minGrade,
+    graceTokenTaskType, totalTokens, hoursPerToken, maxTokensPerTask, initialData?.config?.tokens_used,
+    dropCount, dropCategory, minSubmissions,
+    sourceType, sourceId, targetType, targetId, transferType, transferPercent, conditionType,
+    replacementType, replacementRatio,
+  ]);
+
+  // Check form validity
+  const isValid = useMemo(() => {
+    if (!policyName.trim() || nameError) return false;
+
+    switch (policyType) {
+      case 'grace_tokens':
+        return !!graceTokenTaskType && parseInt(totalTokens) > 0 && parseInt(hoursPerToken) > 0;
+      case 'drop_lowest':
+        return !!dropCategory && parseInt(dropCount) > 0;
+      case 'weight_transfer':
+      case 'grade_replacement':
+        return !!sourceId && !!targetId;
+      default:
+        return true;
+    }
+  }, [policyName, nameError, policyType, graceTokenTaskType, totalTokens, hoursPerToken, dropCategory, dropCount, sourceId, targetId]);
+
+  // Notify parent of validity and data changes
+  useEffect(() => {
+    onValidChange(isValid, formData);
+  }, [isValid, formData, onValidChange]);
 
   return (
     <div style={styles.form}>
-      {/* Policy Type Selection */}
-      <div style={styles.section}>
-        <label style={styles.label}>Policy Type</label>
-        <select
-          value={policyType}
-          onChange={(e) => setPolicyType(e.target.value as PolicyType)}
-          style={styles.select}
-          disabled={!!initialData?.id}
-        >
-          {POLICY_TYPE_OPTIONS.map(opt => (
-            <option key={opt.value} value={opt.value}>
-              {opt.label}
-            </option>
-          ))}
-        </select>
-        <p style={styles.hint}>
-          {POLICY_TYPE_OPTIONS.find(p => p.value === policyType)?.description}
-        </p>
-      </div>
-
-      {/* Policy Name */}
-      <div style={styles.section}>
+      {/* Policy Name - Common for all types */}
+      <div style={styles.field}>
         <label style={styles.label}>Policy Name</label>
         <input
           type="text"
           value={policyName}
           onChange={(e) => setPolicyName(e.target.value)}
-          placeholder={POLICY_TYPE_OPTIONS.find(p => p.value === policyType)?.label}
-          style={styles.input}
+          placeholder="Enter policy name"
+          style={{
+            ...styles.input,
+            borderColor: nameError ? 'var(--color-error)' : 'var(--border-default)',
+          }}
         />
+        {nameError && <p style={styles.error}>{nameError}</p>}
       </div>
 
-      {/* Policy-specific configuration */}
-      {policyType === 'late_penalty' && (
-        <div style={styles.configBox}>
-          <div style={styles.configTitle}>Late Penalty Settings</div>
+      <div style={styles.divider} />
 
+      {/* Late Penalty Fields */}
+      {policyType === 'late_penalty' && (
+        <div style={styles.configSection}>
           <div style={styles.grid2}>
             <div style={styles.field}>
               <label style={styles.label}>Penalty Type</label>
@@ -291,14 +310,17 @@ export function PolicyForm({
             </div>
             <div style={styles.field}>
               <label style={styles.label}>Penalty Value</label>
-              <input
-                type="number"
-                value={penaltyValue}
-                onChange={(e) => setPenaltyValue(e.target.value)}
-                style={styles.input}
-                min="0"
-                max="100"
-              />
+              <div style={styles.inputWithSuffix}>
+                <input
+                  type="number"
+                  value={penaltyValue}
+                  onChange={(e) => setPenaltyValue(e.target.value)}
+                  style={styles.inputInline}
+                  min="0"
+                  max="100"
+                />
+                <span style={styles.suffix}>%</span>
+              </div>
             </div>
           </div>
 
@@ -343,11 +365,27 @@ export function PolicyForm({
         </div>
       )}
 
+      {/* Grace Tokens Fields */}
       {policyType === 'grace_tokens' && (
-        <div style={styles.configBox}>
-          <div style={styles.configTitle}>Grace Token Settings</div>
+        <div style={styles.configSection}>
+          <div style={styles.field}>
+            <label style={styles.label}>Task Type</label>
+            <select
+              value={graceTokenTaskType}
+              onChange={(e) => setGraceTokenTaskType(e.target.value)}
+              style={styles.select}
+            >
+              <option value="">Select task type...</option>
+              {GRACE_TOKEN_TASK_TYPES.map((type) => (
+                <option key={type.value} value={type.value}>
+                  {type.label}
+                </option>
+              ))}
+            </select>
+            <p style={styles.hint}>This policy will only apply to tasks of this type</p>
+          </div>
 
-          <div style={styles.grid3}>
+          <div style={styles.grid2}>
             <div style={styles.field}>
               <label style={styles.label}>Total Tokens</label>
               <input
@@ -368,32 +406,67 @@ export function PolicyForm({
                 min="1"
               />
             </div>
-            <div style={styles.field}>
-              <label style={styles.label}>Max per Task</label>
-              <input
-                type="number"
-                value={maxTokensPerTask}
-                onChange={(e) => setMaxTokensPerTask(e.target.value)}
-                style={styles.input}
-                min="1"
-              />
-            </div>
           </div>
 
           <div style={styles.infoBox}>
             <Info size={14} />
             <span>
-              {totalTokens} tokens × {hoursPerToken} hours = {parseInt(totalTokens || '0') * parseInt(hoursPerToken || '0')} total hours
+              {totalTokens || 0} tokens × {hoursPerToken || 0} hours = <strong>{(parseInt(totalTokens) || 0) * (parseInt(hoursPerToken) || 0)} total extension hours</strong>
             </span>
+          </div>
+
+          <div style={styles.field}>
+            <label style={styles.label}>Max per Task</label>
+            <div style={styles.maxPerTaskRow}>
+              <input
+                type="number"
+                value={maxTokensPerTask}
+                onChange={(e) => setMaxTokensPerTask(e.target.value)}
+                placeholder="No limit"
+                style={styles.maxPerTaskInput}
+                min="1"
+              />
+              <span style={styles.maxPerTaskHint}>
+                {maxTokensPerTask === '' ? 'No limit' : `${maxTokensPerTask} tokens max per task`}
+              </span>
+            </div>
+            <p style={styles.hint}>Maximum tokens on a single task (leave empty for no limit)</p>
           </div>
         </div>
       )}
 
+      {/* Drop Lowest Fields */}
       {policyType === 'drop_lowest' && (
-        <div style={styles.configBox}>
-          <div style={styles.configTitle}>Drop Lowest Settings</div>
-
+        <div style={styles.configSection}>
           <div style={styles.grid2}>
+            <div style={styles.field}>
+              <label style={styles.label}>Category/Group</label>
+              <select
+                value={dropCategory}
+                onChange={(e) => setDropCategory(e.target.value)}
+                style={styles.select}
+              >
+                <option value="">Select category...</option>
+                {taskGroups.length > 0 && (
+                  <>
+                    <optgroup label="Course Groups">
+                      {taskGroups.map(group => (
+                        <option key={group.id} value={group.name}>
+                          {group.displayName}
+                        </option>
+                      ))}
+                    </optgroup>
+                  </>
+                )}
+                <optgroup label="Task Types">
+                  {CATEGORY_TYPES.map(type => (
+                    <option key={type.value} value={type.value}>
+                      {type.label}
+                    </option>
+                  ))}
+                </optgroup>
+              </select>
+            </div>
             <div style={styles.field}>
               <label style={styles.label}>Number to Drop</label>
               <input
@@ -403,25 +476,6 @@ export function PolicyForm({
                 style={styles.input}
                 min="1"
               />
-            </div>
-            <div style={styles.field}>
-              <label style={styles.label}>Category/Group</label>
-              <select
-                value={dropCategory}
-                onChange={(e) => setDropCategory(e.target.value)}
-                style={styles.select}
-              >
-                <option value="">Select category...</option>
-                {taskGroups.map(group => (
-                  <option key={group.id} value={group.name}>
-                    {group.displayName}
-                  </option>
-                ))}
-                <option value="quiz">Quiz</option>
-                <option value="assignment">Assignment</option>
-                <option value="homework">Homework</option>
-                <option value="lab">Lab</option>
-              </select>
             </div>
           </div>
 
@@ -439,17 +493,18 @@ export function PolicyForm({
         </div>
       )}
 
+      {/* Weight Transfer Fields */}
       {policyType === 'weight_transfer' && (
-        <div style={styles.configBox}>
-          <div style={styles.configTitle}>Weight Transfer Settings</div>
-
-          {/* Source */}
+        <div style={styles.configSection}>
           <div style={styles.field}>
             <label style={styles.label}>Source (Transfer From)</label>
             <div style={styles.splitSelect}>
               <select
                 value={sourceType}
-                onChange={(e) => setSourceType(e.target.value as 'task' | 'group')}
+                onChange={(e) => {
+                  setSourceType(e.target.value as 'task' | 'group');
+                  setSourceId('');
+                }}
                 style={styles.selectSmall}
               >
                 <option value="task">Task</option>
@@ -472,18 +527,19 @@ export function PolicyForm({
             </div>
           </div>
 
-          {/* Arrow */}
           <div style={styles.arrowDown}>
             <ArrowDown size={20} color="var(--text-muted)" />
           </div>
 
-          {/* Target */}
           <div style={styles.field}>
             <label style={styles.label}>Target (Transfer To)</label>
             <div style={styles.splitSelect}>
               <select
                 value={targetType}
-                onChange={(e) => setTargetType(e.target.value as 'task' | 'group')}
+                onChange={(e) => {
+                  setTargetType(e.target.value as 'task' | 'group');
+                  setTargetId('');
+                }}
                 style={styles.selectSmall}
               >
                 <option value="task">Task</option>
@@ -508,7 +564,6 @@ export function PolicyForm({
 
           <div style={styles.divider} />
 
-          {/* Transfer Options */}
           <div style={styles.grid2}>
             <div style={styles.field}>
               <label style={styles.label}>Transfer Type</label>
@@ -550,25 +605,23 @@ export function PolicyForm({
                   </select>
                 </>
               )}
-              {transferType === 'full' && (
-                <div style={styles.placeholder} />
-              )}
             </div>
           </div>
         </div>
       )}
 
+      {/* Grade Replacement Fields */}
       {policyType === 'grade_replacement' && (
-        <div style={styles.configBox}>
-          <div style={styles.configTitle}>Grade Replacement Settings</div>
-
-          {/* Source */}
+        <div style={styles.configSection}>
           <div style={styles.field}>
             <label style={styles.label}>Source Grade (Replace From)</label>
             <div style={styles.splitSelect}>
               <select
                 value={sourceType}
-                onChange={(e) => setSourceType(e.target.value as 'task' | 'group')}
+                onChange={(e) => {
+                  setSourceType(e.target.value as 'task' | 'group');
+                  setSourceId('');
+                }}
                 style={styles.selectSmall}
               >
                 <option value="task">Task</option>
@@ -591,18 +644,19 @@ export function PolicyForm({
             </div>
           </div>
 
-          {/* Arrow */}
           <div style={styles.arrowDown}>
             <ArrowDown size={20} color="var(--text-muted)" />
           </div>
 
-          {/* Target */}
           <div style={styles.field}>
             <label style={styles.label}>Target Grade (Replace With)</label>
             <div style={styles.splitSelect}>
               <select
                 value={targetType}
-                onChange={(e) => setTargetType(e.target.value as 'task' | 'group')}
+                onChange={(e) => {
+                  setTargetType(e.target.value as 'task' | 'group');
+                  setTargetId('');
+                }}
                 style={styles.selectSmall}
               >
                 <option value="task">Task</option>
@@ -627,7 +681,6 @@ export function PolicyForm({
 
           <div style={styles.divider} />
 
-          {/* Replacement Options */}
           <div style={styles.grid2}>
             <div style={styles.field}>
               <label style={styles.label}>Replacement Type</label>
@@ -657,43 +710,6 @@ export function PolicyForm({
           </div>
         </div>
       )}
-
-      {/* Applicable Types - only for late_penalty and grace_tokens */}
-      {(policyType === 'late_penalty' || policyType === 'grace_tokens') && (
-        <>
-          <div style={styles.section}>
-            <label style={styles.label}>Applies To (Task Types)</label>
-            <TaskTypeSelector
-              value={applicableTypes}
-              onChange={setApplicableTypes}
-              multiple
-              placeholder="All task types (leave empty for all)"
-            />
-            <p style={styles.hint}>Leave empty to apply to all task types</p>
-          </div>
-
-          <div style={styles.section}>
-            <label style={styles.label}>Exclude Types</label>
-            <TaskTypeSelector
-              value={excludedTypes}
-              onChange={setExcludedTypes}
-              multiple
-              placeholder="No exclusions"
-            />
-            <p style={styles.hint}>These types will never be affected</p>
-          </div>
-        </>
-      )}
-
-      {/* Actions */}
-      <div style={styles.actions}>
-        <button style={styles.cancelBtn} onClick={onCancel}>
-          Cancel
-        </button>
-        <button style={styles.saveBtn} onClick={handleSubmit}>
-          {initialData?.id ? 'Update Policy' : 'Add Policy'}
-        </button>
-      </div>
     </div>
   );
 }
@@ -702,34 +718,13 @@ const styles: Record<string, React.CSSProperties> = {
   form: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '20px',
-    padding: '20px',
-    backgroundColor: 'var(--bg-app)',
-    borderRadius: 'var(--radius-lg)',
-    border: '1px solid var(--border-default)',
+    gap: '16px',
   },
 
-  section: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '6px',
-  },
-
-  configBox: {
+  configSection: {
     display: 'flex',
     flexDirection: 'column',
     gap: '16px',
-    padding: '16px',
-    backgroundColor: 'var(--bg-card)',
-    borderRadius: 'var(--radius-md)',
-    border: '1px solid var(--border-light)',
-  },
-
-  configTitle: {
-    fontSize: 'var(--text-sm)',
-    fontWeight: 'var(--font-semibold)',
-    color: 'var(--text-primary)',
-    marginBottom: '4px',
   },
 
   field: {
@@ -755,6 +750,38 @@ const styles: Record<string, React.CSSProperties> = {
     boxSizing: 'border-box',
   },
 
+  inputInline: {
+    flex: 1,
+    height: '36px',
+    padding: '0 12px',
+    fontSize: '14px',
+    border: '1px solid var(--border-default)',
+    borderTopLeftRadius: 'var(--radius-md)',
+    borderBottomLeftRadius: 'var(--radius-md)',
+    borderTopRightRadius: 0,
+    borderBottomRightRadius: 0,
+    borderRight: 'none',
+    backgroundColor: 'var(--bg-card)',
+    boxSizing: 'border-box',
+  },
+
+  inputWithSuffix: {
+    display: 'flex',
+    alignItems: 'stretch',
+  },
+
+  suffix: {
+    display: 'flex',
+    alignItems: 'center',
+    padding: '0 12px',
+    fontSize: '14px',
+    color: 'var(--text-secondary)',
+    backgroundColor: 'var(--bg-elevated)',
+    border: '1px solid var(--border-default)',
+    borderTopRightRadius: 'var(--radius-md)',
+    borderBottomRightRadius: 'var(--radius-md)',
+  },
+
   select: {
     width: '100%',
     height: '36px',
@@ -773,16 +800,23 @@ const styles: Record<string, React.CSSProperties> = {
     margin: 0,
   },
 
+  error: {
+    fontSize: '12px',
+    color: 'var(--color-error)',
+    margin: 0,
+  },
+
   grid2: {
     display: 'grid',
     gridTemplateColumns: '1fr 1fr',
     gap: '16px',
+    alignItems: 'start',
   },
 
-  grid3: {
-    display: 'grid',
-    gridTemplateColumns: '1fr 1fr 1fr',
-    gap: '16px',
+  divider: {
+    height: '1px',
+    backgroundColor: 'var(--border-light)',
+    margin: '4px 0',
   },
 
   splitSelect: {
@@ -822,16 +856,6 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '4px 0',
   },
 
-  divider: {
-    height: '1px',
-    backgroundColor: 'var(--border-light)',
-    margin: '4px 0',
-  },
-
-  placeholder: {
-    height: '36px',
-  },
-
   infoBox: {
     display: 'flex',
     alignItems: 'center',
@@ -843,36 +867,28 @@ const styles: Record<string, React.CSSProperties> = {
     color: 'var(--text-secondary)',
   },
 
-  actions: {
+  maxPerTaskRow: {
     display: 'flex',
-    justifyContent: 'flex-end',
+    alignItems: 'center',
     gap: '12px',
-    paddingTop: '12px',
-    borderTop: '1px solid var(--border-light)',
   },
 
-  cancelBtn: {
+  maxPerTaskInput: {
+    width: '80px',
     height: '36px',
-    padding: '0 16px',
+    padding: '0 12px',
     fontSize: '14px',
-    backgroundColor: 'transparent',
     border: '1px solid var(--border-default)',
     borderRadius: 'var(--radius-md)',
-    cursor: 'pointer',
-    color: 'var(--text-secondary)',
+    backgroundColor: 'var(--bg-card)',
+    boxSizing: 'border-box',
+    textAlign: 'center',
   },
 
-  saveBtn: {
-    height: '36px',
-    padding: '0 16px',
-    fontSize: '14px',
-    fontWeight: '500',
-    backgroundColor: 'var(--color-navy)',
-    border: 'none',
-    borderRadius: 'var(--radius-md)',
-    cursor: 'pointer',
-    color: 'white',
+  maxPerTaskHint: {
+    fontSize: '13px',
+    color: 'var(--text-muted)',
   },
 };
 
-export default PolicyForm;
+export default PolicyConfigForm;

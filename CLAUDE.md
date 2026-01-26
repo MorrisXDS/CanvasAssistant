@@ -5,9 +5,9 @@
 ## 1. Stack Boundaries (Negative Constraints)
 
 ### Runtime
-- **Node.js:** 20.x required (see `.nvmrc`). Electron 34 bundles Node 20.18.1 - using a different version causes native module ABI mismatches with `better-sqlite3`.
+- **Node.js:** 20+ required (22+ recommended for latest electron-builder). Electron 35 bundles Node 20.x - using a different version causes native module ABI mismatches with `better-sqlite3`.
 - **TypeScript:** 5.7+ with `strict: true`. NO `any` without explicit comment.
-- **Electron:** 34.x. Main process is CommonJS, renderer is ESM via Vite.
+- **Electron:** 40.x. Main process is CommonJS, renderer is ESM via Vite.
 
 ```bash
 # Before development, ensure correct Node version:
@@ -28,9 +28,9 @@ npm rebuild    # Rebuild native modules if switching versions
 |---------|---------|------------|
 | react | ^18.3.1 | No React 19 |
 | zustand | ^5.0.2 | v5 API only |
-| better-sqlite3 | ^11.7.0 | Native bindings |
+| better-sqlite3 | ^12.6.2 | Native bindings |
 | zod | ^4.3.5 | v4 schema syntax |
-| electron | ^34.0.0 | contextIsolation required |
+| electron | ^40.0.0 | contextIsolation required |
 
 ## 2. Architectural Invariants
 
@@ -51,6 +51,7 @@ src/layers/
 2. **No upward imports:** L1 cannot import from L2+
 3. **Events for cross-layer:** Use `EventEmitter` for L1 commit notifications
 4. **IPC boundary:** L5/L6 (renderer) communicates with L0-L4 (main) via `preload.ts`
+5. **Course visibility:** All modules that act on course data MUST use `VisibleDataProvider` to filter to user-selected courses. The ONLY exception is `SyncEngine` which discovers all courses from Canvas.
 
 ### File Placement Rules
 - All SQL migrations: `src/layers/l1-persistence/migrations/*.sql`
@@ -320,10 +321,108 @@ function formatTimeAgo(dateStr: string) { /* local implementation */ }
 | `Input` | Form input with label, error, help text |
 | `Select` | Dropdown select with options |
 
+### Visible Data Provider (`src/layers/l1-persistence/VisibleDataProvider.ts`)
+**Purpose:** Single source of truth for which courses/tasks are visible to the user based on their term selection and hidden course settings.
+
+**CRITICAL RULE:** All orchestrators, services, and queries that operate on course data MUST filter through `VisibleDataProvider`. The ONLY exception is `SyncEngine` which discovers all courses from Canvas API.
+
+```typescript
+// DO THIS - Filter to visible courses
+constructor(db: Database, visibleDataProvider?: VisibleDataProvider) {
+  this.visibleDataProvider = visibleDataProvider ?? null;
+}
+
+private fetchTasks(): TaskForPriority[] {
+  const visibleCourseIds = this.visibleDataProvider?.getVisibleCourseIds();
+
+  let sql = `SELECT * FROM tasks WHERE is_completed = 0`;
+  if (visibleCourseIds && visibleCourseIds.length > 0) {
+    sql += ` AND course_id IN (${visibleCourseIds.join(',')})`;
+  } else if (visibleCourseIds && visibleCourseIds.length === 0) {
+    return []; // No visible courses = no results
+  }
+  // ...
+}
+
+// NOT THIS - Querying all courses ignores user preferences
+private fetchTasks(): TaskForPriority[] {
+  return this.db.executeRead(`SELECT * FROM tasks WHERE is_completed = 0`);
+}
+```
+
+**Key methods:**
+| Method | Usage |
+|--------|-------|
+| `getVisibleCourseIds()` | Get array of course IDs user wants to see |
+| `getVisibleCourses()` | Get full course rows for visible courses |
+| `getVisibleTasks()` | Get tasks from visible courses only |
+| `isTermVisible(termId)` | Check if a term is selected |
+
+**Events to listen for:**
+- `'visibility-changed'` - User changed term selection or hid/unhid a course
+- `'settings-changed'` - Visibility settings were modified
+
+### Database Row Types (`src/layers/l1-persistence/DatabaseRowTypes.ts`)
+**Purpose:** Single source of truth for ALL database row interfaces. Prevents schema drift across orchestrators.
+
+| Type Category | Examples |
+|---------------|----------|
+| Core entity rows | `CourseRow`, `TaskRow`, `PolicyRow`, `NotificationRow` |
+| Minimal variants | `CourseRowMinimal`, `TaskRowMinimal`, `CourseRowSyllabusOnly` |
+| Extended variants | `TaskRowWithPriority`, `TaskRowWithFieldSources` |
+| Grace token rows | `GraceTokenRow`, `GraceTokenRowMinimal` |
+| Intelligence rows | `InsightRow`, `RecommendationRow`, `WorkloadSnapshotRow`, `CompletionEventRow`, `BehaviorPatternRow`, `WeightAdjustmentRow` |
+| Content analysis | `ContentAnalysisRow`, `CoursePageRow`, `ResourceRow` |
+
+```typescript
+// DO THIS - Import from centralized location
+import type { TaskRowMinimal, CourseRowMinimal } from '../../l1-persistence/DatabaseRowTypes';
+const rows = this.db.executeRead<TaskRowMinimal>(sql);
+
+// NOT THIS - Local interface definitions cause schema drift
+interface TaskRow {
+  id: number;
+  course_id: number;
+  // ... fields may differ from actual schema!
+}
+```
+
+**When to update:** Whenever the database schema changes, update types in `DatabaseRowTypes.ts`, NOT in individual orchestrators.
+
+### L3 Intelligence Constants (`src/layers/l3-intelligence/domain/Constants.ts`)
+**Purpose:** Single source of truth for ALL magic numbers, thresholds, and business logic constants in the intelligence layer.
+
+| Constant Category | Examples |
+|-------------------|----------|
+| Time constants | `HOURS`, `MS` (millisecond conversions) |
+| Day names | `DAY_NAMES` (indexed by getDay()) |
+| Effort estimation | `DEFAULT_EFFORT_MINUTES`, `MINUTES_PER_POINT`, `EFFORT_THRESHOLDS` |
+| Workload thresholds | `WORKLOAD_THRESHOLDS`, `WEIGHT_THRESHOLDS` |
+| Insight thresholds | `INSIGHT_THRESHOLDS`, `INSIGHT_EXPIRATION` |
+| Recommendation thresholds | `RECOMMENDATION_THRESHOLDS`, `RECOMMENDATION_VALIDITY` |
+| Behavior analytics | `BEHAVIOR_THRESHOLDS` |
+| Task types | `HIGH_VALUE_TASK_TYPES`, `HIGH_PRIORITY_TASK_TYPES` |
+| Orchestrator defaults | `ORCHESTRATOR_DEFAULTS` |
+
+```typescript
+// DO THIS - Import from Constants.ts
+import { DAY_NAMES, INSIGHT_THRESHOLDS, ORCHESTRATOR_DEFAULTS } from './Constants';
+const dayName = DAY_NAMES[dayOfWeek];
+if (lateRate >= INSIGHT_THRESHOLDS.LATE_RATE_PATTERN) { ... }
+
+// NOT THIS - Magic numbers scattered in code
+const dayNames = ['Sunday', 'Monday', ...]; // Duplicate!
+if (lateRate >= 0.3) { ... } // What does 0.3 mean?
+```
+
+**When to update:** Add new constants to `Constants.ts` instead of hardcoding values in services. Group by category.
+
 ### When Adding New Features
 
 1. **Before creating local helpers:** Check if a centralized version exists
 2. **Settings/preferences:** Always use `settingsManager` and `STORAGE_KEYS`
 3. **Date/time formatting:** Always use `formatters.ts` functions
 4. **UI components:** Check `primitives/` before creating custom modals/buttons
-5. **If no centralized version exists:** Consider adding to the appropriate module if it will be reused
+5. **Database row types:** Always import from `DatabaseRowTypes.ts`, never define locally
+6. **L3 thresholds/constants:** Always import from `Constants.ts`, never hardcode magic numbers
+7. **If no centralized version exists:** Consider adding to the appropriate module if it will be reused

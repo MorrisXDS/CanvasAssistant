@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, protocol, net, Tray, Menu, nativeImage } from 'electron';
 import fs from 'fs';
 import path from 'path';
 
@@ -10,6 +10,7 @@ import { HealthCheck } from './layers/l0-utilities/HealthCheck';
 import { MetricsCollector } from './layers/l0-utilities/MetricsCollector';
 import { HousekeepingManager } from './layers/l0-utilities/HousekeepingManager';
 import { FileDownloadManager } from './layers/l0-utilities/FileDownloadManager';
+import { FileWatcher } from './layers/l0-utilities/FileWatcher';
 
 // L1 - Persistence
 import {
@@ -101,6 +102,14 @@ const fileDownloadManager = new FileDownloadManager({
   logger,
 });
 
+// FileWatcher - monitors downloads directory for external changes
+const fileWatcher = new FileWatcher({
+  baseDir: FILES_DIR,
+  logger,
+  autoStart: false, // Start after app is ready
+  debounceMs: 500,
+});
+
 // Initialize Layer 1 persistence
 const database = new Database({ dbPath: DB_PATH, verbose: false });
 const migrationRunner = new MigrationRunner(database);
@@ -132,6 +141,48 @@ let canvasClient: CanvasClient | null = null;
 let syncEngine: SyncEngine | null = null;
 
 let mainWindow: BrowserWindow | null = null;
+let tray: Tray | null = null;
+let isQuitting = false;
+
+// Window behavior settings type (must match renderer settings schema)
+interface WindowBehaviorSettings {
+  closeAction: 'quit' | 'minimize-to-tray' | null;
+  showTrayIcon: boolean;
+}
+
+// Default window behavior settings
+const DEFAULT_WINDOW_BEHAVIOR: WindowBehaviorSettings = {
+  closeAction: null, // null = not yet chosen, will prompt on first close
+  showTrayIcon: true,
+};
+
+// Get window behavior settings from a simple JSON file in app data
+function getWindowBehavior(): WindowBehaviorSettings {
+  const settingsPath = path.join(APP_DATA_DIR, 'window-behavior.json');
+  try {
+    if (fs.existsSync(settingsPath)) {
+      const data = fs.readFileSync(settingsPath, 'utf-8');
+      return { ...DEFAULT_WINDOW_BEHAVIOR, ...JSON.parse(data) };
+    }
+  } catch {
+    // Return defaults if file doesn't exist or is corrupted
+  }
+  return { ...DEFAULT_WINDOW_BEHAVIOR };
+}
+
+// Save window behavior settings
+function setWindowBehavior(settings: WindowBehaviorSettings): void {
+  const settingsPath = path.join(APP_DATA_DIR, 'window-behavior.json');
+  try {
+    // Ensure directory exists
+    if (!fs.existsSync(APP_DATA_DIR)) {
+      fs.mkdirSync(APP_DATA_DIR, { recursive: true });
+    }
+    fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
+  } catch (error) {
+    logger.error('Failed to save window behavior settings:', error as Error);
+  }
+}
 
 function createWindow() {
   logger.info('Creating main window...');
@@ -197,6 +248,157 @@ function createWindow() {
     logger.info('Main window closed');
     mainWindow = null;
   });
+
+  // Handle window close with minimize-to-tray option
+  mainWindow.on('close', async (event) => {
+    // If we're quitting, allow the close
+    if (isQuitting) {
+      return;
+    }
+
+    const settings = getWindowBehavior();
+
+    // If closeAction is null (not yet chosen), show the dialog
+    if (settings.closeAction === null) {
+      event.preventDefault();
+
+      const result = await dialog.showMessageBox(mainWindow!, {
+        type: 'question',
+        title: 'Close Behavior',
+        message: 'What would you like to do when you close the window?',
+        detail: 'You can change this later in Settings > General.',
+        buttons: ['Minimize to Tray', 'Quit Application'],
+        defaultId: 0,
+        cancelId: 1,
+      });
+
+      // Save the user's choice (persists until changed in settings)
+      const closeAction = result.response === 0 ? 'minimize-to-tray' : 'quit';
+      setWindowBehavior({ ...settings, closeAction });
+
+      // Now apply the chosen action
+      if (closeAction === 'minimize-to-tray') {
+        mainWindow?.hide();
+      } else {
+        isQuitting = true;
+        app.quit();
+      }
+      return;
+    }
+
+    // If minimize-to-tray is set, hide window instead of closing
+    if (settings.closeAction === 'minimize-to-tray') {
+      event.preventDefault();
+      mainWindow?.hide();
+      return;
+    }
+
+    // Otherwise (closeAction === 'quit'), allow the close to proceed
+  });
+}
+
+/**
+ * Create system tray icon and menu
+ */
+function createTray(): void {
+  // Skip if tray already exists
+  if (tray) return;
+
+  const settings = getWindowBehavior();
+
+  // Create tray icon - use the app icon
+  let iconPath: string;
+  if (process.platform === 'darwin') {
+    // macOS - use 16x16 template image
+    iconPath = path.join(__dirname, '../assets/app.iconset/icon_16x16.png');
+  } else if (process.platform === 'win32') {
+    // Windows - use 16x16 or 32x32 icon
+    iconPath = path.join(__dirname, '../assets/app.iconset/icon_32x32.png');
+  } else {
+    // Linux - use 22x22 or 24x24
+    iconPath = path.join(__dirname, '../assets/app.iconset/icon_32x32.png');
+  }
+
+  // Fallback to a simpler path structure for packaged app
+  if (!fs.existsSync(iconPath)) {
+    iconPath = path.join(process.resourcesPath || '', 'assets/app.iconset/icon_32x32.png');
+  }
+
+  // If still not found, create a default icon
+  let icon: Electron.NativeImage;
+  if (fs.existsSync(iconPath)) {
+    icon = nativeImage.createFromPath(iconPath);
+    // On macOS, set as template image for proper menu bar appearance
+    if (process.platform === 'darwin') {
+      icon.setTemplateImage(true);
+    }
+  } else {
+    // Create a simple default icon (small colored square)
+    logger.warn(`Tray icon not found at ${iconPath}, using default`);
+    icon = nativeImage.createEmpty();
+  }
+
+  tray = new Tray(icon);
+  tray.setToolTip('Canvas Assistant');
+
+  // Build context menu
+  const contextMenu = Menu.buildFromTemplate([
+    {
+      label: 'Show Window',
+      click: () => {
+        if (mainWindow) {
+          mainWindow.show();
+          mainWindow.focus();
+        }
+      },
+    },
+    { type: 'separator' },
+    {
+      label: 'Quit',
+      click: () => {
+        isQuitting = true;
+        app.quit();
+      },
+    },
+  ]);
+
+  tray.setContextMenu(contextMenu);
+
+  // Click behavior - show window on single click (Windows/Linux)
+  // On macOS, the menu is shown on click by default
+  if (process.platform !== 'darwin') {
+    tray.on('click', () => {
+      if (mainWindow) {
+        if (mainWindow.isVisible()) {
+          mainWindow.focus();
+        } else {
+          mainWindow.show();
+          mainWindow.focus();
+        }
+      }
+    });
+  }
+
+  // Double-click shows window (Windows)
+  tray.on('double-click', () => {
+    if (mainWindow) {
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  });
+
+  logger.info('System tray created');
+}
+
+/**
+ * Destroy system tray
+ */
+function destroyTray(): void {
+  if (tray) {
+    tray.destroy();
+    tray = null;
+    logger.info('System tray destroyed');
+  }
 }
 
 /**
@@ -585,6 +787,10 @@ function registerIpcHandlers(): void {
       try {
         const result = await syncEngine.syncAll(options);
         logger.info(`Sync completed: ${JSON.stringify(result)}`);
+        // Trigger Files page refresh
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('file-status-changed', { type: 'sync-complete' });
+        }
         return { success: true, result };
       } catch (error) {
         logger.error(`Sync failed: ${error}`);
@@ -1039,6 +1245,53 @@ function registerIpcHandlers(): void {
     }
   });
 
+  // Get all policies for multiple courses (for policy badges on tasks)
+  ipcMain.handle(
+    'data:getAllPolicies',
+    (_event, options?: { courseIds?: number[] }) => {
+      try {
+        let sql =
+          'SELECT * FROM course_policies WHERE is_active = 1 ORDER BY course_id, policy_type, policy_name';
+        const params: unknown[] = [];
+
+        if (options?.courseIds && options.courseIds.length > 0) {
+          const placeholders = options.courseIds.map(() => '?').join(', ');
+          sql = `SELECT * FROM course_policies WHERE course_id IN (${placeholders}) AND is_active = 1 ORDER BY course_id, policy_type, policy_name`;
+          params.push(...options.courseIds);
+        }
+
+        const rows = database.executeRead<{
+          id: number;
+          course_id: number;
+          policy_type: string;
+          policy_name: string;
+          policy_config: string;
+          raw_text: string | null;
+          is_user_verified: number;
+          is_active: number;
+          created_at: string;
+          updated_at: string;
+        }>(sql, params);
+
+        return rows.map((row) => ({
+          id: row.id,
+          courseId: row.course_id,
+          policyType: row.policy_type,
+          policyName: row.policy_name,
+          policyConfig: JSON.parse(row.policy_config || '{}'),
+          rawText: row.raw_text,
+          isUserVerified: Boolean(row.is_user_verified),
+          isActive: Boolean(row.is_active),
+          createdAt: row.created_at,
+          updatedAt: row.updated_at,
+        }));
+      } catch (error) {
+        logger.error(`Failed to get all policies: ${error}`);
+        throw error;
+      }
+    }
+  );
+
   // Get syllabus designation for a course
   ipcMain.handle('data:getCourseSyllabus', (_event, courseId: number) => {
     try {
@@ -1224,10 +1477,10 @@ function registerIpcHandlers(): void {
     }
   });
 
-  // Get all files (resources + notification attachments)
+  // Get all files (resources + notification attachments + pages)
   ipcMain.handle('data:getFiles', () => {
     try {
-      // Get resources (files synced from Canvas)
+      // Get resources (files synced from Canvas) - excludes HTML wrapper pages
       const resources = database.executeRead<{
         id: number;
         external_id: string;
@@ -1278,37 +1531,14 @@ function registerIpcHandlers(): void {
       ORDER BY na.course_id, na.display_name
     `);
 
-      // Get pages from course_pages with module info
-      const pages = database.executeRead<{
-        id: number;
-        external_id: string | null;
-        course_id: number;
-        page_type: string;
-        title: string;
-        url_slug: string | null;
-        body_html: string | null;
-        is_front_page: number;
-        published: number;
-        last_synced_at: string | null;
-        module_name: string | null;
-      }>(`
-      SELECT
-        cp.*,
-        m.name as module_name
-      FROM course_pages cp
-      JOIN courses c ON cp.course_id = c.id
-      LEFT JOIN module_items mi ON mi.item_type = 'Page' AND mi.content_id = cp.external_id
-      LEFT JOIN modules m ON mi.module_id = m.id
-      WHERE cp.published = 1
-      ORDER BY cp.course_id, m.position, cp.title
-    `);
+      // Note: course_pages excluded - they redirect to Canvas, not local files
 
       const downloadedResources = resources.filter((r) => r.local_path !== null).length;
       const downloadedAttachments = attachments.filter(
         (a) => a.download_status === 'completed'
       ).length;
       logger.info(
-        `Found ${resources.length} resources (${downloadedResources} downloaded), ${attachments.length} attachments (${downloadedAttachments} downloaded), and ${pages.length} pages`
+        `Found ${resources.length} files (${downloadedResources} downloaded), ${attachments.length} attachments (${downloadedAttachments} downloaded)`
       );
 
       return {
@@ -1345,21 +1575,7 @@ function registerIpcHandlers(): void {
           notificationTitle: a.notification_title,
           source: 'attachment' as const,
         })),
-        pages: pages.map((p) => ({
-          id: p.id,
-          externalId: p.external_id,
-          courseId: p.course_id,
-          pageType: p.page_type,
-          title: p.title,
-          urlSlug: p.url_slug,
-          hasContent: !!p.body_html,
-          isFrontPage: p.is_front_page === 1,
-          published: p.published === 1,
-          lastSyncedAt: p.last_synced_at,
-          folderPath: p.module_name || (p.is_front_page ? 'Front Page' : 'Pages'),
-          sizeBytes: null, // Pages don't have a file size
-          source: 'page' as const,
-        })),
+        pages: [], // Excluded - course_pages redirect to Canvas, not local files
       };
     } catch (error) {
       logger.error(`Failed to get files: ${error}`);
@@ -1937,6 +2153,17 @@ function registerIpcHandlers(): void {
         logger.info('Downloaded files deleted');
       } catch (err) {
         logger.error(`Failed to delete files directory: ${err}`);
+      }
+    }
+
+    // 3b. Reset window behavior settings (clear minimize-to-tray preference)
+    const windowBehaviorPath = path.join(APP_DATA_DIR, 'window-behavior.json');
+    if (fs.existsSync(windowBehaviorPath)) {
+      try {
+        fs.unlinkSync(windowBehaviorPath);
+        logger.info('Window behavior settings reset');
+      } catch (err) {
+        logger.error(`Failed to delete window behavior settings: ${err}`);
       }
     }
 
@@ -3317,9 +3544,53 @@ function registerIpcHandlers(): void {
       return { success: false, error: 'File not downloaded' };
     }
 
+    // Check if file actually exists on disk
+    if (!fs.existsSync(resource.local_path)) {
+      logger.warn(`[resource:open] File not found on disk, clearing local_path: ${resource.local_path}`);
+      // Clear the local_path since file was deleted
+      database.executeWrite(
+        'UPDATE resources SET local_path = NULL WHERE id = ?',
+        [resourceId],
+        'resources'
+      );
+      return { success: false, error: 'File was deleted from disk. Please re-download.' };
+    }
+
     logger.debug(`[resource:open] Opening: ${resource.local_path}`);
 
-    // Use Electron's shell.openPath for cross-platform file opening
+    // Check if it's an HTML file - open in Electron to support canvas-file:// protocol
+    const ext = path.extname(resource.local_path).toLowerCase();
+    logger.info(`[resource:open] File extension: "${ext}", path: ${resource.local_path}`);
+
+    if (ext === '.html' || ext === '.htm') {
+      logger.info(`[resource:open] Detected HTML file, opening in Electron BrowserWindow`);
+      // Open HTML in a new Electron window to support canvas-file:// protocol
+      const htmlWindow = new BrowserWindow({
+        width: 900,
+        height: 700,
+        title: path.basename(resource.local_path),
+        webPreferences: {
+          nodeIntegration: false,
+          contextIsolation: true,
+        },
+      });
+
+      htmlWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription) => {
+        logger.error(`[resource:open] HTML window failed to load: ${errorCode} - ${errorDescription}`);
+      });
+
+      htmlWindow.webContents.on('did-finish-load', () => {
+        logger.info(`[resource:open] HTML window finished loading`);
+      });
+
+      htmlWindow.loadFile(resource.local_path);
+      logger.info(`[resource:open] Called loadFile for HTML window`);
+      return { success: true };
+    } else {
+      logger.info(`[resource:open] Not an HTML file (ext="${ext}"), will use shell.openPath`);
+    }
+
+    // Use Electron's shell.openPath for other file types
     const { shell } = require('electron');
     shell.openPath(resource.local_path).then((error: string) => {
       if (error) {
@@ -3341,9 +3612,66 @@ function registerIpcHandlers(): void {
       return { success: false, error: 'File not downloaded' };
     }
 
+    // Check if file actually exists on disk
+    if (!fs.existsSync(resource.local_path)) {
+      logger.warn(`[resource:showInFolder] File not found on disk, clearing local_path: ${resource.local_path}`);
+      // Clear the local_path since file was deleted
+      database.executeWrite(
+        'UPDATE resources SET local_path = NULL WHERE id = ?',
+        [resourceId],
+        'resources'
+      );
+      return { success: false, error: 'File was deleted from disk. Please re-download.' };
+    }
+
     const { shell } = require('electron');
     shell.showItemInFolder(resource.local_path);
     return { success: true };
+  });
+
+  // Delete local copy of a resource
+  ipcMain.handle('resource:deleteLocal', (_event, resourceId: number) => {
+    logger.debug(`[resource:deleteLocal] START resourceId=${resourceId}`);
+
+    const resource = database.executeReadOne<{ local_path: string | null; external_id: string }>(
+      'SELECT local_path, external_id FROM resources WHERE id = ?',
+      [resourceId]
+    );
+
+    if (!resource?.local_path) {
+      return { success: false, error: 'File not downloaded' };
+    }
+
+    try {
+      // Delete the file from disk
+      if (fs.existsSync(resource.local_path)) {
+        fs.unlinkSync(resource.local_path);
+        logger.info(`[resource:deleteLocal] Deleted file: ${resource.local_path}`);
+      }
+
+      // Clear local_path in database
+      database.executeWrite(
+        'UPDATE resources SET local_path = NULL WHERE id = ?',
+        [resourceId],
+        'resources'
+      );
+
+      // Notify renderer of the deletion
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('file-status-changed', {
+          type: 'deleted',
+          resourceId,
+          externalId: resource.external_id,
+          path: resource.local_path,
+        });
+      }
+
+      return { success: true };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error(`[resource:deleteLocal] Failed: ${message}`);
+      return { success: false, error: message };
+    }
   });
 
   // L4 Command handlers
@@ -3635,6 +3963,34 @@ function registerIpcHandlers(): void {
         bySeverity: { info: 0, warning: 0, critical: 0 },
         byType: {},
       };
+    }
+  });
+
+  // ============ Intelligence - Suppression (Never Show Again) ============
+
+  ipcMain.handle('intelligence:suppressRecommendation', (_event, id: number) => {
+    if (!recommendationOrchestrator) {
+      return { success: false, error: 'Recommendation system not initialized' };
+    }
+    try {
+      const suppressed = recommendationOrchestrator.suppressRecommendationForever(id);
+      return { success: suppressed };
+    } catch (error) {
+      logger.error('Failed to suppress recommendation', error as Error);
+      return { success: false, error: String(error) };
+    }
+  });
+
+  ipcMain.handle('intelligence:suppressInsight', (_event, id: number) => {
+    if (!insightOrchestrator) {
+      return { success: false, error: 'Insight system not initialized' };
+    }
+    try {
+      const suppressed = insightOrchestrator.suppressInsightForever(id);
+      return { success: suppressed };
+    } catch (error) {
+      logger.error('Failed to suppress insight', error as Error);
+      return { success: false, error: String(error) };
     }
   });
 
@@ -4046,6 +4402,20 @@ function registerIpcHandlers(): void {
     }
   );
 
+  // ============ Last Sync Time ============
+
+  ipcMain.handle('sync:getLastSyncTime', () => {
+    try {
+      // Get the most recent sync time from sync_metadata table
+      const result = database.executeReadOne<{ last_synced_at: string }>(
+        'SELECT MAX(last_synced_at) as last_synced_at FROM sync_metadata'
+      );
+      return result?.last_synced_at || null;
+    } catch (_e) {
+      return null;
+    }
+  });
+
   // ============ Auto-Sync Preferences ============
 
   ipcMain.handle('sync:getAutoSyncPreferences', () => {
@@ -4190,6 +4560,33 @@ function registerIpcHandlers(): void {
       logger.error('Failed to get visible course IDs:', error as Error);
       return { courseIds: [] };
     }
+  });
+
+  // ============ Window Behavior Settings Handlers ============
+
+  ipcMain.handle('settings:getWindowBehavior', () => {
+    try {
+      return getWindowBehavior();
+    } catch (error) {
+      logger.error('Failed to get window behavior settings:', error as Error);
+      return DEFAULT_WINDOW_BEHAVIOR;
+    }
+  });
+
+  ipcMain.handle('settings:setWindowBehavior', (_event, settings: WindowBehaviorSettings) => {
+    try {
+      setWindowBehavior(settings);
+      logger.info(`Window behavior updated: closeAction=${settings.closeAction}, showTrayIcon=${settings.showTrayIcon}`);
+      return { success: true };
+    } catch (error) {
+      logger.error('Failed to set window behavior settings:', error as Error);
+      return { success: false, error: String(error) };
+    }
+  });
+
+  // One-way handler to hide window (for tray functionality)
+  ipcMain.on('window:hide', () => {
+    mainWindow?.hide();
   });
 
   // ============ Course Settings Handlers ============
@@ -4867,6 +5264,8 @@ function startAutoSync(): void {
       // Notify renderer that sync completed
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('sync:status', 'idle');
+        // Trigger Files page refresh
+        mainWindow.webContents.send('file-status-changed', { type: 'sync-complete' });
       }
 
       metricsCollector.increment('sync.auto.success');
@@ -4909,6 +5308,8 @@ async function triggerFocusRestoreSync(): Promise<void> {
 
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('sync:status', 'idle');
+      // Trigger Files page refresh
+      mainWindow.webContents.send('file-status-changed', { type: 'sync-complete' });
     }
 
     metricsCollector.increment('sync.focus_restore.success');
@@ -4945,6 +5346,20 @@ circuitBreaker.on('circuit-closed', ({ endpoint }) => {
   logger.info(`Circuit breaker closed for ${endpoint}`);
   metricsCollector.increment('circuit_breaker.closed');
 });
+
+// Register custom protocol for canvas files - allows fallback from local to network
+// Must be called before app.whenReady()
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'canvas-file',
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      corsEnabled: true,
+    },
+  },
+]);
 
 app.whenReady().then(async () => {
   logger.info('Canvas Integration Dashboard starting...');
@@ -5000,6 +5415,175 @@ app.whenReady().then(async () => {
       });
       if (cleaned > 0) {
         logger.info(`Cleaned HTML from ${cleaned} notification messages`);
+      }
+    }
+
+    // Register canvas-file:// protocol handler for local/network file fallback
+    // URL format: canvas-file://{canvasFileId}/{filename}
+    protocol.handle('canvas-file', async (request) => {
+      const url = new URL(request.url);
+      let canvasFileId = url.hostname; // The file ID is in the hostname part
+      const requestedPath = url.pathname;
+
+      logger.info(`[canvas-file] Protocol request received: ${request.url}`);
+      logger.info(`[canvas-file] Raw hostname: ${canvasFileId}, pathname: ${requestedPath}`);
+
+      // JavaScript's URL parser converts numeric hostnames to IP addresses
+      // e.g., canvas-file://41584900/file.pdf becomes hostname "2.122.137.4"
+      // Convert IP-style hostname back to the original number
+      if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(canvasFileId)) {
+        const parts = canvasFileId.split('.').map(Number);
+        const numericId = (parts[0] << 24) + (parts[1] << 16) + (parts[2] << 8) + parts[3];
+        // Use unsigned conversion for large numbers
+        const unsignedId = numericId >>> 0;
+        canvasFileId = String(unsignedId);
+        logger.info(`[canvas-file] Converted IP-style hostname to file ID: ${canvasFileId}`);
+      }
+
+      logger.info(`[canvas-file] Resolved fileId: ${canvasFileId}`);
+
+      // Look up the resource in the database
+      const resource = database.executeReadOne<{
+        local_path: string | null;
+        url: string | null;
+      }>('SELECT local_path, url FROM resources WHERE external_id = ?', [canvasFileId]);
+
+      logger.info(`[canvas-file] DB lookup result: ${JSON.stringify(resource)}`);
+
+      if (resource?.local_path && fs.existsSync(resource.local_path)) {
+        // Local file exists - serve it
+        logger.info(`[canvas-file] Serving LOCAL file: ${resource.local_path}`);
+        return net.fetch(`file://${resource.local_path}`);
+      } else if (resource?.local_path) {
+        logger.warn(`[canvas-file] local_path set but file doesn't exist: ${resource.local_path}`);
+      }
+
+      if (resource?.url) {
+        // Fall back to Canvas URL - download locally first, then serve
+        logger.info(`[canvas-file] Falling back to NETWORK URL: ${resource.url}`);
+
+        try {
+          // Get auth token for Canvas request
+          const token = await credentialManager.retrieve();
+          const headers: Record<string, string> = {};
+          if (token) {
+            headers['Authorization'] = `Bearer ${token}`;
+          }
+
+          logger.info(`[canvas-file] Downloading file from Canvas...`);
+          const response = await net.fetch(resource.url, { headers });
+
+          if (!response.ok) {
+            logger.error(`[canvas-file] Canvas fetch failed: ${response.status} ${response.statusText}`);
+            return new Response(`Failed to fetch from Canvas: ${response.status}`, { status: response.status });
+          }
+
+          // Get the file content
+          const arrayBuffer = await response.arrayBuffer();
+          const buffer = Buffer.from(arrayBuffer);
+
+          // Determine filename from URL path
+          const filename = decodeURIComponent(requestedPath.split('/').pop() || `file_${canvasFileId}`);
+
+          // Get course info to determine save location
+          const resourceInfo = database.executeReadOne<{
+            course_id: number;
+            folder_path: string | null;
+          }>('SELECT course_id, folder_path FROM resources WHERE external_id = ?', [canvasFileId]);
+
+          if (resourceInfo) {
+            const courseInfo = database.executeReadOne<{ code: string }>(
+              'SELECT code FROM courses WHERE id = ?',
+              [resourceInfo.course_id]
+            );
+
+            if (courseInfo) {
+              // Sanitize course code for file system (replace spaces with underscores)
+              const sanitizedCode = courseInfo.code.replace(/[^a-zA-Z0-9_\-. ]/g, '_').replace(/\s+/g, '_');
+              // Save to course folder
+              const courseFolder = path.join(FILES_DIR, sanitizedCode);
+              const targetFolder = resourceInfo.folder_path
+                ? path.join(courseFolder, resourceInfo.folder_path)
+                : courseFolder;
+
+              // Ensure folder exists
+              if (!fs.existsSync(targetFolder)) {
+                fs.mkdirSync(targetFolder, { recursive: true });
+              }
+
+              const localPath = path.join(targetFolder, filename);
+              fs.writeFileSync(localPath, buffer);
+              logger.info(`[canvas-file] Saved file to: ${localPath}`);
+
+              // Update database with local_path
+              database.executeWrite(
+                'UPDATE resources SET local_path = ? WHERE external_id = ?',
+                [localPath, canvasFileId],
+                'resources'
+              );
+              logger.info(`[canvas-file] Updated database with local_path`);
+            }
+          }
+
+          // Determine content type from filename
+          const ext = path.extname(filename).toLowerCase();
+          const mimeTypes: Record<string, string> = {
+            '.pdf': 'application/pdf',
+            '.png': 'image/png',
+            '.jpg': 'image/jpeg',
+            '.jpeg': 'image/jpeg',
+            '.gif': 'image/gif',
+            '.svg': 'image/svg+xml',
+            '.html': 'text/html',
+            '.htm': 'text/html',
+            '.txt': 'text/plain',
+            '.css': 'text/css',
+            '.js': 'application/javascript',
+            '.json': 'application/json',
+            '.doc': 'application/msword',
+            '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            '.xls': 'application/vnd.ms-excel',
+            '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            '.ppt': 'application/vnd.ms-powerpoint',
+            '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+          };
+          const contentType = mimeTypes[ext] || 'application/octet-stream';
+
+          // Return response with proper content-type for inline display
+          logger.info(`[canvas-file] Serving downloaded content as ${contentType}`);
+          return new Response(buffer, {
+            status: 200,
+            headers: {
+              'Content-Type': contentType,
+              'Content-Length': String(buffer.length),
+            },
+          });
+        } catch (err) {
+          logger.error(`[canvas-file] Error downloading from Canvas: ${err}`);
+          return new Response(`Error fetching file: ${err}`, { status: 500 });
+        }
+      } else {
+        // Resource not found
+        logger.warn(`[canvas-file] Resource not found in DB for external_id: ${canvasFileId}`);
+        return new Response('File not found', { status: 404 });
+      }
+    });
+    logger.info('Registered canvas-file:// protocol handler');
+
+    // Clean up old embedded- resource entries (no longer needed, protocol handles on-demand)
+    const embeddedCleanup = database.executeWrite(
+      `DELETE FROM resources WHERE external_id LIKE 'embedded-%'`,
+      [],
+      'resources'
+    );
+    if (embeddedCleanup.changes > 0) {
+      logger.info(`Cleaned up ${embeddedCleanup.changes} old embedded resource entries`);
+      // Notify renderer to refresh Files page
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('file-status-changed', {
+          type: 'cleanup',
+          message: `Removed ${embeddedCleanup.changes} duplicate entries`,
+        });
       }
     }
 
@@ -5233,6 +5817,55 @@ app.whenReady().then(async () => {
 
   createWindow();
 
+  // Create system tray icon
+  createTray();
+
+  // Start FileWatcher to monitor downloads directory for external changes
+  fileWatcher.start();
+
+  // Handle file deletions - update database and notify renderer
+  fileWatcher.on('file-deleted', (event: { path: string; relativePath: string }) => {
+    logger.info(`[FileWatcher] File deleted: ${event.path}`);
+
+    // Find and update any resource with this local_path
+    const resource = database.executeReadOne<{ id: number; external_id: string }>(
+      'SELECT id, external_id FROM resources WHERE local_path = ?',
+      [event.path]
+    );
+
+    if (resource) {
+      logger.info(`[FileWatcher] Clearing local_path for resource ${resource.id} (${resource.external_id})`);
+      database.executeWrite(
+        'UPDATE resources SET local_path = NULL WHERE id = ?',
+        [resource.id],
+        'resources'
+      );
+
+      // Notify renderer to refresh
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('file-status-changed', {
+          type: 'deleted',
+          resourceId: resource.id,
+          externalId: resource.external_id,
+          path: event.path,
+        });
+      }
+    }
+  });
+
+  // Handle file additions - could be from external download or sync
+  fileWatcher.on('file-added', (event: { path: string; relativePath: string }) => {
+    logger.debug(`[FileWatcher] File added: ${event.path}`);
+
+    // Notify renderer of new file
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('file-status-changed', {
+        type: 'added',
+        path: event.path,
+      });
+    }
+  });
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();
@@ -5240,16 +5873,33 @@ app.whenReady().then(async () => {
   });
 });
 
+// Handle before-quit to set quitting flag
+app.on('before-quit', () => {
+  logger.info('Application preparing to quit...');
+  isQuitting = true;
+});
+
 app.on('window-all-closed', () => {
   logger.info('All windows closed');
 
+  // On macOS, apps typically stay active until explicitly quit
+  // For other platforms, check if we should stay in tray
   if (process.platform !== 'darwin') {
-    app.quit();
+    const settings = getWindowBehavior();
+    // Only quit if not set to minimize-to-tray
+    if (settings.closeAction !== 'minimize-to-tray') {
+      app.quit();
+    } else {
+      logger.info('Staying in tray (minimize-to-tray enabled)');
+    }
   }
 });
 
 app.on('quit', () => {
   logger.info('Application quitting...');
+
+  // Clean up tray
+  destroyTray();
 
   // Stop auto-sync scheduler
   stopAutoSync();
@@ -5271,6 +5921,7 @@ app.on('quit', () => {
   }
 
   // Stop all background services
+  fileWatcher.stop();
   systemMonitor.stop();
   healthCheck.stop();
   metricsCollector.stop();

@@ -33,6 +33,7 @@ import {
 import { formatTimeAgo } from '../constants';
 import { TitleBar } from './TitleBar';
 import { SyncResultToast, SyncConflictModal } from './shared';
+import { useScrollbarVisibility } from '../hooks/useScrollbarVisibility';
 
 // Debug flag - set to true only when debugging layout issues
 const DEBUG_LAYOUT = false;
@@ -93,6 +94,9 @@ export function Layout() {
   const mainRef = useRef<HTMLElement>(null);
   const navigate = useNavigate();
   const location = useLocation();
+
+  // Auto-hide scrollbar on main content area (show on scroll, hide after 1.5s)
+  useScrollbarVisibility(mainRef, 1500);
 
   // Sidebar collapse state from settings
   const { collapsed: isCollapsed, setCollapsed } = useSidebarState();
@@ -548,22 +552,27 @@ export function Layout() {
             </span>
           </button>
 
-          {/* Footer - Sync Status Centered */}
-          <div style={styles.sidebarFooter}>
-            <div style={styles.syncStatusCentered} title={syncDisplay.text}>
+          {/* Footer - Sync Status Always Centered */}
+          <div
+            style={{
+              ...styles.sidebarFooter,
+              justifyContent: 'center',
+              padding: isCollapsed ? 'var(--space-3) 0' : 'var(--space-3) var(--space-4)',
+            }}
+          >
+            <div
+              style={{
+                ...styles.syncStatusCentered,
+                gap: isCollapsed ? 0 : 'var(--space-2)',
+              }}
+              title={syncDisplay.text}
+            >
               {syncDisplay.icon}
-              <span
-                style={{
-                  ...styles.syncText,
-                  opacity: isCollapsed ? 0 : 1,
-                  width: isCollapsed ? 0 : 'auto',
-                  overflow: 'hidden',
-                  whiteSpace: 'nowrap',
-                  transition: 'opacity 200ms ease, width 200ms ease',
-                }}
-              >
-                {syncDisplay.text}
-              </span>
+              {!isCollapsed && (
+                <span style={styles.syncText}>
+                  {syncDisplay.text}
+                </span>
+              )}
             </div>
           </div>
         </aside>
@@ -775,7 +784,9 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 'var(--text-sm)',
     fontWeight: 'var(--font-medium)',
     transition: 'all var(--transition-fast)',
-    borderLeft: '3px solid transparent',
+    borderLeftWidth: '3px',
+    borderLeftStyle: 'solid',
+    borderLeftColor: 'transparent',
     whiteSpace: 'nowrap',
     overflow: 'hidden',
   },

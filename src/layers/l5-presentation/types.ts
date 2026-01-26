@@ -61,6 +61,7 @@ export interface StoreState {
   courses: import('../../shared/ipc-contract').Course[];
   tasks: import('../../shared/ipc-contract').Task[];
   notifications: import('../../shared/ipc-contract').Notification[];
+  policies: import('../../shared/ipc-contract').Policy[];
 
   // Imported Calendars
   importedCalendars: import('../../shared/ipc-contract').ImportedCalendar[];
@@ -114,6 +115,7 @@ export interface StoreActions {
   fetchCourses: () => Promise<void>;
   fetchTasks: (courseId?: number) => Promise<void>;
   fetchNotifications: () => Promise<void>;
+  fetchPolicies: () => Promise<void>;
   refreshAll: () => Promise<void>;
 
   // Imported Calendars

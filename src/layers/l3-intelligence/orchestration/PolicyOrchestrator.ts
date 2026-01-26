@@ -11,40 +11,19 @@
 import { EventEmitter } from 'events';
 import { Database } from '../../l1-persistence/Database';
 import { PolicyRepository } from '../../l1-persistence/repositories/PolicyRepository';
+import type {
+  GraceTokenRow,
+  CourseSyllabusRow,
+  TaskRow,
+} from '../../l1-persistence/DatabaseRowTypes';
 import {
   GraceTokenUsageRepository,
   TokenUsageRecord,
   TokenUsageWithContext,
 } from '../../l1-persistence/repositories/GraceTokenUsageRepository';
 import { GraceTokenService } from '../domain/GraceTokenService';
+import { ORCHESTRATOR_DEFAULTS } from '../domain/Constants';
 import type { Policy, Task } from '../../../shared/ipc-contract';
-
-/**
- * Grace token row in database
- */
-interface GraceTokenRow {
-  id: number;
-  course_id: number;
-  policy_id: number;
-  total_tokens: number;
-  tokens_remaining: number;
-  hours_per_token: number;
-  max_tokens_per_task: number;
-  created_at: string;
-  updated_at: string;
-}
-
-/**
- * Syllabus row for staleness checking
- */
-interface CourseSyllabusRow {
-  id: number;
-  course_id: number;
-  resource_id: number;
-  resource_updated_at: string | null;
-  last_reviewed_at: string;
-  change_detected_at: string | null;
-}
 
 /**
  * Policy with staleness info
@@ -98,7 +77,7 @@ export interface PolicyOrchestratorConfig {
 }
 
 const DEFAULT_CONFIG: Required<PolicyOrchestratorConfig> = {
-  lowTokenWarningThreshold: 1,
+  ...ORCHESTRATOR_DEFAULTS.POLICY,
 };
 
 /**
@@ -367,24 +346,6 @@ export class PolicyOrchestrator extends EventEmitter {
    * Get task by ID.
    */
   private getTask(taskId: number): Task | null {
-    interface TaskRow {
-      id: number;
-      external_id: string;
-      course_id: number;
-      title: string;
-      description: string | null;
-      due_at: string | null;
-      weight: number;
-      grade: number | null;
-      points_possible: number | null;
-      is_completed: number;
-      is_optional: number;
-      completed_at: string | null;
-      task_type: string | null;
-      task_group_id: number | null;
-      submission_status: string | null;
-    }
-
     const row = this.db.executeReadOne<TaskRow>('SELECT * FROM tasks WHERE id = ?', [
       taskId,
     ]);

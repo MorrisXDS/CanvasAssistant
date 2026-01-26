@@ -122,6 +122,11 @@ export class UpdateCoursePreferencesCommand
         );
       }
 
+      // Notify VisibleDataProvider if visibility changed
+      if (params.preferences.isHidden !== undefined && context.visibleDataProvider) {
+        context.visibleDataProvider.notifyVisibilityChanged(params.courseId);
+      }
+
       return {
         success: true,
         data: { previous },

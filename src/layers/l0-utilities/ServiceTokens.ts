@@ -14,6 +14,7 @@ import type { HousekeepingManager } from './HousekeepingManager';
 import type { FileDownloadManager } from './FileDownloadManager';
 import type { Database } from '../l1-persistence/Database';
 import type { MigrationRunner } from '../l1-persistence/MigrationRunner';
+import type { VisibleDataProvider } from '../l1-persistence/VisibleDataProvider';
 import type { CourseRepository } from '../l1-persistence/repositories/CourseRepository';
 import type { TaskRepository } from '../l1-persistence/repositories/TaskRepository';
 import type { PolicyRepository } from '../l1-persistence/repositories/PolicyRepository';
@@ -49,6 +50,7 @@ export type ServiceToken =
   // L1 Persistence
   | 'database'
   | 'migrationRunner'
+  | 'visibleDataProvider'
   | 'courseRepository'
   | 'taskRepository'
   | 'policyRepository'
@@ -87,6 +89,7 @@ export interface ServiceDefinitions {
   // L1 Persistence
   database: Database;
   migrationRunner: MigrationRunner;
+  visibleDataProvider: VisibleDataProvider;
   courseRepository: CourseRepository;
   taskRepository: TaskRepository;
   policyRepository: PolicyRepository;

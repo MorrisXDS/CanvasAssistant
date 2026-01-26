@@ -1,28 +1,27 @@
 /**
  * UseGraceTokenCommand - Apply a grace token to a task
  *
- * Uses domain services for business logic and repositories for data access.
- * This command is now a thin orchestration layer.
+ * Uses PolicyOrchestrator for full grace token workflow including:
+ * - Availability checking
+ * - Usage calculation
+ * - Usage record persistence
+ * - Token count updates
  */
 
-import {
-  Command,
-  CommandContext,
-  CommandResult,
-} from '../types';
-import { TaskRepository, PolicyRepository } from '../../l1-persistence/repositories';
-import { GraceTokenService } from '../../l3-intelligence/domain';
+import { Command, CommandContext, CommandResult } from '../types';
+import { PolicyOrchestrator } from '../../l3-intelligence/orchestration';
 
 export interface UseGraceTokenParams {
   courseId: number;
   taskId: number;
   tokensToUse: number;
+  notes?: string;
 }
 
 export interface UseGraceTokenResult {
   tokensUsed: number;
   remainingTokens: number;
-  newDeadline: Date;
+  newDeadline: Date | null;
   hoursExtended: number;
 }
 
@@ -30,9 +29,6 @@ export class UseGraceTokenCommand
   implements Command<UseGraceTokenParams, UseGraceTokenResult>
 {
   readonly name = 'UseGraceToken';
-
-  // Domain service for business logic
-  private readonly graceTokenService = new GraceTokenService();
 
   validate(params: UseGraceTokenParams): { valid: boolean; error?: string } {
     if (!params.courseId || params.courseId <= 0) {
@@ -60,60 +56,26 @@ export class UseGraceTokenCommand
     }
 
     try {
-      // Create repositories
-      const taskRepo = new TaskRepository(context.db);
-      const policyRepo = new PolicyRepository(context.db);
-
-      // Fetch data using repositories
-      const policy = policyRepo.findGraceTokenPolicy(params.courseId);
-      if (!policy) {
-        return { success: false, error: 'No grace token policy found for this course' };
-      }
-
-      const task = taskRepo.findById(params.taskId);
-      if (!task) {
-        return { success: false, error: 'Task not found' };
-      }
-
-      if (task.courseId !== params.courseId) {
-        return { success: false, error: 'Task not found in this course' };
-      }
-
-      // Use domain service for business logic validation
-      const checkResult = this.graceTokenService.checkAvailability(
-        policy,
-        task,
-        params.tokensToUse
+      // Use PolicyOrchestrator for full workflow
+      const orchestrator = new PolicyOrchestrator(context.db);
+      const result = await orchestrator.useGraceToken(
+        params.courseId,
+        params.taskId,
+        params.tokensToUse,
+        params.notes
       );
 
-      if (!checkResult.canUse) {
-        return { success: false, error: checkResult.error };
+      if (!result.success) {
+        return { success: false, error: result.error };
       }
-
-      // Calculate application result using domain service
-      const applicationResult = this.graceTokenService.calculateApplication(
-        policy.policyConfig,
-        task,
-        params.tokensToUse
-      );
-
-      if (!applicationResult.success) {
-        return { success: false, error: applicationResult.error };
-      }
-
-      // Persist changes using repository
-      policyRepo.updateConfig(policy.id, applicationResult.updatedConfig);
-
-      // Touch the task to mark it as modified
-      taskRepo.update(params.taskId, {});
 
       return {
         success: true,
         data: {
-          tokensUsed: applicationResult.tokensUsed,
-          remainingTokens: applicationResult.remainingTokens,
-          newDeadline: applicationResult.newDeadline,
-          hoursExtended: applicationResult.hoursExtended,
+          tokensUsed: result.tokensUsed,
+          remainingTokens: result.remainingTokens,
+          newDeadline: result.newDeadline,
+          hoursExtended: result.hoursExtended,
         },
       };
     } catch (error) {

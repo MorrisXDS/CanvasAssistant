@@ -17,6 +17,7 @@ import {
   Course,
   Task,
   Notification,
+  Policy,
   SimulationChangeEvent,
   DbCommitEvent,
   DisplayCalendarEvent,
@@ -90,6 +91,7 @@ function processPendingCommits(
   fetchCourses: () => void,
   fetchTasks: () => void,
   fetchNotifications: () => void,
+  fetchPolicies: () => void,
   fetchImportedCalendars: () => void,
   refreshAll: () => void
 ): void {
@@ -99,7 +101,7 @@ function processPendingCommits(
   pendingCommits.clear();
 
   // If too many different tables changed, just refresh all
-  if (tables.size > 3) {
+  if (tables.size > 4) {
     refreshAll();
     return;
   }
@@ -108,6 +110,7 @@ function processPendingCommits(
   if (tables.has('courses')) fetchCourses();
   if (tables.has('tasks')) fetchTasks();
   if (tables.has('notifications')) fetchNotifications();
+  if (tables.has('course_policies')) fetchPolicies();
   if (tables.has('imported_calendars') || tables.has('calendar_events')) {
     fetchImportedCalendars();
   }
@@ -120,6 +123,7 @@ const initialState: StoreState = {
   courses: [],
   tasks: [],
   notifications: [],
+  policies: [],
   importedCalendars: [],
   calendarEvents: [],
   simulation: {
@@ -180,6 +184,12 @@ export const useStore = create<Store>()(
           if (hasCredential) {
             // Load initial data
             await get().refreshAll();
+
+            // Get last sync time from database
+            const lastSyncTime = await api.getLastSyncTime?.();
+            if (lastSyncTime) {
+              set({ lastSyncedAt: lastSyncTime });
+            }
           }
 
           // Get system state
@@ -214,18 +224,33 @@ export const useStore = create<Store>()(
         try {
           let courses = await api.getCourses();
 
-          // Debug logging disabled for production
-
-          // Apply semester filtering based on academic settings
-          // Default to 'auto' if no settings exist (matches UI default)
+          // Get term selection from database via VisibleDataProvider (single source of truth)
           let semesterSelection: 'all' | 'auto' | string = 'auto';
-          const academicSettings = localStorage.getItem('academicSettings');
-          if (academicSettings) {
-            try {
-              const settings = JSON.parse(academicSettings);
-              semesterSelection = settings.termSelection || 'auto';
-            } catch (e) {
-              console.error('[Store] Failed to parse academic settings:', e);
+          try {
+            const termResult = await api.getTermSelection();
+            if (termResult?.termSelection !== undefined) {
+              semesterSelection = String(termResult.termSelection);
+            }
+          } catch (e) {
+            console.error('[Store] Failed to get term selection from database:', e);
+            // Fall back to localStorage for backwards compatibility during migration
+            const academicSettings = localStorage.getItem('academicSettings');
+            if (academicSettings) {
+              try {
+                const settings = JSON.parse(academicSettings);
+                semesterSelection = settings.termSelection || 'auto';
+                // Migrate to database
+                if (api.setTermSelection) {
+                  const valueToSet = semesterSelection === 'all' || semesterSelection === 'auto'
+                    ? semesterSelection
+                    : parseInt(semesterSelection, 10);
+                  api.setTermSelection(valueToSet).catch(() => {
+                    // Ignore migration errors
+                  });
+                }
+              } catch (parseError) {
+                console.error('[Store] Failed to parse academic settings:', parseError);
+              }
             }
           }
 
@@ -383,29 +408,68 @@ export const useStore = create<Store>()(
       },
 
       /**
+       * Fetch policies for visible courses
+       * Used for displaying policy badges on task cards
+       */
+      fetchPolicies: async () => {
+        const api = getApi();
+        if (!api) return;
+
+        try {
+          const allCourses = get().courses;
+
+          if (allCourses.length === 0) {
+            // No courses loaded yet - fetch all policies
+            const policies = await api.getAllPolicies();
+            set({ policies });
+          } else {
+            // Get visible course IDs and fetch only those policies
+            const visibleCourseIds = allCourses
+              .filter((c: Course) => !c.isHidden)
+              .map((c: Course) => c.id);
+
+            const policies = await api.getAllPolicies({ courseIds: visibleCourseIds });
+            set({ policies });
+          }
+        } catch (error) {
+          console.error('Failed to fetch policies:', error);
+          // Don't set lastError for policies - not critical
+        }
+      },
+
+      /**
        * Refresh all data
        * Uses Promise.allSettled to ensure partial failures don't block other refreshes
        */
       refreshAll: async () => {
-        const { fetchCourses, fetchTasks, fetchNotifications, fetchImportedCalendars } =
+        console.debug('[Store] refreshAll: starting');
+        const startTime = Date.now();
+        const { fetchCourses, fetchTasks, fetchNotifications, fetchPolicies, fetchImportedCalendars } =
           get();
-        // Fetch courses FIRST since tasks filtering depends on courses being loaded
-        await fetchCourses();
-        // Then fetch everything else in parallel - use allSettled to handle partial failures
-        const results = await Promise.allSettled([
-          fetchTasks(),
-          fetchNotifications(),
-          fetchImportedCalendars(),
-        ]);
+        try {
+          // Fetch courses FIRST since tasks filtering depends on courses being loaded
+          await fetchCourses();
+          // Then fetch everything else in parallel - use allSettled to handle partial failures
+          const results = await Promise.allSettled([
+            fetchTasks(),
+            fetchNotifications(),
+            fetchPolicies(),
+            fetchImportedCalendars(),
+          ]);
 
-        // Log any unexpected failures (individual fetch methods already handle their own errors)
-        const failures = results.filter(
-          (r): r is PromiseRejectedResult => r.status === 'rejected'
-        );
-        if (failures.length > 0) {
-          for (const failure of failures) {
-            console.error('[Store] Unexpected refresh failure:', failure.reason);
+          // Log any unexpected failures (individual fetch methods already handle their own errors)
+          const failures = results.filter(
+            (r): r is PromiseRejectedResult => r.status === 'rejected'
+          );
+          if (failures.length > 0) {
+            for (const failure of failures) {
+              console.error('[Store] Unexpected refresh failure:', failure.reason);
+            }
           }
+          console.debug(`[Store] refreshAll: completed in ${Date.now() - startTime}ms`);
+        } catch (error) {
+          console.error('[Store] refreshAll: fatal error', error);
+          throw error;
         }
       },
 
@@ -1034,6 +1098,7 @@ export const useStore = create<Store>()(
           fetchCourses,
           fetchTasks,
           fetchNotifications,
+          fetchPolicies,
           fetchImportedCalendars,
           refreshAll,
         } = get();
@@ -1042,6 +1107,7 @@ export const useStore = create<Store>()(
             fetchCourses,
             fetchTasks,
             fetchNotifications,
+            fetchPolicies,
             fetchImportedCalendars,
             refreshAll
           );
@@ -1163,12 +1229,16 @@ export function subscribeToIpcEvents(): () => void {
   });
 
   const unsubSyncStatus = api.onSyncStatus((status: 'idle' | 'syncing' | 'error') => {
+    console.debug(`[Store] sync:status received: ${status}`);
     useStore.setState({ syncStatus: status });
     // Update lastSyncedAt when sync completes successfully
     if (status === 'idle') {
       useStore.setState({ lastSyncedAt: new Date().toISOString() });
-      // Refresh data after sync
-      useStore.getState().refreshAll();
+      // Refresh data after sync - fire and handle errors
+      useStore
+        .getState()
+        .refreshAll()
+        .catch((err) => console.error('[Store] refreshAll failed after sync:status idle:', err));
     }
   });
 
@@ -1191,6 +1261,16 @@ export function subscribeToIpcEvents(): () => void {
       window.location.reload();
     }) || (() => {});
 
+  // Listen for file status changes from FileWatcher (deletions, additions)
+  const unsubFileStatus =
+    api.onFileStatusChanged?.((data: { type: 'deleted' | 'added'; resourceId?: number; path: string }) => {
+      console.debug(`[Store] file-status-changed: ${data.type} ${data.path}`);
+      // Files aren't stored in zustand - components fetch them directly
+      // Just broadcast an event so components can refetch if needed
+      // The store will emit a custom event that FilesPage can listen to
+      window.dispatchEvent(new CustomEvent('file-status-changed', { detail: data }));
+    }) || (() => {});
+
   return () => {
     unsubSimulation();
     unsubDbCommit();
@@ -1198,6 +1278,7 @@ export function subscribeToIpcEvents(): () => void {
     unsubSyncConflicts();
     unsubAuthExpired();
     unsubAppReset();
+    unsubFileStatus();
   };
 }
 
@@ -1286,6 +1367,12 @@ export const selectors = {
    */
   activeNotifications: (state: StoreState) =>
     state.notifications.filter((n) => !n.dismissedAt),
+
+  /**
+   * Get policies for a specific course
+   */
+  coursePolicies: (courseId: number) => (state: StoreState) =>
+    state.policies.filter((p) => p.courseId === courseId && p.isActive),
 
   /**
    * Get simulated grade for a task

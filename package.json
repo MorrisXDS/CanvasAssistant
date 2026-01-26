@@ -4,16 +4,14 @@
   "description": "Offline-first academic command center for Canvas LMS",
   "main": "dist/main.js",
   "engines": {
-    "node": ">=20.18.0 <21.0.0"
+    "node": ">=20.18.0"
   },
   "scripts": {
-    "predev": "npm run check-node",
     "dev": "concurrently \"npm run dev:main\" \"npm run dev:renderer\" \"npm run dev:electron\"",
     "dev:main": "tsc -w",
     "dev:renderer": "vite",
     "dev:electron": "node -e \"setTimeout(() => {}, 3000)\" && cross-env NODE_ENV=development electron .",
     "build": "tsc && vite build",
-    "pretest": "npm run check-node",
     "test": "jest",
     "test:watch": "jest --watch",
     "lint": "eslint src/**/*.ts src/**/*.tsx",
@@ -26,7 +24,7 @@
     "prepare": "husky",
     "postinstall": "electron-builder install-app-deps",
     "rebuild": "electron-rebuild -f -w better-sqlite3",
-    "check-node": "node -e \"const v = process.versions.node.split('.')[0]; if (v !== '20') { console.error('\\x1b[31mError: Node 20.x required (you have ' + process.version + '). Run: nvm use\\x1b[0m'); process.exit(1); }\""
+    "check-node": "node -e \"const v = parseInt(process.versions.node.split('.')[0]); if (v < 20) { console.error('\\x1b[31mError: Node 20+ required (you have ' + process.version + '). Run: nvm use\\x1b[0m'); process.exit(1); }\""
   },
   "lint-staged": {
     "src/**/*.{ts,tsx}": [
@@ -45,10 +43,9 @@
   "author": "UofT Students",
   "license": "MIT",
   "dependencies": {
-    "@types/dompurify": "^3.2.0",
     "@types/html-to-text": "^9.0.4",
     "axios": "^1.7.9",
-    "better-sqlite3": "^11.7.0",
+    "better-sqlite3": "^12.6.2",
     "chokidar": "^5.0.0",
     "dompurify": "^3.3.1",
     "html-to-text": "^9.0.5",
@@ -80,8 +77,8 @@
     "@vitejs/plugin-react": "^4.3.4",
     "concurrently": "^9.1.2",
     "cross-env": "^7.0.3",
-    "electron": "^34.0.0",
-    "electron-builder": "^24.13.3",
+    "electron": "^40.0.0",
+    "electron-builder": "^23.0.6",
     "electron-is-dev": "^3.0.1",
     "eslint": "^9.18.0",
     "husky": "^9.1.7",

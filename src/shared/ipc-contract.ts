@@ -415,6 +415,8 @@ export const InsightTypeSchema = z.enum([
   'grade_at_risk',
   'grade_trend',
   'crunch_period',
+  'unset_weight',
+  'guessed_due_date',
 ]);
 export type InsightType = z.infer<typeof InsightTypeSchema>;
 
@@ -581,6 +583,12 @@ export const IpcContract = {
   },
   'data:getPolicies': {
     params: z.number(),
+    result: z.array(PolicySchema),
+  },
+  'data:getAllPolicies': {
+    params: z.object({
+      courseIds: z.array(z.number()).optional(),
+    }).optional(),
     result: z.array(PolicySchema),
   },
   'data:getGradeHistory': {
@@ -920,6 +928,25 @@ export const IpcContract = {
     params: z.object({ windowDays: z.number().optional() }).optional(),
     result: z.number(),
   },
+
+  // ============ Window Behavior Settings ============
+  'settings:getWindowBehavior': {
+    params: z.void(),
+    result: z.object({
+      closeAction: z.enum(['quit', 'minimize-to-tray']).nullable(),
+      showTrayIcon: z.boolean(),
+    }),
+  },
+  'settings:setWindowBehavior': {
+    params: z.object({
+      closeAction: z.enum(['quit', 'minimize-to-tray']).nullable(),
+      showTrayIcon: z.boolean(),
+    }),
+    result: z.object({
+      success: z.boolean(),
+      error: z.string().optional(),
+    }),
+  },
 } as const;
 
 // ============ Type Utilities ============
@@ -948,6 +975,7 @@ export const OneWayContract = {
   'window:minimize': z.void(),
   'window:maximize': z.void(),
   'window:close': z.void(),
+  'window:hide': z.void(),
   'shell:openExternal': z.string(),
 } as const;
 

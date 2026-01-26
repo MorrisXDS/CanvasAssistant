@@ -3,6 +3,7 @@
  *
  * Allows users to correct auto-detected policies or add missing details.
  * Marks the policy as user-verified after update.
+ * Validates for duplicate policy names on rename.
  */
 
 import {
@@ -40,6 +41,17 @@ export class UpdatePolicyCommand
       return { valid: false, error: 'No updates provided' };
     }
 
+    // Validate policy name if provided
+    if (params.updates.policyName !== undefined) {
+      const trimmedName = params.updates.policyName.trim();
+      if (trimmedName.length === 0) {
+        return { valid: false, error: 'Policy name cannot be empty' };
+      }
+      if (trimmedName.length > 255) {
+        return { valid: false, error: 'Policy name is too long (max 255 characters)' };
+      }
+    }
+
     return { valid: true };
   }
 
@@ -53,20 +65,35 @@ export class UpdatePolicyCommand
     }
 
     try {
-      // Get current policy
+      // Get current policy with course_id for duplicate checking
       const policy = context.db.executeReadOne<{
         id: number;
+        course_id: number;
         policy_name: string;
+        policy_type: string;
         policy_config: string;
         is_user_verified: boolean;
         is_active: boolean;
       }>(
-        'SELECT id, policy_name, policy_config, is_user_verified, is_active FROM course_policies WHERE id = ?',
+        'SELECT id, course_id, policy_name, policy_type, policy_config, is_user_verified, is_active FROM course_policies WHERE id = ?',
         [params.policyId]
       );
 
       if (!policy) {
         return { success: false, error: 'Policy not found' };
+      }
+
+      // Check for duplicate name if renaming
+      if (params.updates.policyName !== undefined) {
+        const newName = params.updates.policyName.trim();
+        const existingPolicy = context.db.executeReadOne<{ id: number }>(
+          'SELECT id FROM course_policies WHERE course_id = ? AND LOWER(policy_name) = LOWER(?) AND is_active = 1 AND id != ?',
+          [policy.course_id, newName, params.policyId]
+        );
+
+        if (existingPolicy) {
+          return { success: false, error: 'A policy with this name already exists' };
+        }
       }
 
       const previousConfig = JSON.parse(policy.policy_config) as Record<string, unknown>;
@@ -78,7 +105,7 @@ export class UpdatePolicyCommand
 
       if (params.updates.policyName !== undefined) {
         updates.push('policy_name = ?');
-        values.push(params.updates.policyName);
+        values.push(params.updates.policyName.trim());
       }
 
       if (params.updates.policyConfig !== undefined) {

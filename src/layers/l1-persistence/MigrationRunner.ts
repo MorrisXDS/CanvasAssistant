@@ -1811,4 +1811,23 @@ export const coreMigrations: Migration[] = [
       ALTER TABLE tasks ADD COLUMN is_optional INTEGER DEFAULT 0;
     `,
   },
+  {
+    version: 61,
+    description: 'Add suppressed_forever columns for permanent dismissal of recommendations/insights',
+    up: `
+      -- Add suppressed_forever to recommendations for "never show again" feature
+      ALTER TABLE recommendations ADD COLUMN suppressed_forever INTEGER DEFAULT 0;
+      CREATE INDEX idx_recommendations_suppressed ON recommendations(suppressed_forever);
+
+      -- Add suppressed_forever to user_insights for "never show again" feature
+      ALTER TABLE user_insights ADD COLUMN suppressed_forever INTEGER DEFAULT 0;
+      CREATE INDEX idx_user_insights_suppressed ON user_insights(suppressed_forever);
+    `,
+    down: `
+      DROP INDEX IF EXISTS idx_recommendations_suppressed;
+      DROP INDEX IF EXISTS idx_user_insights_suppressed;
+      -- SQLite doesn't support DROP COLUMN easily
+      SELECT 1;
+    `,
+  },
 ];

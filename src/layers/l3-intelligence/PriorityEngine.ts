@@ -7,6 +7,11 @@
 
 import { EventEmitter } from 'events';
 import { Database } from '../l1-persistence/Database';
+import type {
+  TaskRowMinimal,
+  CourseRowMinimal,
+  PolicyRowMinimal,
+} from '../l1-persistence/DatabaseRowTypes';
 import { PriorityConfig } from './PriorityConfig';
 import { PolicyEvaluator } from './PolicyEvaluator';
 import { DependencyResolver } from './DependencyResolver';
@@ -21,46 +26,6 @@ import {
   PriorityCalculationResult,
   PriorityPreferences,
 } from './types';
-
-/**
- * Raw task data from database
- */
-interface TaskRow {
-  id: number;
-  course_id: number;
-  title: string;
-  due_at: string | null;
-  unlock_at: string | null;
-  points_possible: number | null;
-  weight: number | null;
-  is_completed: number;
-  grade: number | null;
-  completed_at: string | null;
-}
-
-/**
- * Raw course data from database
- */
-interface CourseRow {
-  id: number;
-  code: string;
-  name: string;
-  current_grade: number | null;
-  target_grade: number;
-  total_weight: number;
-}
-
-/**
- * Raw policy data from database
- */
-interface PolicyRow {
-  id: number;
-  course_id: number;
-  policy_type: string;
-  policy_name: string;
-  policy_config: string;
-  is_active: number;
-}
 
 /**
  * Priority Engine
@@ -838,12 +803,7 @@ export class PriorityEngine extends EventEmitter {
    * Load tasks from database
    */
   private loadTasks(): TaskForPriority[] {
-    const rows = this.db.executeRead<TaskRow & {
-      lock_at: string | null;
-      task_type: string | null;
-      task_group_id: number | null;
-      submission_status: string | null;
-    }>(
+    const rows = this.db.executeRead<TaskRowMinimal>(
       `SELECT id, course_id, title, due_at, unlock_at, lock_at, points_possible,
               weight, is_completed, grade, completed_at, task_type, task_group_id, submission_status
        FROM tasks
@@ -874,7 +834,7 @@ export class PriorityEngine extends EventEmitter {
    * Load course from database
    */
   private loadCourse(courseId: number): CourseForPriority | null {
-    const row = this.db.executeReadOne<CourseRow>(
+    const row = this.db.executeReadOne<CourseRowMinimal>(
       `SELECT id, code, name, current_grade, target_grade, total_weight
        FROM courses WHERE id = ?`,
       [courseId]
@@ -896,7 +856,7 @@ export class PriorityEngine extends EventEmitter {
    * Load policies from database
    */
   private loadPolicies(courseId: number): PolicyForPriority[] {
-    const rows = this.db.executeRead<PolicyRow>(
+    const rows = this.db.executeRead<PolicyRowMinimal>(
       `SELECT id, course_id, policy_type, policy_name, policy_config, is_active
        FROM course_policies WHERE course_id = ? AND is_active = 1`,
       [courseId]
@@ -970,12 +930,7 @@ export class PriorityEngine extends EventEmitter {
     simulatedGrade: number,
     now: Date = new Date()
   ): number | null {
-    const rows = this.db.executeRead<TaskRow & {
-      lock_at: string | null;
-      task_type: string | null;
-      task_group_id: number | null;
-      submission_status: string | null;
-    }>(
+    const rows = this.db.executeRead<TaskRowMinimal>(
       `SELECT id, course_id, title, due_at, unlock_at, lock_at, points_possible,
               weight, is_completed, grade, completed_at, task_type, task_group_id, submission_status
        FROM tasks WHERE id = ?`,
@@ -1073,12 +1028,7 @@ export class PriorityEngine extends EventEmitter {
    * Get explanation for a specific task
    */
   getTaskExplanation(taskId: number, now: Date = new Date()): PriorityExplanation | null {
-    const rows = this.db.executeRead<TaskRow & {
-      lock_at: string | null;
-      task_type: string | null;
-      task_group_id: number | null;
-      submission_status: string | null;
-    }>(
+    const rows = this.db.executeRead<TaskRowMinimal>(
       `SELECT id, course_id, title, due_at, unlock_at, lock_at, points_possible,
               weight, is_completed, grade, completed_at, task_type, task_group_id, submission_status
        FROM tasks WHERE id = ?`,

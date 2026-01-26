@@ -222,6 +222,11 @@ export class ServiceRegistry extends EventEmitter {
       return new MigrationRunner(this.get('database'));
     });
 
+    this.register('visibleDataProvider', () => {
+      const { VisibleDataProvider } = require('../l1-persistence/VisibleDataProvider');
+      return new VisibleDataProvider(this.get('database'));
+    });
+
     // L1 Repositories
     this.register('courseRepository', () => {
       const { CourseRepository } = require('../l1-persistence/repositories/CourseRepository');

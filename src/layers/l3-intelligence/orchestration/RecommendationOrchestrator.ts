@@ -11,6 +11,12 @@
 
 import { EventEmitter } from 'events';
 import { Database } from '../../l1-persistence/Database';
+import type {
+  RecommendationRow,
+  TaskRowMinimal,
+  CourseRowMinimal,
+  CompletionEventRow,
+} from '../../l1-persistence/DatabaseRowTypes';
 import { generateAllRecommendations } from '../domain/RecommendationEngine';
 import {
   identifyStrugglePatterns,
@@ -18,6 +24,7 @@ import {
 } from '../domain/BehaviorAnalytics';
 import { batchEstimateEffort } from '../domain/EffortEstimator';
 import { MessageProbationService } from '../domain/MessageProbationService';
+import { ORCHESTRATOR_DEFAULTS } from '../domain/Constants';
 import {
   Recommendation,
   RecommendationType,
@@ -27,56 +34,6 @@ import {
   EffortEstimate,
   TaskCompletionEvent,
 } from '../types';
-
-/**
- * Raw recommendation from database
- */
-interface RecommendationRow {
-  id: number;
-  recommendation_type: string;
-  task_id: number | null;
-  course_id: number | null;
-  title: string;
-  description: string;
-  reasoning: string;
-  priority_score: number;
-  valid_from: string;
-  valid_until: string;
-  dismissed_at: string | null;
-  acted_on_at: string | null;
-  created_at: string;
-}
-
-/**
- * Raw task from database
- */
-interface TaskRow {
-  id: number;
-  course_id: number;
-  title: string;
-  due_at: string | null;
-  unlock_at: string | null;
-  lock_at: string | null;
-  points_possible: number | null;
-  weight: number | null;
-  is_completed: number;
-  grade: number | null;
-  task_type: string | null;
-  task_group_id: number | null;
-  submission_status: string | null;
-}
-
-/**
- * Raw course from database
- */
-interface CourseRow {
-  id: number;
-  code: string;
-  name: string;
-  current_grade: number | null;
-  target_grade: number;
-  total_weight: number;
-}
 
 /**
  * Configuration for RecommendationOrchestrator
@@ -93,10 +50,7 @@ export interface RecommendationOrchestratorConfig {
 }
 
 const DEFAULT_CONFIG: Required<RecommendationOrchestratorConfig> = {
-  refreshIntervalMs: 30 * 60 * 1000, // 30 minutes
-  defaultAvailableMinutes: 120,
-  maxStoredRecommendations: 100,
-  autoRefresh: true,
+  ...ORCHESTRATOR_DEFAULTS.RECOMMENDATION,
 };
 
 /**
@@ -157,7 +111,7 @@ export class RecommendationOrchestrator extends EventEmitter {
    * Fetch tasks from database
    */
   private fetchTasks(): TaskForPriority[] {
-    const rows = this.db.executeRead<TaskRow>(`
+    const rows = this.db.executeRead<TaskRowMinimal>(`
       SELECT
         t.id, t.course_id, t.title, t.due_at, t.unlock_at, t.lock_at,
         t.points_possible, t.weight, t.is_completed, t.grade,
@@ -193,7 +147,7 @@ export class RecommendationOrchestrator extends EventEmitter {
    * Fetch courses from database
    */
   private fetchCourses(): Map<number, CourseForPriority> {
-    const rows = this.db.executeRead<CourseRow>(`
+    const rows = this.db.executeRead<CourseRowMinimal>(`
       SELECT id, code, name, current_grade, target_grade, total_weight
       FROM courses WHERE deleted_at IS NULL AND is_hidden = 0
     `);
@@ -216,22 +170,9 @@ export class RecommendationOrchestrator extends EventEmitter {
    * Fetch completion events
    */
   private fetchCompletionEvents(): TaskCompletionEvent[] {
-    const rows = this.db.executeRead<{
-      id: number;
-      task_id: number;
-      course_id: number;
-      task_type: string;
-      started_at: string | null;
-      completed_at: string;
-      due_at: string | null;
-      time_to_complete_minutes: number | null;
-      day_of_week: number;
-      hour_of_day: number;
-      days_before_due: number | null;
-      was_late: number;
-      score_achieved: number | null;
-      points_possible: number | null;
-    }>(`SELECT * FROM task_completion_events ORDER BY completed_at DESC LIMIT 100`);
+    const rows = this.db.executeRead<CompletionEventRow>(
+      `SELECT * FROM task_completion_events ORDER BY completed_at DESC LIMIT 100`
+    );
 
     return rows.map((row) => ({
       id: row.id,

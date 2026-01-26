@@ -24,6 +24,9 @@ import { getProductivityScore } from './BehaviorAnalytics';
 
 /**
  * Recommendation validity duration in hours
+ *
+ * All recommendations are based on observable data (due dates, submission
+ * history, grades). We avoid claims about procrastination or study habits.
  */
 const RECOMMENDATION_VALIDITY: Record<RecommendationType, number> = {
   work_now: 4,
@@ -31,6 +34,8 @@ const RECOMMENDATION_VALIDITY: Record<RecommendationType, number> = {
   take_break: 2,
   course_focus: 12,
   redistribute: 24,
+  preemptive_start: 48,
+  focus_at_risk: 24,
 };
 
 /**
@@ -348,6 +353,138 @@ export function generateCourseFocusRecommendation(
     actedOnAt: null,
   };
 }
+
+// ============================================================================
+// New Intelligence-Based Recommendations
+// ============================================================================
+
+/**
+ * Grade forecast data for recommendations
+ */
+export interface GradeForecastForRec {
+  courseId: number;
+  courseCode: string;
+  currentGrade: number;
+  projectedFinal: number;
+  targetGrade: number;
+  neededAverage: number;
+  riskLevel: 'safe' | 'warning' | 'at-risk';
+}
+
+/**
+ * Workload forecast data for recommendations
+ */
+export interface WorkloadForecastForRec {
+  weekStart: Date;
+  predictedHours: number;
+  taskCount: number;
+  severity: 'light' | 'normal' | 'heavy' | 'crunch';
+  tasks: Array<{
+    id: number;
+    title: string;
+    courseCode: string;
+    estimatedMinutes: number;
+    weight: number | null;
+  }>;
+}
+
+// ============================================================================
+// Removed Unfounded Recommendations
+// ============================================================================
+// The following recommendation types were removed because we don't have the
+// data to support them honestly:
+//
+// - procrastination_nudge: We don't know when users START working on tasks
+// - study_strategy: We don't track study methods or preparation time
+//
+// Recommendations are now based on observable data (due dates, submission
+// timing, grades received, task counts).
+
+/**
+ * Generate preemptive start recommendation for upcoming crunch periods
+ */
+export function generatePreemptiveStartRec(
+  task: TaskForPriority,
+  course: CourseForPriority,
+  crunchWeek: WorkloadForecastForRec,
+  currentWeekSeverity: 'light' | 'normal' | 'heavy' | 'crunch',
+  currentTime: Date
+): Recommendation | null {
+  // Only recommend if current week is light/normal and future week is heavy/crunch
+  if (currentWeekSeverity === 'heavy' || currentWeekSeverity === 'crunch') {
+    return null;
+  }
+  if (crunchWeek.severity !== 'heavy' && crunchWeek.severity !== 'crunch') {
+    return null;
+  }
+
+  const daysUntilCrunch = Math.ceil(
+    (crunchWeek.weekStart.getTime() - currentTime.getTime()) / (1000 * 60 * 60 * 24)
+  );
+
+  if (daysUntilCrunch < 3 || daysUntilCrunch > 14) return null;
+
+  const priority = 70 + (task.weight ?? 0) / 2;
+
+  return {
+    type: 'preemptive_start',
+    taskId: task.id,
+    courseId: course.id,
+    title: `Start "${task.title}" Early`,
+    description: `A heavy workload is coming in ${daysUntilCrunch} days. Starting this ${task.taskType} now will ease the pressure.`,
+    reasoning: `Next week has ${crunchWeek.taskCount} tasks (~${Math.round(crunchWeek.predictedHours)} hours). Getting ahead now prevents last-minute stress.`,
+    priorityScore: priority,
+    validFrom: currentTime,
+    validUntil: new Date(currentTime.getTime() + RECOMMENDATION_VALIDITY.preemptive_start * 60 * 60 * 1000),
+    dismissedAt: null,
+    actedOnAt: null,
+  };
+}
+
+
+/**
+ * Generate focus recommendation for at-risk courses
+ */
+export function generateFocusAtRiskRec(
+  tasks: TaskForPriority[],
+  course: CourseForPriority,
+  forecast: GradeForecastForRec,
+  currentTime: Date
+): Recommendation | null {
+  if (forecast.riskLevel === 'safe') return null;
+
+  // Find pending tasks for this course
+  const pendingTasks = tasks.filter(
+    (t) => t.courseId === course.id && !t.isCompleted && t.dueAt && t.dueAt > currentTime
+  );
+
+  if (pendingTasks.length === 0) return null;
+
+  const highestWeight = Math.max(...pendingTasks.map((t) => t.weight ?? 0));
+  const priority = forecast.riskLevel === 'at-risk' ? 85 : 70;
+
+  const nextTask = pendingTasks
+    .sort((a, b) => {
+      const aTime = a.dueAt?.getTime() ?? Infinity;
+      const bTime = b.dueAt?.getTime() ?? Infinity;
+      return aTime - bTime;
+    })[0];
+
+  return {
+    type: 'focus_at_risk',
+    taskId: nextTask?.id ?? null,
+    courseId: course.id,
+    title: `Focus on ${course.code}`,
+    description: `Your projected grade is ${Math.round(forecast.projectedFinal)}%, ${Math.round(forecast.targetGrade - forecast.projectedFinal)}% below target. Prioritize upcoming tasks to improve.`,
+    reasoning: `You need an average of ${Math.round(forecast.neededAverage)}% on remaining work (${pendingTasks.length} tasks, ${Math.round(highestWeight)}% max weight) to reach your ${forecast.targetGrade}% target.`,
+    priorityScore: priority,
+    validFrom: currentTime,
+    validUntil: new Date(currentTime.getTime() + RECOMMENDATION_VALIDITY.focus_at_risk * 60 * 60 * 1000),
+    dismissedAt: null,
+    actedOnAt: null,
+  };
+}
+
 
 /**
  * Generate all relevant recommendations based on current context

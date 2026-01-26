@@ -11,6 +11,10 @@
 
 import { EventEmitter } from 'events';
 import { Database } from '../../l1-persistence/Database';
+import type {
+  WeightAdjustmentRow,
+  CompletionEventRow,
+} from '../../l1-persistence/DatabaseRowTypes';
 import {
   calculateAdaptiveWeights,
   applyAdaptiveWeights,
@@ -19,6 +23,7 @@ import {
   getAdjustmentSummary,
   createLearningInput,
 } from '../domain/AdaptiveWeightService';
+import { ORCHESTRATOR_DEFAULTS } from '../domain/Constants';
 import {
   LearningInput,
   LearningOutcome,
@@ -27,20 +32,6 @@ import {
   PriorityFactors,
   TaskCompletionEvent,
 } from '../types';
-
-/**
- * Raw weight adjustment from database
- */
-interface WeightAdjustmentRow {
-  id: number;
-  factor_name: string;
-  course_id: number | null;
-  task_type: string | null;
-  weight_multiplier: number;
-  adjustment_reason: string | null;
-  sample_size: number;
-  last_updated_at: string;
-}
 
 /**
  * Configuration for AdaptiveLearningOrchestrator
@@ -57,10 +48,7 @@ export interface AdaptiveLearningOrchestratorConfig {
 }
 
 const DEFAULT_CONFIG: Required<AdaptiveLearningOrchestratorConfig> = {
-  recalculateIntervalMs: 24 * 60 * 60 * 1000, // 24 hours
-  minSampleSize: 10,
-  maxLearningInputs: 500,
-  autoRecalculate: true,
+  ...ORCHESTRATOR_DEFAULTS.ADAPTIVE_LEARNING,
 };
 
 /**
@@ -157,22 +145,8 @@ export class AdaptiveLearningOrchestrator extends EventEmitter {
    * Fetch completion events from database
    */
   private fetchCompletionEvents(): TaskCompletionEvent[] {
-    const rows = this.db.executeRead<{
-      id: number;
-      task_id: number;
-      course_id: number;
-      task_type: string;
-      started_at: string | null;
-      completed_at: string;
-      due_at: string | null;
-      time_to_complete_minutes: number | null;
-      day_of_week: number;
-      hour_of_day: number;
-      days_before_due: number | null;
-      was_late: number;
-      score_achieved: number | null;
-      points_possible: number | null;
-    }>(`SELECT * FROM task_completion_events ORDER BY completed_at DESC LIMIT ?`,
+    const rows = this.db.executeRead<CompletionEventRow>(
+      `SELECT * FROM task_completion_events ORDER BY completed_at DESC LIMIT ?`,
       [this.config.maxLearningInputs]
     );
 

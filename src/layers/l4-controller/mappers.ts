@@ -15,13 +15,13 @@ import type {
   DisplayCalendarEvent,
 } from '../../shared/ipc-contract';
 
-// Re-export types from repositories for convenience
+// Re-export types from centralized location for convenience
 export type {
   CourseRow,
   TaskRow,
   PolicyRow,
   NotificationRow,
-} from '../l1-persistence/repositories';
+} from '../l1-persistence/DatabaseRowTypes';
 
 /**
  * Map a course database row to a Course entity.

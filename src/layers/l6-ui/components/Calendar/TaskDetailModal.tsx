@@ -19,6 +19,8 @@ import {
 } from 'lucide-react';
 import type { Task } from '../../../l5-presentation/types';
 import type { CalendarEvent } from './CalendarGrid';
+import { PolicyBadgeGroup } from '../shared';
+import { useStore } from '../../../l5-presentation/store';
 
 interface TaskDetailModalProps {
   isOpen: boolean;
@@ -85,6 +87,7 @@ export function TaskDetailModal({
   onDelete,
 }: TaskDetailModalProps) {
   const navigate = useNavigate();
+  const policies = useStore((state) => state.policies);
   const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false);
 
   // Reset delete confirm state when modal closes
@@ -208,6 +211,19 @@ export function TaskDetailModal({
                       </div>
                     )}
                   </div>
+                </div>
+              )}
+
+              {/* Course Policies */}
+              {policies.filter((p) => p.courseId === task.courseId && p.isActive).length > 0 && (
+                <div style={styles.section}>
+                  <div style={styles.descriptionLabel}>Course Policies</div>
+                  <PolicyBadgeGroup
+                    task={task}
+                    policies={policies}
+                    maxBadges={5}
+                    size="md"
+                  />
                 </div>
               )}
 

@@ -17,6 +17,7 @@ import {
 import { useStore } from '../../../l5-presentation/store';
 import { Card } from '../shared';
 import type { Task, Course } from '../../../l5-presentation/types';
+import { getCourseColor } from '../../constants';
 
 // ============ ICS Utilities ============
 
@@ -184,17 +185,6 @@ const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December'
 ];
-
-// Get course color
-const COURSE_COLORS = [
-  '#007FA3', '#E53935', '#43A047', '#FB8C00', '#8E24AA',
-  '#1E88E5', '#D81B60', '#00ACC1', '#7CB342', '#6D4C41',
-];
-
-function getCourseColor(courseId: number, existingColor: string | null): string {
-  if (existingColor) return existingColor;
-  return COURSE_COLORS[courseId % COURSE_COLORS.length];
-}
 
 // Get priority from task
 function getTaskPriority(task: Task): 'high' | 'medium' | 'low' {

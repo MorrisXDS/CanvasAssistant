@@ -15,40 +15,14 @@ import {
   TaskForPriority,
   TaskCompletionEvent,
 } from '../types';
+import {
+  DEFAULT_EFFORT_MINUTES,
+  MINUTES_PER_POINT,
+  EFFORT_THRESHOLDS,
+} from './Constants';
 
-/**
- * Default effort estimates in minutes by task type
- * Based on typical academic task durations
- */
-export const DEFAULT_EFFORT_MINUTES: Record<string, number> = {
-  final: 480, // 8 hours
-  midterm: 360, // 6 hours
-  exam: 240, // 4 hours
-  project: 300, // 5 hours
-  assignment: 90, // 1.5 hours
-  lab: 120, // 2 hours
-  quiz: 30, // 30 minutes
-  discussion: 20, // 20 minutes
-  attendance: 5, // 5 minutes
-  other: 60, // 1 hour
-};
-
-/**
- * Points-to-effort ratio (minutes per point)
- * Used when points are available to adjust estimates
- */
-const MINUTES_PER_POINT: Record<string, number> = {
-  final: 4.0,
-  midterm: 3.5,
-  exam: 3.0,
-  project: 3.0,
-  assignment: 1.5,
-  lab: 2.0,
-  quiz: 1.0,
-  discussion: 0.5,
-  attendance: 0.1,
-  other: 1.0,
-};
+// Re-export for backwards compatibility
+export { DEFAULT_EFFORT_MINUTES };
 
 /**
  * Get default effort estimate for a task type
