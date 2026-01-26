@@ -18,6 +18,11 @@ import { Layout } from './components/Layout';
 import { Dashboard } from './components/Dashboard';
 import { Onboarding } from './components/Onboarding';
 import { ReAuthModal } from './components/shared/ReAuthModal';
+import { RecoveryBanner, type RecoveryStatus } from './components/shared/RecoveryBanner';
+import {
+  CorruptionDialog,
+  type CorruptionInfo,
+} from './components/shared/CorruptionDialog';
 import {
   AnnouncementDetail,
   AnnouncementsPage,
@@ -123,6 +128,10 @@ function AppContent() {
   } = useStore();
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
 
+  // Recovery and corruption state
+  const [recoveryStatus, setRecoveryStatus] = useState<RecoveryStatus | null>(null);
+  const [corruptionInfo, setCorruptionInfo] = useState<CorruptionInfo | null>(null);
+
   // Listen for system theme changes with proper cleanup
   useSystemThemeListener();
 
@@ -131,12 +140,48 @@ function AppContent() {
     const init = async () => {
       await initialize();
       setIsCheckingAuth(false);
+
+      // Check for recovery status on startup
+      try {
+        const status = await window.api?.getRecoveryStatus?.();
+        if (status && (status.safeMode || status.lastCrash)) {
+          setRecoveryStatus(status);
+        }
+      } catch {
+        // Ignore errors
+      }
     };
     init();
 
     // Subscribe to IPC events from main process
     const unsubscribe = subscribeToIpcEvents();
-    return unsubscribe;
+
+    // Listen for recovery status updates
+    const unsubscribeRecovery = window.api?.onRecoveryStatus?.((status) => {
+      if (status.safeMode || status.lastCrash) {
+        setRecoveryStatus(status);
+      } else {
+        setRecoveryStatus(null);
+      }
+    });
+
+    // Listen for database corruption
+    const unsubscribeCorruption = window.api?.onDatabaseCorruption?.((info) => {
+      setCorruptionInfo(info);
+    });
+
+    // Listen for shutdown notification
+    const unsubscribeShutdown = window.api?.onShutdownRequested?.(() => {
+      // Acknowledge shutdown immediately
+      window.api?.acknowledgeShutdown?.();
+    });
+
+    return () => {
+      unsubscribe();
+      unsubscribeRecovery?.();
+      unsubscribeCorruption?.();
+      unsubscribeShutdown?.();
+    };
   }, [initialize]);
 
   // Handle onboarding completion
@@ -157,6 +202,43 @@ function AppContent() {
     setAuthenticated(false);
   };
 
+  // Handle recovery banner dismissal
+  const handleRecoveryDismiss = async () => {
+    try {
+      await window.api?.dismissCrashNotification?.();
+    } catch {
+      // Ignore errors
+    }
+    setRecoveryStatus(null);
+  };
+
+  // Handle exit safe mode
+  const handleExitSafeMode = async () => {
+    try {
+      await window.api?.exitSafeMode?.();
+      setRecoveryStatus(null);
+    } catch {
+      // Ignore errors
+    }
+  };
+
+  // Handle corruption action
+  const handleCorruptionAction = async (action: 'reset' | 'continue' | 'export') => {
+    if (!window.api?.handleCorruption) {
+      return { success: false, error: 'API not available' };
+    }
+    const result = await window.api.handleCorruption(action);
+    if (result.success && action === 'continue') {
+      setCorruptionInfo(null);
+    }
+    return result;
+  };
+
+  // Handle corruption dialog close
+  const handleCorruptionClose = () => {
+    setCorruptionInfo(null);
+  };
+
   // Show loading while checking auth
   if (!isInitialized || isCheckingAuth) {
     return <LoadingScreen />;
@@ -167,9 +249,19 @@ function AppContent() {
     return <Onboarding onComplete={handleOnboardingComplete} />;
   }
 
-  // Show main app with ReAuthModal overlay if auth error
+  // Show main app with modals and overlays
   return (
     <>
+      {/* Database corruption dialog - highest priority */}
+      {corruptionInfo && (
+        <CorruptionDialog
+          corruption={corruptionInfo}
+          onAction={handleCorruptionAction}
+          onClose={handleCorruptionClose}
+        />
+      )}
+
+      {/* Re-auth modal */}
       {authError && (
         <ReAuthModal
           reason={authError.reason}
@@ -177,6 +269,16 @@ function AppContent() {
           onDisconnect={handleReauthDisconnect}
         />
       )}
+
+      {/* Recovery banner at top */}
+      {recoveryStatus && (
+        <RecoveryBanner
+          status={recoveryStatus}
+          onDismiss={handleRecoveryDismiss}
+          onExitSafeMode={handleExitSafeMode}
+        />
+      )}
+
       <Routes>
         <Route element={<Layout />}>
           <Route path="/" element={<Dashboard />} />

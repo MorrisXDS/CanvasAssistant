@@ -264,8 +264,7 @@ const api = {
   suppressRecommendation: (id: number) =>
     ipcRenderer.invoke('intelligence:suppressRecommendation', id),
 
-  suppressInsight: (id: number) =>
-    ipcRenderer.invoke('intelligence:suppressInsight', id),
+  suppressInsight: (id: number) => ipcRenderer.invoke('intelligence:suppressInsight', id),
 
   // ============ Intelligence - Workload ============
 
@@ -389,7 +388,8 @@ const api = {
 
   // ============ Last Sync Time ============
 
-  getLastSyncTime: () => ipcRenderer.invoke('sync:getLastSyncTime') as Promise<string | null>,
+  getLastSyncTime: () =>
+    ipcRenderer.invoke('sync:getLastSyncTime') as Promise<string | null>,
 
   // ============ Auto-Sync Preferences ============
 
@@ -442,6 +442,27 @@ const api = {
   importCourseData: () => ipcRenderer.invoke('data:importCourseData'),
 
   getCrashInfo: () => ipcRenderer.invoke('app:getCrashInfo'),
+
+  // ============ Recovery & Safe Mode ============
+
+  getRecoveryStatus: () =>
+    ipcRenderer.invoke('app:getRecoveryStatus') as Promise<{
+      safeMode: boolean;
+      lastCrash: { timestamp: string; reason: string } | null;
+      crashCount: number;
+      message: string | null;
+    }>,
+
+  exitSafeMode: () => ipcRenderer.invoke('app:exitSafeMode'),
+
+  dismissCrashNotification: () => ipcRenderer.invoke('app:dismissCrashNotification'),
+
+  reportError: (errorInfo: {
+    message: string;
+    stack?: string;
+    componentStack?: string;
+    timestamp: string;
+  }) => ipcRenderer.invoke('app:reportError', errorInfo),
 
   // ============ Window Controls ============
 
@@ -519,10 +540,7 @@ const api = {
       path: string;
     }) => void
   ): (() => void) => {
-    const handler = (
-      _event: IpcRendererEvent,
-      data: Parameters<typeof callback>[0]
-    ) => {
+    const handler = (_event: IpcRendererEvent, data: Parameters<typeof callback>[0]) => {
       callback(data);
     };
     ipcRenderer.on('file-status-changed', handler);
@@ -561,10 +579,7 @@ const api = {
   onSyncError: (
     callback: (data: { type: string; error: string }) => void
   ): (() => void) => {
-    const handler = (
-      _event: IpcRendererEvent,
-      data: { type: string; error: string }
-    ) => {
+    const handler = (_event: IpcRendererEvent, data: { type: string; error: string }) => {
       callback(data);
     };
     ipcRenderer.on('sync:error', handler);
@@ -683,6 +698,70 @@ const api = {
     ipcRenderer.on('window:promptCloseBehavior', handler);
     return () => ipcRenderer.removeListener('window:promptCloseBehavior', handler);
   },
+
+  /**
+   * Listen for recovery status updates (safe mode, crash recovery)
+   */
+  onRecoveryStatus: (
+    callback: (data: {
+      safeMode: boolean;
+      lastCrash: { timestamp: string; reason: string } | null;
+      message: string | null;
+    }) => void
+  ): (() => void) => {
+    const handler = (
+      _event: IpcRendererEvent,
+      data: {
+        safeMode: boolean;
+        lastCrash: { timestamp: string; reason: string } | null;
+        message: string | null;
+      }
+    ) => {
+      callback(data);
+    };
+    ipcRenderer.on('app:recovery-status', handler);
+    return () => ipcRenderer.removeListener('app:recovery-status', handler);
+  },
+
+  /**
+   * Listen for shutdown notification from main process
+   */
+  onShutdownRequested: (
+    callback: (data: { gracePeriodMs: number }) => void
+  ): (() => void) => {
+    const handler = (_event: IpcRendererEvent, data: { gracePeriodMs: number }) => {
+      callback(data);
+    };
+    ipcRenderer.on('app:shutdown-requested', handler);
+    return () => ipcRenderer.removeListener('app:shutdown-requested', handler);
+  },
+
+  /**
+   * Acknowledge shutdown to main process
+   */
+  acknowledgeShutdown: () => ipcRenderer.send('app:shutdown-acknowledged'),
+
+  /**
+   * Listen for database corruption detected
+   */
+  onDatabaseCorruption: (
+    callback: (data: { errors: string[]; canContinue: boolean }) => void
+  ): (() => void) => {
+    const handler = (
+      _event: IpcRendererEvent,
+      data: { errors: string[]; canContinue: boolean }
+    ) => {
+      callback(data);
+    };
+    ipcRenderer.on('app:database-corruption', handler);
+    return () => ipcRenderer.removeListener('app:database-corruption', handler);
+  },
+
+  /**
+   * Handle database corruption response
+   */
+  handleCorruption: (action: 'reset' | 'continue' | 'export') =>
+    ipcRenderer.invoke('app:handleCorruption', action),
 };
 
 // Expose the API to the renderer process

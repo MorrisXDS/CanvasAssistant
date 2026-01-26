@@ -503,6 +503,42 @@ export class FileDownloadManager extends EventEmitter {
     }
     return totalSize;
   }
+
+  /**
+   * Get pending downloads for persistence
+   * Returns the current queue as serializable objects
+   * Used during app shutdown to save queue state
+   */
+  getPendingDownloads(): DownloadRequest[] {
+    return [...this.queue];
+  }
+
+  /**
+   * Get active downloads that should be requeued
+   * Returns currently downloading items (will be requeued as pending on restart)
+   */
+  getActiveDownloadRequests(): string[] {
+    return Array.from(this.activeDownloads.keys());
+  }
+
+  /**
+   * Restore pending downloads from persisted state
+   * Used during app startup to restore queue from previous session
+   * @param requests Array of download requests to restore
+   */
+  restoreDownloads(requests: DownloadRequest[]): void {
+    if (requests.length === 0) return;
+
+    this.logger?.info(
+      `Restoring ${requests.length} pending downloads from previous session`
+    );
+
+    // Add to queue (don't use queueDownloads to avoid duplicate processing)
+    this.queue.push(...requests);
+
+    // Start processing
+    this.processQueue();
+  }
 }
 
 export default FileDownloadManager;
