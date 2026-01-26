@@ -199,6 +199,37 @@ export function Layout() {
     }
   }, [location.pathname, navigate, landingPage]);
 
+  // Debug: Log when route changes to analyze gap on each page
+  useEffect(() => {
+    if (!DEBUG_LAYOUT) return;
+
+    // Delay to let the new page render
+    const timer = setTimeout(() => {
+      console.log(`[Layout Debug] Route changed to: ${location.pathname}`);
+      if (mainRef.current) {
+        const mainRect = mainRef.current.getBoundingClientRect();
+        const mainStyle = getComputedStyle(mainRef.current);
+        const firstChild = mainRef.current.firstElementChild;
+
+        console.log(`[Layout Debug] Page: ${location.pathname}`);
+        console.log(`[Layout Debug]   Main top: ${mainRect.top}px`);
+        console.log(`[Layout Debug]   Main paddingTop: ${mainStyle.paddingTop}`);
+
+        if (firstChild) {
+          const childRect = firstChild.getBoundingClientRect();
+          const childStyle = getComputedStyle(firstChild);
+          console.log(`[Layout Debug]   Page content top: ${childRect.top}px`);
+          console.log(`[Layout Debug]   Page content marginTop: ${childStyle.marginTop}`);
+          console.log(
+            `[Layout Debug]   GAP (content top - main top): ${childRect.top - mainRect.top}px`
+          );
+        }
+      }
+    }, 200);
+
+    return () => clearTimeout(timer);
+  }, [location.pathname]);
+
   // Drag handlers for nav items
   const handleDragStart = (e: React.DragEvent, itemId: string) => {
     setDraggedItem(itemId);
@@ -340,30 +371,91 @@ export function Layout() {
     if (!DEBUG_LAYOUT) return;
 
     const logDimensions = () => {
-      console.debug('[Layout] Window:', {
+      console.log('[Layout Debug] ========== LAYOUT GAP ANALYSIS ==========');
+      console.log('[Layout Debug] Window:', {
         width: window.innerWidth,
         height: window.innerHeight,
       });
 
       if (containerRef.current) {
         const rect = containerRef.current.getBoundingClientRect();
-        console.debug('[Layout] Container:', { width: rect.width, height: rect.height });
+        const style = getComputedStyle(containerRef.current);
+        console.log('[Layout Debug] Container:', {
+          top: rect.top,
+          left: rect.left,
+          width: rect.width,
+          height: rect.height,
+          marginTop: style.marginTop,
+          paddingTop: style.paddingTop,
+        });
       }
 
       if (mainRef.current) {
         const rect = mainRef.current.getBoundingClientRect();
         const style = getComputedStyle(mainRef.current);
-        console.debug('[Layout] Main:', {
+        console.log('[Layout Debug] Main content area:', {
+          top: rect.top,
+          left: rect.left,
           width: rect.width,
           height: rect.height,
+          marginTop: style.marginTop,
           marginLeft: style.marginLeft,
+          paddingTop: style.paddingTop,
+          paddingRight: style.paddingRight,
+          paddingBottom: style.paddingBottom,
+          paddingLeft: style.paddingLeft,
           padding: style.padding,
         });
+
+        // Check first child (the page content)
+        const firstChild = mainRef.current.firstElementChild;
+        if (firstChild) {
+          const childRect = firstChild.getBoundingClientRect();
+          const childStyle = getComputedStyle(firstChild);
+          console.log('[Layout Debug] First child (page content):', {
+            tagName: firstChild.tagName,
+            className: firstChild.className,
+            top: childRect.top,
+            marginTop: childStyle.marginTop,
+            paddingTop: childStyle.paddingTop,
+            distanceFromMainTop: childRect.top - rect.top,
+          });
+
+          // Check the header/title element if it exists
+          const header = firstChild.querySelector(
+            'header, h1, [class*="header"], [class*="title"]'
+          );
+          if (header) {
+            const headerRect = header.getBoundingClientRect();
+            const headerStyle = getComputedStyle(header);
+            console.log('[Layout Debug] Header/Title element:', {
+              tagName: header.tagName,
+              top: headerRect.top,
+              marginTop: headerStyle.marginTop,
+              paddingTop: headerStyle.paddingTop,
+              distanceFromWindowTop: headerRect.top,
+            });
+          }
+        }
       }
+
+      // Check TitleBar
+      const titleBar = document.querySelector(
+        '[style*="position: fixed"][style*="top: 0"]'
+      );
+      if (titleBar) {
+        const tbRect = titleBar.getBoundingClientRect();
+        console.log('[Layout Debug] TitleBar:', {
+          height: tbRect.height,
+          bottom: tbRect.bottom,
+        });
+      }
+
+      console.log('[Layout Debug] ==========================================');
     };
 
-    // Initial log
-    logDimensions();
+    // Initial log after a short delay to ensure DOM is ready
+    setTimeout(logDimensions, 100);
 
     // Use ResizeObserver for reliable resize detection (including maximize)
     const resizeObserver = new ResizeObserver(() => {
@@ -587,11 +679,7 @@ export function Layout() {
               title={syncDisplay.text}
             >
               {syncDisplay.icon}
-              {!isCollapsed && (
-                <span style={styles.syncText}>
-                  {syncDisplay.text}
-                </span>
-              )}
+              {!isCollapsed && <span style={styles.syncText}>{syncDisplay.text}</span>}
             </div>
           </div>
         </aside>
@@ -869,7 +957,7 @@ const styles: Record<string, React.CSSProperties> = {
     flex: 1,
     backgroundColor: 'var(--bg-app)',
     height: `calc(100vh - ${TITLE_BAR_HEIGHT}px)`,
-    padding: 'var(--space-6)',
+    padding: 'var(--space-4) var(--space-6) var(--space-6) var(--space-6)',
     overflowY: 'auto',
     overflowX: 'hidden',
     transition: 'margin-left 250ms cubic-bezier(0.33, 1, 0.68, 1)',

@@ -18,7 +18,7 @@ export const UI_TEXT = {
       subtitle: 'Enter your Canvas credentials to get started',
       canvasUrlLabel: 'Canvas URL',
       canvasUrlPlaceholder: 'https://your-school.instructure.com',
-      canvasUrlHint: 'Your school\'s Canvas URL (e.g., q.utoronto.ca)',
+      canvasUrlHint: "Your institution's Canvas URL (e.g., q.utoronto.ca)",
       tokenLabel: 'Access Token',
       tokenPlaceholder: 'Paste your Canvas access token here',
       tokenHint: 'Canvas → Account → Settings → New Access Token',
@@ -49,7 +49,7 @@ export const UI_TEXT = {
     },
     complete: {
       title: 'All Set!',
-      subtitle: 'Your setup is complete. Let\'s get started.',
+      subtitle: "Your setup is complete. Let's get started.",
       startButton: 'Start Using Canvas Assistant',
     },
     navigation: {
@@ -64,7 +64,8 @@ export const UI_TEXT = {
   // ==========================================================================
   reauth: {
     title: 'Canvas Token Expired',
-    description: 'Your Canvas access token has expired or been revoked. Please enter a new token to continue syncing.',
+    description:
+      'Your Canvas access token has expired or been revoked. Please generate a new token to continue syncing.',
     tokenLabel: 'New Access Token',
     tokenPlaceholder: 'Paste your new token here',
     tokenHint: 'Canvas → Account → Settings → New Access Token',
@@ -87,11 +88,13 @@ export const UI_TEXT = {
       idle: 'Up to date',
       error: 'Sync error',
       offline: 'Offline',
-      pendingChanges: (count: number) => `${count} pending change${count !== 1 ? 's' : ''}`,
+      pendingChanges: (count: number) =>
+        `${count} unsaved change${count !== 1 ? 's' : ''}`,
     },
     conflict: {
       title: 'Sync Conflict',
-      description: 'There are conflicting changes between your local data and Canvas.',
+      description:
+        'Your local changes conflict with updates from Canvas. Choose which version to keep.',
       keepLocal: 'Keep Local',
       keepLocalDescription: 'Use your local changes',
       useCanvas: 'Use Canvas',
@@ -156,7 +159,8 @@ export const UI_TEXT = {
       resetTitle: 'Reset Data',
       resetDescription: 'Clear all local data and start fresh',
       resetButton: 'Reset All Data',
-      resetWarning: 'This will delete all your local data including settings, cached files, and sync history. This cannot be undone.',
+      resetWarning:
+        'This will delete all your local data including settings, cached files, and sync history. This cannot be undone.',
       exportTitle: 'Export Data',
       exportDescription: 'Download a copy of your data',
       exportButton: 'Export Data',
@@ -240,7 +244,7 @@ export const UI_TEXT = {
     },
     notifications: {
       title: 'No Notifications',
-      description: 'You\'re all caught up! No new announcements.',
+      description: "You're all caught up! No new announcements.",
     },
     files: {
       title: 'No Files',
@@ -299,7 +303,7 @@ export const UI_TEXT = {
   confirm: {
     delete: {
       title: 'Delete Item',
-      message: 'Are you sure you want to delete this item? This action cannot be undone.',
+      message: 'Are you sure you want to delete this? This cannot be undone.',
     },
     discard: {
       title: 'Discard Changes',
@@ -311,11 +315,13 @@ export const UI_TEXT = {
     },
     disconnect: {
       title: 'Disconnect from Canvas',
-      message: 'Are you sure you want to disconnect from Canvas? You will need to re-enter your credentials to sync again.',
+      message:
+        'Are you sure you want to disconnect from Canvas? You will need to re-enter your credentials to sync again.',
     },
     clearData: {
       title: 'Clear All Data',
-      message: 'This will permanently delete all your local data including settings, cached files, and sync history. This cannot be undone.',
+      message:
+        'This will permanently delete all your local data including settings, cached files, and sync history. This cannot be undone.',
     },
   },
 
@@ -326,7 +332,7 @@ export const UI_TEXT = {
     title: 'Dashboard',
     sections: {
       priority: 'Priority Tasks',
-      schedule: 'Today\'s Schedule',
+      schedule: "Today's Schedule",
       recommendations: 'Recommendations',
       insights: 'Insights',
       courses: 'My Courses',
@@ -378,7 +384,8 @@ export const UI_TEXT = {
       title: 'Import Calendar',
       selectFile: 'Select ICS file',
       importing: 'Importing...',
-      success: (count: number) => `Successfully imported ${count} event${count !== 1 ? 's' : ''}.`,
+      success: (count: number) =>
+        `Successfully imported ${count} event${count !== 1 ? 's' : ''}.`,
     },
   },
 

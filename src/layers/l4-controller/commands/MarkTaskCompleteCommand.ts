@@ -18,11 +18,11 @@ export class MarkTaskCompleteCommand implements Command<
 
   validate(params: MarkTaskCompleteParams): { valid: boolean; error?: string } {
     if (!params.taskId || params.taskId <= 0) {
-      return { valid: false, error: 'Invalid task ID' };
+      return { valid: false, error: 'Task not found or invalid' };
     }
 
     if (typeof params.isComplete !== 'boolean') {
-      return { valid: false, error: 'isComplete must be a boolean' };
+      return { valid: false, error: 'Invalid completion status' };
     }
 
     return { valid: true };

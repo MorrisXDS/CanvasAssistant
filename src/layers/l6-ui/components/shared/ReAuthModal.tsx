@@ -7,7 +7,6 @@
 
 import React, { useState } from 'react';
 import { AlertTriangle, Key, Loader2, Check, XCircle, LogOut } from 'lucide-react';
-import { useStore } from '../../../l5-presentation/store';
 
 interface ReAuthModalProps {
   reason?: string;
@@ -104,8 +103,8 @@ export function ReAuthModal({ reason, onReauthSuccess, onDisconnect }: ReAuthMod
         {/* Description */}
         <p style={styles.description}>
           Your Canvas access token has expired or been revoked.
-          {reason && ` Reason: ${reason}`}
-          {' '}Please enter a new token to continue using the app.
+          {reason && ` Reason: ${reason}`} Please enter a new token to continue using the
+          app.
         </p>
 
         {/* Token Input */}
@@ -124,8 +123,7 @@ export function ReAuthModal({ reason, onReauthSuccess, onDisconnect }: ReAuthMod
             autoFocus
           />
           <p style={styles.hint}>
-            You can generate a new token from your Canvas account settings under
-            "Approved Integrations" or "Access Tokens".
+            Generate a new token: Canvas → Account → Settings → New Access Token
           </p>
         </div>
 

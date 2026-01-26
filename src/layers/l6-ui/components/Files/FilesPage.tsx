@@ -6,7 +6,6 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import {
   FolderOpen,
-  Download,
   Loader2,
   Search,
   Grid,
@@ -28,21 +27,32 @@ import {
   Library,
   FolderArchive,
   GripVertical,
-  RotateCcw,
   FileText,
 } from 'lucide-react';
-import { Card, ConfirmDialog, Dropdown, DropdownSection, DropdownSubmenu } from '../shared';
+import { Card, ConfirmDialog, Dropdown } from '../shared';
 import { useStore } from '../../../l5-presentation/store';
 import styles from './FilesPage.module.css';
 
 // Import extracted components
-import { FileListItem, FileItem, FileAttachment, FileResource, FilePage, getFileName, isFileDownloaded, formatFileSize } from './FileListItem';
+import {
+  FileListItem,
+  FileItem,
+  FileAttachment,
+  FileResource,
+  FilePage,
+  getFileName,
+  isFileDownloaded,
+} from './FileListItem';
 import { FileGridItem } from './FileGridItem';
-import { FileFilterPanel, SourceFilter, StatusFilter, SizeFilter } from './FileFilterPanel';
+import {
+  FileFilterPanel,
+  SourceFilter,
+  StatusFilter,
+  SizeFilter,
+} from './FileFilterPanel';
 import { FileSyncConfig } from './FileSyncConfig';
 import { FileSelectionBar, DownloadProgress } from './FileSelectionBar';
 import { FileContextMenu, FilePropertiesContent } from './FileContextMenu';
-import { ConfirmDialog as PropertiesDialog } from '../shared';
 import {
   getFolderTypeFromPath,
   getFolderDepth,
@@ -106,10 +116,13 @@ function loadExpandedState(): ExpandedState {
 
 function saveExpandedState(courses: Set<number>, folders: Set<string>): void {
   try {
-    localStorage.setItem(EXPANDED_STATE_KEY, JSON.stringify({
-      courses: Array.from(courses),
-      folders: Array.from(folders),
-    }));
+    localStorage.setItem(
+      EXPANDED_STATE_KEY,
+      JSON.stringify({
+        courses: Array.from(courses),
+        folders: Array.from(folders),
+      })
+    );
   } catch (e) {
     console.error('Failed to save expanded state:', e);
   }
@@ -148,48 +161,70 @@ function matchesSizeFilter(file: FileItem, filter: SizeFilter): boolean {
 
   const MB = 1024 * 1024;
   switch (filter) {
-    case 'small': return size < 1 * MB;
-    case 'medium': return size >= 1 * MB && size < 10 * MB;
-    case 'large': return size >= 10 * MB;
-    default: return true;
+    case 'small':
+      return size < 1 * MB;
+    case 'medium':
+      return size >= 1 * MB && size < 10 * MB;
+    case 'large':
+      return size >= 10 * MB;
+    default:
+      return true;
   }
 }
 
 // Get folder icon based on type
 function getFolderIcon(type: FolderTypeConfig, size: number = 14) {
   switch (type.type) {
-    case 'announcements': return <Megaphone size={size} />;
-    case 'lectures': return <BookOpen size={size} />;
-    case 'labs': return <FlaskConical size={size} />;
-    case 'assignments': return <ClipboardList size={size} />;
-    case 'tutorials': return <GraduationCap size={size} />;
-    case 'exams': return <FileQuestion size={size} />;
-    case 'resources': return <Library size={size} />;
-    case 'pages': return <FileText size={size} />;
-    default: return <FolderArchive size={size} />;
+    case 'announcements':
+      return <Megaphone size={size} />;
+    case 'lectures':
+      return <BookOpen size={size} />;
+    case 'labs':
+      return <FlaskConical size={size} />;
+    case 'assignments':
+      return <ClipboardList size={size} />;
+    case 'tutorials':
+      return <GraduationCap size={size} />;
+    case 'exams':
+      return <FileQuestion size={size} />;
+    case 'resources':
+      return <Library size={size} />;
+    case 'pages':
+      return <FileText size={size} />;
+    default:
+      return <FolderArchive size={size} />;
   }
 }
 
 export function FilesPage() {
   const { courses, syncStatus, triggerSync } = useStore();
-  const [files, setFiles] = useState<FilesData>({ resources: [], attachments: [], pages: [] });
+  const [files, setFiles] = useState<FilesData>({
+    resources: [],
+    attachments: [],
+    pages: [],
+  });
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
 
   // Settings
-  const [explorerSettings] = useState<FileExplorerSettings>(() => loadFileExplorerSettings());
+  const [explorerSettings] = useState<FileExplorerSettings>(() =>
+    loadFileExplorerSettings()
+  );
   const [viewPrefs, setViewPrefs] = useState<ViewPreferences>(() => loadViewPrefs());
   const [viewMode, setViewModeState] = useState<ViewMode>(() => {
     const saved = loadViewPrefs();
     return saved.viewMode || explorerSettings.defaultViewMode;
   });
 
-  const setViewMode = useCallback((mode: ViewMode) => {
-    setViewModeState(mode);
-    const newPrefs = { ...viewPrefs, viewMode: mode };
-    setViewPrefs(newPrefs);
-    saveViewPrefs(newPrefs);
-  }, [viewPrefs]);
+  const setViewMode = useCallback(
+    (mode: ViewMode) => {
+      setViewModeState(mode);
+      const newPrefs = { ...viewPrefs, viewMode: mode };
+      setViewPrefs(newPrefs);
+      saveViewPrefs(newPrefs);
+    },
+    [viewPrefs]
+  );
 
   // Expanded state
   const [expandedCourses, setExpandedCourses] = useState<Set<number>>(() => {
@@ -220,8 +255,8 @@ export function FilesPage() {
     handleDragEnd: folderDragEnd,
     handleDrop: folderDrop,
     sortFoldersByCustomOrder,
-    resetAllOrders: resetFolderOrders,
-    hasAnyCustomOrder: hasCustomFolderOrder,
+    resetAllOrders: _resetFolderOrders,
+    hasAnyCustomOrder: _hasCustomFolderOrder,
   } = useFolderDragDrop();
 
   // Course drag-and-drop reordering (in files page)
@@ -235,8 +270,8 @@ export function FilesPage() {
     handleDragLeave: filesCoursesDragLeave,
     handleDragEnd: filesCoursesDragEnd,
     handleDrop: filesCoursesDrop,
-    resetOrder: resetFilesCourseOrder,
-    hasCustomOrder: hasCustomFilesCourseOrder,
+    resetOrder: _resetFilesCourseOrder,
+    hasCustomOrder: _hasCustomFilesCourseOrder,
   } = useFilesCourseDragDrop(filesCourseIds);
 
   const [hasAppliedDefaultExpand, setHasAppliedDefaultExpand] = useState(false);
@@ -321,7 +356,11 @@ export function FilesPage() {
 
   // Handle 'expanded' default state
   useEffect(() => {
-    if (explorerSettings.defaultState === 'expanded' && !hasAppliedDefaultExpand && !loading) {
+    if (
+      explorerSettings.defaultState === 'expanded' &&
+      !hasAppliedDefaultExpand &&
+      !loading
+    ) {
       const courseIds = new Set([
         ...files.attachments.map((a) => a.courseId),
         ...files.resources.map((r) => r.courseId),
@@ -370,7 +409,11 @@ export function FilesPage() {
       }
     }
 
-    const allFiles: FileItem[] = [...files.attachments, ...files.resources, ...files.pages];
+    const allFiles: FileItem[] = [
+      ...files.attachments,
+      ...files.resources,
+      ...files.pages,
+    ];
     for (const file of allFiles) {
       const ext = getFileExtension(file);
       if (ext) {
@@ -426,7 +469,11 @@ export function FilesPage() {
 
   // Group and filter files
   const groupedFiles = useMemo(() => {
-    const allFiles: FileItem[] = [...files.attachments, ...files.resources, ...files.pages];
+    const allFiles: FileItem[] = [
+      ...files.attachments,
+      ...files.resources,
+      ...files.pages,
+    ];
 
     const filtered = allFiles.filter((f) => {
       const course = courseMap.get(f.courseId);
@@ -494,15 +541,40 @@ export function FilesPage() {
     }
 
     return groups;
-  }, [files, searchQuery, selectedPrefixes, selectedTerms, sourceFilter, statusFilter, selectedExtensions, sizeFilter, courseMap, selectedCourseIds]);
+  }, [
+    files,
+    searchQuery,
+    selectedPrefixes,
+    selectedTerms,
+    sourceFilter,
+    statusFilter,
+    selectedExtensions,
+    sizeFilter,
+    courseMap,
+    selectedCourseIds,
+  ]);
 
   // Counts
-  const totalFiles = files.attachments.length + files.resources.length + files.pages.length;
+  const totalFiles =
+    files.attachments.length + files.resources.length + files.pages.length;
   const filteredCount = Array.from(groupedFiles.values()).reduce((sum, folderMap) => {
-    return sum + Array.from(folderMap.values()).reduce((fSum, list) => fSum + list.length, 0);
+    return (
+      sum + Array.from(folderMap.values()).reduce((fSum, list) => fSum + list.length, 0)
+    );
   }, 0);
-  const downloadedCount = [...files.attachments, ...files.resources, ...files.pages].filter(isFileDownloaded).length;
-  const hasActiveFilters = selectedPrefixes.size > 0 || selectedTerms.size > 0 || sourceFilter !== 'all' || statusFilter !== 'all' || selectedExtensions.size > 0 || sizeFilter !== 'all' || selectedCourseIds !== null;
+  const downloadedCount = [
+    ...files.attachments,
+    ...files.resources,
+    ...files.pages,
+  ].filter(isFileDownloaded).length;
+  const hasActiveFilters =
+    selectedPrefixes.size > 0 ||
+    selectedTerms.size > 0 ||
+    sourceFilter !== 'all' ||
+    statusFilter !== 'all' ||
+    selectedExtensions.size > 0 ||
+    sizeFilter !== 'all' ||
+    selectedCourseIds !== null;
 
   // Toggle helpers
   const toggleCourse = (courseId: number) => {
@@ -520,7 +592,8 @@ export function FilesPage() {
     });
   };
 
-  const getFolderKey = (courseId: number, folderPath: string) => `${courseId}:${folderPath}`;
+  const getFolderKey = (courseId: number, folderPath: string) =>
+    `${courseId}:${folderPath}`;
 
   const toggleFolder = (courseId: number, folderPath: string) => {
     const key = getFolderKey(courseId, folderPath);
@@ -542,7 +615,8 @@ export function FilesPage() {
     // On expand, sync folder files from Canvas in background (non-blocking)
     if (isExpanding && folderPath && window.api?.syncFolderByPath) {
       // Fire and forget - don't await, let it run in background
-      window.api.syncFolderByPath({ courseId, folderPath })
+      window.api
+        .syncFolderByPath({ courseId, folderPath })
         .then((result) => {
           if (result.success && result.data && result.data.count > 0) {
             // Refresh files data to show newly synced files
@@ -784,7 +858,11 @@ export function FilesPage() {
     }
 
     // Set completion state
-    setDownloadProgress({ total: totalCount, completed: completedCount, isComplete: true });
+    setDownloadProgress({
+      total: totalCount,
+      completed: completedCount,
+      isComplete: true,
+    });
 
     await fetchFiles();
     setSelectedFiles(new Set());
@@ -803,7 +881,8 @@ export function FilesPage() {
     console.log('[FilesPage] handleOpen called, fire-and-forget');
     // Fire-and-forget: don't block UI while file opens in external app
     if (file.source === 'attachment') {
-      api.openAttachment(file.id)
+      api
+        .openAttachment(file.id)
         .then(() => console.log('[FilesPage] openAttachment resolved'))
         .catch((error) => {
           console.error('Failed to open file:', error);
@@ -811,7 +890,8 @@ export function FilesPage() {
     } else if (file.source === 'page') {
       // For pages, open the Canvas URL in browser
       const page = file as FilePage;
-      api.getPage(page.id)
+      api
+        .getPage(page.id)
         .then((pageResult) => {
           if (pageResult?.success && pageResult.data?.canvasUrl) {
             api.openExternal(pageResult.data.canvasUrl);
@@ -821,7 +901,8 @@ export function FilesPage() {
           console.error('Failed to open page:', error);
         });
     } else {
-      api.openResource(file.id)
+      api
+        .openResource(file.id)
         .then(() => console.log('[FilesPage] openResource resolved'))
         .catch((error) => {
           console.error('Failed to open file:', error);
@@ -876,7 +957,11 @@ export function FilesPage() {
   };
 
   const handleClearFilesSync = async () => {
-    if (window.confirm('Clear all synced file data? This will remove file information from the database but not delete downloaded files.')) {
+    if (
+      window.confirm(
+        'Clear all synced file data? This will remove file information from the database but not delete downloaded files.'
+      )
+    ) {
       const api = window.api;
       if (api?.clearFilesSync) {
         await api.clearFilesSync();
@@ -895,9 +980,10 @@ export function FilesPage() {
   const handleCopyPath = async (file: FileItem) => {
     if (file.source === 'page') return;
 
-    const localPath = file.source === 'attachment'
-      ? (file as FileAttachment).localPath
-      : (file as FileResource).localPath;
+    const localPath =
+      file.source === 'attachment'
+        ? (file as FileAttachment).localPath
+        : (file as FileResource).localPath;
 
     if (localPath) {
       try {
@@ -954,12 +1040,6 @@ export function FilesPage() {
     } catch (err) {
       console.error('Failed to open in Canvas:', err);
     }
-  };
-
-  const handleDeleteLocalCopy = async (file: FileItem) => {
-    // TODO: Implement local file deletion
-    // This would require a new IPC handler
-    console.log('Delete local copy:', file);
   };
 
   const handleShowProperties = (file: FileItem) => {
@@ -1053,7 +1133,12 @@ export function FilesPage() {
                 Filters
                 {hasActiveFilters && (
                   <span className={styles.filterBadge}>
-                    {selectedPrefixes.size + selectedTerms.size + (sourceFilter !== 'all' ? 1 : 0) + (statusFilter !== 'all' ? 1 : 0) + selectedExtensions.size + (sizeFilter !== 'all' ? 1 : 0)}
+                    {selectedPrefixes.size +
+                      selectedTerms.size +
+                      (sourceFilter !== 'all' ? 1 : 0) +
+                      (statusFilter !== 'all' ? 1 : 0) +
+                      selectedExtensions.size +
+                      (sizeFilter !== 'all' ? 1 : 0)}
                   </span>
                 )}
                 <ChevronDown size={14} />
@@ -1151,7 +1236,11 @@ export function FilesPage() {
       {totalFiles === 0 ? (
         <Card padding="lg">
           <div className={styles.emptyState}>
-            <FolderOpen size={64} color="var(--color-navy)" style={{ marginBottom: 'var(--space-4)' }} />
+            <FolderOpen
+              size={64}
+              color="var(--color-navy)"
+              style={{ marginBottom: 'var(--space-4)' }}
+            />
             <h2 className={styles.emptyTitle}>No Files Yet</h2>
             <p className={styles.emptyText}>
               Files from Canvas and announcements will appear here after syncing.
@@ -1165,11 +1254,13 @@ export function FilesPage() {
       ) : filteredCount === 0 ? (
         <Card padding="lg">
           <div className={styles.emptyState}>
-            <Search size={48} color="var(--text-muted)" style={{ marginBottom: 'var(--space-4)' }} />
+            <Search
+              size={48}
+              color="var(--text-muted)"
+              style={{ marginBottom: 'var(--space-4)' }}
+            />
             <h2 className={styles.emptyTitle}>No Results</h2>
-            <p className={styles.emptyText}>
-              No files match your current filters
-            </p>
+            <p className={styles.emptyText}>No files match your current filters</p>
             <button className={styles.clearFiltersButton} onClick={clearFilters}>
               Clear filters
             </button>
@@ -1181,7 +1272,9 @@ export function FilesPage() {
           {(() => {
             // Sort courses by custom order
             const courseEntries = Array.from(groupedFiles.entries());
-            const sortedCourseIds = sortCoursesByCustomOrder(courseEntries.map(([id]) => id));
+            const sortedCourseIds = sortCoursesByCustomOrder(
+              courseEntries.map(([id]) => id)
+            );
             const sortedEntries = sortedCourseIds
               .map((id) => courseEntries.find(([cid]) => cid === id))
               .filter(Boolean) as [number, Map<string, FileItem[]>][];
@@ -1204,7 +1297,9 @@ export function FilesPage() {
               // Sort folders: Apply custom order first, then default sorting
               const folderPaths = Array.from(folderMap.keys());
               const orderedPaths = sortFoldersByCustomOrder(courseId, folderPaths);
-              const sortedFolders = orderedPaths.map((path) => [path, folderMap.get(path)!] as [string, FileItem[]]);
+              const sortedFolders = orderedPaths.map(
+                (path) => [path, folderMap.get(path)!] as [string, FileItem[]]
+              );
 
               return (
                 <div
@@ -1255,137 +1350,151 @@ export function FilesPage() {
                     </div>
                     <span className={styles.courseFileCount}>
                       {downloadedInCourse}/{totalInCourse} downloaded
-                  </span>
-                </button>
+                    </span>
+                  </button>
 
-                {/* Folders and Files */}
-                {isExpanded && (
-                  <div className={styles.foldersContainer}>
-                    {sortedFolders.map(([folderPath, folderFiles]) => {
-                      const folderExpanded = isFolderExpanded(courseId, folderPath);
-                      const folderDownloaded = folderFiles.filter(isFileDownloaded).length;
-                      const displayPath = folderPath || 'Root';
+                  {/* Folders and Files */}
+                  {isExpanded && (
+                    <div className={styles.foldersContainer}>
+                      {sortedFolders.map(([folderPath, folderFiles]) => {
+                        const folderExpanded = isFolderExpanded(courseId, folderPath);
+                        const folderDownloaded =
+                          folderFiles.filter(isFileDownloaded).length;
+                        const displayPath = folderPath || 'Root';
 
-                      // Get folder type and styling
-                      const folderType = getFolderTypeFromPath(folderPath || null);
-                      const folderDepth = getFolderDepth(folderPath || null);
+                        // Get folder type and styling
+                        const folderType = getFolderTypeFromPath(folderPath || null);
+                        const folderDepth = getFolderDepth(folderPath || null);
 
-                      const isDragging = draggedFolder?.courseId === courseId && draggedFolder?.path === folderPath;
-                      const isDragOver = dragOverFolder?.courseId === courseId && dragOverFolder?.path === folderPath;
+                        const isDragging =
+                          draggedFolder?.courseId === courseId &&
+                          draggedFolder?.path === folderPath;
+                        const isDragOver =
+                          dragOverFolder?.courseId === courseId &&
+                          dragOverFolder?.path === folderPath;
 
-                      return (
-                        <div
-                          key={folderPath}
-                          className={styles.folderSection}
-                          draggable
-                          onDragStart={(e) => folderDragStart(e, courseId, folderPath)}
-                          onDragEnd={folderDragEnd}
-                          onDragOver={(e) => folderDragOver(e, courseId, folderPath)}
-                          onDragLeave={folderDragLeave}
-                          onDrop={(e) => folderDrop(e, courseId, folderPath, folderPaths)}
-                          style={{
-                            opacity: isDragging ? 0.5 : 1,
-                            boxShadow: isDragOver ? '0 0 0 2px var(--color-blue)' : 'none',
-                            borderRadius: isDragOver ? 'var(--radius-md)' : undefined,
-                            transition: 'opacity 150ms ease, box-shadow 150ms ease',
-                          }}
-                        >
-                          {/* Folder Header with Type Color */}
-                          <button
-                            className={styles.folderHeader}
-                            onClick={() => toggleFolder(courseId, folderPath)}
+                        return (
+                          <div
+                            key={folderPath}
+                            className={styles.folderSection}
+                            draggable
+                            onDragStart={(e) => folderDragStart(e, courseId, folderPath)}
+                            onDragEnd={folderDragEnd}
+                            onDragOver={(e) => folderDragOver(e, courseId, folderPath)}
+                            onDragLeave={folderDragLeave}
+                            onDrop={(e) =>
+                              folderDrop(e, courseId, folderPath, folderPaths)
+                            }
                             style={{
-                              '--folder-accent-color': folderType.color,
-                              paddingLeft: `calc(var(--space-6) + ${folderDepth * 20}px)`,
-                            } as React.CSSProperties}
-                            aria-expanded={folderExpanded}
+                              opacity: isDragging ? 0.5 : 1,
+                              boxShadow: isDragOver
+                                ? '0 0 0 2px var(--color-blue)'
+                                : 'none',
+                              borderRadius: isDragOver ? 'var(--radius-md)' : undefined,
+                              transition: 'opacity 150ms ease, box-shadow 150ms ease',
+                            }}
                           >
-                            <div className={styles.folderHeaderLeft}>
-                              {/* Drag handle */}
-                              <span
-                                className={styles.folderDragHandle}
-                                title="Drag to reorder"
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                <GripVertical size={12} />
+                            {/* Folder Header with Type Color */}
+                            <button
+                              className={styles.folderHeader}
+                              onClick={() => toggleFolder(courseId, folderPath)}
+                              style={
+                                {
+                                  '--folder-accent-color': folderType.color,
+                                  paddingLeft: `calc(var(--space-6) + ${folderDepth * 20}px)`,
+                                } as React.CSSProperties
+                              }
+                              aria-expanded={folderExpanded}
+                            >
+                              <div className={styles.folderHeaderLeft}>
+                                {/* Drag handle */}
+                                <span
+                                  className={styles.folderDragHandle}
+                                  title="Drag to reorder"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  <GripVertical size={12} />
+                                </span>
+                                {folderExpanded ? (
+                                  <ChevronDown size={14} color="var(--text-muted)" />
+                                ) : (
+                                  <ChevronRight size={14} color="var(--text-muted)" />
+                                )}
+                                <span style={{ color: folderType.color }}>
+                                  {getFolderIcon(folderType, 14)}
+                                </span>
+                                <span className={styles.folderName}>{displayPath}</span>
+                                <span
+                                  className={styles.folderTypeBadge}
+                                  style={{ backgroundColor: folderType.color }}
+                                >
+                                  {folderType.label}
+                                </span>
+                              </div>
+                              <span className={styles.folderFileCount}>
+                                {folderDownloaded}/{folderFiles.length}
                               </span>
-                              {folderExpanded ? (
-                                <ChevronDown size={14} color="var(--text-muted)" />
-                              ) : (
-                                <ChevronRight size={14} color="var(--text-muted)" />
-                              )}
-                              <span style={{ color: folderType.color }}>
-                                {getFolderIcon(folderType, 14)}
-                              </span>
-                              <span className={styles.folderName}>{displayPath}</span>
-                              <span
-                                className={styles.folderTypeBadge}
-                                style={{ backgroundColor: folderType.color }}
-                              >
-                                {folderType.label}
-                              </span>
-                            </div>
-                            <span className={styles.folderFileCount}>
-                              {folderDownloaded}/{folderFiles.length}
-                            </span>
-                          </button>
+                            </button>
 
-                          {/* Files in Folder */}
-                          {folderExpanded && (
-                            viewMode === 'list' ? (
-                              <div
-                                className={styles.fileList}
-                                style={{
-                                  '--folder-depth-offset': `${folderDepth * 20}px`,
-                                } as React.CSSProperties}
-                              >
-                                {folderFiles.map((file) => (
-                                  <FileListItem
-                                    key={getFileKey(file)}
-                                    file={file}
-                                    isDownloading={downloadingIds.has(file.id)}
-                                    isSelected={selectedFiles.has(getFileKey(file))}
-                                    selectMode={selectMode}
-                                    onToggleSelect={() => toggleFileSelection(file)}
-                                    onDownload={() => handleDownload(file)}
-                                    onOpen={() => handleOpen(file)}
-                                    onShowInFolder={() => handleShowInFolder(file)}
-                                    onContextMenu={(e) => handleContextMenu(file, e)}
-                                  />
-                                ))}
-                              </div>
-                            ) : (
-                              <div
-                                className={styles.fileGrid}
-                                style={{
-                                  '--folder-depth-offset': `${folderDepth * 20}px`,
-                                } as React.CSSProperties}
-                              >
-                                {folderFiles.map((file) => (
-                                  <FileGridItem
-                                    key={getFileKey(file)}
-                                    file={file}
-                                    isDownloading={downloadingIds.has(file.id)}
-                                    isSelected={selectedFiles.has(getFileKey(file))}
-                                    selectMode={selectMode}
-                                    onToggleSelect={() => toggleFileSelection(file)}
-                                    onDownload={() => handleDownload(file)}
-                                    onOpen={() => handleOpen(file)}
-                                    onShowInFolder={() => handleShowInFolder(file)}
-                                    onContextMenu={(e) => handleContextMenu(file, e)}
-                                  />
-                                ))}
-                              </div>
-                            )
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            );
-          });
+                            {/* Files in Folder */}
+                            {folderExpanded &&
+                              (viewMode === 'list' ? (
+                                <div
+                                  className={styles.fileList}
+                                  style={
+                                    {
+                                      '--folder-depth-offset': `${folderDepth * 20}px`,
+                                    } as React.CSSProperties
+                                  }
+                                >
+                                  {folderFiles.map((file) => (
+                                    <FileListItem
+                                      key={getFileKey(file)}
+                                      file={file}
+                                      isDownloading={downloadingIds.has(file.id)}
+                                      isSelected={selectedFiles.has(getFileKey(file))}
+                                      selectMode={selectMode}
+                                      onToggleSelect={() => toggleFileSelection(file)}
+                                      onDownload={() => handleDownload(file)}
+                                      onOpen={() => handleOpen(file)}
+                                      onShowInFolder={() => handleShowInFolder(file)}
+                                      onContextMenu={(e) => handleContextMenu(file, e)}
+                                    />
+                                  ))}
+                                </div>
+                              ) : (
+                                <div
+                                  className={styles.fileGrid}
+                                  style={
+                                    {
+                                      '--folder-depth-offset': `${folderDepth * 20}px`,
+                                    } as React.CSSProperties
+                                  }
+                                >
+                                  {folderFiles.map((file) => (
+                                    <FileGridItem
+                                      key={getFileKey(file)}
+                                      file={file}
+                                      isDownloading={downloadingIds.has(file.id)}
+                                      isSelected={selectedFiles.has(getFileKey(file))}
+                                      selectMode={selectMode}
+                                      onToggleSelect={() => toggleFileSelection(file)}
+                                      onDownload={() => handleDownload(file)}
+                                      onOpen={() => handleOpen(file)}
+                                      onShowInFolder={() => handleShowInFolder(file)}
+                                      onContextMenu={(e) => handleContextMenu(file, e)}
+                                    />
+                                  ))}
+                                </div>
+                              ))}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            });
           })()}
         </div>
       )}
@@ -1393,14 +1502,22 @@ export function FilesPage() {
       {/* Download Confirmation Dialog */}
       <ConfirmDialog
         isOpen={pendingDownload !== null}
-        title={pendingDownload && isFileDownloaded(pendingDownload) ? 'Re-download File?' : 'Download File'}
+        title={
+          pendingDownload && isFileDownloaded(pendingDownload)
+            ? 'Re-download File?'
+            : 'Download File'
+        }
         message={
           pendingDownload && isFileDownloaded(pendingDownload)
             ? `"${getFileName(pendingDownload)}" has already been downloaded. Do you want to download it again? This will overwrite the existing file.`
             : `Download "${pendingDownload ? getFileName(pendingDownload) : ''}"?`
         }
         type={pendingDownload && isFileDownloaded(pendingDownload) ? 'warning' : 'info'}
-        confirmText={pendingDownload && isFileDownloaded(pendingDownload) ? 'Re-download' : 'Download'}
+        confirmText={
+          pendingDownload && isFileDownloaded(pendingDownload)
+            ? 'Re-download'
+            : 'Download'
+        }
         cancelText="Cancel"
         onConfirm={confirmDownload}
         onCancel={() => setPendingDownload(null)}

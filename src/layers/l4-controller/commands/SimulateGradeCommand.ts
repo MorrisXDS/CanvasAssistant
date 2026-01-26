@@ -16,14 +16,15 @@ import {
   SimulationResult,
 } from '../types';
 
-export class SimulateGradeCommand
-  implements Command<SimulateGradeParams, SimulationResult>
-{
+export class SimulateGradeCommand implements Command<
+  SimulateGradeParams,
+  SimulationResult
+> {
   readonly name = 'SimulateGrade';
 
   validate(params: SimulateGradeParams): { valid: boolean; error?: string } {
     if (!params.taskId || params.taskId <= 0) {
-      return { valid: false, error: 'Invalid task ID' };
+      return { valid: false, error: 'Task not found or invalid' };
     }
 
     if (typeof params.grade !== 'number' || isNaN(params.grade)) {
@@ -84,7 +85,7 @@ export class SimulateGradeCommand
     } catch (error) {
       return {
         success: false,
-        error: `Failed to simulate grade: ${error}`,
+        error: `Failed to simulate grade: ${error instanceof Error ? error.message : String(error)}`,
       };
     }
   }
@@ -93,20 +94,16 @@ export class SimulateGradeCommand
     const course = context.db.executeReadOne<{
       assessed_grade: number | null;
       target_grade: number;
-    }>(
-      'SELECT assessed_grade, target_grade FROM courses WHERE id = ?',
-      [courseId]
-    );
+    }>('SELECT assessed_grade, target_grade FROM courses WHERE id = ?', [courseId]);
 
     const tasks = context.db.executeRead<{
       id: number;
       grade: number | null;
       weight: number;
       priority_score: number;
-    }>(
-      'SELECT id, grade, weight, priority_score FROM tasks WHERE course_id = ?',
-      [courseId]
-    );
+    }>('SELECT id, grade, weight, priority_score FROM tasks WHERE course_id = ?', [
+      courseId,
+    ]);
 
     const originalAssessedGrade = course?.assessed_grade ?? 0;
     const targetGrade = course?.target_grade ?? 85;

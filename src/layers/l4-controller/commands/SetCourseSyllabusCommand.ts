@@ -18,18 +18,19 @@ export interface SetCourseSyllabusResult {
   lastReviewedAt: string;
 }
 
-export class SetCourseSyllabusCommand
-  implements Command<SetCourseSyllabusParams, SetCourseSyllabusResult>
-{
+export class SetCourseSyllabusCommand implements Command<
+  SetCourseSyllabusParams,
+  SetCourseSyllabusResult
+> {
   readonly name = 'SetCourseSyllabus';
 
   validate(params: SetCourseSyllabusParams): { valid: boolean; error?: string } {
     if (!params.courseId || params.courseId <= 0) {
-      return { valid: false, error: 'Invalid course ID' };
+      return { valid: false, error: 'Course not found or invalid' };
     }
 
     if (!params.resourceId || params.resourceId === 0) {
-      return { valid: false, error: 'Invalid resource ID' };
+      return { valid: false, error: 'File not found or invalid' };
     }
 
     return { valid: true };
@@ -74,11 +75,14 @@ export class SetCourseSyllabusCommand
         );
 
         if (!attachment) {
-          return { success: false, error: 'Attachment not found' };
+          return { success: false, error: 'File attachment not found' };
         }
 
         if (attachment.course_id !== params.courseId) {
-          return { success: false, error: 'Attachment does not belong to this course' };
+          return {
+            success: false,
+            error: 'This file attachment belongs to a different course',
+          };
         }
 
         remoteUpdatedAt = attachment.downloaded_at;
@@ -88,17 +92,16 @@ export class SetCourseSyllabusCommand
           id: number;
           course_id: number;
           remote_updated_at: string | null;
-        }>(
-          'SELECT id, course_id, remote_updated_at FROM resources WHERE id = ?',
-          [actualId]
-        );
+        }>('SELECT id, course_id, remote_updated_at FROM resources WHERE id = ?', [
+          actualId,
+        ]);
 
         if (!resource) {
-          return { success: false, error: 'Resource not found' };
+          return { success: false, error: 'File not found' };
         }
 
         if (resource.course_id !== params.courseId) {
-          return { success: false, error: 'Resource does not belong to this course' };
+          return { success: false, error: 'This file belongs to a different course' };
         }
 
         remoteUpdatedAt = resource.remote_updated_at;
@@ -139,7 +142,7 @@ export class SetCourseSyllabusCommand
     } catch (error) {
       return {
         success: false,
-        error: `Failed to set course syllabus: ${error}`,
+        error: `Failed to set course syllabus: ${error instanceof Error ? error.message : String(error)}`,
       };
     }
   }

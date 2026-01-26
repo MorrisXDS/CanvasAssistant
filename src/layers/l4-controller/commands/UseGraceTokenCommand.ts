@@ -25,18 +25,19 @@ export interface UseGraceTokenResult {
   hoursExtended: number;
 }
 
-export class UseGraceTokenCommand
-  implements Command<UseGraceTokenParams, UseGraceTokenResult>
-{
+export class UseGraceTokenCommand implements Command<
+  UseGraceTokenParams,
+  UseGraceTokenResult
+> {
   readonly name = 'UseGraceToken';
 
   validate(params: UseGraceTokenParams): { valid: boolean; error?: string } {
     if (!params.courseId || params.courseId <= 0) {
-      return { valid: false, error: 'Invalid course ID' };
+      return { valid: false, error: 'Course not found or invalid' };
     }
 
     if (!params.taskId || params.taskId <= 0) {
-      return { valid: false, error: 'Invalid task ID' };
+      return { valid: false, error: 'Task not found or invalid' };
     }
 
     if (!params.tokensToUse || params.tokensToUse <= 0) {
@@ -81,7 +82,7 @@ export class UseGraceTokenCommand
     } catch (error) {
       return {
         success: false,
-        error: `Failed to use grace token: ${error}`,
+        error: `Failed to use grace token: ${error instanceof Error ? error.message : String(error)}`,
       };
     }
   }

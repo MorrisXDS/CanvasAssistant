@@ -602,6 +602,62 @@ export const IpcContract = {
     params: z.void(),
     result: FilesDataSchema,
   },
+  'data:getCourseSyllabus': {
+    params: z.number(),
+    result: z
+      .object({
+        id: z.number(),
+        courseId: z.number(),
+        resourceId: z.number(),
+        sourceType: z.string(),
+        resourceUpdatedAt: z.string().nullable(),
+        lastReviewedAt: z.string().nullable(),
+        changeDetectedAt: z.string().nullable(),
+        markedAt: z.string(),
+      })
+      .nullable(),
+  },
+  'data:getCourseFiles': {
+    params: z.number(),
+    result: z.object({
+      resources: z.array(FileResourceSchema),
+      attachments: z.array(FileAttachmentSchema),
+    }),
+  },
+  'data:getTaskCanvasUrl': {
+    params: z.number(),
+    result: z.string().nullable(),
+  },
+  'data:clearAll': {
+    params: ClearDataOptionsSchema.optional(),
+    result: ApiResultSchema(z.void()),
+  },
+  'data:exportDatabase': {
+    params: z.void(),
+    result: ApiResultSchema(z.object({ filePath: z.string() })),
+  },
+  'data:importDatabase': {
+    params: z.void(),
+    result: ApiResultSchema(z.void()),
+  },
+  'data:exportCourseData': {
+    params: z
+      .object({
+        courseIds: z.array(z.number()).optional(),
+        includeFiles: z.boolean().optional(),
+      })
+      .optional(),
+    result: ApiResultSchema(z.object({ filePath: z.string() })),
+  },
+  'data:importCourseData': {
+    params: z.void(),
+    result: ApiResultSchema(
+      z.object({
+        coursesImported: z.number(),
+        tasksImported: z.number(),
+      })
+    ),
+  },
 
   // ============ Attachments ============
   'attachment:download': {
@@ -630,6 +686,10 @@ export const IpcContract = {
     params: z.number(),
     result: ApiResultSchema(z.void()),
   },
+  'resource:deleteLocal': {
+    params: z.number(),
+    result: ApiResultSchema(z.void()),
+  },
 
   // ============ Files Directory ============
   'files:getDirectory': {
@@ -638,6 +698,14 @@ export const IpcContract = {
   },
   'files:openDirectory': {
     params: z.void(),
+    result: ApiResultSchema(z.void()),
+  },
+  'files:selectDirectory': {
+    params: z.void(),
+    result: ApiResultSchema(z.object({ path: z.string() })),
+  },
+  'files:setDirectory': {
+    params: z.string(),
     result: ApiResultSchema(z.void()),
   },
   'files:clearSync': {
@@ -801,6 +869,40 @@ export const IpcContract = {
     params: z.void(),
     result: UserProfileSchema.nullable(),
   },
+  'canvas:debugFetch': {
+    params: z.string(),
+    result: z.unknown(),
+  },
+
+  // ============ Priorities ============
+  'priorities:calculate': {
+    params: z.void(),
+    result: z.array(PriorityItemSchema),
+  },
+  'priorities:refresh': {
+    params: z.void(),
+    result: ApiResultSchema(z.void()),
+  },
+  'priorities:getExplanation': {
+    params: z.object({ taskId: z.number() }),
+    result: z
+      .object({
+        taskId: z.number(),
+        finalScore: z.number(),
+        queue: z.string(),
+        factors: z.record(z.string(), z.unknown()),
+        breakdown: z.array(
+          z.object({
+            factor: z.string(),
+            value: z.number(),
+            contribution: z.number(),
+            explanation: z.string(),
+          })
+        ),
+        reasoning: z.string(),
+      })
+      .nullable(),
+  },
 
   // ============ Sync ============
   'sync:full': {
@@ -847,6 +949,78 @@ export const IpcContract = {
       })
     ),
   },
+  'sync:getPendingConflicts': {
+    params: z.void(),
+    result: z.array(
+      z.object({
+        id: z.string(),
+        entity: z.enum(['course', 'task', 'notification']),
+        entityId: z.number(),
+        externalId: z.string(),
+        entityName: z.string(),
+        field: z.string(),
+        fieldLabel: z.string(),
+        localValue: z.unknown(),
+        canvasValue: z.unknown(),
+        timestamp: z.string(),
+        courseName: z.string().optional(),
+        courseId: z.number().optional(),
+      })
+    ),
+  },
+  'sync:resolveConflict': {
+    params: z.object({
+      conflictId: z.string(),
+      useCanvasValue: z.boolean(),
+      rememberChoice: z.boolean().optional(),
+      rememberForAll: z.boolean().optional(),
+      expiresAt: z.string().nullable().optional(),
+    }),
+    result: ApiResultSchema(z.void()),
+  },
+  'sync:resolveAllConflicts': {
+    params: z.boolean(),
+    result: ApiResultSchema(z.object({ resolved: z.number() })),
+  },
+  'sync:getSyncPreferences': {
+    params: z.void(),
+    result: z.array(
+      z.object({
+        entity: z.string(),
+        field: z.string(),
+        useCanvasValue: z.boolean(),
+        expiresAt: z.string().nullable(),
+        createdAt: z.string(),
+      })
+    ),
+  },
+  'sync:deleteSyncPreference': {
+    params: z.object({
+      entity: z.string(),
+      field: z.string(),
+    }),
+    result: ApiResultSchema(z.void()),
+  },
+  'sync:getLastSyncTime': {
+    params: z.void(),
+    result: z.string().nullable(),
+  },
+  'sync:getAutoSyncPreferences': {
+    params: z.void(),
+    result: z.object({
+      enabled: z.boolean(),
+      autoSyncInterval: z.number(),
+      autoAssignDueDate: z.boolean().optional(),
+    }),
+  },
+  'sync:setAutoSyncPreferences': {
+    params: z.object({
+      enabled: z.boolean(),
+      autoSyncInterval: z.number(),
+      autoAssignDueDate: z.boolean().optional(),
+    }),
+    result: ApiResultSchema(z.void()),
+  },
 
   // ============ File Operations ============
   'file:save': {
@@ -886,6 +1060,10 @@ export const IpcContract = {
     params: z.void(),
     result: RecommendationStatsSchema,
   },
+  'intelligence:suppressRecommendation': {
+    params: z.number(),
+    result: ApiResultSchema(z.void()),
+  },
 
   // ============ Intelligence - Insights ============
   'intelligence:getActiveInsights': {
@@ -907,6 +1085,10 @@ export const IpcContract = {
   'intelligence:getInsightStats': {
     params: z.void(),
     result: InsightStatsSchema,
+  },
+  'intelligence:suppressInsight': {
+    params: z.number(),
+    result: ApiResultSchema(z.void()),
   },
 
   // ============ Intelligence - Workload ============
@@ -931,6 +1113,235 @@ export const IpcContract = {
     params: z.object({ windowDays: z.number().optional() }).optional(),
     result: z.number(),
   },
+  'intelligence:getCourseBalanceScore': {
+    params: z.void(),
+    result: z.number(),
+  },
+  'intelligence:getNeglectedCourses': {
+    params: z.object({ windowDays: z.number().optional() }).optional(),
+    result: z.array(
+      z.object({
+        courseId: z.number(),
+        courseName: z.string(),
+        lastCompletedAt: z.string().nullable(),
+        daysSinceActivity: z.number(),
+      })
+    ),
+  },
+  'intelligence:getDeadlineClusters': {
+    params: z.object({ windowHours: z.number().optional() }).optional(),
+    result: z.array(
+      z.object({
+        startTime: z.string(),
+        endTime: z.string(),
+        taskCount: z.number(),
+        taskIds: z.array(z.number()),
+      })
+    ),
+  },
+  'intelligence:getWorkloadSnapshots': {
+    params: z.object({ days: z.number().optional() }).optional(),
+    result: z.array(WorkloadSnapshotSchema),
+  },
+
+  // ============ Intelligence - Behavior Analytics ============
+  'intelligence:getWeeklyRhythm': {
+    params: z.void(),
+    result: z.object({
+      weeklyPattern: z.array(
+        z.object({
+          dayOfWeek: z.number(),
+          dayName: z.string(),
+          completionCount: z.number(),
+          avgCompletionHour: z.number().nullable(),
+        })
+      ),
+      peakDay: z.string(),
+      peakHour: z.number().nullable(),
+    }),
+  },
+  'intelligence:getCoursePerformance': {
+    params: z.void(),
+    result: z.array(
+      z.object({
+        courseId: z.number(),
+        courseName: z.string(),
+        avgCompletionTime: z.number().nullable(),
+        onTimeRate: z.number(),
+        tasksCompleted: z.number(),
+      })
+    ),
+  },
+  'intelligence:getStrugglePatterns': {
+    params: z.void(),
+    result: z.array(
+      z.object({
+        courseId: z.number(),
+        courseName: z.string(),
+        pattern: z.string(),
+        severity: z.enum(['low', 'medium', 'high']),
+        recommendation: z.string(),
+      })
+    ),
+  },
+  'intelligence:getCompletionTiming': {
+    params: z.void(),
+    result: z.object({
+      earlyCompletions: z.number(),
+      onTimeCompletions: z.number(),
+      lateCompletions: z.number(),
+      avgDaysBeforeDue: z.number(),
+    }),
+  },
+  'intelligence:getBehaviorEventCount': {
+    params: z.void(),
+    result: z.number(),
+  },
+
+  // ============ Intelligence - Adaptive Learning ============
+  'intelligence:getAdaptiveWeights': {
+    params: z.void(),
+    result: z.object({
+      urgency: z.number(),
+      weight: z.number(),
+      courseGap: z.number(),
+      taskType: z.number(),
+      submissionStatus: z.number(),
+    }),
+  },
+  'intelligence:getWeightAdjustments': {
+    params: z.void(),
+    result: z.array(
+      z.object({
+        id: z.number(),
+        factor: z.string(),
+        adjustment: z.number(),
+        reason: z.string(),
+        createdAt: z.string(),
+      })
+    ),
+  },
+  'intelligence:getAdaptiveSummary': {
+    params: z.void(),
+    result: z.object({
+      totalAdjustments: z.number(),
+      lastCalculatedAt: z.string().nullable(),
+      currentWeights: z.record(z.string(), z.number()),
+      drift: z.number(),
+    }),
+  },
+  'intelligence:getAdaptiveStatistics': {
+    params: z.void(),
+    result: z.object({
+      completionEvents: z.number(),
+      adjustmentsMade: z.number(),
+      accuracyImprovement: z.number().nullable(),
+    }),
+  },
+  'intelligence:recalculateAdaptiveWeights': {
+    params: z.void(),
+    result: ApiResultSchema(z.void()),
+  },
+
+  // ============ Settings ============
+  'settings:getDefaultTargetGrade': {
+    params: z.void(),
+    result: z.number(),
+  },
+  'settings:setDefaultTargetGrade': {
+    params: z.number(),
+    result: ApiResultSchema(z.void()),
+  },
+  'settings:getTermSelection': {
+    params: z.void(),
+    result: z.object({
+      value: z.union([z.literal('all'), z.literal('auto'), z.number()]),
+      autoDetectedTermId: z.number().nullable(),
+    }),
+  },
+  'settings:setTermSelection': {
+    params: z.union([z.literal('all'), z.literal('auto'), z.number()]),
+    result: ApiResultSchema(z.void()),
+  },
+
+  // ============ Visibility ============
+  'visibility:getVisibleCourseIds': {
+    params: z.void(),
+    result: z.array(z.number()),
+  },
+
+  // ============ Course Settings ============
+  'course:getSettings': {
+    params: z.number(),
+    result: z
+      .object({
+        courseId: z.number(),
+        autoAssignDueDate: z.number().nullable(),
+        allowGuessedOverride: z.number(),
+      })
+      .nullable(),
+  },
+  'course:updateSettings': {
+    params: z.object({
+      courseId: z.number(),
+      settings: z.object({
+        autoAssignDueDate: z.number().nullable().optional(),
+        allowGuessedOverride: z.number().optional(),
+      }),
+    }),
+    result: ApiResultSchema(z.void()),
+  },
+
+  // ============ App Recovery ============
+  'app:getCrashInfo': {
+    params: z.void(),
+    result: z
+      .object({
+        timestamp: z.string(),
+        reason: z.string(),
+        stack: z.string().optional(),
+      })
+      .nullable(),
+  },
+  'app:getRecoveryStatus': {
+    params: z.void(),
+    result: z.object({
+      safeMode: z.boolean(),
+      lastCrash: z
+        .object({
+          timestamp: z.string(),
+          reason: z.string(),
+        })
+        .nullable(),
+      crashCount: z.number(),
+      message: z.string().nullable(),
+    }),
+  },
+  'app:exitSafeMode': {
+    params: z.void(),
+    result: ApiResultSchema(z.void()),
+  },
+  'app:dismissCrashNotification': {
+    params: z.void(),
+    result: ApiResultSchema(z.void()),
+  },
+  'app:handleCorruption': {
+    params: z.enum(['export', 'reset', 'continue']),
+    result: ApiResultSchema(
+      z.object({
+        exportPath: z.string().optional(),
+      })
+    ),
+  },
+  'app:reportError': {
+    params: z.object({
+      message: z.string(),
+      stack: z.string().optional(),
+      componentStack: z.string().optional(),
+      timestamp: z.string(),
+    }),
+    result: ApiResultSchema(z.void()),
+  },
 
   // ============ Window Behavior Settings ============
   'settings:getWindowBehavior': {
@@ -949,6 +1360,41 @@ export const IpcContract = {
       success: z.boolean(),
       error: z.string().optional(),
     }),
+  },
+
+  // ============ Custom Task Types ============
+  'taskTypes:getAll': {
+    params: z.number().optional(),
+    result: ApiResultSchema(
+      z.array(
+        z.object({
+          id: z.number(),
+          name: z.string(),
+          displayName: z.string(),
+          courseId: z.number().nullable(),
+          createdAt: z.string(),
+        })
+      )
+    ),
+  },
+  'taskTypes:create': {
+    params: z.object({
+      name: z.string(),
+      displayName: z.string(),
+      courseId: z.number().optional(),
+    }),
+    result: ApiResultSchema(
+      z.object({
+        id: z.number(),
+        name: z.string(),
+        displayName: z.string(),
+        courseId: z.number().nullable(),
+      })
+    ),
+  },
+  'taskTypes:delete': {
+    params: z.number(),
+    result: ApiResultSchema(z.void()),
   },
 } as const;
 

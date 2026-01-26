@@ -297,6 +297,8 @@ const api = {
 
   getHealthStatus: () => ipcRenderer.invoke('health:status'),
 
+  getMetricsSummary: () => ipcRenderer.invoke('metrics:summary'),
+
   // ============ Renderer Logger ============
   // Sends logs from renderer to main process Logger
 
@@ -440,6 +442,15 @@ const api = {
     ipcRenderer.invoke('data:exportCourseData', params),
 
   importCourseData: () => ipcRenderer.invoke('data:importCourseData'),
+
+  // ============ Custom Task Types ============
+
+  getTaskTypes: (courseId?: number) => ipcRenderer.invoke('taskTypes:getAll', courseId),
+
+  createTaskType: (params: { name: string; displayName: string; courseId?: number }) =>
+    ipcRenderer.invoke('taskTypes:create', params),
+
+  deleteTaskType: (id: number) => ipcRenderer.invoke('taskTypes:delete', id),
 
   getCrashInfo: () => ipcRenderer.invoke('app:getCrashInfo'),
 

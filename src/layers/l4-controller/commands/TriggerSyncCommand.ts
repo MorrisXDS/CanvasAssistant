@@ -9,12 +9,7 @@
  */
 
 import { EventEmitter } from 'events';
-import {
-  Command,
-  CommandContext,
-  CommandResult,
-  TriggerSyncParams,
-} from '../types';
+import { Command, CommandContext, CommandResult, TriggerSyncParams } from '../types';
 
 /**
  * Sync request event payload
@@ -45,7 +40,11 @@ export class TriggerSyncCommand
 
     if (params.courseId !== undefined) {
       // Validate courseId is a positive integer
-      if (typeof params.courseId !== 'number' || !Number.isInteger(params.courseId) || params.courseId < 1) {
+      if (
+        typeof params.courseId !== 'number' ||
+        !Number.isInteger(params.courseId) ||
+        params.courseId < 1
+      ) {
         return { valid: false, error: 'Invalid course ID: must be a positive integer' };
       }
       // Reasonable upper bound check (SQLite INTEGER max is 2^63-1, but IDs should be reasonable)
@@ -74,7 +73,7 @@ export class TriggerSyncCommand
           const waitTime = Math.ceil((this.minSyncIntervalMs - timeSinceLastSync) / 1000);
           return {
             success: false,
-            error: `Please wait ${waitTime} seconds before syncing again`,
+            error: `Sync is rate-limited. Please wait ${waitTime} seconds before trying again.`,
           };
         }
       }
@@ -110,7 +109,7 @@ export class TriggerSyncCommand
     } catch (error) {
       return {
         success: false,
-        error: `Failed to trigger sync: ${error}`,
+        error: `Failed to trigger sync: ${error instanceof Error ? error.message : String(error)}`,
       };
     }
   }

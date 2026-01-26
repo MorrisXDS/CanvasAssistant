@@ -58,8 +58,7 @@ export function formatDueDate(
   daysUntilDue: number | null,
   options?: { includeTime?: boolean; shortOverdue?: boolean; dueTimeKnown?: boolean }
 ): string {
-  if (!dueAt) return 'No due date';
-  if (daysUntilDue === null) return 'No due date';
+  if (!dueAt || daysUntilDue === null) return 'No due date';
 
   const shortOverdue = options?.shortOverdue ?? true;
   // Hide time if explicitly set to false, default to true (show time if requested)

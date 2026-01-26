@@ -1903,6 +1903,14 @@ export const coreMigrations: Migration[] = [
     version: 65,
     description: 'Add ON DELETE CASCADE to tables missing it',
     up: `
+      -- First, clean up orphaned records that reference non-existent courses
+      -- This prevents FOREIGN KEY constraint failures when recreating tables
+      DELETE FROM calendar_events WHERE course_id IS NOT NULL AND course_id NOT IN (SELECT id FROM courses);
+      DELETE FROM resources WHERE course_id NOT IN (SELECT id FROM courses);
+      DELETE FROM grade_history WHERE course_id NOT IN (SELECT id FROM courses);
+      DELETE FROM course_pages WHERE course_id NOT IN (SELECT id FROM courses);
+      DELETE FROM modules WHERE course_id NOT IN (SELECT id FROM courses);
+
       -- calendar_events: Add CASCADE for course_id
       -- Note: parent_event_id self-reference already handled
       CREATE TABLE calendar_events_v65 (
@@ -2033,6 +2041,26 @@ export const coreMigrations: Migration[] = [
     down: `
       -- Complex reversal - not easily reversible
       SELECT 1;
+    `,
+  },
+  {
+    version: 66,
+    description: 'Create custom_task_types table for user-defined task types',
+    up: `
+      CREATE TABLE custom_task_types (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE,
+        display_name TEXT NOT NULL,
+        course_id INTEGER,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(course_id) REFERENCES courses(id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX idx_custom_task_types_course ON custom_task_types(course_id);
+    `,
+    down: `
+      DROP INDEX IF EXISTS idx_custom_task_types_course;
+      DROP TABLE IF EXISTS custom_task_types;
     `,
   },
 ];

@@ -15,14 +15,15 @@ import {
   CoursePreferences,
 } from '../types';
 
-export class UpdateCoursePreferencesCommand
-  implements Command<UpdateCoursePreferencesParams, { previous: CoursePreferences }>
-{
+export class UpdateCoursePreferencesCommand implements Command<
+  UpdateCoursePreferencesParams,
+  { previous: CoursePreferences }
+> {
   readonly name = 'UpdateCoursePreferences';
 
   validate(params: UpdateCoursePreferencesParams): { valid: boolean; error?: string } {
     if (!params.courseId || params.courseId <= 0) {
-      return { valid: false, error: 'Invalid course ID' };
+      return { valid: false, error: 'Course not found or invalid' };
     }
 
     if (!params.preferences || Object.keys(params.preferences).length === 0) {
@@ -71,10 +72,9 @@ export class UpdateCoursePreferencesCommand
         color: string | null;
         nickname: string | null;
         is_hidden: boolean;
-      }>(
-        'SELECT target_grade, color, nickname, is_hidden FROM courses WHERE id = ?',
-        [params.courseId]
-      );
+      }>('SELECT target_grade, color, nickname, is_hidden FROM courses WHERE id = ?', [
+        params.courseId,
+      ]);
 
       if (!course) {
         return { success: false, error: 'Course not found' };
@@ -134,7 +134,7 @@ export class UpdateCoursePreferencesCommand
     } catch (error) {
       return {
         success: false,
-        error: `Failed to update course preferences: ${error}`,
+        error: `Failed to update course preferences: ${error instanceof Error ? error.message : String(error)}`,
       };
     }
   }

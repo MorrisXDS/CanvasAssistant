@@ -4,21 +4,14 @@
  * Creates a user-defined task (not from Canvas) for a course.
  */
 
-import {
-  Command,
-  CommandContext,
-  CommandResult,
-  CreateTaskParams,
-} from '../types';
+import { Command, CommandContext, CommandResult, CreateTaskParams } from '../types';
 
-export class CreateTaskCommand
-  implements Command<CreateTaskParams, { taskId: number }>
-{
+export class CreateTaskCommand implements Command<CreateTaskParams, { taskId: number }> {
   readonly name = 'CreateTask';
 
   validate(params: CreateTaskParams): { valid: boolean; error?: string } {
     if (!params.courseId || params.courseId <= 0) {
-      return { valid: false, error: 'Invalid course ID' };
+      return { valid: false, error: 'Course not found or invalid' };
     }
 
     if (!params.title || params.title.trim().length === 0) {
@@ -91,7 +84,7 @@ export class CreateTaskCommand
     } catch (error) {
       return {
         success: false,
-        error: `Failed to create task: ${error}`,
+        error: `Failed to create task: ${error instanceof Error ? error.message : String(error)}`,
       };
     }
   }

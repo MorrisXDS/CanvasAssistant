@@ -5,11 +5,7 @@
  * the syllabus or course announcements.
  */
 
-import {
-  Command,
-  CommandContext,
-  CommandResult,
-} from '../types';
+import { Command, CommandContext, CommandResult } from '../types';
 
 export type PolicyType =
   | 'grace_tokens'
@@ -30,9 +26,7 @@ export interface AddPolicyResult {
   policyId: number;
 }
 
-export class AddPolicyCommand
-  implements Command<AddPolicyParams, AddPolicyResult>
-{
+export class AddPolicyCommand implements Command<AddPolicyParams, AddPolicyResult> {
   readonly name = 'AddPolicy';
 
   private readonly validPolicyTypes: PolicyType[] = [
@@ -45,11 +39,14 @@ export class AddPolicyCommand
 
   validate(params: AddPolicyParams): { valid: boolean; error?: string } {
     if (!params.courseId || params.courseId <= 0) {
-      return { valid: false, error: 'Invalid course ID' };
+      return { valid: false, error: 'Course not found or invalid' };
     }
 
     if (!this.validPolicyTypes.includes(params.policyType)) {
-      return { valid: false, error: `Invalid policy type. Must be one of: ${this.validPolicyTypes.join(', ')}` };
+      return {
+        valid: false,
+        error: `Invalid policy type. Must be one of: ${this.validPolicyTypes.join(', ')}`,
+      };
     }
 
     if (!params.policyName || params.policyName.trim().length === 0) {
@@ -76,57 +73,95 @@ export class AddPolicyCommand
     switch (policyType) {
       case 'grace_tokens':
         if (typeof config.total_tokens !== 'number' || config.total_tokens < 0) {
-          return { valid: false, error: 'grace_tokens requires total_tokens (number >= 0)' };
+          return {
+            valid: false,
+            error: 'Grace tokens policy requires a valid token count (0 or more)',
+          };
         }
         if (typeof config.hours_per_token !== 'number' || config.hours_per_token <= 0) {
-          return { valid: false, error: 'grace_tokens requires hours_per_token (number > 0)' };
+          return {
+            valid: false,
+            error:
+              'Grace tokens policy requires hours per token (must be greater than 0)',
+          };
         }
         break;
 
-      case 'late_penalty':
+      case 'late_penalty': {
         if (typeof config.penalty_value !== 'number') {
-          return { valid: false, error: 'late_penalty requires penalty_value (number)' };
+          return { valid: false, error: 'Late penalty policy requires a penalty value' };
         }
-        const validPenaltyTypes = ['percentage_per_day', 'percentage_per_hour', 'flat', 'tiered'];
+        const validPenaltyTypes = [
+          'percentage_per_day',
+          'percentage_per_hour',
+          'flat',
+          'tiered',
+        ];
         if (!validPenaltyTypes.includes(config.penalty_type as string)) {
-          return { valid: false, error: `late_penalty requires penalty_type (one of: ${validPenaltyTypes.join(', ')})` };
+          return {
+            valid: false,
+            error: `Late penalty policy requires a penalty type: ${validPenaltyTypes.join(', ')}`,
+          };
         }
         break;
+      }
 
       case 'drop_lowest':
         if (typeof config.drop_count !== 'number' || config.drop_count < 1) {
-          return { valid: false, error: 'drop_lowest requires drop_count (number >= 1)' };
+          return {
+            valid: false,
+            error: 'Drop lowest policy requires how many to drop (at least 1)',
+          };
         }
         if (typeof config.category !== 'string') {
-          return { valid: false, error: 'drop_lowest requires category (string)' };
+          return {
+            valid: false,
+            error: 'Drop lowest policy requires an assignment category',
+          };
         }
         break;
 
-      case 'weight_transfer':
+      case 'weight_transfer': {
         // Accept either old format (from_task/to_task) or new format (source_task_id/target_task_id)
-        const hasSource = config.source_task_id || config.source_group_id || config.from_task;
-        const hasTarget = config.target_task_id || config.target_group_id || config.to_task;
+        const hasSource =
+          config.source_task_id || config.source_group_id || config.from_task;
+        const hasTarget =
+          config.target_task_id || config.target_group_id || config.to_task;
 
         if (!hasSource) {
-          return { valid: false, error: 'weight_transfer requires a source (source_task_id, source_group_id, or from_task)' };
+          return {
+            valid: false,
+            error: 'Weight transfer policy requires a source assignment',
+          };
         }
         if (!hasTarget) {
-          return { valid: false, error: 'weight_transfer requires a target (target_task_id, target_group_id, or to_task)' };
+          return {
+            valid: false,
+            error: 'Weight transfer policy requires a target assignment',
+          };
         }
         break;
+      }
 
-      case 'grade_replacement':
+      case 'grade_replacement': {
         // Similar to weight_transfer but for grade replacement
         const hasReplacementSource = config.source_task_id || config.source_group_id;
         const hasReplacementTarget = config.target_task_id || config.target_group_id;
 
         if (!hasReplacementSource) {
-          return { valid: false, error: 'grade_replacement requires a source (source_task_id or source_group_id)' };
+          return {
+            valid: false,
+            error: 'Grade replacement policy requires a source assignment',
+          };
         }
         if (!hasReplacementTarget) {
-          return { valid: false, error: 'grade_replacement requires a target (target_task_id or target_group_id)' };
+          return {
+            valid: false,
+            error: 'Grade replacement policy requires a target assignment',
+          };
         }
         break;
+      }
     }
 
     return { valid: true };
@@ -160,7 +195,10 @@ export class AddPolicyCommand
       );
 
       if (existing) {
-        return { success: false, error: 'A policy with this type and name already exists for this course' };
+        return {
+          success: false,
+          error: 'A policy with this type and name already exists for this course',
+        };
       }
 
       // Add default fields to config based on type
@@ -188,7 +226,7 @@ export class AddPolicyCommand
     } catch (error) {
       return {
         success: false,
-        error: `Failed to add policy: ${error}`,
+        error: `Failed to add policy: ${error instanceof Error ? error.message : String(error)}`,
       };
     }
   }

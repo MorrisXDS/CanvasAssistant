@@ -11,7 +11,7 @@ export class UpdateTaskCommand implements Command<UpdateTaskParams, { taskId: nu
 
   validate(params: UpdateTaskParams): { valid: boolean; error?: string } {
     if (!params.taskId || params.taskId <= 0) {
-      return { valid: false, error: 'Invalid task ID' };
+      return { valid: false, error: 'Task not found or invalid' };
     }
 
     if (params.title !== undefined && params.title.trim().length === 0) {
@@ -130,7 +130,7 @@ export class UpdateTaskCommand implements Command<UpdateTaskParams, { taskId: nu
     } catch (error) {
       return {
         success: false,
-        error: `Failed to update task: ${error}`,
+        error: `Failed to update task: ${error instanceof Error ? error.message : String(error)}`,
       };
     }
   }

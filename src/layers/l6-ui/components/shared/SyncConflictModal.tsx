@@ -48,7 +48,7 @@ const FIELD_LABELS: Record<string, Record<string, string>> = {
  * User-friendly entity type mappings
  */
 const ENTITY_LABELS: Record<string, string> = {
-  task: 'COURSEWORK',
+  task: 'ASSIGNMENT',
   course: 'COURSE',
   notification: 'ANNOUNCEMENT',
 };
@@ -346,7 +346,7 @@ export function SyncConflictModal({
                   <span>
                     Apply to all{' '}
                     {currentConflict.entity === 'task'
-                      ? 'courseworks in this course'
+                      ? 'assignments in this course'
                       : currentConflict.entity === 'notification'
                         ? 'announcements'
                         : 'courses'}
