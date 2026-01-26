@@ -3,6 +3,7 @@
  */
 
 import React, { useEffect, useState, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   TrendingUp,
   AlertTriangle,
@@ -16,9 +17,25 @@ import {
   CheckCircle,
   Inbox,
   FileWarning,
+  EyeOff,
 } from 'lucide-react';
 import { Card } from '../shared';
-import type { Insight, InsightSeverity, InsightType } from '../../../../shared/ipc-contract';
+import type {
+  Insight,
+  InsightSeverity,
+  InsightType,
+} from '../../../../shared/ipc-contract';
+
+/**
+ * Insight types that should navigate to CourseDetail when clicked
+ * These are course-specific insights (not general analysis/trends)
+ */
+const NAVIGABLE_INSIGHT_TYPES: InsightType[] = [
+  'workload_warning',
+  'course_struggle',
+  'grade_at_risk',
+  'crunch_period',
+];
 
 interface InsightsCardProps {
   maxItems?: number;
@@ -32,6 +49,11 @@ const INSIGHT_ICONS: Record<InsightType, React.ReactNode> = {
   streak: <Award size={14} />,
   improvement: <TrendingUp size={14} />,
   data_completeness: <FileWarning size={14} />,
+  grade_at_risk: <AlertCircle size={14} />,
+  grade_trend: <TrendingUp size={14} />,
+  crunch_period: <AlertTriangle size={14} />,
+  unset_weight: <FileWarning size={14} />,
+  guessed_due_date: <Calendar size={14} />,
 };
 
 const SEVERITY_COLORS: Record<InsightSeverity, string> = {
@@ -41,7 +63,13 @@ const SEVERITY_COLORS: Record<InsightSeverity, string> = {
 };
 
 // Map insight types to categories
-type InsightCategory = 'Deadline' | 'Performance' | 'Productivity' | 'Achievement' | 'Workload' | 'Setup';
+type InsightCategory =
+  | 'Deadline'
+  | 'Performance'
+  | 'Productivity'
+  | 'Achievement'
+  | 'Workload'
+  | 'Setup';
 
 const INSIGHT_CATEGORIES: Record<InsightType, InsightCategory> = {
   deadline_pattern: 'Deadline',
@@ -51,6 +79,11 @@ const INSIGHT_CATEGORIES: Record<InsightType, InsightCategory> = {
   productivity_window: 'Productivity',
   streak: 'Achievement',
   data_completeness: 'Setup',
+  grade_at_risk: 'Performance',
+  grade_trend: 'Performance',
+  crunch_period: 'Workload',
+  unset_weight: 'Setup',
+  guessed_due_date: 'Setup',
 };
 
 const CATEGORY_COLORS: Record<InsightCategory, string> = {
@@ -74,9 +107,46 @@ function getCourseCode(insight: Insight): string | null {
   return null;
 }
 
+/**
+ * Extract course ID from insight data if present
+ */
+function getCourseId(insight: Insight): number | null {
+  if (!insight.data) return null;
+  const data = insight.data as Record<string, unknown>;
+  if (typeof data.courseId === 'number') {
+    return data.courseId;
+  }
+  return null;
+}
+
 export function InsightsCard({ maxItems = 3 }: InsightsCardProps) {
   const [insights, setInsights] = useState<Insight[]>([]);
   const [loading, setLoading] = useState(true);
+  const navigate = useNavigate();
+
+  /**
+   * Check if an insight is navigable (can click to go to CourseDetail)
+   */
+  const isNavigable = useCallback((insight: Insight): boolean => {
+    return (
+      NAVIGABLE_INSIGHT_TYPES.includes(insight.type) && getCourseId(insight) !== null
+    );
+  }, []);
+
+  /**
+   * Navigate to CourseDetail page for the insight's course
+   */
+  const handleNavigate = useCallback(
+    (insight: Insight) => {
+      if (!isNavigable(insight)) return;
+
+      const courseId = getCourseId(insight);
+      if (courseId) {
+        navigate(`/course/${courseId}`);
+      }
+    },
+    [navigate, isNavigable]
+  );
 
   const fetchInsights = useCallback(async () => {
     try {
@@ -118,6 +188,16 @@ export function InsightsCard({ maxItems = 3 }: InsightsCardProps) {
     }
   };
 
+  const handleSuppress = async (id: number | undefined) => {
+    if (!id) return;
+    try {
+      await window.api.suppressInsight(id);
+      setInsights((prev) => prev.filter((i) => i.id !== id));
+    } catch (err) {
+      console.error('Failed to suppress insight:', err);
+    }
+  };
+
   return (
     <Card
       title="Insights"
@@ -142,69 +222,99 @@ export function InsightsCard({ maxItems = 3 }: InsightsCardProps) {
         </div>
       ) : insights.length === 0 ? (
         <div style={styles.emptyState}>
-          <Inbox size={28} color="var(--text-muted)" style={{ marginBottom: 'var(--space-2)' }} />
+          <Inbox
+            size={28}
+            color="var(--text-muted)"
+            style={{ marginBottom: 'var(--space-2)' }}
+          />
           <span style={styles.emptyText}>No insights available</span>
         </div>
       ) : (
         <div style={styles.list}>
-          {insights.map((insight, index) => (
-            <div
-              key={insight.id}
-              style={{
-                ...styles.item,
-                borderTop: index === 0 ? 'none' : '1px solid var(--border-light)',
-                borderLeftColor: SEVERITY_COLORS[insight.severity],
-              }}
-            >
+          {insights.map((insight, index) => {
+            const navigable = isNavigable(insight);
+            return (
               <div
+                key={insight.id}
                 style={{
-                  ...styles.itemIcon,
-                  backgroundColor: `${SEVERITY_COLORS[insight.severity]}15`,
-                  color: SEVERITY_COLORS[insight.severity],
+                  ...styles.item,
+                  borderTop: index === 0 ? 'none' : '1px solid var(--border-light)',
+                  borderLeftColor: SEVERITY_COLORS[insight.severity],
+                  cursor: navigable ? 'pointer' : 'default',
                 }}
+                onClick={navigable ? () => handleNavigate(insight) : undefined}
+                role={navigable ? 'button' : undefined}
+                tabIndex={navigable ? 0 : undefined}
+                onKeyDown={
+                  navigable
+                    ? (e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          handleNavigate(insight);
+                        }
+                      }
+                    : undefined
+                }
               >
-                {INSIGHT_ICONS[insight.type] || <Info size={14} />}
-              </div>
-              <div style={styles.itemContent}>
-                <div style={styles.itemHeader}>
-                  <div style={styles.itemTitle}>{insight.title}</div>
-                  <div style={styles.badgeContainer}>
-                    {getCourseCode(insight) && (
-                      <span style={styles.courseCodeBadge}>
-                        {getCourseCode(insight)}
-                      </span>
-                    )}
-                    <span
-                      style={{
-                        ...styles.categoryBadge,
-                        backgroundColor: `${CATEGORY_COLORS[INSIGHT_CATEGORIES[insight.type]]}15`,
-                        color: CATEGORY_COLORS[INSIGHT_CATEGORIES[insight.type]],
-                      }}
-                    >
-                      {INSIGHT_CATEGORIES[insight.type]}
-                    </span>
-                    <span
-                      style={{
-                        ...styles.severityBadge,
-                        backgroundColor: `${SEVERITY_COLORS[insight.severity]}15`,
-                        color: SEVERITY_COLORS[insight.severity],
-                      }}
-                    >
-                      {insight.severity}
-                    </span>
-                  </div>
+                <div
+                  style={{
+                    ...styles.itemIcon,
+                    backgroundColor: `${SEVERITY_COLORS[insight.severity]}15`,
+                    color: SEVERITY_COLORS[insight.severity],
+                  }}
+                >
+                  {INSIGHT_ICONS[insight.type] || <Info size={14} />}
                 </div>
-                <div style={styles.itemDescription}>{insight.description}</div>
+                <div style={styles.itemContent}>
+                  <div style={styles.itemHeader}>
+                    <div style={styles.itemTitle}>{insight.title}</div>
+                    <div style={styles.badgeContainer}>
+                      {getCourseCode(insight) && (
+                        <span style={styles.courseCodeBadge}>
+                          {getCourseCode(insight)}
+                        </span>
+                      )}
+                      <span
+                        style={{
+                          ...styles.categoryBadge,
+                          backgroundColor: `${CATEGORY_COLORS[INSIGHT_CATEGORIES[insight.type]]}15`,
+                          color: CATEGORY_COLORS[INSIGHT_CATEGORIES[insight.type]],
+                        }}
+                      >
+                        {INSIGHT_CATEGORIES[insight.type]}
+                      </span>
+                      <span
+                        style={{
+                          ...styles.severityBadge,
+                          backgroundColor: `${SEVERITY_COLORS[insight.severity]}15`,
+                          color: SEVERITY_COLORS[insight.severity],
+                        }}
+                      >
+                        {insight.severity}
+                      </span>
+                    </div>
+                  </div>
+                  <div style={styles.itemDescription}>{insight.description}</div>
+                </div>
+                <div style={styles.itemActions} onClick={(e) => e.stopPropagation()}>
+                  <button
+                    style={styles.dismissButton}
+                    onClick={() => handleAcknowledge(insight.id)}
+                    title="Acknowledge"
+                  >
+                    <X size={14} />
+                  </button>
+                  <button
+                    style={styles.suppressButton}
+                    onClick={() => handleSuppress(insight.id)}
+                    title="Never show again"
+                  >
+                    <EyeOff size={14} />
+                  </button>
+                </div>
               </div>
-              <button
-                style={styles.dismissButton}
-                onClick={() => handleAcknowledge(insight.id)}
-                title="Acknowledge"
-              >
-                <X size={14} />
-              </button>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </Card>
@@ -329,6 +439,12 @@ const styles: Record<string, React.CSSProperties> = {
     lineHeight: 'var(--leading-relaxed)',
   },
 
+  itemActions: {
+    display: 'flex',
+    gap: 'var(--space-1)',
+    flexShrink: 0,
+  },
+
   dismissButton: {
     display: 'flex',
     alignItems: 'center',
@@ -342,6 +458,23 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
     color: 'var(--text-muted)',
     opacity: 0.7,
+    transition: 'opacity var(--transition-fast)',
+    flexShrink: 0,
+  },
+
+  suppressButton: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '24px',
+    height: '24px',
+    padding: 0,
+    background: 'none',
+    border: 'none',
+    borderRadius: 'var(--radius-sm)',
+    cursor: 'pointer',
+    color: 'var(--color-warning)',
+    opacity: 0.6,
     transition: 'opacity var(--transition-fast)',
     flexShrink: 0,
   },

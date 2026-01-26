@@ -13,7 +13,13 @@ export type TaskQueue = 'pinned' | 'active' | 'overdue' | 'deadlines' | 'upcomin
 /**
  * Submission status from Canvas
  */
-export type SubmissionStatus = 'unsubmitted' | 'submitted' | 'graded' | 'late' | 'missing' | null;
+export type SubmissionStatus =
+  | 'unsubmitted'
+  | 'submitted'
+  | 'graded'
+  | 'late'
+  | 'missing'
+  | null;
 
 /**
  * A factor contributing to the priority score
@@ -116,6 +122,8 @@ export interface TaskForPriority {
   taskType: string;
   taskGroupId: number | null;
   submissionStatus: SubmissionStatus;
+  /** Source of each field value: 'canvas', 'user', or 'guessed' */
+  fieldSources?: Record<string, 'canvas' | 'user' | 'guessed'>;
 }
 
 /**
@@ -231,7 +239,11 @@ export interface TaskCompletionEvent {
  */
 export interface UserBehaviorPattern {
   id?: number;
-  patternType: 'weekly_rhythm' | 'course_difficulty' | 'task_type_performance' | 'optimal_work_time';
+  patternType:
+    | 'weekly_rhythm'
+    | 'course_difficulty'
+    | 'task_type_performance'
+    | 'optimal_work_time';
   patternKey: string;
   patternValue: string;
   sampleSize: number;
@@ -389,13 +401,19 @@ export interface NeglectedCourse {
 
 /**
  * Recommendation type enum
+ *
+ * Note: All recommendations are based on observable data (due dates, submission
+ * history, grades). We avoid claims about procrastination or study habits since
+ * we don't track when users start working or how they study.
  */
 export type RecommendationType =
   | 'work_now'
   | 'start_early'
   | 'take_break'
   | 'course_focus'
-  | 'redistribute';
+  | 'redistribute'
+  | 'preemptive_start'
+  | 'focus_at_risk';
 
 /**
  * A generated recommendation
@@ -432,6 +450,10 @@ export interface RecommendationContext {
 
 /**
  * Insight type enum
+ *
+ * Note: All insights are based on observable data (submission timing, grades,
+ * task due dates). We avoid claims about study habits, procrastination, or
+ * time spent working since we don't have that data.
  */
 export type InsightType =
   | 'deadline_pattern'
@@ -440,7 +462,12 @@ export type InsightType =
   | 'workload_warning'
   | 'streak'
   | 'improvement'
-  | 'data_completeness';
+  | 'data_completeness'
+  | 'grade_at_risk'
+  | 'grade_trend'
+  | 'crunch_period'
+  | 'unset_weight'
+  | 'guessed_due_date';
 
 /**
  * Insight severity level

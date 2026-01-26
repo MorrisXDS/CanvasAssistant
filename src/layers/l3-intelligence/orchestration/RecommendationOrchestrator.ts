@@ -301,7 +301,8 @@ export class RecommendationOrchestrator extends EventEmitter {
         this.probationService.generateContentHash('recommendation', rec.type, rec.title, {
           taskId: rec.taskId,
           courseId: rec.courseId,
-        })
+        }),
+      (rec) => rec.type // Pass subType for type-specific frequency settings
     );
 
     // Save to database and record displays
@@ -315,7 +316,7 @@ export class RecommendationOrchestrator extends EventEmitter {
         rec.title,
         { taskId: rec.taskId, courseId: rec.courseId }
       );
-      this.probationService.recordDisplay('recommendation', contentHash);
+      this.probationService.recordDisplay('recommendation', contentHash, rec.type);
     }
 
     // Prune old recommendations
@@ -391,7 +392,7 @@ export class RecommendationOrchestrator extends EventEmitter {
   }
 
   /**
-   * Get active (not dismissed, not expired) recommendations
+   * Get active (not dismissed, not expired, not suppressed forever) recommendations
    * Deduplicates by (task_id, recommendation_type), keeping the highest priority
    */
   getActiveRecommendations(): Recommendation[] {
@@ -410,6 +411,7 @@ export class RecommendationOrchestrator extends EventEmitter {
         FROM recommendations
         WHERE dismissed_at IS NULL
           AND acted_on_at IS NULL
+          AND (suppressed_forever IS NULL OR suppressed_forever = 0)
           AND valid_from <= ?
           AND valid_until >= ?
         GROUP BY COALESCE(task_id, 0), COALESCE(course_id, 0), recommendation_type
@@ -488,6 +490,24 @@ export class RecommendationOrchestrator extends EventEmitter {
 
     if (result.changes > 0) {
       this.emit('recommendation-acted', { id: recommendationId });
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Permanently suppress a recommendation ("Never show again")
+   * Sets suppressed_forever = 1 so it won't appear in getActiveRecommendations
+   */
+  suppressRecommendationForever(recommendationId: number): boolean {
+    const result = this.db.executeWrite(
+      `UPDATE recommendations SET suppressed_forever = 1 WHERE id = ?`,
+      [recommendationId],
+      'recommendations'
+    );
+
+    if (result.changes > 0) {
+      this.emit('recommendation-suppressed', { id: recommendationId });
       return true;
     }
     return false;

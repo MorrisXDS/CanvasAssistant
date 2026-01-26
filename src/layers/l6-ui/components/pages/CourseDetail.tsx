@@ -30,13 +30,18 @@ import {
   FileCode,
   GripVertical,
 } from 'lucide-react';
-import { Card, PolicyModal, ConfirmDialog } from '../shared';
+import { Card, PolicyModal, ConfirmDialog, PolicyBadgeGroup } from '../shared';
 import type { PolicyModalData, PolicyType } from '../shared';
 import { useStore } from '../../../l5-presentation/store';
-import type { Task, Notification } from '../../../l5-presentation/types';
+import type { Task, Notification, Policy } from '../../../l5-presentation/types';
 import { COURSE_COLORS, getCourseColor } from '../../constants';
 import { ColorPicker } from '../primitives';
-import { SyllabusSelector, TaskContextMenu, type CourseSyllabus } from '../Course';
+import {
+  SyllabusSelector,
+  TaskContextMenu,
+  MissingSyllabusWarning,
+  type CourseSyllabus,
+} from '../Course';
 import type { FileResource } from '../Files/FileListItem';
 import { useCourseDetailDragDrop } from './useCourseDetailDragDrop';
 
@@ -98,19 +103,6 @@ interface CoursePage {
   isFrontPage: boolean;
   published: boolean;
   lastSyncedAt: string | null;
-}
-
-interface Policy {
-  id: number;
-  courseId: number;
-  policyType: string;
-  policyName: string;
-  policyConfig: Record<string, unknown>;
-  rawText: string | null;
-  isUserVerified: boolean;
-  isActive: boolean;
-  createdAt: string;
-  updatedAt: string;
 }
 
 interface GradeHistoryEntry {
@@ -242,6 +234,7 @@ export function CourseDetail() {
   const [courseFiles, setCourseFiles] = useState<FileResource[]>([]);
   const [_settingsLoading, _setSettingsLoading] = useState(false);
   const [showSyllabusSelector, setShowSyllabusSelector] = useState(false);
+  const [syllabusWarningDismissed, setSyllabusWarningDismissed] = useState(false);
   const syllabusClickTimeout = useRef<NodeJS.Timeout | null>(null);
 
   // Confirm dialog state
@@ -1111,7 +1104,43 @@ export function CourseDetail() {
                       return;
                     }
                     const api = window.api;
-                    // Fire-and-forget: don't block UI while file opens
+
+                    // Check if syllabus file is downloaded
+                    const syllabusFile = courseFiles.find(
+                      (f) => f.id === syllabus.resourceId
+                    );
+                    const isDownloaded = syllabusFile?.localPath != null;
+
+                    if (!isDownloaded) {
+                      // Prompt to download first
+                      setConfirmDialog({
+                        isOpen: true,
+                        title: 'Download Syllabus',
+                        message: `"${syllabus.resourceTitle}" hasn't been downloaded yet. Would you like to download it now?`,
+                        type: 'info',
+                        confirmText: 'Download',
+                        onConfirm: async () => {
+                          try {
+                            if (syllabus.resourceId < 0) {
+                              await api?.downloadAttachment(
+                                Math.abs(syllabus.resourceId)
+                              );
+                            } else {
+                              await api?.downloadResource(syllabus.resourceId);
+                            }
+                            // Refresh course files to update download status
+                            const updatedFiles = await api?.getCourseFiles?.(courseId);
+                            if (updatedFiles) setCourseFiles(updatedFiles);
+                          } catch (error) {
+                            console.error('Failed to download syllabus:', error);
+                          }
+                          setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
+                        },
+                      });
+                      return;
+                    }
+
+                    // File is downloaded - open it
                     if (syllabus.resourceId < 0) {
                       api
                         ?.openAttachment(Math.abs(syllabus.resourceId))
@@ -1328,6 +1357,16 @@ export function CourseDetail() {
           </div>
         </div>
 
+        {/* Missing Syllabus Warning */}
+        {!syllabusWarningDismissed && (
+          <MissingSyllabusWarning
+            hasSyllabusFile={syllabus !== null}
+            hasCanvasSyllabus={Boolean(course.syllabusBody)}
+            onDismiss={() => setSyllabusWarningDismissed(true)}
+            onSetSyllabus={() => setShowSyllabusSelector(true)}
+          />
+        )}
+
         {/* Two Column Layout */}
         <div style={styles.twoColumn}>
           {/* Left Column - Assignments */}
@@ -1524,6 +1563,7 @@ export function CourseDetail() {
                           <TaskItem
                             key={task.id}
                             task={task}
+                            policies={policies}
                             isFirst={index === 0 && !(isPending && showAddTask)}
                             isCompleted={getIsCompleted(task)}
                             isExpanded={expandedTaskId === task.id}
@@ -1829,6 +1869,7 @@ export function CourseDetail() {
           isOpen={taskListModal.isOpen}
           title={taskListModal.title}
           tasks={taskListModal.tasks}
+          policies={policies}
           onClose={() => setTaskListModal((prev) => ({ ...prev, isOpen: false }))}
           expandedTaskId={expandedTaskId}
           editingTaskId={editingTaskId}
@@ -1897,6 +1938,7 @@ export function CourseDetail() {
 // Task Item Component
 interface TaskItemProps {
   task: Task;
+  policies: Policy[];
   isFirst: boolean;
   isCompleted?: boolean;
   isExpanded: boolean;
@@ -1927,6 +1969,7 @@ interface TaskItemProps {
 
 function TaskItem({
   task,
+  policies,
   isFirst,
   isCompleted,
   isExpanded,
@@ -2046,16 +2089,24 @@ function TaskItem({
                 )}
               </span>
             )}
-            {task.weight > 0 && (
+            {task.weight > 0 ? (
               <span style={styles.taskWeight} title="Weight towards final grade">
                 Weight: {task.weight}%
               </span>
-            )}
+            ) : !isCompleted ? (
+              <span
+                style={styles.unsetWeightBadge}
+                title="Weight not set - affects grade calculation"
+              >
+                No weight
+              </span>
+            ) : null}
             {task.grade !== null && (
               <span style={styles.taskScore} title="Score on this coursework">
                 Score: {task.grade.toFixed(1)}%
               </span>
             )}
+            <PolicyBadgeGroup task={task} policies={policies} maxBadges={2} size="sm" />
           </div>
         </div>
         <div
@@ -2207,6 +2258,7 @@ interface TaskListModalProps {
   isOpen: boolean;
   title: string;
   tasks: Task[];
+  policies: Policy[];
   onClose: () => void;
   expandedTaskId: number | null;
   editingTaskId: number | null;
@@ -2237,6 +2289,7 @@ function TaskListModal({
   isOpen,
   title,
   tasks,
+  policies,
   onClose,
   expandedTaskId,
   editingTaskId,
@@ -2284,6 +2337,7 @@ function TaskListModal({
                 <TaskItem
                   key={task.id}
                   task={task}
+                  policies={policies}
                   isFirst={index === 0}
                   isCompleted={task.isCompleted || task.grade !== null}
                   isExpanded={expandedTaskId === task.id}
@@ -2945,6 +2999,19 @@ const styles: Record<string, React.CSSProperties> = {
     marginLeft: '4px',
     fontStyle: 'italic',
     color: 'var(--color-blue)',
+    cursor: 'help',
+  },
+
+  unsetWeightBadge: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '3px',
+    padding: '1px 6px',
+    borderRadius: 'var(--radius-sm)',
+    backgroundColor: 'var(--color-warning-bg)',
+    color: 'var(--color-warning)',
+    fontSize: 'var(--text-xs)',
+    fontWeight: 'var(--font-medium)',
     cursor: 'help',
   },
 

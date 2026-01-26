@@ -21,6 +21,8 @@ import {
 
 /**
  * Default insight expiration in hours
+ *
+ * All insights are based on observable data (submission timing, grades, due dates).
  */
 const INSIGHT_EXPIRATION: Record<InsightType, number> = {
   deadline_pattern: 168, // 1 week
@@ -30,6 +32,11 @@ const INSIGHT_EXPIRATION: Record<InsightType, number> = {
   streak: 24, // 1 day
   improvement: 168, // 1 week
   data_completeness: 168, // 1 week
+  grade_at_risk: 72, // 3 days
+  grade_trend: 168, // 1 week
+  crunch_period: 48, // 2 days
+  unset_weight: 168, // 1 week
+  guessed_due_date: 168, // 1 week
 };
 
 /**
@@ -63,7 +70,15 @@ export function generateDeadlinePatternInsight(
   // Find day with highest late rate
   let worstDay = -1;
   let worstRate = 0;
-  const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const dayNames = [
+    'Sunday',
+    'Monday',
+    'Tuesday',
+    'Wednesday',
+    'Thursday',
+    'Friday',
+    'Saturday',
+  ];
 
   for (let i = 0; i < 7; i++) {
     const total = totalByDay.get(i) || 0;
@@ -96,7 +111,9 @@ export function generateDeadlinePatternInsight(
       sampleSize: totalByDay.get(worstDay) || 0,
     },
     acknowledgedAt: null,
-    expiresAt: new Date(currentTime.getTime() + INSIGHT_EXPIRATION.deadline_pattern * 60 * 60 * 1000),
+    expiresAt: new Date(
+      currentTime.getTime() + INSIGHT_EXPIRATION.deadline_pattern * 60 * 60 * 1000
+    ),
   };
 }
 
@@ -136,7 +153,9 @@ export function generateCourseStruggleInsight(
       struggleScore: worst.struggleScore,
     },
     acknowledgedAt: null,
-    expiresAt: new Date(currentTime.getTime() + INSIGHT_EXPIRATION.course_struggle * 60 * 60 * 1000),
+    expiresAt: new Date(
+      currentTime.getTime() + INSIGHT_EXPIRATION.course_struggle * 60 * 60 * 1000
+    ),
   };
 }
 
@@ -150,7 +169,15 @@ export function generateProductivityWindowInsight(
 ): Insight | null {
   if (rhythm.sampleSize < 15) return null; // Need enough data
 
-  const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const dayNames = [
+    'Sunday',
+    'Monday',
+    'Tuesday',
+    'Wednesday',
+    'Thursday',
+    'Friday',
+    'Saturday',
+  ];
   const peakDayName = dayNames[rhythm.peakDay];
 
   // Format peak hour
@@ -177,7 +204,9 @@ export function generateProductivityWindowInsight(
       confidence: rhythm.confidence,
     },
     acknowledgedAt: null,
-    expiresAt: new Date(currentTime.getTime() + INSIGHT_EXPIRATION.productivity_window * 60 * 60 * 1000),
+    expiresAt: new Date(
+      currentTime.getTime() + INSIGHT_EXPIRATION.productivity_window * 60 * 60 * 1000
+    ),
   };
 }
 
@@ -218,7 +247,12 @@ export function generateWorkloadWarningInsight(
     severity = 'warning';
   }
 
-  const dayStr = daysUntilPeak === 0 ? 'today' : daysUntilPeak === 1 ? 'tomorrow' : `in ${daysUntilPeak} days`;
+  const dayStr =
+    daysUntilPeak === 0
+      ? 'today'
+      : daysUntilPeak === 1
+        ? 'tomorrow'
+        : `in ${daysUntilPeak} days`;
 
   return {
     type: 'workload_warning',
@@ -233,7 +267,9 @@ export function generateWorkloadWarningInsight(
       taskIds: peakTasks.map((t) => t.id),
     },
     acknowledgedAt: null,
-    expiresAt: new Date(currentTime.getTime() + INSIGHT_EXPIRATION.workload_warning * 60 * 60 * 1000),
+    expiresAt: new Date(
+      currentTime.getTime() + INSIGHT_EXPIRATION.workload_warning * 60 * 60 * 1000
+    ),
   };
 }
 
@@ -286,7 +322,9 @@ export function generateStreakInsight(
       lastCompletedAt: sorted[0].completedAt.toISOString(),
     },
     acknowledgedAt: null,
-    expiresAt: new Date(currentTime.getTime() + INSIGHT_EXPIRATION.streak * 60 * 60 * 1000),
+    expiresAt: new Date(
+      currentTime.getTime() + INSIGHT_EXPIRATION.streak * 60 * 60 * 1000
+    ),
   };
 }
 
@@ -341,9 +379,317 @@ export function generateImprovementInsight(
       sampleSize: gradedEvents.length,
     },
     acknowledgedAt: null,
-    expiresAt: new Date(currentTime.getTime() + INSIGHT_EXPIRATION.improvement * 60 * 60 * 1000),
+    expiresAt: new Date(
+      currentTime.getTime() + INSIGHT_EXPIRATION.improvement * 60 * 60 * 1000
+    ),
   };
 }
+
+// ============================================================================
+// New Intelligence Insights (Grade Forecasting, Crunch Periods, etc.)
+// ============================================================================
+
+/**
+ * Grade forecast data for insight generation
+ */
+export interface GradeForecastForInsight {
+  courseId: number;
+  courseCode: string;
+  currentGrade: number;
+  projectedFinal: number;
+  targetGrade: number;
+  neededAverage: number;
+  remainingWeight: number;
+  riskLevel: 'safe' | 'warning' | 'at-risk';
+  trend: 'improving' | 'stable' | 'declining';
+}
+
+/**
+ * Generate grade at-risk insight
+ * Alerts when projected grade is significantly below target
+ */
+export function generateGradeAtRiskInsight(
+  forecast: GradeForecastForInsight,
+  currentTime: Date
+): Insight | null {
+  // Only generate for at-risk or warning courses
+  if (forecast.riskLevel === 'safe') return null;
+
+  const gap = forecast.targetGrade - forecast.projectedFinal;
+
+  let severity: InsightSeverity = 'warning';
+  let title = `${forecast.courseCode} Grade Warning`;
+  let description = '';
+
+  if (forecast.riskLevel === 'at-risk') {
+    severity = 'critical';
+    title = `${forecast.courseCode} Grade At Risk`;
+    description = `Projected grade (${forecast.projectedFinal}%) is ${Math.round(gap)}% below your target of ${forecast.targetGrade}%. `;
+
+    if (forecast.neededAverage > 95) {
+      description += `You would need an average of ${Math.round(forecast.neededAverage)}% on remaining work to reach your target, which may be unrealistic.`;
+    } else {
+      description += `You need an average of ${Math.round(forecast.neededAverage)}% on remaining work to reach your target.`;
+    }
+  } else {
+    description = `${forecast.courseCode} projected at ${forecast.projectedFinal}%, ${Math.round(gap)}% below your target. You need ${Math.round(forecast.neededAverage)}% on remaining work.`;
+  }
+
+  return {
+    type: 'grade_at_risk',
+    title,
+    description,
+    severity,
+    data: {
+      courseId: forecast.courseId,
+      courseCode: forecast.courseCode,
+      currentGrade: forecast.currentGrade,
+      projectedFinal: forecast.projectedFinal,
+      targetGrade: forecast.targetGrade,
+      neededAverage: forecast.neededAverage,
+      remainingWeight: forecast.remainingWeight,
+      gap,
+    },
+    acknowledgedAt: null,
+    expiresAt: new Date(
+      currentTime.getTime() + INSIGHT_EXPIRATION.grade_at_risk * 60 * 60 * 1000
+    ),
+  };
+}
+
+/**
+ * Generate grade trend insight
+ * Shows when grades are improving or declining
+ */
+export function generateGradeTrendInsight(
+  forecast: GradeForecastForInsight,
+  currentTime: Date
+): Insight | null {
+  // Only interesting if there's a clear trend
+  if (forecast.trend === 'stable') return null;
+
+  const isImproving = forecast.trend === 'improving';
+
+  if (isImproving) {
+    return {
+      type: 'grade_trend',
+      title: `${forecast.courseCode} Grades Improving`,
+      description: `Your recent grades in ${forecast.courseCode} show an upward trend. Keep up the momentum!`,
+      severity: 'info',
+      data: {
+        courseId: forecast.courseId,
+        courseCode: forecast.courseCode,
+        trend: forecast.trend,
+        currentGrade: forecast.currentGrade,
+      },
+      acknowledgedAt: null,
+      expiresAt: new Date(
+        currentTime.getTime() + INSIGHT_EXPIRATION.grade_trend * 60 * 60 * 1000
+      ),
+    };
+  }
+
+  // Declining trend is more serious
+  return {
+    type: 'grade_trend',
+    title: `${forecast.courseCode} Grades Declining`,
+    description: `Your recent grades in ${forecast.courseCode} show a downward trend. Consider adjusting your study approach or seeking help.`,
+    severity: 'warning',
+    data: {
+      courseId: forecast.courseId,
+      courseCode: forecast.courseCode,
+      trend: forecast.trend,
+      currentGrade: forecast.currentGrade,
+    },
+    acknowledgedAt: null,
+    expiresAt: new Date(
+      currentTime.getTime() + INSIGHT_EXPIRATION.grade_trend * 60 * 60 * 1000
+    ),
+  };
+}
+
+/**
+ * Crunch period data for insight generation
+ */
+export interface CrunchPeriodForInsight {
+  startDate: Date;
+  endDate: Date;
+  totalHours: number;
+  taskCount: number;
+  severity: 'moderate' | 'severe' | 'extreme';
+}
+
+/**
+ * Generate crunch period ahead insight
+ */
+export function generateCrunchPeriodInsight(
+  crunchPeriod: CrunchPeriodForInsight,
+  currentTime: Date
+): Insight | null {
+  const daysUntilCrunch = Math.ceil(
+    (crunchPeriod.startDate.getTime() - currentTime.getTime()) / (1000 * 60 * 60 * 24)
+  );
+
+  // Only warn about upcoming crunch periods (within 7 days)
+  if (daysUntilCrunch < 0 || daysUntilCrunch > 7) return null;
+
+  let severity: InsightSeverity = 'warning';
+  if (crunchPeriod.severity === 'extreme') {
+    severity = 'critical';
+  } else if (crunchPeriod.severity === 'moderate') {
+    severity = 'info';
+  }
+
+  const startStr = crunchPeriod.startDate.toLocaleDateString('en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+  });
+  const endStr = crunchPeriod.endDate.toLocaleDateString('en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+  });
+
+  const daysStr =
+    daysUntilCrunch === 0
+      ? 'starts today'
+      : daysUntilCrunch === 1
+        ? 'starts tomorrow'
+        : `in ${daysUntilCrunch} days`;
+
+  return {
+    type: 'crunch_period',
+    title: `Heavy Period Ahead`,
+    description: `You have ${crunchPeriod.taskCount} tasks (~${Math.round(crunchPeriod.totalHours)} hours) due ${startStr} - ${endStr}. This ${crunchPeriod.severity} workload ${daysStr}.`,
+    severity,
+    data: {
+      startDate: crunchPeriod.startDate.toISOString(),
+      endDate: crunchPeriod.endDate.toISOString(),
+      totalHours: crunchPeriod.totalHours,
+      taskCount: crunchPeriod.taskCount,
+      daysUntilCrunch,
+      severity: crunchPeriod.severity,
+    },
+    acknowledgedAt: null,
+    expiresAt: new Date(
+      currentTime.getTime() + INSIGHT_EXPIRATION.crunch_period * 60 * 60 * 1000
+    ),
+  };
+}
+
+// ============================================================================
+// Data Quality Insights
+// ============================================================================
+
+/**
+ * High-value task types that should have weights set
+ */
+const HIGH_VALUE_TASK_TYPES = [
+  'exam',
+  'midterm',
+  'final',
+  'final_exam',
+  'termtest',
+  'project',
+];
+
+/**
+ * Generate unset weight insight
+ * Reminds user about tasks missing weight information
+ */
+export function generateUnsetWeightInsight(
+  tasks: TaskForPriority[],
+  currentTime: Date
+): Insight | null {
+  // Find incomplete tasks with no weight set (0 or null)
+  const unsetTasks = tasks.filter(
+    (t) => !t.isCompleted && (t.weight === 0 || t.weight === null)
+  );
+
+  if (unsetTasks.length === 0) return null;
+
+  // Check if any are high-value types (more urgent)
+  const hasHighValue = unsetTasks.some((t) =>
+    HIGH_VALUE_TASK_TYPES.includes(t.taskType?.toLowerCase() || '')
+  );
+
+  const severity: InsightSeverity = hasHighValue ? 'warning' : 'info';
+  const taskWord = unsetTasks.length === 1 ? 'task has' : 'tasks have';
+
+  return {
+    type: 'unset_weight',
+    title: `${unsetTasks.length} ${taskWord} no weight set`,
+    description: 'Set weights to accurately calculate grade impact and prioritize tasks.',
+    severity,
+    data: {
+      taskIds: unsetTasks.map((t) => t.id),
+      taskCount: unsetTasks.length,
+      hasHighValue,
+    },
+    acknowledgedAt: null,
+    expiresAt: new Date(
+      currentTime.getTime() + INSIGHT_EXPIRATION.unset_weight * 60 * 60 * 1000
+    ),
+  };
+}
+
+/**
+ * Generate guessed due date insight
+ * Reminds user about tasks with auto-assigned dates that may need verification
+ */
+export function generateGuessedDueDateInsight(
+  tasks: TaskForPriority[],
+  currentTime: Date
+): Insight | null {
+  // Find incomplete tasks with guessed due dates
+  const guessedTasks = tasks.filter(
+    (t) => !t.isCompleted && t.fieldSources?.due_at === 'guessed'
+  );
+
+  if (guessedTasks.length === 0) return null;
+
+  // Count how many are urgent (due within 7 days)
+  const urgentCount = guessedTasks.filter((t) => {
+    if (!t.dueAt) return false;
+    const daysUntil = Math.ceil(
+      (t.dueAt.getTime() - currentTime.getTime()) / (1000 * 60 * 60 * 24)
+    );
+    return daysUntil >= 0 && daysUntil <= 7;
+  }).length;
+
+  const severity: InsightSeverity = urgentCount > 0 ? 'warning' : 'info';
+  const taskWord = guessedTasks.length === 1 ? 'task has an' : 'tasks have';
+
+  return {
+    type: 'guessed_due_date',
+    title: `${guessedTasks.length} ${taskWord} estimated due date`,
+    description:
+      'These dates were auto-assigned. Verify they are correct to avoid surprises.',
+    severity,
+    data: {
+      taskIds: guessedTasks.map((t) => t.id),
+      taskCount: guessedTasks.length,
+      urgentCount,
+    },
+    acknowledgedAt: null,
+    expiresAt: new Date(
+      currentTime.getTime() + INSIGHT_EXPIRATION.guessed_due_date * 60 * 60 * 1000
+    ),
+  };
+}
+
+// ============================================================================
+// Removed Unfounded Insights
+// ============================================================================
+// The following insight types were removed because we don't have the data
+// to support them honestly:
+//
+// - study_effectiveness: We don't track study time or preparation time
+// - procrastination_warning: We don't know when users START working on tasks
+//
+// These were replaced with insights based on observable data (submission timing,
+// grades received, due dates).
 
 /**
  * Generate all relevant insights based on available data
@@ -378,6 +724,13 @@ export function generateAllInsights(
 
   const improvement = generateImprovementInsight(events, currentTime);
   if (improvement) insights.push(improvement);
+
+  // Data quality insights
+  const unsetWeight = generateUnsetWeightInsight(tasks, currentTime);
+  if (unsetWeight) insights.push(unsetWeight);
+
+  const guessedDueDate = generateGuessedDueDateInsight(tasks, currentTime);
+  if (guessedDueDate) insights.push(guessedDueDate);
 
   // Sort by severity (critical first, then warning, then info)
   const severityOrder: Record<InsightSeverity, number> = {
@@ -425,6 +778,16 @@ export function getInsightIcon(type: InsightType): string {
       return 'trending-up';
     case 'data_completeness':
       return 'file-warning';
+    case 'grade_at_risk':
+      return 'alert-circle';
+    case 'grade_trend':
+      return 'trending-down';
+    case 'crunch_period':
+      return 'calendar-clock';
+    case 'unset_weight':
+      return 'scale';
+    case 'guessed_due_date':
+      return 'calendar-question';
     default:
       return 'info';
   }

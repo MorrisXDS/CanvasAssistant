@@ -11,9 +11,9 @@
 
 import { EventEmitter } from 'events';
 import { Database } from '../../l1-persistence/Database';
+import { VisibleDataProvider } from '../../l1-persistence/VisibleDataProvider';
 import {
   generateAllInsights,
-  getActiveInsights,
   getInsightIcon,
   getSeverityColor,
 } from '../domain/InsightGenerator';
@@ -29,8 +29,6 @@ import {
   InsightType,
   InsightSeverity,
   TaskCompletionEvent,
-  CoursePerformance,
-  WeeklyRhythm,
   WorkloadDistribution,
   TaskForPriority,
   CourseForPriority,
@@ -69,6 +67,7 @@ interface TaskRow {
   task_type: string | null;
   task_group_id: number | null;
   submission_status: string | null;
+  field_sources: string | null;
 }
 
 /**
@@ -112,16 +111,32 @@ const DEFAULT_CONFIG: Required<InsightOrchestratorConfig> = {
  */
 export class InsightOrchestrator extends EventEmitter {
   private db: Database;
+  private visibleDataProvider: VisibleDataProvider | null;
   private config: Required<InsightOrchestratorConfig>;
   private refreshTimer: NodeJS.Timeout | null = null;
   private cachedInsights: Insight[] = [];
   private probationService: MessageProbationService;
 
-  constructor(db: Database, config?: InsightOrchestratorConfig) {
+  constructor(
+    db: Database,
+    config?: InsightOrchestratorConfig,
+    visibleDataProvider?: VisibleDataProvider
+  ) {
     super();
     this.db = db;
+    this.visibleDataProvider = visibleDataProvider ?? null;
     this.config = { ...DEFAULT_CONFIG, ...config };
     this.probationService = new MessageProbationService(db);
+
+    // Clear cache on visibility changes
+    if (this.visibleDataProvider) {
+      this.visibleDataProvider.on('visibility-changed', () => {
+        this.cachedInsights = [];
+      });
+      this.visibleDataProvider.on('settings-changed', () => {
+        this.cachedInsights = [];
+      });
+    }
 
     if (this.config.autoRefresh) {
       this.startAutoRefresh();
@@ -198,43 +213,77 @@ export class InsightOrchestrator extends EventEmitter {
    * Fetch tasks from database
    */
   private fetchTasks(): TaskForPriority[] {
-    const rows = this.db.executeRead<TaskRow>(`
+    const visibleCourseIds = this.visibleDataProvider?.getVisibleCourseIds();
+
+    let sql = `
       SELECT
         id, course_id, title, due_at, unlock_at, lock_at,
         points_possible, weight, is_completed, grade,
-        task_type, task_group_id, submission_status
+        task_type, task_group_id, submission_status, field_sources
       FROM tasks
       WHERE is_completed = 0
-      ORDER BY due_at ASC
-    `);
+    `;
 
-    return rows.map((row) => ({
-      id: row.id,
-      courseId: row.course_id,
-      title: row.title,
-      dueAt: row.due_at ? new Date(row.due_at) : null,
-      unlockAt: row.unlock_at ? new Date(row.unlock_at) : null,
-      lockAt: row.lock_at ? new Date(row.lock_at) : null,
-      pointsPossible: row.points_possible,
-      weight: row.weight,
-      isCompleted: Boolean(row.is_completed),
-      isPinned: false,
-      grade: row.grade,
-      submittedAt: null,
-      taskType: row.task_type || 'assignment',
-      taskGroupId: row.task_group_id,
-      submissionStatus: row.submission_status as TaskForPriority['submissionStatus'],
-    }));
+    if (visibleCourseIds && visibleCourseIds.length > 0) {
+      sql += ` AND course_id IN (${visibleCourseIds.join(',')})`;
+    } else if (visibleCourseIds && visibleCourseIds.length === 0) {
+      return [];
+    }
+
+    sql += ` ORDER BY due_at ASC`;
+
+    const rows = this.db.executeRead<TaskRow>(sql);
+
+    return rows.map((row) => {
+      let fieldSources: Record<string, 'canvas' | 'user' | 'guessed'> | undefined;
+      if (row.field_sources) {
+        try {
+          fieldSources = JSON.parse(row.field_sources);
+        } catch {
+          fieldSources = undefined;
+        }
+      }
+
+      return {
+        id: row.id,
+        courseId: row.course_id,
+        title: row.title,
+        dueAt: row.due_at ? new Date(row.due_at) : null,
+        unlockAt: row.unlock_at ? new Date(row.unlock_at) : null,
+        lockAt: row.lock_at ? new Date(row.lock_at) : null,
+        pointsPossible: row.points_possible,
+        weight: row.weight,
+        isCompleted: Boolean(row.is_completed),
+        isPinned: false,
+        grade: row.grade,
+        submittedAt: null,
+        taskType: row.task_type || 'assignment',
+        taskGroupId: row.task_group_id,
+        submissionStatus: row.submission_status as TaskForPriority['submissionStatus'],
+        fieldSources,
+      };
+    });
   }
 
   /**
    * Fetch courses from database
+   * Uses VisibleDataProvider to filter to visible courses only
    */
   private fetchCourses(): CourseForPriority[] {
-    const rows = this.db.executeRead<CourseRow>(`
+    const visibleCourseIds = this.visibleDataProvider?.getVisibleCourseIds();
+
+    let sql = `
       SELECT id, code, name, current_grade, target_grade, total_weight
       FROM courses WHERE deleted_at IS NULL
-    `);
+    `;
+
+    if (visibleCourseIds && visibleCourseIds.length > 0) {
+      sql += ` AND id IN (${visibleCourseIds.join(',')})`;
+    } else if (visibleCourseIds && visibleCourseIds.length === 0) {
+      return [];
+    }
+
+    const rows = this.db.executeRead<CourseRow>(sql);
 
     return rows.map((row) => ({
       id: row.id,
@@ -288,12 +337,14 @@ export class InsightOrchestrator extends EventEmitter {
     insights = this.probationService.filterGrounded(
       insights,
       'insight',
-      (insight) => this.probationService.generateContentHash(
-        'insight',
-        insight.type,
-        insight.title,
-        insight.data || {}
-      )
+      (insight) =>
+        this.probationService.generateContentHash(
+          'insight',
+          insight.type,
+          insight.title,
+          insight.data || {}
+        ),
+      (insight) => insight.type // Pass subType for type-specific frequency settings
     );
 
     // Save new insights and check for duplicates
@@ -314,7 +365,7 @@ export class InsightOrchestrator extends EventEmitter {
           insight.title,
           insight.data || {}
         );
-        this.probationService.recordDisplay('insight', contentHash);
+        this.probationService.recordDisplay('insight', contentHash, insight.type);
 
         // Emit for critical/warning insights
         if (insight.severity === 'critical' || insight.severity === 'warning') {
@@ -355,13 +406,15 @@ export class InsightOrchestrator extends EventEmitter {
   }
 
   /**
-   * Get active (not acknowledged, not expired) insights
+   * Get active (not acknowledged, not expired, not suppressed forever) insights
    */
   getActiveInsights(): Insight[] {
     const now = new Date();
-    const rows = this.db.executeRead<InsightRow>(`
+    const rows = this.db.executeRead<InsightRow>(
+      `
       SELECT * FROM user_insights
       WHERE acknowledged_at IS NULL
+        AND (suppressed_forever IS NULL OR suppressed_forever = 0)
         AND (expires_at IS NULL OR expires_at >= ?)
       ORDER BY
         CASE severity
@@ -370,7 +423,9 @@ export class InsightOrchestrator extends EventEmitter {
           WHEN 'info' THEN 2
         END,
         created_at DESC
-    `, [now.toISOString()]);
+    `,
+      [now.toISOString()]
+    );
 
     return rows.map((row) => this.mapInsightRow(row));
   }
@@ -379,11 +434,14 @@ export class InsightOrchestrator extends EventEmitter {
    * Get all insights (including acknowledged)
    */
   getAllInsights(limit: number = 50): Insight[] {
-    const rows = this.db.executeRead<InsightRow>(`
+    const rows = this.db.executeRead<InsightRow>(
+      `
       SELECT * FROM user_insights
       ORDER BY created_at DESC
       LIMIT ?
-    `, [limit]);
+    `,
+      [limit]
+    );
 
     return rows.map((row) => this.mapInsightRow(row));
   }
@@ -436,6 +494,24 @@ export class InsightOrchestrator extends EventEmitter {
   }
 
   /**
+   * Permanently suppress an insight ("Never show again")
+   * Sets suppressed_forever = 1 so it won't appear in getActiveInsights
+   */
+  suppressInsightForever(insightId: number): boolean {
+    const result = this.db.executeWrite(
+      `UPDATE user_insights SET suppressed_forever = 1 WHERE id = ?`,
+      [insightId],
+      'user_insights'
+    );
+
+    if (result.changes > 0) {
+      this.emit('insight-suppressed', { id: insightId });
+      return true;
+    }
+    return false;
+  }
+
+  /**
    * Get insight by ID
    */
   getInsight(insightId: number): Insight | null {
@@ -451,11 +527,14 @@ export class InsightOrchestrator extends EventEmitter {
    * Get insights by type
    */
   getInsightsByType(type: InsightType): Insight[] {
-    const rows = this.db.executeRead<InsightRow>(`
+    const rows = this.db.executeRead<InsightRow>(
+      `
       SELECT * FROM user_insights
       WHERE insight_type = ?
       ORDER BY created_at DESC
-    `, [type]);
+    `,
+      [type]
+    );
 
     return rows.map((row) => this.mapInsightRow(row));
   }
@@ -465,13 +544,16 @@ export class InsightOrchestrator extends EventEmitter {
    */
   getInsightsBySeverity(severity: InsightSeverity): Insight[] {
     const now = new Date();
-    const rows = this.db.executeRead<InsightRow>(`
+    const rows = this.db.executeRead<InsightRow>(
+      `
       SELECT * FROM user_insights
       WHERE severity = ?
         AND acknowledged_at IS NULL
         AND (expires_at IS NULL OR expires_at >= ?)
       ORDER BY created_at DESC
-    `, [severity, now.toISOString()]);
+    `,
+      [severity, now.toISOString()]
+    );
 
     return rows.map((row) => this.mapInsightRow(row));
   }
