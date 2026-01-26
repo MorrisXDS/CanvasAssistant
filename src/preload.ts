@@ -466,6 +466,10 @@ const api = {
     showTrayIcon: boolean;
   }) => ipcRenderer.invoke('settings:setWindowBehavior', settings),
 
+  // Set close behavior and apply immediately (used by first-time dialog)
+  setCloseBehaviorAndApply: (choice: 'minimize-to-tray' | 'quit') =>
+    ipcRenderer.invoke('window:setCloseBehaviorAndApply', choice),
+
   // ============ Shell ============
 
   openExternal: (url: string) => ipcRenderer.send('shell:openExternal', url),
@@ -667,6 +671,17 @@ const api = {
     };
     ipcRenderer.on('app:reset', handler);
     return () => ipcRenderer.removeListener('app:reset', handler);
+  },
+
+  /**
+   * Listen for close behavior prompt (first-time close with no preference set)
+   */
+  onPromptCloseBehavior: (callback: () => void): (() => void) => {
+    const handler = () => {
+      callback();
+    };
+    ipcRenderer.on('window:promptCloseBehavior', handler);
+    return () => ipcRenderer.removeListener('window:promptCloseBehavior', handler);
   },
 };
 

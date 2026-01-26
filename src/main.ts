@@ -250,7 +250,7 @@ function createWindow() {
   });
 
   // Handle window close with minimize-to-tray option
-  mainWindow.on('close', async (event) => {
+  mainWindow.on('close', (event) => {
     // If we're quitting, allow the close
     if (isQuitting) {
       return;
@@ -258,30 +258,12 @@ function createWindow() {
 
     const settings = getWindowBehavior();
 
-    // If closeAction is null (not yet chosen), show the dialog
+    // If closeAction is null (not yet chosen), prompt the user via renderer UI
     if (settings.closeAction === null) {
       event.preventDefault();
-
-      const result = await dialog.showMessageBox(mainWindow!, {
-        type: 'question',
-        title: 'Close Behavior',
-        message: 'What would you like to do when you close the window?',
-        detail: 'You can change this later in Settings > General.',
-        buttons: ['Minimize to Tray', 'Quit Application'],
-        defaultId: 0,
-        cancelId: 1,
-      });
-
-      // Save the user's choice (persists until changed in settings)
-      const closeAction = result.response === 0 ? 'minimize-to-tray' : 'quit';
-      setWindowBehavior({ ...settings, closeAction });
-
-      // Now apply the chosen action
-      if (closeAction === 'minimize-to-tray') {
-        mainWindow?.hide();
-      } else {
-        isQuitting = true;
-        app.quit();
+      // Send event to renderer to show the close behavior dialog
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('window:promptCloseBehavior');
       }
       return;
     }
@@ -4587,6 +4569,22 @@ function registerIpcHandlers(): void {
   // One-way handler to hide window (for tray functionality)
   ipcMain.on('window:hide', () => {
     mainWindow?.hide();
+  });
+
+  // Handler for close behavior dialog response from renderer
+  ipcMain.handle('window:setCloseBehaviorAndApply', (_event, choice: 'minimize-to-tray' | 'quit') => {
+    const settings = getWindowBehavior();
+    setWindowBehavior({ ...settings, closeAction: choice });
+    logger.info(`Close behavior set to: ${choice}`);
+
+    // Apply the chosen action
+    if (choice === 'minimize-to-tray') {
+      mainWindow?.hide();
+    } else {
+      isQuitting = true;
+      app.quit();
+    }
+    return { success: true };
   });
 
   // ============ Course Settings Handlers ============

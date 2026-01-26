@@ -979,5 +979,12 @@ export const OneWayContract = {
   'shell:openExternal': z.string(),
 } as const;
 
+// ============ Push Events from Main to Renderer ============
+
+export const WindowBehaviorPromptSchema = z.object({
+  showPrompt: z.boolean(),
+});
+export type WindowBehaviorPrompt = z.infer<typeof WindowBehaviorPromptSchema>;
+
 export type OneWayChannel = keyof typeof OneWayContract;
 export type OneWayParams<T extends OneWayChannel> = z.infer<(typeof OneWayContract)[T]>;

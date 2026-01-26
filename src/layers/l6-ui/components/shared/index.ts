@@ -24,6 +24,8 @@ export type { PolicyConfigFormData } from './PolicyConfigForm';
 
 export { ConfirmDialog } from './ConfirmDialog';
 
+export { CloseBehaviorDialog } from './CloseBehaviorDialog';
+
 export { SyncResultToast } from './SyncResultToast';
 export type { SyncResultData } from './SyncResultToast';
 

@@ -32,7 +32,7 @@ import {
 } from '../../l5-presentation/settings';
 import { formatTimeAgo } from '../constants';
 import { TitleBar } from './TitleBar';
-import { SyncResultToast, SyncConflictModal } from './shared';
+import { SyncResultToast, SyncConflictModal, CloseBehaviorDialog } from './shared';
 import { useScrollbarVisibility } from '../hooks/useScrollbarVisibility';
 
 // Debug flag - set to true only when debugging layout issues
@@ -104,6 +104,25 @@ export function Layout() {
 
   // Term end date for sync conflict expiration default
   const [termEndDate, setTermEndDate] = useState<string | null>(null);
+
+  // Close behavior dialog state (shown on first close when preference not set)
+  const [showCloseBehaviorDialog, setShowCloseBehaviorDialog] = useState(false);
+
+  // Listen for close behavior prompt from main process
+  useEffect(() => {
+    const unsubscribe = window.api?.onPromptCloseBehavior?.(() => {
+      setShowCloseBehaviorDialog(true);
+    });
+    return () => {
+      unsubscribe?.();
+    };
+  }, []);
+
+  // Handle close behavior choice
+  const handleCloseBehaviorChoice = async (choice: 'minimize-to-tray' | 'quit') => {
+    setShowCloseBehaviorDialog(false);
+    await window.api?.setCloseBehaviorAndApply?.(choice);
+  };
 
   // Fetch term end date when sync conflicts modal opens
   useEffect(() => {
@@ -647,6 +666,12 @@ export function Layout() {
           </div>,
           document.body
         )}
+
+      {/* Close Behavior Dialog - shown on first close when no preference set */}
+      <CloseBehaviorDialog
+        isOpen={showCloseBehaviorDialog}
+        onChoice={handleCloseBehaviorChoice}
+      />
     </>
   );
 }
