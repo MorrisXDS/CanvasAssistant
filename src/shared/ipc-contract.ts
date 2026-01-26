@@ -59,6 +59,7 @@ export const TaskSchema = z.object({
   pointsPossible: z.number().nullable(),
   priorityScore: z.number(),
   isCompleted: z.boolean(),
+  isOptional: z.boolean(),
   completedAt: z.string().nullable(),
   submissionStatus: z.string().nullable(),
   taskType: z.string().nullable(),
@@ -67,7 +68,12 @@ export const TaskSchema = z.object({
 });
 export type Task = z.infer<typeof TaskSchema>;
 
-export const DownloadStatusSchema = z.enum(['pending', 'downloading', 'completed', 'failed']);
+export const DownloadStatusSchema = z.enum([
+  'pending',
+  'downloading',
+  'completed',
+  'failed',
+]);
 
 export const NotificationAttachmentSchema = z.object({
   id: z.number(),
@@ -131,10 +137,13 @@ export const HealthProbeStatusSchema = z.enum(['healthy', 'degraded', 'unhealthy
 
 export const HealthStatusSchema = z.object({
   overall: HealthProbeStatusSchema,
-  probes: z.record(z.string(), z.object({
-    status: HealthProbeStatusSchema,
-    lastChecked: z.string().nullable(),
-  })),
+  probes: z.record(
+    z.string(),
+    z.object({
+      status: HealthProbeStatusSchema,
+      lastChecked: z.string().nullable(),
+    })
+  ),
 });
 export type HealthStatus = z.infer<typeof HealthStatusSchema>;
 
@@ -244,10 +253,12 @@ export const ExportBatchOptionsSchema = z.object({
   courseIds: z.array(z.number()).optional(),
   includeUserEvents: z.boolean().default(true),
   consolidate: z.boolean().default(true),
-  dateRange: z.object({
-    start: z.string(),
-    end: z.string(),
-  }).optional(),
+  dateRange: z
+    .object({
+      start: z.string(),
+      end: z.string(),
+    })
+    .optional(),
 });
 export type ExportBatchOptions = z.infer<typeof ExportBatchOptionsSchema>;
 
@@ -401,6 +412,9 @@ export const InsightTypeSchema = z.enum([
   'streak',
   'improvement',
   'data_completeness',
+  'grade_at_risk',
+  'grade_trend',
+  'crunch_period',
 ]);
 export type InsightType = z.infer<typeof InsightTypeSchema>;
 
@@ -779,12 +793,16 @@ export const IpcContract = {
 
   // ============ Sync ============
   'sync:full': {
-    params: z.object({
-      termSelection: z.union([z.literal('all'), z.literal('auto'), z.string()]).optional(),
-      syncCanvasFiles: z.boolean().optional(),
-      syncAnnouncements: z.boolean().optional(),
-      courseIds: z.array(z.number()).optional(),
-    }).optional(),
+    params: z
+      .object({
+        termSelection: z
+          .union([z.literal('all'), z.literal('auto'), z.string()])
+          .optional(),
+        syncCanvasFiles: z.boolean().optional(),
+        syncAnnouncements: z.boolean().optional(),
+        courseIds: z.array(z.number()).optional(),
+      })
+      .optional(),
     result: ApiResultSchema(z.unknown()),
   },
   'sync:courses': {
@@ -797,22 +815,26 @@ export const IpcContract = {
       localCourseId: z.number(),
       forceRefresh: z.boolean().optional(),
     }),
-    result: ApiResultSchema(z.object({
-      success: z.boolean(),
-      count: z.number(),
-      errors: z.array(z.string()),
-    })),
+    result: ApiResultSchema(
+      z.object({
+        success: z.boolean(),
+        count: z.number(),
+        errors: z.array(z.string()),
+      })
+    ),
   },
   'sync:folderByPath': {
     params: z.object({
       courseId: z.number(),
       folderPath: z.string(),
     }),
-    result: ApiResultSchema(z.object({
-      success: z.boolean(),
-      count: z.number(),
-      errors: z.array(z.string()),
-    })),
+    result: ApiResultSchema(
+      z.object({
+        success: z.boolean(),
+        count: z.number(),
+        errors: z.array(z.string()),
+      })
+    ),
   },
 
   // ============ File Operations ============
@@ -820,10 +842,14 @@ export const IpcContract = {
     params: z.object({
       defaultName: z.string(),
       content: z.string(),
-      filters: z.array(z.object({
-        name: z.string(),
-        extensions: z.array(z.string()),
-      })).optional(),
+      filters: z
+        .array(
+          z.object({
+            name: z.string(),
+            extensions: z.array(z.string()),
+          })
+        )
+        .optional(),
     }),
     result: ApiResultSchema(z.object({ filePath: z.string() })),
   },
@@ -874,10 +900,12 @@ export const IpcContract = {
 
   // ============ Intelligence - Workload ============
   'intelligence:getWorkloadDistribution': {
-    params: z.object({
-      startDate: z.string().optional(),
-      endDate: z.string().optional(),
-    }).optional(),
+    params: z
+      .object({
+        startDate: z.string().optional(),
+        endDate: z.string().optional(),
+      })
+      .optional(),
     result: WorkloadDistributionSchema.nullable(),
   },
   'intelligence:getDailyPlan': {
@@ -898,8 +926,8 @@ export const IpcContract = {
 
 export type IpcChannel = keyof typeof IpcContract;
 
-export type IpcParams<T extends IpcChannel> = z.infer<typeof IpcContract[T]['params']>;
-export type IpcResult<T extends IpcChannel> = z.infer<typeof IpcContract[T]['result']>;
+export type IpcParams<T extends IpcChannel> = z.infer<(typeof IpcContract)[T]['params']>;
+export type IpcResult<T extends IpcChannel> = z.infer<(typeof IpcContract)[T]['result']>;
 
 // ============ Push Event Channels ============
 
@@ -910,7 +938,9 @@ export const PushEventContract = {
 } as const;
 
 export type PushEventChannel = keyof typeof PushEventContract;
-export type PushEventPayload<T extends PushEventChannel> = z.infer<typeof PushEventContract[T]>;
+export type PushEventPayload<T extends PushEventChannel> = z.infer<
+  (typeof PushEventContract)[T]
+>;
 
 // ============ One-Way Channels (send, not invoke) ============
 
@@ -922,4 +952,4 @@ export const OneWayContract = {
 } as const;
 
 export type OneWayChannel = keyof typeof OneWayContract;
-export type OneWayParams<T extends OneWayChannel> = z.infer<typeof OneWayContract[T]>;
+export type OneWayParams<T extends OneWayChannel> = z.infer<(typeof OneWayContract)[T]>;

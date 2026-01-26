@@ -100,6 +100,7 @@ export function mapTaskRowToEntity(row: {
   points_possible: number | null;
   priority_score: number;
   is_completed: number | boolean;
+  is_optional?: number | boolean;
   completed_at: string | null;
   submission_status: string | null;
   task_type?: string | null;
@@ -117,6 +118,7 @@ export function mapTaskRowToEntity(row: {
     pointsPossible: row.points_possible,
     priorityScore: row.priority_score,
     isCompleted: Boolean(row.is_completed),
+    isOptional: Boolean(row.is_optional),
     completedAt: row.completed_at,
     submissionStatus: row.submission_status,
     taskType: row.task_type ?? null,
@@ -279,10 +281,7 @@ export function removeEntityById<T extends { id: number }>(
 /**
  * Helper to add or update an entity in a list.
  */
-export function upsertEntity<T extends { id: number }>(
-  entities: T[],
-  entity: T
-): T[] {
+export function upsertEntity<T extends { id: number }>(entities: T[], entity: T): T[] {
   const existingIndex = entities.findIndex((e) => e.id === entity.id);
   if (existingIndex >= 0) {
     return [
@@ -314,5 +313,5 @@ export function mapLocalCourseIdsToExternal(
     localIds
   );
 
-  return rows.map(r => parseInt(r.external_id, 10)).filter(id => !isNaN(id));
+  return rows.map((r) => parseInt(r.external_id, 10)).filter((id) => !isNaN(id));
 }

@@ -1626,4 +1626,189 @@ export const coreMigrations: Migration[] = [
       DROP TABLE IF EXISTS sync_checkpoints;
     `,
   },
+  {
+    version: 52,
+    description: 'Add visibility_settings table for centralized visibility management',
+    up: `
+      -- Store visibility settings in database (accessible from both main and renderer)
+      CREATE TABLE IF NOT EXISTS visibility_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
+      -- Migrate term selection from localStorage to database
+      -- Default: 'auto' (matches existing UI default)
+      INSERT OR IGNORE INTO visibility_settings (key, value) VALUES ('term_selection', 'auto');
+    `,
+    down: `
+      DROP TABLE IF EXISTS visibility_settings;
+    `,
+  },
+  {
+    version: 53,
+    description: 'Create content_analysis table for document intelligence',
+    up: `
+      -- Table to store content analysis results for documents (PDFs, pages, syllabus, etc.)
+      CREATE TABLE IF NOT EXISTS content_analysis (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        source_type TEXT NOT NULL CHECK(source_type IN ('course_page', 'resource', 'attachment', 'syllabus')),
+        source_id INTEGER NOT NULL,
+        course_id INTEGER,
+        document_type TEXT CHECK(document_type IN ('syllabus', 'rubric', 'assignment', 'reading', 'lecture', 'notes', 'other', 'unknown')),
+        extracted_text TEXT,
+        extracted_entities TEXT, -- JSON: { dates: [], percentages: [], policies: [], keywords: [] }
+        embeddings BLOB, -- Vector for semantic search (future ML layer)
+        analysis_level INTEGER DEFAULT 1 CHECK(analysis_level IN (1, 2, 3, 4)),
+        -- Level 1 = text extraction only
+        -- Level 2 = rule-based extraction (regex)
+        -- Level 3 = local ML (Transformers.js)
+        -- Level 4 = LLM analysis
+        analyzed_at DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(course_id) REFERENCES courses(id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX idx_content_analysis_source ON content_analysis(source_type, source_id);
+      CREATE INDEX idx_content_analysis_course ON content_analysis(course_id);
+      CREATE INDEX idx_content_analysis_type ON content_analysis(document_type);
+      CREATE INDEX idx_content_analysis_level ON content_analysis(analysis_level);
+      CREATE UNIQUE INDEX idx_content_analysis_unique ON content_analysis(source_type, source_id);
+    `,
+    down: `
+      DROP INDEX IF EXISTS idx_content_analysis_unique;
+      DROP INDEX IF EXISTS idx_content_analysis_level;
+      DROP INDEX IF EXISTS idx_content_analysis_type;
+      DROP INDEX IF EXISTS idx_content_analysis_course;
+      DROP INDEX IF EXISTS idx_content_analysis_source;
+      DROP TABLE IF EXISTS content_analysis;
+    `,
+  },
+  {
+    version: 54,
+    description:
+      'Create course_syllabuses table and add based_on_syllabus_reviewed_at to course_policies',
+    up: `
+      -- Table for user-designated syllabus files per course
+      -- Users explicitly mark which file is the syllabus, enabling:
+      -- 1. Change detection: Monitor if Canvas shows the file was modified
+      -- 2. Review tracking: Track when user last reviewed the syllabus
+      -- 3. Policy staleness: Link policies to syllabus review dates
+      CREATE TABLE IF NOT EXISTS course_syllabuses (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        course_id INTEGER NOT NULL UNIQUE,
+        resource_id INTEGER NOT NULL,
+        -- Canvas updated_at when file was marked (for change detection)
+        resource_updated_at TEXT,
+        -- When user last reviewed the syllabus
+        last_reviewed_at DATETIME NOT NULL,
+        -- When we detected the file was modified on Canvas (NULL if no change)
+        change_detected_at DATETIME,
+        -- When user marked this file as syllabus
+        marked_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(course_id) REFERENCES courses(id) ON DELETE CASCADE,
+        FOREIGN KEY(resource_id) REFERENCES resources(id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX idx_course_syllabuses_course ON course_syllabuses(course_id);
+      CREATE INDEX idx_course_syllabuses_resource ON course_syllabuses(resource_id);
+
+      -- Add column to track when policies were entered relative to syllabus review
+      -- If syllabus is updated after this date, warn that policy may be stale
+      ALTER TABLE course_policies ADD COLUMN based_on_syllabus_reviewed_at DATETIME;
+    `,
+    down: `
+      DROP INDEX IF EXISTS idx_course_syllabuses_resource;
+      DROP INDEX IF EXISTS idx_course_syllabuses_course;
+      DROP TABLE IF EXISTS course_syllabuses;
+      -- SQLite doesn't support DROP COLUMN easily
+      SELECT 1;
+    `,
+  },
+  {
+    version: 55,
+    description: 'Add source_type column to course_syllabuses for attachment support',
+    up: `
+      -- Add source_type column to distinguish between resources and attachments
+      -- 'resource' = from resources table (file synced from Canvas)
+      -- 'attachment' = from notification_attachments table (announcement attachment)
+      ALTER TABLE course_syllabuses ADD COLUMN source_type TEXT NOT NULL DEFAULT 'resource';
+    `,
+    down: `
+      -- SQLite doesn't support DROP COLUMN easily
+      SELECT 1;
+    `,
+  },
+  {
+    version: 56,
+    description:
+      'Add sub_type column to message_display_history for type-specific frequency settings',
+    up: `
+      -- Add sub_type column to store the specific type (e.g., 'work_now', 'course_struggle')
+      -- This enables type-specific grounding/quiet period settings
+      ALTER TABLE message_display_history ADD COLUMN sub_type TEXT;
+
+      -- Create index for querying by sub_type
+      CREATE INDEX idx_message_display_subtype ON message_display_history(sub_type);
+    `,
+    down: `
+      DROP INDEX IF EXISTS idx_message_display_subtype;
+      -- SQLite doesn't support DROP COLUMN easily
+      SELECT 1;
+    `,
+  },
+  {
+    version: 57,
+    description: 'Fix completed_at for tasks marked complete without timestamp',
+    up: `
+      -- Fix inconsistency where is_completed = 1 but completed_at is NULL
+      -- Set completed_at to current timestamp for these tasks
+      UPDATE tasks
+      SET completed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+      WHERE is_completed = 1 AND completed_at IS NULL;
+    `,
+  },
+  {
+    version: 58,
+    description:
+      'Reset incorrectly completed tasks - will be fixed on next sync with submission data',
+    up: `
+      -- Tasks marked complete but without grade should be re-evaluated on next sync
+      -- Reset is_completed for tasks that:
+      -- 1. Have no grade (not graded by instructor)
+      -- 2. Have no weight (not a graded assignment we track)
+      -- These will get proper status from Canvas submission.workflow_state on next sync
+      UPDATE tasks
+      SET is_completed = 0, completed_at = NULL, updated_at = CURRENT_TIMESTAMP
+      WHERE is_completed = 1
+        AND grade IS NULL
+        AND source_type = 'canvas';
+    `,
+  },
+  {
+    version: 59,
+    description: 'Populate submission_status based on existing task state',
+    up: `
+      -- Set submission_status based on current is_completed and grade
+      -- This will be overwritten by Canvas workflow_state on next sync
+      UPDATE tasks
+      SET submission_status = CASE
+        WHEN grade IS NOT NULL THEN 'graded'
+        WHEN is_completed = 1 THEN 'submitted'
+        ELSE 'pending'
+      END,
+      updated_at = CURRENT_TIMESTAMP
+      WHERE submission_status IS NULL;
+    `,
+  },
+  {
+    version: 60,
+    description: 'Add is_optional column to tasks for user-marked optional coursework',
+    up: `
+      -- Add is_optional flag - user can mark any task as optional
+      -- Optional tasks appear in "Not for Grade" section and are not overwritten by Canvas sync
+      ALTER TABLE tasks ADD COLUMN is_optional INTEGER DEFAULT 0;
+    `,
+  },
 ];

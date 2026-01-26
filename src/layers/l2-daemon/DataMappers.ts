@@ -55,6 +55,18 @@ export interface CanvasCourse {
   }>;
 }
 
+export interface CanvasSubmission {
+  id?: number;
+  workflow_state?: string; // 'unsubmitted' | 'submitted' | 'graded' | 'pending_review'
+  submitted_at?: string | null;
+  graded_at?: string | null;
+  score?: number | null;
+  grade?: string | null;
+  late?: boolean;
+  missing?: boolean;
+  excused?: boolean;
+}
+
 export interface CanvasAssignment {
   id: number;
   name: string;
@@ -68,6 +80,7 @@ export interface CanvasAssignment {
   course_id: number;
   grading_type: string;
   assignment_group_id: number;
+  submission?: CanvasSubmission; // Included when fetched with include[]=submission
 }
 
 export interface CanvasAttachment {
@@ -109,7 +122,15 @@ export interface CanvasModuleItem {
   id: number;
   module_id: number;
   title: string;
-  type: 'File' | 'Page' | 'Discussion' | 'Assignment' | 'Quiz' | 'SubHeader' | 'ExternalUrl' | 'ExternalTool';
+  type:
+    | 'File'
+    | 'Page'
+    | 'Discussion'
+    | 'Assignment'
+    | 'Quiz'
+    | 'SubHeader'
+    | 'ExternalUrl'
+    | 'ExternalTool';
   content_id?: number;
   position: number;
   indent: number;
@@ -194,7 +215,11 @@ export interface LocalTask {
   points_possible: number | null;
   submission_types: string | null;
   weight: number;
+  grade: number | null; // Percentage grade from Canvas (score / points_possible * 100)
+  task_type: string; // Derived from Canvas submission_types: 'assignment' | 'quiz' | 'discussion' | 'reading' | 'external'
   is_completed: number; // SQLite boolean: 0 or 1
+  submission_status: 'pending' | 'submitted' | 'graded'; // Canvas workflow state mapped
+  completed_at: string | null;
 }
 
 export interface LocalNotification {
@@ -234,11 +259,18 @@ export function mapAttachment(
   courseId: number
 ): LocalNotificationAttachment {
   const attachmentId = safeParse(SafeNumber, canvas.id, 'attachment.id');
-  const displayName = safeParse(SafeString, canvas.display_name, 'attachment.display_name') || `Attachment_${attachmentId}`;
-  const filename = safeParse(SafeString, canvas.filename, 'attachment.filename') || displayName;
+  const displayName =
+    safeParse(SafeString, canvas.display_name, 'attachment.display_name') ||
+    `Attachment_${attachmentId}`;
+  const filename =
+    safeParse(SafeString, canvas.filename, 'attachment.filename') || displayName;
   const url = safeParse(SafeString, canvas.url, 'attachment.url');
   const size = safeParse(SafeNullableNumber, canvas.size, 'attachment.size');
-  const contentType = safeParse(SafeNullableString, canvas.content_type, 'attachment.content_type');
+  const contentType = safeParse(
+    SafeNullableString,
+    canvas.content_type,
+    'attachment.content_type'
+  );
 
   return {
     course_id: courseId,
@@ -306,7 +338,14 @@ export interface LocalResource {
   mime_type: string | null;
   unlock_at: string | null;
   remote_updated_at: string | null;
-  context_type: 'page' | 'assignment' | 'syllabus' | 'module' | 'announcement' | 'files' | null;
+  context_type:
+    | 'page'
+    | 'assignment'
+    | 'syllabus'
+    | 'module'
+    | 'announcement'
+    | 'files'
+    | null;
   context_id: string | null;
 }
 
@@ -335,15 +374,29 @@ export function mapCourse(
 ): LocalCourse {
   // Validate incoming data with safe defaults
   const courseId = safeParse(SafeNumber, canvas.id, 'course.id');
-  const courseCode = safeParse(SafeString, canvas.course_code, 'course.course_code') || `Course_${courseId}`;
+  const courseCode =
+    safeParse(SafeString, canvas.course_code, 'course.course_code') ||
+    `Course_${courseId}`;
   const courseName = safeParse(SafeString, canvas.name, 'course.name') || courseCode;
-  const syllabusBody = safeParse(SafeNullableString, canvas.syllabus_body, 'course.syllabus_body');
-  const enrollmentTermId = safeParse(SafeNullableNumber, canvas.enrollment_term_id, 'course.enrollment_term_id');
+  const syllabusBody = safeParse(
+    SafeNullableString,
+    canvas.syllabus_body,
+    'course.syllabus_body'
+  );
+  const enrollmentTermId = safeParse(
+    SafeNullableNumber,
+    canvas.enrollment_term_id,
+    'course.enrollment_term_id'
+  );
 
   // Extract enrollment data with validation
   const enrollment = canvas.enrollments?.[0];
   const currentGrade = enrollment
-    ? safeParse(SafeNullableNumber, enrollment.computed_current_score, 'course.enrollment.computed_current_score')
+    ? safeParse(
+        SafeNullableNumber,
+        enrollment.computed_current_score,
+        'course.enrollment.computed_current_score'
+      )
     : null;
 
   return {
@@ -365,17 +418,66 @@ export function mapCourse(
  * Map Canvas assignment to local task record
  * Uses Zod schemas for defensive validation of incoming data
  */
-export function mapAssignment(canvas: CanvasAssignment, localCourseId: number): LocalTask {
+export function mapAssignment(
+  canvas: CanvasAssignment,
+  localCourseId: number
+): LocalTask {
   // Validate incoming data with safe defaults
   const assignmentId = safeParse(SafeNumber, canvas.id, 'assignment.id');
-  const assignmentName = safeParse(SafeString, canvas.name, 'assignment.name') || `Assignment_${assignmentId}`;
-  const description = safeParse(SafeNullableString, canvas.description, 'assignment.description');
+  const assignmentName =
+    safeParse(SafeString, canvas.name, 'assignment.name') || `Assignment_${assignmentId}`;
+  const description = safeParse(
+    SafeNullableString,
+    canvas.description,
+    'assignment.description'
+  );
   const dueAt = safeParse(SafeNullableString, canvas.due_at, 'assignment.due_at');
-  const unlockAt = safeParse(SafeNullableString, canvas.unlock_at, 'assignment.unlock_at');
+  const unlockAt = safeParse(
+    SafeNullableString,
+    canvas.unlock_at,
+    'assignment.unlock_at'
+  );
   const lockAt = safeParse(SafeNullableString, canvas.lock_at, 'assignment.lock_at');
-  const pointsPossible = safeParse(SafeNullableNumber, canvas.points_possible, 'assignment.points_possible');
-  const submissionTypes = safeParse(SafeStringArray, canvas.submission_types, 'assignment.submission_types');
-  const hasSubmitted = safeParse(SafeBoolean, canvas.has_submitted_submissions, 'assignment.has_submitted_submissions');
+  const pointsPossible = safeParse(
+    SafeNullableNumber,
+    canvas.points_possible,
+    'assignment.points_possible'
+  );
+  const submissionTypes = safeParse(
+    SafeStringArray,
+    canvas.submission_types,
+    'assignment.submission_types'
+  );
+
+  // Determine submission status from Canvas workflow_state (authoritative source)
+  // Canvas workflow_state: 'unsubmitted' | 'submitted' | 'graded' | 'pending_review'
+  // Maps to our submission_status: 'pending' | 'submitted' | 'graded'
+  const submission = canvas.submission;
+  const workflowState = submission?.workflow_state;
+  const submittedAt = submission?.submitted_at;
+  const score = submission?.score;
+
+  // Map Canvas workflow_state to our submission_status
+  // Canvas workflow_state takes precedence over any user-set status
+  let submissionStatus: 'pending' | 'submitted' | 'graded' = 'pending';
+  if (workflowState === 'graded' || submission?.grade != null) {
+    submissionStatus = 'graded';
+  } else if (
+    workflowState === 'submitted' ||
+    workflowState === 'pending_review' ||
+    submittedAt != null
+  ) {
+    submissionStatus = 'submitted';
+  }
+
+  // Calculate grade as percentage from score / points_possible
+  let grade: number | null = null;
+  if (score != null && pointsPossible != null && pointsPossible > 0) {
+    grade = (score / pointsPossible) * 100;
+  }
+
+  // Derive task_type from submission_types
+  const taskType = deriveTaskType(submissionTypes);
 
   return {
     external_id: String(assignmentId),
@@ -389,8 +491,47 @@ export function mapAssignment(canvas: CanvasAssignment, localCourseId: number): 
     points_possible: pointsPossible,
     submission_types: submissionTypes.length > 0 ? submissionTypes.join(',') : null,
     weight: 0, // Will be calculated by L3 Intelligence
-    is_completed: hasSubmitted ? 1 : 0, // SQLite boolean
+    grade,
+    task_type: taskType,
+    is_completed: submissionStatus !== 'pending' ? 1 : 0,
+    submission_status: submissionStatus,
+    completed_at:
+      submittedAt || (submissionStatus !== 'pending' ? new Date().toISOString() : null),
   };
+}
+
+/**
+ * Derive task_type from Canvas submission_types array
+ * Maps Canvas submission types to our task categories
+ */
+function deriveTaskType(submissionTypes: string[]): string {
+  // Check for not graded first (info items)
+  if (submissionTypes.includes('not_graded')) {
+    return 'info';
+  }
+
+  // Check for quiz
+  if (submissionTypes.includes('online_quiz')) {
+    return 'quiz';
+  }
+
+  // Check for discussion
+  if (submissionTypes.includes('discussion_topic')) {
+    return 'discussion';
+  }
+
+  // Check for no submission required (but graded - like attendance)
+  if (submissionTypes.includes('none')) {
+    return 'attendance';
+  }
+
+  // Check for external tool (could be exam proctoring, etc.)
+  if (submissionTypes.includes('external_tool')) {
+    return 'external';
+  }
+
+  // Default to assignment for upload, text entry, media, on_paper, etc.
+  return 'assignment';
 }
 
 /**
@@ -409,17 +550,46 @@ export function htmlToPlainText(html: string): string {
       { selector: 'p', options: { leadingLineBreaks: 0, trailingLineBreaks: 1 } },
       { selector: 'div', options: { leadingLineBreaks: 0, trailingLineBreaks: 1 } },
       // Headings
-      { selector: 'h1', options: { leadingLineBreaks: 1, trailingLineBreaks: 1, uppercase: false } },
-      { selector: 'h2', options: { leadingLineBreaks: 1, trailingLineBreaks: 1, uppercase: false } },
-      { selector: 'h3', options: { leadingLineBreaks: 1, trailingLineBreaks: 1, uppercase: false } },
-      { selector: 'h4', options: { leadingLineBreaks: 1, trailingLineBreaks: 1, uppercase: false } },
-      { selector: 'h5', options: { leadingLineBreaks: 1, trailingLineBreaks: 1, uppercase: false } },
-      { selector: 'h6', options: { leadingLineBreaks: 1, trailingLineBreaks: 1, uppercase: false } },
+      {
+        selector: 'h1',
+        options: { leadingLineBreaks: 1, trailingLineBreaks: 1, uppercase: false },
+      },
+      {
+        selector: 'h2',
+        options: { leadingLineBreaks: 1, trailingLineBreaks: 1, uppercase: false },
+      },
+      {
+        selector: 'h3',
+        options: { leadingLineBreaks: 1, trailingLineBreaks: 1, uppercase: false },
+      },
+      {
+        selector: 'h4',
+        options: { leadingLineBreaks: 1, trailingLineBreaks: 1, uppercase: false },
+      },
+      {
+        selector: 'h5',
+        options: { leadingLineBreaks: 1, trailingLineBreaks: 1, uppercase: false },
+      },
+      {
+        selector: 'h6',
+        options: { leadingLineBreaks: 1, trailingLineBreaks: 1, uppercase: false },
+      },
       // Lists
-      { selector: 'ul', format: 'unorderedList', options: { leadingLineBreaks: 1, trailingLineBreaks: 1, itemPrefix: '• ' } },
-      { selector: 'ol', format: 'orderedList', options: { leadingLineBreaks: 1, trailingLineBreaks: 1 } },
+      {
+        selector: 'ul',
+        format: 'unorderedList',
+        options: { leadingLineBreaks: 1, trailingLineBreaks: 1, itemPrefix: '• ' },
+      },
+      {
+        selector: 'ol',
+        format: 'orderedList',
+        options: { leadingLineBreaks: 1, trailingLineBreaks: 1 },
+      },
       // Block quotes
-      { selector: 'blockquote', options: { leadingLineBreaks: 1, trailingLineBreaks: 1 } },
+      {
+        selector: 'blockquote',
+        options: { leadingLineBreaks: 1, trailingLineBreaks: 1 },
+      },
       // Links - keep text, ignore href
       { selector: 'a', options: { ignoreHref: true } },
       // Skip images
@@ -458,13 +628,56 @@ export interface FileReference {
  * Common file extensions to detect in text
  */
 const FILE_EXTENSIONS = [
-  'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx',
-  'txt', 'rtf', 'odt', 'ods', 'odp',
-  'zip', 'tar', 'gz', 'rar', '7z', 'tgz',
-  'py', 'java', 'c', 'cpp', 'h', 'hpp', 'js', 'ts', 'html', 'css', 'rb', 'go', 'rs',
-  'png', 'jpg', 'jpeg', 'gif', 'svg', 'bmp', 'webp',
-  'mp4', 'mp3', 'wav', 'avi', 'mov', 'mkv',
-  'csv', 'json', 'xml', 'yaml', 'yml', 'md',
+  'pdf',
+  'doc',
+  'docx',
+  'xls',
+  'xlsx',
+  'ppt',
+  'pptx',
+  'txt',
+  'rtf',
+  'odt',
+  'ods',
+  'odp',
+  'zip',
+  'tar',
+  'gz',
+  'rar',
+  '7z',
+  'tgz',
+  'py',
+  'java',
+  'c',
+  'cpp',
+  'h',
+  'hpp',
+  'js',
+  'ts',
+  'html',
+  'css',
+  'rb',
+  'go',
+  'rs',
+  'png',
+  'jpg',
+  'jpeg',
+  'gif',
+  'svg',
+  'bmp',
+  'webp',
+  'mp4',
+  'mp3',
+  'wav',
+  'avi',
+  'mov',
+  'mkv',
+  'csv',
+  'json',
+  'xml',
+  'yaml',
+  'yml',
+  'md',
 ];
 
 /**
@@ -504,9 +717,14 @@ export function detectFileReferences(
   if (!plainText) return references;
 
   // Build regex for file extensions
-  const extensionPattern = FILE_EXTENSIONS.map(ext => ext.replace('.', '\\.')).join('|');
+  const extensionPattern = FILE_EXTENSIONS.map((ext) => ext.replace('.', '\\.')).join(
+    '|'
+  );
   // Match filenames - word chars, spaces, dashes, parens, dots followed by extension
-  const fileRegex = new RegExp(`[\\w\\s\\-\\(\\)\\[\\]\\.,]+\\.(${extensionPattern})`, 'gi');
+  const fileRegex = new RegExp(
+    `[\\w\\s\\-\\(\\)\\[\\]\\.,]+\\.(${extensionPattern})`,
+    'gi'
+  );
 
   let match;
   while ((match = fileRegex.exec(plainText)) !== null) {
@@ -515,8 +733,9 @@ export function detectFileReferences(
 
     // Try to find matching attachment
     const attachment = attachments.find(
-      a => a.display_name.toLowerCase() === filenameLower ||
-           a.filename.toLowerCase() === filenameLower
+      (a) =>
+        a.display_name.toLowerCase() === filenameLower ||
+        a.filename.toLowerCase() === filenameLower
     );
 
     // Try to find original URL from HTML links
@@ -546,9 +765,15 @@ export function mapAnnouncement(
 ): MappedAnnouncement {
   // Validate incoming data with safe defaults
   const announcementId = safeParse(SafeNumber, canvas.id, 'announcement.id');
-  const title = safeParse(SafeString, canvas.title, 'announcement.title') || `Announcement_${announcementId}`;
+  const title =
+    safeParse(SafeString, canvas.title, 'announcement.title') ||
+    `Announcement_${announcementId}`;
   const message = safeParse(SafeString, canvas.message, 'announcement.message');
-  const postedAt = safeParse(SafeNullableString, canvas.posted_at, 'announcement.posted_at');
+  const postedAt = safeParse(
+    SafeNullableString,
+    canvas.posted_at,
+    'announcement.posted_at'
+  );
 
   // Extract links from HTML before converting (to preserve original URLs)
   const htmlLinkMap = extractHtmlLinks(message);
@@ -607,10 +832,15 @@ export function mapAnnouncement(
  */
 export function mapModule(canvas: CanvasModule, localCourseId: number): LocalModule {
   const moduleId = safeParse(SafeNumber, canvas.id, 'module.id');
-  const moduleName = safeParse(SafeString, canvas.name, 'module.name') || `Module_${moduleId}`;
+  const moduleName =
+    safeParse(SafeString, canvas.name, 'module.name') || `Module_${moduleId}`;
   const position = safeParse(SafeNumber, canvas.position, 'module.position');
   const unlockAt = safeParse(SafeNullableString, canvas.unlock_at, 'module.unlock_at');
-  const requireSequential = safeParse(SafeBoolean, canvas.require_sequential_progress, 'module.require_sequential_progress');
+  const requireSequential = safeParse(
+    SafeBoolean,
+    canvas.require_sequential_progress,
+    'module.require_sequential_progress'
+  );
   const published = safeParse(SafeBoolean, canvas.published, 'module.published');
 
   return {
@@ -633,13 +863,22 @@ export function mapModuleItem(
   localModuleId: number
 ): LocalModuleItem {
   const itemId = safeParse(SafeNumber, canvas.id, 'moduleItem.id');
-  const title = safeParse(SafeString, canvas.title, 'moduleItem.title') || `Item_${itemId}`;
+  const title =
+    safeParse(SafeString, canvas.title, 'moduleItem.title') || `Item_${itemId}`;
   const itemType = safeParse(SafeString, canvas.type, 'moduleItem.type') || 'Unknown';
-  const contentId = safeParse(SafeNullableNumber, canvas.content_id, 'moduleItem.content_id');
+  const contentId = safeParse(
+    SafeNullableNumber,
+    canvas.content_id,
+    'moduleItem.content_id'
+  );
   const position = safeParse(SafeNumber, canvas.position, 'moduleItem.position');
   const indent = safeParse(SafeNumber, canvas.indent, 'moduleItem.indent');
   const htmlUrl = safeParse(SafeNullableString, canvas.html_url, 'moduleItem.html_url');
-  const externalUrl = safeParse(SafeNullableString, canvas.external_url, 'moduleItem.external_url');
+  const externalUrl = safeParse(
+    SafeNullableString,
+    canvas.external_url,
+    'moduleItem.external_url'
+  );
   const published = safeParse(SafeBoolean, canvas.published, 'moduleItem.published');
 
   return {
@@ -669,7 +908,8 @@ export function mapPage(
   pageType: 'syllabus' | 'landing' | 'content' | 'module_item' = 'content'
 ): LocalPage {
   const pageUrl = safeParse(SafeString, canvas.url, 'page.url');
-  const title = safeParse(SafeString, canvas.title, 'page.title') || pageUrl || 'Untitled Page';
+  const title =
+    safeParse(SafeString, canvas.title, 'page.title') || pageUrl || 'Untitled Page';
   const body = safeParse(SafeNullableString, canvas.body, 'page.body');
   const isFrontPage = safeParse(SafeBoolean, canvas.front_page, 'page.front_page');
   const published = safeParse(SafeBoolean, canvas.published, 'page.published');
@@ -711,12 +951,21 @@ export function mapFile(
   // It gets set when user downloads the file
 
   const fileId = safeParse(SafeNumber, canvas.id, 'file.id');
-  const displayName = safeParse(SafeString, canvas.display_name, 'file.display_name') || `File_${fileId}`;
+  const displayName =
+    safeParse(SafeString, canvas.display_name, 'file.display_name') || `File_${fileId}`;
   const url = safeParse(SafeNullableString, canvas.url, 'file.url');
   const size = safeParse(SafeNullableNumber, canvas.size, 'file.size');
-  const contentType = safeParse(SafeNullableString, canvas.content_type, 'file.content_type');
+  const contentType = safeParse(
+    SafeNullableString,
+    canvas.content_type,
+    'file.content_type'
+  );
   const unlockAt = safeParse(SafeNullableString, canvas.unlock_at, 'file.unlock_at');
-  const modifiedAt = safeParse(SafeNullableString, canvas.modified_at, 'file.modified_at');
+  const modifiedAt = safeParse(
+    SafeNullableString,
+    canvas.modified_at,
+    'file.modified_at'
+  );
   const updatedAt = safeParse(SafeNullableString, canvas.updated_at, 'file.updated_at');
 
   // Use modified_at if available (actual content change), otherwise updated_at
@@ -749,7 +998,8 @@ export function mapFolder(
   localParentFolderId: number | null = null
 ): Omit<LocalResource, 'local_path'> {
   const folderId = safeParse(SafeNumber, canvas.id, 'folder.id');
-  const folderName = safeParse(SafeString, canvas.name, 'folder.name') || `Folder_${folderId}`;
+  const folderName =
+    safeParse(SafeString, canvas.name, 'folder.name') || `Folder_${folderId}`;
   const fullName = safeParse(SafeString, canvas.full_name, 'folder.full_name');
   const updatedAt = safeParse(SafeNullableString, canvas.updated_at, 'folder.updated_at');
 
@@ -812,10 +1062,7 @@ export function detectPolicyKeywords(text: string): {
 /**
  * Calculate confidence score for policy detection (0-1)
  */
-export function calculatePolicyConfidence(
-  text: string,
-  keywords: string[]
-): number {
+export function calculatePolicyConfidence(text: string, keywords: string[]): number {
   if (keywords.length === 0) return 0;
 
   // Base score from number of keywords found

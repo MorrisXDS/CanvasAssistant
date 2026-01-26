@@ -36,7 +36,10 @@ export abstract class BaseRepository<TEntity, TRow> {
   /**
    * Execute a read query expecting a single result.
    */
-  protected queryOne<T extends TRow>(sql: string, params: unknown[] = []): TEntity | null {
+  protected queryOne<T extends TRow>(
+    sql: string,
+    params: unknown[] = []
+  ): TEntity | null {
     const row = this.db.executeReadOne<T>(sql, params);
     return row ? this.mapRowToEntity(row) : null;
   }
@@ -108,6 +111,7 @@ export interface TaskRow {
   points_possible: number | null;
   priority_score: number;
   is_completed: number;
+  is_optional: number;
   completed_at: string | null;
   submission_status: string | null;
   task_type: string | null;

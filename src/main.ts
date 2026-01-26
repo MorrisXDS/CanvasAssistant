@@ -12,7 +12,12 @@ import { HousekeepingManager } from './layers/l0-utilities/HousekeepingManager';
 import { FileDownloadManager } from './layers/l0-utilities/FileDownloadManager';
 
 // L1 - Persistence
-import { Database, MigrationRunner, coreMigrations } from './layers/l1-persistence';
+import {
+  Database,
+  MigrationRunner,
+  coreMigrations,
+  VisibleDataProvider,
+} from './layers/l1-persistence';
 
 // L2 - Daemon
 import {
@@ -99,6 +104,7 @@ const fileDownloadManager = new FileDownloadManager({
 // Initialize Layer 1 persistence
 const database = new Database({ dbPath: DB_PATH, verbose: false });
 const migrationRunner = new MigrationRunner(database);
+let visibleDataProvider: VisibleDataProvider | null = null;
 
 // Initialize Layer 4 controller (after database is ready)
 // Note: CommandDispatcher is initialized lazily after database.initialize()
@@ -266,7 +272,12 @@ async function initializeCanvasClient(token: string, baseUrl: string): Promise<b
       logger.warn(`Sync entity error: ${entity} (${externalId}): ${error}`);
       // Forward to renderer for granular error display
       if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('sync:entityError', { entity, externalId, error, courseName });
+        mainWindow.webContents.send('sync:entityError', {
+          entity,
+          externalId,
+          error,
+          courseName,
+        });
       }
     });
 
@@ -824,6 +835,8 @@ function registerIpcHandlers(): void {
           is_completed: number;
           completed_at: string | null;
           submission_status: string | null;
+          task_type: string | null;
+          is_optional: number;
         }>(sql, params);
 
         return rows.map((row) => ({
@@ -840,6 +853,8 @@ function registerIpcHandlers(): void {
           isCompleted: Boolean(row.is_completed),
           completedAt: row.completed_at,
           submissionStatus: row.submission_status,
+          taskType: row.task_type,
+          isOptional: Boolean(row.is_optional),
         }));
       } catch (error) {
         logger.error(`Failed to get tasks: ${error}`);
@@ -1020,6 +1035,166 @@ function registerIpcHandlers(): void {
       }));
     } catch (error) {
       logger.error(`Failed to get policies: ${error}`);
+      throw error;
+    }
+  });
+
+  // Get syllabus designation for a course
+  ipcMain.handle('data:getCourseSyllabus', (_event, courseId: number) => {
+    try {
+      const row = database.executeReadOne<{
+        id: number;
+        course_id: number;
+        resource_id: number;
+        source_type: string;
+        resource_updated_at: string | null;
+        last_reviewed_at: string;
+        change_detected_at: string | null;
+        marked_at: string;
+      }>('SELECT * FROM course_syllabuses WHERE course_id = ?', [courseId]);
+
+      if (!row) return null;
+
+      // Look up the title based on source type
+      let title = 'Unknown file';
+      let _remoteUpdatedAt: string | null = null;
+
+      if (row.source_type === 'attachment') {
+        // Look up notification attachment
+        const attachment = database.executeReadOne<{
+          display_name: string;
+          downloaded_at: string | null;
+        }>(
+          'SELECT display_name, downloaded_at FROM notification_attachments WHERE id = ?',
+          [row.resource_id]
+        );
+        if (attachment) {
+          title = attachment.display_name;
+          _remoteUpdatedAt = attachment.downloaded_at;
+        }
+      } else {
+        // Look up resource
+        const resource = database.executeReadOne<{
+          title: string;
+          remote_updated_at: string | null;
+        }>('SELECT title, remote_updated_at FROM resources WHERE id = ?', [
+          row.resource_id,
+        ]);
+        if (resource) {
+          title = resource.title;
+          _remoteUpdatedAt = resource.remote_updated_at;
+        }
+      }
+
+      // Return resource_id with correct sign (negative for attachments)
+      const returnedResourceId =
+        row.source_type === 'attachment' ? -row.resource_id : row.resource_id;
+
+      return {
+        id: row.id,
+        courseId: row.course_id,
+        resourceId: returnedResourceId,
+        resourceTitle: title,
+        resourceUpdatedAt: row.resource_updated_at,
+        lastReviewedAt: row.last_reviewed_at,
+        changeDetectedAt: row.change_detected_at,
+        markedAt: row.marked_at,
+      };
+    } catch (error) {
+      logger.error(`Failed to get course syllabus: ${error}`);
+      throw error;
+    }
+  });
+
+  // Get files for a specific course (for syllabus selection)
+  // Returns both resources (synced files) and notification attachments
+  ipcMain.handle('data:getCourseFiles', (_event, courseId: number) => {
+    try {
+      // Get resources (files synced from Canvas) - match Files panel query (type IN ('file', 'page'))
+      const resources = database.executeRead<{
+        id: number;
+        external_id: string;
+        course_id: number;
+        parent_folder_id: number | null;
+        folder_path: string | null;
+        type: string;
+        title: string;
+        url: string | null;
+        local_path: string | null;
+        size_bytes: number | null;
+        mime_type: string | null;
+        synced_at: string | null;
+        remote_updated_at: string | null;
+      }>(
+        `SELECT * FROM resources
+         WHERE course_id = ? AND type IN ('file', 'page')
+         ORDER BY folder_path, title`,
+        [courseId]
+      );
+
+      logger.info(
+        `getCourseFiles for course ${courseId}: found ${resources.length} resources, types: ${[...new Set(resources.map((r) => r.type))].join(', ')}, folders: ${[...new Set(resources.map((r) => r.folder_path || 'null'))].join(', ')}`
+      );
+
+      // Get notification attachments for this course
+      const attachments = database.executeRead<{
+        id: number;
+        notification_id: number;
+        course_id: number;
+        external_id: string;
+        display_name: string;
+        filename: string;
+        url: string;
+        size_bytes: number | null;
+        content_type: string | null;
+        local_path: string | null;
+        download_status: string;
+        downloaded_at: string | null;
+      }>(
+        `SELECT na.*
+         FROM notification_attachments na
+         WHERE na.course_id = ?
+         ORDER BY na.display_name`,
+        [courseId]
+      );
+
+      // Map resources to FileResource format
+      const resourceFiles = resources.map((row) => ({
+        id: row.id,
+        externalId: row.external_id,
+        courseId: row.course_id,
+        parentFolderId: row.parent_folder_id,
+        folderPath: row.folder_path,
+        type: row.type,
+        title: row.title,
+        url: row.url,
+        localPath: row.local_path,
+        sizeBytes: row.size_bytes,
+        mimeType: row.mime_type,
+        syncedAt: row.synced_at,
+        source: 'resource' as const,
+      }));
+
+      // Map attachments to FileResource format (with negative IDs to avoid collision)
+      const attachmentFiles = attachments.map((row) => ({
+        id: -row.id, // Negative ID to distinguish from resources
+        externalId: row.external_id,
+        courseId: row.course_id,
+        parentFolderId: null,
+        folderPath: 'Announcement Attachments',
+        type: 'file',
+        title: row.display_name,
+        url: row.url,
+        localPath: row.local_path,
+        sizeBytes: row.size_bytes,
+        mimeType: row.content_type,
+        syncedAt: row.downloaded_at,
+        source: 'attachment' as const,
+      }));
+
+      return [...resourceFiles, ...attachmentFiles];
+    } catch (error) {
+      logger.error(`Failed to get course files: ${error}`);
       throw error;
     }
   });
@@ -1544,6 +1719,7 @@ function registerIpcHandlers(): void {
       }
 
       // Prevent setting to system-critical directories
+      /* eslint-disable cross-platform/no-hardcoded-app-paths -- Fallbacks for system directories when env vars are not set */
       const criticalPaths = [
         process.env.SystemRoot || 'C:\\Windows',
         process.env.ProgramFiles || 'C:\\Program Files',
@@ -1555,11 +1731,14 @@ function registerIpcHandlers(): void {
         '/var',
         '/System',
       ].map((p) => path.resolve(p).toLowerCase());
+      /* eslint-enable cross-platform/no-hardcoded-app-paths */
 
       const resolvedLower = resolvedPath.toLowerCase();
       for (const critical of criticalPaths) {
         if (resolvedLower === critical || resolvedLower.startsWith(critical + path.sep)) {
-          logger.warn(`Rejected attempt to set files directory to system path: ${newPath}`);
+          logger.warn(
+            `Rejected attempt to set files directory to system path: ${newPath}`
+          );
           return { success: false, error: 'Cannot use system directory' };
         }
       }
@@ -1920,6 +2099,115 @@ function registerIpcHandlers(): void {
         canvasUrl,
       },
     };
+  });
+
+  // Get Canvas URL for a resource (file or attachment)
+  ipcMain.handle(
+    'data:getResourceCanvasUrl',
+    (_event, resourceId: number, source: 'resource' | 'attachment') => {
+      try {
+        if (!canvasClient) {
+          return { success: false, error: 'Canvas client not connected' };
+        }
+
+        const baseUrl = canvasClient.getBaseUrl();
+
+        if (source === 'resource') {
+          // Get resource and its course's external_id
+          const result = database.executeRead<{
+            external_id: string;
+            course_id: number;
+          }>('SELECT external_id, course_id FROM resources WHERE id = ?', [resourceId]);
+
+          if (!result[0]) {
+            return { success: false, error: 'Resource not found' };
+          }
+
+          const resource = result[0];
+          const course = database.executeReadOne<{ external_id: string }>(
+            'SELECT external_id FROM courses WHERE id = ?',
+            [resource.course_id]
+          );
+
+          if (!course) {
+            return { success: false, error: 'Course not found' };
+          }
+
+          // Canvas file URL format: /courses/{course_id}/files/{file_id}
+          const canvasUrl = `${baseUrl}/courses/${course.external_id}/files/${resource.external_id}`;
+          return { success: true, data: { canvasUrl } };
+        } else if (source === 'attachment') {
+          // Get attachment and its course's external_id
+          const result = database.executeRead<{
+            external_id: string;
+            course_id: number;
+          }>('SELECT external_id, course_id FROM notification_attachments WHERE id = ?', [
+            resourceId,
+          ]);
+
+          if (!result[0]) {
+            return { success: false, error: 'Attachment not found' };
+          }
+
+          const attachment = result[0];
+          const course = database.executeReadOne<{ external_id: string }>(
+            'SELECT external_id FROM courses WHERE id = ?',
+            [attachment.course_id]
+          );
+
+          if (!course) {
+            return { success: false, error: 'Course not found' };
+          }
+
+          // Canvas file URL format: /courses/{course_id}/files/{file_id}
+          const canvasUrl = `${baseUrl}/courses/${course.external_id}/files/${attachment.external_id}`;
+          return { success: true, data: { canvasUrl } };
+        }
+
+        return { success: false, error: 'Invalid source type' };
+      } catch (error) {
+        logger.error('Failed to get resource Canvas URL:', error as Error);
+        return { success: false, error: 'Failed to get Canvas URL' };
+      }
+    }
+  );
+
+  // Get Canvas URL for a task (assignment)
+  ipcMain.handle('data:getTaskCanvasUrl', (_event, taskId: number) => {
+    try {
+      if (!canvasClient) {
+        return { success: false, error: 'Canvas client not connected' };
+      }
+
+      const baseUrl = canvasClient.getBaseUrl();
+
+      // Get task and its course's external_id
+      const result = database.executeRead<{
+        external_id: string;
+        course_id: number;
+      }>('SELECT external_id, course_id FROM tasks WHERE id = ?', [taskId]);
+
+      if (!result[0]) {
+        return { success: false, error: 'Task not found' };
+      }
+
+      const task = result[0];
+      const course = database.executeReadOne<{ external_id: string }>(
+        'SELECT external_id FROM courses WHERE id = ?',
+        [task.course_id]
+      );
+
+      if (!course) {
+        return { success: false, error: 'Course not found' };
+      }
+
+      // Canvas assignment URL format: /courses/{course_id}/assignments/{assignment_id}
+      const canvasUrl = `${baseUrl}/courses/${course.external_id}/assignments/${task.external_id}`;
+      return { success: true, data: { canvasUrl } };
+    } catch (error) {
+      logger.error('Failed to get task Canvas URL:', error as Error);
+      return { success: false, error: 'Failed to get Canvas URL' };
+    }
   });
 
   // Export page as HTML file (with proper HTML wrapper)
@@ -3859,6 +4147,51 @@ function registerIpcHandlers(): void {
     }
   });
 
+  // ============ Visibility Settings Handlers ============
+
+  ipcMain.handle('settings:getTermSelection', () => {
+    try {
+      if (!visibleDataProvider) {
+        return { termSelection: 'auto' };
+      }
+      const termSelection = visibleDataProvider.getTermSelection();
+      return { termSelection };
+    } catch (error) {
+      logger.error('Failed to get term selection:', error as Error);
+      return { termSelection: 'auto' };
+    }
+  });
+
+  ipcMain.handle(
+    'settings:setTermSelection',
+    (_event, value: 'all' | 'auto' | number) => {
+      try {
+        if (!visibleDataProvider) {
+          return { success: false, error: 'VisibleDataProvider not initialized' };
+        }
+        visibleDataProvider.setTermSelection(value);
+        logger.info(`Term selection updated to: ${value}`);
+        return { success: true };
+      } catch (error) {
+        logger.error('Failed to set term selection:', error as Error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
+  ipcMain.handle('visibility:getVisibleCourseIds', () => {
+    try {
+      if (!visibleDataProvider) {
+        return { courseIds: [] };
+      }
+      const courseIds = visibleDataProvider.getVisibleCourseIds();
+      return { courseIds };
+    } catch (error) {
+      logger.error('Failed to get visible course IDs:', error as Error);
+      return { courseIds: [] };
+    }
+  });
+
   // ============ Course Settings Handlers ============
 
   ipcMain.handle('course:getSettings', (_event, courseId: number) => {
@@ -4685,39 +5018,62 @@ app.whenReady().then(async () => {
       logger.info(`Auto-completed ${autoCompleteResult.changes} graded tasks`);
     }
 
+    // Initialize L1 VisibleDataProvider for centralized visibility rules
+    visibleDataProvider = new VisibleDataProvider(database);
+
     // Initialize L3 PriorityEngine for simulation support
     priorityEngine = new PriorityEngine(database);
 
-    // Initialize L4 CommandDispatcher with PriorityEngine for grade simulations
-    commandDispatcher = new CommandDispatcher({ db: database, priorityEngine });
-
-    // Initialize L3 PriorityOrchestrator
-    priorityOrchestrator = new PriorityOrchestrator(database, {
-      refreshIntervalMs: 15 * 60 * 1000, // 15 minutes
-      autoRefresh: true,
+    // Initialize L4 CommandDispatcher with PriorityEngine and VisibleDataProvider
+    commandDispatcher = new CommandDispatcher({
+      db: database,
+      priorityEngine,
+      visibleDataProvider: visibleDataProvider ?? undefined,
     });
 
-    // Initialize L3 Intelligence Orchestrators
+    // Initialize L3 PriorityOrchestrator with visibility filtering
+    priorityOrchestrator = new PriorityOrchestrator(
+      database,
+      {
+        refreshIntervalMs: 15 * 60 * 1000, // 15 minutes
+        autoRefresh: true,
+      },
+      visibleDataProvider ?? undefined
+    );
+
+    // Initialize L3 Intelligence Orchestrators with visibility filtering
     recommendationOrchestrator = new RecommendationOrchestrator(database, {
       refreshIntervalMs: 30 * 60 * 1000, // 30 minutes
       autoRefresh: true,
     });
 
-    insightOrchestrator = new InsightOrchestrator(database, {
-      refreshIntervalMs: 6 * 60 * 60 * 1000, // 6 hours
-      autoRefresh: true,
-    });
+    insightOrchestrator = new InsightOrchestrator(
+      database,
+      {
+        refreshIntervalMs: 6 * 60 * 60 * 1000, // 6 hours
+        autoRefresh: true,
+      },
+      visibleDataProvider ?? undefined
+    );
 
-    workloadOrchestrator = new WorkloadOrchestrator(database, {
-      defaultAvailableHoursPerDay: 4,
-      defaultLookAheadDays: 14,
-    });
+    workloadOrchestrator = new WorkloadOrchestrator(
+      database,
+      {
+        defaultAvailableHoursPerDay: 4,
+        defaultLookAheadDays: 14,
+      },
+      visibleDataProvider ?? undefined
+    );
 
-    behaviorTrackingOrchestrator = new BehaviorTrackingOrchestrator(database, {
-      refreshIntervalMs: 60 * 60 * 1000, // 1 hour
-      maxEventAgeDays: 180,
-      autoRefresh: true,
-    });
+    behaviorTrackingOrchestrator = new BehaviorTrackingOrchestrator(
+      database,
+      {
+        refreshIntervalMs: 60 * 60 * 1000, // 1 hour
+        maxEventAgeDays: 180,
+        autoRefresh: true,
+      },
+      visibleDataProvider ?? undefined
+    );
 
     adaptiveLearningOrchestrator = new AdaptiveLearningOrchestrator(database, {
       recalculateIntervalMs: 24 * 60 * 60 * 1000, // 24 hours
@@ -4725,7 +5081,9 @@ app.whenReady().then(async () => {
       autoRecalculate: true,
     });
 
-    logger.info('L3 Intelligence orchestrators initialized (including behavior tracking and adaptive learning)');
+    logger.info(
+      'L3 Intelligence orchestrators initialized (including behavior tracking and adaptive learning)'
+    );
 
     // Forward sync requests from CommandDispatcher to SyncEngine
     commandDispatcher.on('sync-requested', async (event) => {
@@ -4760,14 +5118,19 @@ app.whenReady().then(async () => {
             due_at: string | null;
             points_possible: number | null;
             grade: number | null;
-          }>('SELECT id, course_id, task_type, due_at, points_possible, grade FROM tasks WHERE id = ?', [taskId]);
+          }>(
+            'SELECT id, course_id, task_type, due_at, points_possible, grade FROM tasks WHERE id = ?',
+            [taskId]
+          );
 
           if (task) {
             const completedAt = new Date();
             const dueAt = task.due_at ? new Date(task.due_at) : null;
             const wasLate = dueAt ? completedAt > dueAt : false;
             const daysBeforeDue = dueAt
-              ? Math.round((dueAt.getTime() - completedAt.getTime()) / (1000 * 60 * 60 * 24))
+              ? Math.round(
+                  (dueAt.getTime() - completedAt.getTime()) / (1000 * 60 * 60 * 24)
+                )
               : null;
 
             // Record to behavior tracking
@@ -4790,7 +5153,9 @@ app.whenReady().then(async () => {
             if (adaptiveLearningOrchestrator) {
               const defaultFactors = {
                 urgency: 50,
-                weight: task.points_possible ? Math.min(50, task.points_possible / 2) : 10,
+                weight: task.points_possible
+                  ? Math.min(50, task.points_possible / 2)
+                  : 10,
                 courseGap: 15,
                 policyAdjustment: 0,
                 dependency: 0,
@@ -4810,7 +5175,9 @@ app.whenReady().then(async () => {
               );
             }
 
-            logger.debug(`Recorded task completion for behavior tracking: task ${taskId}`);
+            logger.debug(
+              `Recorded task completion for behavior tracking: task ${taskId}`
+            );
           }
         } catch (error) {
           logger.warn(`Failed to track task completion for behavior analysis: ${error}`);

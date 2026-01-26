@@ -4,16 +4,9 @@
  * Allows editing task title, description, due date, weight, and grade.
  */
 
-import {
-  Command,
-  CommandContext,
-  CommandResult,
-  UpdateTaskParams,
-} from '../types';
+import { Command, CommandContext, CommandResult, UpdateTaskParams } from '../types';
 
-export class UpdateTaskCommand
-  implements Command<UpdateTaskParams, { taskId: number }>
-{
+export class UpdateTaskCommand implements Command<UpdateTaskParams, { taskId: number }> {
   readonly name = 'UpdateTask';
 
   validate(params: UpdateTaskParams): { valid: boolean; error?: string } {
@@ -33,7 +26,11 @@ export class UpdateTaskCommand
       return { valid: false, error: 'Weight must be between 0 and 100' };
     }
 
-    if (params.grade !== undefined && params.grade !== null && (params.grade < 0 || params.grade > 150)) {
+    if (
+      params.grade !== undefined &&
+      params.grade !== null &&
+      (params.grade < 0 || params.grade > 150)
+    ) {
       return { valid: false, error: 'Grade must be between 0 and 150' };
     }
 
@@ -92,6 +89,16 @@ export class UpdateTaskCommand
       if (params.pointsPossible !== undefined) {
         updates.push('points_possible = ?');
         values.push(params.pointsPossible);
+      }
+
+      if (params.isOptional !== undefined) {
+        updates.push('is_optional = ?');
+        values.push(params.isOptional ? 1 : 0);
+      }
+
+      if (params.taskType !== undefined) {
+        updates.push('task_type = ?');
+        values.push(params.taskType);
       }
 
       if (updates.length === 0) {

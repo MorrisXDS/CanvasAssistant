@@ -66,6 +66,7 @@ export class TaskRepository extends BaseRepository<Task, TaskRow> {
       pointsPossible: row.points_possible,
       priorityScore: row.priority_score,
       isCompleted: Boolean(row.is_completed),
+      isOptional: Boolean(row.is_optional),
       completedAt: row.completed_at,
       submissionStatus: row.submission_status,
       taskType: row.task_type,
@@ -97,7 +98,9 @@ export class TaskRepository extends BaseRepository<Task, TaskRow> {
    * Find a task by its Canvas external ID.
    */
   findByExternalId(externalId: string): Task | null {
-    return this.queryOne<TaskRow>('SELECT * FROM tasks WHERE external_id = ?', [externalId]);
+    return this.queryOne<TaskRow>('SELECT * FROM tasks WHERE external_id = ?', [
+      externalId,
+    ]);
   }
 
   /**
@@ -167,17 +170,24 @@ export class TaskRepository extends BaseRepository<Task, TaskRow> {
     const mappedUpdates: Record<string, unknown> = {};
 
     if (updates.title !== undefined) mappedUpdates.title = updates.title;
-    if (updates.description !== undefined) mappedUpdates.description = updates.description;
+    if (updates.description !== undefined)
+      mappedUpdates.description = updates.description;
     if (updates.dueAt !== undefined) mappedUpdates.due_at = updates.dueAt;
     if (updates.weight !== undefined) mappedUpdates.weight = updates.weight;
     if (updates.grade !== undefined) mappedUpdates.grade = updates.grade;
-    if (updates.pointsPossible !== undefined) mappedUpdates.points_possible = updates.pointsPossible;
-    if (updates.priorityScore !== undefined) mappedUpdates.priority_score = updates.priorityScore;
-    if (updates.isCompleted !== undefined) mappedUpdates.is_completed = updates.isCompleted ? 1 : 0;
-    if (updates.completedAt !== undefined) mappedUpdates.completed_at = updates.completedAt;
-    if (updates.submissionStatus !== undefined) mappedUpdates.submission_status = updates.submissionStatus;
+    if (updates.pointsPossible !== undefined)
+      mappedUpdates.points_possible = updates.pointsPossible;
+    if (updates.priorityScore !== undefined)
+      mappedUpdates.priority_score = updates.priorityScore;
+    if (updates.isCompleted !== undefined)
+      mappedUpdates.is_completed = updates.isCompleted ? 1 : 0;
+    if (updates.completedAt !== undefined)
+      mappedUpdates.completed_at = updates.completedAt;
+    if (updates.submissionStatus !== undefined)
+      mappedUpdates.submission_status = updates.submissionStatus;
     if (updates.taskType !== undefined) mappedUpdates.task_type = updates.taskType;
-    if (updates.taskGroupId !== undefined) mappedUpdates.task_group_id = updates.taskGroupId;
+    if (updates.taskGroupId !== undefined)
+      mappedUpdates.task_group_id = updates.taskGroupId;
 
     const keys = Object.keys(mappedUpdates);
     if (keys.length === 0) {
@@ -197,8 +207,13 @@ export class TaskRepository extends BaseRepository<Task, TaskRow> {
 
     // Auto-complete if task now has weight > 0 and grade set, and isn't already completed
     // Only do this if we're not explicitly setting isCompleted in this update
-    if (task && updates.isCompleted === undefined &&
-        task.weight > 0 && task.grade !== null && !task.isCompleted) {
+    if (
+      task &&
+      updates.isCompleted === undefined &&
+      task.weight > 0 &&
+      task.grade !== null &&
+      !task.isCompleted
+    ) {
       this.db.executeWrite(
         `UPDATE tasks SET is_completed = 1, completed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
         [id],
@@ -237,11 +252,7 @@ export class TaskRepository extends BaseRepository<Task, TaskRow> {
    * Delete a task.
    */
   delete(id: number): boolean {
-    const result = this.db.executeWrite(
-      'DELETE FROM tasks WHERE id = ?',
-      [id],
-      'tasks'
-    );
+    const result = this.db.executeWrite('DELETE FROM tasks WHERE id = ?', [id], 'tasks');
     return result.changes > 0;
   }
 

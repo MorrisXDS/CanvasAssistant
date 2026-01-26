@@ -8,7 +8,7 @@
 
 import { EventEmitter } from 'events';
 import { Database } from '../l1-persistence/Database';
-import { isCanvasField } from './CanvasFieldMappings';
+import { isCanvasField, isAuthoritativeField } from './CanvasFieldMappings';
 
 export interface SyncConflict {
   id: string;
@@ -389,6 +389,12 @@ export class SyncConflictResolver extends EventEmitter {
       if (!isCanvasProvided) {
         // Canvas doesn't provide this field - always preserve local value
         preservedFields.push(field);
+        continue;
+      }
+
+      // Authoritative fields always use Canvas values without conflict
+      if (isAuthoritativeField(tableName, field)) {
+        autoResolved[field] = canvasValue;
         continue;
       }
 

@@ -51,6 +51,25 @@ export const TASK_CANVAS_FIELDS = [
   'points_possible',
   'submission_types',
   'is_completed',
+  'submission_status', // Derived from Canvas submission.workflow_state
+  'completed_at', // From Canvas submission.submitted_at
+  'grade', // From Canvas submission.score / points_possible * 100
+  'task_type', // Derived from Canvas submission_types
+] as const;
+
+/**
+ * Authoritative Canvas fields that ALWAYS use Canvas values without triggering conflicts.
+ * These fields represent Canvas's ground truth and should never be overridden by local state.
+ */
+export const TASK_AUTHORITATIVE_FIELDS = [
+  'submission_status', // Canvas workflow_state is authoritative
+  'completed_at', // Canvas submitted_at is authoritative
+  'is_completed', // Derived from submission_status
+  'grade', // Canvas score is authoritative
+  'task_type', // Derived from Canvas submission_types
+  'due_at', // Canvas due date is authoritative
+  'unlock_at', // Canvas unlock date is authoritative
+  'lock_at', // Canvas lock date is authoritative
 ] as const;
 
 /**
@@ -58,12 +77,11 @@ export const TASK_CANVAS_FIELDS = [
  * These should never be overwritten by sync.
  */
 export const TASK_LOCAL_FIELDS = [
-  'weight',           // Calculated by L3 intelligence
-  'priority_score',   // Calculated by L3 intelligence
-  'task_type',        // Detected/classified locally
-  'task_group_id',    // Local grouping
-  'grade',            // User-entered or synced separately
+  'weight', // Calculated by L3 intelligence
+  'priority_score', // Calculated by L3 intelligence
+  'task_group_id', // Local grouping
   'local_modified_fields',
+  'is_optional', // User-marked optional (moves to "Not for Grade")
 ] as const;
 
 /**
@@ -104,6 +122,14 @@ export const CANVAS_PROVIDED_FIELDS: Record<string, readonly string[]> = {
 };
 
 /**
+ * Combined mapping of authoritative Canvas fields.
+ * These fields always use Canvas values without conflict prompts.
+ */
+export const CANVAS_AUTHORITATIVE_FIELDS: Record<string, readonly string[]> = {
+  tasks: TASK_AUTHORITATIVE_FIELDS,
+};
+
+/**
  * Combined mapping of locally-managed fields.
  * Maps table name to list of local-only fields.
  */
@@ -118,6 +144,14 @@ export const LOCAL_ONLY_FIELDS: Record<string, readonly string[]> = {
  */
 export function isCanvasField(tableName: string, field: string): boolean {
   const fields = CANVAS_PROVIDED_FIELDS[tableName];
+  return fields ? fields.includes(field) : false;
+}
+
+/**
+ * Type guard to check if a field is authoritative (always use Canvas, no conflicts).
+ */
+export function isAuthoritativeField(tableName: string, field: string): boolean {
+  const fields = CANVAS_AUTHORITATIVE_FIELDS[tableName];
   return fields ? fields.includes(field) : false;
 }
 
