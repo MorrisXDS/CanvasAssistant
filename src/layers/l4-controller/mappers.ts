@@ -95,6 +95,7 @@ export function mapTaskRowToEntity(row: {
   title: string;
   description: string | null;
   due_at: string | null;
+  due_time_known?: number | boolean;
   weight: number;
   grade: number | null;
   points_possible: number | null;
@@ -113,6 +114,7 @@ export function mapTaskRowToEntity(row: {
     title: row.title,
     description: row.description,
     dueAt: row.due_at,
+    dueTimeKnown: Boolean(row.due_time_known ?? 1), // Default true for backward compat
     weight: row.weight,
     grade: row.grade,
     pointsPossible: row.points_possible,

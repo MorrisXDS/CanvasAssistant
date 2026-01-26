@@ -162,7 +162,7 @@ export class InsightOrchestrator extends EventEmitter {
 
     let sql = `
       SELECT
-        id, course_id, title, due_at, unlock_at, lock_at,
+        id, course_id, title, due_at, due_time_known, unlock_at, lock_at,
         points_possible, weight, is_completed, grade,
         task_type, task_group_id, submission_status, field_sources
       FROM tasks
@@ -194,6 +194,7 @@ export class InsightOrchestrator extends EventEmitter {
         courseId: row.course_id,
         title: row.title,
         dueAt: row.due_at ? new Date(row.due_at) : null,
+        dueTimeKnown: Boolean(row.due_time_known ?? 1),
         unlockAt: row.unlock_at ? new Date(row.unlock_at) : null,
         lockAt: row.lock_at ? new Date(row.lock_at) : null,
         pointsPossible: row.points_possible,

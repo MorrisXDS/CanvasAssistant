@@ -56,12 +56,14 @@ export function formatTimeAgo(dateStr: string | null): string {
 export function formatDueDate(
   dueAt: string | null,
   daysUntilDue: number | null,
-  options?: { includeTime?: boolean; shortOverdue?: boolean }
+  options?: { includeTime?: boolean; shortOverdue?: boolean; dueTimeKnown?: boolean }
 ): string {
   if (!dueAt) return 'No due date';
   if (daysUntilDue === null) return 'No due date';
 
   const shortOverdue = options?.shortOverdue ?? true;
+  // Hide time if explicitly set to false, default to true (show time if requested)
+  const dueTimeKnown = options?.dueTimeKnown ?? true;
 
   if (daysUntilDue < 0) {
     const days = Math.abs(daysUntilDue);
@@ -78,7 +80,8 @@ export function formatDueDate(
     day: 'numeric',
   };
 
-  if (options?.includeTime) {
+  // Only include time if requested AND time is known
+  if (options?.includeTime && dueTimeKnown) {
     formatOptions.hour = 'numeric';
     formatOptions.minute = '2-digit';
   }

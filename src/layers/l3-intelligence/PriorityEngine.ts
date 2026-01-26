@@ -193,17 +193,26 @@ export class PriorityEngine extends EventEmitter {
     const depResult = this.dependencyResolver.resolve(task, course.id);
     if (depResult.factor) {
       factors.push(depResult.factor);
-      score += depResult.factor.impact * this.config.getFactorWeights().dependencyBlocking;
+      score +=
+        depResult.factor.impact * this.config.getFactorWeights().dependencyBlocking;
     }
 
     // Calculate grade impact
     const gradeImpact = this.calculateGradeImpact(task, course, policies);
 
     // Determine queue and adjust score for overdue
-    const queue = isPastDue && policyResult.graceTokensAvailable === 0 ? 'overdue' : 'active';
+    const queue =
+      isPastDue && policyResult.graceTokensAvailable === 0 ? 'overdue' : 'active';
 
     if (queue === 'overdue') {
-      score = this.calculateOverdueScore(task, course, policies, gradeImpact, factors, now);
+      score = this.calculateOverdueScore(
+        task,
+        course,
+        policies,
+        gradeImpact,
+        factors,
+        now
+      );
     }
 
     // Calculate expiration
@@ -250,7 +259,8 @@ export class PriorityEngine extends EventEmitter {
       icon: '⏰',
       impact: Math.round(impact),
       description: this.formatTimeRemaining(hoursUntilDue),
-      recommendation: urgencyLevel === 'Critical' ? 'Submit as soon as possible' : undefined,
+      recommendation:
+        urgencyLevel === 'Critical' ? 'Submit as soon as possible' : undefined,
     };
   }
 
@@ -297,7 +307,7 @@ export class PriorityEngine extends EventEmitter {
 
     // Calculate if target is achievable with remaining assignments
     // Assuming remaining assignments can be aced (100%)
-    const effectiveRemainingWeight = remainingWeight ?? (100 - (course.totalWeight || 0));
+    const effectiveRemainingWeight = remainingWeight ?? 100 - (course.totalWeight || 0);
     const maxPossibleGrade = currentGrade + effectiveRemainingWeight;
     const isAchievable = maxPossibleGrade >= course.targetGrade;
 
@@ -391,13 +401,16 @@ export class PriorityEngine extends EventEmitter {
     // Calculate grade projections
     const gradeIfSkipped = (currentPointsEarned / totalPointsAfterTask) * 100;
     // gradeIfAced calculation available for future grade projection features
-    const gradeIfAverage = ((currentPointsEarned + taskPoints * (currentGrade / 100)) / totalPointsAfterTask) * 100;
+    const gradeIfAverage =
+      ((currentPointsEarned + taskPoints * (currentGrade / 100)) / totalPointsAfterTask) *
+      100;
 
     // Calculate minimum score needed to reach target
     let minScoreForTarget: number | null = null;
     if (currentGrade < targetGrade && taskPoints > 0) {
       // Solve for score S: (currentPointsEarned + S) / totalPointsAfterTask >= targetGrade / 100
-      const neededPoints = (targetGrade / 100) * totalPointsAfterTask - currentPointsEarned;
+      const neededPoints =
+        (targetGrade / 100) * totalPointsAfterTask - currentPointsEarned;
       const neededScore = (neededPoints / taskPoints) * 100;
       // Allow values > 100 to indicate bonus points needed
       minScoreForTarget = Math.min(Math.max(neededScore, 0), 150);
@@ -413,7 +426,8 @@ export class PriorityEngine extends EventEmitter {
       gapToTarget,
       gradeIfSkipped: Math.round(gradeIfSkipped * 10) / 10,
       gradeIfAverage: Math.round(gradeIfAverage * 10) / 10,
-      minScoreForTarget: minScoreForTarget !== null ? Math.round(minScoreForTarget) : null,
+      minScoreForTarget:
+        minScoreForTarget !== null ? Math.round(minScoreForTarget) : null,
       riskLevel,
     };
   }
@@ -501,8 +515,12 @@ export class PriorityEngine extends EventEmitter {
 
     // 3. Cutoff urgency (if there's a cutoff approaching)
     const evaluation = this.policyEvaluator.evaluate(task, course, policies, now);
-    const cutoffWindow = evaluation.submissionWindows.find(w => w.type === 'cutoff');
-    if (cutoffWindow && cutoffWindow.hoursRemaining > 0 && cutoffWindow.hoursRemaining < 72) {
+    const cutoffWindow = evaluation.submissionWindows.find((w) => w.type === 'cutoff');
+    if (
+      cutoffWindow &&
+      cutoffWindow.hoursRemaining > 0 &&
+      cutoffWindow.hoursRemaining < 72
+    ) {
       // Within 72 hours of cutoff
       const urgencyImpact = Math.round(30 * (1 - cutoffWindow.hoursRemaining / 72));
       const cutoffUrgencyFactor: PriorityFactor = {
@@ -533,7 +551,8 @@ export class PriorityEngine extends EventEmitter {
       name: 'Risk Level',
       icon: gradeImpact.riskLevel === 'critical' ? '🚨' : '⚠️',
       impact: Math.round(20 * effectiveRiskMultiplier),
-      description: `${gradeImpact.riskLevel.charAt(0).toUpperCase() + gradeImpact.riskLevel.slice(1)} risk` +
+      description:
+        `${gradeImpact.riskLevel.charAt(0).toUpperCase() + gradeImpact.riskLevel.slice(1)} risk` +
         (daysOverdue >= 1 ? ` (${daysOverdue.toFixed(1)} days overdue)` : ''),
     };
     factors.push(riskFactor);
@@ -567,7 +586,12 @@ export class PriorityEngine extends EventEmitter {
     const hoursUntilDue = (task.dueAt.getTime() - now.getTime()) / (1000 * 60 * 60);
     if (hoursUntilDue < 0) {
       // Check if grace tokens available
-      const policyResult = this.policyEvaluator.evaluate(task, {} as CourseForPriority, policies, now);
+      const policyResult = this.policyEvaluator.evaluate(
+        task,
+        {} as CourseForPriority,
+        policies,
+        now
+      );
       if (policyResult.graceTokensAvailable > 0) {
         return 'active'; // Keep in active with grace token availability
       }
@@ -612,7 +636,11 @@ export class PriorityEngine extends EventEmitter {
     }
 
     // Check for expiring grace tokens
-    if (explanation.submissionWindows.some((w) => w.type === 'grace_token' && w.hoursRemaining < 6)) {
+    if (
+      explanation.submissionWindows.some(
+        (w) => w.type === 'grace_token' && w.hoursRemaining < 6
+      )
+    ) {
       result.notices.push({
         taskId: task.id,
         type: 'token_expiring',
@@ -804,7 +832,7 @@ export class PriorityEngine extends EventEmitter {
    */
   private loadTasks(): TaskForPriority[] {
     const rows = this.db.executeRead<TaskRowMinimal>(
-      `SELECT id, course_id, title, due_at, unlock_at, lock_at, points_possible,
+      `SELECT id, course_id, title, due_at, due_time_known, unlock_at, lock_at, points_possible,
               weight, is_completed, grade, completed_at, task_type, task_group_id, submission_status
        FROM tasks
        WHERE is_completed = 0 OR (is_completed = 1 AND completed_at > datetime('now', '-7 days'))
@@ -816,6 +844,7 @@ export class PriorityEngine extends EventEmitter {
       courseId: row.course_id,
       title: row.title,
       dueAt: row.due_at ? new Date(row.due_at) : null,
+      dueTimeKnown: Boolean(row.due_time_known ?? 1),
       unlockAt: row.unlock_at ? new Date(row.unlock_at) : null,
       lockAt: row.lock_at ? new Date(row.lock_at) : null,
       pointsPossible: row.points_possible,
@@ -947,6 +976,7 @@ export class PriorityEngine extends EventEmitter {
       courseId: row.course_id,
       title: row.title,
       dueAt: row.due_at ? new Date(row.due_at) : null,
+      dueTimeKnown: Boolean(row.due_time_known ?? 1),
       unlockAt: row.unlock_at ? new Date(row.unlock_at) : null,
       lockAt: row.lock_at ? new Date(row.lock_at) : null,
       pointsPossible: row.points_possible,
@@ -1029,7 +1059,7 @@ export class PriorityEngine extends EventEmitter {
    */
   getTaskExplanation(taskId: number, now: Date = new Date()): PriorityExplanation | null {
     const rows = this.db.executeRead<TaskRowMinimal>(
-      `SELECT id, course_id, title, due_at, unlock_at, lock_at, points_possible,
+      `SELECT id, course_id, title, due_at, due_time_known, unlock_at, lock_at, points_possible,
               weight, is_completed, grade, completed_at, task_type, task_group_id, submission_status
        FROM tasks WHERE id = ?`,
       [taskId]
@@ -1043,6 +1073,7 @@ export class PriorityEngine extends EventEmitter {
       courseId: row.course_id,
       title: row.title,
       dueAt: row.due_at ? new Date(row.due_at) : null,
+      dueTimeKnown: Boolean(row.due_time_known ?? 1),
       unlockAt: row.unlock_at ? new Date(row.unlock_at) : null,
       lockAt: row.lock_at ? new Date(row.lock_at) : null,
       pointsPossible: row.points_possible,

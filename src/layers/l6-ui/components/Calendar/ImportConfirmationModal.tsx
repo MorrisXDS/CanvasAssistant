@@ -11,7 +11,6 @@ import {
   Repeat,
   MapPin,
   ChevronDown,
-  ChevronUp,
   Clock,
   FileText,
 } from 'lucide-react';
@@ -183,18 +182,21 @@ function EventsPreviewSection({
       <div style={styles.eventsHeader}>
         <label style={styles.label}>Events Preview ({events.length} total)</label>
         {hasMoreEvents && (
-          <button style={styles.expandToggle} onClick={() => setIsExpanded(!isExpanded)}>
-            {isExpanded ? (
-              <>
-                <ChevronUp size={14} />
-                Show less
-              </>
-            ) : (
-              <>
-                <ChevronDown size={14} />
-                Show all {events.length}
-              </>
-            )}
+          <button
+            style={{
+              ...styles.expandToggle,
+              backgroundColor: isExpanded ? 'var(--color-info-bg)' : 'transparent',
+            }}
+            onClick={() => setIsExpanded(!isExpanded)}
+          >
+            {isExpanded ? 'Show less' : `Show all ${events.length}`}
+            <ChevronDown
+              size={14}
+              style={{
+                transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                transition: 'transform 150ms ease',
+              }}
+            />
           </button>
         )}
       </div>
@@ -548,12 +550,14 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     gap: 'var(--space-1)',
     fontSize: 'var(--text-xs)',
+    fontWeight: '500',
     color: 'var(--color-blue)',
     background: 'none',
-    border: 'none',
+    border: '1px solid var(--border-light)',
     cursor: 'pointer',
     padding: 'var(--space-1) var(--space-2)',
-    borderRadius: 'var(--radius-sm)',
+    borderRadius: 'var(--radius-full)',
+    transition: 'background-color 150ms ease, border-color 150ms ease',
   },
 
   eventsList: {

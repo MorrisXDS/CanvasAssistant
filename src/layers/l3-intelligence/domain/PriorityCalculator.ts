@@ -47,11 +47,20 @@ export function calculateTaskTypeBoost(taskType: string): number {
 
 /**
  * Calculate urgency score based on time until due date
+ * When due time is unknown, assumes midnight (start of day) for most urgency
  */
 export function calculateUrgencyScore(task: TaskForPriority, now: Date): number {
   if (!task.dueAt) return 30; // Medium urgency for no due date
 
-  const msUntilDue = task.dueAt.getTime() - now.getTime();
+  // Get effective due time - use actual time or midnight if time unknown
+  let effectiveDueAt = task.dueAt;
+  if (!task.dueTimeKnown) {
+    // Time unknown - assume midnight (start of day) for urgency
+    effectiveDueAt = new Date(task.dueAt);
+    effectiveDueAt.setHours(0, 0, 0, 0);
+  }
+
+  const msUntilDue = effectiveDueAt.getTime() - now.getTime();
   const hoursUntilDue = msUntilDue / (1000 * 60 * 60);
 
   if (hoursUntilDue < 0) {
@@ -291,7 +300,11 @@ function formatRelativeTime(date: Date, now: Date): string {
 /**
  * Build priority factors for explanation
  */
-function buildPriorityFactors(factors: PriorityFactors, task: TaskForPriority, now: Date): PriorityFactor[] {
+function buildPriorityFactors(
+  factors: PriorityFactors,
+  task: TaskForPriority,
+  now: Date
+): PriorityFactor[] {
   const result: PriorityFactor[] = [];
 
   // Urgency factor
@@ -354,7 +367,9 @@ function buildPriorityFactors(factors: PriorityFactors, task: TaskForPriority, n
       name: 'Lock Deadline',
       icon: 'lock',
       impact: factors.lockTimeUrgency,
-      description: task.lockAt ? `Locks in ${formatRelativeTime(task.lockAt, now)}` : 'Lock deadline approaching',
+      description: task.lockAt
+        ? `Locks in ${formatRelativeTime(task.lockAt, now)}`
+        : 'Lock deadline approaching',
     });
   }
 
@@ -365,7 +380,8 @@ function buildPriorityFactors(factors: PriorityFactors, task: TaskForPriority, n
       name: 'Grace Tokens',
       icon: 'ticket',
       impact: factors.graceTokenFactor,
-      description: factors.graceTokenFactor > 0 ? 'Salvageable with tokens' : 'Not salvageable',
+      description:
+        factors.graceTokenFactor > 0 ? 'Salvageable with tokens' : 'Not salvageable',
     });
   }
 
@@ -397,7 +413,11 @@ function buildPriorityFactors(factors: PriorityFactors, task: TaskForPriority, n
 /**
  * Build submission windows for task
  */
-function buildSubmissionWindows(task: TaskForPriority, graceTokenPolicy: GraceTokenPolicy | null, now: Date): SubmissionWindow[] {
+function buildSubmissionWindows(
+  task: TaskForPriority,
+  graceTokenPolicy: GraceTokenPolicy | null,
+  now: Date
+): SubmissionWindow[] {
   const windows: SubmissionWindow[] = [];
 
   if (!task.dueAt) return windows;
@@ -417,9 +437,11 @@ function buildSubmissionWindows(task: TaskForPriority, graceTokenPolicy: GraceTo
 
   // Grace token window
   if (graceTokenPolicy && graceTokenPolicy.tokensRemaining > 0) {
-    const maxExtension = graceTokenPolicy.maxTokensPerTask * graceTokenPolicy.hoursPerToken;
+    const maxExtension =
+      graceTokenPolicy.maxTokensPerTask * graceTokenPolicy.hoursPerToken;
     const tokenDeadline = new Date(task.dueAt.getTime() + maxExtension * 60 * 60 * 1000);
-    const hoursUntilTokenDeadline = (tokenDeadline.getTime() - now.getTime()) / (1000 * 60 * 60);
+    const hoursUntilTokenDeadline =
+      (tokenDeadline.getTime() - now.getTime()) / (1000 * 60 * 60);
 
     if (hoursUntilTokenDeadline > 0) {
       windows.push({
@@ -497,7 +519,9 @@ function buildGradeImpact(task: TaskForPriority, course: CourseForPriority): Gra
 
   // Calculate grade projections
   const gradeIfSkipped = (currentPointsEarned / totalPointsAfterTask) * 100;
-  const gradeIfAverage = ((currentPointsEarned + taskPoints * (currentGrade / 100)) / totalPointsAfterTask) * 100;
+  const gradeIfAverage =
+    ((currentPointsEarned + taskPoints * (currentGrade / 100)) / totalPointsAfterTask) *
+    100;
 
   // Calculate minimum score needed
   const gapToTarget = targetGrade - currentGrade;
@@ -530,7 +554,12 @@ function buildGradeImpact(task: TaskForPriority, course: CourseForPriority): Gra
 /**
  * Generate summary string for task
  */
-function generateSummary(task: TaskForPriority, queue: TaskQueue, score: number, now: Date): string {
+function generateSummary(
+  task: TaskForPriority,
+  queue: TaskQueue,
+  score: number,
+  now: Date
+): string {
   if (queue === 'upcoming' && task.unlockAt) {
     return `Unlocks in ${formatRelativeTime(task.unlockAt, now)}`;
   }
@@ -577,7 +606,9 @@ export function calculatePriority(input: PriorityInput): PriorityResult {
       queue,
       score: 0,
       factors,
-      reason: task.unlockAt ? `Unlocks ${formatRelativeTime(task.unlockAt, now)}` : 'Not yet available',
+      reason: task.unlockAt
+        ? `Unlocks ${formatRelativeTime(task.unlockAt, now)}`
+        : 'Not yet available',
       explanation: {
         taskId: task.id,
         finalScore: 0,
@@ -585,7 +616,9 @@ export function calculatePriority(input: PriorityInput): PriorityResult {
         factors: [],
         submissionWindows: [],
         gradeImpact: buildGradeImpact(task, course),
-        summary: task.unlockAt ? `Unlocks in ${formatRelativeTime(task.unlockAt, now)}` : 'Not yet available',
+        summary: task.unlockAt
+          ? `Unlocks in ${formatRelativeTime(task.unlockAt, now)}`
+          : 'Not yet available',
         calculatedAt: now,
         expiresAt: new Date(now.getTime() + 15 * 60 * 1000), // 15 minutes
       },

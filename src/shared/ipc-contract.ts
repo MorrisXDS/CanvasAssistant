@@ -54,6 +54,7 @@ export const TaskSchema = z.object({
   title: z.string(),
   description: z.string().nullable(),
   dueAt: z.string().nullable(),
+  dueTimeKnown: z.boolean(), // true = time known, false = only date known (assume midnight)
   weight: z.number(),
   grade: z.number().nullable(),
   pointsPossible: z.number().nullable(),
@@ -586,9 +587,11 @@ export const IpcContract = {
     result: z.array(PolicySchema),
   },
   'data:getAllPolicies': {
-    params: z.object({
-      courseIds: z.array(z.number()).optional(),
-    }).optional(),
+    params: z
+      .object({
+        courseIds: z.array(z.number()).optional(),
+      })
+      .optional(),
     result: z.array(PolicySchema),
   },
   'data:getGradeHistory': {

@@ -28,7 +28,6 @@ import {
   PriorityInput,
   PriorityResult,
   GraceTokenPolicy,
-  TaskQueue,
 } from '../types';
 
 /**
@@ -136,7 +135,7 @@ export class PriorityOrchestrator extends EventEmitter {
 
     let sql = `
       SELECT
-        t.id, t.course_id, t.title, t.due_at, t.unlock_at, t.lock_at,
+        t.id, t.course_id, t.title, t.due_at, t.due_time_known, t.unlock_at, t.lock_at,
         t.points_possible, t.weight, t.is_completed, t.grade, t.completed_at,
         t.task_type, t.task_group_id, t.submission_status
       FROM tasks t
@@ -160,6 +159,7 @@ export class PriorityOrchestrator extends EventEmitter {
       courseId: row.course_id,
       title: row.title,
       dueAt: row.due_at ? new Date(row.due_at) : null,
+      dueTimeKnown: Boolean(row.due_time_known),
       unlockAt: row.unlock_at ? new Date(row.unlock_at) : null,
       lockAt: row.lock_at ? new Date(row.lock_at) : null,
       pointsPossible: row.points_possible,
@@ -367,21 +367,27 @@ export class PriorityOrchestrator extends EventEmitter {
     }
 
     // Calculate fresh
-    const taskRow = this.db.executeReadOne<TaskRowMinimal>(`
+    const taskRow = this.db.executeReadOne<TaskRowMinimal>(
+      `
       SELECT
-        t.id, t.course_id, t.title, t.due_at, t.unlock_at, t.lock_at,
+        t.id, t.course_id, t.title, t.due_at, t.due_time_known, t.unlock_at, t.lock_at,
         t.points_possible, t.weight, t.is_completed, t.grade, t.completed_at,
         t.task_type, t.task_group_id, t.submission_status
       FROM tasks t
       WHERE t.id = ?
-    `, [taskId]);
+    `,
+      [taskId]
+    );
 
     if (!taskRow) return null;
 
-    const courseRow = this.db.executeReadOne<CourseRowMinimal>(`
+    const courseRow = this.db.executeReadOne<CourseRowMinimal>(
+      `
       SELECT id, code, name, current_grade, target_grade, total_weight
       FROM courses WHERE id = ?
-    `, [taskRow.course_id]);
+    `,
+      [taskRow.course_id]
+    );
 
     if (!courseRow) return null;
 
@@ -390,6 +396,7 @@ export class PriorityOrchestrator extends EventEmitter {
       courseId: taskRow.course_id,
       title: taskRow.title,
       dueAt: taskRow.due_at ? new Date(taskRow.due_at) : null,
+      dueTimeKnown: Boolean(taskRow.due_time_known),
       unlockAt: taskRow.unlock_at ? new Date(taskRow.unlock_at) : null,
       lockAt: taskRow.lock_at ? new Date(taskRow.lock_at) : null,
       pointsPossible: taskRow.points_possible,

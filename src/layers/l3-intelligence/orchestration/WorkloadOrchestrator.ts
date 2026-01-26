@@ -26,7 +26,7 @@ import {
   identifyDeadlineClusters,
   calculateCourseBalanceScore,
 } from '../domain/WorkloadAnalyzer';
-import { estimateEffort, batchEstimateEffort } from '../domain/EffortEstimator';
+import { batchEstimateEffort } from '../domain/EffortEstimator';
 import { ORCHESTRATOR_DEFAULTS } from '../domain/Constants';
 import {
   WorkloadSnapshot,
@@ -99,7 +99,7 @@ export class WorkloadOrchestrator extends EventEmitter {
 
     let sql = `
       SELECT
-        id, course_id, title, due_at, unlock_at, lock_at,
+        id, course_id, title, due_at, due_time_known, unlock_at, lock_at,
         points_possible, weight, is_completed, grade,
         task_type, task_group_id, submission_status, priority_score
       FROM tasks
@@ -121,6 +121,7 @@ export class WorkloadOrchestrator extends EventEmitter {
       courseId: row.course_id,
       title: row.title,
       dueAt: row.due_at ? new Date(row.due_at) : null,
+      dueTimeKnown: Boolean(row.due_time_known ?? 1),
       unlockAt: row.unlock_at ? new Date(row.unlock_at) : null,
       lockAt: row.lock_at ? new Date(row.lock_at) : null,
       pointsPossible: row.points_possible,
@@ -194,7 +195,9 @@ export class WorkloadOrchestrator extends EventEmitter {
   /**
    * Calculate effort estimates for all tasks
    */
-  private calculateEffortEstimates(tasks: TaskForPriority[]): Map<number, EffortEstimate> {
+  private calculateEffortEstimates(
+    tasks: TaskForPriority[]
+  ): Map<number, EffortEstimate> {
     const events = this.fetchCompletionEvents();
     const estimates = batchEstimateEffort(tasks, events);
 
@@ -242,10 +245,7 @@ export class WorkloadOrchestrator extends EventEmitter {
   /**
    * Analyze workload distribution for a date range
    */
-  analyzeWorkload(
-    startDate: Date = new Date(),
-    endDate?: Date
-  ): WorkloadDistribution {
+  analyzeWorkload(startDate: Date = new Date(), endDate?: Date): WorkloadDistribution {
     const defaultEnd = new Date(startDate);
     defaultEnd.setDate(defaultEnd.getDate() + this.config.defaultLookAheadDays);
     const actualEndDate = endDate || defaultEnd;
@@ -320,7 +320,9 @@ export class WorkloadOrchestrator extends EventEmitter {
   /**
    * Get deadline clusters
    */
-  getDeadlineClusters(windowHours: number = 48): ReturnType<typeof identifyDeadlineClusters> {
+  getDeadlineClusters(
+    windowHours: number = 48
+  ): ReturnType<typeof identifyDeadlineClusters> {
     const tasks = this.fetchTasks();
     return identifyDeadlineClusters(tasks, windowHours);
   }
@@ -405,7 +407,7 @@ export class WorkloadOrchestrator extends EventEmitter {
 
     const summary = this.getDailySummary(today);
     const tasks = this.fetchTasks();
-    const effortEstimates = this.effortEstimatesCache;
+    const _effortEstimates = this.effortEstimatesCache;
 
     // Build tasks by course
     const tasksByCourse: Record<number, number> = {};

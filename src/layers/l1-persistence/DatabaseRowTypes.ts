@@ -70,6 +70,7 @@ export interface TaskRow {
   title: string;
   description: string | null;
   due_at: string | null;
+  due_time_known: number; // 1 = time known, 0 = only date known (assume midnight)
   unlock_at?: string | null;
   lock_at?: string | null;
   weight: number;
@@ -96,6 +97,7 @@ export interface TaskRowMinimal {
   course_id: number;
   title: string;
   due_at: string | null;
+  due_time_known: number; // 1 = time known, 0 = only date known
   unlock_at: string | null;
   lock_at: string | null;
   points_possible: number | null;

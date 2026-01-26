@@ -113,7 +113,7 @@ export class RecommendationOrchestrator extends EventEmitter {
   private fetchTasks(): TaskForPriority[] {
     const rows = this.db.executeRead<TaskRowMinimal>(`
       SELECT
-        t.id, t.course_id, t.title, t.due_at, t.unlock_at, t.lock_at,
+        t.id, t.course_id, t.title, t.due_at, t.due_time_known, t.unlock_at, t.lock_at,
         t.points_possible, t.weight, t.is_completed, t.grade,
         t.task_type, t.task_group_id, t.submission_status
       FROM tasks t
@@ -129,6 +129,7 @@ export class RecommendationOrchestrator extends EventEmitter {
       courseId: row.course_id,
       title: row.title,
       dueAt: row.due_at ? new Date(row.due_at) : null,
+      dueTimeKnown: Boolean(row.due_time_known ?? 1),
       unlockAt: row.unlock_at ? new Date(row.unlock_at) : null,
       lockAt: row.lock_at ? new Date(row.lock_at) : null,
       pointsPossible: row.points_possible,

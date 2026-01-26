@@ -103,7 +103,23 @@ export class FileDownloadManager extends EventEmitter {
    */
   private ensureDirectory(dirPath: string): void {
     if (!fs.existsSync(dirPath)) {
-      fs.mkdirSync(dirPath, { recursive: true });
+      try {
+        fs.mkdirSync(dirPath, { recursive: true });
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        const isPermissionError =
+          errorMessage.includes('EPERM') ||
+          errorMessage.includes('EACCES') ||
+          errorMessage.includes('operation not permitted') ||
+          errorMessage.includes('permission denied');
+
+        if (isPermissionError) {
+          throw new Error(
+            `Permission denied creating directory: ${dirPath}. Please run the application as Administrator (Windows) or with sudo (Mac/Linux).`
+          );
+        }
+        throw error;
+      }
     }
   }
 
@@ -144,15 +160,16 @@ export class FileDownloadManager extends EventEmitter {
 
     if (request.contextFolder) {
       // Context folder can contain path separators (e.g., "Modules/Week_1")
+      // Canvas API always uses forward slashes regardless of platform
       subfolder = request.contextFolder
-        .split('/')
-        .map(c => this.sanitizePathComponent(c))
+        .split(/[/\\]/)
+        .map((c) => this.sanitizePathComponent(c))
         .join(path.sep);
     } else if (request.folderPath) {
-      // Canvas folder path
+      // Canvas folder path - Canvas API always uses forward slashes regardless of platform
       subfolder = request.folderPath
-        .split('/')
-        .map(c => this.sanitizePathComponent(c))
+        .split(/[/\\]/)
+        .map((c) => this.sanitizePathComponent(c))
         .join(path.sep);
     }
 
@@ -168,7 +185,9 @@ export class FileDownloadManager extends EventEmitter {
    */
   queueDownload(request: DownloadRequest): void {
     this.queue.push(request);
-    this.logger?.debug(`Queued download: ${request.filename} for course ${request.courseCode}`);
+    this.logger?.debug(
+      `Queued download: ${request.filename} for course ${request.courseCode}`
+    );
     this.processQueue();
   }
 
@@ -254,11 +273,23 @@ export class FileDownloadManager extends EventEmitter {
         duration: Date.now() - startTime,
       };
 
-      this.logger?.info(`Download complete: ${request.filename} (${bytesDownloaded} bytes)`);
+      this.logger?.info(
+        `Download complete: ${request.filename} (${bytesDownloaded} bytes)`
+      );
       this.emit('download-complete', result);
-
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
+      let errorMessage = error instanceof Error ? error.message : String(error);
+
+      // Detect permission errors and provide helpful guidance
+      const isPermissionError =
+        errorMessage.includes('EPERM') ||
+        errorMessage.includes('EACCES') ||
+        errorMessage.includes('operation not permitted') ||
+        errorMessage.includes('permission denied');
+
+      if (isPermissionError) {
+        errorMessage = `Permission denied. Please run the application as Administrator (Windows) or with sudo (Mac/Linux). Original error: ${errorMessage}`;
+      }
 
       const result: DownloadResult = {
         id: request.id,
@@ -270,7 +301,6 @@ export class FileDownloadManager extends EventEmitter {
 
       this.logger?.error(`Download failed: ${request.filename} - ${errorMessage}`);
       this.emit('download-error', result);
-
     } finally {
       this.activeDownloads.delete(request.id);
       this.processQueue();
@@ -284,7 +314,10 @@ export class FileDownloadManager extends EventEmitter {
     url: string,
     localPath: string,
     authToken?: string,
-    onProgress?: (progress: { bytesDownloaded: number; totalBytes: number | null }) => void,
+    onProgress?: (progress: {
+      bytesDownloaded: number;
+      totalBytes: number | null;
+    }) => void,
     signal?: AbortSignal
   ): Promise<number> {
     return new Promise((resolve, reject) => {
@@ -383,7 +416,7 @@ export class FileDownloadManager extends EventEmitter {
     }
 
     // Also remove from queue if not started
-    const queueIndex = this.queue.findIndex(r => r.id === id);
+    const queueIndex = this.queue.findIndex((r) => r.id === id);
     if (queueIndex !== -1) {
       this.queue.splice(queueIndex, 1);
       return true;

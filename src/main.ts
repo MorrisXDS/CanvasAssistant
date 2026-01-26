@@ -1,4 +1,14 @@
-import { app, BrowserWindow, ipcMain, dialog, protocol, net, Tray, Menu, nativeImage } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  ipcMain,
+  dialog,
+  protocol,
+  net,
+  Tray,
+  Menu,
+  nativeImage,
+} from 'electron';
 import fs from 'fs';
 import path from 'path';
 
@@ -286,15 +296,16 @@ function createTray(): void {
   // Skip if tray already exists
   if (tray) return;
 
-  const settings = getWindowBehavior();
+  const _settings = getWindowBehavior();
 
   // Create tray icon - use the app icon
+  // Platform-specific icon sizes are required for proper display on each OS
   let iconPath: string;
   if (process.platform === 'darwin') {
-    // macOS - use 16x16 template image
+    // macOS requires 16x16 template images for menu bar icons
     iconPath = path.join(__dirname, '../assets/app.iconset/icon_16x16.png');
   } else if (process.platform === 'win32') {
-    // Windows - use 16x16 or 32x32 icon
+    // Windows system tray works best with 32x32 icons
     iconPath = path.join(__dirname, '../assets/app.iconset/icon_32x32.png');
   } else {
     // Linux - use 22x22 or 24x24
@@ -303,7 +314,10 @@ function createTray(): void {
 
   // Fallback to a simpler path structure for packaged app
   if (!fs.existsSync(iconPath)) {
-    iconPath = path.join(process.resourcesPath || '', 'assets/app.iconset/icon_32x32.png');
+    iconPath = path.join(
+      process.resourcesPath || '',
+      'assets/app.iconset/icon_32x32.png'
+    );
   }
 
   // If still not found, create a default icon
@@ -1016,6 +1030,7 @@ function registerIpcHandlers(): void {
           title: string;
           description: string | null;
           due_at: string | null;
+          due_time_known: number;
           weight: number;
           grade: number | null;
           points_possible: number | null;
@@ -1034,6 +1049,7 @@ function registerIpcHandlers(): void {
           title: row.title,
           description: row.description,
           dueAt: row.due_at,
+          dueTimeKnown: Boolean(row.due_time_known ?? 1), // Default to true for backward compat
           weight: row.weight,
           grade: row.grade,
           pointsPossible: row.points_possible,
@@ -1228,51 +1244,48 @@ function registerIpcHandlers(): void {
   });
 
   // Get all policies for multiple courses (for policy badges on tasks)
-  ipcMain.handle(
-    'data:getAllPolicies',
-    (_event, options?: { courseIds?: number[] }) => {
-      try {
-        let sql =
-          'SELECT * FROM course_policies WHERE is_active = 1 ORDER BY course_id, policy_type, policy_name';
-        const params: unknown[] = [];
+  ipcMain.handle('data:getAllPolicies', (_event, options?: { courseIds?: number[] }) => {
+    try {
+      let sql =
+        'SELECT * FROM course_policies WHERE is_active = 1 ORDER BY course_id, policy_type, policy_name';
+      const params: unknown[] = [];
 
-        if (options?.courseIds && options.courseIds.length > 0) {
-          const placeholders = options.courseIds.map(() => '?').join(', ');
-          sql = `SELECT * FROM course_policies WHERE course_id IN (${placeholders}) AND is_active = 1 ORDER BY course_id, policy_type, policy_name`;
-          params.push(...options.courseIds);
-        }
-
-        const rows = database.executeRead<{
-          id: number;
-          course_id: number;
-          policy_type: string;
-          policy_name: string;
-          policy_config: string;
-          raw_text: string | null;
-          is_user_verified: number;
-          is_active: number;
-          created_at: string;
-          updated_at: string;
-        }>(sql, params);
-
-        return rows.map((row) => ({
-          id: row.id,
-          courseId: row.course_id,
-          policyType: row.policy_type,
-          policyName: row.policy_name,
-          policyConfig: JSON.parse(row.policy_config || '{}'),
-          rawText: row.raw_text,
-          isUserVerified: Boolean(row.is_user_verified),
-          isActive: Boolean(row.is_active),
-          createdAt: row.created_at,
-          updatedAt: row.updated_at,
-        }));
-      } catch (error) {
-        logger.error(`Failed to get all policies: ${error}`);
-        throw error;
+      if (options?.courseIds && options.courseIds.length > 0) {
+        const placeholders = options.courseIds.map(() => '?').join(', ');
+        sql = `SELECT * FROM course_policies WHERE course_id IN (${placeholders}) AND is_active = 1 ORDER BY course_id, policy_type, policy_name`;
+        params.push(...options.courseIds);
       }
+
+      const rows = database.executeRead<{
+        id: number;
+        course_id: number;
+        policy_type: string;
+        policy_name: string;
+        policy_config: string;
+        raw_text: string | null;
+        is_user_verified: number;
+        is_active: number;
+        created_at: string;
+        updated_at: string;
+      }>(sql, params);
+
+      return rows.map((row) => ({
+        id: row.id,
+        courseId: row.course_id,
+        policyType: row.policy_type,
+        policyName: row.policy_name,
+        policyConfig: JSON.parse(row.policy_config || '{}'),
+        rawText: row.raw_text,
+        isUserVerified: Boolean(row.is_user_verified),
+        isActive: Boolean(row.is_active),
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      }));
+    } catch (error) {
+      logger.error(`Failed to get all policies: ${error}`);
+      throw error;
     }
-  );
+  });
 
   // Get syllabus designation for a course
   ipcMain.handle('data:getCourseSyllabus', (_event, courseId: number) => {
@@ -3528,7 +3541,9 @@ function registerIpcHandlers(): void {
 
     // Check if file actually exists on disk
     if (!fs.existsSync(resource.local_path)) {
-      logger.warn(`[resource:open] File not found on disk, clearing local_path: ${resource.local_path}`);
+      logger.warn(
+        `[resource:open] File not found on disk, clearing local_path: ${resource.local_path}`
+      );
       // Clear the local_path since file was deleted
       database.executeWrite(
         'UPDATE resources SET local_path = NULL WHERE id = ?',
@@ -3545,7 +3560,9 @@ function registerIpcHandlers(): void {
     logger.info(`[resource:open] File extension: "${ext}", path: ${resource.local_path}`);
 
     if (ext === '.html' || ext === '.htm') {
-      logger.info(`[resource:open] Detected HTML file, opening in Electron BrowserWindow`);
+      logger.info(
+        `[resource:open] Detected HTML file, opening in Electron BrowserWindow`
+      );
       // Open HTML in a new Electron window to support canvas-file:// protocol
       const htmlWindow = new BrowserWindow({
         width: 900,
@@ -3557,9 +3574,14 @@ function registerIpcHandlers(): void {
         },
       });
 
-      htmlWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription) => {
-        logger.error(`[resource:open] HTML window failed to load: ${errorCode} - ${errorDescription}`);
-      });
+      htmlWindow.webContents.on(
+        'did-fail-load',
+        (_event, errorCode, errorDescription) => {
+          logger.error(
+            `[resource:open] HTML window failed to load: ${errorCode} - ${errorDescription}`
+          );
+        }
+      );
 
       htmlWindow.webContents.on('did-finish-load', () => {
         logger.info(`[resource:open] HTML window finished loading`);
@@ -3569,7 +3591,9 @@ function registerIpcHandlers(): void {
       logger.info(`[resource:open] Called loadFile for HTML window`);
       return { success: true };
     } else {
-      logger.info(`[resource:open] Not an HTML file (ext="${ext}"), will use shell.openPath`);
+      logger.info(
+        `[resource:open] Not an HTML file (ext="${ext}"), will use shell.openPath`
+      );
     }
 
     // Use Electron's shell.openPath for other file types
@@ -3596,7 +3620,9 @@ function registerIpcHandlers(): void {
 
     // Check if file actually exists on disk
     if (!fs.existsSync(resource.local_path)) {
-      logger.warn(`[resource:showInFolder] File not found on disk, clearing local_path: ${resource.local_path}`);
+      logger.warn(
+        `[resource:showInFolder] File not found on disk, clearing local_path: ${resource.local_path}`
+      );
       // Clear the local_path since file was deleted
       database.executeWrite(
         'UPDATE resources SET local_path = NULL WHERE id = ?',
@@ -3615,10 +3641,10 @@ function registerIpcHandlers(): void {
   ipcMain.handle('resource:deleteLocal', (_event, resourceId: number) => {
     logger.debug(`[resource:deleteLocal] START resourceId=${resourceId}`);
 
-    const resource = database.executeReadOne<{ local_path: string | null; external_id: string }>(
-      'SELECT local_path, external_id FROM resources WHERE id = ?',
-      [resourceId]
-    );
+    const resource = database.executeReadOne<{
+      local_path: string | null;
+      external_id: string;
+    }>('SELECT local_path, external_id FROM resources WHERE id = ?', [resourceId]);
 
     if (!resource?.local_path) {
       return { success: false, error: 'File not downloaded' };
@@ -4555,16 +4581,21 @@ function registerIpcHandlers(): void {
     }
   });
 
-  ipcMain.handle('settings:setWindowBehavior', (_event, settings: WindowBehaviorSettings) => {
-    try {
-      setWindowBehavior(settings);
-      logger.info(`Window behavior updated: closeAction=${settings.closeAction}, showTrayIcon=${settings.showTrayIcon}`);
-      return { success: true };
-    } catch (error) {
-      logger.error('Failed to set window behavior settings:', error as Error);
-      return { success: false, error: String(error) };
+  ipcMain.handle(
+    'settings:setWindowBehavior',
+    (_event, settings: WindowBehaviorSettings) => {
+      try {
+        setWindowBehavior(settings);
+        logger.info(
+          `Window behavior updated: closeAction=${settings.closeAction}, showTrayIcon=${settings.showTrayIcon}`
+        );
+        return { success: true };
+      } catch (error) {
+        logger.error('Failed to set window behavior settings:', error as Error);
+        return { success: false, error: String(error) };
+      }
     }
-  });
+  );
 
   // One-way handler to hide window (for tray functionality)
   ipcMain.on('window:hide', () => {
@@ -4572,20 +4603,23 @@ function registerIpcHandlers(): void {
   });
 
   // Handler for close behavior dialog response from renderer
-  ipcMain.handle('window:setCloseBehaviorAndApply', (_event, choice: 'minimize-to-tray' | 'quit') => {
-    const settings = getWindowBehavior();
-    setWindowBehavior({ ...settings, closeAction: choice });
-    logger.info(`Close behavior set to: ${choice}`);
+  ipcMain.handle(
+    'window:setCloseBehaviorAndApply',
+    (_event, choice: 'minimize-to-tray' | 'quit') => {
+      const settings = getWindowBehavior();
+      setWindowBehavior({ ...settings, closeAction: choice });
+      logger.info(`Close behavior set to: ${choice}`);
 
-    // Apply the chosen action
-    if (choice === 'minimize-to-tray') {
-      mainWindow?.hide();
-    } else {
-      isQuitting = true;
-      app.quit();
+      // Apply the chosen action
+      if (choice === 'minimize-to-tray') {
+        mainWindow?.hide();
+      } else {
+        isQuitting = true;
+        app.quit();
+      }
+      return { success: true };
     }
-    return { success: true };
-  });
+  );
 
   // ============ Course Settings Handlers ============
 
@@ -4777,7 +4811,7 @@ function registerIpcHandlers(): void {
           courseFilter = ` WHERE id IN (${courseIds.join(',')})`;
         }
 
-        // Fetch courses
+        // Fetch courses with all fields
         const courses = database.executeRead<{
           id: number;
           external_id: string;
@@ -4785,8 +4819,17 @@ function registerIpcHandlers(): void {
           name: string;
           nickname: string | null;
           color: string | null;
-          workflow_state: string | null;
           enrollment_term_id: number | null;
+          target_grade: number | null;
+          target_grade_source: string | null;
+          is_hidden: number;
+          current_grade: number | null;
+          assessed_grade: number | null;
+          total_weight: number | null;
+          syllabus_body: string | null;
+          field_sources: string | null;
+          allow_guessed_override: number | null;
+          auto_assign_due_date: number | null;
         }>(`SELECT * FROM courses${courseFilter}`);
 
         if (courses.length === 0) {
@@ -4816,9 +4859,27 @@ function registerIpcHandlers(): void {
           `SELECT id, external_id, course_id, folder_path, type, title, url, size_bytes, mime_type FROM resources WHERE course_id IN (${courseIdList})`
         );
 
+        // Fetch course_syllabuses
+        const syllabuses = database.executeRead<Record<string, unknown>>(
+          `SELECT * FROM course_syllabuses WHERE course_id IN (${courseIdList})`
+        );
+
+        // Fetch grace_tokens and grace_token_usage
+        const graceTokens = database.executeRead<Record<string, unknown>>(
+          `SELECT * FROM grace_tokens WHERE course_id IN (${courseIdList})`
+        );
+
+        const graceTokenIds = graceTokens.map((g) => g.id).filter(Boolean);
+        const graceTokenUsage =
+          graceTokenIds.length > 0
+            ? database.executeRead<Record<string, unknown>>(
+                `SELECT * FROM grace_token_usage WHERE grace_token_id IN (${graceTokenIds.join(',')})`
+              )
+            : [];
+
         const exportData = {
           exportedAt: new Date().toISOString(),
-          version: '1.0',
+          version: '1.1',
           courses: courses.map((c) => ({
             id: c.id,
             externalId: c.external_id,
@@ -4826,8 +4887,17 @@ function registerIpcHandlers(): void {
             name: c.name,
             nickname: c.nickname,
             color: c.color,
-            workflowState: c.workflow_state,
             enrollmentTermId: c.enrollment_term_id,
+            targetGrade: c.target_grade,
+            targetGradeSource: c.target_grade_source,
+            isHidden: c.is_hidden,
+            currentGrade: c.current_grade,
+            assessedGrade: c.assessed_grade,
+            totalWeight: c.total_weight,
+            syllabusBody: c.syllabus_body,
+            fieldSources: c.field_sources,
+            allowGuessedOverride: c.allow_guessed_override,
+            autoAssignDueDate: c.auto_assign_due_date,
           })),
           tasks,
           notifications,
@@ -4837,6 +4907,9 @@ function registerIpcHandlers(): void {
             ...r,
             localPath: undefined, // Don't include local paths in export
           })),
+          syllabuses,
+          graceTokens,
+          graceTokenUsage,
         };
 
         const result = await dialog.showSaveDialog(mainWindow, {
@@ -4927,6 +5000,19 @@ function registerIpcHandlers(): void {
               nickname: course.nickname,
               color: course.color,
               enrollment_term_id: course.enrollmentTermId || course.enrollment_term_id,
+              target_grade: course.targetGrade ?? course.target_grade ?? 85.0,
+              target_grade_source:
+                course.targetGradeSource || course.target_grade_source || 'default',
+              is_hidden: course.isHidden ?? course.is_hidden ?? 0,
+              current_grade: course.currentGrade ?? course.current_grade,
+              assessed_grade: course.assessedGrade ?? course.assessed_grade,
+              total_weight: course.totalWeight ?? course.total_weight ?? 0,
+              syllabus_body: course.syllabusBody || course.syllabus_body,
+              field_sources: course.fieldSources || course.field_sources,
+              allow_guessed_override:
+                course.allowGuessedOverride ?? course.allow_guessed_override ?? 1,
+              auto_assign_due_date:
+                course.autoAssignDueDate ?? course.auto_assign_due_date,
             },
             'external_id'
           );
@@ -4964,15 +5050,23 @@ function registerIpcHandlers(): void {
               title: task.title,
               description: task.description,
               due_at: task.due_at || task.dueAt,
+              unlock_at: task.unlock_at || task.unlockAt,
+              lock_at: task.lock_at || task.lockAt,
               weight: task.weight || 0,
               grade: task.grade,
               points_possible: task.points_possible || task.pointsPossible,
               priority_score: task.priority_score || task.priorityScore || 0,
-              is_completed: task.is_completed || task.isCompleted || 0,
+              is_completed: task.is_completed ?? task.isCompleted ?? 0,
+              is_optional: task.is_optional ?? task.isOptional ?? 0,
               completed_at: task.completed_at || task.completedAt,
               submission_status: task.submission_status || task.submissionStatus,
               task_type: task.task_type || task.taskType,
               task_group_id: task.task_group_id || task.taskGroupId,
+              field_sources: task.field_sources || task.fieldSources,
+              pain_index: task.pain_index ?? task.painIndex ?? 0,
+              penalty_severity: task.penalty_severity ?? task.penaltySeverity ?? 0,
+              has_safety_net: task.has_safety_net ?? task.hasSafetyNet ?? 0,
+              days_until_cutoff: task.days_until_cutoff ?? task.daysUntilCutoff,
             },
             'external_id'
           );
@@ -5087,8 +5181,99 @@ function registerIpcHandlers(): void {
         }
       }
 
+      // Import syllabuses (v1.1+)
+      let syllabusesImported = 0;
+      if (Array.isArray(importData.syllabuses)) {
+        for (const syllabus of importData.syllabuses) {
+          const oldCourseId = syllabus.course_id || syllabus.courseId;
+          const newCourseId = mapCourseId(oldCourseId);
+          if (!newCourseId) continue;
+
+          // Note: resource_id may not be valid if resources weren't imported
+          database.upsert(
+            'course_syllabuses',
+            {
+              course_id: newCourseId,
+              resource_id: syllabus.resource_id || syllabus.resourceId,
+              source_type: syllabus.source_type || syllabus.sourceType || 'resource',
+              resource_updated_at:
+                syllabus.resource_updated_at || syllabus.resourceUpdatedAt,
+              last_reviewed_at:
+                syllabus.last_reviewed_at ||
+                syllabus.lastReviewedAt ||
+                new Date().toISOString(),
+              change_detected_at:
+                syllabus.change_detected_at || syllabus.changeDetectedAt,
+              marked_at: syllabus.marked_at || syllabus.markedAt,
+            },
+            'course_id'
+          );
+          syllabusesImported++;
+        }
+      }
+
+      // Import grace tokens and usage (v1.1+)
+      let graceTokensImported = 0;
+      let graceTokenUsageImported = 0;
+      const graceTokenIdMap = new Map<number, number>();
+
+      if (Array.isArray(importData.graceTokens)) {
+        for (const token of importData.graceTokens) {
+          const oldCourseId = token.course_id || token.courseId;
+          const newCourseId = mapCourseId(oldCourseId);
+          if (!newCourseId) continue;
+
+          const oldId = token.id;
+
+          database.upsert(
+            'grace_tokens',
+            {
+              course_id: newCourseId,
+              policy_id: token.policy_id || token.policyId,
+              total_tokens: token.total_tokens || token.totalTokens,
+              tokens_remaining: token.tokens_remaining || token.tokensRemaining,
+              hours_per_token: token.hours_per_token ?? token.hoursPerToken ?? 24,
+              max_tokens_per_task:
+                token.max_tokens_per_task ?? token.maxTokensPerTask ?? 2,
+            },
+            ['course_id', 'policy_id']
+          );
+
+          // Get the actual ID from database to map usage records
+          const dbToken = database.executeReadOne<{ id: number }>(
+            'SELECT id FROM grace_tokens WHERE course_id = ? AND policy_id = ?',
+            [newCourseId, token.policy_id || token.policyId]
+          );
+          if (dbToken && oldId) {
+            graceTokenIdMap.set(oldId, dbToken.id);
+          }
+          graceTokensImported++;
+        }
+      }
+
+      if (Array.isArray(importData.graceTokenUsage)) {
+        for (const usage of importData.graceTokenUsage) {
+          const oldTokenId = usage.grace_token_id || usage.graceTokenId;
+          const newTokenId = graceTokenIdMap.get(oldTokenId);
+          if (!newTokenId) continue;
+
+          database.upsert(
+            'grace_token_usage',
+            {
+              grace_token_id: newTokenId,
+              task_id: usage.task_id || usage.taskId,
+              tokens_used: usage.tokens_used || usage.tokensUsed,
+              hours_extended: usage.hours_extended || usage.hoursExtended,
+              used_at: usage.used_at || usage.usedAt,
+            },
+            ['grace_token_id', 'task_id']
+          );
+          graceTokenUsageImported++;
+        }
+      }
+
       logger.info(
-        `Data imported from: ${filePath} (${coursesImported} courses, ${tasksImported} tasks, ${notificationsImported} notifications, ${pagesImported} pages, ${policiesImported} policies, ${resourcesImported} resources)`
+        `Data imported from: ${filePath} (${coursesImported} courses, ${tasksImported} tasks, ${notificationsImported} notifications, ${pagesImported} pages, ${policiesImported} policies, ${resourcesImported} resources, ${syllabusesImported} syllabuses, ${graceTokensImported} grace tokens)`
       );
       metricsCollector.increment('data.import.courses');
 
@@ -5102,6 +5287,9 @@ function registerIpcHandlers(): void {
           pagesImported,
           policiesImported,
           resourcesImported,
+          syllabusesImported,
+          graceTokensImported,
+          graceTokenUsageImported,
         },
       };
     } catch (error) {
@@ -5424,18 +5612,23 @@ app.whenReady().then(async () => {
       const requestedPath = url.pathname;
 
       logger.info(`[canvas-file] Protocol request received: ${request.url}`);
-      logger.info(`[canvas-file] Raw hostname: ${canvasFileId}, pathname: ${requestedPath}`);
+      logger.info(
+        `[canvas-file] Raw hostname: ${canvasFileId}, pathname: ${requestedPath}`
+      );
 
       // JavaScript's URL parser converts numeric hostnames to IP addresses
       // e.g., canvas-file://41584900/file.pdf becomes hostname "2.122.137.4"
       // Convert IP-style hostname back to the original number
       if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(canvasFileId)) {
         const parts = canvasFileId.split('.').map(Number);
-        const numericId = (parts[0] << 24) + (parts[1] << 16) + (parts[2] << 8) + parts[3];
+        const numericId =
+          (parts[0] << 24) + (parts[1] << 16) + (parts[2] << 8) + parts[3];
         // Use unsigned conversion for large numbers
         const unsignedId = numericId >>> 0;
         canvasFileId = String(unsignedId);
-        logger.info(`[canvas-file] Converted IP-style hostname to file ID: ${canvasFileId}`);
+        logger.info(
+          `[canvas-file] Converted IP-style hostname to file ID: ${canvasFileId}`
+        );
       }
 
       logger.info(`[canvas-file] Resolved fileId: ${canvasFileId}`);
@@ -5453,7 +5646,9 @@ app.whenReady().then(async () => {
         logger.info(`[canvas-file] Serving LOCAL file: ${resource.local_path}`);
         return net.fetch(`file://${resource.local_path}`);
       } else if (resource?.local_path) {
-        logger.warn(`[canvas-file] local_path set but file doesn't exist: ${resource.local_path}`);
+        logger.warn(
+          `[canvas-file] local_path set but file doesn't exist: ${resource.local_path}`
+        );
       }
 
       if (resource?.url) {
@@ -5472,22 +5667,30 @@ app.whenReady().then(async () => {
           const response = await net.fetch(resource.url, { headers });
 
           if (!response.ok) {
-            logger.error(`[canvas-file] Canvas fetch failed: ${response.status} ${response.statusText}`);
-            return new Response(`Failed to fetch from Canvas: ${response.status}`, { status: response.status });
+            logger.error(
+              `[canvas-file] Canvas fetch failed: ${response.status} ${response.statusText}`
+            );
+            return new Response(`Failed to fetch from Canvas: ${response.status}`, {
+              status: response.status,
+            });
           }
 
           // Get the file content
           const arrayBuffer = await response.arrayBuffer();
           const buffer = Buffer.from(arrayBuffer);
 
-          // Determine filename from URL path
-          const filename = decodeURIComponent(requestedPath.split('/').pop() || `file_${canvasFileId}`);
+          // Determine filename from URL path (URLs always use forward slashes)
+          const filename = decodeURIComponent(
+            requestedPath.split(/[/\\]/).pop() || `file_${canvasFileId}`
+          );
 
           // Get course info to determine save location
           const resourceInfo = database.executeReadOne<{
             course_id: number;
             folder_path: string | null;
-          }>('SELECT course_id, folder_path FROM resources WHERE external_id = ?', [canvasFileId]);
+          }>('SELECT course_id, folder_path FROM resources WHERE external_id = ?', [
+            canvasFileId,
+          ]);
 
           if (resourceInfo) {
             const courseInfo = database.executeReadOne<{ code: string }>(
@@ -5497,7 +5700,9 @@ app.whenReady().then(async () => {
 
             if (courseInfo) {
               // Sanitize course code for file system (replace spaces with underscores)
-              const sanitizedCode = courseInfo.code.replace(/[^a-zA-Z0-9_\-. ]/g, '_').replace(/\s+/g, '_');
+              const sanitizedCode = courseInfo.code
+                .replace(/[^a-zA-Z0-9_\-. ]/g, '_')
+                .replace(/\s+/g, '_');
               // Save to course folder
               const courseFolder = path.join(FILES_DIR, sanitizedCode);
               const targetFolder = resourceInfo.folder_path
@@ -5539,11 +5744,13 @@ app.whenReady().then(async () => {
             '.js': 'application/javascript',
             '.json': 'application/json',
             '.doc': 'application/msword',
-            '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            '.docx':
+              'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
             '.xls': 'application/vnd.ms-excel',
             '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
             '.ppt': 'application/vnd.ms-powerpoint',
-            '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+            '.pptx':
+              'application/vnd.openxmlformats-officedocument.presentationml.presentation',
           };
           const contentType = mimeTypes[ext] || 'application/octet-stream';
 
@@ -5562,7 +5769,9 @@ app.whenReady().then(async () => {
         }
       } else {
         // Resource not found
-        logger.warn(`[canvas-file] Resource not found in DB for external_id: ${canvasFileId}`);
+        logger.warn(
+          `[canvas-file] Resource not found in DB for external_id: ${canvasFileId}`
+        );
         return new Response('File not found', { status: 404 });
       }
     });
@@ -5832,7 +6041,9 @@ app.whenReady().then(async () => {
     );
 
     if (resource) {
-      logger.info(`[FileWatcher] Clearing local_path for resource ${resource.id} (${resource.external_id})`);
+      logger.info(
+        `[FileWatcher] Clearing local_path for resource ${resource.id} (${resource.external_id})`
+      );
       database.executeWrite(
         'UPDATE resources SET local_path = NULL WHERE id = ?',
         [resource.id],

@@ -111,6 +111,8 @@ export interface TaskForPriority {
   courseId: number;
   title: string;
   dueAt: Date | null;
+  /** Whether the due time is known (true) or only the date (false = assume midnight start of day) */
+  dueTimeKnown: boolean;
   unlockAt: Date | null;
   lockAt: Date | null;
   pointsPossible: number | null;

@@ -1813,7 +1813,8 @@ export const coreMigrations: Migration[] = [
   },
   {
     version: 61,
-    description: 'Add suppressed_forever columns for permanent dismissal of recommendations/insights',
+    description:
+      'Add suppressed_forever columns for permanent dismissal of recommendations/insights',
     up: `
       -- Add suppressed_forever to recommendations for "never show again" feature
       ALTER TABLE recommendations ADD COLUMN suppressed_forever INTEGER DEFAULT 0;
@@ -1828,6 +1829,19 @@ export const coreMigrations: Migration[] = [
       DROP INDEX IF EXISTS idx_user_insights_suppressed;
       -- SQLite doesn't support DROP COLUMN easily
       SELECT 1;
+    `,
+  },
+  {
+    version: 62,
+    description: 'Add due_time_known column to track whether task due time is certain',
+    up: `
+      -- Track whether the due time is known or only the date
+      -- 1 = time is known (e.g., 11:59 PM from Canvas)
+      -- 0 = only date known, time is assumed (midnight start of day)
+      ALTER TABLE tasks ADD COLUMN due_time_known INTEGER DEFAULT 1;
+
+      -- Existing tasks with due_at assume time is known (Canvas provided it)
+      UPDATE tasks SET due_time_known = 1 WHERE due_at IS NOT NULL;
     `,
   },
 ];

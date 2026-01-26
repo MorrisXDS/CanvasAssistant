@@ -154,10 +154,7 @@ export class DependencyResolver {
   /**
    * Resolve dependencies for multiple tasks
    */
-  resolveAll(
-    tasks: TaskForPriority[],
-    courseId: number
-  ): Map<number, DependencyResult> {
+  resolveAll(tasks: TaskForPriority[], courseId: number): Map<number, DependencyResult> {
     const results = new Map<number, DependencyResult>();
 
     for (const task of tasks) {
@@ -170,10 +167,7 @@ export class DependencyResolver {
   /**
    * Find module item associated with a task
    */
-  private findModuleItemForTask(
-    taskId: number,
-    courseId: number
-  ): ModuleItemData | null {
+  private findModuleItemForTask(taskId: number, courseId: number): ModuleItemData | null {
     // Get task external_id
     const task = this.db.executeReadOne<{ external_id: string | null }>(
       'SELECT external_id FROM tasks WHERE id = ?',
@@ -185,24 +179,27 @@ export class DependencyResolver {
     }
 
     // Find module item with matching content_id
-    return this.db.executeReadOne<ModuleItemData>(
-      `SELECT mi.* FROM module_items mi
+    return (
+      this.db.executeReadOne<ModuleItemData>(
+        `SELECT mi.* FROM module_items mi
        JOIN modules m ON mi.module_id = m.id
        WHERE m.course_id = ?
          AND mi.item_type = 'Assignment'
          AND mi.content_id = ?`,
-      [courseId, task.external_id]
-    ) || null;
+        [courseId, task.external_id]
+      ) || null
+    );
   }
 
   /**
    * Get module by ID
    */
   private getModule(moduleId: number): ModuleData | null {
-    return this.db.executeReadOne<ModuleData>(
-      'SELECT * FROM modules WHERE id = ?',
-      [moduleId]
-    ) || null;
+    return (
+      this.db.executeReadOne<ModuleData>('SELECT * FROM modules WHERE id = ?', [
+        moduleId,
+      ]) || null
+    );
   }
 
   /**
@@ -293,14 +290,13 @@ export class DependencyResolver {
   /**
    * Check if task has minimum score
    */
-  private hasMinScore(
-    item: ModuleItemData,
-    courseId: number,
-    minScore: number
-  ): boolean {
+  private hasMinScore(item: ModuleItemData, courseId: number, minScore: number): boolean {
     if (!item.content_id) return true;
 
-    const task = this.db.executeReadOne<{ grade: number | null; points_possible: number | null }>(
+    const task = this.db.executeReadOne<{
+      grade: number | null;
+      points_possible: number | null;
+    }>(
       `SELECT grade, points_possible FROM tasks
        WHERE course_id = ? AND external_id = ?`,
       [courseId, item.content_id]
@@ -352,6 +348,7 @@ export class DependencyResolver {
           courseId,
           title: task.title,
           dueAt: null,
+          dueTimeKnown: true,
           unlockAt: null,
           lockAt: null,
           pointsPossible: null,

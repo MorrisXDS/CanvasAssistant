@@ -1582,7 +1582,10 @@ export function CourseDetail() {
                             onToggleComplete={() => handleToggleComplete(task)}
                             onDuplicate={() => handleDuplicateTask(task.id)}
                             onStartEdit={() => startEditingTask(task)}
-                            onCancelEdit={() => setEditingTaskId(null)}
+                            onCancelEdit={() => {
+                              setEditingTaskId(null);
+                              setExpandedTaskId(null);
+                            }}
                             onSaveEdit={handleSaveTask}
                             onDelete={() => handleDeleteTask(task.id, task.title)}
                             onEditTitleChange={setEditTaskTitle}
@@ -1886,7 +1889,10 @@ export function CourseDetail() {
           onToggleComplete={handleToggleComplete}
           onDuplicate={handleDuplicateTask}
           onStartEdit={startEditingTask}
-          onCancelEdit={() => setEditingTaskId(null)}
+          onCancelEdit={() => {
+            setEditingTaskId(null);
+            setExpandedTaskId(null);
+          }}
           onSaveEdit={handleSaveTask}
           onDelete={(taskId, taskTitle) => handleDeleteTask(taskId, taskTitle)}
           onEditTitleChange={setEditTaskTitle}
@@ -1998,10 +2004,35 @@ function TaskItem({
   taskRef,
 }: TaskItemProps) {
   const [isHovered, setIsHovered] = React.useState(false);
+  const wrapperRef = React.useRef<HTMLDivElement | null>(null);
+
+  // Double-click outside to close edit mode
+  React.useEffect(() => {
+    if (!isExpanded || !isEditing) return;
+
+    const handleDoubleClickOutside = (event: MouseEvent) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node)) {
+        onCancelEdit();
+      }
+    };
+
+    // Delay adding the listener to avoid immediate trigger from the opening double-click
+    const timeoutId = setTimeout(() => {
+      document.addEventListener('dblclick', handleDoubleClickOutside);
+    }, 100);
+
+    return () => {
+      clearTimeout(timeoutId);
+      document.removeEventListener('dblclick', handleDoubleClickOutside);
+    };
+  }, [isExpanded, isEditing, onCancelEdit]);
 
   // Determine if task is submitted (submitted or graded status)
   const isSubmitted =
     task.submissionStatus === 'submitted' || task.submissionStatus === 'graded';
+
+  // Show checkmark for submitted tasks OR completed user-created tasks
+  const showCheckmark = isSubmitted || (isCompleted && !isSubmitted);
 
   // Get display label for task type
   const _getTaskTypeLabel = (typeValue: string | null): string => {
@@ -2018,9 +2049,18 @@ function TaskItem({
     onStartEdit();
   };
 
+  // Combine refs for both click-outside detection and external taskRef callback
+  const setRefs = React.useCallback(
+    (el: HTMLDivElement | null) => {
+      wrapperRef.current = el;
+      if (taskRef) taskRef(el);
+    },
+    [taskRef]
+  );
+
   return (
     <div
-      ref={taskRef}
+      ref={setRefs}
       style={{
         ...styles.taskItemWrapper,
         borderTop: isFirst ? 'none' : '1px solid var(--border-light)',
@@ -2053,15 +2093,17 @@ function TaskItem({
             marginRight: 'var(--space-2)',
           }}
         >
-          {isSubmitted && (
-            <CheckCircle
-              size={18}
-              color="var(--color-success)"
-              className="task-submitted-icon"
-              style={{
-                animation: 'fadeIn 0.3s ease-out',
-              }}
-            />
+          {showCheckmark && (
+            <span title={isSubmitted ? 'Submitted' : 'Completed'}>
+              <CheckCircle
+                size={18}
+                color="var(--color-success)"
+                className="task-submitted-icon"
+                style={{
+                  animation: 'fadeIn 0.3s ease-out',
+                }}
+              />
+            </span>
           )}
         </div>
         <div style={styles.taskInfo}>
@@ -2087,6 +2129,12 @@ function TaskItem({
                     (est.)
                   </span>
                 )}
+                {task.dueTimeKnown === false &&
+                  task.fieldSources?.due_at !== 'guessed' && (
+                    <span style={styles.unknownTimeBadge} title="Due time not specified">
+                      (date only)
+                    </span>
+                  )}
               </span>
             )}
             {task.weight > 0 ? (
@@ -2133,120 +2181,104 @@ function TaskItem({
         </div>
       </div>
 
-      {/* Expanded Detail/Edit Panel */}
-      {isExpanded && (
+      {/* Expanded Edit Panel - only shows when editing */}
+      {isExpanded && isEditing && (
         <div style={styles.taskDetailPanel}>
-          {isEditing ? (
-            /* Edit Mode */
-            <div style={styles.taskEditForm}>
-              <div style={styles.taskEditRow}>
-                <label style={styles.taskEditLabel}>Title</label>
+          <div style={styles.taskEditForm}>
+            <div style={styles.taskEditRow}>
+              <label style={styles.taskEditLabel}>Title</label>
+              <input
+                type="text"
+                value={editTitle}
+                onChange={(e) => onEditTitleChange(e.target.value)}
+                style={styles.taskEditInput}
+              />
+            </div>
+            <div style={styles.taskEditRow}>
+              <label style={styles.taskEditLabel}>Description</label>
+              <textarea
+                value={editDescription}
+                onChange={(e) => onEditDescriptionChange(e.target.value)}
+                style={styles.taskEditTextarea}
+                rows={2}
+              />
+            </div>
+            <div style={styles.taskEditRow}>
+              <label style={styles.taskEditLabel}>Type</label>
+              <select
+                value={editTaskType}
+                onChange={(e) => onEditTaskTypeChange(e.target.value)}
+                style={styles.taskEditSelect}
+              >
+                <option value="">Select type...</option>
+                {TASK_TYPES.map((type) => (
+                  <option key={type.value} value={type.value}>
+                    {type.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div style={styles.taskEditRowGroup}>
+              <div style={styles.taskEditRowHalf}>
+                <label style={styles.taskEditLabel}>Due Date</label>
                 <input
-                  type="text"
-                  value={editTitle}
-                  onChange={(e) => onEditTitleChange(e.target.value)}
+                  type="datetime-local"
+                  value={editDueDate}
+                  onChange={(e) => onEditDueDateChange(e.target.value)}
                   style={styles.taskEditInput}
                 />
               </div>
-              <div style={styles.taskEditRow}>
-                <label style={styles.taskEditLabel}>Description</label>
-                <textarea
-                  value={editDescription}
-                  onChange={(e) => onEditDescriptionChange(e.target.value)}
-                  style={styles.taskEditTextarea}
-                  rows={2}
+              <div style={styles.taskEditRowHalf}>
+                <label
+                  style={styles.taskEditLabel}
+                  title="How much this counts towards your final grade"
+                >
+                  Weight (%)
+                </label>
+                <input
+                  type="number"
+                  value={editWeight}
+                  onChange={(e) => onEditWeightChange(e.target.value)}
+                  style={styles.taskEditInput}
+                  min="0"
+                  max="100"
+                  placeholder="e.g. 10"
                 />
               </div>
-              <div style={styles.taskEditRow}>
-                <label style={styles.taskEditLabel}>Type</label>
-                <select
-                  value={editTaskType}
-                  onChange={(e) => onEditTaskTypeChange(e.target.value)}
-                  style={styles.taskEditSelect}
+              <div style={styles.taskEditRowHalf}>
+                <label
+                  style={styles.taskEditLabel}
+                  title="Your score on this coursework (0-100%)"
                 >
-                  <option value="">Select type...</option>
-                  {TASK_TYPES.map((type) => (
-                    <option key={type.value} value={type.value}>
-                      {type.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div style={styles.taskEditRowGroup}>
-                <div style={styles.taskEditRowHalf}>
-                  <label style={styles.taskEditLabel}>Due Date</label>
-                  <input
-                    type="datetime-local"
-                    value={editDueDate}
-                    onChange={(e) => onEditDueDateChange(e.target.value)}
-                    style={styles.taskEditInput}
-                  />
-                </div>
-                <div style={styles.taskEditRowHalf}>
-                  <label
-                    style={styles.taskEditLabel}
-                    title="How much this counts towards your final grade"
-                  >
-                    Weight (%)
-                  </label>
-                  <input
-                    type="number"
-                    value={editWeight}
-                    onChange={(e) => onEditWeightChange(e.target.value)}
-                    style={styles.taskEditInput}
-                    min="0"
-                    max="100"
-                    placeholder="e.g. 10"
-                  />
-                </div>
-                <div style={styles.taskEditRowHalf}>
-                  <label
-                    style={styles.taskEditLabel}
-                    title="Your score on this coursework (0-100%)"
-                  >
-                    Score (%)
-                  </label>
-                  <input
-                    type="number"
-                    value={editGrade}
-                    onChange={(e) => onEditGradeChange(e.target.value)}
-                    style={styles.taskEditInput}
-                    min="0"
-                    max="150"
-                    placeholder="e.g. 85"
-                  />
-                </div>
-              </div>
-              <div style={styles.taskEditActions}>
-                <button style={styles.deleteButton} onClick={onDelete}>
-                  <Trash2 size={14} />
-                  Delete
-                </button>
-                <div style={styles.taskEditActionsRight}>
-                  <button style={styles.cancelButton} onClick={onCancelEdit}>
-                    Cancel
-                  </button>
-                  <button style={styles.saveButton} onClick={onSaveEdit}>
-                    <Save size={14} />
-                    Save
-                  </button>
-                </div>
+                  Score (%)
+                </label>
+                <input
+                  type="number"
+                  value={editGrade}
+                  onChange={(e) => onEditGradeChange(e.target.value)}
+                  style={styles.taskEditInput}
+                  min="0"
+                  max="150"
+                  placeholder="e.g. 85"
+                />
               </div>
             </div>
-          ) : (
-            /* View Mode */
-            <div style={styles.taskDetailView}>
-              <div style={styles.taskDetailActions}>
-                <button style={styles.editButton} onClick={onStartEdit}>
-                  <Edit3 size={14} />
-                  Edit
+            <div style={styles.taskEditActions}>
+              <button style={styles.deleteButton} onClick={onDelete}>
+                <Trash2 size={14} />
+                Delete
+              </button>
+              <div style={styles.taskEditActionsRight}>
+                <button style={styles.cancelButton} onClick={onCancelEdit}>
+                  Cancel
                 </button>
-                <button style={styles.deleteButtonSmall} onClick={onDelete}>
-                  <Trash2 size={14} />
+                <button style={styles.saveButton} onClick={onSaveEdit}>
+                  <Save size={14} />
+                  Save
                 </button>
               </div>
             </div>
-          )}
+          </div>
         </div>
       )}
     </div>
@@ -2999,6 +3031,12 @@ const styles: Record<string, React.CSSProperties> = {
     marginLeft: '4px',
     fontStyle: 'italic',
     color: 'var(--color-blue)',
+    cursor: 'help',
+  },
+  unknownTimeBadge: {
+    marginLeft: '4px',
+    fontStyle: 'italic',
+    color: 'var(--text-muted)',
     cursor: 'help',
   },
 

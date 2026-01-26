@@ -210,6 +210,7 @@ export interface LocalTask {
   title: string;
   description: string | null;
   due_at: string | null;
+  due_time_known: number; // 1 = time known, 0 = only date known (assume midnight)
   unlock_at: string | null;
   lock_at: string | null;
   points_possible: number | null;
@@ -479,6 +480,21 @@ export function mapAssignment(
   // Derive task_type from submission_types
   const taskType = deriveTaskType(submissionTypes);
 
+  // Detect if due time is known or only date
+  // Midnight (00:00:00) timestamps often indicate "date only" from Canvas
+  // Times like 23:59:00 or other specific times indicate known time
+  let dueTimeKnown = 1; // Assume time is known by default
+  if (dueAt) {
+    const dueDate = new Date(dueAt);
+    const hours = dueDate.getUTCHours();
+    const minutes = dueDate.getUTCMinutes();
+    const seconds = dueDate.getUTCSeconds();
+    // Midnight UTC often means "date only" - Canvas didn't have a specific time
+    if (hours === 0 && minutes === 0 && seconds === 0) {
+      dueTimeKnown = 0;
+    }
+  }
+
   return {
     external_id: String(assignmentId),
     source_type: 'canvas',
@@ -486,6 +502,7 @@ export function mapAssignment(
     title: assignmentName,
     description,
     due_at: dueAt,
+    due_time_known: dueTimeKnown,
     unlock_at: unlockAt,
     lock_at: lockAt,
     points_possible: pointsPossible,
