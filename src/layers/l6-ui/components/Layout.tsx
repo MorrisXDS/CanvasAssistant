@@ -475,6 +475,37 @@ export function Layout() {
     };
   }, []);
 
+  // Force layout recalculation on mount to prevent gap issues
+  // This ensures the browser properly computes flexbox layout
+  useEffect(() => {
+    if (DEBUG_LAYOUT) return; // Debug mode already handles this
+
+    // Force layout recalculation by reading layout properties
+    const forceLayoutRecalc = () => {
+      if (containerRef.current) {
+        // Reading getBoundingClientRect forces synchronous layout
+        void containerRef.current.getBoundingClientRect();
+      }
+      if (mainRef.current) {
+        void mainRef.current.getBoundingClientRect();
+      }
+    };
+
+    // Run after initial render
+    const timer = setTimeout(forceLayoutRecalc, 50);
+
+    // Also use ResizeObserver to handle window maximize/restore
+    const resizeObserver = new ResizeObserver(forceLayoutRecalc);
+    if (containerRef.current) {
+      resizeObserver.observe(containerRef.current);
+    }
+
+    return () => {
+      clearTimeout(timer);
+      resizeObserver.disconnect();
+    };
+  }, []);
+
   // Determine sync display based on actual state
   const getSyncDisplay = () => {
     if (syncStatus === 'syncing') {
