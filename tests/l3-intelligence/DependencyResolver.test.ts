@@ -18,6 +18,7 @@ describe('DependencyResolver', () => {
     courseId: 1,
     title: 'Test Task',
     dueAt: null,
+    dueTimeKnown: true,
     unlockAt: null,
     lockAt: null,
     pointsPossible: null,

@@ -241,8 +241,8 @@ export function Onboarding({ onComplete }: OnboardingProps) {
       if (result.valid) {
         await api.storeCredential(token.trim());
         await api.connectCanvas(baseUrl);
-        // Save Canvas URL to localStorage
-        localStorage.setItem('canvasUrl', baseUrl);
+        // Save Canvas URL using settings manager (keeps cache in sync)
+        settingsManager.set(STORAGE_KEYS.CANVAS_URL, baseUrl);
         setUserName(result.user?.name ?? null);
         setIsConnected(true);
         setCompletedSteps((prev) => new Set([...prev, 'connection']));
@@ -369,100 +369,107 @@ export function Onboarding({ onComplete }: OnboardingProps) {
             {/* Connection Step */}
             {currentStep === 'connection' && (
               <div style={styles.stepContent}>
-                <h2 style={styles.title}>Connect to Canvas</h2>
-                <p style={styles.subtitle}>
-                  Enter your Canvas credentials to get started
-                </p>
+                <div style={styles.stepBody}>
+                  <h2 style={styles.title}>Connect to Canvas</h2>
+                  <p style={styles.subtitle}>
+                    Enter your Canvas credentials to get started
+                  </p>
 
-                {error && (
-                  <div style={styles.errorBox}>
-                    <AlertTriangle size={14} />
-                    <span>{error}</span>
-                  </div>
-                )}
+                  {error && (
+                    <div style={styles.errorBox}>
+                      <AlertTriangle size={14} />
+                      <span>{error}</span>
+                    </div>
+                  )}
 
-                <div style={styles.form}>
-                  <div style={styles.inputGroup}>
-                    <label style={styles.label}>Canvas URL</label>
-                    <input
-                      type="text"
-                      value={canvasUrl}
-                      onChange={(e) => setCanvasUrl(e.target.value)}
-                      placeholder="e.g., canvas.university.edu"
-                      style={styles.input}
-                    />
-                  </div>
+                  <div style={styles.form}>
+                    <div style={styles.inputGroup}>
+                      <label style={styles.label}>Canvas URL</label>
+                      <input
+                        type="text"
+                        value={canvasUrl}
+                        onChange={(e) => setCanvasUrl(e.target.value)}
+                        placeholder="e.g., canvas.university.edu"
+                        style={styles.input}
+                      />
+                    </div>
 
-                  <div style={styles.inputGroup}>
-                    <label style={styles.label}>Access Token</label>
-                    <input
-                      type="password"
-                      value={token}
-                      onChange={(e) => setToken(e.target.value)}
-                      placeholder="Paste your Canvas token here..."
-                      style={styles.input}
-                    />
-                    <div style={styles.helpText}>
-                      Canvas → Account → Settings → New Access Token
+                    <div style={styles.inputGroup}>
+                      <label style={styles.label}>Access Token</label>
+                      <input
+                        type="password"
+                        value={token}
+                        onChange={(e) => setToken(e.target.value)}
+                        placeholder="Paste your Canvas token here..."
+                        style={styles.input}
+                      />
+                      <div style={styles.helpText}>
+                        Canvas → Account → Settings → New Access Token
+                      </div>
                     </div>
                   </div>
                 </div>
 
-                <button
-                  style={{
-                    ...styles.primaryButton,
-                    ...(isValidating ? styles.buttonDisabled : {}),
-                  }}
-                  onClick={handleConnect}
-                  disabled={isValidating}
-                >
-                  {isValidating ? (
-                    <>
-                      <Loader2 size={16} style={styles.spinner} />
-                      Connecting...
-                    </>
-                  ) : (
-                    <>
-                      Connect
-                      <ChevronRight size={16} />
-                    </>
-                  )}
-                </button>
+                <div style={styles.stepFooter}>
+                  <div /> {/* Spacer for alignment */}
+                  <button
+                    style={{
+                      ...styles.primaryButton,
+                      ...(isValidating ? styles.buttonDisabled : {}),
+                    }}
+                    onClick={handleConnect}
+                    disabled={isValidating}
+                  >
+                    {isValidating ? (
+                      <>
+                        <Loader2 size={16} style={styles.spinner} />
+                        Connecting...
+                      </>
+                    ) : (
+                      <>
+                        Connect
+                        <ChevronRight size={16} />
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
             )}
 
             {/* Appearance Step */}
             {currentStep === 'appearance' && (
               <div style={styles.stepContent}>
-                <h2 style={styles.title}>Theme</h2>
-                <p style={styles.subtitle}>
-                  {userName ? `Welcome, ${userName}! ` : ''}Choose your preferred look
-                </p>
+                <div style={styles.stepBody}>
+                  <h2 style={styles.title}>Theme</h2>
+                  <p style={styles.subtitle}>
+                    {userName ? `Welcome, ${userName}! ` : ''}Choose your preferred look
+                  </p>
 
-                <div style={styles.themeOptions}>
-                  {[
-                    { value: 'light' as const, icon: Sun, label: 'Light' },
-                    { value: 'dark' as const, icon: Moon, label: 'Dark' },
-                    { value: 'system' as const, icon: Monitor, label: 'Auto' },
-                  ].map(({ value, icon: Icon, label }) => (
-                    <button
-                      key={value}
-                      type="button"
-                      style={{
-                        ...styles.themeOption,
-                        ...(theme === value ? styles.themeOptionSelected : {}),
-                      }}
-                      onClick={() => setTheme(value)}
-                    >
-                      <Icon size={18} />
-                      <span>{label}</span>
-                    </button>
-                  ))}
+                  <div style={styles.themeOptions}>
+                    {[
+                      { value: 'light' as const, icon: Sun, label: 'Light' },
+                      { value: 'dark' as const, icon: Moon, label: 'Dark' },
+                      { value: 'system' as const, icon: Monitor, label: 'Auto' },
+                    ].map(({ value, icon: Icon, label }) => (
+                      <button
+                        key={value}
+                        type="button"
+                        style={{
+                          ...styles.themeOption,
+                          ...(theme === value ? styles.themeOptionSelected : {}),
+                        }}
+                        onClick={() => setTheme(value)}
+                      >
+                        <Icon size={18} />
+                        <span>{label}</span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
-                <div style={styles.buttonRow}>
+                <div style={styles.stepFooter}>
                   <button style={styles.skipButton} onClick={handleSkipToEnd}>
-                    Skip
+                    Skip Setup
                   </button>
                   <button style={styles.primaryButton} onClick={handleNext}>
                     Continue
@@ -475,22 +482,25 @@ export function Onboarding({ onComplete }: OnboardingProps) {
             {/* Storage Step */}
             {currentStep === 'storage' && (
               <div style={styles.stepContent}>
-                <h2 style={styles.title}>Storage</h2>
-                <p style={styles.subtitle}>Where to save downloaded files</p>
+                <div style={styles.stepBody}>
+                  <h2 style={styles.title}>Storage</h2>
+                  <p style={styles.subtitle}>Where to save downloaded files</p>
 
-                <div style={styles.pathBox}>
-                  <FolderOpen size={16} color="var(--text-muted)" />
-                  <span style={styles.pathText}>
-                    {downloadPath || 'Default location'}
-                  </span>
-                  <button style={styles.changeButton} onClick={handleSelectFolder}>
-                    Change
-                  </button>
+                  <div style={styles.pathBox}>
+                    <FolderOpen size={16} color="var(--text-muted)" />
+                    <span style={styles.pathText}>
+                      {downloadPath || 'Default location'}
+                    </span>
+                    <button style={styles.changeButton} onClick={handleSelectFolder}>
+                      Change
+                    </button>
+                  </div>
                 </div>
 
-                <div style={styles.buttonRow}>
+                <div style={styles.stepFooter}>
                   <button style={styles.secondaryButton} onClick={handleBack}>
                     <ChevronLeft size={16} />
+                    Back
                   </button>
                   <button style={styles.primaryButton} onClick={handleNext}>
                     Continue
@@ -503,37 +513,40 @@ export function Onboarding({ onComplete }: OnboardingProps) {
             {/* Academic Step */}
             {currentStep === 'academic' && (
               <div style={styles.stepContent}>
-                <h2 style={styles.title}>Target Grade</h2>
-                <p style={styles.subtitle}>Set your default grade goal</p>
+                <div style={styles.stepBody}>
+                  <h2 style={styles.title}>Target Grade</h2>
+                  <p style={styles.subtitle}>Set your default grade goal</p>
 
-                <div style={styles.gradeSelector}>
-                  <div style={styles.gradeDisplay}>
-                    <span style={styles.gradeValue}>{targetGrade}%</span>
-                    <span style={styles.gradeLabel}>{getLetterGrade(targetGrade)}</span>
+                  <div style={styles.gradeSelector}>
+                    <div style={styles.gradeDisplay}>
+                      <span style={styles.gradeValue}>{targetGrade}%</span>
+                      <span style={styles.gradeLabel}>{getLetterGrade(targetGrade)}</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="50"
+                      max="100"
+                      step="1"
+                      value={targetGrade}
+                      onChange={(e) => setTargetGrade(Number(e.target.value))}
+                      onKeyDown={(e) => {
+                        if (e.key === 'ArrowUp' || e.key === 'ArrowRight') {
+                          e.preventDefault();
+                          setTargetGrade((prev) => Math.min(100, prev + 1));
+                        } else if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') {
+                          e.preventDefault();
+                          setTargetGrade((prev) => Math.max(50, prev - 1));
+                        }
+                      }}
+                      style={styles.slider}
+                    />
                   </div>
-                  <input
-                    type="range"
-                    min="50"
-                    max="100"
-                    step="1"
-                    value={targetGrade}
-                    onChange={(e) => setTargetGrade(Number(e.target.value))}
-                    onKeyDown={(e) => {
-                      if (e.key === 'ArrowUp' || e.key === 'ArrowRight') {
-                        e.preventDefault();
-                        setTargetGrade((prev) => Math.min(100, prev + 1));
-                      } else if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') {
-                        e.preventDefault();
-                        setTargetGrade((prev) => Math.max(50, prev - 1));
-                      }
-                    }}
-                    style={styles.slider}
-                  />
                 </div>
 
-                <div style={styles.buttonRow}>
+                <div style={styles.stepFooter}>
                   <button style={styles.secondaryButton} onClick={handleBack}>
                     <ChevronLeft size={16} />
+                    Back
                   </button>
                   <button style={styles.primaryButton} onClick={handleNext}>
                     Finish
@@ -690,6 +703,23 @@ const styles: Record<string, React.CSSProperties> = {
 
   stepContent: {
     textAlign: 'center',
+    display: 'flex',
+    flexDirection: 'column',
+    height: '100%',
+    minHeight: '280px',
+  },
+
+  stepBody: {
+    flex: 1,
+  },
+
+  stepFooter: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 'var(--space-5)',
+    paddingTop: 'var(--space-4)',
+    borderTop: '1px solid var(--border-subtle)',
   },
 
   title: {
@@ -781,6 +811,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 'var(--space-1)',
     padding: 'var(--space-2) var(--space-3)',
     backgroundColor: 'transparent',
     color: 'var(--text-muted)',

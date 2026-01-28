@@ -41,7 +41,9 @@ import {
   htmlToPlainText,
   ICSParser,
   RRuleExpander,
+  ExportManager,
 } from './layers/l2-daemon';
+import { HtmlLocalPathManager } from './layers/l2-daemon/HtmlLocalPathManager';
 import crypto from 'crypto';
 
 // L3 - Intelligence
@@ -58,8 +60,10 @@ import { CommandDispatcher } from './layers/l4-controller';
 
 // Application paths
 const APP_DATA_DIR = path.join(app.getPath('userData'), 'CanvasAssistant');
-const DB_PATH = path.join(APP_DATA_DIR, 'canvas.db');
-const METRICS_DB_PATH = path.join(APP_DATA_DIR, 'metrics.db');
+// Database in project folder for easier development access
+const PROJECT_DB_DIR = path.join(process.cwd(), 'database');
+const DB_PATH = path.join(PROJECT_DB_DIR, 'canvas.db');
+const METRICS_DB_PATH = path.join(PROJECT_DB_DIR, 'metrics.db');
 const LOG_DIR = path.join(APP_DATA_DIR, 'logs');
 // Default files directory is in project root's Downloads folder
 const FILES_DIR = path.join(process.cwd(), 'Downloads');
@@ -163,10 +167,19 @@ const fileWatcher = new FileWatcher({
   debounceMs: 500,
 });
 
+// Ensure database directory exists
+if (!fs.existsSync(PROJECT_DB_DIR)) {
+  fs.mkdirSync(PROJECT_DB_DIR, { recursive: true });
+}
+
 // Initialize Layer 1 persistence
 const database = new Database({ dbPath: DB_PATH, verbose: false });
 const migrationRunner = new MigrationRunner(database);
 let visibleDataProvider: VisibleDataProvider | null = null;
+
+// HtmlLocalPathManager - manages HTML download with local path dependencies
+// Initialized lazily after database is ready
+let htmlLocalPathManager: HtmlLocalPathManager | null = null;
 
 // Initialize Layer 4 controller (after database is ready)
 // Note: CommandDispatcher is initialized lazily after database.initialize()
@@ -409,14 +422,15 @@ function createTray(): void {
   // Create tray icon - use the app icon
   // Platform-specific icon sizes are required for proper display on each OS
   let iconPath: string;
-  // Platform: macOS requires 16x16 template images for menu bar icons
+  // Platform-specific icon sizes for optimal display:
+  // - macOS: requires 16x16 template images for menu bar icons
+  // - Windows: system tray works best with 32x32 icons
+  // - Linux: use 22x22 or 24x24, falling back to 32x32
   if (process.platform === 'darwin') {
     iconPath = path.join(__dirname, '../assets/app.iconset/icon_16x16.png');
-    // Platform: Windows system tray works best with 32x32 icons
   } else if (process.platform === 'win32') {
     iconPath = path.join(__dirname, '../assets/app.iconset/icon_32x32.png');
   } else {
-    // Linux - use 22x22 or 24x24
     iconPath = path.join(__dirname, '../assets/app.iconset/icon_32x32.png');
   }
 
@@ -2421,6 +2435,9 @@ function registerIpcHandlers(): void {
     }
 
     // 3. Delete all downloaded files
+    // Stop FileWatcher first to release directory handles
+    fileWatcher.stop();
+
     if (fs.existsSync(FILES_DIR)) {
       try {
         fs.rmSync(FILES_DIR, { recursive: true, force: true });
@@ -2430,6 +2447,9 @@ function registerIpcHandlers(): void {
         logger.error(`Failed to delete files directory: ${err}`);
       }
     }
+
+    // Restart FileWatcher to monitor the recreated directory
+    fileWatcher.start();
 
     // 3b. Reset window behavior settings (clear minimize-to-tray preference)
     const windowBehaviorPath = path.join(APP_DATA_DIR, 'window-behavior.json');
@@ -4078,6 +4098,155 @@ function registerIpcHandlers(): void {
     }
   });
 
+  /**
+   * Open a Canvas file by its external ID
+   * - If already downloaded, opens the local file
+   * - If not downloaded, downloads first then opens
+   * Used for in-app link clicks when HTML local paths feature is enabled
+   */
+  ipcMain.handle('canvas-file:open', async (_event, canvasFileId: string) => {
+    logger.debug(`[canvas-file:open] START canvasFileId=${canvasFileId}`);
+
+    // Look up the resource by external_id
+    const resource = database.executeReadOne<{
+      id: number;
+      course_id: number;
+      external_id: string;
+      title: string;
+      url: string | null;
+      local_path: string | null;
+    }>(
+      'SELECT id, course_id, external_id, title, url, local_path FROM resources WHERE external_id = ?',
+      [canvasFileId]
+    );
+
+    if (!resource) {
+      logger.warn(`[canvas-file:open] Resource not found: ${canvasFileId}`);
+      return { success: false, error: 'File not found in database' };
+    }
+
+    // Check if file is already downloaded and exists on disk
+    if (resource.local_path && fs.existsSync(resource.local_path)) {
+      logger.debug(`[canvas-file:open] Opening existing file: ${resource.local_path}`);
+
+      // Check if it's an HTML file - open in Electron window
+      const ext = path.extname(resource.local_path).toLowerCase();
+      if (ext === '.html' || ext === '.htm') {
+        const htmlWindow = new BrowserWindow({
+          width: 900,
+          height: 700,
+          title: path.basename(resource.local_path),
+          webPreferences: {
+            nodeIntegration: false,
+            contextIsolation: true,
+          },
+        });
+        htmlWindow.loadFile(resource.local_path);
+        return { success: true, localPath: resource.local_path };
+      }
+
+      // Open with system default application
+      const { shell } = require('electron');
+      const error = await shell.openPath(resource.local_path);
+      if (error) {
+        logger.error(`[canvas-file:open] Failed to open: ${error}`);
+        return { success: false, error };
+      }
+      return { success: true, localPath: resource.local_path };
+    }
+
+    // File not downloaded - need to download first
+    if (!resource.url) {
+      return { success: false, error: 'Resource has no download URL' };
+    }
+
+    // Get auth token
+    const token = await credentialManager.retrieve();
+    if (!token) {
+      return { success: false, error: 'No credentials available' };
+    }
+
+    // Get course code for folder organization
+    const course = database.executeReadOne<{ code: string }>(
+      'SELECT code FROM courses WHERE id = ?',
+      [resource.course_id]
+    );
+    const courseCode = course?.code || 'unknown';
+
+    // Download the file
+    const downloadId = `canvas-file-${canvasFileId}-${Date.now()}`;
+    const downloadPromise = new Promise<{
+      success: boolean;
+      localPath?: string;
+      error?: string;
+    }>((resolve) => {
+      const onComplete = (result: { id: string; localPath: string }) => {
+        if (result.id === downloadId) {
+          fileDownloadManager.off('download-complete', onComplete);
+          fileDownloadManager.off('download-error', onError);
+
+          // Update database with local path
+          database.executeWrite(
+            'UPDATE resources SET local_path = ? WHERE id = ?',
+            [result.localPath, resource.id],
+            'resources'
+          );
+
+          resolve({ success: true, localPath: result.localPath });
+        }
+      };
+
+      const onError = (result: { id: string; error: string }) => {
+        if (result.id === downloadId) {
+          fileDownloadManager.off('download-complete', onComplete);
+          fileDownloadManager.off('download-error', onError);
+          resolve({ success: false, error: result.error });
+        }
+      };
+
+      fileDownloadManager.on('download-complete', onComplete);
+      fileDownloadManager.on('download-error', onError);
+
+      fileDownloadManager.queueDownload({
+        id: downloadId,
+        url: resource.url!,
+        courseCode,
+        filename: resource.title,
+        authToken: token,
+      });
+    });
+
+    const downloadResult = await downloadPromise;
+    if (!downloadResult.success) {
+      return downloadResult;
+    }
+
+    // Open the downloaded file
+    const { shell } = require('electron');
+    const ext = path.extname(downloadResult.localPath!).toLowerCase();
+    if (ext === '.html' || ext === '.htm') {
+      const htmlWindow = new BrowserWindow({
+        width: 900,
+        height: 700,
+        title: path.basename(downloadResult.localPath!),
+        webPreferences: {
+          nodeIntegration: false,
+          contextIsolation: true,
+        },
+      });
+      htmlWindow.loadFile(downloadResult.localPath!);
+      return { success: true, localPath: downloadResult.localPath };
+    }
+
+    const error = await shell.openPath(downloadResult.localPath!);
+    if (error) {
+      logger.error(`[canvas-file:open] Failed to open downloaded file: ${error}`);
+      return { success: false, error };
+    }
+
+    return { success: true, localPath: downloadResult.localPath };
+  });
+
   // L4 Command handlers
   ipcMain.handle(
     'command:dispatch',
@@ -5177,7 +5346,12 @@ function registerIpcHandlers(): void {
       logger.info(`Previous database backed up to: ${backupPath}`);
       metricsCollector.increment('data.import.database');
 
-      // Notify user that app needs restart
+      // Force app restart to reinitialize with new database
+      logger.info('Restarting app to apply imported database...');
+      app.relaunch();
+      app.exit(0);
+
+      // This return won't be reached, but TypeScript needs it
       return {
         success: true,
         data: {
@@ -5758,6 +5932,340 @@ function registerIpcHandlers(): void {
     }
   });
 
+  // ============ New Export Features ============
+
+  // Export tasks to CSV
+  ipcMain.handle(
+    'data:exportTasksCsv',
+    async (_event, options?: { courseIds?: number[]; status?: string }) => {
+      if (!mainWindow) {
+        return { success: false, error: 'No window available' };
+      }
+
+      try {
+        const result = await dialog.showSaveDialog(mainWindow, {
+          defaultPath: `canvas-tasks-${new Date().toISOString().split('T')[0]}.csv`,
+          filters: [
+            { name: 'CSV Files', extensions: ['csv'] },
+            { name: 'All Files', extensions: ['*'] },
+          ],
+        });
+
+        if (result.canceled || !result.filePath) {
+          return { success: false, error: 'Save cancelled' };
+        }
+
+        if (!visibleDataProvider) {
+          return { success: false, error: 'Data provider not initialized' };
+        }
+
+        const exportManager = new ExportManager(database, visibleDataProvider, {
+          logger,
+          filesDir: FILES_DIR,
+          appVersion: app.getVersion(),
+        });
+
+        const exportResult = await exportManager.exportTasksCsv(result.filePath, {
+          courseIds: options?.courseIds,
+          status: options?.status as 'all' | 'pending' | 'completed' | undefined,
+        });
+
+        if (exportResult.success) {
+          // Log to export history
+          database.executeWrite(
+            `INSERT INTO export_history (export_type, file_path, file_size, tasks_exported, status)
+             VALUES ('csv', ?, ?, ?, 'completed')`,
+            [
+              result.filePath,
+              exportResult.fileSize || 0,
+              exportResult.tasksExported || 0,
+            ],
+            'export_history'
+          );
+          metricsCollector.increment('data.export.csv.tasks');
+        }
+
+        return exportResult;
+      } catch (error) {
+        logger.error('Failed to export tasks CSV:', error as Error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
+  // Export grades to CSV
+  ipcMain.handle(
+    'data:exportGradesCsv',
+    async (_event, options?: { courseIds?: number[] }) => {
+      if (!mainWindow) {
+        return { success: false, error: 'No window available' };
+      }
+
+      try {
+        const result = await dialog.showSaveDialog(mainWindow, {
+          defaultPath: `canvas-grades-${new Date().toISOString().split('T')[0]}.csv`,
+          filters: [
+            { name: 'CSV Files', extensions: ['csv'] },
+            { name: 'All Files', extensions: ['*'] },
+          ],
+        });
+
+        if (result.canceled || !result.filePath) {
+          return { success: false, error: 'Save cancelled' };
+        }
+
+        if (!visibleDataProvider) {
+          return { success: false, error: 'Data provider not initialized' };
+        }
+
+        const exportManager = new ExportManager(database, visibleDataProvider, {
+          logger,
+          filesDir: FILES_DIR,
+          appVersion: app.getVersion(),
+        });
+
+        const exportResult = await exportManager.exportGradesCsv(result.filePath, {
+          courseIds: options?.courseIds,
+        });
+
+        if (exportResult.success) {
+          // Log to export history
+          database.executeWrite(
+            `INSERT INTO export_history (export_type, file_path, file_size, tasks_exported, status)
+             VALUES ('csv', ?, ?, ?, 'completed')`,
+            [
+              result.filePath,
+              exportResult.fileSize || 0,
+              exportResult.tasksExported || 0,
+            ],
+            'export_history'
+          );
+          metricsCollector.increment('data.export.csv.grades');
+        }
+
+        return exportResult;
+      } catch (error) {
+        logger.error('Failed to export grades CSV:', error as Error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
+  // Selective export with encryption support
+  ipcMain.handle(
+    'data:exportSelective',
+    async (
+      _event,
+      options: {
+        courses?: number[];
+        archivedCourses?: number[];
+        includeTasks?: boolean;
+        includeNotifications?: boolean;
+        includeFiles?: boolean;
+        includeGrades?: boolean;
+        includeCalendar?: boolean;
+        taskStatus?: 'all' | 'pending' | 'completed';
+        dateRange?: { start: string; end: string };
+        format: 'json' | 'csv' | 'zip';
+        encrypt?: boolean;
+        password?: string;
+      }
+    ) => {
+      if (!mainWindow) {
+        return { success: false, error: 'No window available' };
+      }
+
+      try {
+        // Determine file extension based on format and encryption
+        let defaultExt = 'json';
+        let filterName = 'JSON Files';
+        if (options.format === 'csv') {
+          defaultExt = 'csv';
+          filterName = 'CSV Files';
+        } else if (options.format === 'zip') {
+          defaultExt = 'zip';
+          filterName = 'ZIP Archives';
+        } else if (options.encrypt) {
+          defaultExt = 'cbk';
+          filterName = 'Canvas Backup (Encrypted)';
+        }
+
+        const result = await dialog.showSaveDialog(mainWindow, {
+          defaultPath: `canvas-export-${new Date().toISOString().split('T')[0]}.${defaultExt}`,
+          filters: [
+            { name: filterName, extensions: [defaultExt] },
+            { name: 'All Files', extensions: ['*'] },
+          ],
+        });
+
+        if (result.canceled || !result.filePath) {
+          return { success: false, error: 'Save cancelled' };
+        }
+
+        if (!visibleDataProvider) {
+          return { success: false, error: 'Data provider not initialized' };
+        }
+
+        const exportManager = new ExportManager(database, visibleDataProvider, {
+          logger,
+          filesDir: FILES_DIR,
+          appVersion: app.getVersion(),
+        });
+
+        const exportOptions = {
+          ...options,
+          dateRange: options.dateRange
+            ? {
+                start: new Date(options.dateRange.start),
+                end: new Date(options.dateRange.end),
+              }
+            : undefined,
+        };
+
+        const exportResult = await exportManager.exportSelective(
+          result.filePath,
+          exportOptions
+        );
+
+        if (exportResult.success) {
+          // Log to export history
+          database.executeWrite(
+            `INSERT INTO export_history (export_type, file_path, file_size, encrypted, courses_included, tasks_exported, files_exported, status)
+             VALUES ('selective', ?, ?, ?, ?, ?, ?, 'completed')`,
+            [
+              result.filePath,
+              exportResult.fileSize || 0,
+              options.encrypt ? 1 : 0,
+              JSON.stringify(options.courses || []),
+              exportResult.tasksExported || 0,
+              exportResult.filesExported || 0,
+            ],
+            'export_history'
+          );
+          metricsCollector.increment('data.export.selective');
+        }
+
+        return exportResult;
+      } catch (error) {
+        logger.error('Failed to perform selective export:', error as Error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
+  // Import encrypted backup
+  ipcMain.handle('data:importEncrypted', async (_event, password: string) => {
+    if (!mainWindow) {
+      return { success: false, error: 'No window available' };
+    }
+
+    try {
+      const result = await dialog.showOpenDialog(mainWindow, {
+        properties: ['openFile'],
+        filters: [
+          { name: 'Canvas Backup', extensions: ['cbk', 'json'] },
+          { name: 'All Files', extensions: ['*'] },
+        ],
+      });
+
+      if (result.canceled || !result.filePaths.length) {
+        return { success: false, error: 'Import cancelled' };
+      }
+
+      if (!visibleDataProvider) {
+        return { success: false, error: 'Data provider not initialized' };
+      }
+
+      const exportManager = new ExportManager(database, visibleDataProvider, {
+        logger,
+        filesDir: FILES_DIR,
+        appVersion: app.getVersion(),
+      });
+
+      return exportManager.importEncrypted(result.filePaths[0], password);
+    } catch (error) {
+      logger.error('Failed to import encrypted backup:', error as Error);
+      return { success: false, error: String(error) };
+    }
+  });
+
+  // Get export history
+  ipcMain.handle('data:getExportHistory', () => {
+    try {
+      const history = database.executeRead<{
+        id: number;
+        export_type: string;
+        file_path: string;
+        file_size: number;
+        encrypted: number;
+        courses_included: string;
+        tasks_exported: number;
+        files_exported: number;
+        status: string;
+        error_message: string | null;
+        created_at: string;
+      }>('SELECT * FROM export_history ORDER BY created_at DESC LIMIT 50');
+      return { success: true, data: history };
+    } catch (error) {
+      logger.error('Failed to get export history:', error as Error);
+      return { success: false, error: String(error) };
+    }
+  });
+
+  // Run scheduled backup manually
+  ipcMain.handle('data:runScheduledBackup', async () => {
+    try {
+      // Get backup destination from settings (via renderer localStorage sync or default)
+      const backupDir = path.join(app.getPath('documents'), 'CanvasAssistant', 'backups');
+
+      // Ensure backup directory exists
+      if (!fs.existsSync(backupDir)) {
+        fs.mkdirSync(backupDir, { recursive: true });
+      }
+
+      const backupPath = path.join(
+        backupDir,
+        `scheduled-backup-${new Date().toISOString().replace(/[:.]/g, '-')}.db`
+      );
+
+      // Checkpoint WAL before copying
+      database.executeWrite('PRAGMA wal_checkpoint(TRUNCATE)', [], 'system');
+
+      // Copy database file
+      fs.copyFileSync(DB_PATH, backupPath);
+
+      // Log to export history
+      const fileStats = fs.statSync(backupPath);
+      database.executeWrite(
+        `INSERT INTO export_history (export_type, file_path, file_size, status)
+         VALUES ('scheduled', ?, ?, 'completed')`,
+        [backupPath, fileStats.size],
+        'export_history'
+      );
+
+      logger.info(`Scheduled backup created: ${backupPath}`);
+      metricsCollector.increment('data.export.scheduled');
+
+      return { success: true, filePath: backupPath, fileSize: fileStats.size };
+    } catch (error) {
+      logger.error('Failed to run scheduled backup:', error as Error);
+
+      // Log failure to history
+      try {
+        database.executeWrite(
+          `INSERT INTO export_history (export_type, status, error_message)
+           VALUES ('scheduled', 'failed', ?)`,
+          [String(error)],
+          'export_history'
+        );
+      } catch {
+        // Ignore secondary error
+      }
+
+      return { success: false, error: String(error) };
+    }
+  });
+
   // Check if previous session crashed (for recovery dialog)
   ipcMain.handle('app:getCrashInfo', () => {
     const crashCheck = checkCrashFlag();
@@ -6234,6 +6742,11 @@ process.on('unhandledRejection', (reason, _promise) => {
  * Save pending downloads to database for crash recovery
  */
 function savePendingDownloads(): void {
+  // Skip if database is closed (e.g., during import restart)
+  if (!database.isOpen) {
+    return;
+  }
+
   try {
     const pending = fileDownloadManager.getPendingDownloads();
     const active = fileDownloadManager.getActiveDownloadRequests();
@@ -6400,6 +6913,215 @@ function stopAutoSync(): void {
   }
 }
 
+// Backup scheduler state
+let backupSchedulerInterval: NodeJS.Timeout | null = null;
+let _lastBackupCheck: Date | null = null;
+
+/**
+ * Start the backup scheduler (checks every hour if backup is due)
+ */
+function startBackupScheduler(): void {
+  stopBackupScheduler();
+
+  // Check every hour
+  const CHECK_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
+
+  logger.info('Starting backup scheduler (checks hourly)');
+
+  // Initial check after 5 minutes (allow app to settle)
+  setTimeout(() => checkAndRunBackup(), 5 * 60 * 1000);
+
+  // Regular checks
+  backupSchedulerInterval = setInterval(() => {
+    checkAndRunBackup();
+  }, CHECK_INTERVAL_MS);
+}
+
+/**
+ * Stop the backup scheduler
+ */
+function stopBackupScheduler(): void {
+  if (backupSchedulerInterval) {
+    clearInterval(backupSchedulerInterval);
+    backupSchedulerInterval = null;
+  }
+}
+
+/**
+ * Check if backup is due and run it if needed
+ */
+async function checkAndRunBackup(): Promise<void> {
+  try {
+    // This function would normally read settings from renderer storage
+    // Since we can't access localStorage directly, we use a fallback approach
+    // The renderer can trigger backups via IPC, or we can store schedule in DB
+
+    // For now, just check if there's a schedule stored in the database
+    const scheduleRow = database.executeReadOne<{ value: string }>(
+      "SELECT value FROM app_settings WHERE key = 'exportSchedule'"
+    );
+
+    if (!scheduleRow) {
+      return; // No schedule configured
+    }
+
+    let schedule: {
+      enabled: boolean;
+      frequency: string;
+      time?: string;
+      dayOfWeek?: number;
+      dayOfMonth?: number;
+      maxBackups: number;
+      lastRun?: string;
+    };
+
+    try {
+      schedule = JSON.parse(scheduleRow.value);
+    } catch {
+      return; // Invalid schedule
+    }
+
+    if (!schedule.enabled || schedule.frequency === 'never') {
+      return;
+    }
+
+    const now = new Date();
+    const lastRun = schedule.lastRun ? new Date(schedule.lastRun) : null;
+
+    // Determine if backup is due
+    let isDue = false;
+    const targetHour = schedule.time ? parseInt(schedule.time.split(':')[0], 10) : 3; // Default 3 AM
+
+    if (schedule.frequency === 'daily') {
+      // Daily: run once per day at target hour
+      if (!lastRun || now.getTime() - lastRun.getTime() >= 20 * 60 * 60 * 1000) {
+        // At least 20 hours since last run
+        if (now.getHours() === targetHour) {
+          isDue = true;
+        }
+      }
+    } else if (schedule.frequency === 'weekly') {
+      // Weekly: run on specific day of week
+      const targetDay = schedule.dayOfWeek ?? 0; // Default Sunday
+      if (!lastRun || now.getTime() - lastRun.getTime() >= 6 * 24 * 60 * 60 * 1000) {
+        // At least 6 days since last run
+        if (now.getDay() === targetDay && now.getHours() === targetHour) {
+          isDue = true;
+        }
+      }
+    } else if (schedule.frequency === 'monthly') {
+      // Monthly: run on specific day of month
+      const targetDate = schedule.dayOfMonth ?? 1;
+      if (!lastRun || now.getTime() - lastRun.getTime() >= 27 * 24 * 60 * 60 * 1000) {
+        // At least 27 days since last run
+        if (now.getDate() === targetDate && now.getHours() === targetHour) {
+          isDue = true;
+        }
+      }
+    }
+
+    if (!isDue) {
+      return;
+    }
+
+    logger.info('Scheduled backup is due, running...');
+    _lastBackupCheck = now;
+
+    // Run the backup
+    const backupDir = path.join(app.getPath('documents'), 'CanvasAssistant', 'backups');
+
+    if (!fs.existsSync(backupDir)) {
+      fs.mkdirSync(backupDir, { recursive: true });
+    }
+
+    const backupPath = path.join(
+      backupDir,
+      `scheduled-backup-${now.toISOString().replace(/[:.]/g, '-')}.db`
+    );
+
+    // Checkpoint WAL before copying
+    database.executeWrite('PRAGMA wal_checkpoint(TRUNCATE)', [], 'system');
+
+    // Copy database file
+    fs.copyFileSync(DB_PATH, backupPath);
+
+    const fileStats = fs.statSync(backupPath);
+
+    // Log to export history
+    database.executeWrite(
+      `INSERT INTO export_history (export_type, file_path, file_size, status)
+       VALUES ('scheduled', ?, ?, 'completed')`,
+      [backupPath, fileStats.size],
+      'export_history'
+    );
+
+    // Update schedule with last run time
+    schedule.lastRun = now.toISOString();
+    database.executeWrite(
+      "INSERT OR REPLACE INTO app_settings (key, value) VALUES ('exportSchedule', ?)",
+      [JSON.stringify(schedule)],
+      'app_settings'
+    );
+
+    // Rotate old backups (keep maxBackups most recent)
+    rotateBackups(backupDir, schedule.maxBackups);
+
+    logger.info(`Scheduled backup completed: ${backupPath}`);
+    metricsCollector.increment('backup.scheduled.success');
+
+    // Notify renderer
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('backup:completed', {
+        type: 'scheduled',
+        path: backupPath,
+        size: fileStats.size,
+      });
+    }
+  } catch (error) {
+    logger.error('Scheduled backup failed', error instanceof Error ? error : undefined);
+    metricsCollector.increment('backup.scheduled.failure');
+
+    // Log failure to history
+    try {
+      database.executeWrite(
+        `INSERT INTO export_history (export_type, status, error_message)
+         VALUES ('scheduled', 'failed', ?)`,
+        [String(error)],
+        'export_history'
+      );
+    } catch {
+      // Ignore secondary error
+    }
+  }
+}
+
+/**
+ * Rotate old backups, keeping only the most recent N files
+ */
+function rotateBackups(backupDir: string, maxBackups: number): void {
+  try {
+    const files = fs
+      .readdirSync(backupDir)
+      .filter((f) => f.startsWith('scheduled-backup-') && f.endsWith('.db'))
+      .map((f) => ({
+        name: f,
+        path: path.join(backupDir, f),
+        mtime: fs.statSync(path.join(backupDir, f)).mtime.getTime(),
+      }))
+      .sort((a, b) => b.mtime - a.mtime); // Newest first
+
+    // Delete files beyond maxBackups
+    for (let i = maxBackups; i < files.length; i++) {
+      fs.unlinkSync(files[i].path);
+      logger.info(`Rotated old backup: ${files[i].name}`);
+    }
+  } catch (error) {
+    logger.warn(
+      `Backup rotation failed: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
+}
+
 /**
  * Trigger background sync when window regains focus after being away
  */
@@ -6553,8 +7275,57 @@ app.whenReady().then(async () => {
       `Database initialized at version ${currentVersion}, ${migrationResult.applied} migrations applied`
     );
     if (migrationResult.errors.length > 0) {
-      logger.warn(`Migration errors: ${migrationResult.errors.join(', ')}`);
+      logger.error(`Migration errors: ${migrationResult.errors.join(', ')}`);
     }
+
+    // Verify critical schema elements exist
+    const schemaChecks = [
+      {
+        name: 'visibility_settings table',
+        sql: "SELECT 1 FROM sqlite_master WHERE type='table' AND name='visibility_settings'",
+      },
+      {
+        name: 'courses.archived_at column',
+        sql: "SELECT 1 FROM pragma_table_info('courses') WHERE name='archived_at'",
+      },
+      {
+        name: 'calendar_events.task_id column',
+        sql: "SELECT 1 FROM pragma_table_info('calendar_events') WHERE name='task_id'",
+      },
+    ];
+
+    const missingSchema: string[] = [];
+    for (const check of schemaChecks) {
+      try {
+        const result = database.executeRead<{ '1': number }>(check.sql);
+        if (result.length === 0) {
+          missingSchema.push(check.name);
+        }
+      } catch {
+        missingSchema.push(check.name);
+      }
+    }
+
+    if (missingSchema.length > 0) {
+      logger.error(
+        `Missing schema elements: ${missingSchema.join(', ')}. Database version: ${currentVersion}, expected: 75`
+      );
+      logger.error(
+        'Database may need to be reset. Delete canvas.db and restart the app.'
+      );
+
+      // Show dialog after app is ready
+      app.whenReady().then(() => {
+        dialog.showMessageBoxSync({
+          type: 'error',
+          title: 'Database Migration Required',
+          message: 'Your database is missing required schema updates.',
+          detail: `Missing: ${missingSchema.join(', ')}\n\nPlease delete the database file and restart:\n${DB_PATH}\n\nYour data will re-sync from Canvas.`,
+          buttons: ['OK'],
+        });
+      });
+    }
+
     metricsCollector.increment('database.initialized');
 
     // If previous session crashed, check database integrity
@@ -6809,6 +7580,13 @@ app.whenReady().then(async () => {
     // Initialize L1 VisibleDataProvider for centralized visibility rules
     visibleDataProvider = new VisibleDataProvider(database);
 
+    // Initialize HtmlLocalPathManager for HTML download with dependencies
+    htmlLocalPathManager = new HtmlLocalPathManager(database, {
+      filesBaseDir: FILES_DIR,
+      logger,
+      autoRegenerate: true,
+    });
+
     // Initialize L3 PriorityEngine for simulation support
     priorityEngine = new PriorityEngine(database);
 
@@ -7019,6 +7797,9 @@ app.whenReady().then(async () => {
     }
   }
 
+  // Start backup scheduler (runs independently of sync)
+  startBackupScheduler();
+
   // Restore any pending downloads from previous session (if database available)
   try {
     restorePendingDownloads();
@@ -7063,6 +7844,13 @@ app.whenReady().then(async () => {
           path: event.path,
         });
       }
+
+      // Trigger HTML regeneration if feature is enabled
+      if (htmlLocalPathManager) {
+        htmlLocalPathManager.handleFileDeleted(event.path).catch((err) => {
+          logger.error(`[FileWatcher] HTML regeneration failed: ${err}`);
+        });
+      }
     }
   });
 
@@ -7070,11 +7858,24 @@ app.whenReady().then(async () => {
   fileWatcher.on('file-added', (event: { path: string; relativePath: string }) => {
     logger.debug(`[FileWatcher] File added: ${event.path}`);
 
+    // Find resource ID if this file matches a known resource
+    const resource = database.executeReadOne<{ id: number }>(
+      'SELECT id FROM resources WHERE local_path = ?',
+      [event.path]
+    );
+
     // Notify renderer of new file
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('file-status-changed', {
         type: 'added',
         path: event.path,
+      });
+    }
+
+    // Trigger HTML regeneration if feature is enabled
+    if (htmlLocalPathManager) {
+      htmlLocalPathManager.handleFileAdded(event.path, resource?.id).catch((err) => {
+        logger.error(`[FileWatcher] HTML regeneration failed: ${err}`);
       });
     }
   });

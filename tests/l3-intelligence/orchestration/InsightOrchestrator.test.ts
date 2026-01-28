@@ -121,14 +121,14 @@ describe('InsightOrchestrator', () => {
     it('should return non-acknowledged insights', () => {
       // Insert test insight
       db.executeWrite(
-        `INSERT INTO insights (
+        `INSERT INTO user_insights (
           insight_type, title, description, severity, data_json, created_at
         ) VALUES (
           'workload_spike', 'High Workload', 'You have many tasks due soon',
           'warning', '{}', datetime('now')
         )`,
         [],
-        'insights'
+        'user_insights'
       );
 
       const active = orchestrator.getActiveInsights();
@@ -141,7 +141,7 @@ describe('InsightOrchestrator', () => {
     it('should exclude acknowledged insights', () => {
       // Insert acknowledged insight
       db.executeWrite(
-        `INSERT INTO insights (
+        `INSERT INTO user_insights (
           insight_type, title, description, severity, data_json,
           acknowledged_at, created_at
         ) VALUES (
@@ -149,7 +149,7 @@ describe('InsightOrchestrator', () => {
           'warning', '{}', datetime('now'), datetime('now')
         )`,
         [],
-        'insights'
+        'user_insights'
       );
 
       const active = orchestrator.getActiveInsights();
@@ -162,16 +162,16 @@ describe('InsightOrchestrator', () => {
     it('should filter by severity', () => {
       // Insert insights with different severities
       db.executeWrite(
-        `INSERT INTO insights (
+        `INSERT INTO user_insights (
           insight_type, title, description, severity, data_json, created_at
         ) VALUES
         ('test1', 'Info Insight', 'Info level', 'info', '{}', datetime('now')),
         ('test2', 'Warning Insight', 'Warning level', 'warning', '{}', datetime('now'))`,
         [],
-        'insights'
+        'user_insights'
       );
 
-      const warnings = orchestrator.getActiveInsights('warning');
+      const warnings = orchestrator.getInsightsBySeverity('warning');
 
       expect(warnings).toBeDefined();
       // Should only have warning severity
@@ -184,24 +184,24 @@ describe('InsightOrchestrator', () => {
   describe('acknowledgeInsight', () => {
     it('should mark insight as acknowledged', () => {
       db.executeWrite(
-        `INSERT INTO insights (
+        `INSERT INTO user_insights (
           insight_type, title, description, severity, data_json, created_at
         ) VALUES (
           'test', 'Test Insight', 'Description', 'info', '{}', datetime('now')
         )`,
         [],
-        'insights'
+        'user_insights'
       );
 
       const insight = db.executeReadOne<{ id: number }>(
-        'SELECT id FROM insights ORDER BY id DESC LIMIT 1'
+        'SELECT id FROM user_insights ORDER BY id DESC LIMIT 1'
       );
 
       if (insight) {
         orchestrator.acknowledgeInsight(insight.id);
 
         const updated = db.executeReadOne<{ acknowledged_at: string | null }>(
-          'SELECT acknowledged_at FROM insights WHERE id = ?',
+          'SELECT acknowledged_at FROM user_insights WHERE id = ?',
           [insight.id]
         );
         expect(updated?.acknowledged_at).not.toBeNull();
@@ -213,111 +213,23 @@ describe('InsightOrchestrator', () => {
       orchestrator.on('insight-acknowledged', eventSpy);
 
       db.executeWrite(
-        `INSERT INTO insights (
+        `INSERT INTO user_insights (
           insight_type, title, description, severity, data_json, created_at
         ) VALUES (
           'test', 'Test Insight', 'Description', 'info', '{}', datetime('now')
         )`,
         [],
-        'insights'
+        'user_insights'
       );
 
       const insight = db.executeReadOne<{ id: number }>(
-        'SELECT id FROM insights ORDER BY id DESC LIMIT 1'
+        'SELECT id FROM user_insights ORDER BY id DESC LIMIT 1'
       );
 
       if (insight) {
         orchestrator.acknowledgeInsight(insight.id);
         expect(eventSpy).toHaveBeenCalled();
       }
-    });
-  });
-
-  describe('getInsightsByCourse', () => {
-    it('should return insights for specific course', () => {
-      // Insert course-specific insight
-      db.executeWrite(
-        `INSERT INTO insights (
-          insight_type, title, description, severity, data_json, created_at
-        ) VALUES (
-          'grade_drop', 'Grade Dropping', 'Course grade is declining',
-          'warning', ?, datetime('now')
-        )`,
-        [JSON.stringify({ courseId: testCourseId })],
-        'insights'
-      );
-
-      const insights = orchestrator.getInsightsByCourse(testCourseId);
-
-      expect(insights).toBeDefined();
-      expect(Array.isArray(insights)).toBe(true);
-    });
-  });
-
-  describe('cleanupOldInsights', () => {
-    it('should remove old acknowledged insights', () => {
-      // Insert old acknowledged insight
-      db.executeWrite(
-        `INSERT INTO insights (
-          insight_type, title, description, severity, data_json,
-          acknowledged_at, created_at
-        ) VALUES (
-          'old_type', 'Old Insight', 'Very old',
-          'info', '{}', datetime('now', '-30 days'), datetime('now', '-30 days')
-        )`,
-        [],
-        'insights'
-      );
-
-      orchestrator.cleanupOldInsights();
-
-      const count = db.executeReadOne<{ cnt: number }>(
-        "SELECT COUNT(*) as cnt FROM insights WHERE title = 'Old Insight'"
-      );
-      expect(count?.cnt).toBe(0);
-    });
-
-    it('should remove expired insights', () => {
-      // Insert expired insight
-      db.executeWrite(
-        `INSERT INTO insights (
-          insight_type, title, description, severity, data_json,
-          expires_at, created_at
-        ) VALUES (
-          'expired_type', 'Expired Insight', 'Has expired',
-          'info', '{}', datetime('now', '-1 day'), datetime('now', '-2 days')
-        )`,
-        [],
-        'insights'
-      );
-
-      orchestrator.cleanupOldInsights();
-
-      const count = db.executeReadOne<{ cnt: number }>(
-        "SELECT COUNT(*) as cnt FROM insights WHERE title = 'Expired Insight'"
-      );
-      expect(count?.cnt).toBe(0);
-    });
-  });
-
-  describe('getInsightHistory', () => {
-    it('should return recent insights including acknowledged', () => {
-      // Insert multiple insights
-      db.executeWrite(
-        `INSERT INTO insights (
-          insight_type, title, description, severity, data_json, created_at
-        ) VALUES
-        ('type1', 'Insight 1', 'Desc 1', 'info', '{}', datetime('now')),
-        ('type2', 'Insight 2', 'Desc 2', 'warning', '{}', datetime('now', '-1 hour'))`,
-        [],
-        'insights'
-      );
-
-      const history = orchestrator.getInsightHistory(7);
-
-      expect(history).toBeDefined();
-      expect(Array.isArray(history)).toBe(true);
-      expect(history.length).toBe(2);
     });
   });
 

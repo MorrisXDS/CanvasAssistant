@@ -90,11 +90,23 @@ export class MigrationRunner {
 
   /**
    * Run a single migration
+   * Handles common SQLite errors like duplicate columns gracefully
    */
   private runMigration(migration: Migration): void {
     this.db.transaction(() => {
-      // Execute migration SQL
-      this.db.exec(migration.up);
+      try {
+        // Execute migration SQL
+        this.db.exec(migration.up);
+      } catch (error) {
+        // Handle "duplicate column name" errors gracefully
+        // This happens when a column was manually added or migration was partially applied
+        const message = error instanceof Error ? error.message : String(error);
+        if (message.includes('duplicate column name')) {
+          // Column already exists - this is OK, continue with migration silently
+        } else {
+          throw error;
+        }
+      }
 
       // Record migration as applied
       this.db.recordMigration(migration.version, migration.description);
@@ -1467,9 +1479,7 @@ export const coreMigrations: Migration[] = [
     up: `
       -- Track which fields the user has explicitly modified
       -- Used to detect conflicts when Canvas values change
-      -- Note: These columns may already exist from SyncConflictResolver or migration 50's table recreation
-      -- This migration is now a no-op to avoid duplicate column errors; columns are ensured by later migrations
-      SELECT 1;
+      ALTER TABLE tasks ADD COLUMN local_modified_fields TEXT;
     `,
     down: `
       -- SQLite doesn't support DROP COLUMN easily
@@ -2175,6 +2185,95 @@ export const coreMigrations: Migration[] = [
     `,
     down: `
       SELECT 1;
+    `,
+  },
+  {
+    version: 73,
+    description: 'Add HTML local paths schema for offline HTML with dependencies',
+    up: `
+      -- Store original HTML content (never modified by local path rewriting)
+      -- This allows regeneration of local-path HTMLs when files change
+      ALTER TABLE tasks ADD COLUMN description_original TEXT;
+      ALTER TABLE notifications ADD COLUMN message_html_original TEXT;
+      ALTER TABLE course_pages ADD COLUMN body_html_original TEXT;
+      ALTER TABLE courses ADD COLUMN syllabus_body_original TEXT;
+
+      -- Track HTML-to-HTML dependencies (for recursive resolution and cycle detection)
+      CREATE TABLE IF NOT EXISTS html_dependencies (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        parent_source_type TEXT NOT NULL CHECK(parent_source_type IN ('page', 'assignment', 'syllabus', 'module', 'announcement')),
+        parent_source_id TEXT NOT NULL,
+        child_source_type TEXT NOT NULL CHECK(child_source_type IN ('page', 'assignment', 'syllabus', 'module', 'announcement', 'file')),
+        child_source_id TEXT NOT NULL,
+        child_canvas_url TEXT,
+        is_cycle INTEGER DEFAULT 0,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(parent_source_type, parent_source_id, child_source_type, child_source_id)
+      );
+
+      CREATE INDEX idx_html_deps_parent ON html_dependencies(parent_source_type, parent_source_id);
+      CREATE INDEX idx_html_deps_child ON html_dependencies(child_source_type, child_source_id);
+      CREATE INDEX idx_html_deps_cycle ON html_dependencies(is_cycle);
+
+      -- Add ref_type to content_file_references for distinguishing file vs HTML refs
+      ALTER TABLE content_file_references ADD COLUMN ref_type TEXT DEFAULT 'file';
+      -- ref_type: 'file' (image, PDF, etc.) | 'html' (embedded HTML page/iframe)
+
+      -- Track which HTML first triggered a file download (Option B - shared files)
+      -- Format: 'assignment:123' or 'page:front-page'
+      ALTER TABLE resources ADD COLUMN first_referenced_by TEXT;
+    `,
+    down: `
+      DROP INDEX IF EXISTS idx_html_deps_cycle;
+      DROP INDEX IF EXISTS idx_html_deps_child;
+      DROP INDEX IF EXISTS idx_html_deps_parent;
+      DROP TABLE IF EXISTS html_dependencies;
+      -- SQLite doesn't support DROP COLUMN easily
+      SELECT 1;
+    `,
+  },
+  {
+    version: 74,
+    description: 'Create export_history table for tracking backup operations',
+    up: `
+      CREATE TABLE IF NOT EXISTS export_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        export_type TEXT NOT NULL CHECK(export_type IN ('full', 'selective', 'csv', 'scheduled')),
+        file_path TEXT,
+        file_size INTEGER,
+        encrypted INTEGER DEFAULT 0,
+        courses_included TEXT,
+        tasks_exported INTEGER DEFAULT 0,
+        files_exported INTEGER DEFAULT 0,
+        status TEXT DEFAULT 'completed' CHECK(status IN ('completed', 'failed', 'deleted')),
+        error_message TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE INDEX idx_export_history_type ON export_history(export_type);
+      CREATE INDEX idx_export_history_created ON export_history(created_at DESC);
+      CREATE INDEX idx_export_history_status ON export_history(status);
+    `,
+    down: `
+      DROP INDEX IF EXISTS idx_export_history_status;
+      DROP INDEX IF EXISTS idx_export_history_created;
+      DROP INDEX IF EXISTS idx_export_history_type;
+      DROP TABLE IF EXISTS export_history;
+    `,
+  },
+  {
+    version: 75,
+    description:
+      'Create app_settings table for persistent settings (backup schedule, etc)',
+    up: `
+      CREATE TABLE IF NOT EXISTS app_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      );
+    `,
+    down: `
+      DROP TABLE IF EXISTS app_settings;
     `,
   },
 ];

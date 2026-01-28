@@ -810,7 +810,10 @@ describe('HtmlContentSync', () => {
       );
     });
 
-    it('should queue embedded resource downloads', async () => {
+    it('should handle HTML with embedded resources (uses canvas-file:// protocol for on-demand downloads)', async () => {
+      // Note: Embedded resources are NOT queued for download.
+      // Instead, they use the canvas-file:// protocol handler for on-demand downloads
+      // when user clicks a link. See lines 941-948 in HtmlContentSync.ts for details.
       mockDb.executeReadOne.mockImplementation((query: string) => {
         if (query.includes('FROM resources')) {
           return { course_id: 1, title: 'Test', folder_path: 'Pages' };
@@ -827,9 +830,13 @@ describe('HtmlContentSync', () => {
         return null;
       });
 
-      await sync.downloadHtmlItem('html-page-123', '/base');
+      const result = await sync.downloadHtmlItem('html-page-123', '/base');
 
-      expect(mockDownloadManager.queueDownloads).toHaveBeenCalled();
+      // Should succeed even with embedded resources
+      expect(result.success).toBe(true);
+
+      // Embedded resources are NOT queued - handled via canvas-file:// protocol
+      expect(mockDownloadManager.queueDownloads).not.toHaveBeenCalled();
     });
 
     it('should apply URL rewriting when configured', async () => {

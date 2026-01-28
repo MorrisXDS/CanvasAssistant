@@ -24,20 +24,26 @@ describe('GraceTokenService', () => {
     title: 'Test Assignment',
     description: 'Test description',
     dueAt: new Date('2025-01-30T23:59:00Z').toISOString(),
+    dueTimeKnown: true,
     weight: 10,
     grade: null,
     pointsPossible: 100,
     priorityScore: 50,
     isCompleted: false,
+    isOptional: false,
     completedAt: null,
     submissionStatus: null,
+    userSubmissionStatus: null,
+    effectiveSubmissionStatus: null,
     taskType: 'assignment',
     taskGroupId: null,
+    calendarEventId: null,
     ...overrides,
   });
 
   // Helper to create a minimal config
   const createConfig = (overrides: Partial<GraceTokenConfig> = {}): GraceTokenConfig => ({
+    task_type: 'assignment',
     total_tokens: 3,
     tokens_used: 0,
     hours_per_token: 24,

@@ -13,9 +13,20 @@
  * - Policy-related announcement detection
  */
 
-export { CanvasClient, CanvasClientConfig, CanvasUser, CanvasApiError } from './CanvasClient';
+export {
+  CanvasClient,
+  CanvasClientConfig,
+  CanvasUser,
+  CanvasApiError,
+} from './CanvasClient';
 export { RateLimiter, RateLimiterConfig, RateLimitStatus } from './RateLimiter';
-export { SyncEngine, SyncEngineConfig, SyncResult, FullSyncResult, SyncDiagnosticEntry } from './SyncEngine';
+export {
+  SyncEngine,
+  SyncEngineConfig,
+  SyncResult,
+  FullSyncResult,
+  SyncDiagnosticEntry,
+} from './SyncEngine';
 export {
   SyncConflictResolver,
   type SyncConflict,
@@ -63,7 +74,10 @@ export {
   HtmlFileExtractor,
   extractCanvasFileIds,
   extractCanvasFileReferences,
+  extractHtmlReferences,
+  extractAllDependencies,
   type ExtractedFileReference,
+  type ExtractedHtmlReference,
   type HtmlFileExtractorConfig,
 } from './HtmlFileExtractor';
 export {
@@ -73,3 +87,32 @@ export {
   type HtmlContentItem,
   type ExtractedResource,
 } from './HtmlContentSync';
+export {
+  HtmlDependencyResolver,
+  type HtmlSourceType,
+  type DependencyNode,
+  type ResolutionResult,
+  type HtmlDependencyResolverConfig,
+} from './HtmlDependencyResolver';
+export {
+  HtmlUrlRewriter,
+  rewriteHtmlUrls,
+  type ResolvedDependency,
+  type RewriteOptions,
+} from './HtmlUrlRewriter';
+export {
+  HtmlLocalPathManager,
+  type HtmlLocalPathManagerConfig,
+  type HtmlDownloadRequest,
+  type HtmlDownloadResult,
+  type RegenerationInfo,
+} from './HtmlLocalPathManager';
+export {
+  ExportManager,
+  type SelectiveExportOptions,
+  type CsvExportOptions,
+  type ExportResult,
+  type ExportProgress,
+  type ExportManifest,
+  type ExportManagerConfig,
+} from './ExportManager';

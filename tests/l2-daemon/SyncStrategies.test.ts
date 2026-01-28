@@ -192,7 +192,16 @@ describe('SyncStrategies', () => {
         { id: 1, name: 'Task', due_at: '2024-01-20T23:59:59Z' },
       ]);
 
-      mockDb.executeReadOne.mockReturnValue({ name: 'Test Course' });
+      // Mock different queries: course lookup returns course, task lookup returns null
+      mockDb.executeReadOne.mockImplementation((sql: string) => {
+        if (sql.includes('SELECT name FROM courses')) {
+          return { name: 'Test Course' };
+        }
+        if (sql.includes('SELECT * FROM tasks')) {
+          return null; // No existing task - will trigger insert
+        }
+        return null;
+      });
 
       const onDiagnostic = jest.fn();
       const strategyWithDiag = new TaskSyncStrategy(context, {

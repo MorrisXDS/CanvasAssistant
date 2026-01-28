@@ -103,11 +103,47 @@ describe('DataMappers', () => {
         course_id: 12345,
         grading_type: 'points',
         assignment_group_id: 1,
+        // Completion is now determined by submission.workflow_state
+        submission: {
+          workflow_state: 'submitted',
+          submitted_at: '2024-02-10T12:00:00Z',
+        },
       };
 
       const result = mapAssignment(canvasAssignment, 1);
 
       expect(result.is_completed).toBe(1);
+      expect(result.submission_status).toBe('submitted');
+      expect(result.completed_at).toBe('2024-02-10T12:00:00Z');
+    });
+
+    it('should handle graded assignments', () => {
+      const canvasAssignment: CanvasAssignment = {
+        id: 22222,
+        name: 'Graded Task',
+        description: null,
+        due_at: null,
+        unlock_at: null,
+        lock_at: null,
+        points_possible: 100,
+        submission_types: ['online_upload'],
+        has_submitted_submissions: true,
+        course_id: 12345,
+        grading_type: 'points',
+        assignment_group_id: 1,
+        submission: {
+          workflow_state: 'graded',
+          submitted_at: '2024-02-10T12:00:00Z',
+          score: 85,
+          grade: '85',
+        },
+      };
+
+      const result = mapAssignment(canvasAssignment, 1);
+
+      expect(result.is_completed).toBe(1);
+      expect(result.submission_status).toBe('graded');
+      expect(result.grade).toBe(85);
     });
   });
 

@@ -72,7 +72,23 @@
       "Bash(npm outdated:*)",
       "Bash(npm uninstall:*)",
       "Bash(npm update:*)",
-      "Bash(npm view:*)"
+      "Bash(npm view:*)",
+      "Bash(powershell -Command:*)",
+      "Bash(for handler in \"calendar:createEvent\" \"calendar:updateEvent\" \"canvas:validateToken\" \"command:dispatch\" \"file:save\" \"log:renderer\" \"sync:full\" \"sync:folderFiles\")",
+      "Bash(do)",
+      "Bash(if grep -q \"ipcMain\\\\.handle\\\\\\(''$handler''\" \"E:\\\\CanvasAssistant\\\\src\\\\main.ts\")",
+      "Bash(then)",
+      "Bash(else)",
+      "Bash(fi)",
+      "Bash(done)",
+      "Bash(if grep -q \"handle\\(''$handler\" \"E:\\\\CanvasAssistant\\\\src\\\\main.ts\")",
+      "Bash(timeout:*)",
+      "Bash(git stash push:*)",
+      "Bash(tasklist:*)",
+      "Bash(git stash:*)",
+      "Bash(netstat:*)",
+      "Bash(del \"C:\\\\Users\\\\ROG\\\\AppData\\\\Roaming\\\\canvas-integration-dashboard\\\\CanvasAssistant\\\\canvas.db\")",
+      "Bash(wmic process where \"name like '%electron%'\" get processid,name,commandline:*)"
     ]
   }
 }

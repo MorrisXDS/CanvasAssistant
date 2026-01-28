@@ -1365,6 +1365,89 @@ export class SyncEngine extends EventEmitter {
         );
       }
 
+      // ============ EARLY METADATA COMMIT ============
+      // Write course metadata and enrollment terms BEFORE visibility filtering
+      // This ensures VisibleDataProvider has data to work with
+      const baseUrl = this.client.getBaseUrl();
+      const defaultTargetGrade = this.getDefaultTargetGrade();
+
+      this.log?.info(`Early metadata commit: ${fetched.courses.length} courses`);
+
+      // Extract and write enrollment terms first
+      const termsMap = new Map<
+        number,
+        { id: number; name: string; start_at: string | null; end_at: string | null }
+      >();
+      for (const course of fetched.courses) {
+        if (course.term) {
+          if (!termsMap.has(course.term.id)) {
+            termsMap.set(course.term.id, {
+              id: course.term.id,
+              name: course.term.name,
+              start_at: course.term.start_at,
+              end_at: course.term.end_at,
+            });
+          }
+        } else if (
+          course.enrollment_term_id &&
+          !termsMap.has(course.enrollment_term_id)
+        ) {
+          termsMap.set(course.enrollment_term_id, {
+            id: course.enrollment_term_id,
+            name: `Semester ${course.enrollment_term_id}`,
+            start_at: null,
+            end_at: null,
+          });
+        }
+      }
+
+      for (const [termId, term] of termsMap) {
+        this.db.executeWrite(
+          `INSERT INTO enrollment_terms (external_id, name, start_at, end_at) VALUES (?, ?, ?, ?)
+           ON CONFLICT(external_id) DO UPDATE SET name = excluded.name, start_at = excluded.start_at, end_at = excluded.end_at`,
+          [String(termId), term.name, term.start_at, term.end_at],
+          'enrollment_terms'
+        );
+      }
+
+      // Write course metadata (preserving user fields like is_hidden, target_grade, etc.)
+      const preservedCourseFields = [
+        'target_grade',
+        'target_grade_source',
+        'is_hidden',
+        'archived_at',
+        'color',
+        'nickname',
+      ];
+
+      for (const course of fetched.courses) {
+        const localCourse = mapCourse(course, baseUrl, defaultTargetGrade);
+        const existing = this.db.executeReadOne<Record<string, unknown>>(
+          'SELECT * FROM courses WHERE external_id = ?',
+          [localCourse.external_id]
+        );
+
+        const finalData: Record<string, unknown> = { ...localCourse };
+        if (existing) {
+          for (const field of preservedCourseFields) {
+            if (existing[field] !== undefined) {
+              finalData[field] = existing[field];
+            }
+          }
+        }
+
+        this.db.upsert('courses', finalData, 'external_id', true, preservedCourseFields);
+      }
+
+      this.log?.info(
+        `Early metadata commit complete: ${termsMap.size} terms, ${fetched.courses.length} courses`
+      );
+
+      // Invalidate VisibleDataProvider cache so it picks up new courses
+      if (this.visibleDataProvider) {
+        this.visibleDataProvider.invalidateCache();
+      }
+
       // Filter courses based on term selection
       let coursesToSync = fetched.courses;
 
@@ -1441,6 +1524,7 @@ export class SyncEngine extends EventEmitter {
           }
         }
 
+        // Filter to only visible courses (early metadata commit ensures courses exist in DB)
         visibleCoursesToSync = coursesToSync.filter((c) => {
           const localId = canvasToLocalId.get(c.id);
           return localId !== undefined && visibleLocalIds.has(localId);

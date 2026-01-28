@@ -14,6 +14,7 @@ function createBaseState(overrides: Partial<StoreState> = {}): StoreState {
     courses: [],
     tasks: [],
     notifications: [],
+    policies: [],
     simulation: {
       isActive: false,
       startedAt: null,
@@ -53,6 +54,8 @@ function createCourse(overrides: Partial<Course> = {}): Course {
     isHidden: false,
     lastSyncedAt: '2024-01-15T10:00:00Z',
     enrollmentTermId: null,
+    archivedAt: null,
+    archiveSource: null,
     ...overrides,
   };
 }
@@ -70,15 +73,20 @@ function createTask(overrides: Partial<Task> = {}): Task {
     title: 'Assignment 1',
     description: 'First assignment',
     dueAt: defaultDueAt.toISOString(),
+    dueTimeKnown: true,
     weight: 10,
     grade: null,
     pointsPossible: 100,
     priorityScore: 50,
     isCompleted: false,
+    isOptional: false,
     completedAt: null,
     submissionStatus: null,
+    userSubmissionStatus: null,
+    effectiveSubmissionStatus: null,
     taskType: null,
     taskGroupId: null,
+    calendarEventId: null,
     ...overrides,
   };
 }
@@ -117,7 +125,7 @@ describe('DashboardViewModel', () => {
         expect(viewModel.priorityQueue[0].task.id).toBe(1);
       });
 
-      it('sorts by priority score descending', () => {
+      it('sorts by priority score descending when prioritySortingEnabled', () => {
         const course = createCourse();
         const lowPriority = createTask({ id: 1, priorityScore: 30 });
         const highPriority = createTask({ id: 2, priorityScore: 90 });
@@ -128,7 +136,8 @@ describe('DashboardViewModel', () => {
           tasks: [lowPriority, highPriority, mediumPriority],
         });
 
-        const viewModel = computeDashboardViewModel(state);
+        // Must enable priority sorting to sort by priorityScore
+        const viewModel = computeDashboardViewModel(state, { prioritySortingEnabled: true });
 
         expect(viewModel.priorityQueue[0].task.id).toBe(2); // High priority
         expect(viewModel.priorityQueue[1].task.id).toBe(3); // Medium priority

@@ -32,6 +32,7 @@ describe('DataCompletenessAnalyzer', () => {
     courseId: 1,
     title: 'Test Assignment',
     dueAt: new Date('2025-01-30T23:59:00Z'),
+    dueTimeKnown: true,
     unlockAt: null,
     lockAt: null,
     pointsPossible: 100,

@@ -8,6 +8,8 @@ import {
   HtmlFileExtractor,
   extractCanvasFileIds,
   extractCanvasFileReferences,
+  extractHtmlReferences,
+  extractAllDependencies,
 } from '../../src/layers/l2-daemon/HtmlFileExtractor';
 
 describe('HtmlFileExtractor', () => {
@@ -317,6 +319,218 @@ describe('HtmlFileExtractor', () => {
 
       expect(results).toHaveLength(1);
       expect(results[0].canvasFileId).toBe('123456789012345');
+    });
+  });
+
+  describe('HTML reference extraction', () => {
+    describe('extractHtmlReferences', () => {
+      it('should extract iframe src HTML references', () => {
+        const html = '<iframe src="./embedded.html"></iframe>';
+        const refs = extractor.extractHtmlReferences(html);
+        expect(refs).toHaveLength(1);
+        expect(refs[0].matchedUrl).toBe('./embedded.html');
+        expect(refs[0].refType).toBe('iframe');
+      });
+
+      it('should extract object data HTML references', () => {
+        const html = '<object data="content.html" type="text/html"></object>';
+        const refs = extractor.extractHtmlReferences(html);
+        expect(refs).toHaveLength(1);
+        expect(refs[0].refType).toBe('object');
+      });
+
+      it('should extract embed src HTML references', () => {
+        const html = '<embed src="widget.html">';
+        const refs = extractor.extractHtmlReferences(html);
+        expect(refs).toHaveLength(1);
+        expect(refs[0].refType).toBe('embed');
+      });
+
+      it('should extract .html link references', () => {
+        const html = '<a href="page.html">Link</a>';
+        const refs = extractor.extractHtmlReferences(html);
+        expect(refs).toHaveLength(1);
+        expect(refs[0].refType).toBe('html-link');
+      });
+
+      it('should extract .htm link references', () => {
+        const html = '<a href="legacy.htm">Old Link</a>';
+        const refs = extractor.extractHtmlReferences(html);
+        expect(refs).toHaveLength(1);
+        expect(refs[0].refType).toBe('html-link');
+      });
+
+      it('should extract Canvas page links', () => {
+        const html = '<a href="/courses/123/pages/syllabus">Syllabus</a>';
+        const refs = extractor.extractHtmlReferences(html);
+        expect(refs).toHaveLength(1);
+        expect(refs[0].courseId).toBe('123');
+        expect(refs[0].pageSlug).toBe('syllabus');
+        expect(refs[0].refType).toBe('canvas-page');
+      });
+
+      it('should extract Canvas page links with query strings', () => {
+        const html = '<a href="/courses/456/pages/info?titleize=0">Info</a>';
+        const refs = extractor.extractHtmlReferences(html);
+        expect(refs).toHaveLength(1);
+        expect(refs[0].courseId).toBe('456');
+        expect(refs[0].pageSlug).toBe('info');
+      });
+
+      it('should ignore external HTTPS URLs', () => {
+        const html = '<a href="https://youtube.com/watch">Video</a>';
+        const refs = extractor.extractHtmlReferences(html);
+        expect(refs).toHaveLength(0);
+      });
+
+      it('should ignore external HTTP URLs', () => {
+        const html = '<iframe src="http://external.com/page.html"></iframe>';
+        const refs = extractor.extractHtmlReferences(html);
+        expect(refs).toHaveLength(0);
+      });
+
+      it('should ignore mailto links', () => {
+        const html = '<a href="mailto:test@example.com">Email</a>';
+        const refs = extractor.extractHtmlReferences(html);
+        expect(refs).toHaveLength(0);
+      });
+
+      it('should ignore tel links', () => {
+        const html = '<a href="tel:+1234567890">Call</a>';
+        const refs = extractor.extractHtmlReferences(html);
+        expect(refs).toHaveLength(0);
+      });
+
+      it('should ignore javascript links', () => {
+        const html = '<a href="javascript:void(0)">Click</a>';
+        const refs = extractor.extractHtmlReferences(html);
+        expect(refs).toHaveLength(0);
+      });
+
+      it('should ignore anchor links', () => {
+        const html = '<a href="#section1">Jump</a>';
+        const refs = extractor.extractHtmlReferences(html);
+        expect(refs).toHaveLength(0);
+      });
+
+      it('should ignore data URIs', () => {
+        const html = '<iframe src="data:text/html,<h1>Test</h1>"></iframe>';
+        const refs = extractor.extractHtmlReferences(html);
+        expect(refs).toHaveLength(0);
+      });
+
+      it('should deduplicate HTML references by default', () => {
+        const html = `
+          <a href="./page.html">Link 1</a>
+          <a href="./page.html">Link 2</a>
+        `;
+        const refs = extractor.extractHtmlReferences(html);
+        expect(refs).toHaveLength(1);
+      });
+
+      it('should extract multiple different HTML references', () => {
+        const html = `
+          <iframe src="./embed.html"></iframe>
+          <a href="./page.html">Link</a>
+          <a href="/courses/123/pages/info">Info</a>
+        `;
+        const refs = extractor.extractHtmlReferences(html);
+        expect(refs).toHaveLength(3);
+      });
+
+      it('should return empty array for empty HTML', () => {
+        expect(extractor.extractHtmlReferences('')).toEqual([]);
+        expect(extractor.extractHtmlReferences(null as unknown as string)).toEqual([]);
+      });
+
+      it('should return empty array when extractHtmlRefs is disabled', () => {
+        const noHtmlExtractor = new HtmlFileExtractor({ extractHtmlRefs: false });
+        const html = '<iframe src="./embedded.html"></iframe>';
+        const refs = noHtmlExtractor.extractHtmlReferences(html);
+        expect(refs).toEqual([]);
+      });
+    });
+
+    describe('hasHtmlReferences', () => {
+      it('should return true when HTML references exist', () => {
+        const html = '<a href="/courses/123/pages/test">Link</a>';
+        expect(extractor.hasHtmlReferences(html)).toBe(true);
+      });
+
+      it('should return false when no HTML references exist', () => {
+        const html = '<p>Just some text</p>';
+        expect(extractor.hasHtmlReferences(html)).toBe(false);
+      });
+
+      it('should return false for external URLs only', () => {
+        const html = '<a href="https://example.com/page.html">External</a>';
+        expect(extractor.hasHtmlReferences(html)).toBe(false);
+      });
+
+      it('should return false for empty input', () => {
+        expect(extractor.hasHtmlReferences('')).toBe(false);
+        expect(extractor.hasHtmlReferences(null as unknown as string)).toBe(false);
+      });
+    });
+
+    describe('countHtmlReferences', () => {
+      it('should count unique HTML references', () => {
+        const html = `
+          <iframe src="./a.html"></iframe>
+          <a href="./b.html">B</a>
+          <a href="/courses/123/pages/c">C</a>
+        `;
+        expect(extractor.countHtmlReferences(html)).toBe(3);
+      });
+
+      it('should return 0 for no HTML references', () => {
+        expect(extractor.countHtmlReferences('<p>No refs</p>')).toBe(0);
+      });
+    });
+
+    describe('extractAllDependencies', () => {
+      it('should extract both file and HTML references', () => {
+        const html = `
+          <img src="/courses/123/files/456/preview">
+          <a href="/courses/123/pages/info">Info</a>
+        `;
+        const deps = extractor.extractAllDependencies(html);
+
+        expect(deps.files).toHaveLength(1);
+        expect(deps.files[0].canvasFileId).toBe('456');
+
+        expect(deps.htmlRefs).toHaveLength(1);
+        expect(deps.htmlRefs[0].pageSlug).toBe('info');
+      });
+
+      it('should return empty arrays for no dependencies', () => {
+        const deps = extractor.extractAllDependencies('<p>Plain text</p>');
+        expect(deps.files).toEqual([]);
+        expect(deps.htmlRefs).toEqual([]);
+      });
+    });
+  });
+
+  describe('convenience functions for HTML refs', () => {
+    describe('extractHtmlReferences', () => {
+      it('should extract HTML references using default config', () => {
+        const html = '<a href="/courses/123/pages/test">Link</a>';
+        const refs = extractHtmlReferences(html);
+        expect(refs).toHaveLength(1);
+        expect(refs[0].pageSlug).toBe('test');
+      });
+    });
+
+    describe('extractAllDependencies', () => {
+      it('should extract all dependencies using default config', () => {
+        const html = `
+          <img src="/courses/123/files/456/preview">
+          <a href="/courses/123/pages/info">Info</a>
+        `;
+        const deps = extractAllDependencies(html);
+        expect(deps.files).toHaveLength(1);
+        expect(deps.htmlRefs).toHaveLength(1);
+      });
     });
   });
 });

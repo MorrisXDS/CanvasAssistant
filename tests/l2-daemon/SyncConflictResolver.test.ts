@@ -162,18 +162,17 @@ describe('SyncConflictResolver', () => {
       // @ts-expect-error - mock database
       resolver = new SyncConflictResolver(mockDb);
 
-      // Mock isCanvasField to return true for grade
-      jest.spyOn(resolver, 'isCanvasProvidedField').mockReturnValue(true);
-
+      // Use 'title' field - it's a Canvas-provided field but NOT authoritative
+      // (grade, due_at, etc. are authoritative and auto-resolve without conflict)
       const localRecord = {
         id: 1,
-        grade: 85,
-        local_modified_fields: '["grade"]',
-        field_sources: '{"grade": "user"}',
+        title: 'My Custom Title',
+        local_modified_fields: '["title"]',
+        field_sources: '{"title": "user"}',
       };
 
       const canvasData = {
-        grade: 90,
+        title: 'Canvas Title',
       };
 
       const { conflicts } = resolver.detectConflicts(
@@ -197,18 +196,16 @@ describe('SyncConflictResolver', () => {
       // @ts-expect-error - mock database
       resolver = new SyncConflictResolver(mockDb);
 
-      // Mock isCanvasField to return true for grade
-      jest.spyOn(resolver, 'isCanvasProvidedField').mockReturnValue(true);
-
+      // Use 'title' field - not authoritative, can create conflict
       const localRecord = {
         id: 1,
-        grade: 85,
-        local_modified_fields: '["grade"]',
-        field_sources: '{"grade": "user"}',
+        title: 'My Custom Title',
+        local_modified_fields: '["title"]',
+        field_sources: '{"title": "user"}',
       };
 
       const canvasData = {
-        grade: 90,
+        title: 'Canvas Title',
       };
 
       resolver.detectConflicts(
@@ -235,13 +232,12 @@ describe('SyncConflictResolver', () => {
       // @ts-expect-error - mock database
       resolver = new SyncConflictResolver(mockDb);
 
-      jest.spyOn(resolver, 'isCanvasProvidedField').mockReturnValue(true);
-
+      // Use 'title' field - not authoritative, can create conflict
       const localRecord = {
         id: 1,
-        grade: 85,
-        local_modified_fields: '["grade"]',
-        field_sources: '{"grade": "user"}',
+        title: 'My Custom Title',
+        local_modified_fields: '["title"]',
+        field_sources: '{"title": "user"}',
       };
 
       // First sync - creates conflict
@@ -252,7 +248,7 @@ describe('SyncConflictResolver', () => {
         '123',
         'Test Assignment',
         localRecord,
-        { grade: 90 },
+        { title: 'Canvas Title v1' },
         { courseName: 'Math 101', courseId: 5 }
       );
 
@@ -267,7 +263,7 @@ describe('SyncConflictResolver', () => {
         '123',
         'Test Assignment',
         localRecord,
-        { grade: 95 }, // Different canvas value
+        { title: 'Canvas Title v2' }, // Different canvas value
         { courseName: 'Math 101', courseId: 5 }
       );
 
@@ -275,7 +271,7 @@ describe('SyncConflictResolver', () => {
       // Should be the same conflict ID (updated, not new)
       expect(result2.conflicts[0].id).toBe(firstConflictId);
       // Should have updated canvas value
-      expect(result2.conflicts[0].canvasValue).toBe(95);
+      expect(result2.conflicts[0].canvasValue).toBe('Canvas Title v2');
 
       // Total pending conflicts should still be 1
       expect(resolver.getPendingConflicts()).toHaveLength(1);

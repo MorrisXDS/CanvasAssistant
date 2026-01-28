@@ -23,6 +23,7 @@ export {
   AIConfigSchema,
   WindowBehaviorSettingsSchema,
   DashboardSettingsSchema,
+  SettingsPageSettingsSchema,
   // TypeScript types
   type StorageKey,
   type SyncPreferences,
@@ -36,6 +37,7 @@ export {
   type AIConfig,
   type WindowBehaviorSettings,
   type DashboardSettings,
+  type SettingsPageSettings,
   type SettingsValue,
   type SettingsTypeMap,
   // Default values
@@ -50,6 +52,8 @@ export {
   DEFAULT_AI_CONFIG,
   DEFAULT_WINDOW_BEHAVIOR_SETTINGS,
   DEFAULT_DASHBOARD_SETTINGS,
+  DEFAULT_SETTINGS_PAGE_SETTINGS,
+  DEFAULT_SETTINGS_SECTION_ORDER,
   DEFAULT_DASHBOARD_ORDER,
   DEFAULT_NAV_ORDER,
   SETTINGS_DEFAULTS,

@@ -113,6 +113,13 @@ const api = {
   deleteResourceLocal: (resourceId: number) =>
     ipcRenderer.invoke('resource:deleteLocal', resourceId),
 
+  /**
+   * Open a Canvas file by its external ID
+   * Downloads if not present locally, then opens with default application
+   */
+  openCanvasFile: (canvasFileId: string) =>
+    ipcRenderer.invoke('canvas-file:open', canvasFileId),
+
   // ============ Files Directory ============
 
   getFilesDirectory: () => ipcRenderer.invoke('files:getDirectory'),
@@ -453,6 +460,35 @@ const api = {
     ipcRenderer.invoke('data:exportCourseData', params),
 
   importCourseData: () => ipcRenderer.invoke('data:importCourseData'),
+
+  // New selective export methods
+  exportTasksCsv: (options?: { courseIds?: number[]; status?: string }) =>
+    ipcRenderer.invoke('data:exportTasksCsv', options),
+
+  exportGradesCsv: (options?: { courseIds?: number[] }) =>
+    ipcRenderer.invoke('data:exportGradesCsv', options),
+
+  exportSelective: (options: {
+    courses?: number[];
+    archivedCourses?: number[];
+    includeTasks?: boolean;
+    includeNotifications?: boolean;
+    includeFiles?: boolean;
+    includeGrades?: boolean;
+    includeCalendar?: boolean;
+    taskStatus?: 'all' | 'pending' | 'completed';
+    dateRange?: { start: string; end: string };
+    format: 'json' | 'csv' | 'zip';
+    encrypt?: boolean;
+    password?: string;
+  }) => ipcRenderer.invoke('data:exportSelective', options),
+
+  importEncrypted: (password: string) =>
+    ipcRenderer.invoke('data:importEncrypted', password),
+
+  getExportHistory: () => ipcRenderer.invoke('data:getExportHistory'),
+
+  runScheduledBackup: () => ipcRenderer.invoke('data:runScheduledBackup'),
 
   // ============ Custom Task Types ============
 

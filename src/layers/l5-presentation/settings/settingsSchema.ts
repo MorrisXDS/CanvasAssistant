@@ -58,6 +58,12 @@ export const STORAGE_KEYS = {
   FILES_SORT_ORDER: 'filesSortOrder',
   FILES_SELECTED_COURSE: 'filesSelectedCourse',
   FILES_FILTER_MODE: 'filesFilterMode',
+  FILES_DEFAULT_STATE: 'filesDefaultState',
+
+  // Settings page
+  SETTINGS_SECTION_ORDER: 'settingsSectionOrder',
+  SETTINGS_DEFAULT_STATE: 'settingsDefaultState',
+  SETTINGS_OPEN_SECTIONS: 'settingsOpenSections',
 
   // Announcement settings
   ANNOUNCEMENT_SORT_ORDER: 'announcementSortOrder',
@@ -70,6 +76,12 @@ export const STORAGE_KEYS = {
 
   // Dashboard settings
   DASHBOARD: 'dashboardSettings',
+
+  // HTML local paths settings
+  LOCAL_HTML_PATHS: 'localHtmlPathsSettings',
+
+  // Export/backup settings
+  EXPORT_SCHEDULE: 'exportSchedule',
 } as const;
 
 export type StorageKey = (typeof STORAGE_KEYS)[keyof typeof STORAGE_KEYS];
@@ -166,6 +178,43 @@ export const DashboardSettingsSchema = z.object({
   prioritySortingEnabled: z.boolean(),
 });
 
+export const LocalHtmlPathsSettingsSchema = z.object({
+  // Master toggle for local HTML paths feature (disabled by default)
+  enabled: z.boolean(),
+  // Auto-regenerate HTMLs when dependencies change
+  autoRegenerate: z.boolean(),
+  // Prompt user when downloading HTML with missing dependencies
+  promptForMissing: z.boolean(),
+});
+
+export const ExportScheduleSchema = z.object({
+  // Whether scheduled backups are enabled (default: false)
+  enabled: z.boolean(),
+  // Backup frequency
+  frequency: z.enum(['never', 'daily', 'weekly', 'monthly']),
+  // Time of day for backup (24h format, e.g., "03:00")
+  time: z.string().optional(),
+  // Day of week for weekly backups (0=Sunday, 6=Saturday)
+  dayOfWeek: z.number().min(0).max(6).optional(),
+  // Day of month for monthly backups (1-28)
+  dayOfMonth: z.number().min(1).max(28).optional(),
+  // Backup destination ('default' uses app data directory)
+  destination: z.string(),
+  // Maximum number of backups to keep (rotation)
+  maxBackups: z.number().min(1).max(100),
+  // Whether to encrypt backups with password
+  encrypt: z.boolean(),
+  // Timestamp of last successful backup
+  lastRun: z.string().optional(),
+  // Timestamp of next scheduled backup
+  nextRun: z.string().optional(),
+});
+
+export const SettingsPageSettingsSchema = z.object({
+  // How settings sections appear when opening (collapsed, expanded, or remember last state)
+  defaultState: z.enum(['collapsed', 'expanded', 'remember']),
+});
+
 // =============================================================================
 // TYPESCRIPT TYPES - Inferred from Zod schemas
 // =============================================================================
@@ -181,6 +230,9 @@ export type ContentSettings = z.infer<typeof ContentSettingsSchema>;
 export type AIConfig = z.infer<typeof AIConfigSchema>;
 export type WindowBehaviorSettings = z.infer<typeof WindowBehaviorSettingsSchema>;
 export type DashboardSettings = z.infer<typeof DashboardSettingsSchema>;
+export type LocalHtmlPathsSettings = z.infer<typeof LocalHtmlPathsSettingsSchema>;
+export type ExportSchedule = z.infer<typeof ExportScheduleSchema>;
+export type SettingsPageSettings = z.infer<typeof SettingsPageSettingsSchema>;
 
 // Union type for all settings objects
 export type SettingsValue =
@@ -195,6 +247,9 @@ export type SettingsValue =
   | AIConfig
   | WindowBehaviorSettings
   | DashboardSettings
+  | LocalHtmlPathsSettings
+  | ExportSchedule
+  | SettingsPageSettings
   | string
   | boolean
   | string[];
@@ -286,6 +341,24 @@ export const DEFAULT_DASHBOARD_SETTINGS: DashboardSettings = {
   prioritySortingEnabled: false, // Default to simple due date sorting
 };
 
+export const DEFAULT_LOCAL_HTML_PATHS_SETTINGS: LocalHtmlPathsSettings = {
+  enabled: false, // Disabled by default
+  autoRegenerate: true, // Auto-regenerate when files change
+  promptForMissing: true, // Prompt when downloading HTML with missing deps
+};
+
+export const DEFAULT_EXPORT_SCHEDULE: ExportSchedule = {
+  enabled: false, // Disabled by default - manual exports only
+  frequency: 'never',
+  destination: 'default', // Uses app data directory
+  maxBackups: 5, // Keep 5 most recent backups
+  encrypt: false,
+};
+
+export const DEFAULT_SETTINGS_PAGE_SETTINGS: SettingsPageSettings = {
+  defaultState: 'expanded', // All sections expanded by default
+};
+
 // Dashboard section order
 export const DEFAULT_DASHBOARD_ORDER = [
   'priority',
@@ -313,6 +386,8 @@ export interface SettingsTypeMap {
   [STORAGE_KEYS.AI_CONFIG]: AIConfig;
   [STORAGE_KEYS.WINDOW_BEHAVIOR]: WindowBehaviorSettings;
   [STORAGE_KEYS.DASHBOARD]: DashboardSettings;
+  [STORAGE_KEYS.LOCAL_HTML_PATHS]: LocalHtmlPathsSettings;
+  [STORAGE_KEYS.EXPORT_SCHEDULE]: ExportSchedule;
   [STORAGE_KEYS.CANVAS_URL]: string;
   [STORAGE_KEYS.LANDING_PAGE]: string;
   [STORAGE_KEYS.SIDEBAR_COLLAPSED]: boolean;
@@ -336,9 +411,22 @@ export interface SettingsTypeMap {
   [STORAGE_KEYS.FILES_SORT_ORDER]: 'asc' | 'desc';
   [STORAGE_KEYS.FILES_SELECTED_COURSE]: number | null;
   [STORAGE_KEYS.FILES_FILTER_MODE]: string;
+  [STORAGE_KEYS.FILES_DEFAULT_STATE]: 'remember' | 'expanded' | 'collapsed';
+  [STORAGE_KEYS.SETTINGS_SECTION_ORDER]: string[];
+  [STORAGE_KEYS.SETTINGS_DEFAULT_STATE]: 'collapsed' | 'expanded' | 'remember';
+  [STORAGE_KEYS.SETTINGS_OPEN_SECTIONS]: string[];
   [STORAGE_KEYS.ANNOUNCEMENT_SORT_ORDER]: 'asc' | 'desc';
   [STORAGE_KEYS.ONBOARDING_COMPLETED]: boolean;
 }
+
+// Default order for settings sections
+export const DEFAULT_SETTINGS_SECTION_ORDER = [
+  'account',
+  'display',
+  'academic',
+  'notifications',
+  'data',
+];
 
 export const SETTINGS_DEFAULTS: Partial<SettingsTypeMap> = {
   [STORAGE_KEYS.SYNC_PREFS]: DEFAULT_SYNC_PREFERENCES,
@@ -352,12 +440,16 @@ export const SETTINGS_DEFAULTS: Partial<SettingsTypeMap> = {
   [STORAGE_KEYS.AI_CONFIG]: DEFAULT_AI_CONFIG,
   [STORAGE_KEYS.WINDOW_BEHAVIOR]: DEFAULT_WINDOW_BEHAVIOR_SETTINGS,
   [STORAGE_KEYS.DASHBOARD]: DEFAULT_DASHBOARD_SETTINGS,
+  [STORAGE_KEYS.LOCAL_HTML_PATHS]: DEFAULT_LOCAL_HTML_PATHS_SETTINGS,
+  [STORAGE_KEYS.EXPORT_SCHEDULE]: DEFAULT_EXPORT_SCHEDULE,
   [STORAGE_KEYS.CANVAS_URL]: '',
   [STORAGE_KEYS.LANDING_PAGE]: '/',
   [STORAGE_KEYS.SIDEBAR_COLLAPSED]: false,
   [STORAGE_KEYS.NAV_ORDER]: DEFAULT_NAV_ORDER,
   [STORAGE_KEYS.DASHBOARD_SECTION_ORDER]: DEFAULT_DASHBOARD_ORDER,
   [STORAGE_KEYS.CALENDAR_VIEW_MODE]: 'month',
+  [STORAGE_KEYS.FILES_DEFAULT_STATE]: 'remember',
+  [STORAGE_KEYS.SETTINGS_SECTION_ORDER]: DEFAULT_SETTINGS_SECTION_ORDER,
 };
 
 // Schema map for validation
@@ -373,6 +465,8 @@ export const SETTINGS_SCHEMAS: Partial<Record<string, z.ZodType>> = {
   [STORAGE_KEYS.AI_CONFIG]: AIConfigSchema,
   [STORAGE_KEYS.WINDOW_BEHAVIOR]: WindowBehaviorSettingsSchema,
   [STORAGE_KEYS.DASHBOARD]: DashboardSettingsSchema,
+  [STORAGE_KEYS.LOCAL_HTML_PATHS]: LocalHtmlPathsSettingsSchema,
+  [STORAGE_KEYS.EXPORT_SCHEDULE]: ExportScheduleSchema,
 };
 
 // =============================================================================

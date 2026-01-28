@@ -29,6 +29,7 @@ describe('RecommendationEngine', () => {
     courseId: 1,
     title: 'Test Task',
     dueAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // Tomorrow
+    dueTimeKnown: true,
     unlockAt: null,
     lockAt: null,
     pointsPossible: 100,

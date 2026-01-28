@@ -60,6 +60,7 @@ export class Database extends EventEmitter {
   private db: SQLiteDatabase;
   private dbPath: string;
   private isInitialized: boolean = false;
+  private _isOpen: boolean = false;
   private readonly cacheSizeKb: number;
   private readonly mmapSizeBytes: number;
   private readonly walMode: boolean;
@@ -109,6 +110,15 @@ export class Database extends EventEmitter {
     if (this.walMode) {
       this.startCheckpointManagement();
     }
+
+    this._isOpen = true;
+  }
+
+  /**
+   * Check if the database connection is open
+   */
+  get isOpen(): boolean {
+    return this._isOpen;
   }
 
   /**
@@ -754,6 +764,7 @@ export class Database extends EventEmitter {
       });
     } finally {
       this.db.close();
+      this._isOpen = false;
     }
   }
 }

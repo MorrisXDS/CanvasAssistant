@@ -34,6 +34,7 @@ function createTask(overrides: Partial<TaskForPriority> = {}): TaskForPriority {
     courseId: 100,
     title: 'Test Assignment',
     dueAt: null,
+    dueTimeKnown: true,
     unlockAt: null,
     lockAt: null,
     pointsPossible: 100,

@@ -34,6 +34,10 @@ import {
   GraduationCap,
   Settings2,
   BookOpen,
+  HardDrive,
+  FileSpreadsheet,
+  ChevronDown,
+  Trash2,
 } from 'lucide-react';
 import { useStore } from '../../l5-presentation/store';
 import {
@@ -48,6 +52,8 @@ import {
   DEFAULT_CALENDAR_SETTINGS,
   DEFAULT_CONTENT_SETTINGS,
   DEFAULT_DASHBOARD_SETTINGS,
+  DEFAULT_SETTINGS_PAGE_SETTINGS,
+  DEFAULT_SETTINGS_SECTION_ORDER,
   SETTINGS_CATEGORIES,
   searchSettings,
   type SyncPreferences,
@@ -60,9 +66,11 @@ import {
   type ContentSettings,
   type DashboardSettings,
   type SettingsCategory,
+  type SettingsPageSettings,
 } from '../../l5-presentation/settings';
 import type { Course } from '../../l5-presentation/types';
 import { ConfirmDialog } from './shared/ConfirmDialog';
+import { ExportDialog } from './shared/ExportDialog';
 import {
   Accordion,
   SearchInput,
@@ -91,12 +99,13 @@ interface EnrollmentTerm {
   endAt: string | null;
 }
 
-// Category icons
-const CATEGORY_ICONS: Record<SettingsCategory, React.ReactNode> = {
+// Category icons - also includes 'data' section
+const CATEGORY_ICONS: Record<string, React.ReactNode> = {
   account: <Link size={18} />,
   display: <Palette size={18} />,
   academic: <GraduationCap size={18} />,
   notifications: <Bell size={18} />,
+  data: <HardDrive size={18} />,
 };
 
 // Landing page options
@@ -116,18 +125,47 @@ export function SettingsModal({
   onClose,
   isFullPage = false,
 }: SettingsModalProps) {
-  const { courses, fetchCourses } = useStore();
+  const { courses, fetchCourses, setAuthenticated } = useStore();
 
   // Search state
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Accordion state - all sections open by default
-  const [openSections, setOpenSections] = useState<string[]>([
-    'account',
-    'display',
-    'academic',
-    'notifications',
-  ]);
+  // Settings page settings (default state for sections)
+  const [settingsPageSettings, setSettingsPageSettings] = useState<SettingsPageSettings>(
+    () => {
+      const stored = localStorage.getItem(STORAGE_KEYS.SETTINGS_DEFAULT_STATE);
+      if (
+        stored &&
+        (stored === 'collapsed' || stored === 'expanded' || stored === 'remember')
+      ) {
+        return { defaultState: stored };
+      }
+      return DEFAULT_SETTINGS_PAGE_SETTINGS;
+    }
+  );
+
+  // Accordion state - initialized based on settings default state preference
+  const [openSections, setOpenSections] = useState<string[]>(() => {
+    const storedDefaultState = localStorage.getItem(STORAGE_KEYS.SETTINGS_DEFAULT_STATE);
+    const defaultState =
+      storedDefaultState ?? DEFAULT_SETTINGS_PAGE_SETTINGS.defaultState;
+
+    if (defaultState === 'collapsed') {
+      return [];
+    } else if (defaultState === 'remember') {
+      const saved = localStorage.getItem(STORAGE_KEYS.SETTINGS_OPEN_SECTIONS);
+      if (saved) {
+        try {
+          return JSON.parse(saved);
+        } catch {
+          return DEFAULT_SETTINGS_SECTION_ORDER;
+        }
+      }
+      return DEFAULT_SETTINGS_SECTION_ORDER;
+    }
+    // 'expanded' - all sections open
+    return DEFAULT_SETTINGS_SECTION_ORDER;
+  });
 
   // Canvas connection state
   const [canvasUrl, setCanvasUrl] = useState('');
@@ -211,15 +249,33 @@ export function SettingsModal({
     () => settingsManager.get(STORAGE_KEYS.LANDING_PAGE) ?? '/'
   );
 
+  // Section order for drag-and-drop reordering
+  const [sectionOrder, setSectionOrder] = useState<string[]>(() => {
+    const stored = localStorage.getItem(STORAGE_KEYS.SETTINGS_SECTION_ORDER);
+    if (stored) {
+      try {
+        return JSON.parse(stored);
+      } catch {
+        return ['account', 'display', 'academic', 'notifications', 'data'];
+      }
+    }
+    return ['account', 'display', 'academic', 'notifications', 'data'];
+  });
+
+  // Drag state for section reordering
+  const [draggedSection, setDraggedSection] = useState<string | null>(null);
+  const [dragOverSection, setDragOverSection] = useState<string | null>(null);
+
   // Window behavior settings
   const [windowBehavior, setWindowBehavior] = useState<{
     closeAction: 'quit' | 'minimize-to-tray' | null;
     showTrayIcon: boolean;
   }>({ closeAction: null, showTrayIcon: true });
 
-  // Clear data confirmation dialog
+  // Confirmation dialogs
   const [showClearDataConfirm, setShowClearDataConfirm] = useState(false);
   const [deleteTokenOnClear, setDeleteTokenOnClear] = useState(false);
+  const [showDisconnectConfirm, setShowDisconnectConfirm] = useState(false);
 
   // Data export/import state
   const [isExporting, setIsExporting] = useState(false);
@@ -228,6 +284,10 @@ export function SettingsModal({
     type: 'success' | 'error';
     text: string;
   } | null>(null);
+
+  // New export dialog state
+  const [showExportDialog, setShowExportDialog] = useState(false);
+  const [showCsvDropdown, setShowCsvDropdown] = useState(false);
 
   // =============================================================================
   // FILTERED SETTINGS FOR SEARCH
@@ -282,6 +342,16 @@ export function SettingsModal({
       setSearchQuery('');
     }
   }, [isOpen]);
+
+  // Save open sections when changed (for "remember" mode)
+  useEffect(() => {
+    if (settingsPageSettings.defaultState === 'remember') {
+      localStorage.setItem(
+        STORAGE_KEYS.SETTINGS_OPEN_SECTIONS,
+        JSON.stringify(openSections)
+      );
+    }
+  }, [openSections, settingsPageSettings.defaultState]);
 
   // Close on escape key
   useEffect(() => {
@@ -592,6 +662,20 @@ export function SettingsModal({
     settingsManager.set(STORAGE_KEYS.DASHBOARD, newSettings);
   };
 
+  const updateSettingsPageSettings = (updates: Partial<SettingsPageSettings>) => {
+    const newSettings = { ...settingsPageSettings, ...updates };
+    setSettingsPageSettings(newSettings);
+    settingsManager.set(STORAGE_KEYS.SETTINGS_DEFAULT_STATE, newSettings.defaultState);
+
+    // Apply the new default state immediately
+    if (updates.defaultState === 'collapsed') {
+      setOpenSections([]);
+    } else if (updates.defaultState === 'expanded') {
+      setOpenSections(DEFAULT_SETTINGS_SECTION_ORDER);
+    }
+    // For 'remember', keep current state - it will be saved automatically
+  };
+
   const updateLandingPage = (path: string) => {
     setLandingPage(path);
     settingsManager.set(STORAGE_KEYS.LANDING_PAGE, path);
@@ -651,7 +735,7 @@ export function SettingsModal({
     }
   };
 
-  const _handleImportDatabase = async () => {
+  const handleImportDatabase = async () => {
     setIsImporting(true);
     setExportMessage(null);
     try {
@@ -747,6 +831,82 @@ export function SettingsModal({
   };
 
   // =============================================================================
+  // SECTION DRAG AND DROP HANDLERS
+  // =============================================================================
+
+  const handleDragStart = (e: React.DragEvent, sectionId: string) => {
+    setDraggedSection(sectionId);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', sectionId);
+    // Add a slight delay to show the drag effect
+    setTimeout(() => {
+      const target = e.target as HTMLElement;
+      target.style.opacity = '0.5';
+    }, 0);
+  };
+
+  const handleDragEnd = (e: React.DragEvent) => {
+    setDraggedSection(null);
+    setDragOverSection(null);
+    const target = e.target as HTMLElement;
+    target.style.opacity = '1';
+  };
+
+  const handleDragOver = (e: React.DragEvent, sectionId: string) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (sectionId !== draggedSection) {
+      setDragOverSection(sectionId);
+    }
+  };
+
+  const handleDragLeave = () => {
+    setDragOverSection(null);
+  };
+
+  const handleDrop = (e: React.DragEvent, targetSectionId: string) => {
+    e.preventDefault();
+    const sourceSectionId = e.dataTransfer.getData('text/plain');
+
+    if (sourceSectionId && sourceSectionId !== targetSectionId) {
+      const newOrder = [...sectionOrder];
+      const sourceIndex = newOrder.indexOf(sourceSectionId);
+      const targetIndex = newOrder.indexOf(targetSectionId);
+
+      if (sourceIndex !== -1 && targetIndex !== -1) {
+        // Remove from source position
+        newOrder.splice(sourceIndex, 1);
+        // Insert at target position
+        newOrder.splice(targetIndex, 0, sourceSectionId);
+
+        setSectionOrder(newOrder);
+        // Persist to localStorage
+        localStorage.setItem(
+          STORAGE_KEYS.SETTINGS_SECTION_ORDER,
+          JSON.stringify(newOrder)
+        );
+      }
+    }
+
+    setDraggedSection(null);
+    setDragOverSection(null);
+  };
+
+  // Helper to get drag wrapper style
+  const getDragWrapperStyle = (sectionId: string): React.CSSProperties => ({
+    position: 'relative',
+    borderRadius: 'var(--radius-lg)',
+    transition: 'transform 150ms ease, box-shadow 150ms ease',
+    ...(draggedSection === sectionId && {
+      opacity: 0.5,
+    }),
+    ...(dragOverSection === sectionId &&
+      draggedSection !== sectionId && {
+        boxShadow: '0 0 0 2px var(--color-primary)',
+      }),
+  });
+
+  // =============================================================================
   // CHECK IF SETTINGS ARE MODIFIED
   // =============================================================================
 
@@ -766,6 +926,8 @@ export function SettingsModal({
     JSON.stringify(calendarSettings) !== JSON.stringify(DEFAULT_CALENDAR_SETTINGS);
   const isCourseSettingsModified =
     JSON.stringify(courseSettings) !== JSON.stringify(DEFAULT_COURSE_SETTINGS);
+  const isSettingsPageSettingsModified =
+    settingsPageSettings.defaultState !== DEFAULT_SETTINGS_PAGE_SETTINGS.defaultState;
 
   const accountModifiedCount =
     (isSyncModified ? 1 : 0) + (windowBehavior.closeAction !== null ? 1 : 0);
@@ -775,7 +937,8 @@ export function SettingsModal({
     (landingPage !== '/' ? 1 : 0) +
     (isFileExplorerModified ? 1 : 0) +
     (isCalendarModified ? 1 : 0) +
-    (isCourseSettingsModified ? 1 : 0);
+    (isCourseSettingsModified ? 1 : 0) +
+    (isSettingsPageSettingsModified ? 1 : 0);
   const academicModifiedCount = isAcademicModified ? 1 : 0;
   const notificationsModifiedCount = isNotificationsModified ? 1 : 0;
 
@@ -823,932 +986,1205 @@ export function SettingsModal({
         <Accordion type="multiple" value={openSections} onChange={setOpenSections}>
           {/* Account & Connection */}
           {shouldShowSection('account') && (
-            <Accordion.Item value="account">
-              <Accordion.Trigger
-                icon={CATEGORY_ICONS.account}
-                badge={<ModifiedBadge count={accountModifiedCount} />}
-              >
-                {SETTINGS_CATEGORIES.account.label}
-              </Accordion.Trigger>
-              <Accordion.Content>
-                <div style={styles.section}>
-                  <p style={styles.sectionDesc}>
-                    {SETTINGS_CATEGORIES.account.description}
-                  </p>
+            <div
+              draggable
+              onDragStart={(e) => handleDragStart(e, 'account')}
+              onDragEnd={handleDragEnd}
+              onDragOver={(e) => handleDragOver(e, 'account')}
+              onDragLeave={handleDragLeave}
+              onDrop={(e) => handleDrop(e, 'account')}
+              style={{
+                ...getDragWrapperStyle('account'),
+                order: sectionOrder.indexOf('account'),
+              }}
+            >
+              <Accordion.Item value="account">
+                <Accordion.Trigger
+                  icon={CATEGORY_ICONS.account}
+                  badge={<ModifiedBadge count={accountModifiedCount} />}
+                >
+                  {SETTINGS_CATEGORIES.account.label}
+                </Accordion.Trigger>
+                <Accordion.Content>
+                  <div style={styles.section}>
+                    <p style={styles.sectionDesc}>
+                      {SETTINGS_CATEGORIES.account.description}
+                    </p>
 
-                  {/* Canvas URL */}
-                  <SettingRow
-                    label="Canvas URL"
-                    description="Your institution's Canvas LMS URL"
-                    vertical
-                  >
-                    <input
-                      type="text"
-                      value={canvasUrl}
-                      onChange={(e) => setCanvasUrl(e.target.value)}
-                      placeholder="https://your-institution.instructure.com"
-                      style={styles.input}
-                      disabled={isConnected}
-                    />
-                  </SettingRow>
+                    {/* Canvas Connection Card */}
+                    <div style={styles.connectionCard}>
+                      {/* Connection Header with Status Badge */}
+                      <div style={styles.connectionHeader}>
+                        <div style={styles.connectionTitleRow}>
+                          <Link size={18} style={{ color: 'var(--color-primary)' }} />
+                          <span style={styles.connectionTitle}>
+                            Canvas LMS Connection
+                          </span>
+                        </div>
+                        {isConnected ? (
+                          <span style={styles.statusBadgeConnected}>
+                            <Check size={12} /> Connected
+                          </span>
+                        ) : (
+                          <span style={styles.statusBadgeDisconnected}>
+                            <AlertCircle size={12} /> Not Connected
+                          </span>
+                        )}
+                      </div>
 
-                  {/* Connection Status */}
-                  <div style={styles.statusRow}>
-                    <span style={styles.statusLabel}>Status:</span>
-                    {isConnected ? (
-                      <span style={styles.statusConnected}>
-                        <Check size={14} /> Connected
-                      </span>
-                    ) : (
-                      <span style={styles.statusDisconnected}>
-                        <AlertCircle size={14} /> Not Connected
-                      </span>
-                    )}
-                  </div>
+                      {/* URL Display/Input */}
+                      <div style={styles.urlSection}>
+                        <label style={styles.urlLabel}>Canvas URL</label>
+                        {isConnected ? (
+                          <div style={styles.urlDisplay}>
+                            <span style={styles.urlText}>{canvasUrl}</span>
+                          </div>
+                        ) : (
+                          <input
+                            type="text"
+                            value={canvasUrl}
+                            onChange={(e) => setCanvasUrl(e.target.value)}
+                            placeholder="https://your-institution.instructure.com"
+                            style={styles.urlInput}
+                          />
+                        )}
+                      </div>
 
-                  {connectionError && <div style={styles.error}>{connectionError}</div>}
-
-                  {tokenValidationResult.status && (
-                    <div
-                      style={{
-                        ...styles.validationResult,
-                        backgroundColor:
-                          tokenValidationResult.status === 'success'
-                            ? 'var(--color-success-bg)'
-                            : 'var(--color-error-bg)',
-                        color:
-                          tokenValidationResult.status === 'success'
-                            ? 'var(--color-success)'
-                            : 'var(--color-error)',
-                      }}
-                    >
-                      {tokenValidationResult.status === 'success' ? (
-                        <Check size={14} />
-                      ) : (
-                        <AlertCircle size={14} />
+                      {/* Error/Validation Messages */}
+                      {connectionError && (
+                        <div style={styles.connectionError}>
+                          <AlertCircle size={14} />
+                          {connectionError}
+                        </div>
                       )}
-                      {tokenValidationResult.message}
-                    </div>
-                  )}
 
-                  <div style={styles.buttonRow}>
-                    {isConnected ? (
-                      <>
-                        <button
+                      {tokenValidationResult.status && (
+                        <div
                           style={{
-                            ...styles.secondaryButton,
-                            opacity: isValidatingToken ? 0.6 : 1,
+                            ...styles.validationMessage,
+                            backgroundColor:
+                              tokenValidationResult.status === 'success'
+                                ? 'var(--color-success-bg)'
+                                : 'var(--color-error-bg)',
+                            color:
+                              tokenValidationResult.status === 'success'
+                                ? 'var(--color-success)'
+                                : 'var(--color-error)',
                           }}
-                          onClick={handleValidateToken}
-                          disabled={isValidatingToken}
                         >
-                          {isValidatingToken ? (
-                            <>
-                              <Loader2
-                                size={14}
-                                style={{ animation: 'spin 1s linear infinite' }}
-                              />{' '}
-                              Validating...
-                            </>
+                          {tokenValidationResult.status === 'success' ? (
+                            <Check size={14} />
                           ) : (
-                            <>
-                              <ShieldCheck size={14} /> Validate Token
-                            </>
+                            <AlertCircle size={14} />
                           )}
-                        </button>
-                        <button
-                          style={styles.secondaryButton}
-                          onClick={handleOpenTokenReplace}
-                        >
-                          <Key size={14} /> Replace Token
-                        </button>
-                        <button style={styles.dangerButton} onClick={handleDisconnect}>
-                          Disconnect
-                        </button>
-                      </>
-                    ) : (
-                      <button
-                        style={{
-                          ...styles.primaryButton,
-                          opacity: isConnecting || !canvasUrl ? 0.6 : 1,
-                        }}
-                        onClick={handleReconnect}
-                        disabled={isConnecting || !canvasUrl}
-                      >
-                        {isConnecting ? (
+                          {tokenValidationResult.message}
+                        </div>
+                      )}
+
+                      {/* Action Buttons */}
+                      <div style={styles.connectionActions}>
+                        {isConnected ? (
                           <>
-                            <Loader2
-                              size={16}
-                              style={{ animation: 'spin 1s linear infinite' }}
-                            />{' '}
-                            Connecting...
+                            <div style={styles.tokenActions}>
+                              <button
+                                style={{
+                                  ...styles.tokenButton,
+                                  opacity: isValidatingToken ? 0.6 : 1,
+                                }}
+                                onClick={handleValidateToken}
+                                disabled={isValidatingToken}
+                              >
+                                {isValidatingToken ? (
+                                  <>
+                                    <Loader2
+                                      size={14}
+                                      style={{ animation: 'spin 1s linear infinite' }}
+                                    />
+                                    Testing...
+                                  </>
+                                ) : (
+                                  <>
+                                    <ShieldCheck size={14} />
+                                    Test Connection
+                                  </>
+                                )}
+                              </button>
+                              <button
+                                style={styles.tokenButton}
+                                onClick={handleOpenTokenReplace}
+                              >
+                                <Key size={14} />
+                                Update Token
+                              </button>
+                            </div>
+                            <button
+                              style={styles.disconnectButton}
+                              onClick={() => setShowDisconnectConfirm(true)}
+                            >
+                              Remove Connection
+                            </button>
                           </>
                         ) : (
-                          'Connect'
+                          <button
+                            style={{
+                              ...styles.connectButton,
+                              opacity: isConnecting || !canvasUrl ? 0.6 : 1,
+                            }}
+                            onClick={handleReconnect}
+                            disabled={isConnecting || !canvasUrl}
+                          >
+                            {isConnecting ? (
+                              <>
+                                <Loader2
+                                  size={16}
+                                  style={{ animation: 'spin 1s linear infinite' }}
+                                />
+                                Connecting...
+                              </>
+                            ) : (
+                              <>
+                                <Link size={16} />
+                                Connect to Canvas
+                              </>
+                            )}
+                          </button>
                         )}
-                      </button>
-                    )}
-                  </div>
+                      </div>
+                    </div>
 
-                  <div style={styles.divider} />
+                    <div style={styles.divider} />
 
-                  {/* Sync Settings */}
-                  <SettingRow
-                    label="Auto-sync interval"
-                    description="How often to automatically sync data from Canvas"
-                    isModified={
-                      syncPrefs.autoSyncInterval !==
-                      DEFAULT_SYNC_PREFERENCES.autoSyncInterval
-                    }
-                    onReset={() =>
-                      updateSyncPrefs({
-                        autoSyncInterval: DEFAULT_SYNC_PREFERENCES.autoSyncInterval,
-                        autoSyncEnabled: DEFAULT_SYNC_PREFERENCES.autoSyncEnabled,
-                      })
-                    }
-                  >
-                    <SettingSelect
-                      value={String(syncPrefs.autoSyncInterval)}
-                      onChange={(v) => {
-                        const interval = Number(v);
-                        updateSyncPrefs({
-                          autoSyncInterval: interval,
-                          autoSyncEnabled: interval > 0,
-                        });
-                      }}
-                      options={[
-                        { value: '0', label: 'Never' },
-                        { value: '15', label: '15 minutes' },
-                        { value: '30', label: '30 minutes' },
-                        { value: '60', label: '1 hour' },
-                        { value: '120', label: '2 hours' },
-                      ]}
-                    />
-                  </SettingRow>
-
-                  <SettingRow
-                    label="Sync files"
-                    description="Include course files and folders in sync"
-                    isModified={
-                      syncPrefs.syncFiles !== DEFAULT_SYNC_PREFERENCES.syncFiles
-                    }
-                    onReset={() =>
-                      updateSyncPrefs({ syncFiles: DEFAULT_SYNC_PREFERENCES.syncFiles })
-                    }
-                  >
-                    <ToggleSwitch
-                      checked={syncPrefs.syncFiles}
-                      onChange={(checked) => updateSyncPrefs({ syncFiles: checked })}
-                    />
-                  </SettingRow>
-
-                  <SettingRow
-                    label="Sync announcements"
-                    description="Include course announcements in sync"
-                    isModified={
-                      syncPrefs.syncAnnouncements !==
-                      DEFAULT_SYNC_PREFERENCES.syncAnnouncements
-                    }
-                    onReset={() =>
-                      updateSyncPrefs({
-                        syncAnnouncements: DEFAULT_SYNC_PREFERENCES.syncAnnouncements,
-                      })
-                    }
-                  >
-                    <ToggleSwitch
-                      checked={syncPrefs.syncAnnouncements}
-                      onChange={(checked) =>
-                        updateSyncPrefs({ syncAnnouncements: checked })
+                    {/* Sync Settings */}
+                    <SettingRow
+                      label="Auto-sync interval"
+                      description="How often to automatically sync data from Canvas"
+                      isModified={
+                        syncPrefs.autoSyncInterval !==
+                        DEFAULT_SYNC_PREFERENCES.autoSyncInterval
                       }
-                    />
-                  </SettingRow>
-
-                  <div style={styles.divider} />
-
-                  {/* Window Behavior */}
-                  <SettingRow
-                    label="Close button behavior"
-                    description="What happens when you click the close button"
-                    isModified={windowBehavior.closeAction !== null}
-                    onReset={() => updateWindowBehavior({ closeAction: null })}
-                  >
-                    <SettingSelect
-                      value={windowBehavior.closeAction ?? ''}
-                      onChange={(v) =>
-                        updateWindowBehavior({
-                          closeAction:
-                            v === '' ? null : (v as 'quit' | 'minimize-to-tray'),
+                      onReset={() =>
+                        updateSyncPrefs({
+                          autoSyncInterval: DEFAULT_SYNC_PREFERENCES.autoSyncInterval,
+                          autoSyncEnabled: DEFAULT_SYNC_PREFERENCES.autoSyncEnabled,
                         })
                       }
-                      options={[
-                        { value: '', label: 'Ask every time' },
-                        { value: 'minimize-to-tray', label: 'Minimize to tray' },
-                        { value: 'quit', label: 'Quit application' },
-                      ]}
-                    />
-                  </SettingRow>
-                </div>
-              </Accordion.Content>
-            </Accordion.Item>
+                    >
+                      <SettingSelect
+                        value={String(syncPrefs.autoSyncInterval)}
+                        onChange={(v) => {
+                          const interval = Number(v);
+                          updateSyncPrefs({
+                            autoSyncInterval: interval,
+                            autoSyncEnabled: interval > 0,
+                          });
+                        }}
+                        options={[
+                          { value: '0', label: 'Never' },
+                          { value: '15', label: '15 minutes' },
+                          { value: '30', label: '30 minutes' },
+                          { value: '60', label: '1 hour' },
+                          { value: '120', label: '2 hours' },
+                        ]}
+                      />
+                    </SettingRow>
+
+                    <SettingRow
+                      label="Sync files"
+                      description="Include course files and folders in sync"
+                      isModified={
+                        syncPrefs.syncFiles !== DEFAULT_SYNC_PREFERENCES.syncFiles
+                      }
+                      onReset={() =>
+                        updateSyncPrefs({ syncFiles: DEFAULT_SYNC_PREFERENCES.syncFiles })
+                      }
+                    >
+                      <ToggleSwitch
+                        checked={syncPrefs.syncFiles}
+                        onChange={(checked) => updateSyncPrefs({ syncFiles: checked })}
+                      />
+                    </SettingRow>
+
+                    <SettingRow
+                      label="Sync announcements"
+                      description="Include course announcements in sync"
+                      isModified={
+                        syncPrefs.syncAnnouncements !==
+                        DEFAULT_SYNC_PREFERENCES.syncAnnouncements
+                      }
+                      onReset={() =>
+                        updateSyncPrefs({
+                          syncAnnouncements: DEFAULT_SYNC_PREFERENCES.syncAnnouncements,
+                        })
+                      }
+                    >
+                      <ToggleSwitch
+                        checked={syncPrefs.syncAnnouncements}
+                        onChange={(checked) =>
+                          updateSyncPrefs({ syncAnnouncements: checked })
+                        }
+                      />
+                    </SettingRow>
+
+                    <div style={styles.divider} />
+
+                    {/* Window Behavior */}
+                    <SettingRow
+                      label="Close button behavior"
+                      description="What happens when you click the close button"
+                      isModified={windowBehavior.closeAction !== null}
+                      onReset={() => updateWindowBehavior({ closeAction: null })}
+                    >
+                      <SettingSelect
+                        value={windowBehavior.closeAction ?? ''}
+                        onChange={(v) =>
+                          updateWindowBehavior({
+                            closeAction:
+                              v === '' ? null : (v as 'quit' | 'minimize-to-tray'),
+                          })
+                        }
+                        options={[
+                          { value: '', label: 'Ask every time' },
+                          { value: 'minimize-to-tray', label: 'Minimize to tray' },
+                          { value: 'quit', label: 'Quit application' },
+                        ]}
+                      />
+                    </SettingRow>
+                  </div>
+                </Accordion.Content>
+              </Accordion.Item>
+            </div>
           )}
 
           {/* Display & Layout */}
           {shouldShowSection('display') && (
-            <Accordion.Item value="display">
-              <Accordion.Trigger
-                icon={CATEGORY_ICONS.display}
-                badge={<ModifiedBadge count={displayModifiedCount} />}
-              >
-                {SETTINGS_CATEGORIES.display.label}
-              </Accordion.Trigger>
-              <Accordion.Content>
-                <div style={styles.section}>
-                  <p style={styles.sectionDesc}>
-                    {SETTINGS_CATEGORIES.display.description}
-                  </p>
+            <div
+              draggable
+              onDragStart={(e) => handleDragStart(e, 'display')}
+              onDragEnd={handleDragEnd}
+              onDragOver={(e) => handleDragOver(e, 'display')}
+              onDragLeave={handleDragLeave}
+              onDrop={(e) => handleDrop(e, 'display')}
+              style={{
+                ...getDragWrapperStyle('display'),
+                order: sectionOrder.indexOf('display'),
+              }}
+            >
+              <Accordion.Item value="display">
+                <Accordion.Trigger
+                  icon={CATEGORY_ICONS.display}
+                  badge={<ModifiedBadge count={displayModifiedCount} />}
+                >
+                  {SETTINGS_CATEGORIES.display.label}
+                </Accordion.Trigger>
+                <Accordion.Content>
+                  <div style={styles.section}>
+                    <p style={styles.sectionDesc}>
+                      {SETTINGS_CATEGORIES.display.description}
+                    </p>
 
-                  {/* Theme */}
-                  <SettingRow
-                    label="Theme"
-                    description="Application color theme"
-                    isModified={appearance.theme !== DEFAULT_APPEARANCE_SETTINGS.theme}
-                    onReset={() =>
-                      updateAppearance({ theme: DEFAULT_APPEARANCE_SETTINGS.theme })
-                    }
-                  >
-                    <SettingButtonGroup
-                      value={appearance.theme}
-                      onChange={(v) =>
-                        updateAppearance({ theme: v as AppearanceSettings['theme'] })
+                    {/* Theme */}
+                    <SettingRow
+                      label="Theme"
+                      description="Application color theme"
+                      isModified={appearance.theme !== DEFAULT_APPEARANCE_SETTINGS.theme}
+                      onReset={() =>
+                        updateAppearance({ theme: DEFAULT_APPEARANCE_SETTINGS.theme })
                       }
-                      options={[
-                        { value: 'light', label: 'Light', icon: <Sun size={14} /> },
-                        { value: 'dark', label: 'Dark', icon: <Moon size={14} /> },
-                        { value: 'system', label: 'System', icon: <Monitor size={14} /> },
-                      ]}
-                    />
-                  </SettingRow>
+                    >
+                      <SettingButtonGroup
+                        value={appearance.theme}
+                        onChange={(v) =>
+                          updateAppearance({ theme: v as AppearanceSettings['theme'] })
+                        }
+                        options={[
+                          { value: 'light', label: 'Light', icon: <Sun size={14} /> },
+                          { value: 'dark', label: 'Dark', icon: <Moon size={14} /> },
+                          {
+                            value: 'system',
+                            label: 'System',
+                            icon: <Monitor size={14} />,
+                          },
+                        ]}
+                      />
+                    </SettingRow>
 
-                  {/* Landing Page */}
-                  <SettingRow
-                    label="Landing page"
-                    description="The page shown when the app launches"
-                    isModified={landingPage !== '/'}
-                    onReset={() => updateLandingPage('/')}
-                  >
-                    <SettingButtonGroup
-                      value={landingPage}
-                      onChange={updateLandingPage}
-                      options={LANDING_PAGE_OPTIONS.map((opt) => ({
-                        value: opt.value,
-                        label: opt.label,
-                        icon: opt.icon,
-                      }))}
-                    />
-                  </SettingRow>
+                    {/* Landing Page */}
+                    <SettingRow
+                      label="Landing page"
+                      description="The page shown when the app launches"
+                      isModified={landingPage !== '/'}
+                      onReset={() => updateLandingPage('/')}
+                    >
+                      <SettingButtonGroup
+                        value={landingPage}
+                        onChange={updateLandingPage}
+                        options={LANDING_PAGE_OPTIONS.map((opt) => ({
+                          value: opt.value,
+                          label: opt.label,
+                          icon: opt.icon,
+                        }))}
+                      />
+                    </SettingRow>
 
-                  {/* Sidebar */}
-                  <SettingRow
-                    label="Collapsed sidebar"
-                    description="Start with sidebar collapsed on launch"
-                    isModified={
-                      appearance.sidebarCollapsed !==
-                      DEFAULT_APPEARANCE_SETTINGS.sidebarCollapsed
-                    }
-                    onReset={() =>
-                      updateAppearance({
-                        sidebarCollapsed: DEFAULT_APPEARANCE_SETTINGS.sidebarCollapsed,
-                      })
-                    }
-                  >
-                    <ToggleSwitch
-                      checked={appearance.sidebarCollapsed}
-                      onChange={(checked) =>
-                        updateAppearance({ sidebarCollapsed: checked })
+                    {/* Sidebar */}
+                    <SettingRow
+                      label="Collapsed sidebar"
+                      description="Start with sidebar collapsed on launch"
+                      isModified={
+                        appearance.sidebarCollapsed !==
+                        DEFAULT_APPEARANCE_SETTINGS.sidebarCollapsed
                       }
-                    />
-                  </SettingRow>
-
-                  <div style={styles.divider} />
-
-                  {/* Dashboard Settings */}
-                  <SettingRow
-                    label="Priority sorting"
-                    description="Sort tasks by urgency and priority score instead of due date only"
-                    isModified={
-                      dashboardSettings.prioritySortingEnabled !==
-                      DEFAULT_DASHBOARD_SETTINGS.prioritySortingEnabled
-                    }
-                    onReset={() =>
-                      updateDashboardSettings({
-                        prioritySortingEnabled:
-                          DEFAULT_DASHBOARD_SETTINGS.prioritySortingEnabled,
-                      })
-                    }
-                  >
-                    <ToggleSwitch
-                      checked={dashboardSettings.prioritySortingEnabled}
-                      onChange={(checked) =>
-                        updateDashboardSettings({ prioritySortingEnabled: checked })
-                      }
-                    />
-                  </SettingRow>
-
-                  <SettingRow
-                    label="Important works threshold"
-                    description="Show tasks with grade weight above this percentage"
-                    isModified={
-                      dashboardSettings.importantWorksThreshold !==
-                      DEFAULT_DASHBOARD_SETTINGS.importantWorksThreshold
-                    }
-                    onReset={() =>
-                      updateDashboardSettings({
-                        importantWorksThreshold:
-                          DEFAULT_DASHBOARD_SETTINGS.importantWorksThreshold,
-                      })
-                    }
-                  >
-                    <SettingSlider
-                      value={dashboardSettings.importantWorksThreshold}
-                      onChange={(v) =>
-                        updateDashboardSettings({ importantWorksThreshold: v })
-                      }
-                      min={0}
-                      max={50}
-                      step={5}
-                      formatValue={(v) => `${v}%`}
-                    />
-                  </SettingRow>
-
-                  <div style={styles.divider} />
-
-                  {/* View Modes */}
-                  <SettingRow
-                    label="Courses view"
-                    description="Default view mode for the courses page"
-                    isModified={
-                      courseSettings.defaultViewMode !==
-                      DEFAULT_COURSE_SETTINGS.defaultViewMode
-                    }
-                    onReset={() =>
-                      updateCourseSettings({
-                        defaultViewMode: DEFAULT_COURSE_SETTINGS.defaultViewMode,
-                      })
-                    }
-                  >
-                    <SettingButtonGroup
-                      value={courseSettings.defaultViewMode}
-                      onChange={(v) =>
-                        updateCourseSettings({ defaultViewMode: v as 'grid' | 'list' })
-                      }
-                      options={[
-                        { value: 'grid', label: 'Grid' },
-                        { value: 'list', label: 'List' },
-                      ]}
-                    />
-                  </SettingRow>
-
-                  <SettingRow
-                    label="Calendar view"
-                    description="Default view when opening the calendar"
-                    isModified={
-                      calendarSettings.defaultViewMode !==
-                      DEFAULT_CALENDAR_SETTINGS.defaultViewMode
-                    }
-                    onReset={() =>
-                      updateCalendarSettings({
-                        defaultViewMode: DEFAULT_CALENDAR_SETTINGS.defaultViewMode,
-                      })
-                    }
-                  >
-                    <SettingButtonGroup
-                      value={calendarSettings.defaultViewMode}
-                      onChange={(v) =>
-                        updateCalendarSettings({ defaultViewMode: v as 'month' | 'week' })
-                      }
-                      options={[
-                        { value: 'month', label: 'Month' },
-                        { value: 'week', label: 'Week' },
-                      ]}
-                    />
-                  </SettingRow>
-
-                  <SettingRow
-                    label="Files view"
-                    description="Default view mode for the files page"
-                    isModified={
-                      fileExplorer.defaultViewMode !==
-                      DEFAULT_FILE_EXPLORER_SETTINGS.defaultViewMode
-                    }
-                    onReset={() =>
-                      updateFileExplorer({
-                        defaultViewMode: DEFAULT_FILE_EXPLORER_SETTINGS.defaultViewMode,
-                      })
-                    }
-                  >
-                    <SettingButtonGroup
-                      value={fileExplorer.defaultViewMode}
-                      onChange={(v) =>
-                        updateFileExplorer({ defaultViewMode: v as 'list' | 'grid' })
-                      }
-                      options={[
-                        { value: 'list', label: 'List' },
-                        { value: 'grid', label: 'Grid' },
-                      ]}
-                    />
-                  </SettingRow>
-
-                  <SettingRow
-                    label="Folder default state"
-                    description="How folders appear when opening the Files page"
-                    isModified={
-                      fileExplorer.defaultState !==
-                      DEFAULT_FILE_EXPLORER_SETTINGS.defaultState
-                    }
-                    onReset={() =>
-                      updateFileExplorer({
-                        defaultState: DEFAULT_FILE_EXPLORER_SETTINGS.defaultState,
-                      })
-                    }
-                  >
-                    <SettingSelect
-                      value={fileExplorer.defaultState}
-                      onChange={(v) =>
-                        updateFileExplorer({
-                          defaultState: v as FileExplorerSettings['defaultState'],
+                      onReset={() =>
+                        updateAppearance({
+                          sidebarCollapsed: DEFAULT_APPEARANCE_SETTINGS.sidebarCollapsed,
                         })
                       }
-                      options={[
-                        { value: 'collapsed', label: 'All Collapsed' },
-                        { value: 'expanded', label: 'All Expanded' },
-                        { value: 'remember', label: 'Remember State' },
-                      ]}
-                    />
-                  </SettingRow>
-                </div>
-              </Accordion.Content>
-            </Accordion.Item>
+                    >
+                      <ToggleSwitch
+                        checked={appearance.sidebarCollapsed}
+                        onChange={(checked) =>
+                          updateAppearance({ sidebarCollapsed: checked })
+                        }
+                      />
+                    </SettingRow>
+
+                    <div style={styles.divider} />
+
+                    {/* Dashboard Settings */}
+                    <SettingRow
+                      label="Priority sorting"
+                      description="Sort tasks by urgency and priority score instead of due date only"
+                      isModified={
+                        dashboardSettings.prioritySortingEnabled !==
+                        DEFAULT_DASHBOARD_SETTINGS.prioritySortingEnabled
+                      }
+                      onReset={() =>
+                        updateDashboardSettings({
+                          prioritySortingEnabled:
+                            DEFAULT_DASHBOARD_SETTINGS.prioritySortingEnabled,
+                        })
+                      }
+                    >
+                      <ToggleSwitch
+                        checked={dashboardSettings.prioritySortingEnabled}
+                        onChange={(checked) =>
+                          updateDashboardSettings({ prioritySortingEnabled: checked })
+                        }
+                      />
+                    </SettingRow>
+
+                    <SettingRow
+                      label="Important works threshold"
+                      description="Show tasks with grade weight above this percentage"
+                      isModified={
+                        dashboardSettings.importantWorksThreshold !==
+                        DEFAULT_DASHBOARD_SETTINGS.importantWorksThreshold
+                      }
+                      onReset={() =>
+                        updateDashboardSettings({
+                          importantWorksThreshold:
+                            DEFAULT_DASHBOARD_SETTINGS.importantWorksThreshold,
+                        })
+                      }
+                    >
+                      <SettingSlider
+                        value={dashboardSettings.importantWorksThreshold}
+                        onChange={(v) =>
+                          updateDashboardSettings({ importantWorksThreshold: v })
+                        }
+                        min={0}
+                        max={50}
+                        step={5}
+                        formatValue={(v) => `${v}%`}
+                      />
+                    </SettingRow>
+
+                    <div style={styles.divider} />
+
+                    {/* View Modes */}
+                    <SettingRow
+                      label="Courses view"
+                      description="Default view mode for the courses page"
+                      isModified={
+                        courseSettings.defaultViewMode !==
+                        DEFAULT_COURSE_SETTINGS.defaultViewMode
+                      }
+                      onReset={() =>
+                        updateCourseSettings({
+                          defaultViewMode: DEFAULT_COURSE_SETTINGS.defaultViewMode,
+                        })
+                      }
+                    >
+                      <SettingButtonGroup
+                        value={courseSettings.defaultViewMode}
+                        onChange={(v) =>
+                          updateCourseSettings({ defaultViewMode: v as 'grid' | 'list' })
+                        }
+                        options={[
+                          { value: 'grid', label: 'Grid' },
+                          { value: 'list', label: 'List' },
+                        ]}
+                      />
+                    </SettingRow>
+
+                    <SettingRow
+                      label="Calendar view"
+                      description="Default view when opening the calendar"
+                      isModified={
+                        calendarSettings.defaultViewMode !==
+                        DEFAULT_CALENDAR_SETTINGS.defaultViewMode
+                      }
+                      onReset={() =>
+                        updateCalendarSettings({
+                          defaultViewMode: DEFAULT_CALENDAR_SETTINGS.defaultViewMode,
+                        })
+                      }
+                    >
+                      <SettingButtonGroup
+                        value={calendarSettings.defaultViewMode}
+                        onChange={(v) =>
+                          updateCalendarSettings({
+                            defaultViewMode: v as 'month' | 'week',
+                          })
+                        }
+                        options={[
+                          { value: 'month', label: 'Month' },
+                          { value: 'week', label: 'Week' },
+                        ]}
+                      />
+                    </SettingRow>
+
+                    <SettingRow
+                      label="Files view"
+                      description="Default view mode for the files page"
+                      isModified={
+                        fileExplorer.defaultViewMode !==
+                        DEFAULT_FILE_EXPLORER_SETTINGS.defaultViewMode
+                      }
+                      onReset={() =>
+                        updateFileExplorer({
+                          defaultViewMode: DEFAULT_FILE_EXPLORER_SETTINGS.defaultViewMode,
+                        })
+                      }
+                    >
+                      <SettingButtonGroup
+                        value={fileExplorer.defaultViewMode}
+                        onChange={(v) =>
+                          updateFileExplorer({ defaultViewMode: v as 'list' | 'grid' })
+                        }
+                        options={[
+                          { value: 'list', label: 'List' },
+                          { value: 'grid', label: 'Grid' },
+                        ]}
+                      />
+                    </SettingRow>
+
+                    <SettingRow
+                      label="Folder default state"
+                      description="How folders appear when opening the Files page"
+                      isModified={
+                        fileExplorer.defaultState !==
+                        DEFAULT_FILE_EXPLORER_SETTINGS.defaultState
+                      }
+                      onReset={() =>
+                        updateFileExplorer({
+                          defaultState: DEFAULT_FILE_EXPLORER_SETTINGS.defaultState,
+                        })
+                      }
+                    >
+                      <SettingSelect
+                        value={fileExplorer.defaultState}
+                        onChange={(v) =>
+                          updateFileExplorer({
+                            defaultState: v as FileExplorerSettings['defaultState'],
+                          })
+                        }
+                        options={[
+                          { value: 'collapsed', label: 'All Collapsed' },
+                          { value: 'expanded', label: 'All Expanded' },
+                          { value: 'remember', label: 'Remember State' },
+                        ]}
+                      />
+                    </SettingRow>
+
+                    <SettingRow
+                      label="Settings default state"
+                      description="How settings sections appear when opening this page"
+                      isModified={isSettingsPageSettingsModified}
+                      onReset={() =>
+                        updateSettingsPageSettings({
+                          defaultState: DEFAULT_SETTINGS_PAGE_SETTINGS.defaultState,
+                        })
+                      }
+                    >
+                      <SettingSelect
+                        value={settingsPageSettings.defaultState}
+                        onChange={(v) =>
+                          updateSettingsPageSettings({
+                            defaultState: v as SettingsPageSettings['defaultState'],
+                          })
+                        }
+                        options={[
+                          { value: 'collapsed', label: 'All Collapsed' },
+                          { value: 'expanded', label: 'All Expanded' },
+                          { value: 'remember', label: 'Remember State' },
+                        ]}
+                      />
+                    </SettingRow>
+                  </div>
+                </Accordion.Content>
+              </Accordion.Item>
+            </div>
           )}
 
           {/* Academic & Courses */}
           {shouldShowSection('academic') && (
-            <Accordion.Item value="academic">
-              <Accordion.Trigger
-                icon={CATEGORY_ICONS.academic}
-                badge={<ModifiedBadge count={academicModifiedCount} />}
-              >
-                {SETTINGS_CATEGORIES.academic.label}
-              </Accordion.Trigger>
-              <Accordion.Content>
-                <div style={styles.section}>
-                  <p style={styles.sectionDesc}>
-                    {SETTINGS_CATEGORIES.academic.description}
-                  </p>
+            <div
+              draggable
+              onDragStart={(e) => handleDragStart(e, 'academic')}
+              onDragEnd={handleDragEnd}
+              onDragOver={(e) => handleDragOver(e, 'academic')}
+              onDragLeave={handleDragLeave}
+              onDrop={(e) => handleDrop(e, 'academic')}
+              style={{
+                ...getDragWrapperStyle('academic'),
+                order: sectionOrder.indexOf('academic'),
+              }}
+            >
+              <Accordion.Item value="academic">
+                <Accordion.Trigger
+                  icon={CATEGORY_ICONS.academic}
+                  badge={<ModifiedBadge count={academicModifiedCount} />}
+                >
+                  {SETTINGS_CATEGORIES.academic.label}
+                </Accordion.Trigger>
+                <Accordion.Content>
+                  <div style={styles.section}>
+                    <p style={styles.sectionDesc}>
+                      {SETTINGS_CATEGORIES.academic.description}
+                    </p>
 
-                  {/* Target Grade */}
-                  <SettingRow
-                    label="Default target grade"
-                    description="Applied to new courses. Individual targets can be overridden."
-                    isModified={
-                      academic.defaultTargetGrade !==
-                      DEFAULT_ACADEMIC_SETTINGS.defaultTargetGrade
-                    }
-                    onReset={() =>
-                      updateAcademic({
-                        defaultTargetGrade: DEFAULT_ACADEMIC_SETTINGS.defaultTargetGrade,
-                      })
-                    }
-                  >
-                    <SettingSlider
-                      value={academic.defaultTargetGrade}
-                      onChange={(v) => updateAcademic({ defaultTargetGrade: v })}
-                      min={50}
-                      max={100}
-                      step={1}
-                      formatValue={(v) => `${v}%`}
-                    />
-                  </SettingRow>
-
-                  {/* Term Selection */}
-                  <SettingRow
-                    label="Semester selection"
-                    description="Which semester's courses to display"
-                    isModified={
-                      academic.termSelection !== DEFAULT_ACADEMIC_SETTINGS.termSelection
-                    }
-                    onReset={() =>
-                      updateAcademic({
-                        termSelection: DEFAULT_ACADEMIC_SETTINGS.termSelection,
-                      })
-                    }
-                  >
-                    <select
-                      value={academic.termSelection}
-                      onChange={(e) => updateAcademic({ termSelection: e.target.value })}
-                      style={styles.select}
-                    >
-                      <option value="auto">Auto-detect current</option>
-                      <option value="all">Show all semesters</option>
-                      {enrollmentTerms.length > 0 && (
-                        <optgroup label="Available Semesters">
-                          {enrollmentTerms.map((term) => (
-                            <option key={term.externalId} value={term.externalId}>
-                              {term.name}
-                            </option>
-                          ))}
-                        </optgroup>
-                      )}
-                    </select>
-                  </SettingRow>
-
-                  <div style={styles.divider} />
-
-                  {/* Course Visibility */}
-                  <SettingRow
-                    label="Show hidden courses"
-                    description="Display hidden courses in the courses list by default"
-                    isModified={
-                      courseSettings.showHiddenByDefault !==
-                      DEFAULT_COURSE_SETTINGS.showHiddenByDefault
-                    }
-                    onReset={() =>
-                      updateCourseSettings({
-                        showHiddenByDefault: DEFAULT_COURSE_SETTINGS.showHiddenByDefault,
-                      })
-                    }
-                  >
-                    <ToggleSwitch
-                      checked={courseSettings.showHiddenByDefault}
-                      onChange={(checked) =>
-                        updateCourseSettings({ showHiddenByDefault: checked })
+                    {/* Target Grade */}
+                    <SettingRow
+                      label="Default target grade"
+                      description="Applied to new courses. Individual targets can be overridden."
+                      isModified={
+                        academic.defaultTargetGrade !==
+                        DEFAULT_ACADEMIC_SETTINGS.defaultTargetGrade
                       }
-                    />
-                  </SettingRow>
-
-                  {/* Auto-fill due dates */}
-                  <SettingRow
-                    label="Auto-fill due dates"
-                    description="Set today 23:59 as due date for coursework without one"
-                    isModified={
-                      syncPrefs.autoAssignDueDate !==
-                      DEFAULT_SYNC_PREFERENCES.autoAssignDueDate
-                    }
-                    onReset={() =>
-                      updateSyncPrefs({
-                        autoAssignDueDate: DEFAULT_SYNC_PREFERENCES.autoAssignDueDate,
-                      })
-                    }
-                  >
-                    <ToggleSwitch
-                      checked={syncPrefs.autoAssignDueDate}
-                      onChange={(checked) =>
-                        updateSyncPrefs({ autoAssignDueDate: checked })
-                      }
-                    />
-                  </SettingRow>
-
-                  <div style={styles.divider} />
-
-                  {/* Download Location */}
-                  <SettingRow
-                    label="Download location"
-                    description="Where downloaded files are stored on your computer"
-                    vertical
-                  >
-                    <div style={styles.downloadLocationRow}>
-                      <div style={styles.downloadLocationPath}>
-                        {currentDownloadPath || 'Loading...'}
-                      </div>
-                      <button
-                        style={styles.changeLocationBtn}
-                        onClick={handleChangeDownloadLocation}
-                      >
-                        <FolderOpen size={14} /> Change
-                      </button>
-                    </div>
-                  </SettingRow>
-
-                  {/* Link Behavior */}
-                  <SettingRow
-                    label="Link click behavior"
-                    description="How to handle clicks on links in course content"
-                    isModified={
-                      contentSettings.linkBehavior !==
-                      DEFAULT_CONTENT_SETTINGS.linkBehavior
-                    }
-                    onReset={() =>
-                      updateContentSettings({
-                        linkBehavior: DEFAULT_CONTENT_SETTINGS.linkBehavior,
-                      })
-                    }
-                  >
-                    <SettingSelect
-                      value={contentSettings.linkBehavior}
-                      onChange={(v) =>
-                        updateContentSettings({
-                          linkBehavior: v as ContentSettings['linkBehavior'],
+                      onReset={() =>
+                        updateAcademic({
+                          defaultTargetGrade:
+                            DEFAULT_ACADEMIC_SETTINGS.defaultTargetGrade,
                         })
                       }
-                      options={[
-                        { value: 'always-external', label: 'Open in browser' },
-                        { value: 'prefer-local', label: 'Prefer local' },
-                      ]}
-                    />
-                  </SettingRow>
+                    >
+                      <SettingSlider
+                        value={academic.defaultTargetGrade}
+                        onChange={(v) => updateAcademic({ defaultTargetGrade: v })}
+                        min={50}
+                        max={100}
+                        step={1}
+                        formatValue={(v) => `${v}%`}
+                      />
+                    </SettingRow>
 
-                  <div style={styles.divider} />
+                    {/* Term Selection */}
+                    <SettingRow
+                      label="Semester selection"
+                      description="Which semester's courses to display"
+                      isModified={
+                        academic.termSelection !== DEFAULT_ACADEMIC_SETTINGS.termSelection
+                      }
+                      onReset={() =>
+                        updateAcademic({
+                          termSelection: DEFAULT_ACADEMIC_SETTINGS.termSelection,
+                        })
+                      }
+                    >
+                      <select
+                        value={academic.termSelection}
+                        onChange={(e) =>
+                          updateAcademic({ termSelection: e.target.value })
+                        }
+                        style={styles.select}
+                      >
+                        <option value="auto">Auto-detect current</option>
+                        <option value="all">Show all semesters</option>
+                        {enrollmentTerms.length > 0 && (
+                          <optgroup label="Available Semesters">
+                            {enrollmentTerms.map((term) => (
+                              <option key={term.externalId} value={term.externalId}>
+                                {term.name}
+                              </option>
+                            ))}
+                          </optgroup>
+                        )}
+                      </select>
+                    </SettingRow>
 
-                  {/* Course Visibility List */}
-                  <div style={styles.subsectionTitle}>Course Visibility</div>
-                  <p style={styles.fieldDesc}>
-                    Hidden courses won't appear in Dashboard, Tasks, or Announcements.
-                  </p>
-                  <div style={styles.courseList}>
-                    {courses.length === 0 ? (
-                      <p style={styles.emptyText}>No courses synced yet.</p>
-                    ) : (
-                      courses.map((course: Course) => (
-                        <div key={course.id} style={styles.courseRow}>
-                          <div style={styles.courseInfo}>
-                            <span
-                              style={{
-                                ...styles.courseDot,
-                                backgroundColor: course.color || 'var(--color-navy)',
-                              }}
-                            />
-                            <div style={styles.courseText}>
-                              <span style={styles.courseCode}>{course.code}</span>
-                              <span style={styles.courseName}>{course.name}</span>
-                            </div>
-                          </div>
-                          <button
-                            style={{
-                              ...styles.visibilityBtn,
-                              color: course.isHidden
-                                ? 'var(--text-muted)'
-                                : 'var(--color-success)',
-                            }}
-                            onClick={() =>
-                              handleToggleCourseVisibility(course.id, course.isHidden)
-                            }
-                            title={course.isHidden ? 'Show course' : 'Hide course'}
-                          >
-                            {course.isHidden ? <EyeOff size={18} /> : <Eye size={18} />}
-                          </button>
+                    <div style={styles.divider} />
+
+                    {/* Course Visibility */}
+                    <SettingRow
+                      label="Show hidden courses"
+                      description="Display hidden courses in the courses list by default"
+                      isModified={
+                        courseSettings.showHiddenByDefault !==
+                        DEFAULT_COURSE_SETTINGS.showHiddenByDefault
+                      }
+                      onReset={() =>
+                        updateCourseSettings({
+                          showHiddenByDefault:
+                            DEFAULT_COURSE_SETTINGS.showHiddenByDefault,
+                        })
+                      }
+                    >
+                      <ToggleSwitch
+                        checked={courseSettings.showHiddenByDefault}
+                        onChange={(checked) =>
+                          updateCourseSettings({ showHiddenByDefault: checked })
+                        }
+                      />
+                    </SettingRow>
+
+                    {/* Auto-fill due dates */}
+                    <SettingRow
+                      label="Auto-fill due dates"
+                      description="Set today 23:59 as due date for coursework without one"
+                      isModified={
+                        syncPrefs.autoAssignDueDate !==
+                        DEFAULT_SYNC_PREFERENCES.autoAssignDueDate
+                      }
+                      onReset={() =>
+                        updateSyncPrefs({
+                          autoAssignDueDate: DEFAULT_SYNC_PREFERENCES.autoAssignDueDate,
+                        })
+                      }
+                    >
+                      <ToggleSwitch
+                        checked={syncPrefs.autoAssignDueDate}
+                        onChange={(checked) =>
+                          updateSyncPrefs({ autoAssignDueDate: checked })
+                        }
+                      />
+                    </SettingRow>
+
+                    <div style={styles.divider} />
+
+                    {/* Download Location */}
+                    <SettingRow
+                      label="Download location"
+                      description="Where downloaded files are stored on your computer"
+                      vertical
+                    >
+                      <div style={styles.downloadLocationRow}>
+                        <div style={styles.downloadLocationPath}>
+                          {currentDownloadPath || 'Loading...'}
                         </div>
-                      ))
-                    )}
+                        <button
+                          style={styles.changeLocationBtn}
+                          onClick={handleChangeDownloadLocation}
+                        >
+                          <FolderOpen size={14} /> Change
+                        </button>
+                      </div>
+                    </SettingRow>
+
+                    {/* Link Behavior */}
+                    <SettingRow
+                      label="Link click behavior"
+                      description="How to handle clicks on links in course content"
+                      isModified={
+                        contentSettings.linkBehavior !==
+                        DEFAULT_CONTENT_SETTINGS.linkBehavior
+                      }
+                      onReset={() =>
+                        updateContentSettings({
+                          linkBehavior: DEFAULT_CONTENT_SETTINGS.linkBehavior,
+                        })
+                      }
+                    >
+                      <SettingSelect
+                        value={contentSettings.linkBehavior}
+                        onChange={(v) =>
+                          updateContentSettings({
+                            linkBehavior: v as ContentSettings['linkBehavior'],
+                          })
+                        }
+                        options={[
+                          { value: 'always-external', label: 'Open in browser' },
+                          { value: 'prefer-local', label: 'Prefer local' },
+                        ]}
+                      />
+                    </SettingRow>
+
+                    <div style={styles.divider} />
+
+                    {/* Course Visibility List */}
+                    <div style={styles.subsectionTitle}>Course Visibility</div>
+                    <p style={styles.fieldDesc}>
+                      Hidden courses won't appear in Dashboard, Tasks, or Announcements.
+                    </p>
+                    <div style={styles.courseList}>
+                      {courses.length === 0 ? (
+                        <p style={styles.emptyText}>No courses synced yet.</p>
+                      ) : (
+                        courses.map((course: Course) => (
+                          <div key={course.id} style={styles.courseRow}>
+                            <div style={styles.courseInfo}>
+                              <span
+                                style={{
+                                  ...styles.courseDot,
+                                  backgroundColor: course.color || 'var(--color-navy)',
+                                }}
+                              />
+                              <div style={styles.courseText}>
+                                <span style={styles.courseCode}>{course.code}</span>
+                                <span style={styles.courseName}>{course.name}</span>
+                              </div>
+                            </div>
+                            <button
+                              style={{
+                                ...styles.visibilityBtn,
+                                color: course.isHidden
+                                  ? 'var(--text-muted)'
+                                  : 'var(--color-success)',
+                              }}
+                              onClick={() =>
+                                handleToggleCourseVisibility(course.id, course.isHidden)
+                              }
+                              title={course.isHidden ? 'Show course' : 'Hide course'}
+                            >
+                              {course.isHidden ? <EyeOff size={18} /> : <Eye size={18} />}
+                            </button>
+                          </div>
+                        ))
+                      )}
+                    </div>
                   </div>
-                </div>
-              </Accordion.Content>
-            </Accordion.Item>
+                </Accordion.Content>
+              </Accordion.Item>
+            </div>
           )}
 
           {/* Notifications */}
           {shouldShowSection('notifications') && (
-            <Accordion.Item value="notifications">
-              <Accordion.Trigger
-                icon={CATEGORY_ICONS.notifications}
-                badge={<ModifiedBadge count={notificationsModifiedCount} />}
-              >
-                {SETTINGS_CATEGORIES.notifications.label}
+            <div
+              draggable
+              onDragStart={(e) => handleDragStart(e, 'notifications')}
+              onDragEnd={handleDragEnd}
+              onDragOver={(e) => handleDragOver(e, 'notifications')}
+              onDragLeave={handleDragLeave}
+              onDrop={(e) => handleDrop(e, 'notifications')}
+              style={{
+                ...getDragWrapperStyle('notifications'),
+                order: sectionOrder.indexOf('notifications'),
+              }}
+            >
+              <Accordion.Item value="notifications">
+                <Accordion.Trigger
+                  icon={CATEGORY_ICONS.notifications}
+                  badge={<ModifiedBadge count={notificationsModifiedCount} />}
+                >
+                  {SETTINGS_CATEGORIES.notifications.label}
+                </Accordion.Trigger>
+                <Accordion.Content>
+                  <div style={styles.section}>
+                    <p style={styles.sectionDesc}>
+                      {SETTINGS_CATEGORIES.notifications.description}
+                    </p>
+
+                    <SettingRow
+                      label="Enable notifications"
+                      description="Show desktop notifications"
+                      isModified={
+                        notifications.enabled !== DEFAULT_NOTIFICATION_SETTINGS.enabled
+                      }
+                      onReset={() =>
+                        updateNotifications({
+                          enabled: DEFAULT_NOTIFICATION_SETTINGS.enabled,
+                        })
+                      }
+                    >
+                      <ToggleSwitch
+                        checked={notifications.enabled}
+                        onChange={(checked) => updateNotifications({ enabled: checked })}
+                      />
+                    </SettingRow>
+
+                    {notifications.enabled && (
+                      <>
+                        <div style={styles.divider} />
+                        <div style={styles.subsectionTitle}>Alert types</div>
+
+                        <SettingRow
+                          label="Priority alerts"
+                          description="Intelligence flags high-priority or at-risk tasks"
+                          isModified={
+                            notifications.priorityAlerts !==
+                            DEFAULT_NOTIFICATION_SETTINGS.priorityAlerts
+                          }
+                          onReset={() =>
+                            updateNotifications({
+                              priorityAlerts:
+                                DEFAULT_NOTIFICATION_SETTINGS.priorityAlerts,
+                            })
+                          }
+                        >
+                          <ToggleSwitch
+                            checked={notifications.priorityAlerts}
+                            onChange={(checked) =>
+                              updateNotifications({ priorityAlerts: checked })
+                            }
+                          />
+                        </SettingRow>
+
+                        <SettingRow
+                          label="Sync status"
+                          description="Notify on sync success or failure"
+                          isModified={
+                            notifications.syncStatus !==
+                            DEFAULT_NOTIFICATION_SETTINGS.syncStatus
+                          }
+                          onReset={() =>
+                            updateNotifications({
+                              syncStatus: DEFAULT_NOTIFICATION_SETTINGS.syncStatus,
+                            })
+                          }
+                        >
+                          <ToggleSwitch
+                            checked={notifications.syncStatus}
+                            onChange={(checked) =>
+                              updateNotifications({ syncStatus: checked })
+                            }
+                          />
+                        </SettingRow>
+
+                        <SettingRow
+                          label="Due date reminders"
+                          description="Smart reminders before assignments are due"
+                          isModified={
+                            notifications.dueDateReminders !==
+                            DEFAULT_NOTIFICATION_SETTINGS.dueDateReminders
+                          }
+                          onReset={() =>
+                            updateNotifications({
+                              dueDateReminders:
+                                DEFAULT_NOTIFICATION_SETTINGS.dueDateReminders,
+                            })
+                          }
+                        >
+                          <ToggleSwitch
+                            checked={notifications.dueDateReminders}
+                            onChange={(checked) =>
+                              updateNotifications({ dueDateReminders: checked })
+                            }
+                          />
+                        </SettingRow>
+
+                        <SettingRow
+                          label="Grade alerts"
+                          description="Notify when new grades are posted"
+                          isModified={
+                            notifications.gradeAlerts !==
+                            DEFAULT_NOTIFICATION_SETTINGS.gradeAlerts
+                          }
+                          onReset={() =>
+                            updateNotifications({
+                              gradeAlerts: DEFAULT_NOTIFICATION_SETTINGS.gradeAlerts,
+                            })
+                          }
+                        >
+                          <ToggleSwitch
+                            checked={notifications.gradeAlerts}
+                            onChange={(checked) =>
+                              updateNotifications({ gradeAlerts: checked })
+                            }
+                          />
+                        </SettingRow>
+
+                        <div style={styles.divider} />
+                        <div style={styles.subsectionTitle}>Intelligence alerts</div>
+
+                        <SettingRow
+                          label="Workload predictions"
+                          description="AI predicts busy periods and suggests planning"
+                          isModified={
+                            notifications.workloadPredictions !==
+                            DEFAULT_NOTIFICATION_SETTINGS.workloadPredictions
+                          }
+                          onReset={() =>
+                            updateNotifications({
+                              workloadPredictions:
+                                DEFAULT_NOTIFICATION_SETTINGS.workloadPredictions,
+                            })
+                          }
+                        >
+                          <ToggleSwitch
+                            checked={notifications.workloadPredictions}
+                            onChange={(checked) =>
+                              updateNotifications({ workloadPredictions: checked })
+                            }
+                          />
+                        </SettingRow>
+
+                        <SettingRow
+                          label="Risk warnings"
+                          description="Alert when predicted time exceeds remaining time"
+                          isModified={
+                            notifications.riskWarnings !==
+                            DEFAULT_NOTIFICATION_SETTINGS.riskWarnings
+                          }
+                          onReset={() =>
+                            updateNotifications({
+                              riskWarnings: DEFAULT_NOTIFICATION_SETTINGS.riskWarnings,
+                            })
+                          }
+                        >
+                          <ToggleSwitch
+                            checked={notifications.riskWarnings}
+                            onChange={(checked) =>
+                              updateNotifications({ riskWarnings: checked })
+                            }
+                          />
+                        </SettingRow>
+
+                        <div style={styles.divider} />
+                        <div style={styles.subsectionTitle}>Smart quiet mode</div>
+                        <p style={styles.quietModeDesc}>
+                          Automatically suppress notifications when:
+                        </p>
+
+                        <SettingRow
+                          label="Fullscreen mode"
+                          description="Pause during presentations or focus sessions"
+                          isModified={
+                            notifications.quietWhenFullscreen !==
+                            DEFAULT_NOTIFICATION_SETTINGS.quietWhenFullscreen
+                          }
+                          onReset={() =>
+                            updateNotifications({
+                              quietWhenFullscreen:
+                                DEFAULT_NOTIFICATION_SETTINGS.quietWhenFullscreen,
+                            })
+                          }
+                        >
+                          <ToggleSwitch
+                            checked={notifications.quietWhenFullscreen}
+                            onChange={(checked) =>
+                              updateNotifications({ quietWhenFullscreen: checked })
+                            }
+                          />
+                        </SettingRow>
+
+                        <SettingRow
+                          label="On battery power"
+                          description="Pause when device is unplugged"
+                          isModified={
+                            notifications.quietWhenUnplugged !==
+                            DEFAULT_NOTIFICATION_SETTINGS.quietWhenUnplugged
+                          }
+                          onReset={() =>
+                            updateNotifications({
+                              quietWhenUnplugged:
+                                DEFAULT_NOTIFICATION_SETTINGS.quietWhenUnplugged,
+                            })
+                          }
+                        >
+                          <ToggleSwitch
+                            checked={notifications.quietWhenUnplugged}
+                            onChange={(checked) =>
+                              updateNotifications({ quietWhenUnplugged: checked })
+                            }
+                          />
+                        </SettingRow>
+
+                        <SettingRow
+                          label="Busy or Exam status"
+                          description="Pause when inferred status is Busy or Exam"
+                          isModified={
+                            notifications.quietWhenBusy !==
+                            DEFAULT_NOTIFICATION_SETTINGS.quietWhenBusy
+                          }
+                          onReset={() =>
+                            updateNotifications({
+                              quietWhenBusy: DEFAULT_NOTIFICATION_SETTINGS.quietWhenBusy,
+                            })
+                          }
+                        >
+                          <ToggleSwitch
+                            checked={notifications.quietWhenBusy}
+                            onChange={(checked) =>
+                              updateNotifications({ quietWhenBusy: checked })
+                            }
+                          />
+                        </SettingRow>
+                      </>
+                    )}
+                  </div>
+                </Accordion.Content>
+              </Accordion.Item>
+            </div>
+          )}
+
+          {/* Data Management Section */}
+          <div
+            draggable
+            onDragStart={(e) => handleDragStart(e, 'data')}
+            onDragEnd={handleDragEnd}
+            onDragOver={(e) => handleDragOver(e, 'data')}
+            onDragLeave={handleDragLeave}
+            onDrop={(e) => handleDrop(e, 'data')}
+            style={{
+              ...getDragWrapperStyle('data'),
+              order: sectionOrder.indexOf('data'),
+            }}
+          >
+            <Accordion.Item value="data">
+              <Accordion.Trigger icon={<HardDrive size={18} />}>
+                Data Management
               </Accordion.Trigger>
               <Accordion.Content>
-                <div style={styles.section}>
-                  <p style={styles.sectionDesc}>
-                    {SETTINGS_CATEGORIES.notifications.description}
-                  </p>
+                <div style={styles.sectionContent}>
+                  {/* Export Section */}
+                  <div style={styles.subsectionTitle}>Export</div>
+                  <div style={styles.exportButtonRow}>
+                    <button
+                      style={styles.exportActionButton}
+                      onClick={handleExportDatabase}
+                      disabled={isExporting}
+                    >
+                      <Database size={16} />
+                      Quick Backup
+                    </button>
 
-                  <SettingRow
-                    label="Enable notifications"
-                    description="Show desktop notifications"
-                    isModified={
-                      notifications.enabled !== DEFAULT_NOTIFICATION_SETTINGS.enabled
-                    }
-                    onReset={() =>
-                      updateNotifications({
-                        enabled: DEFAULT_NOTIFICATION_SETTINGS.enabled,
-                      })
-                    }
-                  >
-                    <ToggleSwitch
-                      checked={notifications.enabled}
-                      onChange={(checked) => updateNotifications({ enabled: checked })}
-                    />
-                  </SettingRow>
-
-                  {notifications.enabled && (
-                    <>
-                      <div style={styles.divider} />
-                      <div style={styles.subsectionTitle}>Alert types</div>
-
-                      <SettingRow
-                        label="Priority alerts"
-                        description="Intelligence flags high-priority or at-risk tasks"
-                        isModified={
-                          notifications.priorityAlerts !==
-                          DEFAULT_NOTIFICATION_SETTINGS.priorityAlerts
-                        }
-                        onReset={() =>
-                          updateNotifications({
-                            priorityAlerts: DEFAULT_NOTIFICATION_SETTINGS.priorityAlerts,
-                          })
-                        }
+                    <div style={{ position: 'relative' }}>
+                      <button
+                        style={styles.exportActionButton}
+                        onClick={() => setShowCsvDropdown(!showCsvDropdown)}
                       >
-                        <ToggleSwitch
-                          checked={notifications.priorityAlerts}
-                          onChange={(checked) =>
-                            updateNotifications({ priorityAlerts: checked })
-                          }
-                        />
-                      </SettingRow>
+                        <FileSpreadsheet size={16} />
+                        Export CSV
+                        <ChevronDown size={14} />
+                      </button>
+                      {showCsvDropdown && (
+                        <div style={styles.dropdownMenu}>
+                          <button
+                            style={styles.dropdownItem}
+                            onClick={async () => {
+                              setShowCsvDropdown(false);
+                              try {
+                                const result = await window.api.exportTasksCsv({});
+                                if (result.success) {
+                                  setExportMessage({
+                                    type: 'success',
+                                    text: 'Tasks exported successfully',
+                                  });
+                                } else {
+                                  setExportMessage({
+                                    type: 'error',
+                                    text: result.error || 'Export failed',
+                                  });
+                                }
+                              } catch (error) {
+                                setExportMessage({
+                                  type: 'error',
+                                  text: String(error),
+                                });
+                              }
+                            }}
+                          >
+                            Export Tasks
+                          </button>
+                          <button
+                            style={styles.dropdownItem}
+                            onClick={async () => {
+                              setShowCsvDropdown(false);
+                              try {
+                                const result = await window.api.exportGradesCsv({});
+                                if (result.success) {
+                                  setExportMessage({
+                                    type: 'success',
+                                    text: 'Grades exported successfully',
+                                  });
+                                } else {
+                                  setExportMessage({
+                                    type: 'error',
+                                    text: result.error || 'Export failed',
+                                  });
+                                }
+                              } catch (error) {
+                                setExportMessage({
+                                  type: 'error',
+                                  text: String(error),
+                                });
+                              }
+                            }}
+                          >
+                            Export Grades
+                          </button>
+                        </div>
+                      )}
+                    </div>
 
-                      <SettingRow
-                        label="Sync status"
-                        description="Notify on sync success or failure"
-                        isModified={
-                          notifications.syncStatus !==
-                          DEFAULT_NOTIFICATION_SETTINGS.syncStatus
-                        }
-                        onReset={() =>
-                          updateNotifications({
-                            syncStatus: DEFAULT_NOTIFICATION_SETTINGS.syncStatus,
-                          })
-                        }
+                    <button
+                      style={styles.exportActionButton}
+                      onClick={() => setShowExportDialog(true)}
+                    >
+                      <Settings2 size={16} />
+                      Custom Export...
+                    </button>
+                  </div>
+
+                  <div style={styles.divider} />
+
+                  {/* Import Section */}
+                  <div style={styles.subsectionTitle}>Import</div>
+                  <div style={styles.exportButtonRow}>
+                    <button
+                      style={styles.exportActionButton}
+                      onClick={handleImportDatabase}
+                    >
+                      <Download size={16} />
+                      Import Backup...
+                    </button>
+                    <button
+                      style={styles.exportActionButton}
+                      onClick={handleImportSettings}
+                    >
+                      <Download size={16} />
+                      Import Settings...
+                    </button>
+                  </div>
+
+                  <div style={styles.divider} />
+
+                  {/* Danger Zone */}
+                  <div style={{ ...styles.subsectionTitle, color: 'var(--color-error)' }}>
+                    Danger Zone
+                  </div>
+                  <div style={styles.dangerZoneBox}>
+                    <div style={styles.dangerZoneContent}>
+                      <div>
+                        <strong>Reset All Data</strong>
+                        <p style={styles.dangerZoneDesc}>
+                          Delete all synced data. This cannot be undone.
+                        </p>
+                      </div>
+                      <button
+                        style={styles.dangerZoneButton}
+                        onClick={() => setShowClearDataConfirm(true)}
                       >
-                        <ToggleSwitch
-                          checked={notifications.syncStatus}
-                          onChange={(checked) =>
-                            updateNotifications({ syncStatus: checked })
-                          }
-                        />
-                      </SettingRow>
-
-                      <SettingRow
-                        label="Due date reminders"
-                        description="Smart reminders before assignments are due"
-                        isModified={
-                          notifications.dueDateReminders !==
-                          DEFAULT_NOTIFICATION_SETTINGS.dueDateReminders
-                        }
-                        onReset={() =>
-                          updateNotifications({
-                            dueDateReminders:
-                              DEFAULT_NOTIFICATION_SETTINGS.dueDateReminders,
-                          })
-                        }
-                      >
-                        <ToggleSwitch
-                          checked={notifications.dueDateReminders}
-                          onChange={(checked) =>
-                            updateNotifications({ dueDateReminders: checked })
-                          }
-                        />
-                      </SettingRow>
-
-                      <SettingRow
-                        label="Grade alerts"
-                        description="Notify when new grades are posted"
-                        isModified={
-                          notifications.gradeAlerts !==
-                          DEFAULT_NOTIFICATION_SETTINGS.gradeAlerts
-                        }
-                        onReset={() =>
-                          updateNotifications({
-                            gradeAlerts: DEFAULT_NOTIFICATION_SETTINGS.gradeAlerts,
-                          })
-                        }
-                      >
-                        <ToggleSwitch
-                          checked={notifications.gradeAlerts}
-                          onChange={(checked) =>
-                            updateNotifications({ gradeAlerts: checked })
-                          }
-                        />
-                      </SettingRow>
-
-                      <div style={styles.divider} />
-                      <div style={styles.subsectionTitle}>Intelligence alerts</div>
-
-                      <SettingRow
-                        label="Workload predictions"
-                        description="AI predicts busy periods and suggests planning"
-                        isModified={
-                          notifications.workloadPredictions !==
-                          DEFAULT_NOTIFICATION_SETTINGS.workloadPredictions
-                        }
-                        onReset={() =>
-                          updateNotifications({
-                            workloadPredictions:
-                              DEFAULT_NOTIFICATION_SETTINGS.workloadPredictions,
-                          })
-                        }
-                      >
-                        <ToggleSwitch
-                          checked={notifications.workloadPredictions}
-                          onChange={(checked) =>
-                            updateNotifications({ workloadPredictions: checked })
-                          }
-                        />
-                      </SettingRow>
-
-                      <SettingRow
-                        label="Risk warnings"
-                        description="Alert when predicted time exceeds remaining time"
-                        isModified={
-                          notifications.riskWarnings !==
-                          DEFAULT_NOTIFICATION_SETTINGS.riskWarnings
-                        }
-                        onReset={() =>
-                          updateNotifications({
-                            riskWarnings: DEFAULT_NOTIFICATION_SETTINGS.riskWarnings,
-                          })
-                        }
-                      >
-                        <ToggleSwitch
-                          checked={notifications.riskWarnings}
-                          onChange={(checked) =>
-                            updateNotifications({ riskWarnings: checked })
-                          }
-                        />
-                      </SettingRow>
-
-                      <div style={styles.divider} />
-                      <div style={styles.subsectionTitle}>Smart quiet mode</div>
-                      <p style={styles.quietModeDesc}>
-                        Automatically suppress notifications when:
-                      </p>
-
-                      <SettingRow
-                        label="Fullscreen mode"
-                        description="Pause during presentations or focus sessions"
-                        isModified={
-                          notifications.quietWhenFullscreen !==
-                          DEFAULT_NOTIFICATION_SETTINGS.quietWhenFullscreen
-                        }
-                        onReset={() =>
-                          updateNotifications({
-                            quietWhenFullscreen:
-                              DEFAULT_NOTIFICATION_SETTINGS.quietWhenFullscreen,
-                          })
-                        }
-                      >
-                        <ToggleSwitch
-                          checked={notifications.quietWhenFullscreen}
-                          onChange={(checked) =>
-                            updateNotifications({ quietWhenFullscreen: checked })
-                          }
-                        />
-                      </SettingRow>
-
-                      <SettingRow
-                        label="On battery power"
-                        description="Pause when device is unplugged"
-                        isModified={
-                          notifications.quietWhenUnplugged !==
-                          DEFAULT_NOTIFICATION_SETTINGS.quietWhenUnplugged
-                        }
-                        onReset={() =>
-                          updateNotifications({
-                            quietWhenUnplugged:
-                              DEFAULT_NOTIFICATION_SETTINGS.quietWhenUnplugged,
-                          })
-                        }
-                      >
-                        <ToggleSwitch
-                          checked={notifications.quietWhenUnplugged}
-                          onChange={(checked) =>
-                            updateNotifications({ quietWhenUnplugged: checked })
-                          }
-                        />
-                      </SettingRow>
-
-                      <SettingRow
-                        label="Busy or Exam status"
-                        description="Pause when inferred status is Busy or Exam"
-                        isModified={
-                          notifications.quietWhenBusy !==
-                          DEFAULT_NOTIFICATION_SETTINGS.quietWhenBusy
-                        }
-                        onReset={() =>
-                          updateNotifications({
-                            quietWhenBusy: DEFAULT_NOTIFICATION_SETTINGS.quietWhenBusy,
-                          })
-                        }
-                      >
-                        <ToggleSwitch
-                          checked={notifications.quietWhenBusy}
-                          onChange={(checked) =>
-                            updateNotifications({ quietWhenBusy: checked })
-                          }
-                        />
-                      </SettingRow>
-                    </>
-                  )}
+                        <Trash2 size={14} />
+                        Reset
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </Accordion.Content>
             </Accordion.Item>
-          )}
+          </div>
         </Accordion>
 
         {/* No search results message */}
@@ -1953,6 +2389,29 @@ export function SettingsModal({
           Also delete Canvas API token (requires re-authentication)
         </label>
       </ConfirmDialog>
+
+      {/* Disconnect Confirmation */}
+      <ConfirmDialog
+        isOpen={showDisconnectConfirm}
+        type="danger"
+        title="Remove Canvas Connection"
+        message="This will delete your API token and remove the Canvas URL. You'll be taken back to the setup screen to reconnect."
+        confirmText="Remove Connection"
+        cancelText="Keep Connected"
+        onCancel={() => setShowDisconnectConfirm(false)}
+        onConfirm={async () => {
+          setShowDisconnectConfirm(false);
+          await handleDisconnect();
+          // Return to onboarding screen
+          setAuthenticated(false);
+        }}
+      />
+
+      {/* Custom Export Dialog */}
+      <ExportDialog
+        isOpen={showExportDialog}
+        onClose={() => setShowExportDialog(false)}
+      />
     </>
   );
 
@@ -2151,7 +2610,182 @@ const styles: Record<string, React.CSSProperties> = {
     marginBottom: 'var(--space-2)',
   },
 
-  // Connection status
+  // Connection Card
+  connectionCard: {
+    backgroundColor: 'var(--bg-card)',
+    border: '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-lg)',
+    padding: 'var(--space-4)',
+    marginBottom: 'var(--space-4)',
+  },
+
+  connectionHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 'var(--space-4)',
+  },
+
+  connectionTitleRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-2)',
+  },
+
+  connectionTitle: {
+    fontSize: 'var(--text-base)',
+    fontWeight: 'var(--font-semibold)',
+    color: 'var(--text-primary)',
+  },
+
+  statusBadgeConnected: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 'var(--space-1)',
+    padding: 'var(--space-1) var(--space-2)',
+    backgroundColor: 'var(--color-success-bg)',
+    color: 'var(--color-success)',
+    borderRadius: 'var(--radius-full)',
+    fontSize: 'var(--text-xs)',
+    fontWeight: 'var(--font-medium)',
+  },
+
+  statusBadgeDisconnected: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 'var(--space-1)',
+    padding: 'var(--space-1) var(--space-2)',
+    backgroundColor: 'var(--color-error-bg)',
+    color: 'var(--color-error)',
+    borderRadius: 'var(--radius-full)',
+    fontSize: 'var(--text-xs)',
+    fontWeight: 'var(--font-medium)',
+  },
+
+  urlSection: {
+    marginBottom: 'var(--space-3)',
+  },
+
+  urlLabel: {
+    display: 'block',
+    fontSize: 'var(--text-xs)',
+    fontWeight: 'var(--font-medium)',
+    color: 'var(--text-secondary)',
+    marginBottom: 'var(--space-1)',
+    textTransform: 'uppercase',
+    letterSpacing: '0.05em',
+  },
+
+  urlDisplay: {
+    display: 'flex',
+    alignItems: 'center',
+    padding: 'var(--space-2) var(--space-3)',
+    backgroundColor: 'var(--bg-app)',
+    border: '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-md)',
+  },
+
+  urlText: {
+    fontSize: 'var(--text-sm)',
+    color: 'var(--text-primary)',
+    fontFamily: 'var(--font-mono)',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  },
+
+  urlInput: {
+    width: '100%',
+    padding: 'var(--space-2) var(--space-3)',
+    border: '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-md)',
+    fontSize: 'var(--text-sm)',
+    backgroundColor: 'var(--bg-card)',
+    color: 'var(--text-primary)',
+    outline: 'none',
+    fontFamily: 'var(--font-mono)',
+  },
+
+  connectionError: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-2)',
+    padding: 'var(--space-2) var(--space-3)',
+    backgroundColor: 'var(--color-error-bg)',
+    border: '1px solid var(--color-error)',
+    borderRadius: 'var(--radius-md)',
+    fontSize: 'var(--text-sm)',
+    color: 'var(--color-error)',
+    marginBottom: 'var(--space-3)',
+  },
+
+  validationMessage: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-2)',
+    padding: 'var(--space-2) var(--space-3)',
+    borderRadius: 'var(--radius-md)',
+    fontSize: 'var(--text-sm)',
+    marginBottom: 'var(--space-3)',
+  },
+
+  connectionActions: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 'var(--space-2)',
+    paddingTop: 'var(--space-3)',
+    borderTop: '1px solid var(--border-subtle)',
+  },
+
+  tokenActions: {
+    display: 'flex',
+    gap: 'var(--space-2)',
+  },
+
+  tokenButton: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-1)',
+    padding: 'var(--space-2) var(--space-3)',
+    backgroundColor: 'var(--bg-app)',
+    border: '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-md)',
+    fontSize: 'var(--text-sm)',
+    color: 'var(--text-secondary)',
+    cursor: 'pointer',
+    transition: 'all 0.15s ease',
+  },
+
+  disconnectButton: {
+    padding: 'var(--space-2) var(--space-3)',
+    backgroundColor: 'transparent',
+    border: '1px solid var(--color-error)',
+    borderRadius: 'var(--radius-md)',
+    fontSize: 'var(--text-sm)',
+    color: 'var(--color-error)',
+    cursor: 'pointer',
+    transition: 'all 0.15s ease',
+  },
+
+  connectButton: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 'var(--space-2)',
+    width: '100%',
+    padding: 'var(--space-3) var(--space-4)',
+    backgroundColor: 'var(--color-primary)',
+    color: 'white',
+    border: 'none',
+    borderRadius: 'var(--radius-md)',
+    fontSize: 'var(--text-sm)',
+    fontWeight: 'var(--font-medium)',
+    cursor: 'pointer',
+    transition: 'all 0.15s ease',
+  },
+
+  // Connection status (legacy)
   statusRow: {
     display: 'flex',
     alignItems: 'center',
@@ -2518,6 +3152,89 @@ const styles: Record<string, React.CSSProperties> = {
     width: '16px',
     height: '16px',
     cursor: 'pointer',
+  },
+
+  // Data Management Section
+  exportButtonRow: {
+    display: 'flex',
+    gap: 'var(--space-3)',
+    flexWrap: 'wrap',
+  },
+
+  exportActionButton: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-2)',
+    padding: 'var(--space-2) var(--space-4)',
+    backgroundColor: 'var(--bg-app)',
+    border: '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-md)',
+    fontSize: 'var(--text-sm)',
+    color: 'var(--text-primary)',
+    cursor: 'pointer',
+    transition: 'all 0.15s ease',
+  },
+
+  dropdownMenu: {
+    position: 'absolute',
+    top: '100%',
+    left: 0,
+    marginTop: 'var(--space-1)',
+    backgroundColor: 'var(--bg-card)',
+    border: '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-md)',
+    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+    zIndex: 100,
+    minWidth: '160px',
+    overflow: 'hidden',
+  },
+
+  dropdownItem: {
+    display: 'block',
+    width: '100%',
+    padding: 'var(--space-2) var(--space-3)',
+    backgroundColor: 'transparent',
+    border: 'none',
+    fontSize: 'var(--text-sm)',
+    color: 'var(--text-primary)',
+    textAlign: 'left',
+    cursor: 'pointer',
+  },
+
+  dangerZoneBox: {
+    border: '1px solid var(--color-error)',
+    borderRadius: 'var(--radius-md)',
+    padding: 'var(--space-4)',
+    backgroundColor: 'rgba(239, 68, 68, 0.05)',
+  },
+
+  dangerZoneContent: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 'var(--space-4)',
+  },
+
+  dangerZoneDesc: {
+    fontSize: 'var(--text-sm)',
+    color: 'var(--text-secondary)',
+    margin: 'var(--space-1) 0 0 0',
+  },
+
+  dangerZoneButton: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-1)',
+    padding: 'var(--space-2) var(--space-4)',
+    backgroundColor: 'var(--color-error)',
+    border: 'none',
+    borderRadius: 'var(--radius-md)',
+    fontSize: 'var(--text-sm)',
+    fontWeight: 'var(--font-medium)',
+    color: 'white',
+    cursor: 'pointer',
+    transition: 'all 0.15s ease',
+    flexShrink: 0,
   },
 };
 

@@ -71,9 +71,16 @@ describe('CanvasFieldMappings', () => {
     it('should include expected local-only fields', () => {
       expect(TASK_LOCAL_FIELDS).toContain('weight');
       expect(TASK_LOCAL_FIELDS).toContain('priority_score');
-      expect(TASK_LOCAL_FIELDS).toContain('task_type');
       expect(TASK_LOCAL_FIELDS).toContain('task_group_id');
       expect(TASK_LOCAL_FIELDS).toContain('local_modified_fields');
+      expect(TASK_LOCAL_FIELDS).toContain('is_optional');
+      expect(TASK_LOCAL_FIELDS).toContain('user_submission_status');
+    });
+
+    it('should NOT include Canvas-derived fields', () => {
+      // task_type is derived from Canvas submission_types, so it's a Canvas field
+      expect(TASK_LOCAL_FIELDS).not.toContain('task_type');
+      expect(TASK_LOCAL_FIELDS).not.toContain('is_completed');
     });
   });
 

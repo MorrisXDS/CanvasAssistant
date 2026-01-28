@@ -89,7 +89,7 @@ describe('Task Commands', () => {
       it('should reject invalid course ID', () => {
         const result = command.validate({ courseId: 0, title: 'Test Task' });
         expect(result.valid).toBe(false);
-        expect(result.error).toContain('Invalid course ID');
+        expect(result.error).toContain('Course not found or invalid');
       });
 
       it('should reject empty title', () => {
@@ -227,7 +227,7 @@ describe('Task Commands', () => {
       it('should reject invalid task ID', () => {
         const result = command.validate({ taskId: 0 });
         expect(result.valid).toBe(false);
-        expect(result.error).toContain('Invalid task ID');
+        expect(result.error).toContain('Task not found or invalid');
       });
 
       it('should accept valid task ID', () => {
@@ -248,14 +248,14 @@ describe('Task Commands', () => {
           'SELECT id FROM tasks WHERE id = ?',
           [userTaskId]
         );
-        expect(task).toBeNull();
+        expect(task).toBeUndefined();
       });
 
       it('should reject deleting Canvas task without force', async () => {
         const result = await command.execute(context, { taskId: canvasTaskId });
 
         expect(result.success).toBe(false);
-        expect(result.error).toContain('Cannot delete Canvas-synced task');
+        expect(result.error).toContain('This assignment was imported from Canvas');
       });
 
       it('should delete Canvas task with force flag', async () => {
@@ -298,7 +298,7 @@ describe('Task Commands', () => {
       it('should reject invalid task ID', () => {
         const result = command.validate({ taskId: 0, isComplete: true });
         expect(result.valid).toBe(false);
-        expect(result.error).toContain('Invalid task ID');
+        expect(result.error).toContain('Task not found or invalid');
       });
 
       it('should reject non-boolean isComplete', () => {
@@ -307,7 +307,7 @@ describe('Task Commands', () => {
           isComplete: 'yes' as unknown as boolean,
         });
         expect(result.valid).toBe(false);
-        expect(result.error).toContain('must be a boolean');
+        expect(result.error).toContain('Invalid completion status');
       });
 
       it('should accept valid params', () => {
@@ -370,13 +370,16 @@ describe('Task Commands', () => {
       it('should mark field as locally modified', async () => {
         await command.execute(context, { taskId, isComplete: true });
 
-        // Check if the field was marked as modified
-        const modified = db.executeReadOne<{ id: number }>(
-          `SELECT id FROM task_local_modifications
-           WHERE task_id = ? AND field_name = 'is_completed'`,
+        // Check if the field was marked as modified in local_modified_fields JSON
+        const task = db.executeReadOne<{ local_modified_fields: string | null }>(
+          `SELECT local_modified_fields FROM tasks WHERE id = ?`,
           [taskId]
         );
-        expect(modified).not.toBeNull();
+        expect(task).not.toBeNull();
+        const modifiedFields = task?.local_modified_fields
+          ? JSON.parse(task.local_modified_fields)
+          : [];
+        expect(modifiedFields).toContain('is_completed');
       });
     });
   });
@@ -402,7 +405,7 @@ describe('Task Commands', () => {
       it('should reject invalid task ID', () => {
         const result = command.validate({ taskId: 0, title: 'Test' });
         expect(result.valid).toBe(false);
-        expect(result.error).toContain('Invalid task ID');
+        expect(result.error).toContain('Task not found or invalid');
       });
 
       it('should reject empty title', () => {

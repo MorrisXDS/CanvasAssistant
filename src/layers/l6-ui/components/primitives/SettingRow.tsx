@@ -135,7 +135,8 @@ export function ToggleSwitch({
         ...styles.toggle,
         width: dimensions.width,
         height: dimensions.height,
-        backgroundColor: checked ? 'var(--color-blue)' : 'var(--bg-tertiary)',
+        backgroundColor: checked ? 'var(--color-blue)' : 'var(--border-default)',
+        border: checked ? 'none' : '1px solid var(--text-tertiary)',
         opacity: disabled ? 0.5 : 1,
         cursor: disabled ? 'not-allowed' : 'pointer',
       }}

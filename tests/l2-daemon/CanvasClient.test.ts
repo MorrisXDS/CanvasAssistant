@@ -281,6 +281,7 @@ describe('CanvasClient', () => {
 
       expect(rateLimitedHandler).toHaveBeenCalledWith({
         retryAfter: '5',
+        endpoint: 'unknown',
       });
     });
 
@@ -306,6 +307,7 @@ describe('CanvasClient', () => {
 
       expect(authErrorHandler).toHaveBeenCalledWith({
         message: 'Invalid or expired access token',
+        endpoint: 'unknown',
       });
     });
   });

@@ -42,6 +42,12 @@ export interface DownloadRequest {
   contextFolder?: string;
   /** Original folder path from Canvas (used for files from /files endpoint) */
   folderPath?: string;
+  /**
+   * Parent HTML file path (for HTML dependency downloads).
+   * When set, file will be downloaded to {parentHtmlBaseName}_files/ folder.
+   * E.g., parentHtml="CSC108/Assignment1.html" -> "CSC108/Assignment1_files/filename.ext"
+   */
+  parentHtml?: string;
 }
 
 export interface DownloadResult {
@@ -141,7 +147,7 @@ export class FileDownloadManager extends EventEmitter {
 
   /**
    * Get the full directory path for a download request
-   * Handles context folders and folder paths
+   * Handles context folders, folder paths, and parentHtml (for HTML dependencies)
    *
    * Structure: {baseDir}/{courseCode}/{contextFolder|folderPath}/{filename}
    *
@@ -151,8 +157,14 @@ export class FileDownloadManager extends EventEmitter {
    * - Syllabus: TEP327/Syllabus/outline.pdf
    * - Module: TEP327/Modules/Week_1/homework.pdf
    * - Assignment: TEP327/Assignments/Project_1/rubric.pdf
+   * - HTML dependency: TEP327/Assignment1_files/image.png (when parentHtml="TEP327/Assignment1.html")
    */
   getDownloadDirectory(request: DownloadRequest): string {
+    // Special case: downloading as a dependency of an HTML file
+    if (request.parentHtml) {
+      return this.getHtmlFilesFolderPath(request.parentHtml);
+    }
+
     const courseDir = this.getCourseFilesPath(request.courseCode);
 
     // Determine subfolder: contextFolder takes priority, then folderPath
@@ -178,6 +190,20 @@ export class FileDownloadManager extends EventEmitter {
     }
 
     return courseDir;
+  }
+
+  /**
+   * Get the _files folder path for an HTML file
+   * E.g., "CSC108/Assignment1.html" -> "CSC108/Assignment1_files"
+   *
+   * Used for HTML dependency downloads following the convention:
+   * - Assignment1.html has dependencies in Assignment1_files/
+   * - instructions.html (nested) has dependencies in instructions_files/
+   */
+  getHtmlFilesFolderPath(htmlPath: string): string {
+    const parsed = path.parse(htmlPath);
+    const filesFolder = `${parsed.name}_files`;
+    return path.join(parsed.dir, filesFolder);
   }
 
   /**
