@@ -67,8 +67,6 @@ export class RateLimiter extends EventEmitter {
   private processingInterval: NodeJS.Timeout | null = null;
   private autoResumeTimeout: NodeJS.Timeout | null = null;
   private log: ComponentLogger | null;
-  // Guard to prevent multiple processQueue instances from running concurrently (#19)
-  private isProcessing: boolean = false;
 
   private readonly maxConcurrent: number;
   private readonly minDelayMs: number;
@@ -246,8 +244,9 @@ export class RateLimiter extends EventEmitter {
         lowestPriority = req.priority;
         lowestPriorityIdx = i;
         oldestAtLowest = req.createdAt;
-      } else if (req.priority === lowestPriority && req.createdAt < oldestAtLowest) {
-        // Same priority but older - prefer to evict older ones
+      } else if (req.priority === lowestPriority && req.createdAt <= oldestAtLowest) {
+        // Same priority but older (or same time but lower index = earlier in queue)
+        // Use <= to handle same-millisecond insertions by preferring lower index
         lowestPriorityIdx = i;
         oldestAtLowest = req.createdAt;
       }
@@ -278,35 +277,17 @@ export class RateLimiter extends EventEmitter {
 
   /**
    * Process the request queue
-   * Uses a guard to prevent multiple concurrent processing loops (#19)
+   * Starts multiple requests concurrently up to maxConcurrent limit
    */
-  private async processQueue(): Promise<void> {
-    // Guard: Only one processQueue loop should run at a time
-    if (this.isProcessing) {
-      return;
-    }
-
-    if (this.isPaused) {
-      this.log?.debug(` PAUSED: not processing queue`);
-      return;
-    }
-    if (this.activeRequests >= this.maxConcurrent) {
-      this.log?.debug(
-        ` AT CAPACITY: ${this.activeRequests}/${this.maxConcurrent} active, waiting...`
-      );
-      return;
-    }
-    if (this.queue.length === 0) return;
-
-    // Mark as processing to prevent concurrent loops
-    this.isProcessing = true;
-
-    try {
+  private processQueue(): void {
+    // Start requests up to the concurrency limit
+    while (
+      !this.isPaused &&
+      this.activeRequests < this.maxConcurrent &&
+      this.queue.length > 0
+    ) {
       const request = this.queue.shift();
-      if (!request) {
-        this.isProcessing = false;
-        return;
-      }
+      if (!request) break;
 
       this.activeRequests++;
       this.log?.debug(
@@ -314,32 +295,37 @@ export class RateLimiter extends EventEmitter {
       );
       this.emit('request-start', { id: request.id, active: this.activeRequests });
 
-      try {
-        const startTime = Date.now();
-        const result = await request.execute();
-        const duration = Date.now() - startTime;
-        this.activeRequests--;
-        request.resolve(result);
-        this.log?.debug(
-          ` COMPLETE: ${request.id} in ${duration}ms, active=${this.activeRequests}`
-        );
-        this.emit('request-complete', { id: request.id, active: this.activeRequests });
-      } catch (error) {
-        this.activeRequests--;
-        this.log?.debug(` ERROR: ${request.id} - ${error}`);
-        await this.handleRequestError(request, error);
-      }
+      // Execute request asynchronously (don't await - allows concurrency)
+      const startTime = Date.now();
+      request
+        .execute()
+        .then((result) => {
+          const duration = Date.now() - startTime;
+          this.activeRequests--;
+          request.resolve(result);
+          this.log?.debug(
+            ` COMPLETE: ${request.id} in ${duration}ms, active=${this.activeRequests}`
+          );
+          this.emit('request-complete', { id: request.id, active: this.activeRequests });
 
-      // Use adaptive delay based on rate limit remaining, with minDelayMs as floor
-      const effectiveDelay = Math.max(this.minDelayMs, this.adaptiveDelayMs);
-      await this.delay(effectiveDelay);
-    } finally {
-      // Release guard before continuing
-      this.isProcessing = false;
+          // Schedule next request with delay
+          const effectiveDelay = Math.max(this.minDelayMs, this.adaptiveDelayMs);
+          setTimeout(() => this.processQueue(), effectiveDelay);
+        })
+        .catch((error) => {
+          this.activeRequests--;
+          this.log?.debug(` ERROR: ${request.id} - ${error}`);
+          this.handleRequestError(request, error).then(() => {
+            // Schedule next request with delay after error handling
+            const effectiveDelay = Math.max(this.minDelayMs, this.adaptiveDelayMs);
+            setTimeout(() => this.processQueue(), effectiveDelay);
+          });
+        });
     }
 
-    // Continue processing (will re-acquire guard)
-    this.processQueue();
+    if (this.isPaused) {
+      this.log?.debug(` PAUSED: not processing queue`);
+    }
   }
 
   /**
@@ -687,8 +673,6 @@ export class RateLimiter extends EventEmitter {
       clearInterval(this.staleCleanupInterval);
       this.staleCleanupInterval = null;
     }
-    // Reset processing guard (#19)
-    this.isProcessing = false;
     // Remove all listeners to prevent memory leaks (#20)
     this.removeAllListeners();
   }

@@ -352,6 +352,20 @@ export class PolicyOrchestrator extends EventEmitter {
 
     if (!row) return null;
 
+    // Calculate effective submission status using OR logic
+    const userSubmissionStatus = row.user_submission_status ?? null;
+    let effectiveStatus: string | null = 'pending';
+    if (row.submission_status === 'graded' || userSubmissionStatus === 'graded') {
+      effectiveStatus = 'graded';
+    } else if (
+      row.submission_status === 'submitted' ||
+      userSubmissionStatus === 'submitted'
+    ) {
+      effectiveStatus = 'submitted';
+    } else {
+      effectiveStatus = row.submission_status ?? userSubmissionStatus ?? 'pending';
+    }
+
     return {
       id: row.id,
       externalId: row.external_id,
@@ -370,6 +384,9 @@ export class PolicyOrchestrator extends EventEmitter {
       taskType: row.task_type,
       taskGroupId: row.task_group_id,
       submissionStatus: row.submission_status,
+      userSubmissionStatus,
+      effectiveSubmissionStatus: effectiveStatus,
+      calendarEventId: row.calendar_event_id ?? null,
     };
   }
 

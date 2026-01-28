@@ -5,7 +5,7 @@
 
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { PartyPopper, CheckCircle } from 'lucide-react';
+import { PartyPopper, CheckCircle, Circle } from 'lucide-react';
 import { Card, Badge, BadgeVariant } from '../shared';
 import { formatDueDate } from '../../constants';
 import type { PriorityItem } from '../../../l5-presentation/types';
@@ -17,7 +17,10 @@ export interface PriorityListProps {
   onTaskClick?: (taskId: number) => void;
   onTaskDoubleClick?: (taskId: number) => void;
   onTaskContextMenu?: (e: React.MouseEvent, task: Task) => void;
+  onToggleComplete?: (taskId: number, isCompleted: boolean) => void;
   maxItems?: number;
+  /** Whether to show urgency badges (only when priority sorting is enabled) */
+  showUrgencyBadges?: boolean;
 }
 
 function urgencyToVariant(urgency: PriorityItem['urgencyLevel']): BadgeVariant {
@@ -30,7 +33,9 @@ export function PriorityList({
   onTaskClick,
   onTaskDoubleClick,
   onTaskContextMenu,
+  onToggleComplete,
   maxItems = 10,
+  showUrgencyBadges = true,
 }: PriorityListProps) {
   const navigate = useNavigate();
   const displayItems = items.slice(0, maxItems);
@@ -106,8 +111,9 @@ export function PriorityList({
               <div
                 style={{
                   ...styles.priorityBar,
-                  backgroundColor:
-                    item.urgencyLevel === 'critical'
+                  backgroundColor: item.task.isCompleted
+                    ? 'var(--color-success)'
+                    : item.urgencyLevel === 'critical'
                       ? 'var(--color-critical)'
                       : item.urgencyLevel === 'high'
                         ? 'var(--color-high)'
@@ -117,31 +123,34 @@ export function PriorityList({
                 }}
               />
 
-              {/* Submission status indicator */}
-              {(item.task.submissionStatus === 'submitted' ||
-                item.task.submissionStatus === 'graded') && (
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    marginRight: 'var(--space-2)',
-                  }}
-                >
-                  <CheckCircle
-                    size={16}
-                    color="var(--color-success)"
-                    style={{ animation: 'fadeIn 0.3s ease-out' }}
-                  />
-                </div>
-              )}
+              {/* Submission status indicator (only show if no checkbox) */}
+              {!onToggleComplete &&
+                (item.task.submissionStatus === 'submitted' ||
+                  item.task.submissionStatus === 'graded') && (
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      marginRight: 'var(--space-2)',
+                    }}
+                  >
+                    <CheckCircle
+                      size={16}
+                      color="var(--color-success)"
+                      style={{ animation: 'fadeIn 0.3s ease-out' }}
+                    />
+                  </div>
+                )}
 
               {/* Content */}
               <div style={styles.content}>
                 <div style={styles.topRow}>
                   <span style={styles.courseCode}>{item.course.code}</span>
-                  <Badge variant={urgencyToVariant(item.urgencyLevel)} size="sm">
-                    {item.urgencyLevel}
-                  </Badge>
+                  {showUrgencyBadges && (
+                    <Badge variant={urgencyToVariant(item.urgencyLevel)} size="sm">
+                      {item.urgencyLevel}
+                    </Badge>
+                  )}
                 </div>
                 <div style={styles.title}>{item.task.title}</div>
                 <div style={styles.bottomRow}>
@@ -153,6 +162,24 @@ export function PriorityList({
                   )}
                 </div>
               </div>
+
+              {/* Checkbox - right side */}
+              {onToggleComplete && (
+                <button
+                  style={styles.checkbox}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onToggleComplete(item.task.id, item.task.isCompleted);
+                  }}
+                  aria-label={item.task.isCompleted ? 'Mark incomplete' : 'Mark complete'}
+                >
+                  {item.task.isCompleted ? (
+                    <CheckCircle size={24} color="var(--color-success)" />
+                  ) : (
+                    <Circle size={24} color="var(--text-muted)" />
+                  )}
+                </button>
+              )}
             </div>
           ))}
         </div>
@@ -175,6 +202,19 @@ const styles: Record<string, React.CSSProperties> = {
     transition: 'background-color var(--transition-fast)',
     position: 'relative',
     alignItems: 'stretch', // Ensures priority bar spans full height
+  },
+
+  checkbox: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 0,
+    marginLeft: 'var(--space-3)',
+    background: 'none',
+    border: 'none',
+    cursor: 'pointer',
+    flexShrink: 0,
+    alignSelf: 'center',
   },
 
   priorityBar: {

@@ -28,6 +28,13 @@ const api = {
 
   getCourse: (courseId: number) => ipcRenderer.invoke('data:getCourse', courseId),
 
+  getArchivedCourses: () => ipcRenderer.invoke('data:getArchivedCourses'),
+
+  // Get tasks for an archived course (bypasses visibility filtering)
+  // Archived courses are local-only sandboxes
+  getTasksForArchivedCourse: (courseId: number) =>
+    ipcRenderer.invoke('data:getTasksForArchivedCourse', courseId),
+
   // Tasks - requires courseIds for filtered fetch, or explicit 'all' for unfiltered
   getTasks: (options: { courseIds: number[] | 'all' } | number) => {
     if (typeof options === 'number') {
@@ -355,9 +362,13 @@ const api = {
     syncCanvasFiles?: boolean;
     syncAnnouncements?: boolean;
     courseIds?: number[];
+    deferFileProcessing?: boolean;
   }) => ipcRenderer.invoke('sync:full', options),
 
   syncCourses: () => ipcRenderer.invoke('sync:courses'),
+
+  // Process file references in background (for deferred file processing)
+  processFileReferences: () => ipcRenderer.invoke('sync:processFileReferences'),
 
   syncFolderFiles: (params: {
     canvasFolderId: number;
@@ -773,6 +784,23 @@ const api = {
    */
   handleCorruption: (action: 'reset' | 'continue' | 'export') =>
     ipcRenderer.invoke('app:handleCorruption', action),
+
+  /**
+   * Listen for file drops (ICS files dropped on the window)
+   * Electron intercepts file drops and sends content via IPC
+   */
+  onFileDropped: (
+    callback: (data: { type: string; content: string; filename: string }) => void
+  ): (() => void) => {
+    const handler = (
+      _event: IpcRendererEvent,
+      data: { type: string; content: string; filename: string }
+    ) => {
+      callback(data);
+    };
+    ipcRenderer.on('file-dropped', handler);
+    return () => ipcRenderer.removeListener('file-dropped', handler);
+  },
 };
 
 // Expose the API to the renderer process

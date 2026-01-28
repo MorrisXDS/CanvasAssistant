@@ -215,7 +215,8 @@ export function TaskDetailModal({
               )}
 
               {/* Course Policies */}
-              {policies.filter((p) => p.courseId === task.courseId && p.isActive).length > 0 && (
+              {policies.filter((p) => p.courseId === task.courseId && p.isActive).length >
+                0 && (
                 <div style={styles.section}>
                   <div style={styles.descriptionLabel}>Course Policies</div>
                   <PolicyBadgeGroup
@@ -267,15 +268,30 @@ export function TaskDetailModal({
           {!isTask && importedEvent && (
             <>
               <div style={styles.section}>
-                <div style={styles.row}>
-                  <Calendar size={16} color="var(--text-muted)" />
-                  <span style={styles.label}>Date:</span>
-                  <span style={styles.value}>
-                    {importedEvent.allDay
-                      ? new Date(importedEvent.startAt).toLocaleDateString()
-                      : formatDate(importedEvent.startAt)}
-                  </span>
-                </div>
+                {/* Check if this is a deadline task event (start_at is epoch) */}
+                {(() => {
+                  // Use timestamp check (< 1 day from epoch) to handle timezone display issues
+                  const isDeadlineEvent =
+                    importedEvent.taskId &&
+                    new Date(importedEvent.startAt).getTime() < 86400000;
+                  return (
+                    <div style={styles.row}>
+                      <Calendar size={16} color="var(--text-muted)" />
+                      <span style={styles.label}>
+                        {isDeadlineEvent ? 'Due:' : 'Date:'}
+                      </span>
+                      <span style={styles.value}>
+                        {isDeadlineEvent
+                          ? importedEvent.endAt
+                            ? formatDate(importedEvent.endAt)
+                            : 'No due date'
+                          : importedEvent.allDay
+                            ? new Date(importedEvent.startAt).toLocaleDateString()
+                            : formatDate(importedEvent.startAt)}
+                      </span>
+                    </div>
+                  );
+                })()}
                 {importedEvent.location && (
                   <div style={styles.row}>
                     <Target size={16} color="var(--text-muted)" />
@@ -342,6 +358,15 @@ export function TaskDetailModal({
                 )}
               </div>
             )}
+          {/* Edit calendar settings for task events */}
+          {isTask && onEdit && (
+            <div style={styles.footerLeft}>
+              <button style={styles.editButton} onClick={onEdit}>
+                <Edit2 size={14} />
+                Edit Calendar Settings
+              </button>
+            </div>
+          )}
           <div style={styles.footerRight}>
             {isTask && course && (
               <button style={styles.primaryButton} onClick={handleGoToCourse}>
@@ -379,8 +404,8 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 'var(--radius-lg)',
     boxShadow: 'var(--shadow-lg)',
     width: '100%',
-    maxWidth: '480px',
-    maxHeight: '80vh',
+    maxWidth: '420px',
+    maxHeight: '75vh',
     overflow: 'hidden',
     display: 'flex',
     flexDirection: 'column',
@@ -514,10 +539,10 @@ const styles: Record<string, React.CSSProperties> = {
   description: {
     fontSize: 'var(--text-sm)',
     color: 'var(--text-secondary)',
-    lineHeight: 1.6,
-    maxHeight: '150px',
+    lineHeight: 1.5,
+    maxHeight: '100px',
     overflow: 'auto',
-    padding: 'var(--space-3)',
+    padding: 'var(--space-2)',
     backgroundColor: 'var(--bg-app)',
     borderRadius: 'var(--radius-md)',
   },

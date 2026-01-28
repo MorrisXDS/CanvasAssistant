@@ -277,6 +277,54 @@ export function formatFileSize(bytes: number | null): string {
 }
 
 // =============================================================================
+// COURSE NAME FORMATTERS
+// =============================================================================
+
+/**
+ * Extract the clean course name from the full Canvas name string
+ *
+ * Canvas stores names like "ECE311H1 S LEC0101 20261:Introduction to Control Systems"
+ * This extracts just "Introduction to Control Systems"
+ *
+ * @param name - Full course name from Canvas
+ * @returns Clean course name (part after colon, or original if no colon)
+ *
+ * @example
+ * getCleanCourseName("ECE311H1 S LEC0101 20261:Introduction to Control Systems")
+ * // "Introduction to Control Systems"
+ *
+ * getCleanCourseName("My Course") // "My Course"
+ */
+export function getCleanCourseName(name: string | null | undefined): string {
+  if (!name) return '';
+
+  // If name contains a colon, extract the part after it (the actual course name)
+  const colonIndex = name.indexOf(':');
+  if (colonIndex !== -1) {
+    return name.substring(colonIndex + 1).trim();
+  }
+
+  return name;
+}
+
+/**
+ * Format a full course display string (code + clean name)
+ *
+ * @param code - Course code (e.g., "ECE311H1 S LEC0101")
+ * @param name - Full course name from Canvas
+ * @returns Formatted string like "ECE311H1 - Introduction to Control Systems"
+ *
+ * @example
+ * formatCourseName("ECE311H1 S LEC0101", "ECE311H1 S LEC0101 20261:Introduction to Control Systems")
+ * // "ECE311H1 S LEC0101 - Introduction to Control Systems"
+ */
+export function formatCourseName(code: string, name: string | null | undefined): string {
+  const cleanName = getCleanCourseName(name);
+  if (!cleanName) return code;
+  return `${code} - ${cleanName}`;
+}
+
+// =============================================================================
 // TEXT FORMATTERS
 // =============================================================================
 

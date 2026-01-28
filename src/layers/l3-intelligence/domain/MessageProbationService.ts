@@ -14,10 +14,10 @@
  */
 
 import { Database } from '../../l1-persistence/Database';
+import type { DisplayHistoryRow } from '../../l1-persistence/DatabaseRowTypes';
 import crypto from 'crypto';
 import {
   getFrequencySettings,
-  DEFAULT_FREQUENCY_SETTINGS,
   type MessageFrequencySettings,
 } from './MessageFrequencyConfig';
 
@@ -37,17 +37,7 @@ export interface MessageProbationConfig {
 
 type MessageType = 'insight' | 'recommendation';
 
-interface DisplayHistoryRow {
-  id: number;
-  message_type: string;
-  sub_type: string;
-  content_hash: string;
-  display_count: number;
-  first_shown_at: string;
-  last_shown_at: string;
-  grounded_until: string | null;
-  quiet_period_start: string | null;
-}
+// DisplayHistoryRow imported from DatabaseRowTypes.ts
 
 /**
  * MessageProbationService manages duplicate prevention with exponential backoff
@@ -85,7 +75,10 @@ export class MessageProbationService {
   /**
    * Get frequency settings for a message type
    */
-  private getSettings(messageType: MessageType, subType: string): MessageFrequencySettings {
+  private getSettings(
+    messageType: MessageType,
+    subType: string
+  ): MessageFrequencySettings {
     return getFrequencySettings(messageType, subType);
   }
 
@@ -134,7 +127,8 @@ export class MessageProbationService {
     // Use type-specific quiet period, or stored subType if available
     const settings = this.getSettings(messageType, row.sub_type || subType);
     const quietStart = new Date(row.quiet_period_start);
-    const quietEndTime = quietStart.getTime() + settings.quietPeriodHours * 60 * 60 * 1000;
+    const quietEndTime =
+      quietStart.getTime() + settings.quietPeriodHours * 60 * 60 * 1000;
 
     if (now.getTime() >= quietEndTime) {
       // Reset the record - quiet period has passed
@@ -167,7 +161,14 @@ export class MessageProbationService {
         `INSERT INTO message_display_history
          (message_type, sub_type, content_hash, display_count, first_shown_at, last_shown_at, quiet_period_start)
          VALUES (?, ?, ?, 1, ?, ?, ?)`,
-        [messageType, subType, contentHash, now.toISOString(), now.toISOString(), now.toISOString()],
+        [
+          messageType,
+          subType,
+          contentHash,
+          now.toISOString(),
+          now.toISOString(),
+          now.toISOString(),
+        ],
         'message_display_history'
       );
       return;
@@ -188,9 +189,10 @@ export class MessageProbationService {
       groundingHours = Math.min(groundingHours, settings.maxGroundingHours);
     }
 
-    const groundedUntil = groundingHours > 0
-      ? new Date(now.getTime() + groundingHours * 60 * 60 * 1000)
-      : null;
+    const groundedUntil =
+      groundingHours > 0
+        ? new Date(now.getTime() + groundingHours * 60 * 60 * 1000)
+        : null;
 
     // Update record with new grounding, also update sub_type in case it changed
     this.db.executeWrite(
@@ -215,7 +217,10 @@ export class MessageProbationService {
   /**
    * Get grounding info for a message
    */
-  getGroundingInfo(messageType: MessageType, contentHash: string): {
+  getGroundingInfo(
+    messageType: MessageType,
+    contentHash: string
+  ): {
     isGrounded: boolean;
     displayCount: number;
     groundedUntil: Date | null;

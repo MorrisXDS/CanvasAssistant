@@ -8,6 +8,11 @@ import { useNavigate } from 'react-router-dom';
 import { RefreshCw, FlaskConical, X } from 'lucide-react';
 import { useStore } from '../../../l5-presentation/store';
 import { useDashboardViewModel } from '../../../l5-presentation/viewModels/DashboardViewModel';
+import {
+  STORAGE_KEYS,
+  useSetting,
+  DEFAULT_DASHBOARD_SETTINGS,
+} from '../../../l5-presentation/settings';
 import { QuickStats, StatItem } from './QuickStats';
 import { TaskListModal, TaskWithCourse } from './TaskListModal';
 import { GradeBreakdownModal } from './GradeBreakdownModal';
@@ -88,7 +93,14 @@ export function Dashboard() {
   }, []);
   const navigate = useNavigate();
   const state = useStore();
-  const viewModel = useDashboardViewModel(state);
+
+  // Get dashboard settings for priority sorting
+  const [dashboardSettings] = useSetting(STORAGE_KEYS.DASHBOARD);
+  const prioritySortingEnabled =
+    dashboardSettings?.prioritySortingEnabled ??
+    DEFAULT_DASHBOARD_SETTINGS.prioritySortingEnabled;
+
+  const viewModel = useDashboardViewModel(state, { prioritySortingEnabled });
 
   // Modal states
   const [showPendingTasksModal, setShowPendingTasksModal] = useState(false);
@@ -100,6 +112,13 @@ export function Dashboard() {
     () => new Map(state.courses.map((c) => [c.id, c])),
     [state.courses]
   );
+
+  // Filter notifications to only show those from visible courses (or system notifications)
+  const visibleNotifications = useMemo(() => {
+    return state.notifications.filter(
+      (n) => n.courseId === null || courseMap.has(n.courseId)
+    );
+  }, [state.notifications, courseMap]);
 
   const { pendingTasks, overdueTasks } = useMemo(() => {
     const now = new Date();
@@ -226,14 +245,20 @@ export function Dashboard() {
     });
   };
 
-  const handleToggleComplete = async () => {
-    if (!contextMenu) return;
+  const handleToggleComplete = async (taskId?: number, currentlyCompleted?: boolean) => {
     const api = window.api;
     if (!api?.dispatch) return;
+
+    // Use passed params or fall back to context menu
+    const id = taskId ?? contextMenu?.task.id;
+    const isCompleted = currentlyCompleted ?? contextMenu?.task.isCompleted;
+
+    if (id === undefined || isCompleted === undefined) return;
+
     try {
       await api.dispatch('MarkTaskComplete', {
-        taskId: contextMenu.task.id,
-        isComplete: !contextMenu.task.isCompleted,
+        taskId: id,
+        isComplete: !isCompleted,
       });
     } catch (error) {
       console.error('Failed to toggle task complete:', error);
@@ -355,11 +380,13 @@ export function Dashboard() {
             totalPendingTasks={
               viewModel.stats.upcomingTasks + viewModel.stats.overdueTasks
             }
-            notifications={state.notifications}
+            notifications={visibleNotifications}
             onTaskClick={handleTaskClick}
             onTaskDoubleClick={handleTaskDoubleClick}
             onTaskContextMenu={handleTaskContextMenu}
+            onToggleComplete={handleToggleComplete}
             onDismissNotification={handleDismissNotification}
+            prioritySortingEnabled={prioritySortingEnabled}
           />
         </section>
       </div>
@@ -389,7 +416,12 @@ export function Dashboard() {
       {/* Task Context Menu */}
       {contextMenu && (
         <TaskContextMenu
-          task={contextMenu.task}
+          task={{
+            id: contextMenu.task.id,
+            title: contextMenu.task.title,
+            isCompleted: contextMenu.task.isCompleted,
+            isOptional: contextMenu.task.isOptional,
+          }}
           position={contextMenu.position}
           onClose={() => setContextMenu(null)}
           onEdit={() => {

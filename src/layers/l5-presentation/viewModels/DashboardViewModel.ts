@@ -5,6 +5,7 @@
  */
 
 import { StoreState, Course, Task, PriorityItem, CourseSummary } from '../types';
+import { isPriorityTask, isOverdueTask, isUpcomingTask } from '../selectors';
 
 /**
  * Dashboard statistics
@@ -103,14 +104,26 @@ function calculateEffectiveAssessedGrade(
 }
 
 /**
+ * Options for creating priority items
+ */
+interface PriorityItemsOptions {
+  /** Whether to use priority-based sorting (default: false = due date only) */
+  prioritySortingEnabled?: boolean;
+}
+
+/**
  * Create priority items from tasks
  */
-function createPriorityItems(state: StoreState): PriorityItem[] {
+function createPriorityItems(
+  state: StoreState,
+  options: PriorityItemsOptions = {}
+): PriorityItem[] {
   const { tasks, courses } = state;
+  const { prioritySortingEnabled = false } = options;
   const courseMap = new Map(courses.map((c) => [c.id, c]));
 
   return tasks
-    .filter((task) => !task.isCompleted && !!task.dueAt)
+    .filter(isPriorityTask)
     .map((task) => {
       const course = courseMap.get(task.courseId);
       if (!course) return null;
@@ -125,11 +138,17 @@ function createPriorityItems(state: StoreState): PriorityItem[] {
     })
     .filter((item): item is PriorityItem => item !== null)
     .sort((a, b) => {
-      // Primary sort: by priority score (descending)
-      const scoreDiff = b.task.priorityScore - a.task.priorityScore;
-      if (scoreDiff !== 0) return scoreDiff;
+      if (prioritySortingEnabled) {
+        // Priority sorting: by urgency level, then priority score, then due date
+        const urgencyOrder = { critical: 0, high: 1, medium: 2, low: 3 };
+        const urgencyDiff = urgencyOrder[a.urgencyLevel] - urgencyOrder[b.urgencyLevel];
+        if (urgencyDiff !== 0) return urgencyDiff;
 
-      // Secondary sort: by due date (ascending - earliest first)
+        const scoreDiff = b.task.priorityScore - a.task.priorityScore;
+        if (scoreDiff !== 0) return scoreDiff;
+      }
+
+      // Default/fallback: sort by due date (ascending - earliest first)
       const aDue = a.task.dueAt ? new Date(a.task.dueAt).getTime() : Infinity;
       const bDue = b.task.dueAt ? new Date(b.task.dueAt).getTime() : Infinity;
       return aDue - bDue;
@@ -190,20 +209,16 @@ function calculateStats(
   state: StoreState,
   courseSummaries: CourseSummary[]
 ): DashboardStats {
-  const { tasks, simulation } = state;
-  const now = new Date();
+  const { tasks, courses, simulation } = state;
 
-  const completedTasks = tasks.filter((t) => t.isCompleted).length;
-  const upcomingTasks = tasks.filter((t) => {
-    if (t.isCompleted || !t.dueAt) return false;
-    const due = new Date(t.dueAt);
-    return due > now;
-  }).length;
-  const overdueTasks = tasks.filter((t) => {
-    if (t.isCompleted || !t.dueAt) return false;
-    const due = new Date(t.dueAt);
-    return due < now;
-  }).length;
+  // Only count tasks from visible (non-hidden) courses
+  // This ensures archived courses' tasks don't appear in stats
+  const visibleCourseIds = new Set(courses.filter((c) => !c.isHidden).map((c) => c.id));
+  const visibleTasks = tasks.filter((t) => visibleCourseIds.has(t.courseId));
+
+  const completedTasks = visibleTasks.filter((t) => t.isCompleted).length;
+  const upcomingTasks = visibleTasks.filter(isUpcomingTask).length;
+  const overdueTasks = visibleTasks.filter(isOverdueTask).length;
 
   // Calculate average grade across courses
   const gradesWithValues = courseSummaries
@@ -217,7 +232,7 @@ function calculateStats(
 
   return {
     totalCourses: courseSummaries.length,
-    totalTasks: tasks.length,
+    totalTasks: visibleTasks.length,
     completedTasks,
     upcomingTasks,
     overdueTasks,
@@ -227,10 +242,23 @@ function calculateStats(
 }
 
 /**
+ * Options for computing dashboard view model
+ */
+export interface DashboardViewModelOptions {
+  /** Whether to use priority-based sorting (default: false = due date only) */
+  prioritySortingEnabled?: boolean;
+}
+
+/**
  * Compute the complete dashboard view model from store state
  */
-export function computeDashboardViewModel(state: StoreState): DashboardViewModel {
-  const priorityQueue = createPriorityItems(state);
+export function computeDashboardViewModel(
+  state: StoreState,
+  options: DashboardViewModelOptions = {}
+): DashboardViewModel {
+  const priorityQueue = createPriorityItems(state, {
+    prioritySortingEnabled: options.prioritySortingEnabled,
+  });
   const courseSummaries = createCourseSummaries(state);
   const stats = calculateStats(state, courseSummaries);
 
@@ -247,6 +275,9 @@ export function computeDashboardViewModel(state: StoreState): DashboardViewModel
  * React hook for dashboard view model
  * Uses selector pattern for optimal re-renders
  */
-export function useDashboardViewModel(state: StoreState): DashboardViewModel {
-  return computeDashboardViewModel(state);
+export function useDashboardViewModel(
+  state: StoreState,
+  options: DashboardViewModelOptions = {}
+): DashboardViewModel {
+  return computeDashboardViewModel(state, options);
 }

@@ -22,12 +22,14 @@ export interface MissingSyllabusWarningProps {
  */
 export function MissingSyllabusWarning({
   hasSyllabusFile,
-  hasCanvasSyllabus,
+  hasCanvasSyllabus: _hasCanvasSyllabus,
   onDismiss,
   onSetSyllabus,
 }: MissingSyllabusWarningProps) {
-  // Don't show if either source has a syllabus
-  if (hasSyllabusFile || hasCanvasSyllabus) {
+  // Only hide if a syllabus FILE is designated (for change tracking)
+  // Canvas syllabus body alone shouldn't suppress this warning since
+  // designating a file enables automatic update tracking
+  if (hasSyllabusFile) {
     return null;
   }
 

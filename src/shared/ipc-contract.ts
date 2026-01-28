@@ -15,6 +15,9 @@ export type SyncStatus = z.infer<typeof SyncStatusSchema>;
 export const TargetGradeSourceSchema = z.enum(['default', 'manual']);
 export type TargetGradeSource = z.infer<typeof TargetGradeSourceSchema>;
 
+export const ArchiveSourceSchema = z.enum(['manual', 'auto']);
+export type ArchiveSource = z.infer<typeof ArchiveSourceSchema>;
+
 export const CourseSchema = z.object({
   id: z.number(),
   externalId: z.string(),
@@ -29,6 +32,10 @@ export const CourseSchema = z.object({
   isHidden: z.boolean(),
   lastSyncedAt: z.string().nullable(),
   enrollmentTermId: z.number().nullable(),
+  /** ISO timestamp when course was archived, null if active */
+  archivedAt: z.string().nullable(),
+  /** How the course was archived: 'manual' (user) or 'auto' (term expired). Auto-archived cannot be restored. */
+  archiveSource: ArchiveSourceSchema.nullable(),
 });
 export type Course = z.infer<typeof CourseSchema>;
 
@@ -63,8 +70,14 @@ export const TaskSchema = z.object({
   isOptional: z.boolean(),
   completedAt: z.string().nullable(),
   submissionStatus: z.string().nullable(),
+  /** User-set submission status, independent of Canvas */
+  userSubmissionStatus: z.string().nullable(),
+  /** Effective status: OR of submissionStatus and userSubmissionStatus */
+  effectiveSubmissionStatus: z.string().nullable(),
   taskType: z.string().nullable(),
   taskGroupId: z.number().nullable(),
+  /** FK to calendar event for task-calendar linking */
+  calendarEventId: z.number().nullable(),
   fieldSources: z.record(z.string(), z.enum(['canvas', 'user', 'guessed'])).optional(),
 });
 export type Task = z.infer<typeof TaskSchema>;
@@ -180,6 +193,8 @@ export const ExternalCalendarEventSchema = z.object({
   sourceType: CalendarSourceTypeSchema,
   courseId: z.number().nullable(),
   importedCalendarId: z.number().nullable(),
+  /** FK to task if this event was auto-generated from a task */
+  taskId: z.number().nullable(),
   title: z.string(),
   description: z.string().nullable(),
   startAt: z.string(),
@@ -190,6 +205,12 @@ export const ExternalCalendarEventSchema = z.object({
   recurrenceRule: z.string().nullable(),
   recurrenceExceptionDates: z.string().nullable(),
   parentEventId: z.number().nullable(),
+  /** Custom color override for this event */
+  eventColor: z.string().nullable(),
+  /** Calendar-specific notes (don't affect task) */
+  notes: z.string().nullable(),
+  /** Reminder offset in minutes */
+  reminderMinutes: z.number().nullable(),
 });
 export type ExternalCalendarEvent = z.infer<typeof ExternalCalendarEventSchema>;
 
@@ -197,8 +218,15 @@ export const DisplayCalendarEventSchema = ExternalCalendarEventSchema.extend({
   isRecurrenceInstance: z.boolean(),
   recurrenceDate: z.string().optional(),
   originalEventId: z.number().optional(),
+  /** Display color (from event, calendar, or course) */
   color: z.string(),
   calendarName: z.string().optional(),
+  /** Task details when event is task-generated */
+  taskTitle: z.string().optional(),
+  taskWeight: z.number().optional(),
+  taskType: z.string().optional(),
+  courseCode: z.string().optional(),
+  courseName: z.string().optional(),
 });
 export type DisplayCalendarEvent = z.infer<typeof DisplayCalendarEventSchema>;
 
@@ -245,6 +273,12 @@ export const UpdateCalendarEventSchema = z.object({
   endAt: z.string().optional(),
   allDay: z.boolean().optional(),
   location: z.string().optional(),
+  /** Custom color override */
+  color: z.string().optional(),
+  /** Calendar-specific notes (don't affect task) */
+  notes: z.string().optional(),
+  /** Reminder offset in minutes */
+  reminderMinutes: z.number().optional(),
 });
 export type UpdateCalendarEventInput = z.infer<typeof UpdateCalendarEventSchema>;
 

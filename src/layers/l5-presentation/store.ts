@@ -674,6 +674,9 @@ export const useStore = create<Store>()(
         allDay: boolean;
         location?: string;
         courseId?: number;
+        color?: string;
+        notes?: string;
+        reminderMinutes?: number;
       }) => {
         const api = getApi();
         if (!api) return { success: false };
@@ -688,6 +691,7 @@ export const useStore = create<Store>()(
               sourceType: 'user',
               courseId: data.courseId ?? null,
               importedCalendarId: null,
+              taskId: null,
               title: data.title,
               description: data.description ?? null,
               startAt: data.startAt,
@@ -698,8 +702,11 @@ export const useStore = create<Store>()(
               recurrenceRule: null,
               recurrenceExceptionDates: null,
               parentEventId: null,
+              eventColor: data.color ?? null,
+              notes: data.notes ?? null,
+              reminderMinutes: data.reminderMinutes ?? null,
               isRecurrenceInstance: false,
-              color: '#6366F1', // Default user event color
+              color: data.color ?? '#6366F1', // Use provided color or default user event color
             };
             set((state) => ({
               calendarEvents: [...state.calendarEvents, newEvent],
@@ -725,6 +732,9 @@ export const useStore = create<Store>()(
           endAt?: string;
           allDay?: boolean;
           location?: string;
+          color?: string;
+          notes?: string;
+          reminderMinutes?: number;
         }
       ) => {
         const api = getApi();
@@ -747,6 +757,14 @@ export const useStore = create<Store>()(
                       ...(data.endAt !== undefined && { endAt: data.endAt }),
                       ...(data.allDay !== undefined && { allDay: data.allDay }),
                       ...(data.location !== undefined && { location: data.location }),
+                      ...(data.color !== undefined && {
+                        eventColor: data.color,
+                        color: data.color,
+                      }),
+                      ...(data.notes !== undefined && { notes: data.notes }),
+                      ...(data.reminderMinutes !== undefined && {
+                        reminderMinutes: data.reminderMinutes,
+                      }),
                     }
                   : e
               ),
@@ -1305,6 +1323,39 @@ export function subscribeToIpcEvents(): () => void {
       }
     ) || (() => {});
 
+  // Listen for sync phase changes (staged progress)
+  const unsubSyncPhase =
+    api.onSyncPhase?.((data: { phase: string; status: string }) => {
+      if (data.status === 'started') {
+        const phaseMessages: Record<string, string> = {
+          fetch: 'Loading courses...',
+          commit: 'Saving data...',
+          'file-refs': 'Processing files...',
+          'html-content': 'Downloading content...',
+        };
+        const message = phaseMessages[data.phase] || `Syncing ${data.phase}...`;
+        useStore.setState({ syncMessage: message });
+      }
+    }) || (() => {});
+
+  // Listen for sync progress updates (per-course progress)
+  const unsubSyncProgress =
+    api.onSyncProgress?.(
+      (data: {
+        syncId: string;
+        phase: string;
+        totalCourses: number;
+        completedCourses: number;
+        currentCourse?: string;
+      }) => {
+        if (data.currentCourse) {
+          useStore.setState({
+            syncMessage: `Syncing ${data.currentCourse}... (${data.completedCourses}/${data.totalCourses})`,
+          });
+        }
+      }
+    ) || (() => {});
+
   return () => {
     unsubSimulation();
     unsubDbCommit();
@@ -1313,6 +1364,8 @@ export function subscribeToIpcEvents(): () => void {
     unsubAuthExpired();
     unsubAppReset();
     unsubFileStatus();
+    unsubSyncPhase();
+    unsubSyncProgress();
   };
 }
 

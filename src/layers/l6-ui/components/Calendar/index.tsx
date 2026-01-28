@@ -16,26 +16,42 @@ import {
   Download,
   Upload,
   Plus,
-  Edit2,
-  Trash2,
 } from 'lucide-react';
 import { useStore } from '../../../l5-presentation/store';
-import { CalendarGrid, CalendarView, CalendarEvent, TaskCalendarEvent, ImportedCalendarEvent } from './CalendarGrid';
+import {
+  CalendarGrid,
+  CalendarView,
+  CalendarEvent,
+  TaskCalendarEvent,
+  ImportedCalendarEvent,
+} from './CalendarGrid';
 import { ImportConfirmationModal } from './ImportConfirmationModal';
 import { CalendarManagerPanel } from './CalendarManagerPanel';
 import { TaskDetailModal } from './TaskDetailModal';
 import { EventFormModal } from './EventFormModal';
-import type { ICSImportPreview, Task, DisplayCalendarEvent } from '../../../l5-presentation/types';
+import type {
+  ICSImportPreview,
+  Task,
+  DisplayCalendarEvent,
+} from '../../../l5-presentation/types';
 import { getCourseColor } from '../../constants';
 
 // ICS utilities
 function formatICSDate(date: Date): string {
-  return date.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+  return date
+    .toISOString()
+    .replace(/[-:]/g, '')
+    .replace(/\.\d{3}/, '');
 }
 
 function escapeICSText(text: string | null | undefined): string {
   if (!text) return '';
-  return text.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n');
+  // eslint-disable-next-line cross-platform/no-hardcoded-path-separator -- ICS format escaping, not file paths
+  return text
+    .replace(/\\/g, '\\\\')
+    .replace(/;/g, '\\;')
+    .replace(/,/g, '\\,')
+    .replace(/\n/g, '\\n');
 }
 
 function generateICS(events: CalendarEvent[]): string {
@@ -60,7 +76,9 @@ function generateICS(events: CalendarEvent[]): string {
     lines.push(`DTSTART:${formatICSDate(dueDate)}`);
     lines.push(`DTEND:${formatICSDate(new Date(dueDate.getTime() + 60 * 60 * 1000))}`);
     lines.push(`SUMMARY:${escapeICSText(event.task.title)}`);
-    lines.push(`DESCRIPTION:${escapeICSText(`Course: ${event.course.code || 'Unknown'}${event.task.description ? '\\n' + event.task.description : ''}`)}`);
+    lines.push(
+      `DESCRIPTION:${escapeICSText(`Course: ${event.course.code || 'Unknown'}${event.task.description ? '\\n' + event.task.description : ''}`)}`
+    );
     if (event.course.code) {
       lines.push(`CATEGORIES:${escapeICSText(event.course.code)}`);
     }
@@ -79,7 +97,7 @@ interface ParsedICSEvent {
   description: string;
 }
 
-function parseICS(icsContent: string): ParsedICSEvent[] {
+function _parseICS(icsContent: string): ParsedICSEvent[] {
   const events: ParsedICSEvent[] = [];
   const lines = icsContent.replace(/\r\n /g, '').split(/\r?\n/);
 
@@ -87,7 +105,13 @@ function parseICS(icsContent: string): ParsedICSEvent[] {
 
   for (const line of lines) {
     if (line === 'BEGIN:VEVENT') {
-      currentEvent = { uid: '', summary: '', dtstart: null, dtend: null, description: '' };
+      currentEvent = {
+        uid: '',
+        summary: '',
+        dtstart: null,
+        dtend: null,
+        description: '',
+      };
     } else if (line === 'END:VEVENT' && currentEvent) {
       events.push(currentEvent as ParsedICSEvent);
       currentEvent = null;
@@ -103,7 +127,10 @@ function parseICS(icsContent: string): ParsedICSEvent[] {
           currentEvent.uid = value;
           break;
         case 'SUMMARY':
-          currentEvent.summary = value.replace(/\\n/g, '\n').replace(/\\,/g, ',').replace(/\\;/g, ';');
+          currentEvent.summary = value
+            .replace(/\\n/g, '\n')
+            .replace(/\\,/g, ',')
+            .replace(/\\;/g, ';');
           break;
         case 'DTSTART':
           currentEvent.dtstart = parseICSDate(value);
@@ -112,7 +139,10 @@ function parseICS(icsContent: string): ParsedICSEvent[] {
           currentEvent.dtend = parseICSDate(value);
           break;
         case 'DESCRIPTION':
-          currentEvent.description = value.replace(/\\n/g, '\n').replace(/\\,/g, ',').replace(/\\;/g, ';');
+          currentEvent.description = value
+            .replace(/\\n/g, '\n')
+            .replace(/\\,/g, ',')
+            .replace(/\\;/g, ';');
           break;
       }
     }
@@ -127,14 +157,16 @@ function parseICSDate(value: string): Date | null {
   if (!match) return null;
 
   const [, year, month, day, hour = '00', min = '00', sec = '00'] = match;
-  return new Date(Date.UTC(
-    parseInt(year),
-    parseInt(month) - 1,
-    parseInt(day),
-    parseInt(hour),
-    parseInt(min),
-    parseInt(sec)
-  ));
+  return new Date(
+    Date.UTC(
+      parseInt(year),
+      parseInt(month) - 1,
+      parseInt(day),
+      parseInt(hour),
+      parseInt(min),
+      parseInt(sec)
+    )
+  );
 }
 
 // Filter types
@@ -148,7 +180,11 @@ function loadCalendarSettings(): { defaultViewMode: CalendarView } {
     console.log('[Calendar] loadCalendarSettings - raw:', stored);
     if (stored) {
       const parsed = JSON.parse(stored);
-      if (parsed.defaultViewMode === 'month' || parsed.defaultViewMode === 'week' || parsed.defaultViewMode === 'day') {
+      if (
+        parsed.defaultViewMode === 'month' ||
+        parsed.defaultViewMode === 'week' ||
+        parsed.defaultViewMode === 'day'
+      ) {
         return { defaultViewMode: parsed.defaultViewMode };
       }
     }
@@ -200,7 +236,7 @@ export function CalendarPage() {
     createCalendarEvent,
     updateCalendarEvent,
     deleteCalendarEvent,
-    exportCalendarsBatch,
+    exportCalendarsBatch: _exportCalendarsBatch,
   } = useStore();
   const location = useLocation();
   const navigate = useNavigate();
@@ -254,6 +290,49 @@ export function CalendarPage() {
     setCurrentDate(new Date());
   }, [location.key]);
 
+  // Listen for file drops - both from Electron IPC and from window custom event
+  useEffect(() => {
+    // Handler for ICS content (from any source)
+    const processICSContent = async (content: string, filename: string) => {
+      try {
+        const preview = await window.api.parseICSPreview(content, filename);
+        if (preview) {
+          setPendingICSContent(content);
+          setImportPreview(preview);
+          setShowImportModal(true);
+        }
+      } catch (error) {
+        console.error('Failed to parse dropped ICS file:', error);
+      }
+    };
+
+    // Electron IPC handler
+    const handleFileDrop = async (data: {
+      type: string;
+      content: string;
+      filename: string;
+    }) => {
+      if (data.type === 'ics') {
+        await processICSContent(data.content, data.filename);
+      }
+    };
+
+    // Window custom event handler (fallback for HTML5 drag-drop)
+    const handleWindowDrop = async (e: Event) => {
+      const customEvent = e as CustomEvent<{ content: string; filename: string }>;
+      console.log('[Calendar] Received ics-file-dropped event');
+      await processICSContent(customEvent.detail.content, customEvent.detail.filename);
+    };
+
+    const cleanup = window.api.onFileDropped(handleFileDrop);
+    window.addEventListener('ics-file-dropped', handleWindowDrop);
+
+    return () => {
+      cleanup();
+      window.removeEventListener('ics-file-dropped', handleWindowDrop);
+    };
+  }, []);
+
   // Drag-and-drop handlers - use counter to handle child element events
   const dragCounterRef = React.useRef(0);
 
@@ -261,9 +340,8 @@ export function CalendarPage() {
     e.preventDefault();
     e.stopPropagation();
     dragCounterRef.current++;
-    if (e.dataTransfer.types.includes('Files')) {
-      setIsDragging(true);
-    }
+    e.dataTransfer.dropEffect = 'copy';
+    setIsDragging(true);
   }, []);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -288,10 +366,11 @@ export function CalendarPage() {
     setIsDragging(false);
 
     const files = Array.from(e.dataTransfer.files);
-    const icsFile = files.find(f => f.name.endsWith('.ics') || f.type === 'text/calendar');
+    const icsFile = files.find(
+      (f) => f.name.endsWith('.ics') || f.type === 'text/calendar'
+    );
 
     if (!icsFile) {
-      console.warn('No ICS file found in drop');
       return;
     }
 
@@ -310,50 +389,52 @@ export function CalendarPage() {
   }, []);
 
   // Handle import confirmation
-  const handleImportConfirm = useCallback(async (options: { name: string; color: string }) => {
-    if (!pendingICSContent || !importPreview) return;
+  const handleImportConfirm = useCallback(
+    async (options: { name: string; color: string }) => {
+      if (!pendingICSContent || !importPreview) return;
 
-    console.log('[Calendar] Importing ICS:', {
-      filename: importPreview.filename,
-      name: options.name,
-      color: options.color,
-      eventCount: importPreview.events.length,
-    });
+      await importICSFile(pendingICSContent, importPreview.filename, {
+        name: options.name,
+        color: options.color,
+      });
 
-    const result = await importICSFile(pendingICSContent, importPreview.filename, {
-      name: options.name,
-      color: options.color,
-    });
+      setShowImportModal(false);
+      setImportPreview(null);
+      setPendingICSContent('');
 
-    console.log('[Calendar] Import result:', result);
-
-    setShowImportModal(false);
-    setImportPreview(null);
-    setPendingICSContent('');
-
-    // Refetch calendars and events after import
-    console.log('[Calendar] Refetching after import...');
-    await fetchImportedCalendars();
-    // Calculate range based on current view
-    const start = new Date(currentDate);
-    const end = new Date(currentDate);
-    if (view === 'month') {
-      start.setDate(1);
-      start.setHours(0, 0, 0, 0);
-      end.setMonth(end.getMonth() + 1);
-      end.setDate(0);
-      end.setHours(23, 59, 59, 999);
-    } else if (view === 'week') {
-      start.setDate(start.getDate() - start.getDay());
-      start.setHours(0, 0, 0, 0);
-      end.setDate(start.getDate() + 6);
-      end.setHours(23, 59, 59, 999);
-    } else {
-      start.setHours(0, 0, 0, 0);
-      end.setHours(23, 59, 59, 999);
-    }
-    fetchCalendarEventsForRange(start, end);
-  }, [pendingICSContent, importPreview, importICSFile, fetchImportedCalendars, fetchCalendarEventsForRange, currentDate, view]);
+      // Refetch calendars and events after import
+      await fetchImportedCalendars();
+      // Calculate range based on current view
+      const start = new Date(currentDate);
+      const end = new Date(currentDate);
+      if (view === 'month') {
+        start.setDate(1);
+        start.setHours(0, 0, 0, 0);
+        end.setMonth(end.getMonth() + 1);
+        end.setDate(0);
+        end.setHours(23, 59, 59, 999);
+      } else if (view === 'week') {
+        start.setDate(start.getDate() - start.getDay());
+        start.setHours(0, 0, 0, 0);
+        // Fix: end must be based on start (not currentDate) to handle month boundaries correctly
+        end.setTime(start.getTime() + 6 * 24 * 60 * 60 * 1000);
+        end.setHours(23, 59, 59, 999);
+      } else {
+        start.setHours(0, 0, 0, 0);
+        end.setHours(23, 59, 59, 999);
+      }
+      fetchCalendarEventsForRange(start, end);
+    },
+    [
+      pendingICSContent,
+      importPreview,
+      importICSFile,
+      fetchImportedCalendars,
+      fetchCalendarEventsForRange,
+      currentDate,
+      view,
+    ]
+  );
 
   const handleImportCancel = useCallback(() => {
     setShowImportModal(false);
@@ -397,7 +478,8 @@ export function CalendarPage() {
     setPriorityFilter('all');
   };
 
-  const hasActiveFilters = selectedCourses !== null || deadlineFilter !== 'all' || priorityFilter !== 'all';
+  const hasActiveFilters =
+    selectedCourses !== null || deadlineFilter !== 'all' || priorityFilter !== 'all';
 
   // Build courses with generated colors
   const coursesWithColors = useMemo(() => {
@@ -505,7 +587,8 @@ export function CalendarPage() {
     } else if (view === 'week') {
       start.setDate(start.getDate() - start.getDay());
       start.setHours(0, 0, 0, 0);
-      end.setDate(start.getDate() + 6);
+      // Fix: end must be based on start (not currentDate) to handle month boundaries correctly
+      end.setTime(start.getTime() + 6 * 24 * 60 * 60 * 1000);
       end.setHours(23, 59, 59, 999);
     } else {
       start.setHours(0, 0, 0, 0);
@@ -551,8 +634,12 @@ export function CalendarPage() {
         for (const course of coursesWithColors) {
           const code = course.code.toLowerCase();
           const shortCode = code.split(/[hy]\d/)[0];
-          if (eventTitle.includes(code) || calendarName.includes(code) ||
-            (shortCode.length >= 3 && (eventTitle.includes(shortCode) || calendarName.includes(shortCode)))) {
+          if (
+            eventTitle.includes(code) ||
+            calendarName.includes(code) ||
+            (shortCode.length >= 3 &&
+              (eventTitle.includes(shortCode) || calendarName.includes(shortCode)))
+          ) {
             courseIds.add(course.id);
             break;
           }
@@ -582,7 +669,15 @@ export function CalendarPage() {
     if (importedEvents.length > 0) {
       console.log('[Calendar] Imported events sample:', importedEvents.slice(0, 3));
     }
-  }, [importedCalendars, calendarEvents, taskEvents, importedEvents, events, visibleEvents, visibleRange]);
+  }, [
+    importedCalendars,
+    calendarEvents,
+    taskEvents,
+    importedEvents,
+    events,
+    visibleEvents,
+    visibleRange,
+  ]);
 
   // Navigation handlers
   const goToPrevious = () => {
@@ -632,7 +727,12 @@ export function CalendarPage() {
       }
       return `${weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
     }
-    return currentDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+    return currentDate.toLocaleDateString('en-US', {
+      weekday: 'long',
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric',
+    });
   };
 
   const handleEventClick = (event: CalendarEvent) => {
@@ -688,6 +788,10 @@ export function CalendarPage() {
     allDay: boolean;
     location?: string;
     courseId?: number;
+    // Calendar-specific fields
+    color?: string;
+    notes?: string;
+    reminderMinutes?: number;
   }) => {
     if (eventToEdit) {
       // Update existing event
@@ -745,6 +849,16 @@ export function CalendarPage() {
   const handleEditFromDetail = () => {
     if (selectedEvent?.type === 'imported') {
       handleOpenEditEvent(selectedEvent.event);
+    } else if (selectedEvent?.type === 'task') {
+      // Find the linked calendar event for this task
+      const taskId = selectedEvent.task.id;
+      const linkedEvent = calendarEvents.find((e) => e.taskId === taskId);
+      if (linkedEvent) {
+        handleOpenEditEvent(linkedEvent);
+      } else {
+        // No calendar event yet - this shouldn't happen with auto-creation
+        console.warn('No linked calendar event found for task:', taskId);
+      }
     }
   };
 
@@ -802,8 +916,8 @@ export function CalendarPage() {
   };
 
   // Get visible imported calendars
-  const visibleImportedCalendars = useMemo(() => {
-    return importedCalendars.filter(c => c.isVisible);
+  const _visibleImportedCalendars = useMemo(() => {
+    return importedCalendars.filter((c) => c.isVisible);
   }, [importedCalendars]);
 
   return (
@@ -882,7 +996,9 @@ export function CalendarPage() {
           <button
             style={{
               ...styles.filterButton,
-              backgroundColor: showCalendarManager ? 'var(--color-navy)' : 'var(--bg-card)',
+              backgroundColor: showCalendarManager
+                ? 'var(--color-navy)'
+                : 'var(--bg-card)',
               color: showCalendarManager ? 'white' : 'var(--text-primary)',
             }}
             onClick={() => setShowCalendarManager(!showCalendarManager)}
@@ -1018,8 +1134,11 @@ export function CalendarPage() {
                   style={{
                     ...styles.filterChip,
                     backgroundColor:
-                      deadlineFilter === opt.value ? 'var(--color-navy)' : 'var(--bg-app)',
-                    color: deadlineFilter === opt.value ? 'white' : 'var(--text-secondary)',
+                      deadlineFilter === opt.value
+                        ? 'var(--color-navy)'
+                        : 'var(--bg-app)',
+                    color:
+                      deadlineFilter === opt.value ? 'white' : 'var(--text-secondary)',
                   }}
                   onClick={() => setDeadlineFilter(opt.value as DeadlineFilter)}
                 >
@@ -1044,8 +1163,11 @@ export function CalendarPage() {
                   style={{
                     ...styles.filterChip,
                     backgroundColor:
-                      priorityFilter === opt.value ? 'var(--color-navy)' : 'var(--bg-app)',
-                    color: priorityFilter === opt.value ? 'white' : 'var(--text-secondary)',
+                      priorityFilter === opt.value
+                        ? 'var(--color-navy)'
+                        : 'var(--bg-app)',
+                    color:
+                      priorityFilter === opt.value ? 'white' : 'var(--text-secondary)',
                   }}
                   onClick={() => setPriorityFilter(opt.value as PriorityFilter)}
                 >

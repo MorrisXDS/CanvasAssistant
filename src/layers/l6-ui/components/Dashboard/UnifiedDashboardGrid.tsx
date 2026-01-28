@@ -8,8 +8,8 @@ import { DashboardSection } from './DashboardSection';
 import { useDashboardDragDrop } from './useDashboardDragDrop';
 import { PriorityList } from './PriorityList';
 import { NotificationsFeed } from './NotificationsFeed';
-import { RecommendationsCard } from './RecommendationsCard';
-import { InsightsCard } from './InsightsCard';
+import { ScheduleCard } from './ScheduleCard';
+import { ImportantWorksCard } from './ImportantWorksCard';
 import type { PriorityItem, Task } from '../../../l5-presentation/types';
 import type { Notification } from '../../../l5-presentation/types';
 
@@ -22,8 +22,8 @@ interface SectionConfig {
 const SECTIONS: SectionConfig[] = [
   { id: 'priority', title: 'Upcoming Assignments' },
   { id: 'notifications', title: 'Recent Updates' },
-  { id: 'recommendations', title: 'Recommendations' },
-  { id: 'insights', title: 'Insights' },
+  { id: 'schedule', title: "Today's Schedule" },
+  { id: 'importantWorks', title: 'Important Works' },
 ];
 
 export interface UnifiedDashboardGridProps {
@@ -33,7 +33,10 @@ export interface UnifiedDashboardGridProps {
   onTaskClick: (taskId: number) => void;
   onTaskDoubleClick?: (taskId: number) => void;
   onTaskContextMenu?: (e: React.MouseEvent, task: Task) => void;
+  onToggleComplete?: (taskId: number, isCompleted: boolean) => void;
   onDismissNotification: (id: number) => void;
+  /** Whether priority sorting is enabled (controls urgency badge visibility) */
+  prioritySortingEnabled?: boolean;
 }
 
 export function UnifiedDashboardGrid({
@@ -43,7 +46,9 @@ export function UnifiedDashboardGrid({
   onTaskClick,
   onTaskDoubleClick,
   onTaskContextMenu,
+  onToggleComplete,
   onDismissNotification,
+  prioritySortingEnabled = false,
 }: UnifiedDashboardGridProps) {
   const {
     sectionOrder,
@@ -67,7 +72,9 @@ export function UnifiedDashboardGrid({
             onTaskClick={onTaskClick}
             onTaskDoubleClick={onTaskDoubleClick}
             onTaskContextMenu={onTaskContextMenu}
+            onToggleComplete={onToggleComplete}
             maxItems={6}
+            showUrgencyBadges={prioritySortingEnabled}
           />
         );
       case 'notifications':
@@ -78,10 +85,10 @@ export function UnifiedDashboardGrid({
             maxItems={4}
           />
         );
-      case 'recommendations':
-        return <RecommendationsCard maxItems={4} />;
-      case 'insights':
-        return <InsightsCard maxItems={4} />;
+      case 'schedule':
+        return <ScheduleCard maxItems={4} />;
+      case 'importantWorks':
+        return <ImportantWorksCard maxItems={4} />;
       default:
         return null;
     }

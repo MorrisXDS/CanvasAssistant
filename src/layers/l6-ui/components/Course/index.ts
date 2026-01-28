@@ -15,3 +15,5 @@ export type { TaskContextMenuProps } from './TaskContextMenu';
 
 export { MissingSyllabusWarning } from './MissingSyllabusWarning';
 export type { MissingSyllabusWarningProps } from './MissingSyllabusWarning';
+
+export { DuplicateCourseworkBanner } from './DuplicateCourseworkBanner';

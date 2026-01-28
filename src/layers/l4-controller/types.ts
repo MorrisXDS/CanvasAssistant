@@ -145,6 +145,8 @@ export interface UpdateTaskParams {
   pointsPossible?: number | null;
   isOptional?: boolean;
   taskType?: string | null;
+  /** User-set submission status, independent of Canvas */
+  userSubmissionStatus?: string | null;
 }
 
 export interface DeleteTaskParams {

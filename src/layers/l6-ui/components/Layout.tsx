@@ -475,12 +475,12 @@ export function Layout() {
     };
   }, []);
 
-  // Force layout recalculation on mount to prevent gap issues
+  // Force layout recalculation on mount to prevent gap/bar issues
   // This ensures the browser properly computes flexbox layout
   useEffect(() => {
     if (DEBUG_LAYOUT) return; // Debug mode already handles this
 
-    // Force layout recalculation by reading layout properties
+    // Force layout recalculation by reading layout properties and triggering scroll
     const forceLayoutRecalc = () => {
       if (containerRef.current) {
         // Reading getBoundingClientRect forces synchronous layout
@@ -488,11 +488,21 @@ export function Layout() {
       }
       if (mainRef.current) {
         void mainRef.current.getBoundingClientRect();
+        // Trigger a tiny scroll to force browser repaint (fixes cyan bar issue)
+        // This mimics what happens when user navigates to a task
+        const currentScroll = mainRef.current.scrollTop;
+        mainRef.current.scrollTop = 1;
+        // Use requestAnimationFrame to ensure the scroll is rendered
+        requestAnimationFrame(() => {
+          if (mainRef.current) {
+            mainRef.current.scrollTop = currentScroll;
+          }
+        });
       }
     };
 
-    // Run after initial render
-    const timer = setTimeout(forceLayoutRecalc, 50);
+    // Run after initial render with a slight delay
+    const timer = setTimeout(forceLayoutRecalc, 100);
 
     // Also use ResizeObserver to handle window maximize/restore
     const resizeObserver = new ResizeObserver(forceLayoutRecalc);
@@ -613,10 +623,11 @@ export function Layout() {
 
           {/* Navigation - drag to reorder */}
           <nav style={styles.nav}>
-            {navItems.map((item) => {
+            {navItems.map((item, index) => {
               const Icon = item.icon;
               const isDragging = draggedItem === item.id;
               const isDragOver = dragOverItem === item.id;
+              const isLastItem = index === navItems.length - 1;
               return (
                 <div
                   key={item.id}
@@ -631,6 +642,9 @@ export function Layout() {
                     borderTop: isDragOver
                       ? '2px solid var(--color-blue)'
                       : '2px solid transparent',
+                    borderBottom: isLastItem
+                      ? 'none'
+                      : '1px solid rgba(255, 255, 255, 0.1)',
                     transition: 'border-color 150ms ease',
                   }}
                 >
@@ -914,8 +928,8 @@ const styles: Record<string, React.CSSProperties> = {
     padding: 'var(--space-4) 0',
     display: 'flex',
     flexDirection: 'column',
-    gap: 'var(--space-1)',
     overflow: 'hidden',
+    // Remove gap - use borders for separation like right panel cards
   },
 
   navLink: {

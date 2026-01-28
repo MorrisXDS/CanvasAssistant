@@ -5,10 +5,10 @@
 
 import React, { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Clock, AlertTriangle, CheckCircle } from 'lucide-react';
+import { ArrowLeft, Clock, AlertTriangle, CheckCircle, Circle, Plus } from 'lucide-react';
 import { Card, Badge, BadgeVariant } from '../shared';
 import { useStore } from '../../../l5-presentation/store';
-import { formatDueDate, getBadgeUrgency } from '../../constants';
+import { formatDueDate, getBadgeUrgency, getCleanCourseName } from '../../constants';
 import type { Task, Course } from '../../../l5-presentation/types';
 import { TaskContextMenu } from '../Course/TaskContextMenu';
 
@@ -39,6 +39,15 @@ export function TasksPage() {
   const { tasks, courses } = useStore();
   const [filter, setFilter] = useState<FilterType>('all');
   const [_showFilterDropdown, _setShowFilterDropdown] = useState(false);
+
+  // Add Task state
+  const [showAddTask, setShowAddTask] = useState(false);
+  const [newTaskCourseId, setNewTaskCourseId] = useState<number | ''>('');
+  const [newTaskTitle, setNewTaskTitle] = useState('');
+  const [newTaskDescription, setNewTaskDescription] = useState('');
+  const [newTaskDueDate, setNewTaskDueDate] = useState('');
+  const [newTaskWeight, setNewTaskWeight] = useState('');
+  const [newTaskType, setNewTaskType] = useState('');
 
   const courseMap = useMemo(() => new Map(courses.map((c) => [c.id, c])), [courses]);
 
@@ -131,14 +140,20 @@ export function TasksPage() {
     });
   };
 
-  const handleToggleComplete = async () => {
-    if (!contextMenu) return;
+  const handleToggleComplete = async (taskId?: number, currentlyCompleted?: boolean) => {
     const api = window.api;
     if (!api?.dispatch) return;
+
+    // Use passed params or fall back to context menu
+    const id = taskId ?? contextMenu?.task.id;
+    const isCompleted = currentlyCompleted ?? contextMenu?.task.isCompleted;
+
+    if (id === undefined || isCompleted === undefined) return;
+
     try {
       await api.dispatch('MarkTaskComplete', {
-        taskId: contextMenu.task.id,
-        isComplete: !contextMenu.task.isCompleted,
+        taskId: id,
+        isComplete: !isCompleted,
       });
     } catch (error) {
       console.error('Failed to toggle task complete:', error);
@@ -173,6 +188,33 @@ export function TasksPage() {
     navigate(`/course/${contextMenu.course.id}?highlightTask=${contextMenu.task.id}`);
   };
 
+  // Create new task
+  const handleCreateTask = async () => {
+    const api = window.api;
+    if (!api?.dispatch || !newTaskTitle.trim() || !newTaskCourseId) return;
+
+    try {
+      await api.dispatch('CreateTask', {
+        courseId: newTaskCourseId,
+        title: newTaskTitle.trim(),
+        description: newTaskDescription.trim() || undefined,
+        dueAt: newTaskDueDate || undefined,
+        weight: newTaskWeight ? parseFloat(newTaskWeight) : undefined,
+        taskType: newTaskType || undefined,
+      });
+      // Reset form
+      setNewTaskCourseId('');
+      setNewTaskTitle('');
+      setNewTaskDescription('');
+      setNewTaskDueDate('');
+      setNewTaskWeight('');
+      setNewTaskType('');
+      setShowAddTask(false);
+    } catch (error) {
+      console.error('Failed to create task:', error);
+    }
+  };
+
   const filterOptions: { value: FilterType; label: string; count: number }[] = [
     { value: 'all', label: 'All Tasks', count: stats.all },
     { value: 'pending', label: 'Pending', count: stats.pending },
@@ -184,14 +226,20 @@ export function TasksPage() {
     <div style={styles.page}>
       {/* Header */}
       <div style={styles.header}>
-        <button onClick={() => navigate('/')} style={styles.backButton}>
-          <ArrowLeft size={16} />
-          <span>Dashboard</span>
-        </button>
-        <div style={styles.headerContent}>
-          <h1 style={styles.title}>All Tasks</h1>
-          <p style={styles.subtitle}>{filteredTasks.length} tasks</p>
+        <div>
+          <button onClick={() => navigate('/')} style={styles.backButton}>
+            <ArrowLeft size={16} />
+            <span>Dashboard</span>
+          </button>
+          <div style={styles.headerContent}>
+            <h1 style={styles.title}>All Tasks</h1>
+            <p style={styles.subtitle}>{filteredTasks.length} tasks</p>
+          </div>
         </div>
+        <button style={styles.addButton} onClick={() => setShowAddTask(true)}>
+          <Plus size={16} />
+          Add Task
+        </button>
       </div>
 
       {/* Filter Tabs */}
@@ -307,16 +355,117 @@ export function TasksPage() {
                     </span>
                   </div>
                 </div>
+
+                {/* Checkbox - right side */}
+                <button
+                  style={styles.checkbox}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleToggleComplete(item.task.id, item.task.isCompleted);
+                  }}
+                  aria-label={item.task.isCompleted ? 'Mark incomplete' : 'Mark complete'}
+                >
+                  {item.task.isCompleted ? (
+                    <CheckCircle size={24} color="var(--color-success)" />
+                  ) : (
+                    <Circle size={24} color="var(--text-muted)" />
+                  )}
+                </button>
               </div>
             ))}
           </div>
         )}
       </Card>
 
+      {/* Add Task Modal */}
+      {showAddTask && (
+        <div style={styles.modalOverlay} onClick={() => setShowAddTask(false)}>
+          <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+            <h2 style={styles.modalTitle}>Add Task</h2>
+            <div style={styles.modalForm}>
+              <select
+                value={newTaskCourseId}
+                onChange={(e) =>
+                  setNewTaskCourseId(e.target.value ? Number(e.target.value) : '')
+                }
+                style={styles.formSelect}
+              >
+                <option value="">Select course...</option>
+                {courses.map((course) => (
+                  <option key={course.id} value={course.id}>
+                    {course.code} - {course.nickname || getCleanCourseName(course.name)}
+                  </option>
+                ))}
+              </select>
+              <input
+                type="text"
+                placeholder="Task title"
+                value={newTaskTitle}
+                onChange={(e) => setNewTaskTitle(e.target.value)}
+                style={styles.formInput}
+                autoFocus
+              />
+              <textarea
+                placeholder="Description (optional)"
+                value={newTaskDescription}
+                onChange={(e) => setNewTaskDescription(e.target.value)}
+                style={styles.formTextarea}
+                rows={2}
+              />
+              <div style={styles.formRow}>
+                <select
+                  value={newTaskType}
+                  onChange={(e) => setNewTaskType(e.target.value)}
+                  style={styles.formSelect}
+                >
+                  <option value="">Select type...</option>
+                  <option value="assignment">Assignment</option>
+                  <option value="quiz">Quiz</option>
+                  <option value="discussion">Discussion</option>
+                  <option value="exam">Exam</option>
+                </select>
+                <input
+                  type="date"
+                  value={newTaskDueDate}
+                  onChange={(e) => setNewTaskDueDate(e.target.value)}
+                  style={styles.formInput}
+                />
+                <input
+                  type="number"
+                  placeholder="Weight %"
+                  value={newTaskWeight}
+                  onChange={(e) => setNewTaskWeight(e.target.value)}
+                  style={styles.formInputSmall}
+                  min="0"
+                  max="100"
+                />
+              </div>
+              <div style={styles.formActions}>
+                <button style={styles.cancelButton} onClick={() => setShowAddTask(false)}>
+                  Cancel
+                </button>
+                <button
+                  style={styles.saveButton}
+                  onClick={handleCreateTask}
+                  disabled={!newTaskTitle.trim() || !newTaskCourseId}
+                >
+                  Create Task
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Task Context Menu */}
       {contextMenu && (
         <TaskContextMenu
-          task={contextMenu.task}
+          task={{
+            id: contextMenu.task.id,
+            title: contextMenu.task.title,
+            isCompleted: contextMenu.task.isCompleted,
+            isOptional: contextMenu.task.isOptional,
+          }}
           position={contextMenu.position}
           onClose={() => setContextMenu(null)}
           onEdit={() => {
@@ -360,6 +509,9 @@ const styles: Record<string, React.CSSProperties> = {
 
   header: {
     marginBottom: 'var(--space-6)',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
   },
 
   backButton: {
@@ -433,6 +585,19 @@ const styles: Record<string, React.CSSProperties> = {
     padding: 'var(--space-4) var(--space-5)',
     cursor: 'pointer',
     transition: 'background-color var(--transition-fast)',
+  },
+
+  checkbox: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 0,
+    marginLeft: 'var(--space-3)',
+    background: 'none',
+    border: 'none',
+    cursor: 'pointer',
+    flexShrink: 0,
+    transition: 'transform var(--transition-fast)',
   },
 
   priorityBar: {
@@ -512,6 +677,127 @@ const styles: Record<string, React.CSSProperties> = {
     padding: 'var(--space-8)',
     color: 'var(--text-muted)',
     fontSize: 'var(--text-sm)',
+  },
+
+  addButton: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-2)',
+    padding: 'var(--space-2) var(--space-4)',
+    backgroundColor: 'var(--color-navy)',
+    color: 'white',
+    border: 'none',
+    borderRadius: 'var(--radius-md)',
+    fontSize: 'var(--text-sm)',
+    fontWeight: 'var(--font-medium)',
+    cursor: 'pointer',
+  },
+
+  modalOverlay: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1000,
+  },
+
+  modal: {
+    backgroundColor: 'var(--bg-card)',
+    borderRadius: 'var(--radius-lg)',
+    padding: 'var(--space-6)',
+    width: '100%',
+    maxWidth: '480px',
+    boxShadow: 'var(--shadow-lg)',
+  },
+
+  modalTitle: {
+    fontSize: 'var(--text-lg)',
+    fontWeight: 'var(--font-semibold)',
+    color: 'var(--text-primary)',
+    marginBottom: 'var(--space-4)',
+  },
+
+  modalForm: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 'var(--space-3)',
+  },
+
+  formInput: {
+    padding: 'var(--space-3)',
+    fontSize: 'var(--text-sm)',
+    border: '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-md)',
+    backgroundColor: 'var(--bg-app)',
+    color: 'var(--text-primary)',
+  },
+
+  formInputSmall: {
+    width: '100px',
+    padding: 'var(--space-2) var(--space-3)',
+    fontSize: 'var(--text-sm)',
+    border: '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-md)',
+    backgroundColor: 'var(--bg-app)',
+    color: 'var(--text-primary)',
+  },
+
+  formTextarea: {
+    padding: 'var(--space-3)',
+    fontSize: 'var(--text-sm)',
+    border: '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-md)',
+    backgroundColor: 'var(--bg-app)',
+    color: 'var(--text-primary)',
+    resize: 'vertical',
+  },
+
+  formSelect: {
+    flex: 1,
+    padding: 'var(--space-2) var(--space-3)',
+    fontSize: 'var(--text-sm)',
+    border: '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-md)',
+    backgroundColor: 'var(--bg-app)',
+    color: 'var(--text-primary)',
+  },
+
+  formRow: {
+    display: 'flex',
+    gap: 'var(--space-3)',
+  },
+
+  formActions: {
+    display: 'flex',
+    justifyContent: 'flex-end',
+    gap: 'var(--space-2)',
+    marginTop: 'var(--space-2)',
+  },
+
+  cancelButton: {
+    padding: 'var(--space-2) var(--space-4)',
+    backgroundColor: 'transparent',
+    color: 'var(--text-secondary)',
+    border: '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-md)',
+    fontSize: 'var(--text-sm)',
+    cursor: 'pointer',
+  },
+
+  saveButton: {
+    padding: 'var(--space-2) var(--space-4)',
+    backgroundColor: 'var(--color-navy)',
+    color: 'white',
+    border: 'none',
+    borderRadius: 'var(--radius-md)',
+    fontSize: 'var(--text-sm)',
+    fontWeight: 'var(--font-medium)',
+    cursor: 'pointer',
   },
 };
 

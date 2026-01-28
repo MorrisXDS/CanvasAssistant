@@ -20,7 +20,14 @@ import { EventEmitter } from 'events';
  */
 export interface DocumentClassification {
   /** Predicted document type */
-  documentType: 'syllabus' | 'rubric' | 'assignment' | 'lecture' | 'notes' | 'reading' | 'other';
+  documentType:
+    | 'syllabus'
+    | 'rubric'
+    | 'assignment'
+    | 'lecture'
+    | 'notes'
+    | 'reading'
+    | 'other';
   /** Confidence score 0-1 */
   confidence: number;
   /** All class scores */
@@ -133,7 +140,7 @@ export class LocalMLService extends EventEmitter {
 
     try {
       // Try to dynamically import @xenova/transformers
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
+
       const transformers = require('@xenova/transformers');
       this.pipeline = transformers.pipeline;
       this.available = true;
@@ -149,10 +156,7 @@ export class LocalMLService extends EventEmitter {
   /**
    * Initialize a pipeline lazily
    */
-  private async initPipeline(
-    task: string,
-    model: string
-  ): Promise<unknown> {
+  private async initPipeline(task: string, model: string): Promise<unknown> {
     if (!this.pipeline) {
       const isAvailable = await this.checkAvailability();
       if (!isAvailable) {
@@ -183,7 +187,14 @@ export class LocalMLService extends EventEmitter {
 
     // For document classification, we use zero-shot classification
     // with our academic document labels
-    const labels = ['syllabus', 'rubric', 'assignment', 'lecture notes', 'reading material', 'other'];
+    const labels = [
+      'syllabus',
+      'rubric',
+      'assignment',
+      'lecture notes',
+      'reading material',
+      'other',
+    ];
 
     try {
       if (!this.classifierPipeline) {
@@ -344,7 +355,8 @@ export class LocalMLService extends EventEmitter {
         embedding: null,
         processingTimeMs: Date.now() - startTime,
         mlAvailable: false,
-        error: 'Transformers.js not available. Install @xenova/transformers for ML features.',
+        error:
+          'Transformers.js not available. Install @xenova/transformers for ML features.',
       };
     }
 

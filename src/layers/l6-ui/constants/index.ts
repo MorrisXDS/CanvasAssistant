@@ -45,6 +45,9 @@ export {
   getUrgencyLevel,
   getUrgencyColor,
   getBadgeUrgency,
+  // Course names
+  getCleanCourseName,
+  formatCourseName,
 } from './formatters';
 
 // UI Text

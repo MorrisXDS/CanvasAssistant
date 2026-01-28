@@ -38,13 +38,16 @@ export class CourseRepository extends BaseRepository<Course, CourseRow> {
       isHidden: Boolean(row.is_hidden),
       lastSyncedAt: row.last_synced_at,
       enrollmentTermId: row.enrollment_term_id,
+      archivedAt: row.archived_at ?? null,
+      archiveSource: row.archive_source ?? null,
     };
   }
 
   protected mapEntityToRow(entity: Partial<Course>): Record<string, unknown> {
     const row: Record<string, unknown> = {};
     if (entity.targetGrade !== undefined) row.target_grade = entity.targetGrade;
-    if (entity.targetGradeSource !== undefined) row.target_grade_source = entity.targetGradeSource;
+    if (entity.targetGradeSource !== undefined)
+      row.target_grade_source = entity.targetGradeSource;
     if (entity.assessedGrade !== undefined) row.assessed_grade = entity.assessedGrade;
     if (entity.currentGrade !== undefined) row.current_grade = entity.currentGrade;
     if (entity.color !== undefined) row.color = entity.color;
@@ -71,7 +74,9 @@ export class CourseRepository extends BaseRepository<Course, CourseRow> {
    * Find a course by its Canvas external ID.
    */
   findByExternalId(externalId: string): Course | null {
-    return this.queryOne<CourseRow>('SELECT * FROM courses WHERE external_id = ?', [externalId]);
+    return this.queryOne<CourseRow>('SELECT * FROM courses WHERE external_id = ?', [
+      externalId,
+    ]);
   }
 
   /**
@@ -97,10 +102,9 @@ export class CourseRepository extends BaseRepository<Course, CourseRow> {
    * Get detailed course information including syllabus.
    */
   findDetailById(id: number): CourseDetail | null {
-    const row = this.db.executeReadOne<CourseRow>(
-      'SELECT * FROM courses WHERE id = ?',
-      [id]
-    );
+    const row = this.db.executeReadOne<CourseRow>('SELECT * FROM courses WHERE id = ?', [
+      id,
+    ]);
 
     if (!row) return null;
 
@@ -117,13 +121,18 @@ export class CourseRepository extends BaseRepository<Course, CourseRow> {
   update(id: number, updates: CourseUpdates): Course | null {
     const mappedUpdates: Record<string, unknown> = {};
 
-    if (updates.targetGrade !== undefined) mappedUpdates.target_grade = updates.targetGrade;
-    if (updates.targetGradeSource !== undefined) mappedUpdates.target_grade_source = updates.targetGradeSource;
-    if (updates.assessedGrade !== undefined) mappedUpdates.assessed_grade = updates.assessedGrade;
-    if (updates.currentGrade !== undefined) mappedUpdates.current_grade = updates.currentGrade;
+    if (updates.targetGrade !== undefined)
+      mappedUpdates.target_grade = updates.targetGrade;
+    if (updates.targetGradeSource !== undefined)
+      mappedUpdates.target_grade_source = updates.targetGradeSource;
+    if (updates.assessedGrade !== undefined)
+      mappedUpdates.assessed_grade = updates.assessedGrade;
+    if (updates.currentGrade !== undefined)
+      mappedUpdates.current_grade = updates.currentGrade;
     if (updates.color !== undefined) mappedUpdates.color = updates.color;
     if (updates.nickname !== undefined) mappedUpdates.nickname = updates.nickname;
-    if (updates.isHidden !== undefined) mappedUpdates.is_hidden = updates.isHidden ? 1 : 0;
+    if (updates.isHidden !== undefined)
+      mappedUpdates.is_hidden = updates.isHidden ? 1 : 0;
 
     const keys = Object.keys(mappedUpdates);
     if (keys.length === 0) {

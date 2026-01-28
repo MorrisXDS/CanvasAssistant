@@ -9,3 +9,10 @@ export {
   clearPolicyInfoCache,
 } from './policySelectors';
 export type { TaskPolicyInfo } from './policySelectors';
+
+export {
+  isActiveTask,
+  isPriorityTask,
+  isOverdueTask,
+  isUpcomingTask,
+} from './taskFilters';

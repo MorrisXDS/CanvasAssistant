@@ -44,6 +44,7 @@ export interface VisibleCourseRow {
   is_hidden: number;
   enrollment_term_id: number | null;
   deleted_at: string | null;
+  archived_at: string | null;
 }
 
 /**
@@ -136,19 +137,22 @@ export class VisibleDataProvider extends EventEmitter {
    * Get IDs of all visible courses based on:
    * 1. is_hidden = 0 (not hidden by user)
    * 2. deleted_at IS NULL (not soft-deleted)
-   * 3. Term selection (all, auto, or specific term)
+   * 3. archived_at IS NULL (not archived)
+   * 4. Term selection (all, auto, or specific term)
    */
   getVisibleCourseIds(): number[] {
     // Check cache
-    if (this.cachedVisibleCourseIds !== null &&
-        Date.now() - this.cacheTimestamp < this.CACHE_TTL_MS) {
+    if (
+      this.cachedVisibleCourseIds !== null &&
+      Date.now() - this.cacheTimestamp < this.CACHE_TTL_MS
+    ) {
       return this.cachedVisibleCourseIds;
     }
 
     const termSelection = this.getTermSelection();
     let sql = `
       SELECT id FROM courses
-      WHERE deleted_at IS NULL AND is_hidden = 0
+      WHERE deleted_at IS NULL AND is_hidden = 0 AND archived_at IS NULL
     `;
 
     if (termSelection === 'auto') {
@@ -168,7 +172,7 @@ export class VisibleDataProvider extends EventEmitter {
     // 'all' = no additional filter (just is_hidden and deleted_at)
 
     const rows = this.db.executeRead<{ id: number }>(sql);
-    this.cachedVisibleCourseIds = rows.map(r => r.id);
+    this.cachedVisibleCourseIds = rows.map((r) => r.id);
     this.cacheTimestamp = Date.now();
     return this.cachedVisibleCourseIds;
   }
@@ -221,6 +225,73 @@ export class VisibleDataProvider extends EventEmitter {
   isCourseVisible(courseId: number): boolean {
     const visibleIds = this.getVisibleCourseIds();
     return visibleIds.includes(courseId);
+  }
+
+  // ============ Archived Courses ============
+
+  /**
+   * Get all archived courses (archived_at IS NOT NULL)
+   * Sorted by term end date (primary), then alphabetically by code (secondary)
+   */
+  getArchivedCourses(): VisibleCourseRow[] {
+    return this.db.executeRead<VisibleCourseRow>(`
+      SELECT c.* FROM courses c
+      LEFT JOIN enrollment_terms et ON c.enrollment_term_id = CAST(et.external_id AS INTEGER)
+      WHERE c.deleted_at IS NULL AND c.archived_at IS NOT NULL
+      ORDER BY et.end_at DESC NULLS LAST, c.code ASC
+    `);
+  }
+
+  /**
+   * Get IDs of archived courses
+   */
+  getArchivedCourseIds(): number[] {
+    const rows = this.db.executeRead<{ id: number }>(`
+      SELECT id FROM courses
+      WHERE deleted_at IS NULL AND archived_at IS NOT NULL
+    `);
+    return rows.map((r) => r.id);
+  }
+
+  /**
+   * Check if a specific course is archived
+   */
+  isCourseArchived(courseId: number): boolean {
+    const row = this.db.executeReadOne<{ archived_at: string | null }>(
+      `SELECT archived_at FROM courses WHERE id = ?`,
+      [courseId]
+    );
+    return row?.archived_at != null;
+  }
+
+  /**
+   * Get tasks for an archived course (bypasses visibility filtering)
+   *
+   * Archived courses are local-only sandboxes - users can view and edit
+   * their data without affecting visible/active course workflows.
+   *
+   * @param courseId - The archived course ID
+   * @returns Tasks for the course, or empty array if course doesn't exist or isn't archived
+   */
+  getTasksForArchivedCourse(courseId: number): VisibleTaskRow[] {
+    // Verify course exists and is archived
+    const course = this.db.executeReadOne<{ id: number; archived_at: string | null }>(
+      `SELECT id, archived_at FROM courses WHERE id = ? AND deleted_at IS NULL`,
+      [courseId]
+    );
+
+    if (!course || !course.archived_at) {
+      return []; // Course doesn't exist or isn't archived
+    }
+
+    return this.db.executeRead<VisibleTaskRow>(
+      `
+      SELECT * FROM tasks
+      WHERE course_id = ?
+      ORDER BY due_at ASC NULLS LAST, priority_score DESC
+    `,
+      [courseId]
+    );
   }
 
   // ============ Event Emission ============

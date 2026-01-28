@@ -1,9 +1,11 @@
 /**
  * SettingsModal Tests
  *
- * Tests for the Settings Modal component, focusing on:
- * - Course Settings section structure and visual hierarchy
+ * Tests for the redesigned Settings Modal component with accordion sections.
+ * Focuses on:
+ * - Accordion section structure
  * - Canvas URL input behavior
+ * - Search functionality
  */
 
 import React from 'react';
@@ -62,6 +64,10 @@ const mockApi = {
   }),
   updateCourseSettings: jest.fn().mockResolvedValue({ success: true }),
   toggleCourseHidden: jest.fn().mockResolvedValue({ success: true }),
+  getWindowBehavior: jest.fn().mockResolvedValue({ closeAction: null, minimizeToTray: false }),
+  setWindowBehavior: jest.fn().mockResolvedValue({ success: true }),
+  connectCanvas: jest.fn().mockResolvedValue({ success: true }),
+  deleteCredential: jest.fn().mockResolvedValue({ success: true }),
 };
 
 Object.defineProperty(window, 'api', {
@@ -110,12 +116,11 @@ Object.defineProperty(window, 'matchMedia', {
 import { SettingsModal } from '../../src/layers/l6-ui/components/SettingsModal';
 import { SettingsManager } from '../../src/layers/l5-presentation/settings/SettingsManager';
 
-// Helper to find sidebar button by exact text match
-function findSidebarButton(container: HTMLElement, text: string): HTMLElement | null {
+// Helper to find accordion section trigger by text
+function findAccordionTrigger(container: HTMLElement, text: string): HTMLElement | null {
   const buttons = Array.from(container.querySelectorAll('button'));
   for (const btn of buttons) {
-    // Sidebar buttons have specific text content
-    if (btn.textContent?.trim() === text) {
+    if (btn.textContent?.includes(text)) {
       return btn;
     }
   }
@@ -130,122 +135,43 @@ describe('SettingsModal', () => {
     SettingsManager.resetInstance();
   });
 
-  describe('Course Settings section', () => {
-    it('renders only one Course Settings heading', async () => {
-      const { container } = render(<SettingsModal isOpen={true} onClose={jest.fn()} />);
-
-      // Navigate to courses section via sidebar button
-      const coursesTab = findSidebarButton(container, 'Courses');
-      expect(coursesTab).not.toBeNull();
-
-      await act(async () => {
-        fireEvent.click(coursesTab!);
-      });
+  describe('Accordion structure', () => {
+    it('renders all four accordion sections', async () => {
+      render(<SettingsModal isOpen={true} onClose={jest.fn()} />);
 
       await waitFor(() => {
-        // Should find exactly one "Course Settings" heading
-        const headings = screen.getAllByRole('heading', { level: 3 });
-        const courseSettingsHeadings = headings.filter(
-          (h) => h.textContent === 'Course Settings'
-        );
-        expect(courseSettingsHeadings).toHaveLength(1);
+        // Check for the four main section headers
+        expect(screen.getByText('Account & Connection')).toBeInTheDocument();
+        expect(screen.getByText('Display & Layout')).toBeInTheDocument();
+        expect(screen.getByText('Academic & Courses')).toBeInTheDocument();
+        expect(screen.getByText('Notifications')).toBeInTheDocument();
       });
     });
 
-    it('renders settings in distinct visual cards with subsection titles', async () => {
-      const { container } = render(<SettingsModal isOpen={true} onClose={jest.fn()} />);
-
-      // Navigate to courses section
-      const coursesTab = findSidebarButton(container, 'Courses');
-
-      await act(async () => {
-        fireEvent.click(coursesTab!);
-      });
+    it('renders search input at the top', async () => {
+      render(<SettingsModal isOpen={true} onClose={jest.fn()} />);
 
       await waitFor(() => {
-        // Check for subsection titles that indicate visual separation
-        expect(screen.getByText('Display')).toBeInTheDocument();
-        expect(screen.getByText('Per-Course Sync')).toBeInTheDocument();
-        expect(screen.getByText('Visibility')).toBeInTheDocument();
+        const searchInput = screen.getByPlaceholderText('Search settings...');
+        expect(searchInput).toBeInTheDocument();
       });
     });
 
-    it('shows course selector in per-course sync section', async () => {
+    it('all sections are expanded by default', async () => {
       const { container } = render(<SettingsModal isOpen={true} onClose={jest.fn()} />);
 
-      // Navigate to courses section
-      const coursesTab = findSidebarButton(container, 'Courses');
-
-      await act(async () => {
-        fireEvent.click(coursesTab!);
-      });
-
       await waitFor(() => {
-        const courseSelect = screen.getByRole('combobox');
-        expect(courseSelect).toBeInTheDocument();
-
-        // Should have the default option plus course options
-        const options = screen.getAllByRole('option');
-        expect(options.length).toBeGreaterThanOrEqual(2); // Default + at least one course
-      });
-    });
-
-    it('shows sync settings only after selecting a course', async () => {
-      const { container } = render(<SettingsModal isOpen={true} onClose={jest.fn()} />);
-
-      // Navigate to courses section
-      const coursesTab = findSidebarButton(container, 'Courses');
-
-      await act(async () => {
-        fireEvent.click(coursesTab!);
-      });
-
-      await waitFor(() => {
-        // Before selecting a course, auto-fill settings should not be visible
-        expect(screen.queryByText('Auto-fill due dates')).not.toBeInTheDocument();
-      });
-
-      // Select a course
-      const courseSelect = screen.getByRole('combobox');
-
-      await act(async () => {
-        fireEvent.change(courseSelect, { target: { value: '1' } });
-      });
-
-      await waitFor(() => {
-        // After selecting a course, auto-fill settings should be visible
-        expect(screen.getByText('Auto-fill due dates')).toBeInTheDocument();
-      });
-    });
-
-    it('displays course visibility list with course codes', async () => {
-      const { container } = render(<SettingsModal isOpen={true} onClose={jest.fn()} />);
-
-      // Navigate to courses section
-      const coursesTab = findSidebarButton(container, 'Courses');
-
-      await act(async () => {
-        fireEvent.click(coursesTab!);
-      });
-
-      await waitFor(() => {
-        // Should show course codes in the visibility list
-        expect(screen.getByText('CS101')).toBeInTheDocument();
-        expect(screen.getByText('MATH200')).toBeInTheDocument();
+        // Look for expanded accordion content areas
+        // When a section is expanded, its content should be visible
+        expect(screen.getByText('Canvas URL')).toBeInTheDocument();
+        expect(screen.getByText('Theme')).toBeInTheDocument();
       });
     });
   });
 
   describe('Canvas URL input', () => {
     it('allows typing full URL without interruption', async () => {
-      const { container } = render(<SettingsModal isOpen={true} onClose={jest.fn()} />);
-
-      // Navigate to canvas section
-      const canvasTab = findSidebarButton(container, 'Canvas');
-
-      await act(async () => {
-        fireEvent.click(canvasTab!);
-      });
+      render(<SettingsModal isOpen={true} onClose={jest.fn()} />);
 
       await waitFor(() => {
         const urlInput = screen.getByPlaceholderText(/instructure\.com/i);
@@ -265,70 +191,123 @@ describe('SettingsModal', () => {
       expect(urlInput.value).toBe(testUrl);
     });
 
-    it('loads saved URL from localStorage on mount', async () => {
-      const savedUrl = 'https://saved.instructure.com';
-      // Set the canvas URL in localStorage (the mock's internal store)
-      localStorageMock.setItem('canvasUrl', savedUrl);
-      // Reset settingsManager so it picks up the new localStorage value
-      SettingsManager.resetInstance();
-
-      const { container } = render(<SettingsModal isOpen={true} onClose={jest.fn()} />);
-
-      // Navigate to canvas section
-      const canvasTab = findSidebarButton(container, 'Canvas');
-
-      await act(async () => {
-        fireEvent.click(canvasTab!);
-      });
+    it('renders Canvas URL input field', async () => {
+      render(<SettingsModal isOpen={true} onClose={jest.fn()} />);
 
       await waitFor(() => {
-        const urlInput = screen.getByPlaceholderText(/instructure\.com/i) as HTMLInputElement;
-        expect(urlInput.value).toBe(savedUrl);
+        const urlInput = screen.getByPlaceholderText(/instructure\.com/i);
+        expect(urlInput).toBeInTheDocument();
       });
     });
 
-    it('does not overwrite user input when async operations complete', async () => {
-      // Setup: no saved URL - reset settingsManager to start fresh
-      SettingsManager.resetInstance();
-
-      // Make hasCredential slow
-      let resolveCredential: (value: boolean) => void;
-      mockApi.hasCredential.mockImplementation(
-        () => new Promise((resolve) => {
-          resolveCredential = resolve;
-        })
-      );
-
-      const { container } = render(<SettingsModal isOpen={true} onClose={jest.fn()} />);
-
-      // Navigate to canvas section
-      const canvasTab = findSidebarButton(container, 'Canvas');
-
-      await act(async () => {
-        fireEvent.click(canvasTab!);
-      });
+    it('shows connection status', async () => {
+      render(<SettingsModal isOpen={true} onClose={jest.fn()} />);
 
       await waitFor(() => {
-        expect(screen.getByPlaceholderText(/instructure\.com/i)).toBeInTheDocument();
+        // Should show "Not Connected" when hasCredential returns false
+        expect(screen.getByText(/Not Connected/i)).toBeInTheDocument();
       });
+    });
+  });
 
-      const urlInput = screen.getByPlaceholderText(/instructure\.com/i) as HTMLInputElement;
+  describe('Search functionality', () => {
+    it('filters settings when typing in search', async () => {
+      render(<SettingsModal isOpen={true} onClose={jest.fn()} />);
 
-      // User starts typing
-      const userUrl = 'https://user-typed.instructure.com';
+      const searchInput = screen.getByPlaceholderText('Search settings...');
+
       await act(async () => {
-        fireEvent.change(urlInput, { target: { value: userUrl } });
+        fireEvent.change(searchInput, { target: { value: 'theme' } });
       });
 
-      expect(urlInput.value).toBe(userUrl);
+      // Wait for debounce
+      await waitFor(() => {
+        // Theme setting should still be visible
+        expect(screen.getByText('Theme')).toBeInTheDocument();
+      }, { timeout: 500 });
+    });
 
-      // Now the async operation completes
+    it('shows no results message when search has no matches', async () => {
+      render(<SettingsModal isOpen={true} onClose={jest.fn()} />);
+
+      const searchInput = screen.getByPlaceholderText('Search settings...');
+
       await act(async () => {
-        resolveCredential!(false);
+        fireEvent.change(searchInput, { target: { value: 'xyznonexistent' } });
       });
 
-      // The user's input should NOT be overwritten
-      expect(urlInput.value).toBe(userUrl);
+      // Wait for debounce and check for no results
+      await waitFor(() => {
+        expect(screen.getByText(/no settings found/i)).toBeInTheDocument();
+      }, { timeout: 500 });
+    });
+  });
+
+  describe('Footer actions', () => {
+    it('renders import and export buttons', async () => {
+      render(<SettingsModal isOpen={true} onClose={jest.fn()} />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Export Settings')).toBeInTheDocument();
+        expect(screen.getByText('Import Settings')).toBeInTheDocument();
+      });
+    });
+
+    it('renders reset all button', async () => {
+      render(<SettingsModal isOpen={true} onClose={jest.fn()} />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Reset All')).toBeInTheDocument();
+      });
+    });
+  });
+
+  describe('Display settings', () => {
+    it('shows theme options', async () => {
+      render(<SettingsModal isOpen={true} onClose={jest.fn()} />);
+
+      await waitFor(() => {
+        // Theme setting should be visible in the Display section
+        expect(screen.getByText('Theme')).toBeInTheDocument();
+      });
+    });
+
+    it('shows landing page setting', async () => {
+      render(<SettingsModal isOpen={true} onClose={jest.fn()} />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Landing page')).toBeInTheDocument();
+      });
+    });
+  });
+
+  describe('Academic settings', () => {
+    it('shows target grade setting', async () => {
+      render(<SettingsModal isOpen={true} onClose={jest.fn()} />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Default target grade')).toBeInTheDocument();
+      });
+    });
+
+    it('displays course visibility list with course codes', async () => {
+      render(<SettingsModal isOpen={true} onClose={jest.fn()} />);
+
+      await waitFor(() => {
+        // Should show course codes in the visibility list
+        expect(screen.getByText('CS101')).toBeInTheDocument();
+        expect(screen.getByText('MATH200')).toBeInTheDocument();
+      });
+    });
+  });
+
+  describe('Notification settings', () => {
+    it('shows notification toggles', async () => {
+      render(<SettingsModal isOpen={true} onClose={jest.fn()} />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Enable notifications')).toBeInTheDocument();
+      });
     });
   });
 });

@@ -9,6 +9,8 @@ export interface CanvasClientConfig {
   timeout?: number;
   /** Optional logger for debugging API calls */
   logger?: ComponentLogger;
+  /** Optional callback to receive rate limit updates from response headers */
+  onRateLimit?: (remaining: number) => void;
 }
 
 export interface CanvasUser {
@@ -59,6 +61,7 @@ export class CanvasClient extends EventEmitter {
   private accessToken: string;
   private log: ComponentLogger | null;
   private validator: InputValidator;
+  private onRateLimit: ((remaining: number) => void) | null;
 
   constructor(config: CanvasClientConfig) {
     super();
@@ -66,6 +69,7 @@ export class CanvasClient extends EventEmitter {
     this.accessToken = config.accessToken;
     this.log = config.logger ?? null;
     this.validator = new InputValidator({ strictness: 'lenient', logWarnings: true });
+    this.onRateLimit = config.onRateLimit ?? null;
 
     this.client = axios.create({
       baseURL: `${this.baseUrl}/api/v1`,
@@ -122,6 +126,11 @@ export class CanvasClient extends EventEmitter {
         this.log?.debug(
           `RESPONSE: ${status} ${url} - ${dataLength} items, rate_limit_remaining=${rateLimitRemaining || 'N/A'}${hasNextPage ? ', has_next_page=true' : ''}`
         );
+
+        // Update rate limiter with current quota (enables adaptive throttling)
+        if (rateLimitRemaining !== undefined && this.onRateLimit) {
+          this.onRateLimit(Number(rateLimitRemaining));
+        }
 
         // Log first few items for debugging (truncated) - only for arrays
         if (this.log && isArray && response.data.length > 0) {

@@ -443,14 +443,20 @@ describe('RateLimiter', () => {
       // Pause to prevent processing
       staleLimiter.pause();
 
-      // Queue a request
+      // Queue a request and track the rejection
+      let rejectionError: Error | undefined;
       const promise = staleLimiter.enqueue(async () => 'result');
+      // Attach catch handler immediately to prevent unhandled rejection warning
+      promise.catch((err: Error) => {
+        rejectionError = err;
+      });
 
       // Wait for timeout + cleanup interval
       await new Promise((r) => setTimeout(r, 100));
 
-      // Request should have been rejected
-      await expect(promise).rejects.toThrow('Request timeout');
+      // Request should have been rejected with timeout error
+      expect(rejectionError).toBeDefined();
+      expect(rejectionError!.message).toMatch(/Request timeout/);
 
       expect(staleHandler).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -507,10 +513,19 @@ describe('RateLimiter', () => {
       smallQueueLimiter.pause();
 
       // Fill queue with low priority requests
+      // Track rejections immediately to prevent unhandled rejection warnings
+      let low1Error: Error | undefined;
+      let low2Error: Error | undefined;
       const low1 = smallQueueLimiter.enqueue(async () => 'low1', 1);
-      smallQueueLimiter.enqueue(async () => 'low2', 1);
+      low1.catch((err: Error) => {
+        low1Error = err;
+      });
+      const low2 = smallQueueLimiter.enqueue(async () => 'low2', 1);
+      low2.catch((err: Error) => {
+        low2Error = err;
+      });
 
-      // Add high priority - should evict one low priority
+      // Add high priority - should evict the oldest low priority (low1)
       const highPromise = smallQueueLimiter.enqueue(async () => 'high', 10);
 
       // Low priority request should have been evicted
@@ -521,7 +536,14 @@ describe('RateLimiter', () => {
         })
       );
 
-      await expect(low1).rejects.toThrow('evicted');
+      // Wait for microtask queue to flush (catch handlers are async)
+      await Promise.resolve();
+
+      // low1 should be evicted (older = lower index in queue)
+      expect(low1Error).toBeDefined();
+      expect(low1Error!.message).toMatch(/evicted/);
+      // low2 should NOT be evicted
+      expect(low2Error).toBeUndefined();
 
       smallQueueLimiter.resume();
       const result = await highPromise;

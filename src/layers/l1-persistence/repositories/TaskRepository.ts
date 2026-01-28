@@ -43,6 +43,19 @@ export class TaskRepository extends BaseRepository<Task, TaskRow> {
     super(db);
   }
 
+  /**
+   * Calculate effective submission status using OR logic.
+   * If either Canvas or user status is 'graded' or 'submitted', use that.
+   */
+  private getEffectiveSubmissionStatus(
+    canvasStatus: string | null,
+    userStatus: string | null
+  ): string | null {
+    if (canvasStatus === 'graded' || userStatus === 'graded') return 'graded';
+    if (canvasStatus === 'submitted' || userStatus === 'submitted') return 'submitted';
+    return canvasStatus ?? userStatus ?? 'pending';
+  }
+
   protected mapRowToEntity(row: TaskRow): Task {
     // Parse field_sources JSON if present
     let fieldSources: Record<string, 'canvas' | 'user' | 'guessed'> | undefined;
@@ -53,6 +66,12 @@ export class TaskRepository extends BaseRepository<Task, TaskRow> {
         // Invalid JSON, ignore
       }
     }
+
+    const userSubmissionStatus = row.user_submission_status ?? null;
+    const effectiveStatus = this.getEffectiveSubmissionStatus(
+      row.submission_status,
+      userSubmissionStatus
+    );
 
     return {
       id: row.id,
@@ -70,8 +89,11 @@ export class TaskRepository extends BaseRepository<Task, TaskRow> {
       isOptional: Boolean(row.is_optional),
       completedAt: row.completed_at,
       submissionStatus: row.submission_status,
+      userSubmissionStatus,
+      effectiveSubmissionStatus: effectiveStatus,
       taskType: row.task_type,
       taskGroupId: row.task_group_id,
+      calendarEventId: row.calendar_event_id ?? null,
       fieldSources,
     };
   }

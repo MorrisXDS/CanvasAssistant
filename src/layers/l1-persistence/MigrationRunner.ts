@@ -2063,4 +2063,118 @@ export const coreMigrations: Migration[] = [
       DROP TABLE IF EXISTS custom_task_types;
     `,
   },
+  {
+    version: 67,
+    description: 'Add archived_at column to courses for course archiving',
+    up: `
+      -- Add archived_at column to courses
+      -- NULL = active course, non-NULL = archived at that timestamp
+      -- Archived courses are hidden from dashboard, priorities, tasks pages but recoverable
+      ALTER TABLE courses ADD COLUMN archived_at DATETIME DEFAULT NULL;
+      CREATE INDEX idx_courses_archived ON courses(archived_at);
+    `,
+    down: `
+      DROP INDEX IF EXISTS idx_courses_archived;
+      -- SQLite doesn't support DROP COLUMN easily
+      SELECT 1;
+    `,
+  },
+  {
+    version: 68,
+    description:
+      'Add user_submission_status column to tasks for user-override submission tracking',
+    up: `
+      -- Add user_submission_status for OR logic with Canvas submission_status
+      -- NULL = no user override, 'submitted' = user marked as submitted, 'graded' = user marked as graded
+      -- Effective status = canvas OR user (if either is submitted/graded, effective is submitted/graded)
+      ALTER TABLE tasks ADD COLUMN user_submission_status TEXT DEFAULT NULL;
+      CREATE INDEX idx_tasks_user_submission ON tasks(user_submission_status);
+    `,
+    down: `
+      DROP INDEX IF EXISTS idx_tasks_user_submission;
+      -- SQLite doesn't support DROP COLUMN easily
+      SELECT 1;
+    `,
+  },
+  {
+    version: 69,
+    description: 'Add calendar_event_id to tasks for task-calendar event linking',
+    up: `
+      -- Add calendar_event_id for optional task-calendar event linking
+      -- NULL = no linked event, non-NULL = linked to calendar event
+      -- ON DELETE SET NULL: if event is deleted, task link is cleared (not task itself)
+      -- Bidirectional sync: task due_at changes update event, event time changes update task
+      ALTER TABLE tasks ADD COLUMN calendar_event_id INTEGER DEFAULT NULL
+        REFERENCES calendar_events(id) ON DELETE SET NULL;
+      CREATE INDEX idx_tasks_calendar_event ON tasks(calendar_event_id);
+    `,
+    down: `
+      DROP INDEX IF EXISTS idx_tasks_calendar_event;
+      -- SQLite doesn't support DROP COLUMN easily
+      SELECT 1;
+    `,
+  },
+  {
+    version: 70,
+    description:
+      'Add task_id and calendar-specific fields to calendar_events for task-calendar unification',
+    up: `
+      -- Add task_id to calendar_events for bidirectional task-event linking
+      -- Each task can have one auto-generated calendar event
+      ALTER TABLE calendar_events ADD COLUMN task_id INTEGER REFERENCES tasks(id) ON DELETE CASCADE;
+
+      -- Add calendar-specific fields that don't affect the underlying task
+      ALTER TABLE calendar_events ADD COLUMN color TEXT;
+      ALTER TABLE calendar_events ADD COLUMN notes TEXT;
+      ALTER TABLE calendar_events ADD COLUMN reminder_minutes INTEGER;
+
+      -- Index for efficient task-event lookups
+      CREATE INDEX idx_calendar_events_task ON calendar_events(task_id);
+    `,
+    down: `
+      DROP INDEX IF EXISTS idx_calendar_events_task;
+      -- SQLite doesn't support DROP COLUMN easily
+      SELECT 1;
+    `,
+  },
+  {
+    version: 71,
+    description: 'Add archive_source to courses to track manual vs auto archives',
+    up: `
+      -- Track how a course was archived: 'manual' (user action) or 'auto' (term expired)
+      -- Auto-archived courses cannot be restored by the user
+      ALTER TABLE courses ADD COLUMN archive_source TEXT;
+
+      -- Backfill: archived courses with expired terms are 'auto', others are 'manual'
+      UPDATE courses SET archive_source = 'auto'
+      WHERE archived_at IS NOT NULL
+        AND enrollment_term_id IN (
+          SELECT CAST(external_id AS INTEGER) FROM enrollment_terms
+          WHERE end_at IS NOT NULL AND end_at < datetime('now')
+        );
+
+      UPDATE courses SET archive_source = 'manual'
+      WHERE archived_at IS NOT NULL AND archive_source IS NULL;
+    `,
+    down: `
+      -- SQLite doesn't support DROP COLUMN easily
+      SELECT 1;
+    `,
+  },
+  {
+    version: 72,
+    description: 'Fix archive_source for courses with expired terms',
+    up: `
+      -- Correct archive_source: courses with expired terms should be 'auto'
+      UPDATE courses SET archive_source = 'auto'
+      WHERE archived_at IS NOT NULL
+        AND enrollment_term_id IN (
+          SELECT CAST(external_id AS INTEGER) FROM enrollment_terms
+          WHERE end_at IS NOT NULL AND end_at < datetime('now')
+        );
+    `,
+    down: `
+      SELECT 1;
+    `,
+  },
 ];

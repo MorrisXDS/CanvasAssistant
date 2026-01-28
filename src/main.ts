@@ -8,6 +8,7 @@ import {
   Tray,
   Menu,
   nativeImage,
+  nativeTheme,
 } from 'electron';
 import fs from 'fs';
 import path from 'path';
@@ -29,6 +30,7 @@ import {
   coreMigrations,
   VisibleDataProvider,
 } from './layers/l1-persistence';
+import type { PendingDownloadRow } from './layers/l1-persistence/DatabaseRowTypes';
 
 // L2 - Daemon
 import {
@@ -90,6 +92,21 @@ interface DatabaseCorruptionInfo {
   canContinue: boolean;
 }
 let databaseCorruptionDetected: DatabaseCorruptionInfo | null = null;
+
+// ============================================================================
+// SINGLE INSTANCE LOCK - Must be checked before any service initialization
+// ============================================================================
+// Multiple instances cause: SQLite BUSY errors, WAL corruption, credential conflicts,
+// duplicate API calls, and settings file corruption
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+
+if (!gotSingleInstanceLock) {
+  // Another instance is already running - exit immediately and synchronously
+  // Using app.exit() instead of app.quit() to prevent any async initialization
+  // eslint-disable-next-line cross-platform/no-console-in-main -- Logger not yet initialized
+  console.warn('[CID] Another instance is already running. Exiting.');
+  app.exit(0);
+}
 
 // Auto-sync state
 let autoSyncInterval: NodeJS.Timeout | null = null;
@@ -163,7 +180,9 @@ let behaviorTrackingOrchestrator: BehaviorTrackingOrchestrator | null = null;
 let adaptiveLearningOrchestrator: AdaptiveLearningOrchestrator | null = null;
 
 // Initialize Layer 2 daemon components (lazy-init for CanvasClient/SyncEngine)
-const rateLimiter = new RateLimiter({ maxConcurrent: 3, minDelayMs: 100 });
+// Canvas allows ~700 requests/min (~11.7 req/sec)
+// Use 6 concurrent with 50ms min delay for ~12 req/sec throughput
+const rateLimiter = new RateLimiter({ maxConcurrent: 6, minDelayMs: 50 });
 const circuitBreaker = new CircuitBreaker({
   enabled: true,
   failureThreshold: 5,
@@ -229,11 +248,21 @@ function createWindow() {
     minWidth: 1080,
     minHeight: 720,
     frame: false,
+    thickFrame: false, // Remove Windows window shadow/border completely
+    show: false, // Don't show until ready to prevent white flash
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#0f172a' : '#F5F7FA',
+    accentColor: false, // Disable Windows accent color border on frameless window
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
       contextIsolation: true,
+      // navigateOnDragDrop: false is default - lets drop events reach the renderer
     },
+  });
+
+  // Show window when content is ready to prevent white flash
+  mainWindow.once('ready-to-show', () => {
+    mainWindow?.show();
   });
 
   // Monitor window focus and fullscreen states
@@ -380,11 +409,11 @@ function createTray(): void {
   // Create tray icon - use the app icon
   // Platform-specific icon sizes are required for proper display on each OS
   let iconPath: string;
+  // Platform: macOS requires 16x16 template images for menu bar icons
   if (process.platform === 'darwin') {
-    // macOS requires 16x16 template images for menu bar icons
     iconPath = path.join(__dirname, '../assets/app.iconset/icon_16x16.png');
+    // Platform: Windows system tray works best with 32x32 icons
   } else if (process.platform === 'win32') {
-    // Windows system tray works best with 32x32 icons
     iconPath = path.join(__dirname, '../assets/app.iconset/icon_32x32.png');
   } else {
     // Linux - use 22x22 or 24x24
@@ -481,7 +510,12 @@ function destroyTray(): void {
  */
 async function initializeCanvasClient(token: string, baseUrl: string): Promise<boolean> {
   try {
-    canvasClient = new CanvasClient({ baseUrl, accessToken: token });
+    canvasClient = new CanvasClient({
+      baseUrl,
+      accessToken: token,
+      // Wire up rate limit feedback for adaptive throttling
+      onRateLimit: (remaining: number) => rateLimiter.updateRateLimit(remaining),
+    });
 
     // Validate the token
     const validation = await circuitBreaker.execute(() => canvasClient!.validateToken());
@@ -505,7 +539,7 @@ async function initializeCanvasClient(token: string, baseUrl: string): Promise<b
       }
     });
 
-    // Initialize sync engine with HTML content sync
+    // Initialize sync engine with HTML content sync and visibility filtering
     syncEngine = new SyncEngine({
       client: canvasClient,
       db: database,
@@ -520,6 +554,7 @@ async function initializeCanvasClient(token: string, baseUrl: string): Promise<b
         maxConcurrentDownloads: 3,
       },
       logger: logger.child('SyncEngine'),
+      visibleDataProvider: visibleDataProvider ?? undefined,
     });
 
     // Forward sync events to metrics
@@ -830,6 +865,7 @@ function registerIpcHandlers(): void {
         syncCanvasFiles?: boolean;
         syncAnnouncements?: boolean;
         courseIds?: number[];
+        deferFileProcessing?: boolean;
       }
     ) => {
       logger.debug(`[IPC sync:full] Received options: ${JSON.stringify(options)}`);
@@ -888,6 +924,26 @@ function registerIpcHandlers(): void {
 
     try {
       const result = await syncEngine.syncCourses();
+      return { success: true, result };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+
+  // Process file references in background (for deferred file processing)
+  ipcMain.handle('sync:processFileReferences', async () => {
+    if (!syncEngine) {
+      return { success: false, error: 'Canvas client not initialized' };
+    }
+
+    try {
+      const result = await syncEngine.processFileReferencesBackground();
+      // Trigger Files page refresh
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('file-status-changed', {
+          type: 'file-refs-complete',
+        });
+      }
       return { success: true, result };
     } catch (error) {
       return { success: false, error: String(error) };
@@ -1052,12 +1108,14 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle('data:getCourses', () => {
     try {
+      // Filter out archived and deleted courses
       const rows = database.executeRead<{
         id: number;
         external_id: string;
         code: string;
         name: string;
         target_grade: number;
+        target_grade_source: 'default' | 'manual' | null;
         assessed_grade: number | null;
         current_grade: number | null;
         color: string | null;
@@ -1065,7 +1123,9 @@ function registerIpcHandlers(): void {
         is_hidden: number;
         last_synced_at: string | null;
         enrollment_term_id: number | null;
-      }>('SELECT * FROM courses ORDER BY name');
+      }>(
+        'SELECT * FROM courses WHERE archived_at IS NULL AND deleted_at IS NULL ORDER BY name'
+      );
 
       return rows.map((row) => ({
         id: row.id,
@@ -1073,6 +1133,7 @@ function registerIpcHandlers(): void {
         code: row.code,
         name: row.name,
         targetGrade: row.target_grade,
+        targetGradeSource: row.target_grade_source ?? 'default',
         assessedGrade: row.assessed_grade,
         currentGrade: row.current_grade,
         color: row.color,
@@ -1080,6 +1141,8 @@ function registerIpcHandlers(): void {
         isHidden: Boolean(row.is_hidden),
         lastSyncedAt: row.last_synced_at,
         enrollmentTermId: row.enrollment_term_id,
+        archivedAt: null, // Always null since we filter out archived courses
+        archiveSource: null, // Always null since we filter out archived courses
       }));
     } catch (error) {
       logger.error(`Failed to get courses: ${error}`);
@@ -1091,22 +1154,47 @@ function registerIpcHandlers(): void {
     'data:getTasks',
     (_event, options?: { courseIds?: number[] } | number) => {
       try {
-        // Support both old API (single courseId) and new API (courseIds array)
+        // Use VisibleDataProvider as single source of truth for visibility
+        // This ensures consistent filtering across all services
         let sql: string;
         let params: number[] = [];
 
         if (typeof options === 'number') {
-          // Legacy: single courseId
-          sql = 'SELECT * FROM tasks WHERE course_id = ? ORDER BY priority_score DESC';
+          // Legacy: single courseId - verify it's visible first
+          if (visibleDataProvider && !visibleDataProvider.isCourseVisible(options)) {
+            return []; // Course not visible, return empty
+          }
+          sql = `SELECT t.* FROM tasks t
+                 WHERE t.course_id = ?
+                 ORDER BY t.priority_score DESC`;
           params = [options];
-        } else if (options?.courseIds && options.courseIds.length > 0) {
-          // New: array of courseIds - filter at source for bandwidth efficiency
-          const placeholders = options.courseIds.map(() => '?').join(', ');
-          sql = `SELECT * FROM tasks WHERE course_id IN (${placeholders}) ORDER BY priority_score DESC`;
-          params = options.courseIds;
+        } else if (
+          options?.courseIds &&
+          Array.isArray(options.courseIds) &&
+          options.courseIds.length > 0
+        ) {
+          // Filter provided courseIds to only visible ones
+          const visibleIds = visibleDataProvider?.getVisibleCourseIds() ?? [];
+          const visibleSet = new Set(visibleIds);
+          const filteredCourseIds = options.courseIds.filter((id) => visibleSet.has(id));
+
+          if (filteredCourseIds.length === 0) return [];
+
+          const placeholders = filteredCourseIds.map(() => '?').join(', ');
+          sql = `SELECT t.* FROM tasks t
+                 WHERE t.course_id IN (${placeholders})
+                 ORDER BY t.priority_score DESC`;
+          params = filteredCourseIds;
         } else {
-          // No filter - return all tasks
-          sql = 'SELECT * FROM tasks ORDER BY priority_score DESC';
+          // No filter - return tasks from all visible courses
+          const visibleIds = visibleDataProvider?.getVisibleCourseIds() ?? [];
+          if (visibleIds.length === 0) return [];
+
+          const placeholders = visibleIds.map(() => '?').join(', ');
+          sql = `SELECT t.* FROM tasks t
+                 WHERE t.course_id IN (${placeholders})
+                 ORDER BY t.priority_score DESC`;
+          params = visibleIds;
         }
 
         const rows = database.executeRead<{
@@ -1157,29 +1245,42 @@ function registerIpcHandlers(): void {
     'data:getNotifications',
     (_event, options?: { courseIds?: number[] }) => {
       try {
-        // Filter by courseIds if provided, always include system notifications (course_id is null)
+        // Use VisibleDataProvider as single source of truth for visibility
+        // Always include system notifications (course_id IS NULL)
+        const visibleIds = visibleDataProvider?.getVisibleCourseIds() ?? [];
         let sql: string;
         let params: number[] = [];
 
-        if (options?.courseIds && options.courseIds.length > 0) {
-          // Filter by courseIds - keeps system notifications + notifications from specified courses
-          const placeholders = options.courseIds.map(() => '?').join(', ');
-          sql = `
-        SELECT n.* FROM notifications n
-        LEFT JOIN courses c ON n.course_id = c.id
-        WHERE (n.course_id IS NULL OR n.course_id IN (${placeholders}))
-          AND (n.course_id IS NULL OR c.id IS NOT NULL)
-        ORDER BY n.published_at DESC
-      `;
-          params = options.courseIds;
+        if (
+          options?.courseIds &&
+          Array.isArray(options.courseIds) &&
+          options.courseIds.length > 0
+        ) {
+          // Filter provided courseIds to only visible ones
+          const visibleSet = new Set(visibleIds);
+          const filteredCourseIds = options.courseIds.filter((id) => visibleSet.has(id));
+
+          if (filteredCourseIds.length === 0) {
+            // Only system notifications when no visible courses match
+            sql = `SELECT * FROM notifications WHERE course_id IS NULL ORDER BY published_at DESC`;
+          } else {
+            const placeholders = filteredCourseIds.map(() => '?').join(', ');
+            sql = `SELECT * FROM notifications
+                   WHERE course_id IS NULL OR course_id IN (${placeholders})
+                   ORDER BY published_at DESC`;
+            params = filteredCourseIds;
+          }
         } else {
-          // No filter - return all notifications from synced courses
-          sql = `
-        SELECT n.* FROM notifications n
-        LEFT JOIN courses c ON n.course_id = c.id
-        WHERE n.course_id IS NULL OR c.id IS NOT NULL
-        ORDER BY n.published_at DESC
-      `;
+          // No filter - return notifications from all visible courses + system
+          if (visibleIds.length === 0) {
+            sql = `SELECT * FROM notifications WHERE course_id IS NULL ORDER BY published_at DESC`;
+          } else {
+            const placeholders = visibleIds.map(() => '?').join(', ');
+            sql = `SELECT * FROM notifications
+                   WHERE course_id IS NULL OR course_id IN (${placeholders})
+                   ORDER BY published_at DESC`;
+            params = visibleIds;
+          }
         }
 
         const rows = database.executeRead<{
@@ -1259,6 +1360,7 @@ function registerIpcHandlers(): void {
         code: string;
         name: string;
         target_grade: number;
+        target_grade_source: 'default' | 'manual' | null;
         assessed_grade: number | null;
         current_grade: number | null;
         total_weight: number;
@@ -1267,6 +1369,9 @@ function registerIpcHandlers(): void {
         is_hidden: number;
         syllabus_body: string | null;
         last_synced_at: string | null;
+        enrollment_term_id: number | null;
+        archived_at: string | null;
+        archive_source: 'manual' | 'auto' | null;
       }>('SELECT * FROM courses WHERE id = ?', [courseId]);
 
       if (!row) return null;
@@ -1277,6 +1382,7 @@ function registerIpcHandlers(): void {
         code: row.code,
         name: row.name,
         targetGrade: row.target_grade,
+        targetGradeSource: row.target_grade_source ?? 'default',
         assessedGrade: row.assessed_grade,
         currentGrade: row.current_grade,
         totalWeight: row.total_weight,
@@ -1285,9 +1391,95 @@ function registerIpcHandlers(): void {
         isHidden: Boolean(row.is_hidden),
         syllabusBody: row.syllabus_body,
         lastSyncedAt: row.last_synced_at,
+        enrollmentTermId: row.enrollment_term_id,
+        archivedAt: row.archived_at,
+        archiveSource: row.archive_source,
       };
     } catch (error) {
       logger.error(`Failed to get course: ${error}`);
+      throw error;
+    }
+  });
+
+  // Get archived courses - sorted by term end date (primary), then alphabetically (secondary)
+  ipcMain.handle('data:getArchivedCourses', () => {
+    try {
+      const rows = database.executeRead<{
+        id: number;
+        external_id: string;
+        code: string;
+        name: string;
+        target_grade: number;
+        assessed_grade: number | null;
+        current_grade: number | null;
+        color: string | null;
+        nickname: string | null;
+        archived_at: string;
+        archive_source: string | null;
+        enrollment_term_id: number | null;
+        term_end_at: string | null;
+      }>(`
+        SELECT c.id, c.external_id, c.code, c.name, c.target_grade, c.assessed_grade,
+               c.current_grade, c.color, c.nickname, c.archived_at, c.archive_source,
+               c.enrollment_term_id, et.end_at as term_end_at
+        FROM courses c
+        LEFT JOIN enrollment_terms et ON c.enrollment_term_id = CAST(et.external_id AS INTEGER)
+        WHERE c.deleted_at IS NULL AND c.archived_at IS NOT NULL
+        ORDER BY et.end_at DESC NULLS LAST, c.code ASC
+      `);
+
+      return rows.map((row) => ({
+        id: row.id,
+        externalId: row.external_id,
+        code: row.code,
+        name: row.name,
+        targetGrade: row.target_grade,
+        assessedGrade: row.assessed_grade,
+        currentGrade: row.current_grade,
+        color: row.color,
+        nickname: row.nickname,
+        archivedAt: row.archived_at,
+        archiveSource: row.archive_source as 'manual' | 'auto' | null,
+        isHidden: false,
+        lastSyncedAt: null,
+        enrollmentTermId: row.enrollment_term_id,
+        targetGradeSource: 'default' as const,
+      }));
+    } catch (error) {
+      logger.error(`Failed to get archived courses: ${error}`);
+      throw error;
+    }
+  });
+
+  // Get tasks for an archived course (bypasses visibility filtering)
+  // Archived courses are local-only sandboxes - users can view/edit without affecting active workflows
+  ipcMain.handle('data:getTasksForArchivedCourse', (_event, courseId: number) => {
+    try {
+      if (!visibleDataProvider) {
+        return [];
+      }
+      const rows = visibleDataProvider.getTasksForArchivedCourse(courseId);
+
+      return rows.map((row) => ({
+        id: row.id,
+        externalId: row.external_id,
+        courseId: row.course_id,
+        title: row.title,
+        description: row.description,
+        dueAt: row.due_at,
+        dueTimeKnown: true, // Default for archived
+        weight: row.weight ?? 0,
+        grade: row.grade,
+        pointsPossible: row.points_possible,
+        priorityScore: row.priority_score,
+        isCompleted: Boolean(row.is_completed),
+        completedAt: row.completed_at,
+        submissionStatus: row.submission_status,
+        taskType: row.task_type,
+        isOptional: false, // Default for archived
+      }));
+    } catch (error) {
+      logger.error(`Failed to get tasks for archived course ${courseId}: ${error}`);
       throw error;
     }
   });
@@ -1580,6 +1772,7 @@ function registerIpcHandlers(): void {
       FROM resources r
       JOIN courses c ON r.course_id = c.id
       WHERE r.type IN ('file', 'page')
+        AND c.archived_at IS NULL AND c.deleted_at IS NULL
       ORDER BY r.course_id, r.folder_path, r.title
     `);
 
@@ -1609,6 +1802,7 @@ function registerIpcHandlers(): void {
       FROM notification_attachments na
       JOIN courses c ON na.course_id = c.id
       JOIN notifications n ON na.notification_id = n.id
+      WHERE c.archived_at IS NULL AND c.deleted_at IS NULL
       ORDER BY na.course_id, na.display_name
     `);
 
@@ -2882,8 +3076,16 @@ function registerIpcHandlers(): void {
           'SELECT COUNT(*) as count FROM calendar_events WHERE imported_calendar_id = ?',
           [calendarId]
         );
-        logger.debug(
-          `[Calendar] Verification: ${verifyCount?.count || 0} events in DB for calendar ${calendarId}`
+        logger.info(
+          `[Calendar Import] Verification: ${verifyCount?.count || 0} events in DB for calendar ${calendarId}`
+        );
+
+        // Also log total events in DB
+        const totalEvents = database.executeReadOne<{ count: number }>(
+          'SELECT COUNT(*) as count FROM calendar_events'
+        );
+        logger.info(
+          `[Calendar Import] Total calendar_events in DB: ${totalEvents?.count || 0}`
         );
 
         return { success: true, data: { calendarId, eventCount } };
@@ -2993,6 +3195,7 @@ function registerIpcHandlers(): void {
   );
 
   // Get calendar events for a date range (with RRULE expansion)
+  // Includes both imported/user events AND task-generated events (unified view)
   ipcMain.handle(
     'calendar:getEventsForRange',
     async (
@@ -3011,27 +3214,36 @@ function registerIpcHandlers(): void {
           `[Calendar] Fetching events for range: ${params.startDate} to ${params.endDate}`
         );
 
-        // First check how many events exist
-        const countResult = database.executeReadOne<{ count: number }>(
-          'SELECT COUNT(*) as count FROM calendar_events WHERE source_type IN (?, ?) AND deleted_at IS NULL',
-          ['imported', 'user']
-        );
-        logger.debug(
-          `[Calendar] Total calendar events in DB: ${countResult?.count || 0}`
-        );
-
-        // Build query based on includeHidden flag - include both 'imported' and 'user' events
+        // Query includes both regular events AND task-generated events
+        // Task-generated events have task_id IS NOT NULL
+        // Filter out events from archived/deleted courses
         let sql = `
-        SELECT ce.*, ic.name as calendar_name, ic.color as calendar_color, ic.is_visible
-        FROM calendar_events ce
-        LEFT JOIN imported_calendars ic ON ce.imported_calendar_id = ic.id
-        WHERE ce.source_type IN ('imported', 'user')
-          AND ce.deleted_at IS NULL
-      `;
+          SELECT
+            ce.id, ce.external_id, ce.source_type, ce.course_id, ce.imported_calendar_id,
+            ce.task_id, ce.title, ce.description, ce.start_at, ce.end_at, ce.all_day,
+            ce.location, ce.uid, ce.recurrence_rule, ce.recurrence_exception_dates,
+            ce.parent_event_id, ce.color as event_color, ce.notes, ce.reminder_minutes,
+            ic.name as calendar_name, ic.color as calendar_color, ic.is_visible,
+            t.title as task_title, t.weight as task_weight, t.task_type,
+            c.code as course_code, c.name as course_name, c.color as course_color
+          FROM calendar_events ce
+          LEFT JOIN imported_calendars ic ON ce.imported_calendar_id = ic.id
+          LEFT JOIN tasks t ON ce.task_id = t.id
+          LEFT JOIN courses c ON ce.course_id = c.id
+          WHERE ce.deleted_at IS NULL
+            AND (ce.source_type IN ('imported', 'user') OR ce.task_id IS NOT NULL)
+            AND (c.id IS NULL OR (c.archived_at IS NULL AND c.deleted_at IS NULL))
+        `;
 
         if (!params.includeHidden) {
-          sql +=
-            " AND (ic.is_visible = 1 OR ic.is_visible IS NULL OR ce.source_type = 'user')";
+          sql += `
+            AND (
+              ic.is_visible = 1
+              OR ic.is_visible IS NULL
+              OR ce.source_type = 'user'
+              OR ce.task_id IS NOT NULL
+            )
+          `;
         }
 
         const rows = database.executeRead<{
@@ -3040,6 +3252,7 @@ function registerIpcHandlers(): void {
           source_type: string;
           course_id: number | null;
           imported_calendar_id: number | null;
+          task_id: number | null;
           title: string;
           description: string | null;
           start_at: string;
@@ -3050,37 +3263,82 @@ function registerIpcHandlers(): void {
           recurrence_rule: string | null;
           recurrence_exception_dates: string | null;
           parent_event_id: number | null;
+          event_color: string | null;
+          notes: string | null;
+          reminder_minutes: number | null;
           calendar_name: string | null;
           calendar_color: string | null;
+          task_title: string | null;
+          task_weight: number | null;
+          task_type: string | null;
+          course_code: string | null;
+          course_name: string | null;
+          course_color: string | null;
         }>(sql);
 
-        // Map to CalendarEventRecord format
-        const events = rows.map((row) => ({
-          id: row.id,
-          externalId: row.external_id,
-          sourceType: row.source_type as 'canvas' | 'user' | 'imported',
-          courseId: row.course_id,
-          importedCalendarId: row.imported_calendar_id,
-          title: row.title,
-          description: row.description,
-          startAt: row.start_at,
-          endAt: row.end_at,
-          allDay: Boolean(row.all_day),
-          location: row.location,
-          uid: row.uid,
-          recurrenceRule: row.recurrence_rule,
-          recurrenceExceptionDates: row.recurrence_exception_dates,
-          parentEventId: row.parent_event_id,
-          calendarName: row.calendar_name,
-          color: row.calendar_color || '#6366F1',
-        }));
+        logger.info(
+          `[Calendar Query] Returned ${rows.length} rows for range ${params.startDate} to ${params.endDate}`
+        );
 
-        logger.debug(`[Calendar] Query returned ${rows.length} rows`);
-        if (rows.length > 0) {
-          logger.debug(`[Calendar] First event: ${JSON.stringify(rows[0])}`);
-        }
+        // Map to DisplayCalendarEvent format
+        const events = rows.map((row) => {
+          // Determine display color: event override > calendar color > course color > default
+          let color = '#6366F1'; // default indigo
+          if (row.event_color) {
+            color = row.event_color;
+          } else if (row.calendar_color) {
+            color = row.calendar_color;
+          } else if (row.course_color) {
+            color = row.course_color;
+          } else if (row.course_id) {
+            // Use course-based color from palette
+            const paletteColors = [
+              '#3B82F6',
+              '#EF4444',
+              '#10B981',
+              '#F59E0B',
+              '#8B5CF6',
+              '#EC4899',
+              '#06B6D4',
+              '#84CC16',
+              '#F97316',
+              '#6366F1',
+            ];
+            color = paletteColors[row.course_id % paletteColors.length];
+          }
 
-        logger.debug(`[Calendar] Mapped ${events.length} events`);
+          return {
+            id: row.id,
+            externalId: row.external_id,
+            sourceType: row.source_type as 'canvas' | 'user' | 'imported',
+            courseId: row.course_id,
+            importedCalendarId: row.imported_calendar_id,
+            taskId: row.task_id,
+            title: row.title,
+            description: row.description,
+            startAt: row.start_at,
+            endAt: row.end_at,
+            allDay: Boolean(row.all_day),
+            location: row.location,
+            uid: row.uid,
+            recurrenceRule: row.recurrence_rule,
+            recurrenceExceptionDates: row.recurrence_exception_dates,
+            parentEventId: row.parent_event_id,
+            eventColor: row.event_color,
+            notes: row.notes,
+            reminderMinutes: row.reminder_minutes,
+            calendarName: row.calendar_name,
+            color,
+            // Task-specific fields
+            taskTitle: row.task_title ?? undefined,
+            taskWeight: row.task_weight ?? undefined,
+            taskType: row.task_type ?? undefined,
+            courseCode: row.course_code ?? undefined,
+            courseName: row.course_name ?? undefined,
+            // For DisplayCalendarEvent schema
+            isRecurrenceInstance: false,
+          };
+        });
 
         // Expand recurring events
         const expander = new RRuleExpander();
@@ -3088,11 +3346,13 @@ function registerIpcHandlers(): void {
 
         logger.debug(`[Calendar] After expansion: ${expandedEvents.length} events`);
 
-        // Add color and calendar name to expanded events
+        // Ensure all expanded events have required fields
         const result = expandedEvents.map((e) => ({
           ...e,
           color: (e as (typeof events)[0]).color || '#6366F1',
           calendarName: (e as (typeof events)[0]).calendarName,
+          isRecurrenceInstance:
+            (e as { isRecurrenceInstance?: boolean }).isRecurrenceInstance ?? false,
         }));
 
         logger.debug(`[Calendar] Returning ${result.length} events to renderer`);
@@ -3166,12 +3426,19 @@ function registerIpcHandlers(): void {
         endAt?: string;
         allDay?: boolean;
         location?: string;
+        // Calendar-only fields (don't affect task)
+        color?: string;
+        notes?: string;
+        reminderMinutes?: number;
       }
     ) => {
       try {
-        // Verify event exists and is editable (user or imported)
-        const existing = database.executeReadOne<{ source_type: string }>(
-          'SELECT source_type FROM calendar_events WHERE id = ? AND deleted_at IS NULL',
+        // Verify event exists and is editable (user, imported, or task-generated)
+        const existing = database.executeReadOne<{
+          source_type: string;
+          task_id: number | null;
+        }>(
+          'SELECT source_type, task_id FROM calendar_events WHERE id = ? AND deleted_at IS NULL',
           [id]
         );
 
@@ -3179,7 +3446,7 @@ function registerIpcHandlers(): void {
           return { success: false, error: 'Event not found' };
         }
 
-        if (existing.source_type === 'canvas') {
+        if (existing.source_type === 'canvas' && !existing.task_id) {
           return { success: false, error: 'Cannot edit Canvas events' };
         }
 
@@ -3210,6 +3477,19 @@ function registerIpcHandlers(): void {
           setClauses.push('location = ?');
           values.push(data.location);
         }
+        // Calendar-only fields
+        if (data.color !== undefined) {
+          setClauses.push('color = ?');
+          values.push(data.color);
+        }
+        if (data.notes !== undefined) {
+          setClauses.push('notes = ?');
+          values.push(data.notes);
+        }
+        if (data.reminderMinutes !== undefined) {
+          setClauses.push('reminder_minutes = ?');
+          values.push(data.reminderMinutes);
+        }
 
         if (setClauses.length === 0) {
           return { success: true };
@@ -3224,6 +3504,23 @@ function registerIpcHandlers(): void {
           'calendar_events'
         );
 
+        // If this is a task-generated event and endAt was updated, also update task.due_at
+        // The end time of the event represents the task's due time
+        if (existing.task_id && data.endAt !== undefined) {
+          database.executeWrite(
+            `UPDATE tasks SET
+               due_at = ?,
+               local_modified_at = CURRENT_TIMESTAMP,
+               updated_at = CURRENT_TIMESTAMP
+             WHERE id = ?`,
+            [data.endAt, existing.task_id],
+            'tasks'
+          );
+          logger.info(
+            `Updated task id=${existing.task_id} due_at from calendar event id=${id}`
+          );
+        }
+
         logger.info(`Updated calendar event id=${id}`);
         return { success: true };
       } catch (error) {
@@ -3234,6 +3531,7 @@ function registerIpcHandlers(): void {
   );
 
   // Delete calendar event (soft delete)
+  // For task-generated events, this unlinks but doesn't delete the task
   ipcMain.handle('calendar:deleteEvent', async (_event, id: number) => {
     try {
       // Verify event exists
@@ -3241,8 +3539,9 @@ function registerIpcHandlers(): void {
         source_type: string;
         imported_calendar_id: number | null;
         title: string;
+        task_id: number | null;
       }>(
-        'SELECT source_type, imported_calendar_id, title FROM calendar_events WHERE id = ? AND deleted_at IS NULL',
+        'SELECT source_type, imported_calendar_id, title, task_id FROM calendar_events WHERE id = ? AND deleted_at IS NULL',
         [id]
       );
 
@@ -3250,8 +3549,19 @@ function registerIpcHandlers(): void {
         return { success: false, error: 'Event not found' };
       }
 
-      if (existing.source_type === 'canvas') {
+      if (existing.source_type === 'canvas' && !existing.task_id) {
         return { success: false, error: 'Cannot delete Canvas events' };
+      }
+
+      // If this is a task-generated event, just clear the link (don't delete the event)
+      // The event will be recreated on next sync
+      if (existing.task_id) {
+        database.executeWrite(
+          'UPDATE tasks SET calendar_event_id = NULL WHERE id = ?',
+          [existing.task_id],
+          'tasks'
+        );
+        logger.info(`Unlinked task id=${existing.task_id} from calendar event id=${id}`);
       }
 
       // Soft delete the event
@@ -5918,19 +6228,7 @@ process.on('unhandledRejection', (reason, _promise) => {
 
 // ============ Download Queue Persistence ============
 
-interface PendingDownloadRow {
-  id: number;
-  resource_id: string;
-  course_code: string;
-  url: string;
-  filename: string;
-  context_folder: string | null;
-  folder_path: string | null;
-  expected_size: number | null;
-  priority: number;
-  status: string;
-  retry_count: number;
-}
+// PendingDownloadRow imported from DatabaseRowTypes.ts
 
 /**
  * Save pending downloads to database for crash recovery
@@ -6172,6 +6470,17 @@ protocol.registerSchemesAsPrivileged([
     },
   },
 ]);
+
+// Handle when user tries to launch another instance (focus existing window)
+app.on('second-instance', (_event, _commandLine, _workingDirectory) => {
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) {
+      mainWindow.restore();
+    }
+    mainWindow.focus();
+    logger.info('Focused existing window from second instance launch attempt');
+  }
+});
 
 app.whenReady().then(async () => {
   logger.info('Canvas Integration Dashboard starting...');

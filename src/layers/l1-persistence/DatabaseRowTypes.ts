@@ -34,6 +34,10 @@ export interface CourseRow {
   syllabus_body: string | null;
   last_synced_at: string | null;
   enrollment_term_id: number | null;
+  /** ISO timestamp when course was archived, null if active */
+  archived_at: string | null;
+  /** How the course was archived: 'manual' (user) or 'auto' (term expired) */
+  archive_source: 'manual' | 'auto' | null;
   created_at: string;
   updated_at: string;
 }
@@ -81,8 +85,12 @@ export interface TaskRow {
   is_optional: number;
   completed_at: string | null;
   submission_status: string | null;
+  /** User-set submission status, independent of Canvas. Used for OR logic with submission_status */
+  user_submission_status: string | null;
   task_type: string | null;
   task_group_id: number | null;
+  /** FK to calendar_events.id for task-calendar linking. ON DELETE SET NULL */
+  calendar_event_id: number | null;
   local_modified_at: string | null;
   field_sources: string | null; // JSON: {"due_at": "guessed", "grade": "canvas"}
   created_at: string;
@@ -350,4 +358,64 @@ export interface ResourceRow {
   title: string;
   local_path: string | null;
   mime_type: string | null;
+}
+
+// =============================================================================
+// Download Queue Rows
+// =============================================================================
+
+/**
+ * Pending download row from pending_downloads table
+ * Used by: main.ts for download queue crash recovery
+ */
+export interface PendingDownloadRow {
+  id: number;
+  resource_id: string;
+  course_code: string;
+  url: string;
+  filename: string;
+  context_folder: string | null;
+  folder_path: string | null;
+  expected_size: number | null;
+  priority: number;
+  status: string;
+  retry_count: number;
+}
+
+// =============================================================================
+// Message Display History Rows
+// =============================================================================
+
+/**
+ * Display history row from message_display_history table
+ * Used by: MessageProbationService for duplicate prevention with exponential backoff
+ */
+export interface DisplayHistoryRow {
+  id: number;
+  message_type: string;
+  sub_type: string;
+  content_hash: string;
+  display_count: number;
+  first_shown_at: string;
+  last_shown_at: string;
+  grounded_until: string | null;
+  quiet_period_start: string | null;
+}
+
+// =============================================================================
+// Grace Token Usage Rows
+// =============================================================================
+
+/**
+ * Token usage row from grace_token_usage table
+ * Used by: GraceTokenUsageRepository for tracking grace token consumption
+ */
+export interface TokenUsageRow {
+  id: number;
+  grace_token_id: number;
+  task_id: number;
+  tokens_used: number;
+  hours_extended: number;
+  used_at: string;
+  notes: string | null;
 }

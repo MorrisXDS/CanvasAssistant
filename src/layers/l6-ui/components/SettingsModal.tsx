@@ -1,37 +1,39 @@
 /**
- * SettingsModal Component
- * Modal overlay for application settings
+ * SettingsModal Component - Redesigned
+ *
+ * Modal overlay for application settings with:
+ * - 4 collapsible accordion sections
+ * - Fuzzy search across all settings
+ * - Change indicators for modified settings
+ * - Import/export functionality
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   X,
   Link,
-  RefreshCw,
   Check,
   AlertCircle,
   Loader2,
   Sun,
   Moon,
   Monitor,
-  GraduationCap,
   FolderOpen,
-  BookOpen,
   Eye,
   EyeOff,
   Calendar,
-  Home,
   LayoutDashboard,
-  Paintbrush,
   Bell,
   Database,
-  GripVertical,
   RotateCcw,
-  LayoutGrid,
   Upload,
   Download,
   ShieldCheck,
   Key,
+  Palette,
+  GraduationCap,
+  Settings2,
+  BookOpen,
 } from 'lucide-react';
 import { useStore } from '../../l5-presentation/store';
 import {
@@ -45,6 +47,9 @@ import {
   DEFAULT_COURSE_SETTINGS,
   DEFAULT_CALENDAR_SETTINGS,
   DEFAULT_CONTENT_SETTINGS,
+  DEFAULT_DASHBOARD_SETTINGS,
+  SETTINGS_CATEGORIES,
+  searchSettings,
   type SyncPreferences,
   type AppearanceSettings,
   type NotificationSettings,
@@ -53,22 +58,24 @@ import {
   type CourseSettings,
   type CalendarSettings,
   type ContentSettings,
+  type DashboardSettings,
+  type SettingsCategory,
 } from '../../l5-presentation/settings';
 import type { Course } from '../../l5-presentation/types';
 import { ConfirmDialog } from './shared/ConfirmDialog';
+import {
+  Accordion,
+  SearchInput,
+  SettingRow,
+  ToggleSwitch,
+  SettingSelect,
+  SettingSlider,
+  SettingButtonGroup,
+} from './primitives';
 
-// Settings sections
-type SettingsSection =
-  | 'general'
-  | 'dashboard'
-  | 'canvas'
-  | 'sync'
-  | 'academic'
-  | 'courses'
-  | 'calendar'
-  | 'files'
-  | 'appearance'
-  | 'notifications';
+// =============================================================================
+// TYPES
+// =============================================================================
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -84,309 +91,25 @@ interface EnrollmentTerm {
   endAt: string | null;
 }
 
+// Category icons
+const CATEGORY_ICONS: Record<SettingsCategory, React.ReactNode> = {
+  account: <Link size={18} />,
+  display: <Palette size={18} />,
+  academic: <GraduationCap size={18} />,
+  notifications: <Bell size={18} />,
+};
+
+// Landing page options
 const LANDING_PAGE_OPTIONS = [
-  { value: '/', label: 'Dashboard', icon: LayoutDashboard },
-  { value: '/calendar', label: 'Calendar', icon: Calendar },
-  { value: '/courses', label: 'Courses', icon: BookOpen },
-  { value: '/files', label: 'Files', icon: FolderOpen },
+  { value: '/', label: 'Dashboard', icon: <LayoutDashboard size={16} /> },
+  { value: '/calendar', label: 'Calendar', icon: <Calendar size={16} /> },
+  { value: '/courses', label: 'Courses', icon: <BookOpen size={16} /> },
+  { value: '/files', label: 'Files', icon: <FolderOpen size={16} /> },
 ];
 
-// Dashboard section labels for display
-const DASHBOARD_SECTION_LABELS: Record<string, string> = {
-  priority: 'Upcoming Assignments',
-  notifications: 'Recent Updates',
-  recommendations: 'Recommendations',
-  insights: 'Insights',
-};
-
-// Default order for dashboard sections (used for reset comparison)
-const LOCAL_DEFAULT_DASHBOARD_ORDER = [
-  'priority',
-  'notifications',
-  'recommendations',
-  'insights',
-];
-
-/**
- * Dashboard Settings Section - Interactive layout configuration
- */
-function DashboardSettingsSection() {
-  const [sectionOrder, setSectionOrder] = React.useState<string[]>(() => {
-    const stored = settingsManager.get(STORAGE_KEYS.DASHBOARD_SECTION_ORDER);
-    return stored?.length ? stored : [...LOCAL_DEFAULT_DASHBOARD_ORDER];
-  });
-
-  const [draggedItem, setDraggedItem] = React.useState<string | null>(null);
-  const [dragOverItem, setDragOverItem] = React.useState<string | null>(null);
-
-  const isCustomized = React.useMemo(() => {
-    return sectionOrder.some((id, i) => id !== LOCAL_DEFAULT_DASHBOARD_ORDER[i]);
-  }, [sectionOrder]);
-
-  const handleDragStart = (e: React.DragEvent, sectionId: string) => {
-    setDraggedItem(sectionId);
-    e.dataTransfer.effectAllowed = 'move';
-  };
-
-  const handleDragOver = (e: React.DragEvent, sectionId: string) => {
-    e.preventDefault();
-    if (draggedItem && sectionId !== draggedItem) {
-      setDragOverItem(sectionId);
-    }
-  };
-
-  const handleDrop = (e: React.DragEvent, targetId: string) => {
-    e.preventDefault();
-    if (!draggedItem || draggedItem === targetId) return;
-
-    const newOrder = [...sectionOrder];
-    const draggedIndex = newOrder.indexOf(draggedItem);
-    const targetIndex = newOrder.indexOf(targetId);
-
-    if (draggedIndex !== -1 && targetIndex !== -1) {
-      // Swap positions
-      newOrder[draggedIndex] = targetId;
-      newOrder[targetIndex] = draggedItem;
-      setSectionOrder(newOrder);
-      settingsManager.set(STORAGE_KEYS.DASHBOARD_SECTION_ORDER, newOrder);
-    }
-
-    setDraggedItem(null);
-    setDragOverItem(null);
-  };
-
-  const handleDragEnd = () => {
-    setDraggedItem(null);
-    setDragOverItem(null);
-  };
-
-  const handleReset = () => {
-    setSectionOrder([...LOCAL_DEFAULT_DASHBOARD_ORDER]);
-    settingsManager.remove(STORAGE_KEYS.DASHBOARD_SECTION_ORDER);
-  };
-
-  return (
-    <div style={dashboardStyles.section}>
-      <h3 style={dashboardStyles.sectionTitle}>Dashboard Layout</h3>
-      <p style={dashboardStyles.sectionDesc}>
-        Customize the arrangement of dashboard sections. Drag items to reorder.
-      </p>
-
-      <div style={dashboardStyles.gridPreview}>
-        {sectionOrder.map((sectionId, index) => (
-          <div
-            key={sectionId}
-            draggable
-            onDragStart={(e) => handleDragStart(e, sectionId)}
-            onDragOver={(e) => handleDragOver(e, sectionId)}
-            onDrop={(e) => handleDrop(e, sectionId)}
-            onDragEnd={handleDragEnd}
-            style={{
-              ...dashboardStyles.gridItem,
-              opacity: draggedItem === sectionId ? 0.5 : 1,
-              borderColor:
-                dragOverItem === sectionId
-                  ? 'var(--color-blue)'
-                  : 'var(--border-default)',
-              borderWidth: dragOverItem === sectionId ? '2px' : '1px',
-            }}
-          >
-            <GripVertical
-              size={14}
-              style={{ color: 'var(--text-muted)', flexShrink: 0 }}
-            />
-            <span style={dashboardStyles.gridItemLabel}>
-              {DASHBOARD_SECTION_LABELS[sectionId]}
-            </span>
-            <span style={dashboardStyles.gridItemPosition}>{index + 1}</span>
-          </div>
-        ))}
-      </div>
-
-      <div style={dashboardStyles.gridLegend}>
-        <div style={dashboardStyles.legendItem}>
-          <div
-            style={{
-              ...dashboardStyles.legendBox,
-              backgroundColor: 'var(--color-blue-50)',
-            }}
-          >
-            1
-          </div>
-          <span>Top Left</span>
-        </div>
-        <div style={dashboardStyles.legendItem}>
-          <div
-            style={{
-              ...dashboardStyles.legendBox,
-              backgroundColor: 'var(--color-blue-50)',
-            }}
-          >
-            2
-          </div>
-          <span>Top Right</span>
-        </div>
-        <div style={dashboardStyles.legendItem}>
-          <div
-            style={{
-              ...dashboardStyles.legendBox,
-              backgroundColor: 'var(--color-blue-50)',
-            }}
-          >
-            3
-          </div>
-          <span>Bottom Left</span>
-        </div>
-        <div style={dashboardStyles.legendItem}>
-          <div
-            style={{
-              ...dashboardStyles.legendBox,
-              backgroundColor: 'var(--color-blue-50)',
-            }}
-          >
-            4
-          </div>
-          <span>Bottom Right</span>
-        </div>
-      </div>
-
-      {isCustomized && (
-        <button style={dashboardStyles.resetButton} onClick={handleReset}>
-          <RotateCcw size={14} />
-          Reset to Default Layout
-        </button>
-      )}
-
-      <div style={dashboardStyles.divider} />
-
-      <div style={dashboardStyles.field}>
-        <label style={dashboardStyles.label}>Interaction Tips</label>
-        <ul style={dashboardStyles.tipsList}>
-          <li>Hover over any section to reveal the drag handle</li>
-          <li>Drag sections by their grip handle to reorder</li>
-          <li>Your layout preferences are saved automatically</li>
-        </ul>
-      </div>
-    </div>
-  );
-}
-
-const dashboardStyles: Record<string, React.CSSProperties> = {
-  section: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 'var(--space-4)',
-  },
-  sectionTitle: {
-    fontSize: 'var(--text-lg)',
-    fontWeight: 'var(--font-semibold)',
-    color: 'var(--text-primary)',
-    margin: 0,
-  },
-  sectionDesc: {
-    fontSize: 'var(--text-sm)',
-    color: 'var(--text-secondary)',
-    margin: 0,
-  },
-  gridPreview: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(2, 1fr)',
-    gap: 'var(--space-2)',
-    padding: 'var(--space-3)',
-    backgroundColor: 'var(--bg-app)',
-    borderRadius: 'var(--radius-md)',
-    border: '1px solid var(--border-default)',
-  },
-  gridItem: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 'var(--space-2)',
-    padding: 'var(--space-3)',
-    backgroundColor: 'var(--bg-card)',
-    border: '1px solid var(--border-default)',
-    borderRadius: 'var(--radius-md)',
-    cursor: 'grab',
-    transition: 'all var(--transition-fast)',
-  },
-  gridItemLabel: {
-    flex: 1,
-    fontSize: 'var(--text-sm)',
-    fontWeight: 'var(--font-medium)',
-    color: 'var(--text-primary)',
-  },
-  gridItemPosition: {
-    width: '20px',
-    height: '20px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontSize: '10px',
-    fontWeight: 'var(--font-semibold)',
-    backgroundColor: 'var(--color-blue-50)',
-    color: 'var(--color-navy)',
-    borderRadius: 'var(--radius-full)',
-  },
-  gridLegend: {
-    display: 'flex',
-    gap: 'var(--space-4)',
-    justifyContent: 'center',
-    fontSize: 'var(--text-xs)',
-    color: 'var(--text-muted)',
-  },
-  legendItem: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 'var(--space-1)',
-  },
-  legendBox: {
-    width: '16px',
-    height: '16px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontSize: '9px',
-    fontWeight: 'var(--font-semibold)',
-    borderRadius: 'var(--radius-sm)',
-    color: 'var(--color-navy)',
-  },
-  resetButton: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 'var(--space-2)',
-    padding: 'var(--space-2) var(--space-4)',
-    backgroundColor: 'transparent',
-    border: '1px solid var(--border-default)',
-    borderRadius: 'var(--radius-md)',
-    fontSize: 'var(--text-sm)',
-    color: 'var(--text-secondary)',
-    cursor: 'pointer',
-    transition: 'all var(--transition-fast)',
-    alignSelf: 'center',
-  },
-  divider: {
-    height: '1px',
-    backgroundColor: 'var(--border-light)',
-    margin: 'var(--space-2) 0',
-  },
-  field: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 'var(--space-2)',
-  },
-  label: {
-    fontSize: 'var(--text-sm)',
-    fontWeight: 'var(--font-medium)',
-    color: 'var(--text-primary)',
-  },
-  tipsList: {
-    margin: 0,
-    paddingLeft: 'var(--space-4)',
-    fontSize: 'var(--text-xs)',
-    color: 'var(--text-secondary)',
-    lineHeight: 'var(--leading-relaxed)',
-  },
-};
+// =============================================================================
+// MAIN COMPONENT
+// =============================================================================
 
 export function SettingsModal({
   isOpen,
@@ -394,7 +117,17 @@ export function SettingsModal({
   isFullPage = false,
 }: SettingsModalProps) {
   const { courses, fetchCourses } = useStore();
-  const [activeSection, setActiveSection] = useState<SettingsSection>('general');
+
+  // Search state
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Accordion state - all sections open by default
+  const [openSections, setOpenSections] = useState<string[]>([
+    'account',
+    'display',
+    'academic',
+    'notifications',
+  ]);
 
   // Canvas connection state
   const [canvasUrl, setCanvasUrl] = useState('');
@@ -441,14 +174,6 @@ export function SettingsModal({
     () => settingsManager.get(STORAGE_KEYS.ACADEMIC) ?? DEFAULT_ACADEMIC_SETTINGS
   );
 
-  // Course-specific sync settings
-  const [selectedCourseId, setSelectedCourseId] = useState<number | null>(null);
-  const [perCourseSyncSettings, setPerCourseSyncSettings] = useState<{
-    autoAssignDueDate: number | null; // null = inherit, 0 = off, 1 = on
-    allowGuessedOverride: number;
-  }>({ autoAssignDueDate: null, allowGuessedOverride: 1 });
-  const [isLoadingCourseSettings, setIsLoadingCourseSettings] = useState(false);
-
   // Enrollment terms loaded from database
   const [enrollmentTerms, setEnrollmentTerms] = useState<EnrollmentTerm[]>([]);
 
@@ -458,7 +183,7 @@ export function SettingsModal({
       settingsManager.get(STORAGE_KEYS.FILE_EXPLORER) ?? DEFAULT_FILE_EXPLORER_SETTINGS
   );
 
-  // Current download directory (fetched from main process)
+  // Current download directory
   const [currentDownloadPath, setCurrentDownloadPath] = useState<string>('');
 
   // Course settings
@@ -471,9 +196,14 @@ export function SettingsModal({
     () => settingsManager.get(STORAGE_KEYS.CALENDAR) ?? DEFAULT_CALENDAR_SETTINGS
   );
 
-  // Content settings (link behavior)
+  // Content settings
   const [contentSettings, setContentSettings] = useState<ContentSettings>(
     () => settingsManager.get(STORAGE_KEYS.CONTENT) ?? DEFAULT_CONTENT_SETTINGS
+  );
+
+  // Dashboard settings
+  const [dashboardSettings, setDashboardSettings] = useState<DashboardSettings>(
+    () => settingsManager.get(STORAGE_KEYS.DASHBOARD) ?? DEFAULT_DASHBOARD_SETTINGS
   );
 
   // Landing page setting
@@ -481,17 +211,44 @@ export function SettingsModal({
     () => settingsManager.get(STORAGE_KEYS.LANDING_PAGE) ?? '/'
   );
 
-  // Clear data confirmation dialog
-  const [showClearDataConfirm, setShowClearDataConfirm] = useState(false);
-  const [deleteTokenOnClear, setDeleteTokenOnClear] = useState(false);
-
-  // Window behavior settings (minimize to tray)
+  // Window behavior settings
   const [windowBehavior, setWindowBehavior] = useState<{
     closeAction: 'quit' | 'minimize-to-tray' | null;
     showTrayIcon: boolean;
   }>({ closeAction: null, showTrayIcon: true });
 
-  // Apply theme on change - settingsManager handles DOM updates
+  // Clear data confirmation dialog
+  const [showClearDataConfirm, setShowClearDataConfirm] = useState(false);
+  const [deleteTokenOnClear, setDeleteTokenOnClear] = useState(false);
+
+  // Data export/import state
+  const [isExporting, setIsExporting] = useState(false);
+  const [_isImporting, setIsImporting] = useState(false);
+  const [exportMessage, setExportMessage] = useState<{
+    type: 'success' | 'error';
+    text: string;
+  } | null>(null);
+
+  // =============================================================================
+  // FILTERED SETTINGS FOR SEARCH
+  // =============================================================================
+
+  const filteredSettings = useMemo(() => {
+    if (!searchQuery.trim()) return null;
+    return searchSettings(searchQuery);
+  }, [searchQuery]);
+
+  const hasSearchResults = filteredSettings !== null;
+  const matchingCategories = useMemo(() => {
+    if (!filteredSettings) return new Set<SettingsCategory>();
+    return new Set(filteredSettings.map((s) => s.category));
+  }, [filteredSettings]);
+
+  // =============================================================================
+  // EFFECTS
+  // =============================================================================
+
+  // Apply theme on change
   useEffect(() => {
     const applyTheme = (theme: 'light' | 'dark' | 'system') => {
       const root = document.documentElement;
@@ -521,81 +278,30 @@ export function SettingsModal({
       fetchDownloadDirectory();
       fetchWindowBehavior();
     } else {
-      // Reset initialization flag when modal closes so URL loads fresh on next open
       canvasUrlInitializedRef.current = false;
+      setSearchQuery('');
     }
   }, [isOpen]);
 
-  // Fetch window behavior settings from main process
-  const fetchWindowBehavior = async () => {
-    try {
-      const settings = await window.api.getWindowBehavior();
-      setWindowBehavior(settings);
-    } catch (error) {
-      console.error('[Settings] Failed to fetch window behavior:', error);
-    }
-  };
-
-  // Update window behavior settings in main process
-  const updateWindowBehavior = async (updates: Partial<{
-    closeAction: 'quit' | 'minimize-to-tray' | null;
-    showTrayIcon: boolean;
-  }>) => {
-    const newSettings = { ...windowBehavior, ...updates };
-    setWindowBehavior(newSettings);
-    try {
-      await window.api.setWindowBehavior(newSettings);
-    } catch (error) {
-      console.error('[Settings] Failed to update window behavior:', error);
-    }
-  };
-
-  // Fetch current download directory
-  const fetchDownloadDirectory = async () => {
-    try {
-      const result = await window.api.getFilesDirectory();
-      setCurrentDownloadPath(result.path);
-    } catch (error) {
-      console.error('[Settings] Failed to fetch download directory:', error);
-    }
-  };
-
-  // Handle changing download directory
-  const handleChangeDownloadLocation = async () => {
-    try {
-      const result = await window.api.selectFilesDirectory();
-      if (result.success && result.data?.path) {
-        const newPath = result.data.path;
-        // Set the directory in the main process
-        const setResult = await window.api.setFilesDirectory(newPath);
-        if (setResult.success) {
-          setCurrentDownloadPath(newPath);
-          updateFileExplorer({ downloadLocation: newPath });
-        } else {
-          console.error('[Settings] Failed to set download directory:', setResult.error);
-        }
+  // Close on escape key
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen) {
+        onClose();
       }
-    } catch (error) {
-      console.error('[Settings] Failed to change download location:', error);
-    }
-  };
+    };
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [isOpen, onClose]);
 
-  // Fetch enrollment terms from database
-  const fetchEnrollmentTerms = async () => {
-    try {
-      const terms = await window.api.getEnrollmentTerms();
-      console.debug('[Settings] Fetched enrollment terms:', terms);
-      setEnrollmentTerms(terms);
-    } catch (error) {
-      console.error('[Settings] Failed to fetch enrollment terms:', error);
-    }
-  };
+  // =============================================================================
+  // HANDLERS - Canvas Connection
+  // =============================================================================
 
   const checkCanvasConnection = async () => {
     try {
       const hasCredential = await window.api.hasCredential();
       const savedUrl = settingsManager.get(STORAGE_KEYS.CANVAS_URL) ?? '';
-      // Only set URL on first initialization - don't overwrite user input
       if (!canvasUrlInitializedRef.current) {
         setCanvasUrl(savedUrl);
         canvasUrlInitializedRef.current = true;
@@ -606,18 +312,6 @@ export function SettingsModal({
     }
   };
 
-  const handleDisconnect = async () => {
-    try {
-      await window.api.deleteCredential();
-      setIsConnected(false);
-      settingsManager.remove(STORAGE_KEYS.CANVAS_URL);
-      setCanvasUrl('');
-    } catch (e) {
-      console.error('Failed to disconnect:', e);
-    }
-  };
-
-  // Normalize Canvas URL (add https:// if missing, remove trailing slashes)
   const normalizeUrl = (url: string): string => {
     let normalized = url.trim();
     if (!normalized.startsWith('http://') && !normalized.startsWith('https://')) {
@@ -646,13 +340,22 @@ export function SettingsModal({
     }
   };
 
-  // Validate the current token
+  const handleDisconnect = async () => {
+    try {
+      await window.api.deleteCredential();
+      setIsConnected(false);
+      settingsManager.remove(STORAGE_KEYS.CANVAS_URL);
+      setCanvasUrl('');
+    } catch (e) {
+      console.error('Failed to disconnect:', e);
+    }
+  };
+
   const handleValidateToken = async () => {
     if (!canvasUrl) return;
     setIsValidatingToken(true);
     setTokenValidationResult({ status: null, message: null });
     try {
-      // Get the stored token and validate it
       const normalizedUrl = normalizeUrl(canvasUrl);
       const result = await window.api.connectCanvas(normalizedUrl);
       if (result.success) {
@@ -676,14 +379,12 @@ export function SettingsModal({
     }
   };
 
-  // Open token replacement modal
   const handleOpenTokenReplace = () => {
     setNewToken('');
     setNewTokenValidation({ valid: null, userName: null, error: null });
     setShowTokenReplaceModal(true);
   };
 
-  // Validate new token before replacement
   const handleValidateNewToken = async () => {
     if (!newToken || !canvasUrl) return;
     setIsValidatingNewToken(true);
@@ -715,15 +416,12 @@ export function SettingsModal({
     }
   };
 
-  // Replace the token
   const handleReplaceToken = async () => {
     if (!newTokenValidation.valid || !newToken) return;
     setIsReplacingToken(true);
     try {
-      // Store the new token
       const storeResult = await window.api.storeCredential(newToken);
       if (storeResult.success) {
-        // Reinitialize the connection with the new token
         const normalizedUrl = normalizeUrl(canvasUrl);
         const connectResult = await window.api.connectCanvas(normalizedUrl);
         if (connectResult.success) {
@@ -759,12 +457,52 @@ export function SettingsModal({
     }
   };
 
+  // =============================================================================
+  // HANDLERS - Settings Updates
+  // =============================================================================
+
+  const fetchEnrollmentTerms = async () => {
+    try {
+      const terms = await window.api.getEnrollmentTerms();
+      setEnrollmentTerms(terms);
+    } catch (error) {
+      console.error('[Settings] Failed to fetch enrollment terms:', error);
+    }
+  };
+
+  const fetchDownloadDirectory = async () => {
+    try {
+      const result = await window.api.getFilesDirectory();
+      setCurrentDownloadPath(result.path);
+    } catch (error) {
+      console.error('[Settings] Failed to fetch download directory:', error);
+    }
+  };
+
+  const fetchWindowBehavior = async () => {
+    try {
+      const settings = await window.api.getWindowBehavior();
+      setWindowBehavior(settings);
+    } catch (error) {
+      console.error('[Settings] Failed to fetch window behavior:', error);
+    }
+  };
+
+  const updateWindowBehavior = async (updates: Partial<typeof windowBehavior>) => {
+    const newSettings = { ...windowBehavior, ...updates };
+    setWindowBehavior(newSettings);
+    try {
+      await window.api.setWindowBehavior(newSettings);
+    } catch (error) {
+      console.error('[Settings] Failed to update window behavior:', error);
+    }
+  };
+
   const updateSyncPrefs = async (updates: Partial<SyncPreferences>) => {
     const newPrefs = { ...syncPrefs, ...updates };
     setSyncPrefs(newPrefs);
     settingsManager.set(STORAGE_KEYS.SYNC_PREFS, newPrefs);
 
-    // Sync settings to backend that affect sync behavior
     if (
       'autoSyncEnabled' in updates ||
       'autoSyncInterval' in updates ||
@@ -782,13 +520,113 @@ export function SettingsModal({
     }
   };
 
-  // Data export/import handlers
-  const [isExporting, setIsExporting] = useState(false);
-  const [isImporting, setIsImporting] = useState(false);
-  const [exportMessage, setExportMessage] = useState<{
-    type: 'success' | 'error';
-    text: string;
-  } | null>(null);
+  const updateAppearance = (updates: Partial<AppearanceSettings>) => {
+    const newSettings = { ...appearance, ...updates };
+    setAppearance(newSettings);
+    settingsManager.set(STORAGE_KEYS.APPEARANCE, newSettings);
+  };
+
+  const updateNotifications = (updates: Partial<NotificationSettings>) => {
+    const newSettings = { ...notifications, ...updates };
+    setNotifications(newSettings);
+    settingsManager.set(STORAGE_KEYS.NOTIFICATIONS, newSettings);
+  };
+
+  const updateAcademic = async (updates: Partial<AcademicSettings>) => {
+    const newSettings = { ...academic, ...updates };
+    setAcademic(newSettings);
+    settingsManager.set(STORAGE_KEYS.ACADEMIC, newSettings);
+
+    if (updates.defaultTargetGrade !== undefined) {
+      try {
+        await window.api?.setDefaultTargetGrade(updates.defaultTargetGrade);
+      } catch (error) {
+        console.error('[Settings] Failed to propagate default target grade:', error);
+      }
+    }
+
+    if (updates.termSelection !== undefined) {
+      try {
+        const value =
+          updates.termSelection === 'all' || updates.termSelection === 'auto'
+            ? updates.termSelection
+            : parseInt(updates.termSelection, 10);
+        await window.api?.setTermSelection(value);
+        useStore.getState().fetchCourses();
+      } catch (error) {
+        console.error('[Settings] Failed to propagate term selection:', error);
+      }
+    }
+  };
+
+  const updateFileExplorer = (updates: Partial<FileExplorerSettings>) => {
+    const newSettings = { ...fileExplorer, ...updates };
+    setFileExplorer(newSettings);
+    settingsManager.set(STORAGE_KEYS.FILE_EXPLORER, newSettings);
+  };
+
+  const updateCourseSettings = (updates: Partial<CourseSettings>) => {
+    const newSettings = { ...courseSettings, ...updates };
+    setCourseSettings(newSettings);
+    settingsManager.set(STORAGE_KEYS.COURSES, newSettings);
+  };
+
+  const updateCalendarSettings = (updates: Partial<CalendarSettings>) => {
+    const newSettings = { ...calendarSettings, ...updates };
+    setCalendarSettings(newSettings);
+    settingsManager.set(STORAGE_KEYS.CALENDAR, newSettings);
+    if (updates.defaultViewMode) {
+      localStorage.removeItem('viewMode:calendar');
+    }
+  };
+
+  const updateContentSettings = (updates: Partial<ContentSettings>) => {
+    const newSettings = { ...contentSettings, ...updates };
+    setContentSettings(newSettings);
+    settingsManager.set(STORAGE_KEYS.CONTENT, newSettings);
+  };
+
+  const updateDashboardSettings = (updates: Partial<DashboardSettings>) => {
+    const newSettings = { ...dashboardSettings, ...updates };
+    setDashboardSettings(newSettings);
+    settingsManager.set(STORAGE_KEYS.DASHBOARD, newSettings);
+  };
+
+  const updateLandingPage = (path: string) => {
+    setLandingPage(path);
+    settingsManager.set(STORAGE_KEYS.LANDING_PAGE, path);
+  };
+
+  const handleChangeDownloadLocation = async () => {
+    try {
+      const result = await window.api.selectFilesDirectory();
+      if (result.success && result.data?.path) {
+        const newPath = result.data.path;
+        const setResult = await window.api.setFilesDirectory(newPath);
+        if (setResult.success) {
+          setCurrentDownloadPath(newPath);
+          updateFileExplorer({ downloadLocation: newPath });
+        }
+      }
+    } catch (error) {
+      console.error('[Settings] Failed to change download location:', error);
+    }
+  };
+
+  const handleToggleCourseVisibility = async (
+    courseId: number,
+    currentlyHidden: boolean
+  ) => {
+    await window.api.dispatch('UpdateCoursePreferences', {
+      courseId,
+      preferences: { isHidden: !currentlyHidden },
+    });
+    await fetchCourses();
+  };
+
+  // =============================================================================
+  // HANDLERS - Export/Import
+  // =============================================================================
 
   const handleExportDatabase = async () => {
     setIsExporting(true);
@@ -813,7 +651,7 @@ export function SettingsModal({
     }
   };
 
-  const handleImportDatabase = async () => {
+  const _handleImportDatabase = async () => {
     setIsImporting(true);
     setExportMessage(null);
     try {
@@ -821,7 +659,7 @@ export function SettingsModal({
       if (result.success) {
         setExportMessage({
           type: 'success',
-          text: `Database imported successfully. Please restart the app to apply changes. Previous database backed up.`,
+          text: `Database imported successfully. Please restart the app to apply changes.`,
         });
       } else {
         setExportMessage({ type: 'error', text: result.error || 'Import failed' });
@@ -836,299 +674,133 @@ export function SettingsModal({
     }
   };
 
-  const handleExportCourseData = async () => {
-    setIsExporting(true);
-    setExportMessage(null);
+  const handleExportSettings = () => {
     try {
-      const result = await window.api.exportCourseData();
-      if (result.success) {
-        setExportMessage({
-          type: 'success',
-          text: `Exported ${result.data?.courseCount} courses, ${result.data?.taskCount} tasks to ${result.data?.filePath}`,
-        });
-      } else {
-        setExportMessage({ type: 'error', text: result.error || 'Export failed' });
+      const settings: Record<string, unknown> = {};
+      const keys = Object.values(STORAGE_KEYS);
+      for (const key of keys) {
+        const value = localStorage.getItem(key);
+        if (value !== null) {
+          try {
+            settings[key] = JSON.parse(value);
+          } catch {
+            settings[key] = value;
+          }
+        }
       }
+
+      const blob = new Blob([JSON.stringify(settings, null, 2)], {
+        type: 'application/json',
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `canvas-assistant-settings-${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      setExportMessage({ type: 'success', text: 'Settings exported successfully' });
     } catch (e) {
       setExportMessage({
         type: 'error',
         text: e instanceof Error ? e.message : 'Export failed',
       });
-    } finally {
-      setIsExporting(false);
     }
   };
 
-  const handleImportCourseData = async () => {
-    setIsImporting(true);
-    setExportMessage(null);
-    try {
-      const result = await window.api.importCourseData();
-      if (result.success) {
-        const d = result.data;
+  const handleImportSettings = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+    input.onchange = async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+
+      try {
+        const text = await file.text();
+        const settings = JSON.parse(text);
+
+        if (typeof settings !== 'object' || settings === null) {
+          throw new Error('Invalid settings file format');
+        }
+
+        for (const [key, value] of Object.entries(settings)) {
+          if (typeof value === 'string') {
+            localStorage.setItem(key, value);
+          } else {
+            localStorage.setItem(key, JSON.stringify(value));
+          }
+        }
+
+        setExportMessage({ type: 'success', text: 'Settings imported. Reloading...' });
+        setTimeout(() => window.location.reload(), 1000);
+      } catch (e) {
         setExportMessage({
-          type: 'success',
-          text: `Imported ${d?.coursesImported} courses, ${d?.tasksImported} tasks, ${d?.notificationsImported} notifications`,
+          type: 'error',
+          text: e instanceof Error ? e.message : 'Import failed',
         });
-        // Refresh data after import
-        fetchCourses();
-      } else {
-        setExportMessage({ type: 'error', text: result.error || 'Import failed' });
-      }
-    } catch (e) {
-      setExportMessage({
-        type: 'error',
-        text: e instanceof Error ? e.message : 'Import failed',
-      });
-    } finally {
-      setIsImporting(false);
-    }
-  };
-
-  const updateAppearance = (updates: Partial<AppearanceSettings>) => {
-    const newSettings = { ...appearance, ...updates };
-    setAppearance(newSettings);
-    settingsManager.set(STORAGE_KEYS.APPEARANCE, newSettings);
-    // Theme is applied via the useEffect above
-  };
-
-  const updateNotifications = (updates: Partial<NotificationSettings>) => {
-    const newSettings = { ...notifications, ...updates };
-    setNotifications(newSettings);
-    settingsManager.set(STORAGE_KEYS.NOTIFICATIONS, newSettings);
-  };
-
-  const updateAcademic = async (updates: Partial<AcademicSettings>) => {
-    const newSettings = { ...academic, ...updates };
-    setAcademic(newSettings);
-    settingsManager.set(STORAGE_KEYS.ACADEMIC, newSettings);
-
-    // If defaultTargetGrade changed, propagate to courses via IPC
-    if (updates.defaultTargetGrade !== undefined) {
-      try {
-        const result = await window.api?.setDefaultTargetGrade(
-          updates.defaultTargetGrade
-        );
-        if (result?.success) {
-          console.debug(
-            `[Settings] Default target grade propagated to ${result.data?.updatedCourses ?? 0} courses`
-          );
-        }
-      } catch (error) {
-        console.error('[Settings] Failed to propagate default target grade:', error);
-      }
-    }
-
-    // If termSelection changed, propagate to database via VisibleDataProvider
-    if (updates.termSelection !== undefined) {
-      try {
-        const value = updates.termSelection === 'all' || updates.termSelection === 'auto'
-          ? updates.termSelection
-          : parseInt(updates.termSelection, 10);
-        const result = await window.api?.setTermSelection(value);
-        if (result?.success) {
-          console.debug(`[Settings] Term selection propagated to database: ${value}`);
-          // Trigger re-fetch of courses to apply new filter
-          useStore.getState().fetchCourses();
-        }
-      } catch (error) {
-        console.error('[Settings] Failed to propagate term selection:', error);
-      }
-    }
-  };
-
-  // Load course-specific settings when a course is selected
-  const loadCourseSpecificSettings = async (courseId: number) => {
-    setIsLoadingCourseSettings(true);
-    try {
-      const result = await window.api?.getCourseSettings(courseId);
-      if (result?.success) {
-        setPerCourseSyncSettings({
-          autoAssignDueDate: result.data.autoAssignDueDate,
-          allowGuessedOverride: result.data.allowGuessedOverride,
-        });
-      }
-    } catch (error) {
-      console.error('[Settings] Failed to load course settings:', error);
-    } finally {
-      setIsLoadingCourseSettings(false);
-    }
-  };
-
-  // Update course-specific settings
-  const updateCourseSpecificSettings = async (
-    updates: Partial<{
-      autoAssignDueDate: number | null;
-      allowGuessedOverride: number;
-    }>
-  ) => {
-    if (!selectedCourseId) return;
-
-    const newSettings = { ...perCourseSyncSettings, ...updates };
-    setPerCourseSyncSettings(newSettings);
-
-    try {
-      await window.api?.updateCourseSettings(selectedCourseId, updates);
-    } catch (error) {
-      console.error('[Settings] Failed to update course settings:', error);
-    }
-  };
-
-  // Handle course selection change
-  const handleCourseSelect = (courseId: number | null) => {
-    setSelectedCourseId(courseId);
-    if (courseId) {
-      loadCourseSpecificSettings(courseId);
-    } else {
-      setPerCourseSyncSettings({ autoAssignDueDate: null, allowGuessedOverride: 1 });
-    }
-  };
-
-  const updateFileExplorer = (updates: Partial<FileExplorerSettings>) => {
-    const newSettings = { ...fileExplorer, ...updates };
-    setFileExplorer(newSettings);
-    settingsManager.set(STORAGE_KEYS.FILE_EXPLORER, newSettings);
-  };
-
-  const updateCourseSettings = (updates: Partial<CourseSettings>) => {
-    const newSettings = { ...courseSettings, ...updates };
-    setCourseSettings(newSettings);
-    settingsManager.set(STORAGE_KEYS.COURSES, newSettings);
-  };
-
-  const updateCalendarSettings = (updates: Partial<CalendarSettings>) => {
-    const newSettings = { ...calendarSettings, ...updates };
-    setCalendarSettings(newSettings);
-    settingsManager.set(STORAGE_KEYS.CALENDAR, newSettings);
-    // Also clear the user's view mode preference so next time they open calendar, it uses the new default
-    if (updates.defaultViewMode) {
-      localStorage.removeItem('viewMode:calendar');
-    }
-  };
-
-  const updateContentSettings = (updates: Partial<ContentSettings>) => {
-    const newSettings = { ...contentSettings, ...updates };
-    setContentSettings(newSettings);
-    settingsManager.set(STORAGE_KEYS.CONTENT, newSettings);
-  };
-
-  const updateLandingPage = (path: string) => {
-    setLandingPage(path);
-    settingsManager.set(STORAGE_KEYS.LANDING_PAGE, path);
-  };
-
-  const handleToggleCourseVisibility = async (
-    courseId: number,
-    currentlyHidden: boolean
-  ) => {
-    await window.api.dispatch('UpdateCoursePreferences', {
-      courseId,
-      preferences: { isHidden: !currentlyHidden },
-    });
-    await fetchCourses();
-  };
-
-  // Close on escape key
-  useEffect(() => {
-    const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isOpen) {
-        onClose();
       }
     };
-    window.addEventListener('keydown', handleEscape);
-    return () => window.removeEventListener('keydown', handleEscape);
-  }, [isOpen, onClose]);
+    input.click();
+  };
 
-  // Settings tab drag-and-drop state
-  const [draggedTab, setDraggedTab] = useState<SettingsSection | null>(null);
-  const [dragOverTab, setDragOverTab] = useState<SettingsSection | null>(null);
-  const [tabOrder, setTabOrder] = useState<SettingsSection[]>(() => {
-    try {
-      const stored = localStorage.getItem('settingsTabOrder');
-      if (stored) return JSON.parse(stored);
-    } catch {
-      // ignore
-    }
-    return [
-      'general',
-      'dashboard',
-      'canvas',
-      'sync',
-      'academic',
-      'courses',
-      'calendar',
-      'files',
-      'appearance',
-      'notifications',
-    ];
-  });
+  // =============================================================================
+  // CHECK IF SETTINGS ARE MODIFIED
+  // =============================================================================
 
-  const handleTabDragStart = useCallback((e: React.DragEvent, tabId: SettingsSection) => {
-    e.dataTransfer.effectAllowed = 'move';
-    setDraggedTab(tabId);
-  }, []);
+  const isSyncModified =
+    JSON.stringify(syncPrefs) !== JSON.stringify(DEFAULT_SYNC_PREFERENCES);
+  const isAppearanceModified =
+    JSON.stringify(appearance) !== JSON.stringify(DEFAULT_APPEARANCE_SETTINGS);
+  const isNotificationsModified =
+    JSON.stringify(notifications) !== JSON.stringify(DEFAULT_NOTIFICATION_SETTINGS);
+  const isAcademicModified =
+    JSON.stringify(academic) !== JSON.stringify(DEFAULT_ACADEMIC_SETTINGS);
+  const isDashboardModified =
+    JSON.stringify(dashboardSettings) !== JSON.stringify(DEFAULT_DASHBOARD_SETTINGS);
+  const isFileExplorerModified =
+    JSON.stringify(fileExplorer) !== JSON.stringify(DEFAULT_FILE_EXPLORER_SETTINGS);
+  const isCalendarModified =
+    JSON.stringify(calendarSettings) !== JSON.stringify(DEFAULT_CALENDAR_SETTINGS);
+  const isCourseSettingsModified =
+    JSON.stringify(courseSettings) !== JSON.stringify(DEFAULT_COURSE_SETTINGS);
 
-  const handleTabDragOver = useCallback(
-    (e: React.DragEvent, tabId: SettingsSection) => {
-      e.preventDefault();
-      if (tabId !== draggedTab) setDragOverTab(tabId);
-    },
-    [draggedTab]
-  );
+  const accountModifiedCount =
+    (isSyncModified ? 1 : 0) + (windowBehavior.closeAction !== null ? 1 : 0);
+  const displayModifiedCount =
+    (isAppearanceModified ? 1 : 0) +
+    (isDashboardModified ? 1 : 0) +
+    (landingPage !== '/' ? 1 : 0) +
+    (isFileExplorerModified ? 1 : 0) +
+    (isCalendarModified ? 1 : 0) +
+    (isCourseSettingsModified ? 1 : 0);
+  const academicModifiedCount = isAcademicModified ? 1 : 0;
+  const notificationsModifiedCount = isNotificationsModified ? 1 : 0;
 
-  const handleTabDrop = useCallback(
-    (e: React.DragEvent, targetTab: SettingsSection) => {
-      e.preventDefault();
-      if (!draggedTab || draggedTab === targetTab) {
-        setDraggedTab(null);
-        setDragOverTab(null);
-        return;
-      }
-      const newOrder = [...tabOrder];
-      const draggedIdx = newOrder.indexOf(draggedTab);
-      const targetIdx = newOrder.indexOf(targetTab);
-      newOrder[draggedIdx] = targetTab;
-      newOrder[targetIdx] = draggedTab;
-      setTabOrder(newOrder);
-      localStorage.setItem('settingsTabOrder', JSON.stringify(newOrder));
-      setDraggedTab(null);
-      setDragOverTab(null);
-    },
-    [draggedTab, tabOrder]
-  );
+  // =============================================================================
+  // RENDER
+  // =============================================================================
 
   if (!isOpen) return null;
 
-  const allSections = [
-    { id: 'general' as const, label: 'General', icon: Home },
-    { id: 'dashboard' as const, label: 'Dashboard', icon: LayoutGrid },
-    { id: 'canvas' as const, label: 'Canvas', icon: Link },
-    { id: 'sync' as const, label: 'Sync', icon: RefreshCw },
-    { id: 'academic' as const, label: 'Academic', icon: GraduationCap },
-    { id: 'courses' as const, label: 'Courses', icon: BookOpen },
-    { id: 'calendar' as const, label: 'Calendar', icon: Calendar },
-    { id: 'files' as const, label: 'Files', icon: FolderOpen },
-    { id: 'appearance' as const, label: 'Appearance', icon: Paintbrush },
-    { id: 'notifications' as const, label: 'Notifications', icon: Bell },
-  ];
+  const shouldShowSection = (category: SettingsCategory): boolean => {
+    if (!hasSearchResults) return true;
+    return matchingCategories.has(category);
+  };
 
-  // Sort sections by custom order
-  const sections = tabOrder
-    .map((id) => allSections.find((s) => s.id === id))
-    .filter(Boolean) as typeof allSections;
+  const ModifiedBadge = ({ count }: { count: number }) =>
+    count > 0 ? <span style={styles.modifiedBadge}>{count} modified</span> : null;
 
-  const themeOptions = [
-    { value: 'light' as const, label: 'Light', icon: Sun },
-    { value: 'dark' as const, label: 'Dark', icon: Moon },
-    { value: 'system' as const, label: 'System', icon: Monitor },
-  ];
-
-  // Content shared between full page and modal modes
   const content = (
     <>
       {/* Header */}
       <div style={isFullPage ? styles.pageHeader : styles.header}>
-        <h2 style={isFullPage ? styles.pageTitle : styles.title}>Settings</h2>
+        <div style={styles.headerContent}>
+          <Settings2 size={24} style={{ color: 'var(--color-navy)' }} />
+          <h2 style={isFullPage ? styles.pageTitle : styles.title}>Settings</h2>
+        </div>
         {!isFullPage && (
           <button style={styles.closeButton} onClick={onClose} aria-label="Close">
             <X size={20} />
@@ -1136,1362 +808,1154 @@ export function SettingsModal({
         )}
       </div>
 
+      {/* Search */}
+      <div style={styles.searchContainer}>
+        <SearchInput
+          value={searchQuery}
+          onChange={setSearchQuery}
+          placeholder="Search settings..."
+          debounce={150}
+        />
+      </div>
+
+      {/* Content */}
       <div style={styles.content}>
-        {/* Sidebar */}
-        <nav style={styles.sidebar}>
-          {sections.map((section) => {
-            const Icon = section.icon;
-            const isActive = activeSection === section.id;
-            const isDragging = draggedTab === section.id;
-            const isDragOver = dragOverTab === section.id;
-            return (
-              <button
-                key={section.id}
-                draggable
-                onDragStart={(e) => handleTabDragStart(e, section.id)}
-                onDragEnd={() => {
-                  setDraggedTab(null);
-                  setDragOverTab(null);
-                }}
-                onDragOver={(e) => handleTabDragOver(e, section.id)}
-                onDragLeave={() => setDragOverTab(null)}
-                onDrop={(e) => handleTabDrop(e, section.id)}
-                style={{
-                  ...styles.sidebarItem,
-                  ...(isActive ? styles.sidebarItemActive : {}),
-                  opacity: isDragging ? 0.5 : 1,
-                  boxShadow: isDragOver ? 'inset 0 0 0 2px var(--color-blue)' : 'none',
-                  transition:
-                    'opacity 150ms ease, box-shadow 150ms ease, background-color var(--transition-fast)',
-                }}
-                onClick={() => setActiveSection(section.id)}
+        <Accordion type="multiple" value={openSections} onChange={setOpenSections}>
+          {/* Account & Connection */}
+          {shouldShowSection('account') && (
+            <Accordion.Item value="account">
+              <Accordion.Trigger
+                icon={CATEGORY_ICONS.account}
+                badge={<ModifiedBadge count={accountModifiedCount} />}
               >
-                <span style={styles.sidebarIcon}>
-                  <Icon size={18} />
-                </span>
-                <span>{section.label}</span>
-              </button>
-            );
-          })}
-        </nav>
+                {SETTINGS_CATEGORIES.account.label}
+              </Accordion.Trigger>
+              <Accordion.Content>
+                <div style={styles.section}>
+                  <p style={styles.sectionDesc}>
+                    {SETTINGS_CATEGORIES.account.description}
+                  </p>
 
-        {/* Main content - fixed height */}
-        <div style={styles.main}>
-          {activeSection === 'general' && (
-            <div style={styles.section}>
-              <h3 style={styles.sectionTitle}>General Settings</h3>
-              <p style={styles.sectionDesc}>Configure general application behavior.</p>
-
-              <div style={styles.field}>
-                <label style={styles.label}>Landing page</label>
-                <p style={styles.fieldDesc}>The page shown when the app launches.</p>
-                <div style={styles.landingPageOptions}>
-                  {LANDING_PAGE_OPTIONS.map((option) => {
-                    const Icon = option.icon;
-                    const isActive = landingPage === option.value;
-                    return (
-                      <button
-                        key={option.value}
-                        style={{
-                          ...styles.landingPageOption,
-                          ...(isActive ? styles.landingPageOptionActive : {}),
-                        }}
-                        onClick={() => updateLandingPage(option.value)}
-                      >
-                        <Icon size={18} />
-                        <span>{option.label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div style={styles.divider} />
-
-              <div style={styles.field}>
-                <label style={styles.label}>Close button behavior</label>
-                <p style={styles.fieldDesc}>
-                  Choose what happens when you click the close button.
-                </p>
-                <select
-                  style={styles.select}
-                  value={windowBehavior.closeAction ?? ''}
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    updateWindowBehavior({
-                      closeAction: value === '' ? null : (value as 'quit' | 'minimize-to-tray'),
-                    });
-                  }}
-                >
-                  <option value="">Ask every time (not set)</option>
-                  <option value="minimize-to-tray">Minimize to system tray</option>
-                  <option value="quit">Quit application</option>
-                </select>
-              </div>
-
-              <div style={styles.divider} />
-
-              <div style={styles.field}>
-                <label style={styles.label}>Reset to Default Order</label>
-                <p style={styles.fieldDesc}>
-                  Reset custom ordering for various UI elements. Drag-and-drop ordering is
-                  saved automatically.
-                </p>
-                <div style={styles.resetOrderGrid}>
-                  <button
-                    style={styles.resetOrderButton}
-                    onClick={() => {
-                      localStorage.removeItem('navItemOrder');
-                      window.location.reload();
-                    }}
+                  {/* Canvas URL */}
+                  <SettingRow
+                    label="Canvas URL"
+                    description="Your institution's Canvas LMS URL"
+                    vertical
                   >
-                    <RotateCcw size={14} />
-                    Sidebar
-                  </button>
-                  <button
-                    style={styles.resetOrderButton}
-                    onClick={() => {
-                      localStorage.removeItem('dashboardSectionOrder');
-                      window.location.reload();
-                    }}
-                  >
-                    <RotateCcw size={14} />
-                    Dashboard
-                  </button>
-                  <button
-                    style={styles.resetOrderButton}
-                    onClick={() => {
-                      localStorage.removeItem('courseOrder');
-                      window.location.reload();
-                    }}
-                  >
-                    <RotateCcw size={14} />
-                    Courses
-                  </button>
-                  <button
-                    style={styles.resetOrderButton}
-                    onClick={() => {
-                      localStorage.removeItem('filesCourseOrder');
-                      localStorage.removeItem('folderOrder');
-                      window.location.reload();
-                    }}
-                  >
-                    <RotateCcw size={14} />
-                    Files
-                  </button>
-                  <button
-                    style={styles.resetOrderButton}
-                    onClick={() => {
-                      localStorage.removeItem('settingsTabOrder');
-                      window.location.reload();
-                    }}
-                  >
-                    <RotateCcw size={14} />
-                    Settings Tabs
-                  </button>
-                </div>
-              </div>
+                    <input
+                      type="text"
+                      value={canvasUrl}
+                      onChange={(e) => setCanvasUrl(e.target.value)}
+                      placeholder="https://your-institution.instructure.com"
+                      style={styles.input}
+                      disabled={isConnected}
+                    />
+                  </SettingRow>
 
-              <div style={styles.divider} />
-
-              <div style={styles.field}>
-                <label style={styles.label}>
-                  <Database
-                    size={16}
-                    style={{ verticalAlign: 'middle', marginRight: '8px' }}
-                  />
-                  Data Export & Import
-                </label>
-                <p style={styles.fieldDesc}>
-                  Export your data for backup or import previously exported data.
-                </p>
-                <div style={styles.exportButtons}>
-                  <button
-                    style={styles.secondaryButton}
-                    onClick={handleExportDatabase}
-                    disabled={isExporting || isImporting}
-                  >
-                    {isExporting ? (
-                      <Loader2 size={14} className="spin" />
+                  {/* Connection Status */}
+                  <div style={styles.statusRow}>
+                    <span style={styles.statusLabel}>Status:</span>
+                    {isConnected ? (
+                      <span style={styles.statusConnected}>
+                        <Check size={14} /> Connected
+                      </span>
                     ) : (
-                      <Upload size={14} />
+                      <span style={styles.statusDisconnected}>
+                        <AlertCircle size={14} /> Not Connected
+                      </span>
                     )}
-                    Export Database
-                  </button>
-                  <button
-                    style={styles.secondaryButton}
-                    onClick={handleImportDatabase}
-                    disabled={isExporting || isImporting}
-                  >
-                    {isImporting ? (
-                      <Loader2 size={14} className="spin" />
-                    ) : (
-                      <Download size={14} />
-                    )}
-                    Import Database
-                  </button>
-                  <button
-                    style={styles.secondaryButton}
-                    onClick={handleExportCourseData}
-                    disabled={isExporting || isImporting}
-                  >
-                    {isExporting ? (
-                      <Loader2 size={14} className="spin" />
-                    ) : (
-                      <Upload size={14} />
-                    )}
-                    Export Course Data (JSON)
-                  </button>
-                  <button
-                    style={styles.secondaryButton}
-                    onClick={handleImportCourseData}
-                    disabled={isExporting || isImporting}
-                  >
-                    {isImporting ? (
-                      <Loader2 size={14} className="spin" />
-                    ) : (
-                      <Download size={14} />
-                    )}
-                    Import Course Data (JSON)
-                  </button>
-                </div>
-                {exportMessage && (
-                  <div
-                    style={{
-                      ...styles.exportMessage,
-                      backgroundColor:
-                        exportMessage.type === 'success'
-                          ? 'var(--color-success-bg)'
-                          : 'var(--color-error-bg)',
-                      color:
-                        exportMessage.type === 'success'
-                          ? 'var(--color-success)'
-                          : 'var(--color-error)',
-                    }}
-                  >
-                    {exportMessage.text}
                   </div>
-                )}
-              </div>
 
-              <div style={styles.divider} />
+                  {connectionError && <div style={styles.error}>{connectionError}</div>}
 
-              <div style={styles.field}>
-                <label style={styles.label}>Clear app data</label>
-                <p style={styles.fieldDesc}>
-                  Delete all synced data (courses, tasks, files, announcements) and reset
-                  settings.
-                </p>
-                <label style={styles.checkboxLabel}>
-                  <input
-                    type="checkbox"
-                    checked={deleteTokenOnClear}
-                    onChange={(e) => setDeleteTokenOnClear(e.target.checked)}
-                    style={styles.checkbox}
-                  />
-                  Also delete Canvas API token (requires re-authentication)
-                </label>
-                <button
-                  style={styles.dangerButton}
-                  onClick={() => setShowClearDataConfirm(true)}
-                >
-                  Clear All Data
-                </button>
-              </div>
-
-              <ConfirmDialog
-                isOpen={showClearDataConfirm}
-                type="danger"
-                title="Clear All App Data"
-                message={
-                  deleteTokenOnClear
-                    ? 'This will delete all synced data including courses, tasks, files, announcements, AND your Canvas API token. You will need to re-authenticate after this action. This action cannot be undone.'
-                    : 'This will delete all synced data including courses, tasks, files, and announcements. This action cannot be undone. Your Canvas connection will be preserved.'
-                }
-                confirmText="Clear All Data"
-                cancelText="Cancel"
-                onCancel={() => {
-                  setShowClearDataConfirm(false);
-                  setDeleteTokenOnClear(false);
-                }}
-                onConfirm={async () => {
-                  setShowClearDataConfirm(false);
-                  try {
-                    // Clear database via IPC (optionally including token)
-                    // If deleteToken is true, main process sends app:reset event
-                    // which the store handles (clears localStorage + reloads)
-                    await window.api.clearAllData({ deleteToken: deleteTokenOnClear });
-
-                    if (!deleteTokenOnClear) {
-                      // Token preserved - manually clear localStorage but keep Canvas URL, then reload
-                      const savedCanvasUrl = localStorage.getItem('canvasUrl');
-                      localStorage.clear();
-                      if (savedCanvasUrl) {
-                        localStorage.setItem('canvasUrl', savedCanvasUrl);
-                      }
-                      window.location.reload();
-                    }
-                    // If deleteToken was true, the app:reset event handler will reload automatically
-                    setDeleteTokenOnClear(false);
-                  } catch (error) {
-                    console.error('Failed to clear data:', error);
-                  }
-                }}
-              />
-            </div>
-          )}
-
-          {activeSection === 'dashboard' && <DashboardSettingsSection />}
-
-          {activeSection === 'canvas' && (
-            <div style={styles.section}>
-              <h3 style={styles.sectionTitle}>Canvas Connection</h3>
-              <p style={styles.sectionDesc}>Connect to your institution's Canvas LMS.</p>
-
-              <div style={styles.field}>
-                <label style={styles.label}>Canvas URL</label>
-                <input
-                  type="text"
-                  value={canvasUrl}
-                  onChange={(e) => setCanvasUrl(e.target.value)}
-                  placeholder="https://your-institution.instructure.com"
-                  style={styles.input}
-                  disabled={isConnected}
-                />
-              </div>
-
-              <div style={styles.statusRow}>
-                <span style={styles.statusLabel}>Status:</span>
-                {isConnected ? (
-                  <span style={styles.statusConnected}>
-                    <Check size={14} /> Connected
-                  </span>
-                ) : (
-                  <span style={styles.statusDisconnected}>
-                    <AlertCircle size={14} /> Not Connected
-                  </span>
-                )}
-              </div>
-
-              {connectionError && <div style={styles.error}>{connectionError}</div>}
-
-              {tokenValidationResult.status && (
-                <div
-                  style={{
-                    ...styles.validationResult,
-                    backgroundColor:
-                      tokenValidationResult.status === 'success'
-                        ? 'var(--color-success-bg)'
-                        : 'var(--color-error-bg)',
-                    color:
-                      tokenValidationResult.status === 'success'
-                        ? 'var(--color-success)'
-                        : 'var(--color-error)',
-                  }}
-                >
-                  {tokenValidationResult.status === 'success' ? (
-                    <Check size={14} />
-                  ) : (
-                    <AlertCircle size={14} />
-                  )}
-                  {tokenValidationResult.message}
-                </div>
-              )}
-
-              <div style={styles.buttonRow}>
-                {isConnected ? (
-                  <>
-                    <button
+                  {tokenValidationResult.status && (
+                    <div
                       style={{
-                        ...styles.secondaryButton,
-                        opacity: isValidatingToken ? 0.6 : 1,
+                        ...styles.validationResult,
+                        backgroundColor:
+                          tokenValidationResult.status === 'success'
+                            ? 'var(--color-success-bg)'
+                            : 'var(--color-error-bg)',
+                        color:
+                          tokenValidationResult.status === 'success'
+                            ? 'var(--color-success)'
+                            : 'var(--color-error)',
                       }}
-                      onClick={handleValidateToken}
-                      disabled={isValidatingToken}
                     >
-                      {isValidatingToken ? (
-                        <>
-                          <Loader2
-                            size={14}
-                            style={{ animation: 'spin 1s linear infinite' }}
-                          />
-                          Validating...
-                        </>
-                      ) : (
-                        <>
-                          <ShieldCheck size={14} />
-                          Validate Token
-                        </>
-                      )}
-                    </button>
-                    <button
-                      style={styles.secondaryButton}
-                      onClick={handleOpenTokenReplace}
-                    >
-                      <Key size={14} />
-                      Replace Token
-                    </button>
-                    <button style={styles.dangerButton} onClick={handleDisconnect}>
-                      Disconnect
-                    </button>
-                  </>
-                ) : (
-                  <button
-                    style={{
-                      ...styles.primaryButton,
-                      opacity: isConnecting || !canvasUrl ? 0.6 : 1,
-                    }}
-                    onClick={handleReconnect}
-                    disabled={isConnecting || !canvasUrl}
-                  >
-                    {isConnecting ? (
-                      <>
-                        <Loader2
-                          size={16}
-                          style={{ animation: 'spin 1s linear infinite' }}
-                        />
-                        Connecting...
-                      </>
-                    ) : (
-                      'Connect'
-                    )}
-                  </button>
-                )}
-              </div>
-
-              {/* Token Replacement Modal */}
-              {showTokenReplaceModal && (
-                <div
-                  style={styles.tokenModalOverlay}
-                  onClick={() => setShowTokenReplaceModal(false)}
-                >
-                  <div style={styles.tokenModal} onClick={(e) => e.stopPropagation()}>
-                    <div style={styles.tokenModalHeader}>
-                      <h4 style={styles.tokenModalTitle}>Replace Canvas Token</h4>
-                      <button
-                        style={styles.tokenModalClose}
-                        onClick={() => setShowTokenReplaceModal(false)}
-                      >
-                        <X size={18} />
-                      </button>
-                    </div>
-
-                    <p style={styles.tokenModalDesc}>
-                      Enter your new Canvas API token. You can generate one from your
-                      Canvas account settings.
-                    </p>
-
-                    <div style={styles.field}>
-                      <label style={styles.label}>New Access Token</label>
-                      <input
-                        type="password"
-                        value={newToken}
-                        onChange={(e) => {
-                          setNewToken(e.target.value);
-                          setNewTokenValidation({
-                            valid: null,
-                            userName: null,
-                            error: null,
-                          });
-                        }}
-                        placeholder="Enter your new Canvas access token"
-                        style={styles.input}
-                        autoFocus
-                      />
-                    </div>
-
-                    {newTokenValidation.error && (
-                      <div style={styles.error}>
-                        <AlertCircle size={14} /> {newTokenValidation.error}
-                      </div>
-                    )}
-
-                    {newTokenValidation.valid && (
-                      <div style={styles.tokenSuccess}>
+                      {tokenValidationResult.status === 'success' ? (
                         <Check size={14} />
-                        Token valid
-                        {newTokenValidation.userName &&
-                          ` for ${newTokenValidation.userName}`}
-                      </div>
-                    )}
+                      ) : (
+                        <AlertCircle size={14} />
+                      )}
+                      {tokenValidationResult.message}
+                    </div>
+                  )}
 
-                    <div style={styles.tokenModalButtons}>
-                      {!newTokenValidation.valid ? (
+                  <div style={styles.buttonRow}>
+                    {isConnected ? (
+                      <>
                         <button
                           style={{
-                            ...styles.primaryButton,
-                            opacity: isValidatingNewToken || !newToken ? 0.6 : 1,
+                            ...styles.secondaryButton,
+                            opacity: isValidatingToken ? 0.6 : 1,
                           }}
-                          onClick={handleValidateNewToken}
-                          disabled={isValidatingNewToken || !newToken}
+                          onClick={handleValidateToken}
+                          disabled={isValidatingToken}
                         >
-                          {isValidatingNewToken ? (
+                          {isValidatingToken ? (
                             <>
                               <Loader2
                                 size={14}
                                 style={{ animation: 'spin 1s linear infinite' }}
-                              />
+                              />{' '}
                               Validating...
                             </>
                           ) : (
                             <>
-                              <ShieldCheck size={14} />
-                              Validate Token
+                              <ShieldCheck size={14} /> Validate Token
                             </>
                           )}
                         </button>
-                      ) : (
                         <button
-                          style={{
-                            ...styles.primaryButton,
-                            opacity: isReplacingToken ? 0.6 : 1,
-                          }}
-                          onClick={handleReplaceToken}
-                          disabled={isReplacingToken}
+                          style={styles.secondaryButton}
+                          onClick={handleOpenTokenReplace}
                         >
-                          {isReplacingToken ? (
-                            <>
-                              <Loader2
-                                size={14}
-                                style={{ animation: 'spin 1s linear infinite' }}
-                              />
-                              Replacing...
-                            </>
-                          ) : (
-                            <>
-                              <Key size={14} />
-                              Replace Token
-                            </>
-                          )}
+                          <Key size={14} /> Replace Token
                         </button>
-                      )}
+                        <button style={styles.dangerButton} onClick={handleDisconnect}>
+                          Disconnect
+                        </button>
+                      </>
+                    ) : (
                       <button
-                        style={styles.cancelButton}
-                        onClick={() => setShowTokenReplaceModal(false)}
+                        style={{
+                          ...styles.primaryButton,
+                          opacity: isConnecting || !canvasUrl ? 0.6 : 1,
+                        }}
+                        onClick={handleReconnect}
+                        disabled={isConnecting || !canvasUrl}
                       >
-                        Cancel
+                        {isConnecting ? (
+                          <>
+                            <Loader2
+                              size={16}
+                              style={{ animation: 'spin 1s linear infinite' }}
+                            />{' '}
+                            Connecting...
+                          </>
+                        ) : (
+                          'Connect'
+                        )}
                       </button>
-                    </div>
+                    )}
                   </div>
-                </div>
-              )}
-            </div>
-          )}
 
-          {activeSection === 'sync' && (
-            <div style={styles.section}>
-              <h3 style={styles.sectionTitle}>Sync Preferences</h3>
-              <p style={styles.sectionDesc}>Configure automatic data synchronization.</p>
+                  <div style={styles.divider} />
 
-              <div style={styles.field}>
-                <label style={styles.label}>Auto-sync interval</label>
-                <p style={styles.fieldDescription}>
-                  How often to automatically sync data from Canvas in the background
-                </p>
-                <select
-                  value={syncPrefs.autoSyncInterval}
-                  onChange={(e) => {
-                    const interval = Number(e.target.value);
-                    updateSyncPrefs({
-                      autoSyncInterval: interval,
-                      autoSyncEnabled: interval > 0,
-                    });
-                  }}
-                  style={styles.select}
-                >
-                  <option value={0}>Never (manual sync only)</option>
-                  <option value={15}>Every 15 minutes</option>
-                  <option value={30}>Every 30 minutes</option>
-                  <option value={60}>Every hour</option>
-                  <option value={120}>Every 2 hours</option>
-                </select>
-              </div>
-
-              <div style={styles.divider} />
-              <div style={styles.subsectionTitle}>Data to sync</div>
-
-              <ToggleRow
-                label="Files"
-                description="Course files and folders"
-                checked={syncPrefs.syncFiles}
-                onChange={() => updateSyncPrefs({ syncFiles: !syncPrefs.syncFiles })}
-              />
-
-              <ToggleRow
-                label="Announcements"
-                description="Course announcements"
-                checked={syncPrefs.syncAnnouncements}
-                onChange={() =>
-                  updateSyncPrefs({ syncAnnouncements: !syncPrefs.syncAnnouncements })
-                }
-              />
-
-              <div style={styles.divider} />
-              <div style={styles.subsectionTitle}>Task defaults</div>
-
-              <ToggleRow
-                label="Auto-assign due date"
-                description="Set today 23:59 as due date for coursework without one. You can override this per task."
-                checked={syncPrefs.autoAssignDueDate}
-                onChange={() =>
-                  updateSyncPrefs({ autoAssignDueDate: !syncPrefs.autoAssignDueDate })
-                }
-              />
-
-              <div style={styles.divider} />
-              <div style={styles.subsectionTitle}>Offline content</div>
-
-              <ToggleRow
-                label="Save HTML content"
-                description="Download pages, assignments, and announcements as HTML files for offline viewing"
-                checked={syncPrefs.saveHtmlContent}
-                onChange={() =>
-                  updateSyncPrefs({ saveHtmlContent: !syncPrefs.saveHtmlContent })
-                }
-              />
-
-              {syncPrefs.saveHtmlContent && (
-                <>
-                  <div style={styles.field}>
-                    <label style={styles.label}>URL handling</label>
-                    <p style={styles.fieldDesc}>
-                      How to handle links to images and files in HTML content.
-                    </p>
-                    <select
-                      value={syncPrefs.htmlUrlRewriting}
-                      onChange={(e) =>
+                  {/* Sync Settings */}
+                  <SettingRow
+                    label="Auto-sync interval"
+                    description="How often to automatically sync data from Canvas"
+                    isModified={
+                      syncPrefs.autoSyncInterval !==
+                      DEFAULT_SYNC_PREFERENCES.autoSyncInterval
+                    }
+                    onReset={() =>
+                      updateSyncPrefs({
+                        autoSyncInterval: DEFAULT_SYNC_PREFERENCES.autoSyncInterval,
+                        autoSyncEnabled: DEFAULT_SYNC_PREFERENCES.autoSyncEnabled,
+                      })
+                    }
+                  >
+                    <SettingSelect
+                      value={String(syncPrefs.autoSyncInterval)}
+                      onChange={(v) => {
+                        const interval = Number(v);
                         updateSyncPrefs({
-                          htmlUrlRewriting: e.target.value as 'local' | 'original',
+                          autoSyncInterval: interval,
+                          autoSyncEnabled: interval > 0,
+                        });
+                      }}
+                      options={[
+                        { value: '0', label: 'Never' },
+                        { value: '15', label: '15 minutes' },
+                        { value: '30', label: '30 minutes' },
+                        { value: '60', label: '1 hour' },
+                        { value: '120', label: '2 hours' },
+                      ]}
+                    />
+                  </SettingRow>
+
+                  <SettingRow
+                    label="Sync files"
+                    description="Include course files and folders in sync"
+                    isModified={
+                      syncPrefs.syncFiles !== DEFAULT_SYNC_PREFERENCES.syncFiles
+                    }
+                    onReset={() =>
+                      updateSyncPrefs({ syncFiles: DEFAULT_SYNC_PREFERENCES.syncFiles })
+                    }
+                  >
+                    <ToggleSwitch
+                      checked={syncPrefs.syncFiles}
+                      onChange={(checked) => updateSyncPrefs({ syncFiles: checked })}
+                    />
+                  </SettingRow>
+
+                  <SettingRow
+                    label="Sync announcements"
+                    description="Include course announcements in sync"
+                    isModified={
+                      syncPrefs.syncAnnouncements !==
+                      DEFAULT_SYNC_PREFERENCES.syncAnnouncements
+                    }
+                    onReset={() =>
+                      updateSyncPrefs({
+                        syncAnnouncements: DEFAULT_SYNC_PREFERENCES.syncAnnouncements,
+                      })
+                    }
+                  >
+                    <ToggleSwitch
+                      checked={syncPrefs.syncAnnouncements}
+                      onChange={(checked) =>
+                        updateSyncPrefs({ syncAnnouncements: checked })
+                      }
+                    />
+                  </SettingRow>
+
+                  <div style={styles.divider} />
+
+                  {/* Window Behavior */}
+                  <SettingRow
+                    label="Close button behavior"
+                    description="What happens when you click the close button"
+                    isModified={windowBehavior.closeAction !== null}
+                    onReset={() => updateWindowBehavior({ closeAction: null })}
+                  >
+                    <SettingSelect
+                      value={windowBehavior.closeAction ?? ''}
+                      onChange={(v) =>
+                        updateWindowBehavior({
+                          closeAction:
+                            v === '' ? null : (v as 'quit' | 'minimize-to-tray'),
                         })
                       }
-                      style={styles.select}
-                    >
-                      <option value="local">Rewrite for offline use (recommended)</option>
-                      <option value="original">Keep original Canvas URLs</option>
-                    </select>
-                  </div>
-
-                  <ToggleRow
-                    label="Download images"
-                    description="Download embedded images for offline access"
-                    checked={syncPrefs.downloadImages}
-                    onChange={() =>
-                      updateSyncPrefs({ downloadImages: !syncPrefs.downloadImages })
-                    }
-                  />
-
-                  <ToggleRow
-                    label="Download linked files"
-                    description="Download files linked in content"
-                    checked={syncPrefs.downloadLinkedFiles}
-                    onChange={() =>
-                      updateSyncPrefs({
-                        downloadLinkedFiles: !syncPrefs.downloadLinkedFiles,
-                      })
-                    }
-                  />
-                </>
-              )}
-
-              <div style={styles.divider} />
-
-              <div style={styles.field}>
-                <label style={styles.label}>Link click behavior</label>
-                <p style={styles.fieldDesc}>
-                  How to handle clicks on links in announcements and course content.
-                </p>
-                <select
-                  value={contentSettings.linkBehavior}
-                  onChange={(e) =>
-                    updateContentSettings({
-                      linkBehavior: e.target.value as 'always-external' | 'prefer-local',
-                    })
-                  }
-                  style={styles.select}
-                >
-                  <option value="always-external">Always open in browser</option>
-                  <option value="prefer-local">
-                    Open locally if downloaded, otherwise browser
-                  </option>
-                </select>
-              </div>
-            </div>
+                      options={[
+                        { value: '', label: 'Ask every time' },
+                        { value: 'minimize-to-tray', label: 'Minimize to tray' },
+                        { value: 'quit', label: 'Quit application' },
+                      ]}
+                    />
+                  </SettingRow>
+                </div>
+              </Accordion.Content>
+            </Accordion.Item>
           )}
 
-          {activeSection === 'academic' && (
-            <div style={styles.section}>
-              <h3 style={styles.sectionTitle}>Academic Settings</h3>
-              <p style={styles.sectionDesc}>
-                Configure grade targets and term preferences.
-              </p>
-
-              <div style={styles.field}>
-                <label style={styles.label}>Default target grade</label>
-                <p style={styles.fieldDesc}>
-                  Applied to new courses. Individual course targets can be overridden.
-                </p>
-                <div style={styles.gradeInputRow}>
-                  <input
-                    type="range"
-                    min="50"
-                    max="100"
-                    step="1"
-                    value={academic.defaultTargetGrade}
-                    onChange={(e) =>
-                      updateAcademic({ defaultTargetGrade: Number(e.target.value) })
-                    }
-                    onKeyDown={(e) => {
-                      if (e.key === 'ArrowUp' || e.key === 'ArrowRight') {
-                        e.preventDefault();
-                        updateAcademic({
-                          defaultTargetGrade: Math.min(
-                            100,
-                            academic.defaultTargetGrade + 1
-                          ),
-                        });
-                      } else if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') {
-                        e.preventDefault();
-                        updateAcademic({
-                          defaultTargetGrade: Math.max(
-                            50,
-                            academic.defaultTargetGrade - 1
-                          ),
-                        });
-                      }
-                    }}
-                    style={styles.slider}
-                  />
-                  <span style={styles.gradeValue}>{academic.defaultTargetGrade}%</span>
-                </div>
-              </div>
-
-              <div style={styles.divider} />
-
-              <div style={styles.field}>
-                <label style={styles.label}>Semester selection</label>
-                <p style={styles.fieldDesc}>
-                  Choose which semester's courses to display.
-                </p>
-                <select
-                  value={academic.termSelection}
-                  onChange={(e) => {
-                    console.debug(
-                      '[Settings] Semester selection changed:',
-                      e.target.value
-                    );
-                    updateAcademic({ termSelection: e.target.value });
-                  }}
-                  style={styles.select}
-                >
-                  <option value="auto">Auto-detect current semester</option>
-                  <option value="all">Show all semesters</option>
-                  {enrollmentTerms.length > 0 && (
-                    <optgroup label="Available Semesters">
-                      {enrollmentTerms.map((term) => (
-                        <option key={term.externalId} value={term.externalId}>
-                          {term.name}
-                        </option>
-                      ))}
-                    </optgroup>
-                  )}
-                </select>
-                {enrollmentTerms.length === 0 && (
-                  <p
-                    style={{
-                      ...styles.fieldDesc,
-                      marginTop: 'var(--space-2)',
-                      color: 'var(--color-warning)',
-                    }}
-                  >
-                    No semesters found. Sync courses to load available semesters.
+          {/* Display & Layout */}
+          {shouldShowSection('display') && (
+            <Accordion.Item value="display">
+              <Accordion.Trigger
+                icon={CATEGORY_ICONS.display}
+                badge={<ModifiedBadge count={displayModifiedCount} />}
+              >
+                {SETTINGS_CATEGORIES.display.label}
+              </Accordion.Trigger>
+              <Accordion.Content>
+                <div style={styles.section}>
+                  <p style={styles.sectionDesc}>
+                    {SETTINGS_CATEGORIES.display.description}
                   </p>
-                )}
-              </div>
-            </div>
-          )}
 
-          {activeSection === 'courses' && (
-            <div style={styles.section}>
-              <h3 style={styles.sectionTitle}>Course Settings</h3>
-              <p style={styles.sectionDesc}>
-                Configure course display, visibility, and per-course sync behavior.
-              </p>
+                  {/* Theme */}
+                  <SettingRow
+                    label="Theme"
+                    description="Application color theme"
+                    isModified={appearance.theme !== DEFAULT_APPEARANCE_SETTINGS.theme}
+                    onReset={() =>
+                      updateAppearance({ theme: DEFAULT_APPEARANCE_SETTINGS.theme })
+                    }
+                  >
+                    <SettingButtonGroup
+                      value={appearance.theme}
+                      onChange={(v) =>
+                        updateAppearance({ theme: v as AppearanceSettings['theme'] })
+                      }
+                      options={[
+                        { value: 'light', label: 'Light', icon: <Sun size={14} /> },
+                        { value: 'dark', label: 'Dark', icon: <Moon size={14} /> },
+                        { value: 'system', label: 'System', icon: <Monitor size={14} /> },
+                      ]}
+                    />
+                  </SettingRow>
 
-              {/* Display Settings */}
-              <div style={styles.settingsCard}>
-                <div style={styles.subsectionTitle}>Display</div>
-                <div style={styles.settingsCardContent}>
-                  <div style={styles.field}>
-                    <label style={styles.label}>Default view mode</label>
-                    <div style={styles.viewModeToggle}>
-                      <button
-                        style={{
-                          ...styles.viewModeBtn,
-                          backgroundColor:
-                            courseSettings.defaultViewMode === 'grid'
-                              ? 'var(--color-navy)'
-                              : 'transparent',
-                          color:
-                            courseSettings.defaultViewMode === 'grid'
-                              ? 'white'
-                              : 'var(--text-secondary)',
-                        }}
-                        onClick={() => updateCourseSettings({ defaultViewMode: 'grid' })}
-                      >
-                        Grid
-                      </button>
-                      <button
-                        style={{
-                          ...styles.viewModeBtn,
-                          backgroundColor:
-                            courseSettings.defaultViewMode === 'list'
-                              ? 'var(--color-navy)'
-                              : 'transparent',
-                          color:
-                            courseSettings.defaultViewMode === 'list'
-                              ? 'white'
-                              : 'var(--text-secondary)',
-                        }}
-                        onClick={() => updateCourseSettings({ defaultViewMode: 'list' })}
-                      >
-                        List
-                      </button>
-                    </div>
-                  </div>
+                  {/* Landing Page */}
+                  <SettingRow
+                    label="Landing page"
+                    description="The page shown when the app launches"
+                    isModified={landingPage !== '/'}
+                    onReset={() => updateLandingPage('/')}
+                  >
+                    <SettingButtonGroup
+                      value={landingPage}
+                      onChange={updateLandingPage}
+                      options={LANDING_PAGE_OPTIONS.map((opt) => ({
+                        value: opt.value,
+                        label: opt.label,
+                        icon: opt.icon,
+                      }))}
+                    />
+                  </SettingRow>
 
-                  <ToggleRow
-                    label="Show hidden courses by default"
-                    description="Display hidden courses in the courses list"
-                    checked={courseSettings.showHiddenByDefault}
-                    onChange={() =>
-                      updateCourseSettings({
-                        showHiddenByDefault: !courseSettings.showHiddenByDefault,
+                  {/* Sidebar */}
+                  <SettingRow
+                    label="Collapsed sidebar"
+                    description="Start with sidebar collapsed on launch"
+                    isModified={
+                      appearance.sidebarCollapsed !==
+                      DEFAULT_APPEARANCE_SETTINGS.sidebarCollapsed
+                    }
+                    onReset={() =>
+                      updateAppearance({
+                        sidebarCollapsed: DEFAULT_APPEARANCE_SETTINGS.sidebarCollapsed,
                       })
                     }
-                  />
-                </div>
-              </div>
-
-              {/* Per-Course Sync Settings */}
-              <div style={styles.settingsCard}>
-                <div style={styles.subsectionTitle}>Per-Course Sync</div>
-                <div style={styles.settingsCardContent}>
-                  <div style={styles.field}>
-                    <label style={styles.label}>Select course to configure</label>
-                    <select
-                      style={styles.select}
-                      value={selectedCourseId || ''}
-                      onChange={(e) =>
-                        handleCourseSelect(e.target.value ? Number(e.target.value) : null)
+                  >
+                    <ToggleSwitch
+                      checked={appearance.sidebarCollapsed}
+                      onChange={(checked) =>
+                        updateAppearance({ sidebarCollapsed: checked })
                       }
+                    />
+                  </SettingRow>
+
+                  <div style={styles.divider} />
+
+                  {/* Dashboard Settings */}
+                  <SettingRow
+                    label="Priority sorting"
+                    description="Sort tasks by urgency and priority score instead of due date only"
+                    isModified={
+                      dashboardSettings.prioritySortingEnabled !==
+                      DEFAULT_DASHBOARD_SETTINGS.prioritySortingEnabled
+                    }
+                    onReset={() =>
+                      updateDashboardSettings({
+                        prioritySortingEnabled:
+                          DEFAULT_DASHBOARD_SETTINGS.prioritySortingEnabled,
+                      })
+                    }
+                  >
+                    <ToggleSwitch
+                      checked={dashboardSettings.prioritySortingEnabled}
+                      onChange={(checked) =>
+                        updateDashboardSettings({ prioritySortingEnabled: checked })
+                      }
+                    />
+                  </SettingRow>
+
+                  <SettingRow
+                    label="Important works threshold"
+                    description="Show tasks with grade weight above this percentage"
+                    isModified={
+                      dashboardSettings.importantWorksThreshold !==
+                      DEFAULT_DASHBOARD_SETTINGS.importantWorksThreshold
+                    }
+                    onReset={() =>
+                      updateDashboardSettings({
+                        importantWorksThreshold:
+                          DEFAULT_DASHBOARD_SETTINGS.importantWorksThreshold,
+                      })
+                    }
+                  >
+                    <SettingSlider
+                      value={dashboardSettings.importantWorksThreshold}
+                      onChange={(v) =>
+                        updateDashboardSettings({ importantWorksThreshold: v })
+                      }
+                      min={0}
+                      max={50}
+                      step={5}
+                      formatValue={(v) => `${v}%`}
+                    />
+                  </SettingRow>
+
+                  <div style={styles.divider} />
+
+                  {/* View Modes */}
+                  <SettingRow
+                    label="Courses view"
+                    description="Default view mode for the courses page"
+                    isModified={
+                      courseSettings.defaultViewMode !==
+                      DEFAULT_COURSE_SETTINGS.defaultViewMode
+                    }
+                    onReset={() =>
+                      updateCourseSettings({
+                        defaultViewMode: DEFAULT_COURSE_SETTINGS.defaultViewMode,
+                      })
+                    }
+                  >
+                    <SettingButtonGroup
+                      value={courseSettings.defaultViewMode}
+                      onChange={(v) =>
+                        updateCourseSettings({ defaultViewMode: v as 'grid' | 'list' })
+                      }
+                      options={[
+                        { value: 'grid', label: 'Grid' },
+                        { value: 'list', label: 'List' },
+                      ]}
+                    />
+                  </SettingRow>
+
+                  <SettingRow
+                    label="Calendar view"
+                    description="Default view when opening the calendar"
+                    isModified={
+                      calendarSettings.defaultViewMode !==
+                      DEFAULT_CALENDAR_SETTINGS.defaultViewMode
+                    }
+                    onReset={() =>
+                      updateCalendarSettings({
+                        defaultViewMode: DEFAULT_CALENDAR_SETTINGS.defaultViewMode,
+                      })
+                    }
+                  >
+                    <SettingButtonGroup
+                      value={calendarSettings.defaultViewMode}
+                      onChange={(v) =>
+                        updateCalendarSettings({ defaultViewMode: v as 'month' | 'week' })
+                      }
+                      options={[
+                        { value: 'month', label: 'Month' },
+                        { value: 'week', label: 'Week' },
+                      ]}
+                    />
+                  </SettingRow>
+
+                  <SettingRow
+                    label="Files view"
+                    description="Default view mode for the files page"
+                    isModified={
+                      fileExplorer.defaultViewMode !==
+                      DEFAULT_FILE_EXPLORER_SETTINGS.defaultViewMode
+                    }
+                    onReset={() =>
+                      updateFileExplorer({
+                        defaultViewMode: DEFAULT_FILE_EXPLORER_SETTINGS.defaultViewMode,
+                      })
+                    }
+                  >
+                    <SettingButtonGroup
+                      value={fileExplorer.defaultViewMode}
+                      onChange={(v) =>
+                        updateFileExplorer({ defaultViewMode: v as 'list' | 'grid' })
+                      }
+                      options={[
+                        { value: 'list', label: 'List' },
+                        { value: 'grid', label: 'Grid' },
+                      ]}
+                    />
+                  </SettingRow>
+
+                  <SettingRow
+                    label="Folder default state"
+                    description="How folders appear when opening the Files page"
+                    isModified={
+                      fileExplorer.defaultState !==
+                      DEFAULT_FILE_EXPLORER_SETTINGS.defaultState
+                    }
+                    onReset={() =>
+                      updateFileExplorer({
+                        defaultState: DEFAULT_FILE_EXPLORER_SETTINGS.defaultState,
+                      })
+                    }
+                  >
+                    <SettingSelect
+                      value={fileExplorer.defaultState}
+                      onChange={(v) =>
+                        updateFileExplorer({
+                          defaultState: v as FileExplorerSettings['defaultState'],
+                        })
+                      }
+                      options={[
+                        { value: 'collapsed', label: 'All Collapsed' },
+                        { value: 'expanded', label: 'All Expanded' },
+                        { value: 'remember', label: 'Remember State' },
+                      ]}
+                    />
+                  </SettingRow>
+                </div>
+              </Accordion.Content>
+            </Accordion.Item>
+          )}
+
+          {/* Academic & Courses */}
+          {shouldShowSection('academic') && (
+            <Accordion.Item value="academic">
+              <Accordion.Trigger
+                icon={CATEGORY_ICONS.academic}
+                badge={<ModifiedBadge count={academicModifiedCount} />}
+              >
+                {SETTINGS_CATEGORIES.academic.label}
+              </Accordion.Trigger>
+              <Accordion.Content>
+                <div style={styles.section}>
+                  <p style={styles.sectionDesc}>
+                    {SETTINGS_CATEGORIES.academic.description}
+                  </p>
+
+                  {/* Target Grade */}
+                  <SettingRow
+                    label="Default target grade"
+                    description="Applied to new courses. Individual targets can be overridden."
+                    isModified={
+                      academic.defaultTargetGrade !==
+                      DEFAULT_ACADEMIC_SETTINGS.defaultTargetGrade
+                    }
+                    onReset={() =>
+                      updateAcademic({
+                        defaultTargetGrade: DEFAULT_ACADEMIC_SETTINGS.defaultTargetGrade,
+                      })
+                    }
+                  >
+                    <SettingSlider
+                      value={academic.defaultTargetGrade}
+                      onChange={(v) => updateAcademic({ defaultTargetGrade: v })}
+                      min={50}
+                      max={100}
+                      step={1}
+                      formatValue={(v) => `${v}%`}
+                    />
+                  </SettingRow>
+
+                  {/* Term Selection */}
+                  <SettingRow
+                    label="Semester selection"
+                    description="Which semester's courses to display"
+                    isModified={
+                      academic.termSelection !== DEFAULT_ACADEMIC_SETTINGS.termSelection
+                    }
+                    onReset={() =>
+                      updateAcademic({
+                        termSelection: DEFAULT_ACADEMIC_SETTINGS.termSelection,
+                      })
+                    }
+                  >
+                    <select
+                      value={academic.termSelection}
+                      onChange={(e) => updateAcademic({ termSelection: e.target.value })}
+                      style={styles.select}
                     >
-                      <option value="">-- Select a course --</option>
-                      {courses
-                        .filter((c) => !c.isHidden)
-                        .sort((a, b) => a.name.localeCompare(b.name))
-                        .map((course) => (
-                          <option key={course.id} value={course.id}>
-                            {course.code} - {course.name}
-                          </option>
-                        ))}
+                      <option value="auto">Auto-detect current</option>
+                      <option value="all">Show all semesters</option>
+                      {enrollmentTerms.length > 0 && (
+                        <optgroup label="Available Semesters">
+                          {enrollmentTerms.map((term) => (
+                            <option key={term.externalId} value={term.externalId}>
+                              {term.name}
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
                     </select>
-                  </div>
+                  </SettingRow>
 
-                  {selectedCourseId && !isLoadingCourseSettings && (
-                    <>
-                      <div style={styles.inlineSettingsDivider} />
+                  <div style={styles.divider} />
 
-                      <div style={styles.field}>
-                        <label style={styles.label}>Auto-fill due dates</label>
-                        <p style={styles.fieldDesc}>
-                          Assign today 23:59 to tasks without due dates
-                        </p>
-                        <div style={styles.inlineRadioGroup}>
-                          <label style={styles.inlineRadioLabel}>
-                            <input
-                              type="radio"
-                              name="autoAssignDueDate"
-                              checked={perCourseSyncSettings.autoAssignDueDate === null}
-                              onChange={() =>
-                                updateCourseSpecificSettings({ autoAssignDueDate: null })
-                              }
-                              style={styles.radio}
-                            />
-                            <span>Use default</span>
-                          </label>
-                          <label style={styles.inlineRadioLabel}>
-                            <input
-                              type="radio"
-                              name="autoAssignDueDate"
-                              checked={perCourseSyncSettings.autoAssignDueDate === 1}
-                              onChange={() =>
-                                updateCourseSpecificSettings({ autoAssignDueDate: 1 })
-                              }
-                              style={styles.radio}
-                            />
-                            <span>Enabled</span>
-                          </label>
-                          <label style={styles.inlineRadioLabel}>
-                            <input
-                              type="radio"
-                              name="autoAssignDueDate"
-                              checked={perCourseSyncSettings.autoAssignDueDate === 0}
-                              onChange={() =>
-                                updateCourseSpecificSettings({ autoAssignDueDate: 0 })
-                              }
-                              style={styles.radio}
-                            />
-                            <span>Disabled</span>
-                          </label>
-                        </div>
+                  {/* Course Visibility */}
+                  <SettingRow
+                    label="Show hidden courses"
+                    description="Display hidden courses in the courses list by default"
+                    isModified={
+                      courseSettings.showHiddenByDefault !==
+                      DEFAULT_COURSE_SETTINGS.showHiddenByDefault
+                    }
+                    onReset={() =>
+                      updateCourseSettings({
+                        showHiddenByDefault: DEFAULT_COURSE_SETTINGS.showHiddenByDefault,
+                      })
+                    }
+                  >
+                    <ToggleSwitch
+                      checked={courseSettings.showHiddenByDefault}
+                      onChange={(checked) =>
+                        updateCourseSettings({ showHiddenByDefault: checked })
+                      }
+                    />
+                  </SettingRow>
+
+                  {/* Auto-fill due dates */}
+                  <SettingRow
+                    label="Auto-fill due dates"
+                    description="Set today 23:59 as due date for coursework without one"
+                    isModified={
+                      syncPrefs.autoAssignDueDate !==
+                      DEFAULT_SYNC_PREFERENCES.autoAssignDueDate
+                    }
+                    onReset={() =>
+                      updateSyncPrefs({
+                        autoAssignDueDate: DEFAULT_SYNC_PREFERENCES.autoAssignDueDate,
+                      })
+                    }
+                  >
+                    <ToggleSwitch
+                      checked={syncPrefs.autoAssignDueDate}
+                      onChange={(checked) =>
+                        updateSyncPrefs({ autoAssignDueDate: checked })
+                      }
+                    />
+                  </SettingRow>
+
+                  <div style={styles.divider} />
+
+                  {/* Download Location */}
+                  <SettingRow
+                    label="Download location"
+                    description="Where downloaded files are stored on your computer"
+                    vertical
+                  >
+                    <div style={styles.downloadLocationRow}>
+                      <div style={styles.downloadLocationPath}>
+                        {currentDownloadPath || 'Loading...'}
                       </div>
-
-                      <div style={styles.inlineSettingsDivider} />
-
-                      <div style={styles.inlineToggle}>
-                        <div style={styles.inlineToggleText}>
-                          <span style={styles.inlineToggleLabel}>
-                            Allow Canvas to override auto-filled values
-                          </span>
-                          <span style={styles.inlineToggleDesc}>
-                            Canvas updates will replace estimated values silently
-                          </span>
-                        </div>
-                        <button
-                          style={{
-                            ...styles.toggleSwitch,
-                            backgroundColor:
-                              perCourseSyncSettings.allowGuessedOverride === 1
-                                ? 'var(--color-blue)'
-                                : 'var(--bg-tertiary)',
-                          }}
-                          onClick={() =>
-                            updateCourseSpecificSettings({
-                              allowGuessedOverride:
-                                perCourseSyncSettings.allowGuessedOverride === 1 ? 0 : 1,
-                            })
-                          }
-                        >
-                          <div
-                            style={{
-                              ...styles.toggleKnob,
-                              transform:
-                                perCourseSyncSettings.allowGuessedOverride === 1
-                                  ? 'translateX(20px)'
-                                  : 'translateX(0)',
-                            }}
-                          />
-                        </button>
-                      </div>
-                    </>
-                  )}
-
-                  {selectedCourseId && isLoadingCourseSettings && (
-                    <div style={styles.loadingRow}>
-                      <Loader2
-                        size={16}
-                        style={{ animation: 'spin 1s linear infinite' }}
-                      />
-                      Loading course settings...
+                      <button
+                        style={styles.changeLocationBtn}
+                        onClick={handleChangeDownloadLocation}
+                      >
+                        <FolderOpen size={14} /> Change
+                      </button>
                     </div>
-                  )}
+                  </SettingRow>
 
-                  {!selectedCourseId && (
-                    <p style={styles.fieldDesc}>
-                      Select a course above to configure its sync settings
-                    </p>
-                  )}
-                </div>
-              </div>
+                  {/* Link Behavior */}
+                  <SettingRow
+                    label="Link click behavior"
+                    description="How to handle clicks on links in course content"
+                    isModified={
+                      contentSettings.linkBehavior !==
+                      DEFAULT_CONTENT_SETTINGS.linkBehavior
+                    }
+                    onReset={() =>
+                      updateContentSettings({
+                        linkBehavior: DEFAULT_CONTENT_SETTINGS.linkBehavior,
+                      })
+                    }
+                  >
+                    <SettingSelect
+                      value={contentSettings.linkBehavior}
+                      onChange={(v) =>
+                        updateContentSettings({
+                          linkBehavior: v as ContentSettings['linkBehavior'],
+                        })
+                      }
+                      options={[
+                        { value: 'always-external', label: 'Open in browser' },
+                        { value: 'prefer-local', label: 'Prefer local' },
+                      ]}
+                    />
+                  </SettingRow>
 
-              {/* Course Visibility */}
-              <div style={styles.settingsCard}>
-                <div style={styles.subsectionTitle}>Visibility</div>
-                <p style={styles.fieldDesc}>
-                  Hidden courses won't appear in Dashboard, Tasks, or Announcements.
-                </p>
-                <div style={styles.courseList}>
-                  {courses.length === 0 ? (
-                    <p style={styles.emptyText}>No courses synced yet.</p>
-                  ) : (
-                    courses.map((course: Course) => (
-                      <div key={course.id} style={styles.courseRow}>
-                        <div style={styles.courseInfo}>
-                          <span
-                            style={{
-                              ...styles.courseDot,
-                              backgroundColor: course.color || 'var(--color-navy)',
-                            }}
-                          />
-                          <div style={styles.courseText}>
-                            <span style={styles.courseCode}>{course.code}</span>
-                            <span style={styles.courseName}>{course.name}</span>
+                  <div style={styles.divider} />
+
+                  {/* Course Visibility List */}
+                  <div style={styles.subsectionTitle}>Course Visibility</div>
+                  <p style={styles.fieldDesc}>
+                    Hidden courses won't appear in Dashboard, Tasks, or Announcements.
+                  </p>
+                  <div style={styles.courseList}>
+                    {courses.length === 0 ? (
+                      <p style={styles.emptyText}>No courses synced yet.</p>
+                    ) : (
+                      courses.map((course: Course) => (
+                        <div key={course.id} style={styles.courseRow}>
+                          <div style={styles.courseInfo}>
+                            <span
+                              style={{
+                                ...styles.courseDot,
+                                backgroundColor: course.color || 'var(--color-navy)',
+                              }}
+                            />
+                            <div style={styles.courseText}>
+                              <span style={styles.courseCode}>{course.code}</span>
+                              <span style={styles.courseName}>{course.name}</span>
+                            </div>
                           </div>
+                          <button
+                            style={{
+                              ...styles.visibilityBtn,
+                              color: course.isHidden
+                                ? 'var(--text-muted)'
+                                : 'var(--color-success)',
+                            }}
+                            onClick={() =>
+                              handleToggleCourseVisibility(course.id, course.isHidden)
+                            }
+                            title={course.isHidden ? 'Show course' : 'Hide course'}
+                          >
+                            {course.isHidden ? <EyeOff size={18} /> : <Eye size={18} />}
+                          </button>
                         </div>
-                        <button
-                          style={{
-                            ...styles.visibilityBtn,
-                            color: course.isHidden
-                              ? 'var(--text-muted)'
-                              : 'var(--color-success)',
-                          }}
-                          onClick={() =>
-                            handleToggleCourseVisibility(course.id, course.isHidden)
-                          }
-                          title={course.isHidden ? 'Show course' : 'Hide course'}
-                        >
-                          {course.isHidden ? <EyeOff size={18} /> : <Eye size={18} />}
-                        </button>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {activeSection === 'calendar' && (
-            <div style={styles.section}>
-              <h3 style={styles.sectionTitle}>Calendar Settings</h3>
-              <p style={styles.sectionDesc}>Configure calendar display preferences.</p>
-
-              <div style={styles.field}>
-                <label style={styles.label}>Default view</label>
-                <p style={styles.fieldDesc}>
-                  The view shown when opening the calendar page.
-                </p>
-                <div style={styles.viewModeToggle}>
-                  <button
-                    style={{
-                      ...styles.viewModeBtn,
-                      backgroundColor:
-                        calendarSettings.defaultViewMode === 'month'
-                          ? 'var(--color-navy)'
-                          : 'transparent',
-                      color:
-                        calendarSettings.defaultViewMode === 'month'
-                          ? 'white'
-                          : 'var(--text-secondary)',
-                    }}
-                    onClick={() => updateCalendarSettings({ defaultViewMode: 'month' })}
-                  >
-                    Month
-                  </button>
-                  <button
-                    style={{
-                      ...styles.viewModeBtn,
-                      backgroundColor:
-                        calendarSettings.defaultViewMode === 'week'
-                          ? 'var(--color-navy)'
-                          : 'transparent',
-                      color:
-                        calendarSettings.defaultViewMode === 'week'
-                          ? 'white'
-                          : 'var(--text-secondary)',
-                    }}
-                    onClick={() => updateCalendarSettings({ defaultViewMode: 'week' })}
-                  >
-                    Week
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {activeSection === 'files' && (
-            <div style={styles.section}>
-              <h3 style={styles.sectionTitle}>File Explorer</h3>
-              <p style={styles.sectionDesc}>
-                Configure file browser behavior and defaults.
-              </p>
-
-              <div style={styles.field}>
-                <label style={styles.label}>Download location</label>
-                <p style={styles.fieldDesc}>
-                  Where downloaded files are stored on your computer.
-                </p>
-                <div style={styles.downloadLocationRow}>
-                  <div style={styles.downloadLocationPath}>
-                    {currentDownloadPath || 'Loading...'}
+                      ))
+                    )}
                   </div>
-                  <button
-                    style={styles.changeLocationBtn}
-                    onClick={handleChangeDownloadLocation}
-                  >
-                    <FolderOpen size={14} />
-                    Change
-                  </button>
                 </div>
-              </div>
+              </Accordion.Content>
+            </Accordion.Item>
+          )}
 
-              <div style={styles.divider} />
+          {/* Notifications */}
+          {shouldShowSection('notifications') && (
+            <Accordion.Item value="notifications">
+              <Accordion.Trigger
+                icon={CATEGORY_ICONS.notifications}
+                badge={<ModifiedBadge count={notificationsModifiedCount} />}
+              >
+                {SETTINGS_CATEGORIES.notifications.label}
+              </Accordion.Trigger>
+              <Accordion.Content>
+                <div style={styles.section}>
+                  <p style={styles.sectionDesc}>
+                    {SETTINGS_CATEGORIES.notifications.description}
+                  </p>
 
-              <div style={styles.field}>
-                <label style={styles.label}>Default folder state</label>
-                <p style={styles.fieldDesc}>
-                  How folders appear when opening the Files page.
-                </p>
-                <div style={styles.radioGroup}>
-                  {[
-                    {
-                      value: 'collapsed',
-                      label: 'All Collapsed',
-                      desc: 'Start with all folders closed',
-                    },
-                    {
-                      value: 'expanded',
-                      label: 'All Expanded',
-                      desc: 'Start with all folders open',
-                    },
-                    {
-                      value: 'remember',
-                      label: 'Remember State',
-                      desc: "Restore last session's state",
-                    },
-                  ].map((option) => (
-                    <label
-                      key={option.value}
-                      style={{
-                        ...styles.radioOption,
-                        borderColor:
-                          fileExplorer.defaultState === option.value
-                            ? 'var(--color-blue)'
-                            : 'var(--border-default)',
-                        backgroundColor:
-                          fileExplorer.defaultState === option.value
-                            ? 'rgba(0, 127, 163, 0.1)'
-                            : 'transparent',
-                      }}
-                    >
-                      <input
-                        type="radio"
-                        name="defaultState"
-                        value={option.value}
-                        checked={fileExplorer.defaultState === option.value}
-                        onChange={() =>
-                          updateFileExplorer({
-                            defaultState:
-                              option.value as FileExplorerSettings['defaultState'],
+                  <SettingRow
+                    label="Enable notifications"
+                    description="Show desktop notifications"
+                    isModified={
+                      notifications.enabled !== DEFAULT_NOTIFICATION_SETTINGS.enabled
+                    }
+                    onReset={() =>
+                      updateNotifications({
+                        enabled: DEFAULT_NOTIFICATION_SETTINGS.enabled,
+                      })
+                    }
+                  >
+                    <ToggleSwitch
+                      checked={notifications.enabled}
+                      onChange={(checked) => updateNotifications({ enabled: checked })}
+                    />
+                  </SettingRow>
+
+                  {notifications.enabled && (
+                    <>
+                      <div style={styles.divider} />
+                      <div style={styles.subsectionTitle}>Alert types</div>
+
+                      <SettingRow
+                        label="Priority alerts"
+                        description="Intelligence flags high-priority or at-risk tasks"
+                        isModified={
+                          notifications.priorityAlerts !==
+                          DEFAULT_NOTIFICATION_SETTINGS.priorityAlerts
+                        }
+                        onReset={() =>
+                          updateNotifications({
+                            priorityAlerts: DEFAULT_NOTIFICATION_SETTINGS.priorityAlerts,
                           })
                         }
-                        style={styles.radioInput}
-                      />
-                      <div>
-                        <div style={styles.radioLabel}>{option.label}</div>
-                        <div style={styles.radioDesc}>{option.desc}</div>
-                      </div>
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              <div style={styles.divider} />
-
-              <div style={styles.field}>
-                <label style={styles.label}>Default view mode</label>
-                <div style={styles.viewModeToggle}>
-                  <button
-                    style={{
-                      ...styles.viewModeBtn,
-                      backgroundColor:
-                        fileExplorer.defaultViewMode === 'list'
-                          ? 'var(--color-navy)'
-                          : 'transparent',
-                      color:
-                        fileExplorer.defaultViewMode === 'list'
-                          ? 'white'
-                          : 'var(--text-secondary)',
-                    }}
-                    onClick={() => updateFileExplorer({ defaultViewMode: 'list' })}
-                  >
-                    List
-                  </button>
-                  <button
-                    style={{
-                      ...styles.viewModeBtn,
-                      backgroundColor:
-                        fileExplorer.defaultViewMode === 'grid'
-                          ? 'var(--color-navy)'
-                          : 'transparent',
-                      color:
-                        fileExplorer.defaultViewMode === 'grid'
-                          ? 'white'
-                          : 'var(--text-secondary)',
-                    }}
-                    onClick={() => updateFileExplorer({ defaultViewMode: 'grid' })}
-                  >
-                    Grid
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {activeSection === 'appearance' && (
-            <div style={styles.section}>
-              <h3 style={styles.sectionTitle}>Appearance</h3>
-              <p style={styles.sectionDesc}>Customize the look and feel.</p>
-
-              <div style={styles.field}>
-                <label style={styles.label}>Theme</label>
-                <div style={styles.themeOptions}>
-                  {themeOptions.map((option) => {
-                    const Icon = option.icon;
-                    const isActive = appearance.theme === option.value;
-                    return (
-                      <button
-                        key={option.value}
-                        style={{
-                          ...styles.themeOption,
-                          ...(isActive ? styles.themeOptionActive : {}),
-                        }}
-                        onClick={() => updateAppearance({ theme: option.value })}
                       >
-                        <Icon size={18} />
-                        <span>{option.label}</span>
-                      </button>
-                    );
-                  })}
+                        <ToggleSwitch
+                          checked={notifications.priorityAlerts}
+                          onChange={(checked) =>
+                            updateNotifications({ priorityAlerts: checked })
+                          }
+                        />
+                      </SettingRow>
+
+                      <SettingRow
+                        label="Sync status"
+                        description="Notify on sync success or failure"
+                        isModified={
+                          notifications.syncStatus !==
+                          DEFAULT_NOTIFICATION_SETTINGS.syncStatus
+                        }
+                        onReset={() =>
+                          updateNotifications({
+                            syncStatus: DEFAULT_NOTIFICATION_SETTINGS.syncStatus,
+                          })
+                        }
+                      >
+                        <ToggleSwitch
+                          checked={notifications.syncStatus}
+                          onChange={(checked) =>
+                            updateNotifications({ syncStatus: checked })
+                          }
+                        />
+                      </SettingRow>
+
+                      <SettingRow
+                        label="Due date reminders"
+                        description="Smart reminders before assignments are due"
+                        isModified={
+                          notifications.dueDateReminders !==
+                          DEFAULT_NOTIFICATION_SETTINGS.dueDateReminders
+                        }
+                        onReset={() =>
+                          updateNotifications({
+                            dueDateReminders:
+                              DEFAULT_NOTIFICATION_SETTINGS.dueDateReminders,
+                          })
+                        }
+                      >
+                        <ToggleSwitch
+                          checked={notifications.dueDateReminders}
+                          onChange={(checked) =>
+                            updateNotifications({ dueDateReminders: checked })
+                          }
+                        />
+                      </SettingRow>
+
+                      <SettingRow
+                        label="Grade alerts"
+                        description="Notify when new grades are posted"
+                        isModified={
+                          notifications.gradeAlerts !==
+                          DEFAULT_NOTIFICATION_SETTINGS.gradeAlerts
+                        }
+                        onReset={() =>
+                          updateNotifications({
+                            gradeAlerts: DEFAULT_NOTIFICATION_SETTINGS.gradeAlerts,
+                          })
+                        }
+                      >
+                        <ToggleSwitch
+                          checked={notifications.gradeAlerts}
+                          onChange={(checked) =>
+                            updateNotifications({ gradeAlerts: checked })
+                          }
+                        />
+                      </SettingRow>
+
+                      <div style={styles.divider} />
+                      <div style={styles.subsectionTitle}>Intelligence alerts</div>
+
+                      <SettingRow
+                        label="Workload predictions"
+                        description="AI predicts busy periods and suggests planning"
+                        isModified={
+                          notifications.workloadPredictions !==
+                          DEFAULT_NOTIFICATION_SETTINGS.workloadPredictions
+                        }
+                        onReset={() =>
+                          updateNotifications({
+                            workloadPredictions:
+                              DEFAULT_NOTIFICATION_SETTINGS.workloadPredictions,
+                          })
+                        }
+                      >
+                        <ToggleSwitch
+                          checked={notifications.workloadPredictions}
+                          onChange={(checked) =>
+                            updateNotifications({ workloadPredictions: checked })
+                          }
+                        />
+                      </SettingRow>
+
+                      <SettingRow
+                        label="Risk warnings"
+                        description="Alert when predicted time exceeds remaining time"
+                        isModified={
+                          notifications.riskWarnings !==
+                          DEFAULT_NOTIFICATION_SETTINGS.riskWarnings
+                        }
+                        onReset={() =>
+                          updateNotifications({
+                            riskWarnings: DEFAULT_NOTIFICATION_SETTINGS.riskWarnings,
+                          })
+                        }
+                      >
+                        <ToggleSwitch
+                          checked={notifications.riskWarnings}
+                          onChange={(checked) =>
+                            updateNotifications({ riskWarnings: checked })
+                          }
+                        />
+                      </SettingRow>
+
+                      <div style={styles.divider} />
+                      <div style={styles.subsectionTitle}>Smart quiet mode</div>
+                      <p style={styles.quietModeDesc}>
+                        Automatically suppress notifications when:
+                      </p>
+
+                      <SettingRow
+                        label="Fullscreen mode"
+                        description="Pause during presentations or focus sessions"
+                        isModified={
+                          notifications.quietWhenFullscreen !==
+                          DEFAULT_NOTIFICATION_SETTINGS.quietWhenFullscreen
+                        }
+                        onReset={() =>
+                          updateNotifications({
+                            quietWhenFullscreen:
+                              DEFAULT_NOTIFICATION_SETTINGS.quietWhenFullscreen,
+                          })
+                        }
+                      >
+                        <ToggleSwitch
+                          checked={notifications.quietWhenFullscreen}
+                          onChange={(checked) =>
+                            updateNotifications({ quietWhenFullscreen: checked })
+                          }
+                        />
+                      </SettingRow>
+
+                      <SettingRow
+                        label="On battery power"
+                        description="Pause when device is unplugged"
+                        isModified={
+                          notifications.quietWhenUnplugged !==
+                          DEFAULT_NOTIFICATION_SETTINGS.quietWhenUnplugged
+                        }
+                        onReset={() =>
+                          updateNotifications({
+                            quietWhenUnplugged:
+                              DEFAULT_NOTIFICATION_SETTINGS.quietWhenUnplugged,
+                          })
+                        }
+                      >
+                        <ToggleSwitch
+                          checked={notifications.quietWhenUnplugged}
+                          onChange={(checked) =>
+                            updateNotifications({ quietWhenUnplugged: checked })
+                          }
+                        />
+                      </SettingRow>
+
+                      <SettingRow
+                        label="Busy or Exam status"
+                        description="Pause when inferred status is Busy or Exam"
+                        isModified={
+                          notifications.quietWhenBusy !==
+                          DEFAULT_NOTIFICATION_SETTINGS.quietWhenBusy
+                        }
+                        onReset={() =>
+                          updateNotifications({
+                            quietWhenBusy: DEFAULT_NOTIFICATION_SETTINGS.quietWhenBusy,
+                          })
+                        }
+                      >
+                        <ToggleSwitch
+                          checked={notifications.quietWhenBusy}
+                          onChange={(checked) =>
+                            updateNotifications({ quietWhenBusy: checked })
+                          }
+                        />
+                      </SettingRow>
+                    </>
+                  )}
                 </div>
-              </div>
-
-              <ToggleRow
-                label="Collapsed sidebar by default"
-                description="Start with sidebar collapsed on launch"
-                checked={appearance.sidebarCollapsed}
-                onChange={() =>
-                  updateAppearance({ sidebarCollapsed: !appearance.sidebarCollapsed })
-                }
-              />
-            </div>
+              </Accordion.Content>
+            </Accordion.Item>
           )}
+        </Accordion>
 
-          {activeSection === 'notifications' && (
-            <div style={styles.section}>
-              <h3 style={styles.sectionTitle}>Notifications</h3>
-              <p style={styles.sectionDesc}>Configure alerts and smart notifications.</p>
+        {/* No search results message */}
+        {hasSearchResults && filteredSettings?.length === 0 && (
+          <div style={styles.noResults}>
+            <p>No settings found for "{searchQuery}"</p>
+            <button style={styles.clearSearchBtn} onClick={() => setSearchQuery('')}>
+              Clear search
+            </button>
+          </div>
+        )}
+      </div>
 
-              <ToggleRow
-                label="Enable notifications"
-                description="Show desktop notifications"
-                checked={notifications.enabled}
-                onChange={() => updateNotifications({ enabled: !notifications.enabled })}
-              />
-
-              {notifications.enabled && (
-                <>
-                  <div style={styles.divider} />
-                  <div style={styles.subsectionTitle}>Alert types</div>
-
-                  <ToggleRow
-                    label="Priority alerts"
-                    description="Intelligence flags high-priority or at-risk tasks"
-                    checked={notifications.priorityAlerts}
-                    onChange={() =>
-                      updateNotifications({
-                        priorityAlerts: !notifications.priorityAlerts,
-                      })
-                    }
-                  />
-
-                  <ToggleRow
-                    label="Sync status"
-                    description="Notify on sync success or failure"
-                    checked={notifications.syncStatus}
-                    onChange={() =>
-                      updateNotifications({ syncStatus: !notifications.syncStatus })
-                    }
-                  />
-
-                  <ToggleRow
-                    label="Due date reminders"
-                    description="Smart reminders before assignments are due"
-                    checked={notifications.dueDateReminders}
-                    onChange={() =>
-                      updateNotifications({
-                        dueDateReminders: !notifications.dueDateReminders,
-                      })
-                    }
-                  />
-
-                  <ToggleRow
-                    label="Grade alerts"
-                    description="Notify when new grades are posted"
-                    checked={notifications.gradeAlerts}
-                    onChange={() =>
-                      updateNotifications({ gradeAlerts: !notifications.gradeAlerts })
-                    }
-                  />
-
-                  <div style={styles.divider} />
-                  <div style={styles.subsectionTitle}>Intelligence alerts</div>
-
-                  <ToggleRow
-                    label="Workload predictions"
-                    description="AI predicts busy periods and suggests planning"
-                    checked={notifications.workloadPredictions}
-                    onChange={() =>
-                      updateNotifications({
-                        workloadPredictions: !notifications.workloadPredictions,
-                      })
-                    }
-                  />
-
-                  <ToggleRow
-                    label="Risk warnings"
-                    description="Alert when predicted time exceeds remaining time"
-                    checked={notifications.riskWarnings}
-                    onChange={() =>
-                      updateNotifications({ riskWarnings: !notifications.riskWarnings })
-                    }
-                  />
-
-                  <div style={styles.divider} />
-                  <div style={styles.subsectionTitle}>Smart quiet mode</div>
-                  <p style={styles.quietModeDesc}>
-                    Automatically suppress notifications when:
-                  </p>
-
-                  <ToggleRow
-                    label="Device unplugged"
-                    description="Pause when on battery power"
-                    checked={notifications.quietWhenUnplugged}
-                    onChange={() =>
-                      updateNotifications({
-                        quietWhenUnplugged: !notifications.quietWhenUnplugged,
-                      })
-                    }
-                  />
-
-                  <ToggleRow
-                    label="Fullscreen mode"
-                    description="Pause during presentations or focus sessions"
-                    checked={notifications.quietWhenFullscreen}
-                    onChange={() =>
-                      updateNotifications({
-                        quietWhenFullscreen: !notifications.quietWhenFullscreen,
-                      })
-                    }
-                  />
-
-                  <ToggleRow
-                    label="Busy or Exam status"
-                    description="Pause when inferred status is Busy or Exam"
-                    checked={notifications.quietWhenBusy}
-                    onChange={() =>
-                      updateNotifications({ quietWhenBusy: !notifications.quietWhenBusy })
-                    }
-                  />
-                </>
-              )}
-            </div>
-          )}
+      {/* Footer */}
+      <div style={styles.footer}>
+        <div style={styles.footerLeft}>
+          <button style={styles.footerButton} onClick={handleExportSettings}>
+            <Upload size={14} /> Export Settings
+          </button>
+          <button style={styles.footerButton} onClick={handleImportSettings}>
+            <Download size={14} /> Import Settings
+          </button>
+        </div>
+        <div style={styles.footerRight}>
+          <button
+            style={styles.footerButton}
+            onClick={handleExportDatabase}
+            disabled={isExporting}
+          >
+            <Database size={14} /> Backup Data
+          </button>
+          <button
+            style={{ ...styles.footerButton, ...styles.dangerButtonSmall }}
+            onClick={() => setShowClearDataConfirm(true)}
+          >
+            <RotateCcw size={14} /> Reset All
+          </button>
         </div>
       </div>
+
+      {exportMessage && (
+        <div
+          style={{
+            ...styles.exportMessage,
+            backgroundColor:
+              exportMessage.type === 'success'
+                ? 'var(--color-success-bg)'
+                : 'var(--color-error-bg)',
+            color:
+              exportMessage.type === 'success'
+                ? 'var(--color-success)'
+                : 'var(--color-error)',
+          }}
+        >
+          {exportMessage.text}
+        </div>
+      )}
+
+      {/* Token Replacement Modal */}
+      {showTokenReplaceModal && (
+        <div
+          style={styles.tokenModalOverlay}
+          onClick={() => setShowTokenReplaceModal(false)}
+        >
+          <div style={styles.tokenModal} onClick={(e) => e.stopPropagation()}>
+            <div style={styles.tokenModalHeader}>
+              <h4 style={styles.tokenModalTitle}>Replace Canvas Token</h4>
+              <button
+                style={styles.tokenModalClose}
+                onClick={() => setShowTokenReplaceModal(false)}
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <p style={styles.tokenModalDesc}>
+              Enter your new Canvas API token. You can generate one from your Canvas
+              account settings.
+            </p>
+            <div style={styles.field}>
+              <label style={styles.label}>New Access Token</label>
+              <input
+                type="password"
+                value={newToken}
+                onChange={(e) => {
+                  setNewToken(e.target.value);
+                  setNewTokenValidation({ valid: null, userName: null, error: null });
+                }}
+                placeholder="Enter your new Canvas access token"
+                style={styles.input}
+                autoFocus
+              />
+            </div>
+            {newTokenValidation.error && (
+              <div style={styles.error}>
+                <AlertCircle size={14} /> {newTokenValidation.error}
+              </div>
+            )}
+            {newTokenValidation.valid && (
+              <div style={styles.tokenSuccess}>
+                <Check size={14} />
+                Token valid
+                {newTokenValidation.userName && ` for ${newTokenValidation.userName}`}
+              </div>
+            )}
+            <div style={styles.tokenModalButtons}>
+              {!newTokenValidation.valid ? (
+                <button
+                  style={{
+                    ...styles.primaryButton,
+                    opacity: isValidatingNewToken || !newToken ? 0.6 : 1,
+                  }}
+                  onClick={handleValidateNewToken}
+                  disabled={isValidatingNewToken || !newToken}
+                >
+                  {isValidatingNewToken ? (
+                    <>
+                      <Loader2
+                        size={14}
+                        style={{ animation: 'spin 1s linear infinite' }}
+                      />{' '}
+                      Validating...
+                    </>
+                  ) : (
+                    <>
+                      <ShieldCheck size={14} /> Validate Token
+                    </>
+                  )}
+                </button>
+              ) : (
+                <button
+                  style={{ ...styles.primaryButton, opacity: isReplacingToken ? 0.6 : 1 }}
+                  onClick={handleReplaceToken}
+                  disabled={isReplacingToken}
+                >
+                  {isReplacingToken ? (
+                    <>
+                      <Loader2
+                        size={14}
+                        style={{ animation: 'spin 1s linear infinite' }}
+                      />{' '}
+                      Replacing...
+                    </>
+                  ) : (
+                    <>
+                      <Key size={14} /> Replace Token
+                    </>
+                  )}
+                </button>
+              )}
+              <button
+                style={styles.cancelButton}
+                onClick={() => setShowTokenReplaceModal(false)}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Clear Data Confirmation */}
+      <ConfirmDialog
+        isOpen={showClearDataConfirm}
+        type="danger"
+        title="Reset All Data"
+        message={
+          deleteTokenOnClear
+            ? 'This will delete all synced data including courses, tasks, files, announcements, AND your Canvas API token. You will need to re-authenticate after this action. This action cannot be undone.'
+            : 'This will delete all synced data including courses, tasks, files, and announcements. This action cannot be undone. Your Canvas connection will be preserved.'
+        }
+        confirmText="Reset All Data"
+        cancelText="Cancel"
+        onCancel={() => {
+          setShowClearDataConfirm(false);
+          setDeleteTokenOnClear(false);
+        }}
+        onConfirm={async () => {
+          setShowClearDataConfirm(false);
+          try {
+            await window.api.clearAllData({ deleteToken: deleteTokenOnClear });
+            if (!deleteTokenOnClear) {
+              const savedCanvasUrl = localStorage.getItem('canvasUrl');
+              localStorage.clear();
+              if (savedCanvasUrl) {
+                localStorage.setItem('canvasUrl', savedCanvasUrl);
+              }
+              window.location.reload();
+            }
+            setDeleteTokenOnClear(false);
+          } catch (error) {
+            console.error('Failed to clear data:', error);
+          }
+        }}
+      >
+        <label style={styles.checkboxLabel}>
+          <input
+            type="checkbox"
+            checked={deleteTokenOnClear}
+            onChange={(e) => setDeleteTokenOnClear(e.target.checked)}
+            style={styles.checkbox}
+          />
+          Also delete Canvas API token (requires re-authentication)
+        </label>
+      </ConfirmDialog>
     </>
   );
 
-  // Render with appropriate wrapper based on mode
   if (isFullPage) {
     return <div style={styles.fullPage}>{content}</div>;
   }
@@ -2505,38 +1969,9 @@ export function SettingsModal({
   );
 }
 
-// Toggle row component
-interface ToggleRowProps {
-  label: string;
-  description: string;
-  checked: boolean;
-  onChange: () => void;
-}
-
-function ToggleRow({ label, description, checked, onChange }: ToggleRowProps) {
-  return (
-    <div style={styles.toggle}>
-      <div style={styles.toggleText}>
-        <div style={styles.toggleLabel}>{label}</div>
-        <div style={styles.toggleDesc}>{description}</div>
-      </div>
-      <button
-        style={{
-          ...styles.toggleSwitch,
-          backgroundColor: checked ? 'var(--color-blue)' : 'var(--color-gray-300)',
-        }}
-        onClick={onChange}
-      >
-        <div
-          style={{
-            ...styles.toggleKnob,
-            transform: checked ? 'translateX(20px)' : 'translateX(0)',
-          }}
-        />
-      </button>
-    </div>
-  );
-}
+// =============================================================================
+// STYLES
+// =============================================================================
 
 const styles: Record<string, React.CSSProperties> = {
   overlay: {
@@ -2555,8 +1990,8 @@ const styles: Record<string, React.CSSProperties> = {
   modal: {
     backgroundColor: 'var(--bg-card)',
     borderRadius: 'var(--radius-xl)',
-    width: 'min(700px, 90vw)',
-    height: 'min(600px, 80vh)',
+    width: 'min(640px, 90vw)',
+    maxHeight: '85vh',
     display: 'flex',
     flexDirection: 'column',
     boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
@@ -2570,18 +2005,6 @@ const styles: Record<string, React.CSSProperties> = {
     overflow: 'hidden',
   },
 
-  pageHeader: {
-    marginBottom: 'var(--space-4)',
-    flexShrink: 0,
-  },
-
-  pageTitle: {
-    margin: 0,
-    fontSize: 'var(--text-2xl)',
-    fontWeight: 'var(--font-bold)',
-    color: 'var(--text-primary)',
-  },
-
   header: {
     display: 'flex',
     alignItems: 'center',
@@ -2591,10 +2014,28 @@ const styles: Record<string, React.CSSProperties> = {
     flexShrink: 0,
   },
 
+  pageHeader: {
+    marginBottom: 'var(--space-4)',
+    flexShrink: 0,
+  },
+
+  headerContent: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-3)',
+  },
+
   title: {
     margin: 0,
     fontSize: 'var(--text-lg)',
     fontWeight: 'var(--font-semibold)',
+    color: 'var(--text-primary)',
+  },
+
+  pageTitle: {
+    margin: 0,
+    fontSize: 'var(--text-2xl)',
+    fontWeight: 'var(--font-bold)',
     color: 'var(--text-primary)',
   },
 
@@ -2610,106 +2051,59 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: 'center',
   },
 
+  searchContainer: {
+    padding: 'var(--space-3) var(--space-5)',
+    borderBottom: '1px solid var(--border-default)',
+    flexShrink: 0,
+  },
+
   content: {
-    display: 'flex',
     flex: 1,
-    overflow: 'hidden',
-  },
-
-  sidebar: {
-    width: '160px',
-    flexShrink: 0,
-    borderRight: '1px solid var(--border-default)',
-    padding: 'var(--space-3)',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 'var(--space-1)',
-  },
-
-  sidebarItem: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 'var(--space-2)',
-    padding: 'var(--space-2) var(--space-3)',
-    backgroundColor: 'transparent',
-    border: 'none',
-    borderRadius: 'var(--radius-md)',
-    cursor: 'pointer',
-    color: 'var(--text-secondary)',
-    fontSize: 'var(--text-sm)',
-    textAlign: 'left' as const,
-    width: '100%',
-    transition: 'background-color var(--transition-fast), color var(--transition-fast)',
-    outline: 'none',
-  },
-
-  sidebarItemActive: {
-    backgroundColor: 'var(--color-blue)',
-    color: 'white',
-  },
-
-  sidebarIcon: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: '20px',
-    height: '20px',
-    flexShrink: 0,
-  },
-
-  main: {
-    flex: 1,
-    padding: 'var(--space-4)',
     overflowY: 'auto',
+    padding: 'var(--space-4) var(--space-5)',
   },
 
   section: {
     display: 'flex',
     flexDirection: 'column',
-    gap: 'var(--space-3)',
-  },
-
-  sectionTitle: {
-    margin: 0,
-    fontSize: 'var(--text-base)',
-    fontWeight: 'var(--font-semibold)',
-    color: 'var(--text-primary)',
+    gap: 'var(--space-1)',
   },
 
   sectionDesc: {
     margin: 0,
+    marginBottom: 'var(--space-3)',
     fontSize: 'var(--text-sm)',
     color: 'var(--text-secondary)',
+  },
+
+  divider: {
+    height: '1px',
+    backgroundColor: 'var(--border-default)',
+    margin: 'var(--space-3) 0',
   },
 
   subsectionTitle: {
     fontSize: 'var(--text-xs)',
     fontWeight: 'var(--font-semibold)',
-    textTransform: 'uppercase' as const,
+    textTransform: 'uppercase',
     letterSpacing: '0.05em',
     color: 'var(--text-secondary)',
     marginTop: 'var(--space-2)',
+    marginBottom: 'var(--space-1)',
   },
 
-  quietModeDesc: {
-    margin: 0,
+  modifiedBadge: {
     fontSize: 'var(--text-xs)',
-    color: 'var(--text-muted)',
-  },
-
-  field: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 'var(--space-2)',
-  },
-
-  label: {
-    fontSize: 'var(--text-sm)',
+    color: 'var(--color-blue)',
+    backgroundColor: 'var(--color-blue-50)',
+    padding: '2px 8px',
+    borderRadius: 'var(--radius-full)',
     fontWeight: 'var(--font-medium)',
-    color: 'var(--text-primary)',
   },
 
+  // Form elements
   input: {
+    width: '100%',
     padding: 'var(--space-2) var(--space-3)',
     border: '1px solid var(--border-default)',
     borderRadius: 'var(--radius-md)',
@@ -2728,12 +2122,41 @@ const styles: Record<string, React.CSSProperties> = {
     color: 'var(--text-primary)',
     cursor: 'pointer',
     outline: 'none',
+    minWidth: '160px',
   },
 
+  field: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 'var(--space-2)',
+  },
+
+  label: {
+    fontSize: 'var(--text-sm)',
+    fontWeight: 'var(--font-medium)',
+    color: 'var(--text-primary)',
+  },
+
+  fieldDesc: {
+    margin: 0,
+    fontSize: 'var(--text-xs)',
+    color: 'var(--text-muted)',
+    marginBottom: 'var(--space-2)',
+  },
+
+  quietModeDesc: {
+    margin: 0,
+    fontSize: 'var(--text-xs)',
+    color: 'var(--text-muted)',
+    marginBottom: 'var(--space-2)',
+  },
+
+  // Connection status
   statusRow: {
     display: 'flex',
     alignItems: 'center',
     gap: 'var(--space-2)',
+    marginBottom: 'var(--space-2)',
   },
 
   statusLabel: {
@@ -2758,17 +2181,34 @@ const styles: Record<string, React.CSSProperties> = {
   },
 
   error: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-2)',
     padding: 'var(--space-2) var(--space-3)',
     backgroundColor: 'var(--color-error-bg)',
     border: '1px solid var(--color-error)',
     borderRadius: 'var(--radius-md)',
     fontSize: 'var(--text-sm)',
     color: 'var(--color-error)',
+    marginBottom: 'var(--space-2)',
   },
 
+  validationResult: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-2)',
+    padding: 'var(--space-2) var(--space-3)',
+    borderRadius: 'var(--radius-md)',
+    fontSize: 'var(--text-sm)',
+    marginBottom: 'var(--space-2)',
+  },
+
+  // Buttons
   buttonRow: {
     display: 'flex',
-    gap: 'var(--space-3)',
+    gap: 'var(--space-2)',
+    flexWrap: 'wrap',
+    marginTop: 'var(--space-2)',
   },
 
   primaryButton: {
@@ -2785,6 +2225,19 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
   },
 
+  secondaryButton: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-2)',
+    padding: 'var(--space-2) var(--space-3)',
+    backgroundColor: 'var(--bg-app)',
+    border: '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-md)',
+    fontSize: 'var(--text-sm)',
+    color: 'var(--text-secondary)',
+    cursor: 'pointer',
+  },
+
   dangerButton: {
     padding: 'var(--space-2) var(--space-4)',
     backgroundColor: 'var(--color-error)',
@@ -2796,249 +2249,52 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
   },
 
-  toggle: {
+  cancelButton: {
+    padding: 'var(--space-2) var(--space-4)',
+    backgroundColor: 'transparent',
+    border: '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-md)',
+    fontSize: 'var(--text-sm)',
+    color: 'var(--text-secondary)',
+    cursor: 'pointer',
+  },
+
+  // Download location
+  downloadLocationRow: {
     display: 'flex',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 'var(--space-2) 0',
+    gap: 'var(--space-2)',
+    padding: 'var(--space-2) var(--space-3)',
+    backgroundColor: 'var(--bg-app)',
+    borderRadius: 'var(--radius-md)',
+    border: '1px solid var(--border-default)',
   },
 
-  toggleText: {
+  downloadLocationPath: {
     flex: 1,
-    marginRight: 'var(--space-3)',
-  },
-
-  toggleLabel: {
     fontSize: 'var(--text-sm)',
-    fontWeight: 'var(--font-medium)',
-    color: 'var(--text-primary)',
+    color: 'var(--text-secondary)',
+    fontFamily: 'var(--font-mono)',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
   },
 
-  toggleDesc: {
+  changeLocationBtn: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-1)',
+    padding: 'var(--space-1) var(--space-2)',
+    backgroundColor: 'var(--bg-card)',
+    border: '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-sm)',
     fontSize: 'var(--text-xs)',
     color: 'var(--text-secondary)',
-    marginTop: '2px',
-  },
-
-  toggleSwitch: {
-    width: '44px',
-    height: '24px',
-    borderRadius: '12px',
-    border: 'none',
     cursor: 'pointer',
-    position: 'relative',
-    transition: 'background-color var(--transition-fast)',
     flexShrink: 0,
   },
 
-  toggleKnob: {
-    width: '20px',
-    height: '20px',
-    backgroundColor: 'white',
-    borderRadius: '50%',
-    position: 'absolute',
-    top: '2px',
-    left: '2px',
-    transition: 'transform var(--transition-fast)',
-    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.2)',
-  },
-
-  divider: {
-    height: '1px',
-    backgroundColor: 'var(--border-default)',
-    margin: 'var(--space-2) 0',
-  },
-
-  themeOptions: {
-    display: 'flex',
-    gap: 'var(--space-2)',
-  },
-
-  themeOption: {
-    flex: 1,
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    gap: 'var(--space-1)',
-    padding: 'var(--space-3)',
-    border: '2px solid var(--border-default)',
-    borderRadius: 'var(--radius-md)',
-    backgroundColor: 'transparent',
-    color: 'var(--text-secondary)',
-    fontSize: 'var(--text-xs)',
-    cursor: 'pointer',
-    transition: 'all var(--transition-fast)',
-  },
-
-  themeOptionActive: {
-    borderColor: 'var(--color-blue)',
-    backgroundColor: 'rgba(0, 127, 163, 0.1)',
-    color: 'var(--color-blue)',
-  },
-
-  fieldDesc: {
-    margin: 0,
-    fontSize: 'var(--text-xs)',
-    color: 'var(--text-muted)',
-    marginBottom: 'var(--space-2)',
-  },
-
-  checkboxLabel: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 'var(--space-2)',
-    fontSize: 'var(--text-sm)',
-    color: 'var(--text-secondary)',
-    cursor: 'pointer',
-    marginBottom: 'var(--space-3)',
-  },
-
-  checkbox: {
-    width: '16px',
-    height: '16px',
-    cursor: 'pointer',
-  },
-
-  gradeInputRow: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 'var(--space-3)',
-  },
-
-  slider: {
-    flex: 1,
-    height: '6px',
-    WebkitAppearance: 'none',
-    appearance: 'none',
-    borderRadius: '3px',
-    backgroundColor: 'var(--border-default)',
-    cursor: 'pointer',
-  },
-
-  gradeValue: {
-    fontSize: 'var(--text-lg)',
-    fontWeight: 'var(--font-bold)',
-    color: 'var(--color-blue)',
-    minWidth: '50px',
-    textAlign: 'right',
-  },
-
-  radioGroup: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 'var(--space-2)',
-  },
-
-  radioOption: {
-    display: 'flex',
-    alignItems: 'flex-start',
-    gap: 'var(--space-3)',
-    padding: 'var(--space-3)',
-    border: '1px solid',
-    borderRadius: 'var(--radius-md)',
-    cursor: 'pointer',
-    transition: 'all var(--transition-fast)',
-  },
-
-  radioInput: {
-    marginTop: '2px',
-    accentColor: 'var(--color-blue)',
-  },
-
-  radioLabel: {
-    fontSize: 'var(--text-sm)',
-    fontWeight: 'var(--font-medium)',
-    color: 'var(--text-primary)',
-  },
-
-  radioDesc: {
-    fontSize: 'var(--text-xs)',
-    color: 'var(--text-muted)',
-    marginTop: '2px',
-  },
-
-  viewModeToggle: {
-    display: 'flex',
-    backgroundColor: 'var(--bg-app)',
-    borderRadius: 'var(--radius-md)',
-    border: '1px solid var(--border-default)',
-    overflow: 'hidden',
-    width: 'fit-content',
-  },
-
-  viewModeBtn: {
-    padding: 'var(--space-2) var(--space-4)',
-    fontSize: 'var(--text-sm)',
-    fontWeight: 'var(--font-medium)',
-    border: 'none',
-    cursor: 'pointer',
-    transition: 'all var(--transition-fast)',
-  },
-
-  // Course settings styles
-  settingsCard: {
-    backgroundColor: 'var(--bg-app)',
-    borderRadius: 'var(--radius-md)',
-    border: '1px solid var(--border-default)',
-    padding: 'var(--space-3)',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 'var(--space-2)',
-  },
-
-  settingsCardContent: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 'var(--space-3)',
-    paddingLeft: 'var(--space-1)',
-  },
-
-  inlineSettingsDivider: {
-    height: '1px',
-    backgroundColor: 'var(--border-muted)',
-    margin: '0',
-  },
-
-  inlineRadioGroup: {
-    display: 'flex',
-    gap: 'var(--space-4)',
-    flexWrap: 'wrap',
-  },
-
-  inlineRadioLabel: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 'var(--space-2)',
-    fontSize: 'var(--text-sm)',
-    color: 'var(--text-primary)',
-    cursor: 'pointer',
-  },
-
-  inlineToggle: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 'var(--space-3)',
-  },
-
-  inlineToggleText: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '2px',
-    flex: 1,
-  },
-
-  inlineToggleLabel: {
-    fontSize: 'var(--text-sm)',
-    fontWeight: 'var(--font-medium)',
-    color: 'var(--text-primary)',
-  },
-
-  inlineToggleDesc: {
-    fontSize: 'var(--text-xs)',
-    color: 'var(--text-muted)',
-  },
-
+  // Course list
   courseList: {
     display: 'flex',
     flexDirection: 'column',
@@ -3057,7 +2313,6 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: 'space-between',
     padding: 'var(--space-2)',
     borderRadius: 'var(--radius-sm)',
-    transition: 'background-color var(--transition-fast)',
   },
 
   courseInfo: {
@@ -3104,7 +2359,6 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    transition: 'color var(--transition-fast)',
   },
 
   emptyText: {
@@ -3114,141 +2368,69 @@ const styles: Record<string, React.CSSProperties> = {
     padding: 'var(--space-4)',
   },
 
-  // Landing page options
-  landingPageOptions: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(2, 1fr)',
-    gap: 'var(--space-2)',
-  },
-
-  landingPageOption: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 'var(--space-2)',
-    padding: 'var(--space-3)',
-    border: '2px solid var(--border-default)',
-    borderRadius: 'var(--radius-md)',
-    backgroundColor: 'transparent',
+  // No results
+  noResults: {
+    textAlign: 'center',
+    padding: 'var(--space-8)',
     color: 'var(--text-secondary)',
-    fontSize: 'var(--text-sm)',
-    cursor: 'pointer',
-    transition: 'all var(--transition-fast)',
   },
 
-  landingPageOptionActive: {
-    borderColor: 'var(--color-blue)',
-    backgroundColor: 'rgba(0, 127, 163, 0.1)',
-    color: 'var(--color-blue)',
-  },
-
-  resetButton: {
-    padding: 'var(--space-2) var(--space-3)',
+  clearSearchBtn: {
+    marginTop: 'var(--space-3)',
+    padding: 'var(--space-2) var(--space-4)',
     backgroundColor: 'transparent',
     border: '1px solid var(--border-default)',
     borderRadius: 'var(--radius-md)',
     fontSize: 'var(--text-sm)',
     color: 'var(--text-secondary)',
     cursor: 'pointer',
-    transition: 'all var(--transition-fast)',
-    marginTop: 'var(--space-2)',
   },
 
-  resetOrderGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))',
-    gap: 'var(--space-2)',
-    marginTop: 'var(--space-2)',
-  },
-
-  resetOrderButton: {
+  // Footer
+  footer: {
     display: 'flex',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 'var(--space-1)',
-    padding: 'var(--space-2) var(--space-3)',
-    backgroundColor: 'var(--bg-app)',
-    border: '1px solid var(--border-default)',
-    borderRadius: 'var(--radius-md)',
-    fontSize: 'var(--text-xs)',
-    color: 'var(--text-secondary)',
-    cursor: 'pointer',
-    transition: 'all var(--transition-fast)',
-  },
-
-  // Data export styles
-  exportButtons: {
-    display: 'flex',
-    gap: 'var(--space-2)',
-    flexWrap: 'wrap' as const,
-  },
-
-  secondaryButton: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 'var(--space-2)',
-    padding: 'var(--space-2) var(--space-3)',
-    backgroundColor: 'var(--bg-app)',
-    border: '1px solid var(--border-default)',
-    borderRadius: 'var(--radius-md)',
-    fontSize: 'var(--text-sm)',
-    color: 'var(--text-secondary)',
-    cursor: 'pointer',
-    transition: 'all var(--transition-fast)',
-  },
-
-  exportMessage: {
-    padding: 'var(--space-2) var(--space-3)',
-    borderRadius: 'var(--radius-md)',
-    fontSize: 'var(--text-sm)',
-    marginTop: 'var(--space-2)',
-  },
-
-  // Download location styles
-  downloadLocationRow: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 'var(--space-2)',
-    padding: 'var(--space-2) var(--space-3)',
-    backgroundColor: 'var(--bg-app)',
-    borderRadius: 'var(--radius-md)',
-    border: '1px solid var(--border-default)',
-  },
-
-  downloadLocationPath: {
-    flex: 1,
-    fontSize: 'var(--text-sm)',
-    color: 'var(--text-secondary)',
-    fontFamily: 'var(--font-mono)',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap',
-  },
-
-  changeLocationBtn: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 'var(--space-1)',
-    padding: 'var(--space-1) var(--space-2)',
-    backgroundColor: 'var(--bg-card)',
-    border: '1px solid var(--border-default)',
-    borderRadius: 'var(--radius-sm)',
-    fontSize: 'var(--text-xs)',
-    color: 'var(--text-secondary)',
-    cursor: 'pointer',
-    transition: 'all var(--transition-fast)',
+    justifyContent: 'space-between',
+    padding: 'var(--space-3) var(--space-5)',
+    borderTop: '1px solid var(--border-default)',
     flexShrink: 0,
   },
 
-  // Token validation and replacement styles
-  validationResult: {
+  footerLeft: {
     display: 'flex',
-    alignItems: 'center',
     gap: 'var(--space-2)',
-    padding: 'var(--space-2) var(--space-3)',
-    borderRadius: 'var(--radius-md)',
-    fontSize: 'var(--text-sm)',
   },
 
+  footerRight: {
+    display: 'flex',
+    gap: 'var(--space-2)',
+  },
+
+  footerButton: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-1)',
+    padding: 'var(--space-2) var(--space-3)',
+    backgroundColor: 'transparent',
+    border: '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-md)',
+    fontSize: 'var(--text-xs)',
+    color: 'var(--text-secondary)',
+    cursor: 'pointer',
+  },
+
+  dangerButtonSmall: {
+    borderColor: 'var(--color-error)',
+    color: 'var(--color-error)',
+  },
+
+  exportMessage: {
+    padding: 'var(--space-2) var(--space-5)',
+    fontSize: 'var(--text-sm)',
+    borderTop: '1px solid var(--border-default)',
+  },
+
+  // Token modal
   tokenModalOverlay: {
     position: 'fixed',
     top: 0,
@@ -3321,40 +2503,21 @@ const styles: Record<string, React.CSSProperties> = {
     marginTop: 'var(--space-4)',
   },
 
-  cancelButton: {
-    padding: 'var(--space-2) var(--space-4)',
-    backgroundColor: 'transparent',
-    border: '1px solid var(--border-default)',
-    borderRadius: 'var(--radius-md)',
-    fontSize: 'var(--text-sm)',
-    color: 'var(--text-secondary)',
-    cursor: 'pointer',
-  },
-
-  // Course settings specific styles (radioGroup and radioLabel already defined above)
-  radio: {
-    width: '16px',
-    height: '16px',
-    cursor: 'pointer',
-  },
-
-  loadingRow: {
+  // Checkbox
+  checkboxLabel: {
     display: 'flex',
     alignItems: 'center',
     gap: 'var(--space-2)',
     fontSize: 'var(--text-sm)',
     color: 'var(--text-secondary)',
-    padding: 'var(--space-4) 0',
+    cursor: 'pointer',
+    marginTop: 'var(--space-3)',
   },
 
-  emptyState: {
-    padding: 'var(--space-6)',
-    textAlign: 'center',
-    color: 'var(--text-muted)',
-    fontSize: 'var(--text-sm)',
-    backgroundColor: 'var(--bg-app)',
-    borderRadius: 'var(--radius-md)',
-    marginTop: 'var(--space-4)',
+  checkbox: {
+    width: '16px',
+    height: '16px',
+    cursor: 'pointer',
   },
 };
 

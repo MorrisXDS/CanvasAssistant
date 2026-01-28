@@ -5,6 +5,39 @@
  * Used by SyncConflictResolver to determine conflict handling.
  *
  * IMPORTANT: When adding fields to DataMappers, update this file accordingly.
+ *
+ * ## Field Authority Rules
+ *
+ * Fields are categorized into three types:
+ *
+ * ### 1. Canvas Fields (CANVAS_PROVIDED_FIELDS)
+ * Fields that Canvas API provides. During sync:
+ * - New records: Canvas values are used
+ * - Existing records: Conflict detection if local differs from Canvas
+ *
+ * ### 2. Authoritative Fields (CANVAS_AUTHORITATIVE_FIELDS)
+ * Subset of Canvas fields that ALWAYS use Canvas values without user prompts.
+ * These represent Canvas's ground truth:
+ * - `grade` - Canvas submission score is authoritative (user cannot override)
+ * - `due_at` - Canvas due date is authoritative (user cannot override)
+ * - `submission_status` - Canvas workflow_state is authoritative
+ * - `is_completed` - Derived from submission_status
+ * - `completed_at` - Canvas submitted_at is authoritative
+ *
+ * ### 3. Local Fields (LOCAL_ONLY_FIELDS)
+ * Fields managed entirely by the application, never synced from Canvas:
+ * - `weight` - Calculated by L3 intelligence
+ * - `priority_score` - Calculated by L3 intelligence
+ * - `task_group_id` - Local grouping
+ * - `is_optional` - User-marked optional status
+ *
+ * ## Adding New Fields
+ *
+ * When adding a new field to the database schema:
+ * 1. Determine if it comes from Canvas API or is local-only
+ * 2. Add to the appropriate constant array below
+ * 3. Update DatabaseRowTypes.ts with the field
+ * 4. If it's a sync field, update the relevant DataMapper
  */
 
 /**
@@ -60,13 +93,40 @@ export const TASK_CANVAS_FIELDS = [
 /**
  * Authoritative Canvas fields that ALWAYS use Canvas values without triggering conflicts.
  * These fields represent Canvas's ground truth and should never be overridden by local state.
+ *
+ * ## Field Explanations
+ *
+ * @field submission_status - Canvas workflow_state (pending, submitted, graded).
+ *        User can set `user_submission_status` independently for OR logic.
+ *
+ * @field completed_at - Timestamp from Canvas submission.submitted_at.
+ *        Represents when the student actually submitted.
+ *
+ * @field is_completed - Boolean derived from submission_status.
+ *        True if workflow_state indicates submission exists.
+ *
+ * @field grade - Numeric grade from Canvas submission.score / points_possible * 100.
+ *        Instructor grades are always authoritative.
+ *
+ * @field due_at - Due date from Canvas assignment.due_at.
+ *        Canvas assignment dates are authoritative for academic compliance.
+ *
+ * @field unlock_at - Date when assignment becomes available.
+ *        Canvas controls assignment availability.
+ *
+ * @field lock_at - Date when assignment becomes locked.
+ *        Canvas controls assignment lock dates.
+ *
+ * ## NOT Authoritative (removed)
+ *
+ * Note: `task_type` was previously authoritative but has been removed.
+ * Users can now override Canvas-derived task types with conflict UI.
  */
 export const TASK_AUTHORITATIVE_FIELDS = [
   'submission_status', // Canvas workflow_state is authoritative
   'completed_at', // Canvas submitted_at is authoritative
   'is_completed', // Derived from submission_status
   'grade', // Canvas score is authoritative
-  'task_type', // Derived from Canvas submission_types
   'due_at', // Canvas due date is authoritative
   'unlock_at', // Canvas unlock date is authoritative
   'lock_at', // Canvas lock date is authoritative
@@ -82,6 +142,8 @@ export const TASK_LOCAL_FIELDS = [
   'task_group_id', // Local grouping
   'local_modified_fields',
   'is_optional', // User-marked optional (moves to "Not for Grade")
+  'calendar_event_id', // Link to calendar event (bidirectional sync)
+  'user_submission_status', // User-set submission status (OR logic with Canvas)
 ] as const;
 
 /**

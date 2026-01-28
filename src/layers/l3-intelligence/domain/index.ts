@@ -171,10 +171,7 @@ export {
   normalizeText,
   detectDocumentType,
 } from './TextExtractor';
-export type {
-  TextExtractionResult,
-  TextExtractionOptions,
-} from './TextExtractor';
+export type { TextExtractionResult, TextExtractionOptions } from './TextExtractor';
 
 // Rule-Based Extraction (Layer 2 Content Analysis)
 export {
@@ -231,10 +228,7 @@ export {
   generateGradeTrendInsight,
   generateCrunchPeriodInsight,
 } from './InsightGenerator';
-export type {
-  GradeForecastForInsight,
-  CrunchPeriodForInsight,
-} from './InsightGenerator';
+export type { GradeForecastForInsight, CrunchPeriodForInsight } from './InsightGenerator';
 
 // Extended RecommendationEngine exports
 // Note: procrastination_nudge and study_strategy removed as unfounded
@@ -242,10 +236,7 @@ export {
   generatePreemptiveStartRec,
   generateFocusAtRiskRec,
 } from './RecommendationEngine';
-export type {
-  GradeForecastForRec,
-  WorkloadForecastForRec,
-} from './RecommendationEngine';
+export type { GradeForecastForRec, WorkloadForecastForRec } from './RecommendationEngine';
 
 // Local ML Service (Layer 3 Content Analysis - Optional)
 export { LocalMLService, getLocalMLService } from './LocalMLService';
@@ -265,3 +256,13 @@ export type {
   LLMResponse,
   LLMServiceConfig,
 } from './LLMService';
+
+// Submission Status Service (OR logic for submission tracking)
+export {
+  getEffectiveSubmissionStatus,
+  isEffectivelySubmitted,
+  isEffectivelyGraded,
+  getSubmissionStatusLabel,
+  getSubmissionStatusBadgeVariant,
+} from './SubmissionStatusService';
+export type { SubmissionStatus } from './SubmissionStatusService';

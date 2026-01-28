@@ -22,6 +22,7 @@ export {
   ContentSettingsSchema,
   AIConfigSchema,
   WindowBehaviorSettingsSchema,
+  DashboardSettingsSchema,
   // TypeScript types
   type StorageKey,
   type SyncPreferences,
@@ -34,6 +35,7 @@ export {
   type ContentSettings,
   type AIConfig,
   type WindowBehaviorSettings,
+  type DashboardSettings,
   type SettingsValue,
   type SettingsTypeMap,
   // Default values
@@ -47,10 +49,19 @@ export {
   DEFAULT_CONTENT_SETTINGS,
   DEFAULT_AI_CONFIG,
   DEFAULT_WINDOW_BEHAVIOR_SETTINGS,
+  DEFAULT_DASHBOARD_SETTINGS,
   DEFAULT_DASHBOARD_ORDER,
   DEFAULT_NAV_ORDER,
   SETTINGS_DEFAULTS,
   SETTINGS_SCHEMAS,
+  // Settings metadata for UI
+  SETTINGS_METADATA,
+  SETTINGS_CATEGORIES,
+  getSettingsByCategory,
+  searchSettings,
+  type SettingsCategory,
+  type SettingComponentType,
+  type SettingMetadata,
 } from './settingsSchema';
 
 // Manager exports

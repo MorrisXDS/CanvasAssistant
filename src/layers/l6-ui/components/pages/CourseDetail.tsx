@@ -5,6 +5,7 @@
 
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom';
+import DOMPurify from 'dompurify';
 import {
   ArrowLeft,
   BookOpen,
@@ -29,6 +30,7 @@ import {
   Download,
   FileCode,
   GripVertical,
+  Archive,
 } from 'lucide-react';
 import { Card, PolicyModal, ConfirmDialog, PolicyBadgeGroup } from '../shared';
 import type { PolicyModalData, PolicyType } from '../shared';
@@ -40,6 +42,7 @@ import {
   SyllabusSelector,
   TaskContextMenu,
   MissingSyllabusWarning,
+  DuplicateCourseworkBanner,
   type CourseSyllabus,
 } from '../Course';
 import type { FileResource } from '../Files/FileListItem';
@@ -89,6 +92,8 @@ interface CourseDetailData {
   isHidden: boolean;
   syllabusBody: string | null;
   lastSyncedAt: string | null;
+  archivedAt: string | null;
+  archiveSource: 'manual' | 'auto' | null;
 }
 
 interface CoursePage {
@@ -177,7 +182,10 @@ export function CourseDetail() {
   const { id } = useParams<{ id: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { tasks } = useStore();
+  const { tasks: storeTasks } = useStore();
+
+  // Local state for archived course tasks (fetched directly, bypasses visibility filtering)
+  const [archivedCourseTasks, setArchivedCourseTasks] = useState<Task[]>([]);
 
   // Task highlight from URL param
   const highlightTaskId = searchParams.get('highlightTask');
@@ -270,6 +278,36 @@ export function CourseDetail() {
     task: Task;
     position: { x: number; y: number };
   } | null>(null);
+
+  // Archived course warning state
+  const [archivedWarningAcknowledged, setArchivedWarningAcknowledged] = useState(() => {
+    // Check if user has globally dismissed archived warnings
+    const globalDismiss = localStorage.getItem('archivedCourseWarningDismissed');
+    if (globalDismiss === 'true') return true;
+    // Check if dismissed for this specific course
+    const dismissedCourses = JSON.parse(
+      localStorage.getItem('archivedCourseWarningDismissedIds') || '[]'
+    );
+    return dismissedCourses.includes(Number(id));
+  });
+
+  const handleAcknowledgeArchivedWarning = (neverShowAgain: boolean) => {
+    if (neverShowAgain) {
+      localStorage.setItem('archivedCourseWarningDismissed', 'true');
+    } else {
+      const dismissedCourses = JSON.parse(
+        localStorage.getItem('archivedCourseWarningDismissedIds') || '[]'
+      );
+      if (!dismissedCourses.includes(courseId)) {
+        dismissedCourses.push(courseId);
+        localStorage.setItem(
+          'archivedCourseWarningDismissedIds',
+          JSON.stringify(dismissedCourses)
+        );
+      }
+    }
+    setArchivedWarningAcknowledged(true);
+  };
 
   // Maximum items to show in each list before "View all"
   const MAX_VISIBLE_ITEMS = 5;
@@ -370,6 +408,22 @@ export function CourseDetail() {
     }
   };
 
+  // Archive/Unarchive course
+  const handleArchiveCourse = async () => {
+    const api = window.api;
+    if (!api?.dispatch || !course) return;
+
+    try {
+      const result = await api.dispatch('ArchiveCourse', { courseId });
+      if (result.success) {
+        // Navigate back to courses page after archiving
+        navigate('/courses');
+      }
+    } catch (error) {
+      console.error('Failed to archive course:', error);
+    }
+  };
+
   // Syllabus handlers
   const handleSetSyllabus = async (resourceId: number) => {
     const api = window.api;
@@ -438,6 +492,19 @@ export function CourseDetail() {
     }
   };
 
+  // Refresh archived course tasks (for archived courses only)
+  const refreshArchivedCourseTasks = async () => {
+    if (!course?.archivedAt) return;
+    const api = window.api;
+    if (!api?.getTasksForArchivedCourse) return;
+    try {
+      const tasks = await api.getTasksForArchivedCourse(courseId);
+      setArchivedCourseTasks(tasks || []);
+    } catch (error) {
+      console.error('Failed to refresh archived course tasks:', error);
+    }
+  };
+
   // Create new task
   const handleCreateTask = async () => {
     const api = window.api;
@@ -459,6 +526,8 @@ export function CourseDetail() {
       setNewTaskWeight('');
       setNewTaskType('');
       setShowAddTask(false);
+      // Refresh archived course tasks if applicable
+      await refreshArchivedCourseTasks();
     } catch (error) {
       console.error('Failed to create task:', error);
     }
@@ -471,6 +540,7 @@ export function CourseDetail() {
 
     try {
       await api.dispatch('DuplicateTask', { taskId });
+      await refreshArchivedCourseTasks();
     } catch (error) {
       console.error('Failed to duplicate task:', error);
     }
@@ -486,14 +556,15 @@ export function CourseDetail() {
         taskId: task.id,
         isComplete: !task.isCompleted,
       });
+      await refreshArchivedCourseTasks();
     } catch (error) {
       console.error('Failed to toggle task completion:', error);
     }
   };
 
-  // Start editing a task
+  // Start editing a task (also expands it)
   const startEditingTask = (task: Task) => {
-    setEditingTaskId(task.id);
+    // Set all edit fields first
     setEditTaskTitle(task.title);
     setEditTaskDescription(stripHtml(task.description));
     // Convert UTC ISO string to local datetime-local format (YYYY-MM-DDTHH:MM)
@@ -511,6 +582,9 @@ export function CourseDetail() {
     setEditTaskWeight(task.weight?.toString() || '');
     setEditTaskGrade(task.grade?.toString() || '');
     setEditTaskType(task.taskType || '');
+    // Set editing and expanded state together at the end
+    setEditingTaskId(task.id);
+    setExpandedTaskId(task.id);
   };
 
   // Save task edits
@@ -529,6 +603,7 @@ export function CourseDetail() {
         taskType: editTaskType || null,
       });
       setEditingTaskId(null);
+      await refreshArchivedCourseTasks();
     } catch (error) {
       console.error('Failed to update task:', error);
     }
@@ -551,6 +626,7 @@ export function CourseDetail() {
           if (result.success) {
             setExpandedTaskId(null);
             setEditingTaskId(null);
+            await refreshArchivedCourseTasks();
           }
         } catch (error) {
           console.error('Failed to delete task:', error);
@@ -771,6 +847,12 @@ export function CourseDetail() {
         setCoursePages(pagesData || []);
         setSyllabus(syllabusData || null);
         setCourseFiles(filesData || []);
+
+        // For archived courses, fetch tasks directly (bypasses visibility filtering)
+        if (courseData?.archivedAt && api.getTasksForArchivedCourse) {
+          const archivedTasks = await api.getTasksForArchivedCourse(courseId);
+          setArchivedCourseTasks(archivedTasks || []);
+        }
       } catch (error) {
         console.error('Failed to fetch course data:', error);
       } finally {
@@ -813,9 +895,14 @@ export function CourseDetail() {
   }, [highlightTaskId, loading, setSearchParams]);
 
   // Filter tasks for this course
+  // For archived courses, use directly fetched tasks (bypasses visibility filtering)
+  // For active courses, use store tasks (respects visibility filtering)
   const courseTasks = useMemo(() => {
-    return tasks.filter((t) => t.courseId === courseId);
-  }, [tasks, courseId]);
+    if (course?.archivedAt) {
+      return archivedCourseTasks;
+    }
+    return storeTasks.filter((t) => t.courseId === courseId);
+  }, [course?.archivedAt, archivedCourseTasks, storeTasks, courseId]);
 
   // Separate tasks by status: pending, submitted, graded, info (not for grade)
   const { pendingTasks, submittedTasks, gradedTasks, infoTasks } = useMemo(() => {
@@ -961,6 +1048,12 @@ export function CourseDetail() {
                 </span>
                 <h1 style={styles.courseName}>{course.nickname || course.name}</h1>
                 <span style={styles.fullCode}>{course.code}</span>
+                {course.archivedAt && (
+                  <span style={styles.archivedBadge}>
+                    ARCHIVED
+                    {course.archiveSource === 'auto' && ' (Term Ended)'}
+                  </span>
+                )}
               </div>
 
               {/* Grade Summary */}
@@ -1253,6 +1346,17 @@ export function CourseDetail() {
                       )}
                     </button>
                   </div>
+                  <div style={styles.settingsField}>
+                    <label style={styles.settingsLabel}>Archive</label>
+                    <button
+                      style={styles.archiveButton}
+                      onClick={handleArchiveCourse}
+                      title="Archive this course. Archived courses are hidden but can be restored."
+                    >
+                      <Archive size={16} />
+                      Archive Course
+                    </button>
+                  </div>
                 </div>
 
                 <div style={styles.settingsActions}>
@@ -1365,6 +1469,48 @@ export function CourseDetail() {
             onDismiss={() => setSyllabusWarningDismissed(true)}
             onSetSyllabus={() => setShowSyllabusSelector(true)}
           />
+        )}
+
+        {/* Duplicate Coursework Warning */}
+        <DuplicateCourseworkBanner tasks={courseTasks} />
+
+        {/* Archived Course Warning */}
+        {course.archivedAt && !archivedWarningAcknowledged && (
+          <div style={styles.archivedWarningBanner}>
+            <div style={styles.archivedWarningContent}>
+              <Archive size={20} />
+              <div style={styles.archivedWarningText}>
+                <strong>This course is archived.</strong>
+                <span>
+                  Changes you make here are stored locally only and will not sync with
+                  Canvas.
+                </span>
+              </div>
+            </div>
+            <div style={styles.archivedWarningActions}>
+              <label style={styles.archivedWarningCheckbox}>
+                <input
+                  type="checkbox"
+                  id="neverShowArchivedWarning"
+                  style={{ marginRight: '6px' }}
+                />
+                Don't show again
+              </label>
+              <button
+                style={styles.archivedWarningButton}
+                onClick={() => {
+                  const neverShow = (
+                    document.getElementById(
+                      'neverShowArchivedWarning'
+                    ) as HTMLInputElement
+                  )?.checked;
+                  handleAcknowledgeArchivedWarning(neverShow);
+                }}
+              >
+                I understand
+              </button>
+            </div>
+          </div>
         )}
 
         {/* Two Column Layout */}
@@ -1908,11 +2054,15 @@ export function CourseDetail() {
       {/* Task Context Menu */}
       {taskContextMenu && (
         <TaskContextMenu
-          task={taskContextMenu.task}
+          task={{
+            id: taskContextMenu.task.id,
+            title: taskContextMenu.task.title,
+            isCompleted: taskContextMenu.task.isCompleted,
+            isOptional: taskContextMenu.task.isOptional,
+          }}
           position={taskContextMenu.position}
           onClose={() => setTaskContextMenu(null)}
           onEdit={() => {
-            setExpandedTaskId(taskContextMenu.task.id);
             startEditingTask(taskContextMenu.task);
           }}
           onDuplicate={() => handleDuplicateTask(taskContextMenu.task.id)}
@@ -2041,12 +2191,9 @@ function TaskItem({
     return found ? found.label : typeValue;
   };
 
-  // Handle double-click to expand for editing
+  // Handle double-click to toggle expand/collapse
   const handleDoubleClick = () => {
-    if (!isExpanded) {
-      onToggleExpand();
-    }
-    onStartEdit();
+    onToggleExpand();
   };
 
   // Combine refs for both click-outside detection and external taskRef callback
@@ -2180,6 +2327,82 @@ function TaskItem({
           </button>
         </div>
       </div>
+
+      {/* Expanded Detail Panel - read-only view */}
+      {isExpanded && !isEditing && (
+        <div style={styles.taskDetailPanel}>
+          <div style={styles.taskDetailContent}>
+            {task.description && (
+              <div style={styles.taskDetailRow}>
+                <span style={styles.taskDetailLabel}>Description</span>
+                <div
+                  className="announcement-content"
+                  style={styles.taskDetailText}
+                  dangerouslySetInnerHTML={{
+                    __html: DOMPurify.sanitize(task.description, {
+                      ADD_ATTR: ['target'], // Allow target="_blank" on links
+                    }),
+                  }}
+                  onClick={(e) => {
+                    // Intercept link clicks and open in external browser
+                    const target = e.target as HTMLElement;
+                    if (target.tagName === 'A') {
+                      e.preventDefault();
+                      const href = (target as HTMLAnchorElement).href;
+                      if (href) {
+                        window.api?.openExternal(href);
+                      }
+                    }
+                  }}
+                />
+              </div>
+            )}
+            <div style={styles.taskDetailGrid}>
+              {task.taskType && (
+                <div style={styles.taskDetailItem}>
+                  <span style={styles.taskDetailLabel}>Type</span>
+                  <span style={styles.taskDetailValue}>
+                    {TASK_TYPES.find((t) => t.value === task.taskType)?.label ||
+                      task.taskType}
+                  </span>
+                </div>
+              )}
+              {task.dueAt && (
+                <div style={styles.taskDetailItem}>
+                  <span style={styles.taskDetailLabel}>Due Date</span>
+                  <span style={styles.taskDetailValue}>
+                    {new Date(task.dueAt).toLocaleString()}
+                  </span>
+                </div>
+              )}
+              {task.weight > 0 && (
+                <div style={styles.taskDetailItem}>
+                  <span style={styles.taskDetailLabel}>Weight</span>
+                  <span style={styles.taskDetailValue}>{task.weight}%</span>
+                </div>
+              )}
+              {task.grade !== null && (
+                <div style={styles.taskDetailItem}>
+                  <span style={styles.taskDetailLabel}>Score</span>
+                  <span style={styles.taskDetailValue}>{task.grade}%</span>
+                </div>
+              )}
+              {task.pointsPossible !== null && (
+                <div style={styles.taskDetailItem}>
+                  <span style={styles.taskDetailLabel}>Points</span>
+                  <span style={styles.taskDetailValue}>{task.pointsPossible}</span>
+                </div>
+              )}
+            </div>
+            <div style={styles.taskDetailActions}>
+              <button style={styles.editButton} onClick={onStartEdit}>
+                <Edit3 size={14} />
+                Edit
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Expanded Edit Panel - only shows when editing */}
       {isExpanded && isEditing && (
@@ -2551,6 +2774,73 @@ const styles: Record<string, React.CSSProperties> = {
     color: 'var(--text-muted)',
   },
 
+  archivedBadge: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    padding: '4px 10px',
+    backgroundColor: 'var(--color-warning-bg)',
+    color: 'var(--color-warning)',
+    fontSize: 'var(--text-xs)',
+    fontWeight: 'var(--font-bold)',
+    borderRadius: 'var(--radius-md)',
+    marginLeft: 'var(--space-2)',
+    textTransform: 'uppercase' as const,
+    letterSpacing: '0.5px',
+  },
+
+  archivedWarningBanner: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap' as const,
+    gap: 'var(--space-3)',
+    padding: 'var(--space-4)',
+    marginBottom: 'var(--space-4)',
+    backgroundColor: 'var(--color-warning-bg)',
+    border: '1px solid var(--color-warning)',
+    borderRadius: 'var(--radius-lg)',
+  },
+
+  archivedWarningContent: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: 'var(--space-3)',
+    color: 'var(--color-warning)',
+  },
+
+  archivedWarningText: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: '4px',
+    fontSize: 'var(--text-sm)',
+    color: 'var(--text-primary)',
+  },
+
+  archivedWarningActions: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-4)',
+  },
+
+  archivedWarningCheckbox: {
+    display: 'flex',
+    alignItems: 'center',
+    fontSize: 'var(--text-sm)',
+    color: 'var(--text-secondary)',
+    cursor: 'pointer',
+  },
+
+  archivedWarningButton: {
+    padding: 'var(--space-2) var(--space-4)',
+    backgroundColor: 'var(--color-warning)',
+    color: 'white',
+    border: 'none',
+    borderRadius: 'var(--radius-md)',
+    fontSize: 'var(--text-sm)',
+    fontWeight: 'var(--font-medium)',
+    cursor: 'pointer',
+  },
+
   gradeSummary: {
     display: 'flex',
     flexWrap: 'wrap',
@@ -2715,6 +3005,20 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 'var(--radius-md)',
     cursor: 'pointer',
     color: 'var(--text-secondary)',
+  },
+
+  archiveButton: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-2)',
+    height: '36px',
+    padding: '0 var(--space-3)',
+    fontSize: 'var(--text-sm)',
+    backgroundColor: 'var(--color-warning-50)',
+    border: '1px solid var(--color-warning)',
+    borderRadius: 'var(--radius-md)',
+    cursor: 'pointer',
+    color: 'var(--color-warning)',
   },
 
   settingsDivider: {
@@ -3111,6 +3415,34 @@ const styles: Record<string, React.CSSProperties> = {
     paddingLeft: 'var(--space-12)',
     backgroundColor: 'var(--bg-app)',
     borderTop: '1px solid var(--border-light)',
+  },
+
+  taskDetailContent: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 'var(--space-3)',
+  },
+
+  taskDetailRow: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 'var(--space-1)',
+  },
+
+  taskDetailText: {
+    fontSize: 'var(--text-sm)',
+    color: 'var(--text-primary)',
+    lineHeight: 1.5,
+    margin: 0,
+    maxHeight: '200px',
+    overflowY: 'auto',
+    wordBreak: 'break-word' as const,
+  },
+
+  taskDetailGrid: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: 'var(--space-4)',
   },
 
   taskDetailView: {

@@ -215,7 +215,6 @@ export async function extractTextFromPdf(
 
   // Try to dynamically import pdf-parse if available
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const pdfParse = require('pdf-parse');
     const data = await pdfParse(buffer);
 
@@ -248,20 +247,22 @@ export async function extractTextFromPdf(
  * Clean and normalize extracted text
  */
 export function normalizeText(text: string): string {
-  return text
-    // Normalize whitespace
-    .replace(/\r\n/g, '\n')
-    .replace(/\r/g, '\n')
-    // Remove excessive newlines
-    .replace(/\n{3,}/g, '\n\n')
-    // Remove excessive spaces
-    .replace(/[ \t]{2,}/g, ' ')
-    // Trim lines
-    .split('\n')
-    .map((line) => line.trim())
-    .join('\n')
-    // Final trim
-    .trim();
+  return (
+    text
+      // Normalize whitespace
+      .replace(/\r\n/g, '\n')
+      .replace(/\r/g, '\n')
+      // Remove excessive newlines
+      .replace(/\n{3,}/g, '\n\n')
+      // Remove excessive spaces
+      .replace(/[ \t]{2,}/g, ' ')
+      // Trim lines
+      .split('\n')
+      .map((line) => line.trim())
+      .join('\n')
+      // Final trim
+      .trim()
+  );
 }
 
 /**
@@ -270,17 +271,28 @@ export function normalizeText(text: string): string {
 export function detectDocumentType(
   text: string,
   filename?: string
-): 'syllabus' | 'rubric' | 'assignment' | 'reading' | 'lecture' | 'notes' | 'other' | 'unknown' {
+):
+  | 'syllabus'
+  | 'rubric'
+  | 'assignment'
+  | 'reading'
+  | 'lecture'
+  | 'notes'
+  | 'other'
+  | 'unknown' {
   const lowerText = text.toLowerCase();
   const lowerFilename = filename?.toLowerCase() ?? '';
 
   // Check filename first
   if (lowerFilename.includes('syllabus')) return 'syllabus';
   if (lowerFilename.includes('rubric')) return 'rubric';
-  if (lowerFilename.includes('assignment') || lowerFilename.includes('homework')) return 'assignment';
-  if (lowerFilename.includes('lecture') || lowerFilename.includes('slide')) return 'lecture';
+  if (lowerFilename.includes('assignment') || lowerFilename.includes('homework'))
+    return 'assignment';
+  if (lowerFilename.includes('lecture') || lowerFilename.includes('slide'))
+    return 'lecture';
   if (lowerFilename.includes('notes') || lowerFilename.includes('note')) return 'notes';
-  if (lowerFilename.includes('reading') || lowerFilename.includes('chapter')) return 'reading';
+  if (lowerFilename.includes('reading') || lowerFilename.includes('chapter'))
+    return 'reading';
 
   // Content-based detection
   const syllabusKeywords = [
@@ -337,13 +349,25 @@ export function detectDocumentType(
   // Require at least 2 keyword matches for classification
   const threshold = 2;
 
-  if (syllabusScore >= threshold && syllabusScore >= rubricScore && syllabusScore >= assignmentScore) {
+  if (
+    syllabusScore >= threshold &&
+    syllabusScore >= rubricScore &&
+    syllabusScore >= assignmentScore
+  ) {
     return 'syllabus';
   }
-  if (rubricScore >= threshold && rubricScore >= syllabusScore && rubricScore >= assignmentScore) {
+  if (
+    rubricScore >= threshold &&
+    rubricScore >= syllabusScore &&
+    rubricScore >= assignmentScore
+  ) {
     return 'rubric';
   }
-  if (assignmentScore >= threshold && assignmentScore >= syllabusScore && assignmentScore >= rubricScore) {
+  if (
+    assignmentScore >= threshold &&
+    assignmentScore >= syllabusScore &&
+    assignmentScore >= rubricScore
+  ) {
     return 'assignment';
   }
 

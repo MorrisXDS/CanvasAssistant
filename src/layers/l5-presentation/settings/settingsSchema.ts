@@ -67,6 +67,9 @@ export const STORAGE_KEYS = {
 
   // AI/Intelligence settings
   AI_CONFIG: 'aiConfig',
+
+  // Dashboard settings
+  DASHBOARD: 'dashboardSettings',
 } as const;
 
 export type StorageKey = (typeof STORAGE_KEYS)[keyof typeof STORAGE_KEYS];
@@ -156,6 +159,13 @@ export const WindowBehaviorSettingsSchema = z.object({
   showTrayIcon: z.boolean(),
 });
 
+export const DashboardSettingsSchema = z.object({
+  // Threshold for showing tasks in "Important Works" section (percentage)
+  importantWorksThreshold: z.number().min(0).max(100),
+  // Whether to sort tasks by priority score (false = sort by due date only)
+  prioritySortingEnabled: z.boolean(),
+});
+
 // =============================================================================
 // TYPESCRIPT TYPES - Inferred from Zod schemas
 // =============================================================================
@@ -170,6 +180,7 @@ export type CalendarSettings = z.infer<typeof CalendarSettingsSchema>;
 export type ContentSettings = z.infer<typeof ContentSettingsSchema>;
 export type AIConfig = z.infer<typeof AIConfigSchema>;
 export type WindowBehaviorSettings = z.infer<typeof WindowBehaviorSettingsSchema>;
+export type DashboardSettings = z.infer<typeof DashboardSettingsSchema>;
 
 // Union type for all settings objects
 export type SettingsValue =
@@ -183,6 +194,7 @@ export type SettingsValue =
   | ContentSettings
   | AIConfig
   | WindowBehaviorSettings
+  | DashboardSettings
   | string
   | boolean
   | string[];
@@ -269,13 +281,17 @@ export const DEFAULT_WINDOW_BEHAVIOR_SETTINGS: WindowBehaviorSettings = {
   showTrayIcon: true,
 };
 
+export const DEFAULT_DASHBOARD_SETTINGS: DashboardSettings = {
+  importantWorksThreshold: 10, // 10% default
+  prioritySortingEnabled: false, // Default to simple due date sorting
+};
+
 // Dashboard section order
 export const DEFAULT_DASHBOARD_ORDER = [
   'priority',
+  'notifications',
   'schedule',
-  'recommendations',
-  'insights',
-  'courses',
+  'importantWorks',
 ];
 
 // Nav item order (default sidebar navigation)
@@ -296,6 +312,7 @@ export interface SettingsTypeMap {
   [STORAGE_KEYS.CONTENT]: ContentSettings;
   [STORAGE_KEYS.AI_CONFIG]: AIConfig;
   [STORAGE_KEYS.WINDOW_BEHAVIOR]: WindowBehaviorSettings;
+  [STORAGE_KEYS.DASHBOARD]: DashboardSettings;
   [STORAGE_KEYS.CANVAS_URL]: string;
   [STORAGE_KEYS.LANDING_PAGE]: string;
   [STORAGE_KEYS.SIDEBAR_COLLAPSED]: boolean;
@@ -334,6 +351,7 @@ export const SETTINGS_DEFAULTS: Partial<SettingsTypeMap> = {
   [STORAGE_KEYS.CONTENT]: DEFAULT_CONTENT_SETTINGS,
   [STORAGE_KEYS.AI_CONFIG]: DEFAULT_AI_CONFIG,
   [STORAGE_KEYS.WINDOW_BEHAVIOR]: DEFAULT_WINDOW_BEHAVIOR_SETTINGS,
+  [STORAGE_KEYS.DASHBOARD]: DEFAULT_DASHBOARD_SETTINGS,
   [STORAGE_KEYS.CANVAS_URL]: '',
   [STORAGE_KEYS.LANDING_PAGE]: '/',
   [STORAGE_KEYS.SIDEBAR_COLLAPSED]: false,
@@ -354,4 +372,379 @@ export const SETTINGS_SCHEMAS: Partial<Record<string, z.ZodType>> = {
   [STORAGE_KEYS.CONTENT]: ContentSettingsSchema,
   [STORAGE_KEYS.AI_CONFIG]: AIConfigSchema,
   [STORAGE_KEYS.WINDOW_BEHAVIOR]: WindowBehaviorSettingsSchema,
+  [STORAGE_KEYS.DASHBOARD]: DashboardSettingsSchema,
+};
+
+// =============================================================================
+// SETTINGS METADATA - For UI display and search
+// =============================================================================
+
+export type SettingsCategory = 'account' | 'display' | 'academic' | 'notifications';
+
+export type SettingComponentType =
+  | 'toggle'
+  | 'select'
+  | 'input'
+  | 'slider'
+  | 'button-group'
+  | 'custom';
+
+export interface SettingMetadata {
+  /** The setting key (for nested settings, use dot notation like 'syncPrefs.autoSyncEnabled') */
+  key: string;
+  /** Display label */
+  label: string;
+  /** Description for UI display and search */
+  description: string;
+  /** Category for grouping */
+  category: SettingsCategory;
+  /** Component type for rendering */
+  component: SettingComponentType;
+  /** Search keywords (additional terms to match) */
+  keywords?: string[];
+}
+
+/**
+ * Metadata for all settings exposed in the Settings UI.
+ * Used for:
+ * - Grouping settings by category
+ * - Search functionality
+ * - Tooltips and help text
+ */
+export const SETTINGS_METADATA: SettingMetadata[] = [
+  // =================================
+  // ACCOUNT & CONNECTION
+  // =================================
+  {
+    key: 'canvasUrl',
+    label: 'Canvas URL',
+    description: "Your institution's Canvas LMS URL",
+    category: 'account',
+    component: 'input',
+    keywords: ['institution', 'instructure', 'connection', 'api'],
+  },
+  {
+    key: 'canvasToken',
+    label: 'Canvas API Token',
+    description: 'Access token for Canvas API authentication',
+    category: 'account',
+    component: 'custom',
+    keywords: ['api', 'key', 'authentication', 'credentials'],
+  },
+  {
+    key: 'syncPrefs.autoSyncEnabled',
+    label: 'Auto-sync',
+    description: 'Automatically sync data from Canvas in the background',
+    category: 'account',
+    component: 'toggle',
+    keywords: ['automatic', 'background', 'refresh'],
+  },
+  {
+    key: 'syncPrefs.autoSyncInterval',
+    label: 'Sync interval',
+    description: 'How often to automatically sync data from Canvas',
+    category: 'account',
+    component: 'select',
+    keywords: ['frequency', 'minutes', 'schedule'],
+  },
+  {
+    key: 'syncPrefs.syncFiles',
+    label: 'Sync files',
+    description: 'Include course files and folders in sync',
+    category: 'account',
+    component: 'toggle',
+    keywords: ['documents', 'downloads', 'attachments'],
+  },
+  {
+    key: 'syncPrefs.syncAnnouncements',
+    label: 'Sync announcements',
+    description: 'Include course announcements in sync',
+    category: 'account',
+    component: 'toggle',
+    keywords: ['news', 'updates', 'messages'],
+  },
+  {
+    key: 'windowBehavior.closeAction',
+    label: 'Close button behavior',
+    description: 'What happens when you click the close button',
+    category: 'account',
+    component: 'select',
+    keywords: ['quit', 'minimize', 'tray', 'exit'],
+  },
+
+  // =================================
+  // DISPLAY & LAYOUT
+  // =================================
+  {
+    key: 'appearance.theme',
+    label: 'Theme',
+    description: 'Application color theme',
+    category: 'display',
+    component: 'button-group',
+    keywords: ['dark', 'light', 'mode', 'color'],
+  },
+  {
+    key: 'appearance.sidebarCollapsed',
+    label: 'Sidebar collapsed',
+    description: 'Start with sidebar collapsed on launch',
+    category: 'display',
+    component: 'toggle',
+    keywords: ['navigation', 'narrow', 'compact'],
+  },
+  {
+    key: 'landingPage',
+    label: 'Landing page',
+    description: 'The page shown when the app launches',
+    category: 'display',
+    component: 'button-group',
+    keywords: ['home', 'startup', 'default'],
+  },
+  {
+    key: 'dashboard.prioritySortingEnabled',
+    label: 'Priority sorting',
+    description: 'Sort tasks by urgency and priority score instead of due date only',
+    category: 'display',
+    component: 'toggle',
+    keywords: ['order', 'ranking', 'importance'],
+  },
+  {
+    key: 'dashboard.importantWorksThreshold',
+    label: 'Important works threshold',
+    description: 'Show tasks with grade weight above this percentage in Important Works',
+    category: 'display',
+    component: 'slider',
+    keywords: ['weight', 'percent', 'significant'],
+  },
+  {
+    key: 'courses.defaultViewMode',
+    label: 'Courses view',
+    description: 'Default view mode for the courses page',
+    category: 'display',
+    component: 'button-group',
+    keywords: ['grid', 'list', 'layout'],
+  },
+  {
+    key: 'calendar.defaultViewMode',
+    label: 'Calendar view',
+    description: 'Default view mode when opening the calendar',
+    category: 'display',
+    component: 'button-group',
+    keywords: ['month', 'week', 'schedule'],
+  },
+  {
+    key: 'fileExplorer.defaultViewMode',
+    label: 'Files view',
+    description: 'Default view mode for the files page',
+    category: 'display',
+    component: 'button-group',
+    keywords: ['grid', 'list', 'layout'],
+  },
+  {
+    key: 'fileExplorer.defaultState',
+    label: 'Folder default state',
+    description: 'How folders appear when opening the Files page',
+    category: 'display',
+    component: 'select',
+    keywords: ['collapsed', 'expanded', 'remember'],
+  },
+
+  // =================================
+  // ACADEMIC & COURSES
+  // =================================
+  {
+    key: 'academic.defaultTargetGrade',
+    label: 'Default target grade',
+    description: 'Applied to new courses. Individual course targets can be overridden.',
+    category: 'academic',
+    component: 'slider',
+    keywords: ['goal', 'percent', 'score'],
+  },
+  {
+    key: 'academic.termSelection',
+    label: 'Semester selection',
+    description: "Which semester's courses to display",
+    category: 'academic',
+    component: 'select',
+    keywords: ['term', 'quarter', 'year', 'filter'],
+  },
+  {
+    key: 'courses.showHiddenByDefault',
+    label: 'Show hidden courses',
+    description: 'Display hidden courses in the courses list by default',
+    category: 'academic',
+    component: 'toggle',
+    keywords: ['visibility', 'filter'],
+  },
+  {
+    key: 'syncPrefs.autoAssignDueDate',
+    label: 'Auto-fill due dates',
+    description: 'Set today 23:59 as due date for coursework without one',
+    category: 'academic',
+    component: 'toggle',
+    keywords: ['deadline', 'missing', 'guess'],
+  },
+  {
+    key: 'content.linkBehavior',
+    label: 'Link click behavior',
+    description: 'How to handle clicks on links in announcements and course content',
+    category: 'academic',
+    component: 'select',
+    keywords: ['external', 'browser', 'local'],
+  },
+  {
+    key: 'fileExplorer.downloadLocation',
+    label: 'Download location',
+    description: 'Where downloaded files are stored on your computer',
+    category: 'academic',
+    component: 'custom',
+    keywords: ['folder', 'path', 'directory'],
+  },
+  {
+    key: 'syncPrefs.saveHtmlContent',
+    label: 'Save HTML content',
+    description:
+      'Download pages, assignments, and announcements as HTML for offline viewing',
+    category: 'academic',
+    component: 'toggle',
+    keywords: ['offline', 'download', 'local'],
+  },
+
+  // =================================
+  // NOTIFICATIONS
+  // =================================
+  {
+    key: 'notifications.enabled',
+    label: 'Enable notifications',
+    description: 'Show desktop notifications',
+    category: 'notifications',
+    component: 'toggle',
+    keywords: ['alerts', 'desktop', 'popup'],
+  },
+  {
+    key: 'notifications.priorityAlerts',
+    label: 'Priority alerts',
+    description: 'Intelligence flags high-priority or at-risk tasks',
+    category: 'notifications',
+    component: 'toggle',
+    keywords: ['urgent', 'important', 'warning'],
+  },
+  {
+    key: 'notifications.syncStatus',
+    label: 'Sync status',
+    description: 'Notify on sync success or failure',
+    category: 'notifications',
+    component: 'toggle',
+    keywords: ['update', 'refresh', 'complete'],
+  },
+  {
+    key: 'notifications.dueDateReminders',
+    label: 'Due date reminders',
+    description: 'Smart reminders before assignments are due',
+    category: 'notifications',
+    component: 'toggle',
+    keywords: ['deadline', 'upcoming', 'alert'],
+  },
+  {
+    key: 'notifications.gradeAlerts',
+    label: 'Grade alerts',
+    description: 'Notify when new grades are posted',
+    category: 'notifications',
+    component: 'toggle',
+    keywords: ['score', 'marks', 'results'],
+  },
+  {
+    key: 'notifications.workloadPredictions',
+    label: 'Workload predictions',
+    description: 'AI predicts busy periods and suggests planning',
+    category: 'notifications',
+    component: 'toggle',
+    keywords: ['ai', 'intelligence', 'busy'],
+  },
+  {
+    key: 'notifications.riskWarnings',
+    label: 'Risk warnings',
+    description: 'Alert when predicted time exceeds remaining time',
+    category: 'notifications',
+    component: 'toggle',
+    keywords: ['danger', 'late', 'overdue'],
+  },
+  {
+    key: 'notifications.quietWhenFullscreen',
+    label: 'Quiet in fullscreen',
+    description: 'Pause notifications during presentations or focus sessions',
+    category: 'notifications',
+    component: 'toggle',
+    keywords: ['dnd', 'do not disturb', 'focus'],
+  },
+  {
+    key: 'notifications.quietWhenUnplugged',
+    label: 'Quiet on battery',
+    description: 'Pause notifications when on battery power',
+    category: 'notifications',
+    component: 'toggle',
+    keywords: ['power', 'laptop', 'save'],
+  },
+  {
+    key: 'notifications.quietWhenBusy',
+    label: 'Quiet when busy',
+    description: 'Pause when inferred status is Busy or Exam',
+    category: 'notifications',
+    component: 'toggle',
+    keywords: ['status', 'exam', 'studying'],
+  },
+];
+
+/**
+ * Get settings by category
+ */
+export function getSettingsByCategory(category: SettingsCategory): SettingMetadata[] {
+  return SETTINGS_METADATA.filter((s) => s.category === category);
+}
+
+/**
+ * Search settings by query (fuzzy match on label, description, and keywords)
+ */
+export function searchSettings(query: string): SettingMetadata[] {
+  if (!query.trim()) return SETTINGS_METADATA;
+
+  const normalizedQuery = query.toLowerCase().trim();
+  const terms = normalizedQuery.split(/\s+/);
+
+  return SETTINGS_METADATA.filter((setting) => {
+    const searchableText = [
+      setting.label,
+      setting.description,
+      ...(setting.keywords || []),
+    ]
+      .join(' ')
+      .toLowerCase();
+
+    // All terms must match somewhere in the searchable text
+    return terms.every((term) => searchableText.includes(term));
+  });
+}
+
+/**
+ * Category display names and icons
+ */
+export const SETTINGS_CATEGORIES: Record<
+  SettingsCategory,
+  { label: string; description: string }
+> = {
+  account: {
+    label: 'Account & Connection',
+    description: 'Canvas connection, sync settings, and app behavior',
+  },
+  display: {
+    label: 'Display & Layout',
+    description: 'Theme, views, and dashboard customization',
+  },
+  academic: {
+    label: 'Academic & Courses',
+    description: 'Grades, terms, course visibility, and file management',
+  },
+  notifications: {
+    label: 'Notifications',
+    description: 'Alerts, reminders, and quiet mode settings',
+  },
 };

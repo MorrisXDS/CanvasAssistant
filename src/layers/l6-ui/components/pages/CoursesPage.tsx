@@ -20,9 +20,14 @@ import {
   Eye,
   EyeOff,
   GripVertical,
+  Archive,
+  ArchiveRestore,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { useStore, getCachedCourseGrades } from '../../../l5-presentation/store';
 import { Card } from '../shared';
+import { useShallow } from 'zustand/react/shallow';
 import { ColorPickerPopup } from '../primitives';
 import { useCourseDragDrop } from './useCourseDragDrop';
 import { formatTimeAgo, COURSE_COLORS, getCourseColor } from '../../constants';
@@ -127,7 +132,14 @@ function saveViewMode(pageKey: string, mode: ViewMode): void {
 
 export function CoursesPage() {
   const navigate = useNavigate();
-  const { courses, fetchCourses, tasks } = useStore();
+  const { courses, fetchCourses, refreshAll, tasks } = useStore(
+    useShallow((state) => ({
+      courses: state.courses,
+      fetchCourses: state.fetchCourses,
+      refreshAll: state.refreshAll,
+      tasks: state.tasks,
+    }))
+  );
   const [viewMode, setViewModeState] = useState<ViewMode>(() =>
     loadViewMode('courses', loadCourseSettings().defaultViewMode)
   );
@@ -169,6 +181,31 @@ export function CoursesPage() {
     () => loadCourseSettings().showHiddenByDefault
   );
   const [showFilters, setShowFilters] = useState(false);
+
+  // Archived courses state
+  const [archivedCourses, setArchivedCourses] = useState<Course[]>([]);
+  const [showArchived, setShowArchived] = useState(false);
+  const [loadingArchived, setLoadingArchived] = useState(false);
+
+  // Archive dropdown state
+  const [showArchiveDropdown, setShowArchiveDropdown] = useState(false);
+  const archiveDropdownRef = React.useRef<HTMLDivElement>(null);
+
+  // Close archive dropdown when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (
+        archiveDropdownRef.current &&
+        !archiveDropdownRef.current.contains(event.target as Node)
+      ) {
+        setShowArchiveDropdown(false);
+      }
+    }
+    if (showArchiveDropdown) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [showArchiveDropdown]);
 
   // Get unique prefixes and types from visible courses (respects showHidden toggle)
   const { availablePrefixes, availableTypes } = useMemo(() => {
@@ -220,6 +257,59 @@ export function CoursesPage() {
   useEffect(() => {
     savePinnedCourses(pinnedCourses);
   }, [pinnedCourses]);
+
+  // Fetch archived courses when section is expanded
+  useEffect(() => {
+    const fetchArchivedCourses = async () => {
+      if (!showArchived) return;
+      setLoadingArchived(true);
+      try {
+        const result = await window.api?.getArchivedCourses?.();
+        if (result) {
+          setArchivedCourses(result);
+        }
+      } catch (error) {
+        console.error('Failed to fetch archived courses:', error);
+      } finally {
+        setLoadingArchived(false);
+      }
+    };
+    fetchArchivedCourses();
+  }, [showArchived]);
+
+  // Handle unarchive course
+  const handleUnarchiveCourse = async (courseId: number) => {
+    try {
+      const result = await window.api.dispatch('UnarchiveCourse', { courseId });
+      if (result.success) {
+        // Remove from archived list
+        setArchivedCourses((prev) => prev.filter((c) => c.id !== courseId));
+        // Refresh all data (courses, tasks, notifications) so Dashboard updates correctly
+        await refreshAll();
+      }
+    } catch (error) {
+      console.error('Failed to unarchive course:', error);
+    }
+  };
+
+  // Handle archive course
+  const handleArchiveCourse = async (courseId: number) => {
+    try {
+      const result = await window.api.dispatch('ArchiveCourse', { courseId });
+      if (result.success) {
+        // Refresh all data (courses, tasks, notifications) so Dashboard updates correctly
+        await refreshAll();
+        // Also refresh archived courses list and expand section to show user where it went
+        const archivedResult = await window.api?.getArchivedCourses?.();
+        if (archivedResult) {
+          setArchivedCourses(archivedResult);
+          setShowArchived(true); // Expand to show the archived course
+        }
+      }
+    } catch (error) {
+      console.error('Failed to archive course:', error);
+    }
+  };
 
   // Toggle pin status
   const togglePin = (courseId: number, e: React.MouseEvent) => {
@@ -447,6 +537,57 @@ export function CoursesPage() {
             >
               <List size={18} />
             </button>
+          </div>
+
+          {/* Archive Button with Dropdown */}
+          <div style={{ position: 'relative' }} ref={archiveDropdownRef}>
+            <button
+              style={styles.archiveButton}
+              onClick={() => setShowArchiveDropdown(!showArchiveDropdown)}
+              title="Archive a course"
+            >
+              <Archive size={16} />
+              <span>Archive</span>
+              <ChevronDown size={14} style={{ marginLeft: '2px' }} />
+            </button>
+
+            {showArchiveDropdown && (
+              <div style={styles.archiveDropdown}>
+                <div style={styles.archiveDropdownHeader}>Select course to archive</div>
+                {courses.length === 0 ? (
+                  <div style={styles.archiveDropdownEmpty}>No courses available</div>
+                ) : (
+                  <div style={styles.archiveDropdownList}>
+                    {courses.map((course) => (
+                      <button
+                        key={course.id}
+                        style={styles.archiveDropdownItem}
+                        onClick={() => {
+                          handleArchiveCourse(course.id);
+                          setShowArchiveDropdown(false);
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: '8px',
+                            height: '8px',
+                            borderRadius: '50%',
+                            backgroundColor: getCourseColor(course.id, course.color),
+                            flexShrink: 0,
+                          }}
+                        />
+                        <span style={styles.archiveDropdownCode}>
+                          {getShortCode(course.code)}
+                        </span>
+                        <span style={styles.archiveDropdownName}>
+                          {course.nickname || course.name}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </header>
@@ -696,6 +837,87 @@ export function CoursesPage() {
           )}
         </div>
       )}
+
+      {/* Archived Courses Section */}
+      <div style={styles.archivedSection}>
+        <button
+          style={styles.archivedHeader}
+          onClick={() => setShowArchived(!showArchived)}
+        >
+          <div style={styles.archivedHeaderLeft}>
+            <Archive size={18} color="var(--text-muted)" />
+            <span style={styles.archivedTitle}>Archived Courses</span>
+            {archivedCourses.length > 0 && (
+              <span style={styles.archivedCount}>{archivedCourses.length}</span>
+            )}
+          </div>
+          {showArchived ? (
+            <ChevronUp size={18} color="var(--text-muted)" />
+          ) : (
+            <ChevronDown size={18} color="var(--text-muted)" />
+          )}
+        </button>
+
+        {showArchived && (
+          <div style={styles.archivedContent}>
+            {loadingArchived ? (
+              <div style={styles.archivedLoading}>Loading archived courses...</div>
+            ) : archivedCourses.length === 0 ? (
+              <div style={styles.archivedEmpty}>
+                <Archive size={32} color="var(--text-muted)" />
+                <p>No archived courses</p>
+              </div>
+            ) : (
+              <div style={styles.archivedList}>
+                {archivedCourses.map((course) => {
+                  const isAutoArchived = course.archiveSource === 'auto';
+                  return (
+                    <div key={course.id} style={styles.archivedItem}>
+                      <div
+                        style={{
+                          ...styles.archivedColorBar,
+                          backgroundColor: getCourseColor(course.id, course.color),
+                        }}
+                      />
+                      <div
+                        style={styles.archivedInfoClickable}
+                        onClick={() => navigate(`/course/${course.id}`)}
+                        title="View course details"
+                      >
+                        <span style={styles.archivedCode}>
+                          {getShortCode(course.code)}
+                        </span>
+                        <span style={styles.archivedName}>{course.name}</span>
+                        {isAutoArchived && (
+                          <span style={styles.autoArchivedBadge}>Term ended</span>
+                        )}
+                      </div>
+                      <button
+                        style={{
+                          ...styles.unarchiveButton,
+                          ...(isAutoArchived ? styles.unarchiveButtonDisabled : {}),
+                        }}
+                        onClick={() =>
+                          !isAutoArchived && handleUnarchiveCourse(course.id)
+                        }
+                        title={
+                          isAutoArchived
+                            ? 'Cannot restore - term has ended'
+                            : 'Restore this course'
+                        }
+                        disabled={isAutoArchived}
+                      >
+                        <ArchiveRestore size={16} />
+                        Restore
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -1303,6 +1525,88 @@ const styles: Record<string, React.CSSProperties> = {
     transition: 'all var(--transition-fast)',
   },
 
+  archiveButton: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-1)',
+    height: '36px',
+    padding: '0 var(--space-3)',
+    fontSize: 'var(--text-sm)',
+    fontWeight: 'var(--font-medium)',
+    color: 'var(--text-secondary)',
+    backgroundColor: 'var(--bg-card)',
+    border: '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-md)',
+    cursor: 'pointer',
+    transition: 'all var(--transition-fast)',
+  },
+
+  archiveDropdown: {
+    position: 'absolute',
+    top: '100%',
+    right: 0,
+    marginTop: 'var(--space-1)',
+    width: '280px',
+    maxHeight: '320px',
+    backgroundColor: 'var(--bg-card)',
+    border: '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-md)',
+    boxShadow: 'var(--shadow-lg)',
+    zIndex: 100,
+    overflow: 'hidden',
+  },
+
+  archiveDropdownHeader: {
+    padding: 'var(--space-2) var(--space-3)',
+    fontSize: 'var(--text-xs)',
+    fontWeight: 'var(--font-medium)',
+    color: 'var(--text-muted)',
+    borderBottom: '1px solid var(--border-light)',
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px',
+  },
+
+  archiveDropdownEmpty: {
+    padding: 'var(--space-4)',
+    textAlign: 'center' as const,
+    color: 'var(--text-muted)',
+    fontSize: 'var(--text-sm)',
+  },
+
+  archiveDropdownList: {
+    maxHeight: '280px',
+    overflowY: 'auto' as const,
+  },
+
+  archiveDropdownItem: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-2)',
+    width: '100%',
+    padding: 'var(--space-2) var(--space-3)',
+    fontSize: 'var(--text-sm)',
+    color: 'var(--text-primary)',
+    backgroundColor: 'transparent',
+    border: 'none',
+    cursor: 'pointer',
+    textAlign: 'left' as const,
+    transition: 'background-color var(--transition-fast)',
+  },
+
+  archiveDropdownCode: {
+    fontWeight: 'var(--font-bold)',
+    color: 'var(--text-secondary)',
+    fontSize: 'var(--text-xs)',
+    flexShrink: 0,
+  },
+
+  archiveDropdownName: {
+    flex: 1,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap' as const,
+  },
+
   resetOrderButton: {
     display: 'flex',
     alignItems: 'center',
@@ -1633,6 +1937,155 @@ const styles: Record<string, React.CSSProperties> = {
 
   emptyText: {
     color: 'var(--text-secondary)',
+  },
+
+  // Archived Section
+  archivedSection: {
+    marginTop: 'var(--space-6)',
+    backgroundColor: 'var(--bg-card)',
+    borderRadius: 'var(--radius-lg)',
+    border: '1px solid var(--border-default)',
+    overflow: 'hidden',
+  },
+
+  archivedHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+    padding: 'var(--space-4)',
+    backgroundColor: 'transparent',
+    border: 'none',
+    cursor: 'pointer',
+  },
+
+  archivedHeaderLeft: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-2)',
+  },
+
+  archivedTitle: {
+    fontSize: 'var(--text-sm)',
+    fontWeight: 'var(--font-medium)',
+    color: 'var(--text-secondary)',
+  },
+
+  archivedCount: {
+    fontSize: 'var(--text-xs)',
+    padding: '2px 6px',
+    backgroundColor: 'var(--bg-app)',
+    borderRadius: 'var(--radius-sm)',
+    color: 'var(--text-muted)',
+  },
+
+  archivedContent: {
+    borderTop: '1px solid var(--border-light)',
+  },
+
+  archivedLoading: {
+    padding: 'var(--space-6)',
+    textAlign: 'center' as const,
+    color: 'var(--text-muted)',
+    fontSize: 'var(--text-sm)',
+  },
+
+  archivedEmpty: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    alignItems: 'center',
+    gap: 'var(--space-2)',
+    padding: 'var(--space-6)',
+    color: 'var(--text-muted)',
+    fontSize: 'var(--text-sm)',
+  },
+
+  archivedList: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+  },
+
+  archivedItem: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-3)',
+    padding: 'var(--space-3) var(--space-4)',
+    borderTop: '1px solid var(--border-light)',
+  },
+
+  archivedColorBar: {
+    width: '4px',
+    height: '40px',
+    borderRadius: 'var(--radius-sm)',
+    flexShrink: 0,
+  },
+
+  archivedInfo: {
+    flex: 1,
+    minWidth: 0,
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: '2px',
+  },
+
+  archivedInfoClickable: {
+    flex: 1,
+    minWidth: 0,
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: '2px',
+    cursor: 'pointer',
+    padding: 'var(--space-1)',
+    marginLeft: 'calc(-1 * var(--space-1))',
+    borderRadius: 'var(--radius-sm)',
+    transition: 'background-color var(--transition-fast)',
+  },
+
+  archivedCode: {
+    fontSize: 'var(--text-xs)',
+    fontWeight: 'var(--font-bold)',
+    color: 'var(--text-muted)',
+    textTransform: 'uppercase' as const,
+  },
+
+  archivedName: {
+    fontSize: 'var(--text-sm)',
+    color: 'var(--text-secondary)',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap' as const,
+  },
+
+  unarchiveButton: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-1)',
+    padding: 'var(--space-2) var(--space-3)',
+    fontSize: 'var(--text-xs)',
+    fontWeight: 'var(--font-medium)',
+    color: 'var(--color-blue)',
+    backgroundColor: 'var(--color-blue-50)',
+    border: '1px solid var(--color-blue)',
+    borderRadius: 'var(--radius-md)',
+    cursor: 'pointer',
+    flexShrink: 0,
+  },
+
+  unarchiveButtonDisabled: {
+    color: 'var(--text-tertiary)',
+    backgroundColor: 'var(--color-gray-100)',
+    border: '1px solid var(--color-gray-300)',
+    cursor: 'not-allowed',
+    opacity: 0.6,
+  },
+
+  autoArchivedBadge: {
+    fontSize: 'var(--text-xs)',
+    color: 'var(--text-tertiary)',
+    backgroundColor: 'var(--color-gray-100)',
+    padding: '2px 6px',
+    borderRadius: 'var(--radius-sm)',
+    marginLeft: 'var(--space-2)',
   },
 };
 

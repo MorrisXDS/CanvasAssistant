@@ -15,7 +15,12 @@
  */
 
 export { PriorityConfig, DEFAULT_CONFIG } from './PriorityConfig';
-export type { PriorityConfigData, FactorWeights, UrgencyCurve, RefreshTier } from './PriorityConfig';
+export type {
+  PriorityConfigData,
+  FactorWeights,
+  UrgencyCurve,
+  RefreshTier,
+} from './PriorityConfig';
 
 export { PriorityEngine } from './PriorityEngine';
 
@@ -104,6 +109,12 @@ export {
   getAdjustmentSummary,
   determineOutcome,
   createLearningInput,
+  // Submission Status Service
+  getEffectiveSubmissionStatus,
+  isEffectivelySubmitted,
+  isEffectivelyGraded,
+  getSubmissionStatusLabel,
+  getSubmissionStatusBadgeVariant,
 } from './domain';
 
 export type {
@@ -115,6 +126,7 @@ export type {
   TokenCheckResult,
   TokenApplicationResult,
   TokenStatus,
+  SubmissionStatus,
 } from './domain';
 
 // Orchestration (coordinates domain + DB)

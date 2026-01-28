@@ -322,45 +322,119 @@ function formatTimeAgo(dateStr: string) { /* local implementation */ }
 | `Select` | Dropdown select with options |
 
 ### Visible Data Provider (`src/layers/l1-persistence/VisibleDataProvider.ts`)
-**Purpose:** Single source of truth for which courses/tasks are visible to the user based on their term selection and hidden course settings.
+**Purpose:** Single source of truth for which courses/tasks are visible to the user.
 
-**CRITICAL RULE:** All orchestrators, services, and queries that operate on course data MUST filter through `VisibleDataProvider`. The ONLY exception is `SyncEngine` which discovers all courses from Canvas API.
+## MANDATORY: Course Visibility Filtering
 
+**BEFORE writing ANY code that queries courses, tasks, notifications, calendar events, files, or any course-related data, you MUST use `VisibleDataProvider`.**
+
+### What "Visible" Means
+A course is visible if ALL of these are true:
+1. `archived_at IS NULL` - not archived by user
+2. `deleted_at IS NULL` - not soft-deleted
+3. `is_hidden = 0` - not hidden by user
+4. Passes term selection filter ('all', 'auto', or specific term)
+
+### The Rule (NO EXCEPTIONS except SyncEngine)
+
+| Component Type | Requirement |
+|----------------|-------------|
+| IPC handlers (`main.ts`) | MUST use `visibleDataProvider.getVisibleCourseIds()` |
+| L3 Orchestrators | MUST inject and use `VisibleDataProvider` |
+| L4 Commands | MUST use `VisibleDataProvider` via CommandDispatcher |
+| L5 Store selectors | MUST filter by courses in state (which are pre-filtered) |
+| L6 UI components | MUST filter by courseMap from store |
+| **SyncEngine ONLY** | Exception - discovers ALL courses from Canvas API |
+
+### Correct Pattern (IPC Handler)
 ```typescript
-// DO THIS - Filter to visible courses
-constructor(db: Database, visibleDataProvider?: VisibleDataProvider) {
-  this.visibleDataProvider = visibleDataProvider ?? null;
-}
+ipcMain.handle('data:getTasks', (_event, options) => {
+  // ALWAYS get visible IDs first
+  const visibleIds = visibleDataProvider.getVisibleCourseIds();
 
-private fetchTasks(): TaskForPriority[] {
-  const visibleCourseIds = this.visibleDataProvider?.getVisibleCourseIds();
+  // If no visible courses, return empty (not all data!)
+  if (visibleIds.length === 0) return [];
 
-  let sql = `SELECT * FROM tasks WHERE is_completed = 0`;
-  if (visibleCourseIds && visibleCourseIds.length > 0) {
-    sql += ` AND course_id IN (${visibleCourseIds.join(',')})`;
-  } else if (visibleCourseIds && visibleCourseIds.length === 0) {
-    return []; // No visible courses = no results
+  // Filter query to visible courses only
+  const placeholders = visibleIds.map(() => '?').join(', ');
+  const sql = `SELECT * FROM tasks WHERE course_id IN (${placeholders})`;
+  return database.executeRead(sql, visibleIds);
+});
+```
+
+### Correct Pattern (L3 Orchestrator)
+```typescript
+export class MyOrchestrator {
+  constructor(
+    private db: Database,
+    private visibleDataProvider: VisibleDataProvider  // MUST inject
+  ) {}
+
+  getRelevantTasks(): Task[] {
+    const visibleIds = this.visibleDataProvider.getVisibleCourseIds();
+    if (visibleIds.length === 0) return [];
+
+    return this.db.executeRead(
+      `SELECT * FROM tasks WHERE course_id IN (${visibleIds.join(',')})`
+    );
   }
-  // ...
-}
-
-// NOT THIS - Querying all courses ignores user preferences
-private fetchTasks(): TaskForPriority[] {
-  return this.db.executeRead(`SELECT * FROM tasks WHERE is_completed = 0`);
 }
 ```
 
-**Key methods:**
+### Correct Pattern (L6 UI Component)
+```typescript
+function MyComponent() {
+  const { courses, tasks, notifications } = useStore();
+
+  // Build courseMap from store (already visibility-filtered)
+  const courseMap = useMemo(
+    () => new Map(courses.map(c => [c.id, c])),
+    [courses]
+  );
+
+  // Filter data to only include items from visible courses
+  const visibleTasks = useMemo(
+    () => tasks.filter(t => courseMap.has(t.courseId)),
+    [tasks, courseMap]
+  );
+
+  const visibleNotifications = useMemo(
+    () => notifications.filter(n => n.courseId === null || courseMap.has(n.courseId)),
+    [notifications, courseMap]
+  );
+}
+```
+
+### WRONG - Never Do This
+```typescript
+// WRONG: Querying without visibility filter
+const tasks = db.executeRead('SELECT * FROM tasks');
+
+// WRONG: Only checking archived (misses hidden, term selection)
+const tasks = db.executeRead('SELECT * FROM tasks t JOIN courses c ON t.course_id = c.id WHERE c.archived_at IS NULL');
+
+// WRONG: Hardcoding visibility logic instead of using provider
+const visibleCourses = courses.filter(c => !c.isHidden && !c.archivedAt);
+```
+
+### Key Methods
 | Method | Usage |
 |--------|-------|
-| `getVisibleCourseIds()` | Get array of course IDs user wants to see |
+| `getVisibleCourseIds()` | Get IDs of all visible courses |
 | `getVisibleCourses()` | Get full course rows for visible courses |
 | `getVisibleTasks()` | Get tasks from visible courses only |
-| `isTermVisible(termId)` | Check if a term is selected |
+| `isCourseVisible(id)` | Check if specific course is visible |
+| `getArchivedCourses()` | Get archived courses (for Archived section UI) |
 
-**Events to listen for:**
-- `'visibility-changed'` - User changed term selection or hid/unhid a course
-- `'settings-changed'` - Visibility settings were modified
+### Events
+- `'visibility-changed'` - Course visibility changed (archive, hide, delete)
+- `'settings-changed'` - Term selection changed
+
+### Checklist Before Submitting Code
+- [ ] Does my code query courses, tasks, notifications, files, or calendar events?
+- [ ] If yes, am I using `VisibleDataProvider.getVisibleCourseIds()`?
+- [ ] If visibleIds is empty, do I return empty result (not all data)?
+- [ ] In UI, am I filtering by courseMap from store?
 
 ### Database Row Types (`src/layers/l1-persistence/DatabaseRowTypes.ts`)
 **Purpose:** Single source of truth for ALL database row interfaces. Prevents schema drift across orchestrators.

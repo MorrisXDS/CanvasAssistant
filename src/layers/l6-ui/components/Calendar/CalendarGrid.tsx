@@ -38,10 +38,33 @@ export interface ImportedCalendarEvent {
 // Union type for all calendar events
 export type CalendarEvent = TaskCalendarEvent | ImportedCalendarEvent;
 
-// Helper to get event date
+// Helper to check if an imported event is a deadline task event (start_at is epoch)
+// Type guard narrows to ImportedCalendarEvent when true
+// Use timestamp check (< 1 day from epoch) to handle timezone display issues
+function isDeadlineTaskEvent(event: CalendarEvent): event is ImportedCalendarEvent {
+  if (event.type !== 'imported') return false;
+  if (!event.event.taskId) return false;
+  return new Date(event.event.startAt).getTime() < 86400000; // Less than 1 day from epoch
+}
+
+// Helper to get event date (for positioning on calendar)
 function getEventDate(event: CalendarEvent): Date | null {
   if (event.type === 'task') {
     return event.task.dueAt ? new Date(event.task.dueAt) : null;
+  }
+  // For deadline task events, use floor hour of due time for positioning
+  // Event will span from floor hour to due time (e.g., 11:00-11:59 for due at 11:59)
+  if (isDeadlineTaskEvent(event) && event.event.endAt) {
+    const dueTime = new Date(event.event.endAt);
+    const dueMinutes = dueTime.getMinutes();
+    // If due at exact hour (11:00), position at previous hour (10:00-11:00)
+    if (dueMinutes === 0) {
+      return new Date(dueTime.getTime() - 60 * 60 * 1000); // 1 hour before
+    }
+    // Otherwise use floor hour (set minutes/seconds to 0)
+    const floorHour = new Date(dueTime);
+    floorHour.setMinutes(0, 0, 0);
+    return floorHour;
   }
   return new Date(event.event.startAt);
 }
@@ -55,7 +78,7 @@ function getEventTitle(event: CalendarEvent): string {
 }
 
 // Helper to get event color
-function getEventColor(event: CalendarEvent): string {
+function _getEventColor(event: CalendarEvent): string {
   if (event.type === 'task') {
     return event.course.color || '#007FA3';
   }
@@ -81,7 +104,7 @@ function getEventFullLabel(event: CalendarEvent): string {
 }
 
 // Helper to get tooltip text
-function getEventTooltip(event: CalendarEvent): string {
+function _getEventTooltip(event: CalendarEvent): string {
   if (event.type === 'task') {
     const task = event.task;
     const course = event.course;
@@ -90,13 +113,18 @@ function getEventTooltip(event: CalendarEvent): string {
     return `${course.code}: ${task.title}\nDue: ${dueDate}\nWeight: ${weight}\nType: ${task.taskType}`;
   }
   const evt = event.event;
+  // For deadline task events, show "Due: [time]" instead of start time
+  if (isDeadlineTaskEvent(event)) {
+    const dueDate = evt.endAt ? new Date(evt.endAt).toLocaleString() : 'No due date';
+    return `${evt.title}\nDue: ${dueDate}${evt.location ? `\nLocation: ${evt.location}` : ''}`;
+  }
   const start = new Date(evt.startAt).toLocaleString();
   const end = evt.endAt ? new Date(evt.endAt).toLocaleString() : null;
   return `${evt.title}\nStart: ${start}${end ? `\nEnd: ${end}` : ''}${evt.location ? `\nLocation: ${evt.location}` : ''}`;
 }
 
 // Helper to get time display
-function getEventTime(event: CalendarEvent): string | null {
+function _getEventTime(event: CalendarEvent): string | null {
   const date = getEventDate(event);
   if (!date) return null;
   if (event.type === 'imported' && event.event.allDay) return null;
@@ -105,11 +133,13 @@ function getEventTime(event: CalendarEvent): string | null {
 
 // Helper to format time as "xx:xx am/pm"
 function formatTimeAmPm(date: Date): string {
-  return date.toLocaleTimeString('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true
-  }).toLowerCase();
+  return date
+    .toLocaleTimeString('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    })
+    .toLowerCase();
 }
 
 // Helper to get time range string "xx:xx am/pm - xx:xx am/pm"
@@ -117,6 +147,12 @@ function getEventTimeRange(event: CalendarEvent): string | null {
   const startDate = getEventDate(event);
   if (!startDate) return null;
   if (event.type === 'imported' && event.event.allDay) return null;
+
+  // For deadline task events, show "Due [time]"
+  if (isDeadlineTaskEvent(event) && event.event.endAt) {
+    const dueTime = formatTimeAmPm(new Date(event.event.endAt));
+    return `Due ${dueTime}`;
+  }
 
   const startTime = formatTimeAmPm(startDate);
 
@@ -154,6 +190,21 @@ function getEventEndDate(event: CalendarEvent): Date | null {
 
 // Calculate event duration in hours
 function getEventDurationHours(event: CalendarEvent): number {
+  // Deadline task events: show from floor hour to due time
+  if (isDeadlineTaskEvent(event)) {
+    const dueTime = event.event.endAt ? new Date(event.event.endAt) : null;
+    if (dueTime) {
+      const dueMinutes = dueTime.getMinutes();
+      // If due at exact hour (e.g., 11:00), show 1 hour block
+      // Otherwise show from floor hour to due time (e.g., 11:00-11:59 = ~1 hour)
+      if (dueMinutes === 0) {
+        return 1;
+      }
+      return Math.max(0.5, dueMinutes / 60);
+    }
+    return 1;
+  }
+
   const start = getEventDate(event);
   const end = getEventEndDate(event);
   if (!start) return 1;
@@ -173,6 +224,15 @@ function getEventStartOffset(event: CalendarEvent): number {
 
 // Calculate event end offset within last hour (0-1)
 function getEventEndOffset(event: CalendarEvent): number {
+  // For deadline task events, use due time's minute offset
+  if (isDeadlineTaskEvent(event) && event.event.endAt) {
+    const dueTime = new Date(event.event.endAt);
+    const minutes = dueTime.getMinutes();
+    // For exact hour (11:00), end at full hour
+    // For other times (11:59), end at that minute offset
+    return minutes === 0 ? 1 : minutes / 60;
+  }
+
   const end = getEventEndDate(event);
   if (!end) return 1;
   const minutes = end.getMinutes();
@@ -205,7 +265,7 @@ function eventsOverlap(a: CalendarEvent, b: CalendarEvent): boolean {
 // Group overlapping events and assign column positions
 function positionEvents(events: CalendarEvent[]): PositionedEvent[] {
   // Filter to timed events only (exclude all-day events)
-  const timedEvents = events.filter(e => {
+  const timedEvents = events.filter((e) => {
     const date = getEventDate(e);
     if (!date) return false;
     // Check allDay flag for calendar events (imported/user)
@@ -233,7 +293,7 @@ function positionEvents(events: CalendarEvent[]): PositionedEvent[] {
 
     // Check if this event overlaps with any existing group
     for (let i = 0; i < groups.length; i++) {
-      const overlapsWithGroup = groups[i].some(e => eventsOverlap(event, e));
+      const overlapsWithGroup = groups[i].some((e) => eventsOverlap(event, e));
       if (overlapsWithGroup) {
         if (foundGroup === -1) {
           foundGroup = i;
@@ -274,12 +334,15 @@ function positionEvents(events: CalendarEvent[]): PositionedEvent[] {
     for (const event of sortedGroup) {
       let placed = false;
       const eventStart = getEventDate(event)!;
-      const eventEnd = getEventEndDate(event) || new Date(eventStart.getTime() + 60 * 60 * 1000);
+      const _eventEnd =
+        getEventEndDate(event) || new Date(eventStart.getTime() + 60 * 60 * 1000);
 
       // Try to place in existing column
       for (let col = 0; col < columns.length; col++) {
         const lastInCol = columns[col][columns[col].length - 1];
-        const lastEnd = getEventEndDate(lastInCol) || new Date(getEventDate(lastInCol)!.getTime() + 60 * 60 * 1000);
+        const lastEnd =
+          getEventEndDate(lastInCol) ||
+          new Date(getEventDate(lastInCol)!.getTime() + 60 * 60 * 1000);
 
         if (eventStart >= lastEnd) {
           columns[col].push(event);
@@ -415,13 +478,19 @@ function matchEventToCourse(
     }
 
     // Match course name (e.g., "Introduction to Computer Science")
-    if (courseName.length > 3 && (eventTitle.includes(courseName) || calendarName.includes(courseName))) {
+    if (
+      courseName.length > 3 &&
+      (eventTitle.includes(courseName) || calendarName.includes(courseName))
+    ) {
       return { course, matchType: 'name' };
     }
 
     // Match short code (e.g., "CSC148" without the H1/Y1 suffix)
     const shortCode = courseCode.split(/[hy]\d/)[0];
-    if (shortCode.length >= 3 && (eventTitle.includes(shortCode) || calendarName.includes(shortCode))) {
+    if (
+      shortCode.length >= 3 &&
+      (eventTitle.includes(shortCode) || calendarName.includes(shortCode))
+    ) {
       return { course, matchType: 'shortCode' };
     }
   }
@@ -478,7 +547,7 @@ export function CalendarGrid({
   const containerRef = useRef<HTMLDivElement>(null);
   const weekGridRef = useRef<HTMLDivElement>(null);
   const dayGridRef = useRef<HTMLDivElement>(null);
-  const popupRef = useRef<HTMLDivElement>(null);
+  const _popupRef = useRef<HTMLDivElement>(null);
 
   // Update current time every minute
   useEffect(() => {
@@ -503,7 +572,7 @@ export function CalendarGrid({
     }
     if (view === 'week') {
       const weekDays = getWeekDays(currentDate);
-      return weekDays.some(d => isSameDay(d, today));
+      return weekDays.some((d) => isSameDay(d, today));
     }
     return false;
   };
@@ -512,7 +581,7 @@ export function CalendarGrid({
   const getTodayColumnIndex = () => {
     const today = new Date();
     const weekDays = getWeekDays(currentDate);
-    return weekDays.findIndex(d => isSameDay(d, today));
+    return weekDays.findIndex((d) => isSameDay(d, today));
   };
 
   // Create course match cache for imported events
@@ -554,7 +623,10 @@ export function CalendarGrid({
         visibleEvents = events.filter((e) => {
           const eventDate = getEventDate(e);
           if (!eventDate) return false;
-          return eventDate >= weekStart && eventDate <= new Date(weekEnd.getTime() + 24 * 60 * 60 * 1000);
+          return (
+            eventDate >= weekStart &&
+            eventDate <= new Date(weekEnd.getTime() + 24 * 60 * 60 * 1000)
+          );
         });
       } else if (view === 'day') {
         visibleEvents = events.filter((e) => {
@@ -657,10 +729,7 @@ export function CalendarGrid({
   };
 
   // Handler for single event hover - shows unified popup
-  const handleEventHover = (
-    e: React.MouseEvent,
-    event: CalendarEvent
-  ) => {
+  const handleEventHover = (e: React.MouseEvent, event: CalendarEvent) => {
     cancelHidePopup();
     const eventId = getEventId(event);
     setHoveredEventId(eventId);
@@ -688,7 +757,8 @@ export function CalendarGrid({
     } else {
       // Fallback to internal modal
       const eventId = getEventId(event);
-      const match = event.type === 'imported' ? (courseMatches.get(eventId) ?? null) : null;
+      const match =
+        event.type === 'imported' ? (courseMatches.get(eventId) ?? null) : null;
       setDetailModal({ event, courseMatch: match });
     }
   };
@@ -711,16 +781,26 @@ export function CalendarGrid({
 
     return (
       <div style={styles.modalOverlay} onClick={hideDetailModal}>
-        <div style={{
-          ...styles.modalContent,
-          opacity: isCompleted ? 0.85 : 1,
-        }} onClick={(e) => e.stopPropagation()}>
+        <div
+          style={{
+            ...styles.modalContent,
+            opacity: isCompleted ? 0.85 : 1,
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
           <div style={{ ...styles.modalHeader, backgroundColor: effectiveColor }}>
-            <div style={{
-              ...styles.modalTitle,
-              textDecoration: isCompleted ? 'line-through' : 'none',
-            }}>{title}{isCompleted && ' (Completed)'}</div>
-            <button style={styles.modalClose} onClick={hideDetailModal}>×</button>
+            <div
+              style={{
+                ...styles.modalTitle,
+                textDecoration: isCompleted ? 'line-through' : 'none',
+              }}
+            >
+              {title}
+              {isCompleted && ' (Completed)'}
+            </div>
+            <button style={styles.modalClose} onClick={hideDetailModal}>
+              ×
+            </button>
           </div>
           <div style={styles.modalBody}>
             {/* Time range */}
@@ -809,10 +889,12 @@ export function CalendarGrid({
 
     return (
       <div ref={containerRef} style={styles.monthWrapper} onMouseLeave={hidePopupDelayed}>
-        <div style={{
-          ...styles.monthGrid,
-          gridTemplateRows: `auto repeat(${weeksNeeded}, 1fr)`,
-        }}>
+        <div
+          style={{
+            ...styles.monthGrid,
+            gridTemplateRows: `auto repeat(${weeksNeeded}, 1fr)`,
+          }}
+        >
           {/* Weekday headers */}
           {WEEKDAYS.map((day) => (
             <div key={day} style={styles.weekdayHeader}>
@@ -826,7 +908,11 @@ export function CalendarGrid({
             const isCurrentMonth = date.getMonth() === currentDate.getMonth();
             const visibleEvents = dayEvents.slice(0, MAX_VISIBLE);
             const hiddenEvents = dayEvents.slice(MAX_VISIBLE);
-            const dateLabel = date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+            const dateLabel = date.toLocaleDateString('en-US', {
+              weekday: 'short',
+              month: 'short',
+              day: 'numeric',
+            });
 
             return (
               <div
@@ -834,7 +920,9 @@ export function CalendarGrid({
                 style={{
                   ...styles.dayCell,
                   opacity: isCurrentMonth ? 1 : 0.4,
-                  backgroundColor: isToday(date) ? 'rgba(0, 127, 163, 0.08)' : 'transparent',
+                  backgroundColor: isToday(date)
+                    ? 'rgba(0, 127, 163, 0.08)'
+                    : 'transparent',
                 }}
                 onClick={() => onDateClick?.(date)}
               >
@@ -851,7 +939,8 @@ export function CalendarGrid({
                   {visibleEvents.map((event, i) => {
                     const eventId = getEventId(event);
                     const isHovered = hoveredEventId === eventId;
-                    const match = event.type === 'imported' ? courseMatches.get(eventId) : null;
+                    const match =
+                      event.type === 'imported' ? courseMatches.get(eventId) : null;
                     const effectiveColor = getEffectiveEventColor(event);
                     const isCompleted = isCompletedTask(event);
                     return (
@@ -874,11 +963,15 @@ export function CalendarGrid({
                         onMouseEnter={(e) => handleEventHover(e, event)}
                         onMouseLeave={handleEventLeave}
                       >
-                        <span style={{
-                          ...styles.eventText,
-                          textDecoration: isCompleted ? 'line-through' : 'none',
-                        }}>
-                          <strong>{getEventShortLabel(event)}</strong>{getEventShortLabel(event) ? ' ' : ''}{getEventTitle(event)}
+                        <span
+                          style={{
+                            ...styles.eventText,
+                            textDecoration: isCompleted ? 'line-through' : 'none',
+                          }}
+                        >
+                          <strong>{getEventShortLabel(event)}</strong>
+                          {getEventShortLabel(event) ? ' ' : ''}
+                          {getEventTitle(event)}
                         </span>
                       </div>
                     );
@@ -925,7 +1018,8 @@ export function CalendarGrid({
                 const time = getEventTimeRange(event);
                 const isTask = event.type === 'task';
                 const eventId = getEventId(event);
-                const match = event.type === 'imported' ? courseMatches.get(eventId) : null;
+                const match =
+                  event.type === 'imported' ? courseMatches.get(eventId) : null;
                 const effectiveColor = getEffectiveEventColor(event);
                 const isCompleted = isCompletedTask(event);
                 return (
@@ -938,23 +1032,27 @@ export function CalendarGrid({
                     }}
                     onClick={() => handleEventClick(event)}
                   >
-                    <div style={{
-                      ...styles.popupItemTitle,
-                      textDecoration: isCompleted ? 'line-through' : 'none',
-                    }}>
+                    <div
+                      style={{
+                        ...styles.popupItemTitle,
+                        textDecoration: isCompleted ? 'line-through' : 'none',
+                      }}
+                    >
                       <strong>{getEventFullLabel(event)}</strong> {getEventTitle(event)}
                     </div>
-                    {time && (
-                      <div style={styles.popupItemTime}>{time}</div>
-                    )}
+                    {time && <div style={styles.popupItemTime}>{time}</div>}
                     {isTask && event.task.weight > 0 && (
                       <div style={styles.popupItemMeta}>Weight: {event.task.weight}%</div>
                     )}
                     {!isTask && event.event.location && (
-                      <div style={styles.popupItemMeta}>Location: {event.event.location}</div>
+                      <div style={styles.popupItemMeta}>
+                        Location: {event.event.location}
+                      </div>
                     )}
                     {match && (
-                      <div style={styles.popupItemCourseLink}>→ Go to {match.course.code}</div>
+                      <div style={styles.popupItemCourseLink}>
+                        → Go to {match.course.code}
+                      </div>
                     )}
                   </div>
                 );
@@ -971,11 +1069,17 @@ export function CalendarGrid({
 
   if (view === 'week') {
     const days = getWeekDays(currentDate);
-    const MAX_VISIBLE_HOUR = 4; // Show up to 4 events side-by-side horizontally
+    const _MAX_VISIBLE_HOUR = 4; // Show up to 4 events side-by-side horizontally
     const MAX_VISIBLE_ALLDAY = 1;
 
     const formatHourLabel = (hour: number) =>
-      hour === 0 ? '12 AM' : hour < 12 ? `${hour} AM` : hour === 12 ? '12 PM' : `${hour - 12} PM`;
+      hour === 0
+        ? '12 AM'
+        : hour < 12
+          ? `${hour} AM`
+          : hour === 12
+            ? '12 PM'
+            : `${hour - 12} PM`;
 
     return (
       <div ref={containerRef} style={styles.weekWrapper} onMouseLeave={hidePopupDelayed}>
@@ -990,14 +1094,18 @@ export function CalendarGrid({
                   key={index}
                   style={{
                     ...styles.weekDayHeader,
-                    backgroundColor: isToday(date) ? 'rgba(0, 127, 163, 0.08)' : 'var(--bg-card)',
+                    backgroundColor: isToday(date)
+                      ? 'rgba(0, 127, 163, 0.08)'
+                      : 'var(--bg-card)',
                   }}
                 >
                   <span style={styles.weekDayName}>{WEEKDAYS[date.getDay()]}</span>
                   <span
                     style={{
                       ...styles.weekDayNumber,
-                      backgroundColor: isToday(date) ? 'var(--color-navy)' : 'transparent',
+                      backgroundColor: isToday(date)
+                        ? 'var(--color-navy)'
+                        : 'transparent',
                       color: isToday(date) ? 'white' : 'var(--text-primary)',
                     }}
                   >
@@ -1025,7 +1133,8 @@ export function CalendarGrid({
                     {visibleEvents.map((event, i) => {
                       const eventId = getEventId(event);
                       const isHovered = hoveredEventId === eventId;
-                      const match = event.type === 'imported' ? courseMatches.get(eventId) : null;
+                      const _match =
+                        event.type === 'imported' ? courseMatches.get(eventId) : null;
                       const effectiveColor = getEffectiveEventColor(event);
                       const isCompleted = isCompletedTask(event);
                       return (
@@ -1044,11 +1153,15 @@ export function CalendarGrid({
                           onMouseEnter={(e) => handleEventHover(e, event)}
                           onMouseLeave={handleEventLeave}
                         >
-                          <span style={{
-                            ...styles.eventText,
-                            textDecoration: isCompleted ? 'line-through' : 'none',
-                          }}>
-                            <strong>{getEventShortLabel(event)}</strong>{getEventShortLabel(event) ? ' ' : ''}{getEventTitle(event)}
+                          <span
+                            style={{
+                              ...styles.eventText,
+                              textDecoration: isCompleted ? 'line-through' : 'none',
+                            }}
+                          >
+                            <strong>{getEventShortLabel(event)}</strong>
+                            {getEventShortLabel(event) ? ' ' : ''}
+                            {getEventTitle(event)}
                           </span>
                         </div>
                       );
@@ -1096,7 +1209,8 @@ export function CalendarGrid({
                 {days.map((date, dayIndex) => {
                   const dayEvents = getEventsForDate(date);
                   const positionedEvents = positionEvents(dayEvents);
-                  const showTimeIndicator = isTodayVisible() && getTodayColumnIndex() === dayIndex;
+                  const showTimeIndicator =
+                    isTodayVisible() && getTodayColumnIndex() === dayIndex;
 
                   return (
                     <div key={dayIndex} style={styles.weekDayColumn}>
@@ -1115,8 +1229,13 @@ export function CalendarGrid({
                       {positionedEvents.map((pe) => {
                         const eventId = getEventId(pe.event);
                         const isHovered = hoveredEventId === eventId;
-                        const isInProgress = isEventInProgress(pe.event, currentTime) && isSameDay(date, new Date());
-                        const match = pe.event.type === 'imported' ? courseMatches.get(eventId) : null;
+                        const isInProgress =
+                          isEventInProgress(pe.event, currentTime) &&
+                          isSameDay(date, new Date());
+                        const match =
+                          pe.event.type === 'imported'
+                            ? courseMatches.get(eventId)
+                            : null;
                         const effectiveColor = getEffectiveEventColor(pe.event);
                         const timeRange = getEventTimeRange(pe.event);
                         const isCompleted = isCompletedTask(pe.event);
@@ -1126,7 +1245,8 @@ export function CalendarGrid({
                         // Tasks snap to floor hour, imported events use exact time
                         const top = isTask
                           ? pe.startHour * WEEK_HOUR_HEIGHT
-                          : pe.startHour * WEEK_HOUR_HEIGHT + pe.startOffset * WEEK_HOUR_HEIGHT;
+                          : pe.startHour * WEEK_HOUR_HEIGHT +
+                            pe.startOffset * WEEK_HOUR_HEIGHT;
                         const height = pe.durationHours * WEEK_HOUR_HEIGHT - 2;
                         const left = `${(pe.column / pe.totalColumns) * 100}%`;
                         const width = `${(1 / pe.totalColumns) * 100 - 1}%`;
@@ -1154,17 +1274,27 @@ export function CalendarGrid({
                             onMouseEnter={(e) => handleEventHover(e, pe.event)}
                             onMouseLeave={handleEventLeave}
                           >
-                            {isInProgress && <div style={styles.inProgressBadge}>NOW</div>}
-                            <div style={{
-                              ...styles.weekEventTitle,
-                              textDecoration: isCompleted ? 'line-through' : 'none',
-                            }}>
+                            {isInProgress && (
+                              <div style={styles.inProgressBadge}>NOW</div>
+                            )}
+                            <div
+                              style={{
+                                ...styles.weekEventTitle,
+                                textDecoration: isCompleted ? 'line-through' : 'none',
+                              }}
+                            >
                               <strong>{getEventShortLabel(pe.event)}</strong>
                               {getEventShortLabel(pe.event) ? ' ' : ''}
                               {getEventTitle(pe.event)}
                             </div>
-                            {timeRange && <div style={styles.weekEventTime}>{timeRange}</div>}
-                            {match && <div style={styles.weekEventCourse}>→ {match.course.code}</div>}
+                            {timeRange && (
+                              <div style={styles.weekEventTime}>{timeRange}</div>
+                            )}
+                            {match && (
+                              <div style={styles.weekEventCourse}>
+                                → {match.course.code}
+                              </div>
+                            )}
                           </div>
                         );
                       })}
@@ -1193,7 +1323,8 @@ export function CalendarGrid({
                 const time = getEventTimeRange(event);
                 const isTask = event.type === 'task';
                 const eventId = getEventId(event);
-                const match = event.type === 'imported' ? courseMatches.get(eventId) : null;
+                const match =
+                  event.type === 'imported' ? courseMatches.get(eventId) : null;
                 const effectiveColor = getEffectiveEventColor(event);
                 const isCompleted = isCompletedTask(event);
                 return (
@@ -1206,23 +1337,27 @@ export function CalendarGrid({
                     }}
                     onClick={() => handleEventClick(event)}
                   >
-                    <div style={{
-                      ...styles.popupItemTitle,
-                      textDecoration: isCompleted ? 'line-through' : 'none',
-                    }}>
+                    <div
+                      style={{
+                        ...styles.popupItemTitle,
+                        textDecoration: isCompleted ? 'line-through' : 'none',
+                      }}
+                    >
                       <strong>{getEventFullLabel(event)}</strong> {getEventTitle(event)}
                     </div>
-                    {time && (
-                      <div style={styles.popupItemTime}>{time}</div>
-                    )}
+                    {time && <div style={styles.popupItemTime}>{time}</div>}
                     {isTask && event.task.weight > 0 && (
                       <div style={styles.popupItemMeta}>Weight: {event.task.weight}%</div>
                     )}
                     {!isTask && event.event.location && (
-                      <div style={styles.popupItemMeta}>Location: {event.event.location}</div>
+                      <div style={styles.popupItemMeta}>
+                        Location: {event.event.location}
+                      </div>
                     )}
                     {match && (
-                      <div style={styles.popupItemCourseLink}>→ Go to {match.course.code}</div>
+                      <div style={styles.popupItemCourseLink}>
+                        → Go to {match.course.code}
+                      </div>
                     )}
                   </div>
                 );
@@ -1290,10 +1425,12 @@ export function CalendarGrid({
                     onMouseEnter={(e) => handleEventHover(e, event)}
                     onMouseLeave={handleEventLeave}
                   >
-                    <div style={{
-                      ...styles.dayEventTitle,
-                      textDecoration: isCompleted ? 'line-through' : 'none',
-                    }}>
+                    <div
+                      style={{
+                        ...styles.dayEventTitle,
+                        textDecoration: isCompleted ? 'line-through' : 'none',
+                      }}
+                    >
                       <strong>{getEventShortLabel(event)}</strong>
                       {getEventShortLabel(event) ? ' ' : ''}
                       {getEventTitle(event)}
@@ -1312,7 +1449,13 @@ export function CalendarGrid({
             {HOURS.map((hour) => (
               <div key={hour} style={styles.dayHourRow}>
                 <div style={styles.dayTimeLabel}>
-                  {hour === 0 ? '12 AM' : hour < 12 ? `${hour} AM` : hour === 12 ? '12 PM' : `${hour - 12} PM`}
+                  {hour === 0
+                    ? '12 AM'
+                    : hour < 12
+                      ? `${hour} AM`
+                      : hour === 12
+                        ? '12 PM'
+                        : `${hour - 12} PM`}
                 </div>
                 <div style={styles.dayHourCellBackground} />
               </div>
@@ -1338,8 +1481,11 @@ export function CalendarGrid({
               {positionedDayEvents.map((pe) => {
                 const eventId = getEventId(pe.event);
                 const isHovered = hoveredEventId === eventId;
-                const isInProgress = isEventInProgress(pe.event, currentTime) && isSameDay(currentDate, new Date());
-                const match = pe.event.type === 'imported' ? courseMatches.get(eventId) : null;
+                const isInProgress =
+                  isEventInProgress(pe.event, currentTime) &&
+                  isSameDay(currentDate, new Date());
+                const match =
+                  pe.event.type === 'imported' ? courseMatches.get(eventId) : null;
                 const effectiveColor = getEffectiveEventColor(pe.event);
                 const timeRange = getEventTimeRange(pe.event);
                 const isCompleted = isCompletedTask(pe.event);
@@ -1378,16 +1524,20 @@ export function CalendarGrid({
                     onMouseLeave={handleEventLeave}
                   >
                     {isInProgress && <div style={styles.inProgressBadge}>NOW</div>}
-                    <div style={{
-                      ...styles.dayEventTitle,
-                      textDecoration: isCompleted ? 'line-through' : 'none',
-                    }}>
+                    <div
+                      style={{
+                        ...styles.dayEventTitle,
+                        textDecoration: isCompleted ? 'line-through' : 'none',
+                      }}
+                    >
                       <strong>{getEventShortLabel(pe.event)}</strong>
                       {getEventShortLabel(pe.event) ? ' ' : ''}
                       {getEventTitle(pe.event)}
                     </div>
                     {timeRange && <div style={styles.dayEventMeta}>{timeRange}</div>}
-                    {match && <div style={styles.dayEventCourse}>→ {match.course.code}</div>}
+                    {match && (
+                      <div style={styles.dayEventCourse}>→ {match.course.code}</div>
+                    )}
                   </div>
                 );
               })}

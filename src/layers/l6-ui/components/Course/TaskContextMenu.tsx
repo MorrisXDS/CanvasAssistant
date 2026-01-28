@@ -1,6 +1,9 @@
 /**
  * TaskContextMenu Component
  * Right-click context menu for task operations
+ *
+ * Note: Calendar linking options have been removed as tasks now
+ * automatically appear as calendar events (task-calendar unification).
  */
 
 import React, { useEffect, useRef } from 'react';

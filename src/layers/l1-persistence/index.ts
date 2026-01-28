@@ -13,11 +13,7 @@
  */
 
 export { Database, DatabaseConfig, CommitEvent } from './Database';
-export {
-  MigrationRunner,
-  Migration,
-  coreMigrations,
-} from './MigrationRunner';
+export { MigrationRunner, Migration, coreMigrations } from './MigrationRunner';
 export {
   VisibleDataProvider,
   VisibleDataProviderConfig,
@@ -74,6 +70,12 @@ export type {
   ContentAnalysisRow,
   CoursePageRow,
   ResourceRow,
+  // Download queue rows
+  PendingDownloadRow,
+  // Message display history rows
+  DisplayHistoryRow,
+  // Grace token usage rows
+  TokenUsageRow,
 } from './DatabaseRowTypes';
 
 // Re-export types for convenience

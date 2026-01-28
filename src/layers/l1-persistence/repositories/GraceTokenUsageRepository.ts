@@ -6,20 +6,11 @@
  */
 
 import type { Database } from '../Database';
+import type { TokenUsageRow } from '../DatabaseRowTypes';
 import { BaseRepository } from './BaseRepository';
 
-/**
- * Database row for grace_token_usage table
- */
-export interface TokenUsageRow {
-  id: number;
-  grace_token_id: number;
-  task_id: number;
-  tokens_used: number;
-  hours_extended: number;
-  used_at: string;
-  notes: string | null;
-}
+// TokenUsageRow imported from DatabaseRowTypes.ts
+export type { TokenUsageRow } from '../DatabaseRowTypes';
 
 /**
  * Token usage record entity
@@ -57,7 +48,10 @@ export interface RecordUsageParams {
 /**
  * Repository for grace token usage records.
  */
-export class GraceTokenUsageRepository extends BaseRepository<TokenUsageRecord, TokenUsageRow> {
+export class GraceTokenUsageRepository extends BaseRepository<
+  TokenUsageRecord,
+  TokenUsageRow
+> {
   constructor(db: Database) {
     super(db);
   }
@@ -107,10 +101,9 @@ export class GraceTokenUsageRepository extends BaseRepository<TokenUsageRecord, 
    * Find usage record by ID.
    */
   findById(id: number): TokenUsageRecord | null {
-    return this.queryOne<TokenUsageRow>(
-      'SELECT * FROM grace_token_usage WHERE id = ?',
-      [id]
-    );
+    return this.queryOne<TokenUsageRow>('SELECT * FROM grace_token_usage WHERE id = ?', [
+      id,
+    ]);
   }
 
   /**
@@ -137,11 +130,13 @@ export class GraceTokenUsageRepository extends BaseRepository<TokenUsageRecord, 
    * Find all usage records for a course (via grace_tokens -> course_policies).
    */
   findByCourseId(courseId: number): TokenUsageWithContext[] {
-    const rows = this.db.executeRead<TokenUsageRow & {
-      task_title: string;
-      course_id: number;
-      course_code: string;
-    }>(
+    const rows = this.db.executeRead<
+      TokenUsageRow & {
+        task_title: string;
+        course_id: number;
+        course_code: string;
+      }
+    >(
       `SELECT
         gtu.*,
         t.title as task_title,

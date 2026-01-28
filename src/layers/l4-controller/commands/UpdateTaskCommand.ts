@@ -101,6 +101,11 @@ export class UpdateTaskCommand implements Command<UpdateTaskParams, { taskId: nu
         values.push(params.taskType);
       }
 
+      if (params.userSubmissionStatus !== undefined) {
+        updates.push('user_submission_status = ?');
+        values.push(params.userSubmissionStatus);
+      }
+
       if (updates.length === 0) {
         return { success: true, data: { taskId: params.taskId } };
       }
@@ -121,6 +126,26 @@ export class UpdateTaskCommand implements Command<UpdateTaskParams, { taskId: nu
       // Recalculate course grade if grade or weight changed
       if (params.grade !== undefined || params.weight !== undefined) {
         this.updateCourseAssessedGrade(context, task.course_id);
+      }
+
+      // Bidirectional sync: if due_at changed and task has linked calendar event, update event
+      if (params.dueAt !== undefined) {
+        const taskWithLink = context.db.executeReadOne<{
+          calendar_event_id: number | null;
+        }>('SELECT calendar_event_id FROM tasks WHERE id = ?', [params.taskId]);
+
+        if (taskWithLink?.calendar_event_id) {
+          const newDueAt = params.dueAt || null;
+          if (newDueAt) {
+            context.db.executeWrite(
+              `UPDATE calendar_events
+               SET start_at = ?, end_at = datetime(?, '+1 hour'), updated_at = CURRENT_TIMESTAMP
+               WHERE id = ?`,
+              [newDueAt, newDueAt, taskWithLink.calendar_event_id],
+              'calendar_events'
+            );
+          }
+        }
       }
 
       return {
