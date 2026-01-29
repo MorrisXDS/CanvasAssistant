@@ -89,7 +89,7 @@ export const TASK_CANVAS_FIELDS = [
   'submission_status', // Derived from Canvas submission.workflow_state
   'completed_at', // From Canvas submission.submitted_at
   'grade', // From Canvas submission.score / points_possible * 100
-  'task_type', // Derived from Canvas submission_types
+  'task_type', // Derived from Canvas submission_types - user can override with conflict UI
 ] as const;
 
 /**
@@ -116,14 +116,14 @@ export const TASK_CANVAS_FIELDS = [
  * @field lock_at - Date when assignment becomes locked.
  *        Canvas controls assignment lock dates.
  *
- * ## NOT Authoritative (removed)
+ * ## Conflict-enabled Fields (user can override via conflict UI)
  *
- * @field task_type - Was previously authoritative but has been removed.
- *        Users can now override Canvas-derived task types with conflict UI.
+ * @field task_type - Derived from Canvas submission_types. User can override
+ *        and will see conflict UI if Canvas value differs from local value.
+ *        NOT authoritative - user decides which value to keep.
  *
- * @field is_completed - Was previously authoritative (derived from submission_status).
- *        Removed so users can mark tasks complete locally and it persists.
- *        User-marked completion is never overwritten by Canvas sync.
+ * @field is_completed - User can mark tasks complete locally. If Canvas
+ *        differs, user decides via conflict UI which value to keep.
  */
 export const TASK_AUTHORITATIVE_FIELDS = [
   'submission_status', // Canvas workflow_state is authoritative

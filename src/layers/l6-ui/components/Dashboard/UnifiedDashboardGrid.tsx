@@ -140,6 +140,7 @@ const styles: Record<string, React.CSSProperties> = {
     gridTemplateRows: 'repeat(2, 1fr)',
     columnGap: 'var(--space-4)',
     rowGap: 'var(--space-4)',
+    alignItems: 'stretch', // Ensure cards stretch to fill cells
     width: '100%',
     // Fill available vertical space: viewport - header(~80px) - stats(~100px) - spacing(~120px)
     height: 'calc(100vh - 300px)',

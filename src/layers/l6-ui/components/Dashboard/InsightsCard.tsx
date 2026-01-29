@@ -20,6 +20,7 @@ import {
   EyeOff,
 } from 'lucide-react';
 import { Card } from '../shared';
+import { INSIGHT_LABELS, CARD_TITLES } from '../../constants';
 import type {
   Insight,
   InsightSeverity,
@@ -62,37 +63,31 @@ const SEVERITY_COLORS: Record<InsightSeverity, string> = {
   info: 'var(--color-info)',
 };
 
-// Map insight types to categories
-type InsightCategory =
-  | 'Deadline'
-  | 'Performance'
-  | 'Productivity'
-  | 'Achievement'
-  | 'Workload'
-  | 'Setup';
+// Map insight types to categories using centralized labels
+type InsightCategory = keyof typeof INSIGHT_LABELS.categories;
 
 const INSIGHT_CATEGORIES: Record<InsightType, InsightCategory> = {
-  deadline_pattern: 'Deadline',
-  workload_warning: 'Workload',
-  course_struggle: 'Performance',
-  improvement: 'Performance',
-  productivity_window: 'Productivity',
-  streak: 'Achievement',
-  data_completeness: 'Setup',
-  grade_at_risk: 'Performance',
-  grade_trend: 'Performance',
-  crunch_period: 'Workload',
-  unset_weight: 'Setup',
-  guessed_due_date: 'Setup',
+  deadline_pattern: 'deadline',
+  workload_warning: 'workload',
+  course_struggle: 'performance',
+  improvement: 'performance',
+  productivity_window: 'productivity',
+  streak: 'achievement',
+  data_completeness: 'setup',
+  grade_at_risk: 'performance',
+  grade_trend: 'performance',
+  crunch_period: 'workload',
+  unset_weight: 'setup',
+  guessed_due_date: 'setup',
 };
 
 const CATEGORY_COLORS: Record<InsightCategory, string> = {
-  Deadline: '#dc2626', // red
-  Workload: '#ea580c', // orange
-  Performance: '#7c3aed', // purple
-  Productivity: '#0891b2', // cyan
-  Achievement: '#16a34a', // green
-  Setup: '#6b7280', // gray
+  deadline: '#dc2626', // red
+  workload: '#ea580c', // orange
+  performance: '#7c3aed', // purple
+  productivity: '#0891b2', // cyan
+  achievement: '#16a34a', // green
+  setup: '#6b7280', // gray
 };
 
 /**
@@ -200,16 +195,16 @@ export function InsightsCard({ maxItems = 3 }: InsightsCardProps) {
 
   return (
     <Card
-      title="Insights"
+      title={CARD_TITLES.dashboard.insights}
       headerAction={
         insights.length > 1 && (
           <button
             style={styles.clearAllButton}
             onClick={handleAcknowledgeAll}
-            title="Acknowledge all"
+            title={INSIGHT_LABELS.actions.acknowledgeAll}
           >
             <CheckCircle size={12} />
-            <span>Clear all</span>
+            <span>{INSIGHT_LABELS.actions.clearAll}</span>
           </button>
         )
       }
@@ -218,7 +213,7 @@ export function InsightsCard({ maxItems = 3 }: InsightsCardProps) {
     >
       {loading ? (
         <div style={styles.emptyState}>
-          <span style={styles.emptyText}>Loading...</span>
+          <span style={styles.emptyText}>{INSIGHT_LABELS.empty.loading}</span>
         </div>
       ) : insights.length === 0 ? (
         <div style={styles.emptyState}>
@@ -227,7 +222,7 @@ export function InsightsCard({ maxItems = 3 }: InsightsCardProps) {
             color="var(--text-muted)"
             style={{ marginBottom: 'var(--space-2)' }}
           />
-          <span style={styles.emptyText}>No insights available</span>
+          <span style={styles.emptyText}>{INSIGHT_LABELS.empty.description}</span>
         </div>
       ) : (
         <div style={styles.list}>
@@ -281,7 +276,7 @@ export function InsightsCard({ maxItems = 3 }: InsightsCardProps) {
                           color: CATEGORY_COLORS[INSIGHT_CATEGORIES[insight.type]],
                         }}
                       >
-                        {INSIGHT_CATEGORIES[insight.type]}
+                        {INSIGHT_LABELS.categories[INSIGHT_CATEGORIES[insight.type]]}
                       </span>
                       <span
                         style={{
@@ -300,14 +295,14 @@ export function InsightsCard({ maxItems = 3 }: InsightsCardProps) {
                   <button
                     style={styles.dismissButton}
                     onClick={() => handleAcknowledge(insight.id)}
-                    title="Acknowledge"
+                    title={INSIGHT_LABELS.actions.acknowledge}
                   >
                     <X size={14} />
                   </button>
                   <button
                     style={styles.suppressButton}
                     onClick={() => handleSuppress(insight.id)}
-                    title="Never show again"
+                    title={INSIGHT_LABELS.actions.neverShowAgain}
                   >
                     <EyeOff size={14} />
                   </button>

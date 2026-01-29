@@ -7,7 +7,7 @@ import { useNavigate } from 'react-router-dom';
 import { CalendarCheck, MapPin } from 'lucide-react';
 import { Card } from '../shared';
 import { useStore } from '../../../l5-presentation/store';
-import type { DisplayCalendarEvent, Course } from '../../../l5-presentation/types';
+import type { DisplayCalendarEvent } from '../../../l5-presentation/types';
 
 interface ScheduleCardProps {
   maxItems?: number;
@@ -111,17 +111,6 @@ export function ScheduleCard({ maxItems = 4 }: ScheduleCardProps) {
   const fetchCalendarEventsForRange = useStore(
     (state) => state.fetchCalendarEventsForRange
   );
-  const courses = useStore((state) => state.courses);
-
-  // Create course lookup map
-  const courseMap = useMemo(() => {
-    const map = new Map<number, Course>();
-    for (const course of courses) {
-      map.set(course.id, course);
-    }
-    return map;
-  }, [courses]);
-
   // Fetch today's events on mount
   useEffect(() => {
     const today = new Date();
@@ -202,7 +191,6 @@ export function ScheduleCard({ maxItems = 4 }: ScheduleCardProps) {
       ) : (
         <div style={styles.list}>
           {todaysEvents.map((event, index) => {
-            const course = event.courseId ? courseMap.get(event.courseId) : null;
             const timeRange = event.endAt
               ? formatTimeRange(event.startAt, event.endAt)
               : formatTime(event.startAt);
@@ -215,11 +203,6 @@ export function ScheduleCard({ maxItems = 4 }: ScheduleCardProps) {
               isDeadlineEvent && event.endAt
                 ? `Due ${formatTime(event.endAt)}`
                 : timeRange;
-
-            // Source info text
-            const sourceInfo = course
-              ? course.code
-              : event.calendarName || (event.sourceType === 'user' ? 'Personal' : '');
 
             return (
               <div
@@ -246,26 +229,26 @@ export function ScheduleCard({ maxItems = 4 }: ScheduleCardProps) {
                   }}
                 />
 
-                {/* All content left-aligned */}
+                {/* Title first, then time + location aligned */}
                 <div style={styles.content}>
+                  {/* Row 1: Event title */}
                   <span style={styles.eventTitle}>{event.title}</span>
+                  {/* Row 2: Time + Location (locations align left-most) */}
                   <div style={styles.metaRow}>
-                    <span style={styles.timeRange}>{displayTime}</span>
+                    <span
+                      style={{
+                        ...styles.timeRange,
+                        // Only set min-width if this event has a location
+                        ...(event.location ? { minWidth: '110px' } : {}),
+                      }}
+                    >
+                      {displayTime}
+                    </span>
                     {event.location && (
-                      <>
-                        <span style={styles.separator}>·</span>
-                        <MapPin
-                          size={11}
-                          style={{ color: 'var(--text-muted)', flexShrink: 0 }}
-                        />
-                        <span style={styles.location}>{event.location}</span>
-                      </>
-                    )}
-                    {sourceInfo && (
-                      <>
-                        <span style={styles.separator}>·</span>
-                        <span style={styles.sourceInfo}>{sourceInfo}</span>
-                      </>
+                      <span style={styles.location}>
+                        <MapPin size={11} style={{ flexShrink: 0 }} />
+                        {event.location}
+                      </span>
                     )}
                   </div>
                 </div>
@@ -338,32 +321,26 @@ const styles: Record<string, React.CSSProperties> = {
   metaRow: {
     display: 'flex',
     alignItems: 'center',
-    gap: '4px',
-    flexWrap: 'wrap',
+    gap: 'var(--space-2)',
   },
 
   timeRange: {
-    fontSize: 'var(--text-xs)',
-    color: 'var(--text-muted)',
+    fontSize: 'var(--text-sm)',
+    fontWeight: 'var(--font-medium)',
+    color: 'var(--text-secondary)',
     whiteSpace: 'nowrap',
-  },
-
-  separator: {
-    fontSize: 'var(--text-xs)',
-    color: 'var(--text-muted)',
   },
 
   location: {
-    fontSize: 'var(--text-xs)',
-    color: 'var(--text-muted)',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '3px',
+    fontSize: 'var(--text-sm)',
+    fontWeight: 'var(--font-medium)',
+    color: 'var(--text-secondary)',
     overflow: 'hidden',
     textOverflow: 'ellipsis',
     whiteSpace: 'nowrap',
-  },
-
-  sourceInfo: {
-    fontSize: 'var(--text-xs)',
-    color: 'var(--text-muted)',
   },
 };
 

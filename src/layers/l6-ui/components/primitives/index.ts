@@ -56,3 +56,6 @@ export {
   SettingSlider,
   SettingButtonGroup,
 } from './SettingRow';
+
+// Settings Dock
+export { SettingsDock } from './SettingsDock';

@@ -99,6 +99,8 @@ export class UpdateTaskCommand implements Command<UpdateTaskParams, { taskId: nu
       if (params.taskType !== undefined) {
         updates.push('task_type = ?');
         values.push(params.taskType);
+        // Mark task_type as user-modified so sync will trigger conflict if Canvas differs
+        this.markFieldAsUserModified(context, params.taskId, 'task_type');
       }
 
       if (params.userSubmissionStatus !== undefined) {
@@ -158,6 +160,51 @@ export class UpdateTaskCommand implements Command<UpdateTaskParams, { taskId: nu
         error: `Failed to update task: ${error instanceof Error ? error.message : String(error)}`,
       };
     }
+  }
+
+  /**
+   * Mark a field as user-modified in field_sources
+   * This ensures sync will trigger a conflict if Canvas has a different value
+   */
+  private markFieldAsUserModified(
+    context: CommandContext,
+    taskId: number,
+    field: string
+  ): void {
+    // Get current field_sources
+    const task = context.db.executeReadOne<{ field_sources: string | null }>(
+      'SELECT field_sources FROM tasks WHERE id = ?',
+      [taskId]
+    );
+
+    const sources: Record<string, string> = task?.field_sources
+      ? JSON.parse(task.field_sources)
+      : {};
+    sources[field] = 'user';
+
+    context.db.executeWrite(
+      'UPDATE tasks SET field_sources = ? WHERE id = ?',
+      [JSON.stringify(sources), taskId],
+      'tasks'
+    );
+
+    // Also update local_modified_fields for backwards compatibility
+    const taskWithModified = context.db.executeReadOne<{
+      local_modified_fields: string | null;
+    }>('SELECT local_modified_fields FROM tasks WHERE id = ?', [taskId]);
+
+    const modified = new Set<string>(
+      taskWithModified?.local_modified_fields
+        ? JSON.parse(taskWithModified.local_modified_fields)
+        : []
+    );
+    modified.add(field);
+
+    context.db.executeWrite(
+      'UPDATE tasks SET local_modified_fields = ? WHERE id = ?',
+      [JSON.stringify(Array.from(modified)), taskId],
+      'tasks'
+    );
   }
 
   private updateCourseAssessedGrade(context: CommandContext, courseId: number): void {

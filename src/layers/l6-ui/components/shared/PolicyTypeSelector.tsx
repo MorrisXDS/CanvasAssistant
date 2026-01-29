@@ -6,6 +6,7 @@
 
 import React from 'react';
 import { Ticket, Clock, TrendingDown, ArrowRightLeft, RefreshCw } from 'lucide-react';
+import { POLICY_LABELS } from '../../constants';
 
 export type PolicyType =
   | 'late_penalty'
@@ -24,32 +25,32 @@ interface PolicyTypeInfo {
 const POLICY_TYPES: PolicyTypeInfo[] = [
   {
     value: 'grace_tokens',
-    label: 'Grace Tokens',
-    description: 'Extend deadlines using tokens',
+    label: POLICY_LABELS.types.grace_tokens.label,
+    description: POLICY_LABELS.types.grace_tokens.description,
     icon: <Ticket size={24} />,
   },
   {
     value: 'late_penalty',
-    label: 'Late Penalty',
-    description: 'Deduct points for late work',
+    label: POLICY_LABELS.types.late_penalty.label,
+    description: POLICY_LABELS.types.late_penalty.description,
     icon: <Clock size={24} />,
   },
   {
     value: 'drop_lowest',
-    label: 'Drop Lowest',
-    description: 'Drop lowest grade(s)',
+    label: POLICY_LABELS.types.drop_lowest.label,
+    description: POLICY_LABELS.types.drop_lowest.description,
     icon: <TrendingDown size={24} />,
   },
   {
     value: 'weight_transfer',
-    label: 'Weight Transfer',
-    description: 'Move weight between tasks',
+    label: POLICY_LABELS.types.weight_transfer.label,
+    description: POLICY_LABELS.types.weight_transfer.description,
     icon: <ArrowRightLeft size={24} />,
   },
   {
     value: 'grade_replacement',
-    label: 'Grade Replacement',
-    description: 'Replace with higher grade',
+    label: POLICY_LABELS.types.grade_replacement.label,
+    description: POLICY_LABELS.types.grade_replacement.description,
     icon: <RefreshCw size={24} />,
   },
 ];

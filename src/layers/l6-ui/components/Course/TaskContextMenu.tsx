@@ -18,6 +18,7 @@ import {
   Eye,
   Calendar,
 } from 'lucide-react';
+import { MENU_LABELS } from '../../constants';
 
 export interface TaskContextMenuProps {
   task: {
@@ -175,7 +176,7 @@ export function TaskContextMenu({
         role="menuitem"
       >
         <Edit3 size={14} />
-        <span>Edit</span>
+        <span>{MENU_LABELS.task.edit}</span>
       </button>
 
       {/* Duplicate */}
@@ -187,7 +188,7 @@ export function TaskContextMenu({
         role="menuitem"
       >
         <Copy size={14} />
-        <span>Duplicate</span>
+        <span>{MENU_LABELS.task.duplicate}</span>
       </button>
 
       {/* Mark Complete / Incomplete */}
@@ -201,12 +202,12 @@ export function TaskContextMenu({
         {task.isCompleted ? (
           <>
             <Circle size={14} />
-            <span>Mark Incomplete</span>
+            <span>{MENU_LABELS.task.markIncomplete}</span>
           </>
         ) : (
           <>
             <CheckCircle size={14} />
-            <span>Mark Complete</span>
+            <span>{MENU_LABELS.task.markComplete}</span>
           </>
         )}
       </button>
@@ -223,12 +224,12 @@ export function TaskContextMenu({
           {task.isOptional ? (
             <>
               <Eye size={14} />
-              <span>Mark as Required</span>
+              <span>{MENU_LABELS.task.markRequired}</span>
             </>
           ) : (
             <>
               <EyeOff size={14} />
-              <span>Mark as Optional</span>
+              <span>{MENU_LABELS.task.markOptional}</span>
             </>
           )}
         </button>
@@ -246,7 +247,7 @@ export function TaskContextMenu({
         role="menuitem"
       >
         <Globe size={14} />
-        <span>Open in Canvas</span>
+        <span>{MENU_LABELS.task.openInCanvas}</span>
       </button>
 
       {/* View in Calendar */}
@@ -259,7 +260,7 @@ export function TaskContextMenu({
           role="menuitem"
         >
           <Calendar size={14} />
-          <span>View in Calendar</span>
+          <span>{MENU_LABELS.task.viewInCalendar}</span>
         </button>
       )}
 
@@ -275,7 +276,7 @@ export function TaskContextMenu({
         role="menuitem"
       >
         <Trash2 size={14} />
-        <span>Delete</span>
+        <span>{MENU_LABELS.task.delete}</span>
       </button>
     </div>
   );

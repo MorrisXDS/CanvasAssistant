@@ -81,7 +81,7 @@ export function MissingDependenciesDialog({
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      size="md"
+      size="lg"
       closeOnBackdropClick={!isDownloading}
     >
       <Modal.Header
@@ -160,7 +160,7 @@ export function MissingDependenciesDialog({
           onClick={onOpenAnyway}
           disabled={isDownloading}
         >
-          <ExternalLink size={16} />
+          <ExternalLink size={14} />
           Open Anyway
         </button>
         <div style={styles.buttonGroup}>
@@ -172,8 +172,8 @@ export function MissingDependenciesDialog({
             onClick={handleDownload}
             disabled={isDownloading}
           >
-            <Download size={16} />
-            {isDownloading ? 'Downloading...' : 'Download All'}
+            <Download size={14} />
+            {isDownloading ? 'Downloading...' : 'Download'}
           </button>
         </div>
       </Modal.Footer>
@@ -215,7 +215,7 @@ const styles: Record<string, React.CSSProperties> = {
 
   progressFill: {
     height: '100%',
-    backgroundColor: 'var(--color-primary)',
+    backgroundColor: 'var(--color-blue)',
     borderRadius: '3px',
     transition: 'width 200ms ease',
   },
@@ -300,6 +300,7 @@ const styles: Record<string, React.CSSProperties> = {
   buttonGroup: {
     display: 'flex',
     gap: '8px',
+    flexShrink: 0,
   },
 
   primaryButton: {
@@ -310,7 +311,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '13px',
     fontWeight: 500,
     color: 'white',
-    backgroundColor: 'var(--color-primary)',
+    backgroundColor: 'var(--color-blue)',
     border: 'none',
     borderRadius: 'var(--radius-md)',
     cursor: 'pointer',

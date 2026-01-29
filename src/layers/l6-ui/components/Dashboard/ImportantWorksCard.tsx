@@ -16,7 +16,7 @@ import {
   type ImportantWorksFilter as FilterType,
   type DashboardSettings,
 } from '../../../l5-presentation/settings';
-import { formatDueDate, getCourseColor } from '../../constants';
+import { formatDueDate, getCourseColor, CARD_TITLES } from '../../constants';
 import { isDeadlineEvent, formatDurationDisplay } from '../Calendar/calendarUtils';
 import type { Task, Course, DisplayCalendarEvent } from '../../../l5-presentation/types';
 
@@ -149,7 +149,7 @@ export function ImportantWorksCard({ maxItems = 4 }: ImportantWorksCardProps) {
 
   return (
     <Card
-      title="Important Works"
+      title={CARD_TITLES.dashboard.importantWorks}
       headerAction={
         <ImportantWorksFilter filter={filter} onFilterChange={handleFilterChange} />
       }
@@ -194,7 +194,11 @@ export function ImportantWorksCard({ maxItems = 4 }: ImportantWorksCardProps) {
                   minute: '2-digit',
                   hour12: true,
                 });
-                timeDisplay = `${deadlineDate} ${deadlineTime}`;
+                // Always prefix with "Due" if not already present
+                const duePrefix = deadlineDate.toLowerCase().startsWith('due')
+                  ? ''
+                  : 'Due ';
+                timeDisplay = `${duePrefix}${deadlineDate} ${deadlineTime}`;
               }
             }
 

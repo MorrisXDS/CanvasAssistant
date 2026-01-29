@@ -24,6 +24,7 @@ const FIELD_LABELS: Record<string, Record<string, string>> = {
     submission_status: 'Submission Status',
     unlock_at: 'Available From',
     lock_at: 'Available Until',
+    task_type: 'Coursework Type',
   },
   course: {
     name: 'Course Name',
@@ -48,7 +49,7 @@ const FIELD_LABELS: Record<string, Record<string, string>> = {
  * User-friendly entity type mappings
  */
 const ENTITY_LABELS: Record<string, string> = {
-  task: 'ASSIGNMENT',
+  task: 'COURSEWORK',
   course: 'COURSE',
   notification: 'ANNOUNCEMENT',
 };
@@ -350,9 +351,9 @@ export function SyncConflictModal({
                 }}
               />
               <span>
-                Remember my choice for "
-                {getFieldLabel(currentConflict.entity, currentConflict.field)}" in future
-                syncs
+                Remember my choice for{' '}
+                {getFieldLabel(currentConflict.entity, currentConflict.field)} for{' '}
+                {currentConflict.entityName} in future syncs
               </span>
             </label>
 
@@ -367,7 +368,7 @@ export function SyncConflictModal({
                   <span>
                     Apply to all{' '}
                     {currentConflict.entity === 'task'
-                      ? 'assignments in this course'
+                      ? 'coursework in this course'
                       : currentConflict.entity === 'notification'
                         ? 'announcements'
                         : 'courses'}

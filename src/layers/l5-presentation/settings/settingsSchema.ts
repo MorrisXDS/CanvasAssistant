@@ -64,6 +64,7 @@ export const STORAGE_KEYS = {
   SETTINGS_SECTION_ORDER: 'settingsSectionOrder',
   SETTINGS_DEFAULT_STATE: 'settingsDefaultState',
   SETTINGS_OPEN_SECTIONS: 'settingsOpenSections',
+  SETTINGS_DOCK_AUTO_HIDE: 'settingsDockAutoHide',
 
   // Announcement settings
   ANNOUNCEMENT_SORT_ORDER: 'announcementSortOrder',
@@ -491,6 +492,7 @@ export interface SettingsTypeMap {
   [STORAGE_KEYS.SETTINGS_SECTION_ORDER]: string[];
   [STORAGE_KEYS.SETTINGS_DEFAULT_STATE]: 'collapsed' | 'expanded' | 'remember';
   [STORAGE_KEYS.SETTINGS_OPEN_SECTIONS]: string[];
+  [STORAGE_KEYS.SETTINGS_DOCK_AUTO_HIDE]: boolean;
   [STORAGE_KEYS.ANNOUNCEMENT_SORT_ORDER]: 'asc' | 'desc';
   [STORAGE_KEYS.ONBOARDING_COMPLETED]: boolean;
 }
@@ -655,7 +657,7 @@ export const SETTINGS_METADATA: SettingMetadata[] = [
   },
   {
     key: 'appearance.sidebarCollapsed',
-    label: 'Sidebar collapsed',
+    label: 'Collapsed sidebar',
     description: 'Start with sidebar collapsed on launch',
     category: 'display',
     component: 'toggle',
@@ -717,6 +719,22 @@ export const SETTINGS_METADATA: SettingMetadata[] = [
     component: 'select',
     keywords: ['collapsed', 'expanded', 'remember'],
   },
+  {
+    key: 'settingsPage.defaultState',
+    label: 'Settings default state',
+    description: 'How settings sections appear when opening this page',
+    category: 'display',
+    component: 'select',
+    keywords: ['collapsed', 'expanded', 'remember', 'accordion'],
+  },
+  {
+    key: 'settingsDockAutoHide',
+    label: 'Dock auto-hide',
+    description: 'Hide the section navigation dock until mouse is near bottom',
+    category: 'display',
+    component: 'toggle',
+    keywords: ['dock', 'navigation', 'hide', 'macOS'],
+  },
 
   // =================================
   // ACADEMIC & COURSES
@@ -777,6 +795,15 @@ export const SETTINGS_METADATA: SettingMetadata[] = [
     category: 'academic',
     component: 'toggle',
     keywords: ['offline', 'download', 'local'],
+  },
+  {
+    key: 'localHtmlPathsSettings.enabled',
+    label: 'Offline HTML files',
+    description:
+      'Prompt to download missing images and linked files when opening HTML content',
+    category: 'academic',
+    component: 'toggle',
+    keywords: ['offline', 'local', 'images', 'dependencies'],
   },
 
   // =================================

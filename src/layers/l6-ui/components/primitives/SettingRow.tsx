@@ -22,6 +22,8 @@ import { Info, RotateCcw } from 'lucide-react';
 // =============================================================================
 
 interface SettingRowProps {
+  /** Unique key for this setting (used for search filtering) */
+  settingKey?: string;
   /** Setting label */
   label: string;
   /** Optional description */
@@ -47,6 +49,7 @@ interface SettingRowProps {
 // =============================================================================
 
 export function SettingRow({
+  settingKey: _settingKey,
   label,
   description,
   tooltip,

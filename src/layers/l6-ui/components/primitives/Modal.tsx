@@ -210,11 +210,7 @@ function ModalHeader({
         {children}
       </div>
       {showCloseButton && handleClose && (
-        <button
-          style={styles.closeButton}
-          onClick={handleClose}
-          aria-label="Close modal"
-        >
+        <button style={styles.closeButton} onClick={handleClose} aria-label="Close modal">
           <X size={20} />
         </button>
       )}
@@ -300,10 +296,12 @@ const styles: Record<string, React.CSSProperties> = {
     transform: 'translate(-50%, -50%)',
     backgroundColor: 'var(--bg-card)',
     borderRadius: 'var(--radius-xl)',
-    boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+    boxShadow:
+      '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
     display: 'flex',
     flexDirection: 'column',
     maxHeight: '90vh',
+    overflow: 'visible',
   },
 
   header: {
@@ -380,6 +378,7 @@ const styles: Record<string, React.CSSProperties> = {
   footer: {
     display: 'flex',
     alignItems: 'center',
+    flexWrap: 'wrap',
     gap: '12px',
     padding: '16px 24px 20px',
     borderTop: '1px solid var(--border-default)',

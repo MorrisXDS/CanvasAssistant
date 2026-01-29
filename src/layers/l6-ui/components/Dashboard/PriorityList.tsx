@@ -3,12 +3,14 @@
  * Displays tasks ranked by ROI/priority score
  */
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PartyPopper, CheckCircle, Circle } from 'lucide-react';
 import { Card, Badge, BadgeVariant } from '../shared';
 import { formatDueDate } from '../../constants';
-import type { PriorityItem } from '../../../l5-presentation/types';
+import { useStore } from '../../../l5-presentation/store';
+import { isDeadlineEvent, formatDurationDisplay } from '../Calendar/calendarUtils';
+import type { PriorityItem, DisplayCalendarEvent } from '../../../l5-presentation/types';
 import type { Task } from '../../../l5-presentation/types';
 
 export interface PriorityListProps {
@@ -38,10 +40,51 @@ export function PriorityList({
   showUrgencyBadges = true,
 }: PriorityListProps) {
   const navigate = useNavigate();
+  const calendarEvents = useStore((state) => state.calendarEvents);
   const displayItems = items.slice(0, maxItems);
   // Use totalPendingTasks if provided, otherwise fall back to items length
   const hasPendingTasks =
     totalPendingTasks !== undefined ? totalPendingTasks > 0 : items.length > 0;
+
+  // Create calendar event lookup map
+  const calendarEventMap = useMemo(() => {
+    const map = new Map<number, DisplayCalendarEvent>();
+    for (const event of calendarEvents) {
+      map.set(event.id, event);
+    }
+    return map;
+  }, [calendarEvents]);
+
+  /**
+   * Format time display for a task:
+   * - Duration event: show time range
+   * - Deadline event: show "Due [date] [time]"
+   * - No due date: return null
+   */
+  const formatTimeDisplay = (task: Task, daysUntilDue: number | null): string | null => {
+    const calendarEvent = task.calendarEventId
+      ? calendarEventMap.get(task.calendarEventId)
+      : undefined;
+
+    if (calendarEvent && !isDeadlineEvent(calendarEvent)) {
+      // Duration event - show time range
+      return formatDurationDisplay(calendarEvent);
+    } else if (task.dueAt) {
+      // Deadline event - show relative deadline with time
+      if (daysUntilDue !== null) {
+        const deadlineDate = formatDueDate(task.dueAt, daysUntilDue);
+        const deadlineTime = new Date(task.dueAt).toLocaleTimeString('en-US', {
+          hour: 'numeric',
+          minute: '2-digit',
+          hour12: true,
+        });
+        // Always prefix with "Due" if not already present
+        const duePrefix = deadlineDate.toLowerCase().startsWith('due') ? '' : 'Due ';
+        return `${duePrefix}${deadlineDate} ${deadlineTime}`;
+      }
+    }
+    return null;
+  };
 
   // Handle double-click to navigate and expand
   const handleDoubleClick = (taskId: number) => {
@@ -71,7 +114,7 @@ export function PriorityList({
           </button>
         )
       }
-      style={{ flex: 1, display: 'flex', flexDirection: 'column' }}
+      style={{ display: 'flex', flexDirection: 'column', height: '100%' }}
     >
       {!hasPendingTasks ? (
         <div style={styles.emptyState}>
@@ -135,9 +178,11 @@ export function PriorityList({
                 </div>
                 <div style={styles.title}>{item.task.title}</div>
                 <div style={styles.bottomRow}>
-                  <span style={styles.dueDate}>
-                    {formatDueDate(item.task.dueAt, item.daysUntilDue)}
-                  </span>
+                  {formatTimeDisplay(item.task, item.daysUntilDue) && (
+                    <span style={styles.dueDate}>
+                      {formatTimeDisplay(item.task, item.daysUntilDue)}
+                    </span>
+                  )}
                   {item.task.weight > 0 && (
                     <span style={styles.weight}>{item.task.weight}% weight</span>
                   )}

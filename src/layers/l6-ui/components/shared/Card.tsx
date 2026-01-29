@@ -56,7 +56,7 @@ export function Card({
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: '20px 24px',
-    minHeight: '64px',
+    height: '64px', // Fixed height for consistent alignment across cards
     boxSizing: 'border-box',
     borderBottom: '1px solid var(--border-light)',
   };

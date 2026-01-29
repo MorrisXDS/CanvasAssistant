@@ -8,7 +8,13 @@ import { useNavigate } from 'react-router-dom';
 import { Megaphone, Bell, Inbox, X } from 'lucide-react';
 import { Card } from '../shared';
 import { useStore } from '../../../l5-presentation/store';
-import { formatTimeAgo, truncateText, getCourseColor } from '../../constants';
+import {
+  formatTimeAgo,
+  truncateText,
+  getCourseColor,
+  CARD_TITLES,
+  MENU_LABELS,
+} from '../../constants';
 import type { Notification } from '../../../l5-presentation/types';
 
 function getShortCode(code: string): string {
@@ -53,16 +59,16 @@ export function NotificationsFeed({
 
   return (
     <Card
-      title="Recent Updates"
+      title={CARD_TITLES.dashboard.recentUpdates}
       headerAction={
         notifications.length > maxItems && (
           <button style={styles.viewAll} onClick={() => navigate('/announcements')}>
-            View all
+            {MENU_LABELS.common.viewAll}
           </button>
         )
       }
       padding="md"
-      style={{ flex: 1, display: 'flex', flexDirection: 'column' }}
+      style={{ display: 'flex', flexDirection: 'column', height: '100%' }}
     >
       {activeNotifications.length === 0 ? (
         <div style={styles.emptyState}>
