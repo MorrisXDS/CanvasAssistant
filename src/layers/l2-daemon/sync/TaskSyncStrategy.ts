@@ -103,6 +103,7 @@ export class TaskSyncStrategy extends BaseSyncStrategy {
 
             if (existingByTitle && existingByTitle.source_type === 'user') {
               // Merge: link the user task to Canvas, preserve user-set fields
+              // Keep local is_completed if user modified it (don't overwrite user completion)
               this.db.executeWrite(
                 `UPDATE tasks SET
                   external_id = ?,
@@ -112,7 +113,6 @@ export class TaskSyncStrategy extends BaseSyncStrategy {
                   unlock_at = COALESCE(?, unlock_at),
                   points_possible = COALESCE(?, points_possible),
                   submission_types = COALESCE(?, submission_types),
-                  is_completed = ?,
                   updated_at = CURRENT_TIMESTAMP
                 WHERE id = ?`,
                 [
@@ -122,7 +122,6 @@ export class TaskSyncStrategy extends BaseSyncStrategy {
                   localTask.unlock_at,
                   localTask.points_possible,
                   localTask.submission_types,
-                  localTask.is_completed,
                   existingByTitle.id,
                 ],
                 'tasks'

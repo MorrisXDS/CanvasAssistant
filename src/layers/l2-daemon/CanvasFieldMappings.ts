@@ -21,8 +21,10 @@
  * - `grade` - Canvas submission score is authoritative (user cannot override)
  * - `due_at` - Canvas due date is authoritative (user cannot override)
  * - `submission_status` - Canvas workflow_state is authoritative
- * - `is_completed` - Derived from submission_status
  * - `completed_at` - Canvas submitted_at is authoritative
+ *
+ * Note: `is_completed` is NOT authoritative - users can mark tasks complete
+ * locally and it will persist even if Canvas shows incomplete.
  *
  * ### 3. Local Fields (LOCAL_ONLY_FIELDS)
  * Fields managed entirely by the application, never synced from Canvas:
@@ -102,9 +104,6 @@ export const TASK_CANVAS_FIELDS = [
  * @field completed_at - Timestamp from Canvas submission.submitted_at.
  *        Represents when the student actually submitted.
  *
- * @field is_completed - Boolean derived from submission_status.
- *        True if workflow_state indicates submission exists.
- *
  * @field grade - Numeric grade from Canvas submission.score / points_possible * 100.
  *        Instructor grades are always authoritative.
  *
@@ -119,13 +118,16 @@ export const TASK_CANVAS_FIELDS = [
  *
  * ## NOT Authoritative (removed)
  *
- * Note: `task_type` was previously authoritative but has been removed.
- * Users can now override Canvas-derived task types with conflict UI.
+ * @field task_type - Was previously authoritative but has been removed.
+ *        Users can now override Canvas-derived task types with conflict UI.
+ *
+ * @field is_completed - Was previously authoritative (derived from submission_status).
+ *        Removed so users can mark tasks complete locally and it persists.
+ *        User-marked completion is never overwritten by Canvas sync.
  */
 export const TASK_AUTHORITATIVE_FIELDS = [
   'submission_status', // Canvas workflow_state is authoritative
   'completed_at', // Canvas submitted_at is authoritative
-  'is_completed', // Derived from submission_status
   'grade', // Canvas score is authoritative
   'due_at', // Canvas due date is authoritative
   'unlock_at', // Canvas unlock date is authoritative

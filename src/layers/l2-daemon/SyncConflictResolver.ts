@@ -458,6 +458,8 @@ export class SyncConflictResolver extends EventEmitter {
         // Update in database
         this.savePendingConflict(existingConflict);
         conflicts.push(existingConflict);
+        // Preserve local value until conflict is resolved
+        preservedFields.push(field);
       } else {
         // Create new conflict
         const conflictId = `${entity}-${externalId}-${field}-${++this.conflictIdCounter}`;
@@ -480,6 +482,8 @@ export class SyncConflictResolver extends EventEmitter {
         this.pendingConflicts.set(conflictId, conflict);
         // Persist conflict to database so it survives app restart
         this.savePendingConflict(conflict);
+        // Preserve local value until conflict is resolved
+        preservedFields.push(field);
       }
     }
 

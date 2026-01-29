@@ -6,7 +6,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { AlertTriangle, X, RefreshCw, Calendar, Clock } from 'lucide-react';
+import { AlertTriangle, X, Calendar, Clock } from 'lucide-react';
 
 /**
  * User-friendly field name mappings
@@ -52,6 +52,35 @@ const ENTITY_LABELS: Record<string, string> = {
   course: 'COURSE',
   notification: 'ANNOUNCEMENT',
 };
+
+/**
+ * Field-specific value formatters for human-readable display
+ */
+const VALUE_FORMATTERS: Record<string, Record<string, (val: unknown) => string>> = {
+  task: {
+    is_completed: (val) => (val ? 'Completed' : 'Not completed'),
+    is_optional: (val) => (val ? 'Optional' : 'Required'),
+  },
+  course: {
+    is_hidden: (val) => (val ? 'Hidden' : 'Visible'),
+  },
+  notification: {
+    is_read: (val) => (val ? 'Read' : 'Unread'),
+  },
+};
+
+/**
+ * Get context-aware labels for local vs canvas values
+ */
+function getValueLabels(field: string): { local: string; canvas: string } {
+  if (field === 'is_completed') {
+    return { local: 'You marked', canvas: 'Canvas says' };
+  }
+  if (['title', 'description', 'weight', 'task_type'].includes(field)) {
+    return { local: 'Your edit', canvas: 'From Canvas' };
+  }
+  return { local: 'Your value', canvas: 'Canvas value' };
+}
 
 /**
  * Get user-friendly label for a field
@@ -136,31 +165,6 @@ function getExpirationDate(
   }
 }
 
-function formatExpirationLabel(
-  preset: ExpirationPreset,
-  termEndDate?: string | null
-): string {
-  switch (preset) {
-    case 'term-end':
-      if (termEndDate) {
-        return `End of term (${new Date(termEndDate).toLocaleDateString()})`;
-      }
-      return 'End of term';
-    case '1-week':
-      return '1 week';
-    case '1-month':
-      return '1 month';
-    case '3-months':
-      return '3 months';
-    case 'never':
-      return 'Never (always remember)';
-    case 'custom':
-      return 'Custom date...';
-    default:
-      return preset;
-  }
-}
-
 export function SyncConflictModal({
   isOpen,
   conflicts,
@@ -196,7 +200,12 @@ export function SyncConflictModal({
   const currentConflict = conflicts[currentIndex];
   const isLast = currentIndex === conflicts.length - 1;
 
-  const formatValue = (value: unknown): string => {
+  const formatValue = (entity: string, field: string, value: unknown): string => {
+    // Check for field-specific formatter first
+    const formatter = VALUE_FORMATTERS[entity]?.[field];
+    if (formatter) return formatter(value);
+
+    // Fallback formatting
     if (value === null || value === undefined) return '(not set)';
     if (typeof value === 'boolean') return value ? 'Yes' : 'No';
     if (typeof value === 'number') return value.toString();
@@ -277,45 +286,57 @@ export function SyncConflictModal({
             <span style={styles.fieldLabel}>
               {getFieldLabel(currentConflict.entity, currentConflict.field)}
             </span>
-            <span style={styles.fieldName}>({currentConflict.field})</span>
           </div>
 
           {/* Values comparison */}
-          <div style={styles.valuesContainer}>
-            <div style={styles.valueBox}>
-              <div style={styles.valueHeader}>
-                <span style={styles.valueLabel}>Local Value</span>
-              </div>
-              <div style={styles.valueContent}>
-                {formatValue(currentConflict.localValue)}
-              </div>
-              <button
-                style={{ ...styles.choiceButton, ...styles.localButton }}
-                onClick={() => handleResolve(false)}
-              >
-                Keep Local
-              </button>
-            </div>
+          {(() => {
+            const labels = getValueLabels(currentConflict.field);
+            return (
+              <div style={styles.valuesContainer}>
+                <div style={styles.valueBox}>
+                  <div style={styles.valueHeader}>
+                    <span style={styles.valueLabel}>{labels.local}</span>
+                  </div>
+                  <div style={styles.valueContent}>
+                    {formatValue(
+                      currentConflict.entity,
+                      currentConflict.field,
+                      currentConflict.localValue
+                    )}
+                  </div>
+                  <button
+                    style={{ ...styles.choiceButton, ...styles.localButton }}
+                    onClick={() => handleResolve(false)}
+                  >
+                    Keep Mine
+                  </button>
+                </div>
 
-            <div style={styles.valueDivider}>
-              <RefreshCw size={16} color="var(--text-muted)" />
-            </div>
+                <div style={styles.valueDivider}>
+                  <span style={styles.vsText}>vs</span>
+                </div>
 
-            <div style={styles.valueBox}>
-              <div style={styles.valueHeader}>
-                <span style={styles.valueLabel}>Canvas Value</span>
+                <div style={styles.valueBox}>
+                  <div style={styles.valueHeader}>
+                    <span style={styles.valueLabel}>{labels.canvas}</span>
+                  </div>
+                  <div style={styles.valueContent}>
+                    {formatValue(
+                      currentConflict.entity,
+                      currentConflict.field,
+                      currentConflict.canvasValue
+                    )}
+                  </div>
+                  <button
+                    style={{ ...styles.choiceButton, ...styles.canvasButton }}
+                    onClick={() => handleResolve(true)}
+                  >
+                    Use Canvas
+                  </button>
+                </div>
               </div>
-              <div style={styles.valueContent}>
-                {formatValue(currentConflict.canvasValue)}
-              </div>
-              <button
-                style={{ ...styles.choiceButton, ...styles.canvasButton }}
-                onClick={() => handleResolve(true)}
-              >
-                Use Canvas
-              </button>
-            </div>
-          </div>
+            );
+          })()}
 
           {/* Remember options */}
           <div style={styles.rememberOptions}>
@@ -359,34 +380,26 @@ export function SyncConflictModal({
                     <Clock size={14} />
                     <span>Remember until:</span>
                   </div>
-                  <div style={styles.expirationOptions}>
-                    {(
-                      [
-                        'term-end',
-                        '1-week',
-                        '1-month',
-                        '3-months',
-                        'never',
-                        'custom',
-                      ] as ExpirationPreset[]
-                    ).map((preset) =>
-                      // Skip term-end if no term date available
-                      preset === 'term-end' && !termEndDate ? null : (
-                        <label key={preset} style={styles.expirationOption}>
-                          <input
-                            type="radio"
-                            name="expiration"
-                            checked={expirationPreset === preset}
-                            onChange={() => {
-                              setExpirationPreset(preset);
-                              setShowCustomDatePicker(preset === 'custom');
-                            }}
-                          />
-                          <span>{formatExpirationLabel(preset, termEndDate)}</span>
-                        </label>
-                      )
+                  <select
+                    value={expirationPreset}
+                    onChange={(e) => {
+                      const preset = e.target.value as ExpirationPreset;
+                      setExpirationPreset(preset);
+                      setShowCustomDatePicker(preset === 'custom');
+                    }}
+                    style={styles.expirationSelect}
+                  >
+                    {termEndDate && (
+                      <option value="term-end">
+                        End of term ({new Date(termEndDate).toLocaleDateString()})
+                      </option>
                     )}
-                  </div>
+                    <option value="1-week">1 week</option>
+                    <option value="1-month">1 month</option>
+                    <option value="3-months">3 months</option>
+                    <option value="never">Always</option>
+                    <option value="custom">Custom date...</option>
+                  </select>
 
                   {showCustomDatePicker && (
                     <div style={styles.customDatePicker}>
@@ -406,15 +419,17 @@ export function SyncConflictModal({
           </div>
         </div>
 
-        {/* Footer with bulk actions */}
-        <div style={styles.footer}>
-          <button style={styles.bulkButton} onClick={() => onResolveAll(false)}>
-            Skip All - Keep Local
-          </button>
-          <button style={styles.bulkButton} onClick={() => onResolveAll(true)}>
-            Skip All - Use Canvas
-          </button>
-        </div>
+        {/* Footer with bulk actions - only show for multiple conflicts */}
+        {conflicts.length > 1 && (
+          <div style={styles.footer}>
+            <button style={styles.bulkButton} onClick={() => onResolveAll(false)}>
+              Keep All Mine ({conflicts.length})
+            </button>
+            <button style={styles.bulkButton} onClick={() => onResolveAll(true)}>
+              Use All Canvas ({conflicts.length})
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -523,7 +538,7 @@ const styles: Record<string, React.CSSProperties> = {
     backgroundColor: 'var(--color-blue)',
     padding: 'var(--space-1) var(--space-2)',
     borderRadius: 'var(--radius-sm)',
-    maxWidth: '180px',
+    maxWidth: '220px',
     overflow: 'hidden',
     textOverflow: 'ellipsis',
     whiteSpace: 'nowrap',
@@ -543,10 +558,6 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 'var(--text-lg)',
     fontWeight: 'var(--font-semibold)',
     color: 'var(--text-primary)',
-  },
-  fieldName: {
-    fontSize: 'var(--text-sm)',
-    color: 'var(--text-muted)',
   },
   valuesContainer: {
     display: 'flex',
@@ -588,25 +599,33 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: 'center',
     padding: '0 var(--space-2)',
   },
+  vsText: {
+    fontSize: 'var(--text-sm)',
+    fontWeight: 'var(--font-medium)',
+    color: 'var(--text-muted)',
+    textTransform: 'lowercase',
+  },
   choiceButton: {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 'var(--space-2)',
     padding: 'var(--space-2) var(--space-3)',
-    backgroundColor: 'var(--color-success)',
-    color: 'white',
-    border: 'none',
     borderRadius: 'var(--radius-md)',
     fontSize: 'var(--text-sm)',
     fontWeight: 'var(--font-medium)',
     cursor: 'pointer',
+    transition: 'all var(--transition-fast)',
   },
   localButton: {
     backgroundColor: 'var(--color-success)',
+    color: 'white',
+    border: 'none',
   },
   canvasButton: {
-    backgroundColor: 'var(--color-blue)',
+    backgroundColor: 'transparent',
+    color: 'var(--color-blue)',
+    border: '1px solid var(--color-blue)',
   },
   rememberOptions: {
     borderTop: '1px solid var(--border-light)',
@@ -638,19 +657,15 @@ const styles: Record<string, React.CSSProperties> = {
     color: 'var(--text-primary)',
     marginBottom: 'var(--space-2)',
   },
-  expirationOptions: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 'var(--space-1)',
-  },
-  expirationOption: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 'var(--space-2)',
+  expirationSelect: {
+    padding: 'var(--space-2)',
     fontSize: 'var(--text-sm)',
-    color: 'var(--text-secondary)',
+    border: '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-md)',
+    backgroundColor: 'var(--bg-card)',
+    color: 'var(--text-primary)',
     cursor: 'pointer',
-    padding: 'var(--space-1) 0',
+    width: '100%',
   },
   customDatePicker: {
     display: 'flex',
