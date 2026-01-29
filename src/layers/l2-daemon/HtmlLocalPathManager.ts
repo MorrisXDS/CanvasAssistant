@@ -627,6 +627,8 @@ export class HtmlLocalPathManager extends EventEmitter {
    * Find HTMLs that reference a given file path
    */
   private findAffectedHtmls(filePath: string): RegenerationInfo[] {
+    this.logger?.info(`[findAffectedHtmls] Looking for HTMLs referencing: ${filePath}`);
+
     // Get resource ID from file path
     const resource = this.db.executeReadOne<{ id: number; external_id: string }>(
       'SELECT id, external_id FROM resources WHERE local_path = ?',
@@ -634,8 +636,13 @@ export class HtmlLocalPathManager extends EventEmitter {
     );
 
     if (!resource) {
+      this.logger?.info(`[findAffectedHtmls] No resource found for path`);
       return [];
     }
+
+    this.logger?.info(
+      `[findAffectedHtmls] Found resource: id=${resource.id}, external_id=${resource.external_id}`
+    );
 
     // Find HTMLs that depend on this resource
     const deps = this.db.executeRead<{
@@ -648,28 +655,42 @@ export class HtmlLocalPathManager extends EventEmitter {
       [resource.external_id]
     );
 
+    this.logger?.info(
+      `[findAffectedHtmls] Found ${deps.length} parent HTMLs in html_dependencies`
+    );
+
     // Build regeneration info for each affected HTML
     return deps.map((dep) => {
-      // Get HTML file path from html_exports or construct it
-      const htmlExport = this.db.executeReadOne<{
+      this.logger?.info(
+        `[findAffectedHtmls] Processing parent: ${dep.parent_source_type}:${dep.parent_source_id}`
+      );
+
+      // Construct external_id for the HTML resource based on source type
+      // Format: html-{sourceType}-{sourceId}
+      const htmlExternalId = `html-${dep.parent_source_type}-${dep.parent_source_id}`;
+
+      // Get HTML file path from resources table
+      const htmlResource = this.db.executeReadOne<{
         local_path: string | null;
         course_id: number;
-      }>(
-        `SELECT local_path, course_id FROM html_exports
-         WHERE source_type = ? AND source_id = ?`,
-        [dep.parent_source_type, dep.parent_source_id]
+      }>(`SELECT local_path, course_id FROM resources WHERE external_id = ?`, [
+        htmlExternalId,
+      ]);
+
+      this.logger?.info(
+        `[findAffectedHtmls] HTML resource lookup: external_id=${htmlExternalId}, found=${!!htmlResource}, local_path=${htmlResource?.local_path}`
       );
 
       // Get course external_id
-      const course = htmlExport
+      const course = htmlResource
         ? this.db.executeReadOne<{ external_id: string }>(
             'SELECT external_id FROM courses WHERE id = ?',
-            [htmlExport.course_id]
+            [htmlResource.course_id]
           )
         : null;
 
       return {
-        htmlPath: htmlExport?.local_path || '',
+        htmlPath: htmlResource?.local_path || '',
         sourceType: dep.parent_source_type as HtmlSourceType,
         sourceId: dep.parent_source_id,
         courseId: course?.external_id || '',

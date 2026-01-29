@@ -105,13 +105,30 @@ const api = {
   downloadResource: (resourceId: number) =>
     ipcRenderer.invoke('resource:download', resourceId),
 
-  openResource: (resourceId: number) => ipcRenderer.invoke('resource:open', resourceId),
+  openResource: (resourceId: number, skipDependencyCheck?: boolean) =>
+    ipcRenderer.invoke('resource:open', resourceId, skipDependencyCheck),
 
   showResourceInFolder: (resourceId: number) =>
     ipcRenderer.invoke('resource:showInFolder', resourceId),
 
   deleteResourceLocal: (resourceId: number) =>
     ipcRenderer.invoke('resource:deleteLocal', resourceId),
+
+  // ============ HTML Dependencies ============
+
+  /**
+   * Check if an HTML resource has missing dependencies
+   * Returns list of missing files with size info
+   */
+  checkHtmlDependencies: (resourceId: number) =>
+    ipcRenderer.invoke('html:checkDependencies', resourceId),
+
+  /**
+   * Download missing dependencies for an HTML resource
+   * Regenerates HTML with correct local paths after download
+   */
+  downloadHtmlDependencies: (resourceId: number) =>
+    ipcRenderer.invoke('html:downloadDependencies', resourceId),
 
   /**
    * Open a Canvas file by its external ID
@@ -419,7 +436,24 @@ const api = {
     autoSyncEnabled: boolean;
     autoSyncInterval: number;
     autoAssignDueDate?: boolean;
+    saveHtmlContent?: boolean;
+    htmlUrlRewriting?: 'local' | 'original';
+    downloadImages?: boolean;
+    downloadLinkedFiles?: boolean;
+    syncFiles?: boolean;
+    syncAnnouncements?: boolean;
   }) => ipcRenderer.invoke('sync:setAutoSyncPreferences', prefs),
+
+  // ============ Local HTML Paths Settings ============
+
+  getLocalHtmlPathsSettings: () =>
+    ipcRenderer.invoke('settings:getLocalHtmlPathsSettings'),
+
+  setLocalHtmlPathsSettings: (settings: {
+    enabled: boolean;
+    autoRegenerate: boolean;
+    promptForMissing: boolean;
+  }) => ipcRenderer.invoke('settings:setLocalHtmlPathsSettings', settings),
 
   // ============ Academic Settings ============
 

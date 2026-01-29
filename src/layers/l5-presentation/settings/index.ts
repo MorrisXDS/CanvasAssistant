@@ -24,6 +24,7 @@ export {
   WindowBehaviorSettingsSchema,
   DashboardSettingsSchema,
   SettingsPageSettingsSchema,
+  LocalHtmlPathsSettingsSchema,
   // TypeScript types
   type StorageKey,
   type SyncPreferences,
@@ -38,6 +39,7 @@ export {
   type WindowBehaviorSettings,
   type DashboardSettings,
   type SettingsPageSettings,
+  type LocalHtmlPathsSettings,
   type SettingsValue,
   type SettingsTypeMap,
   // Default values
@@ -53,6 +55,7 @@ export {
   DEFAULT_WINDOW_BEHAVIOR_SETTINGS,
   DEFAULT_DASHBOARD_SETTINGS,
   DEFAULT_SETTINGS_PAGE_SETTINGS,
+  DEFAULT_LOCAL_HTML_PATHS_SETTINGS,
   DEFAULT_SETTINGS_SECTION_ORDER,
   DEFAULT_DASHBOARD_ORDER,
   DEFAULT_NAV_ORDER,

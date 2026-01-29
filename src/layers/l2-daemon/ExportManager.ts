@@ -13,6 +13,7 @@ import { Database } from '../l1-persistence/Database';
 import { VisibleDataProvider } from '../l1-persistence/VisibleDataProvider';
 import { CryptoManager, EncryptedData } from '../l0-utilities/CryptoManager';
 import { ComponentLogger, Logger } from '../l0-utilities/Logger';
+import type { SyncEngine } from './SyncEngine';
 import type {
   CourseRow,
   TaskRow,
@@ -101,6 +102,10 @@ export interface ExportManifest {
     files: number;
     pages: number;
     policies: number;
+    modules: number;
+    resources: number;
+    syncPreferences: number;
+    pendingConflicts: number;
   };
   checksums?: Record<string, string>;
 }
@@ -109,6 +114,8 @@ export interface ExportManagerConfig {
   logger?: Logger;
   filesDir?: string;
   appVersion?: string;
+  /** Optional SyncEngine reference for sync status checks */
+  syncEngine?: SyncEngine;
 }
 
 // CSV header definitions
@@ -157,6 +164,7 @@ export class ExportManager extends EventEmitter {
   private readonly log: ComponentLogger;
   private readonly filesDir: string;
   private readonly appVersion: string;
+  private readonly syncEngine: SyncEngine | null;
 
   constructor(
     db: Database,
@@ -168,6 +176,7 @@ export class ExportManager extends EventEmitter {
     this.visibleDataProvider = visibleDataProvider;
     this.filesDir = config.filesDir ?? '';
     this.appVersion = config.appVersion ?? '1.0.0';
+    this.syncEngine = config.syncEngine ?? null;
 
     if (config.logger) {
       this.log = config.logger.child('exportManager');
@@ -177,6 +186,14 @@ export class ExportManager extends EventEmitter {
       this.log = defaultLogger.child('exportManager');
       this.cryptoManager = new CryptoManager();
     }
+  }
+
+  /**
+   * Check if sync is currently in progress
+   * Export should not run during sync to ensure data consistency
+   */
+  isSyncInProgress(): boolean {
+    return this.syncEngine?.isBusy() ?? false;
   }
 
   /**
@@ -356,6 +373,11 @@ export class ExportManager extends EventEmitter {
         return { success: false, error: 'Password required for encrypted export' };
       }
 
+      // Check if sync is in progress
+      if (this.isSyncInProgress()) {
+        return { success: false, error: 'Cannot export while sync is in progress' };
+      }
+
       this.emitProgress('collecting', 5, 'Collecting data...');
 
       const courseIds = this.resolveCourseIds(
@@ -438,12 +460,36 @@ export class ExportManager extends EventEmitter {
         );
       }
 
+      // Collect modules and module items
+      const modules = this.db.executeRead<Record<string, unknown>>(
+        `SELECT * FROM modules WHERE course_id IN (${courseIds.map(() => '?').join(', ')})`,
+        courseIds
+      );
+
+      const moduleIds = modules.map((m) => m.id as number);
+      let moduleItems: Record<string, unknown>[] = [];
+      if (moduleIds.length > 0) {
+        moduleItems = this.db.executeRead<Record<string, unknown>>(
+          `SELECT * FROM module_items WHERE module_id IN (${moduleIds.map(() => '?').join(', ')})`,
+          moduleIds
+        );
+      }
+
+      // Collect resources (file references)
+      const resources = this.db.executeRead<Record<string, unknown>>(
+        `SELECT * FROM resources WHERE course_id IN (${courseIds.map(() => '?').join(', ')})`,
+        courseIds
+      );
+
+      // Collect sync metadata (etags for incremental sync)
+      const syncMetadata = this.collectSyncMetadata();
+
       this.emitProgress('collecting', 45, 'Building export data...');
 
       // Build export data object
       const exportData = {
         exportedAt: new Date().toISOString(),
-        version: '2.0',
+        version: '2.1', // Version bump for new sync metadata
         appVersion: this.appVersion,
         options: {
           format: options.format,
@@ -464,6 +510,10 @@ export class ExportManager extends EventEmitter {
         graceTokens,
         pages,
         calendarEvents,
+        modules,
+        moduleItems,
+        resources,
+        syncMetadata,
       };
 
       // Handle different formats
@@ -560,8 +610,14 @@ export class ExportManager extends EventEmitter {
         archive.pipe(output);
 
         // Create manifest
+        const syncMeta = exportData.syncMetadata as
+          | {
+              preferences?: unknown[];
+              pendingConflicts?: unknown[];
+            }
+          | undefined;
         const manifest: ExportManifest = {
-          version: '2.0',
+          version: '2.1',
           exportedAt: new Date().toISOString(),
           appVersion: this.appVersion,
           format: 'zip',
@@ -573,6 +629,10 @@ export class ExportManager extends EventEmitter {
             files: 0,
             pages: (exportData.pages as unknown[])?.length || 0,
             policies: (exportData.policies as unknown[])?.length || 0,
+            modules: (exportData.modules as unknown[])?.length || 0,
+            resources: (exportData.resources as unknown[])?.length || 0,
+            syncPreferences: syncMeta?.preferences?.length || 0,
+            pendingConflicts: syncMeta?.pendingConflicts?.length || 0,
           },
           checksums: {},
         };
@@ -798,6 +858,66 @@ export class ExportManager extends EventEmitter {
     if (percentage >= 53) return 'D';
     if (percentage >= 50) return 'D-';
     return 'F';
+  }
+
+  /**
+   * Collect sync metadata for export
+   * Includes etag cache, sync preferences, and pending conflicts
+   */
+  private collectSyncMetadata(): {
+    endpoints: Record<string, unknown>[];
+    preferences: Record<string, unknown>[];
+    pendingConflicts: Record<string, unknown>[];
+    lastSyncedAt: string | null;
+  } {
+    let endpoints: Record<string, unknown>[] = [];
+    let preferences: Record<string, unknown>[] = [];
+    let pendingConflicts: Record<string, unknown>[] = [];
+    let lastSyncedAt: string | null = null;
+
+    try {
+      // Collect sync_metadata (etag cache for incremental sync)
+      endpoints = this.db.executeRead<Record<string, unknown>>(
+        'SELECT * FROM sync_metadata'
+      );
+    } catch {
+      // Table may not exist
+    }
+
+    try {
+      // Collect sync_preferences (user conflict resolution choices)
+      preferences = this.db.executeRead<Record<string, unknown>>(
+        'SELECT * FROM sync_preferences'
+      );
+    } catch {
+      // Table may not exist
+    }
+
+    try {
+      // Collect pending_sync_conflicts (conflicts awaiting resolution)
+      pendingConflicts = this.db.executeRead<Record<string, unknown>>(
+        'SELECT * FROM pending_sync_conflicts'
+      );
+    } catch {
+      // Table may not exist
+    }
+
+    try {
+      // Get last sync timestamp
+      const lastSync = this.db.executeReadOne<{ last_synced_at: string }>(
+        'SELECT MAX(last_synced_at) as last_synced_at FROM sync_metadata'
+      );
+      lastSyncedAt = lastSync?.last_synced_at ?? null;
+    } catch {
+      // Table may not exist
+    }
+
+    return {
+      endpoints,
+      preferences,
+      pendingConflicts,
+      lastSyncedAt,
+    };
   }
 
   /**

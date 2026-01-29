@@ -90,6 +90,23 @@ export type StorageKey = (typeof STORAGE_KEYS)[keyof typeof STORAGE_KEYS];
 // ZOD SCHEMAS - Validation schemas for settings objects
 // =============================================================================
 
+/**
+ * Sync Preferences Schema
+ *
+ * Settings that affect sync behavior are read from user_preferences table
+ * in the main process. Changes to these settings are applied on next sync.
+ *
+ * SYNC-AFFECTING SETTINGS:
+ * - autoSyncEnabled: Controls auto-sync timer (immediate effect via IPC)
+ * - autoSyncInterval: Controls auto-sync frequency (immediate effect via IPC)
+ * - syncFiles: Whether to sync Canvas files and folders
+ * - syncAnnouncements: Whether to sync course announcements
+ * - autoAssignDueDate: Auto-fill due dates for assignments without one
+ * - saveHtmlContent: Enable HTML content download for offline viewing
+ * - htmlUrlRewriting: 'local' rewrites URLs to local paths, 'original' keeps Canvas URLs
+ * - downloadImages: Download images embedded in HTML content
+ * - downloadLinkedFiles: Download files linked in HTML content
+ */
 export const SyncPreferencesSchema = z.object({
   autoSyncEnabled: z.boolean(),
   autoSyncInterval: z.number().min(5).max(120),

@@ -42,9 +42,11 @@ import {
 } from './SyncConflictResolver';
 import { HtmlFileExtractor, ExtractedFileReference } from './HtmlFileExtractor';
 import { HtmlContentSync } from './HtmlContentSync';
+import { OperationCoordinator } from './OperationCoordinator';
 import { FileDownloadManager } from '../l0-utilities/FileDownloadManager';
 import { HtmlContentSyncConfig } from '../l0-utilities/AppConfig';
 import type { ComponentLogger } from '../l0-utilities/Logger';
+import crypto from 'crypto';
 
 export interface SyncEngineConfig {
   client: CanvasClient;
@@ -60,6 +62,8 @@ export interface SyncEngineConfig {
   logger?: ComponentLogger;
   /** Visible data provider for filtering courses */
   visibleDataProvider?: VisibleDataProvider;
+  /** Operation coordinator for sync/download conflict prevention */
+  operationCoordinator?: OperationCoordinator;
 }
 
 export interface SyncResult {
@@ -209,6 +213,8 @@ export class SyncEngine extends EventEmitter {
   private lastSyncedCourses: CanvasCourse[] = [];
   // Visible data provider for filtering courses
   private visibleDataProvider: VisibleDataProvider | null = null;
+  // Operation coordinator for sync/download conflict prevention
+  private operationCoordinator: OperationCoordinator | null = null;
 
   constructor(config: SyncEngineConfig) {
     super();
@@ -221,6 +227,7 @@ export class SyncEngine extends EventEmitter {
     this.filesBaseDir = config.filesBaseDir || null;
     this.log = config.logger ?? null;
     this.visibleDataProvider = config.visibleDataProvider || null;
+    this.operationCoordinator = config.operationCoordinator || null;
 
     // Initialize HTML content sync if configured
     this.log?.debug(
@@ -258,9 +265,129 @@ export class SyncEngine extends EventEmitter {
   }
 
   /**
+   * Safe wrapper for database writes that checks if database is available.
+   * Logs a warning and returns false if database is not open or is locked.
+   * Use for non-critical writes that can be skipped without breaking sync.
+   *
+   * @param sql SQL statement to execute
+   * @param params Query parameters
+   * @param table Table name for commit event emission
+   * @returns true if write succeeded, false if skipped
+   */
+  private safeWrite(sql: string, params: unknown[], table: string): boolean {
+    if (!this.db.isOpen) {
+      this.log?.warn(`Skipping write to ${table} - database is closed`);
+      return false;
+    }
+    if (this.db.isWriteLocked()) {
+      this.log?.debug(`Skipping write to ${table} - database is locked`);
+      return false;
+    }
+    try {
+      this.db.executeWrite(sql, params, table);
+      return true;
+    } catch (error) {
+      this.log?.error(
+        `Failed to write to ${table}`,
+        error instanceof Error ? error : undefined
+      );
+      return false;
+    }
+  }
+
+  /**
+   * Compute MD5 hash of content for change detection.
+   * Returns null if content is null/undefined.
+   */
+  private computeContentHash(content: string | null | undefined): string | null {
+    if (!content) return null;
+    return crypto.createHash('md5').update(content).digest('hex');
+  }
+
+  /**
+   * Check if there's an active download for a specific HTML resource.
+   * If so, skip updating that resource to prevent conflicts.
+   */
+  private hasActiveDownloadFor(sourceType: string, sourceId: string): boolean {
+    if (!this.operationCoordinator) return false;
+    return this.operationCoordinator.hasActiveDownload(sourceType, sourceId);
+  }
+
+  /**
+   * Update content hash and re-extract dependencies when HTML content changes.
+   * This ensures dependency resolver sees current file references.
+   */
+  private updateContentHashAndDependencies(
+    sourceType: 'page' | 'assignment' | 'syllabus' | 'announcement',
+    sourceId: string,
+    newContent: string | null,
+    _courseId: number
+  ): void {
+    if (!newContent) return;
+
+    const newHash = this.computeContentHash(newContent);
+    if (!newHash) return;
+
+    // Update content hash in appropriate table
+    if (sourceType === 'page') {
+      this.db.executeWrite(
+        'UPDATE course_pages SET content_hash = ? WHERE external_id = ?',
+        [newHash, sourceId],
+        'course_pages'
+      );
+    } else if (sourceType === 'assignment') {
+      this.db.executeWrite(
+        'UPDATE tasks SET description_hash = ? WHERE external_id = ?',
+        [newHash, sourceId],
+        'tasks'
+      );
+    } else if (sourceType === 'syllabus') {
+      this.db.executeWrite(
+        'UPDATE courses SET syllabus_hash = ? WHERE external_id = ?',
+        [newHash, sourceId],
+        'courses'
+      );
+    }
+
+    // Re-extract and update dependencies (only if html_dependencies table exists)
+    try {
+      // Extract file references from new content
+      const fileRefs = this.htmlFileExtractor.extract(newContent);
+
+      // Delete old dependencies (only those without active download session)
+      this.db.executeWrite(
+        `DELETE FROM html_dependencies
+         WHERE parent_source_type = ? AND parent_source_id = ?
+         AND download_session_id IS NULL`,
+        [sourceType, sourceId],
+        'html_dependencies'
+      );
+
+      // Insert new file dependencies with current content hash
+      for (const ref of fileRefs) {
+        this.db.executeWrite(
+          `INSERT OR REPLACE INTO html_dependencies
+           (parent_source_type, parent_source_id, child_source_type, child_source_id, is_cycle, recorded_content_hash)
+           VALUES (?, ?, 'file', ?, 0, ?)`,
+          [sourceType, sourceId, ref.canvasFileId, newHash],
+          'html_dependencies'
+        );
+      }
+
+      this.log?.debug(
+        `Updated ${fileRefs.length} dependencies for ${sourceType}:${sourceId} (hash=${newHash.substring(0, 8)})`
+      );
+    } catch {
+      // html_dependencies table may not exist yet (migration not run)
+      // This is fine - dependencies will be created on first download
+    }
+  }
+
+  /**
    * Ensure the pending_sync_data table exists for crash-safe conflict resolution
    */
   private ensurePendingSyncDataTable(): void {
+    if (!this.db.isOpen) return;
     try {
       this.db.exec(`
         CREATE TABLE IF NOT EXISTS pending_sync_data (
@@ -362,6 +489,7 @@ export class SyncEngine extends EventEmitter {
    * Ensure the endpoint_backoff table exists
    */
   private ensureBackoffTable(): void {
+    if (!this.db.isOpen) return;
     try {
       this.db.exec(`
         CREATE TABLE IF NOT EXISTS endpoint_backoff (
@@ -388,6 +516,7 @@ export class SyncEngine extends EventEmitter {
    * @returns Default target grade (80 if not set)
    */
   private getDefaultTargetGrade(): number {
+    if (!this.db.isOpen) return 80;
     try {
       const prefs = this.db.executeReadOne<{ value: string }>(
         "SELECT value FROM user_preferences WHERE key = 'academicSettings'"
@@ -1212,6 +1341,30 @@ export class SyncEngine extends EventEmitter {
       `syncAll called, htmlContentSync=${!!this.htmlContentSync}, filesBaseDir=${this.filesBaseDir}`
     );
 
+    // Skip sync if database is not open
+    if (!this.db.isOpen) {
+      this.log?.warn('Sync skipped: database is not open');
+      this.emit('sync-error', { type: 'full', error: 'Database is not available' });
+      const skippedResult: SyncResult = {
+        success: false,
+        entity: '',
+        count: 0,
+        errors: ['Database not available'],
+        duration: 0,
+      };
+      return {
+        courses: { ...skippedResult, entity: 'courses' },
+        tasks: { ...skippedResult, entity: 'tasks' },
+        announcements: { ...skippedResult, entity: 'announcements' },
+        modules: { ...skippedResult, entity: 'modules' },
+        pages: { ...skippedResult, entity: 'pages' },
+        folders: { ...skippedResult, entity: 'folders' },
+        files: { ...skippedResult, entity: 'files' },
+        totalDuration: 0,
+        errors: ['Database not available'],
+      };
+    }
+
     // Skip sync if database is locked (e.g., during app reset)
     if (this.db.isWriteLocked()) {
       this.log?.debug('Sync skipped: database is locked for writes');
@@ -1422,9 +1575,17 @@ export class SyncEngine extends EventEmitter {
 
       for (const course of fetched.courses) {
         const localCourse = mapCourse(course, baseUrl, defaultTargetGrade);
+        const courseExternalId = localCourse.external_id;
+
+        // Check if there's an active syllabus download - if so, skip syllabus_body update
+        const hasSyllabusDownload = this.hasActiveDownloadFor(
+          'syllabus',
+          courseExternalId
+        );
+
         const existing = this.db.executeReadOne<Record<string, unknown>>(
           'SELECT * FROM courses WHERE external_id = ?',
-          [localCourse.external_id]
+          [courseExternalId]
         );
 
         const finalData: Record<string, unknown> = { ...localCourse };
@@ -1434,9 +1595,40 @@ export class SyncEngine extends EventEmitter {
               finalData[field] = existing[field];
             }
           }
+
+          // Skip syllabus_body update if download is in progress
+          if (hasSyllabusDownload && localCourse.syllabus_body) {
+            this.log?.info(
+              `Skipping syllabus update for course ${courseExternalId} - download in progress`
+            );
+            finalData.syllabus_body = existing.syllabus_body;
+          }
+        }
+
+        // Compute and add syllabus hash
+        if (finalData.syllabus_body && typeof finalData.syllabus_body === 'string') {
+          finalData.syllabus_hash = this.computeContentHash(finalData.syllabus_body);
         }
 
         this.db.upsert('courses', finalData, 'external_id', true, preservedCourseFields);
+
+        // Update syllabus dependencies if content changed
+        const oldHash = existing?.syllabus_hash as string | null;
+        const newHash = finalData.syllabus_hash as string | null;
+        if (newHash && oldHash && newHash !== oldHash && !hasSyllabusDownload) {
+          const localId = this.db.executeReadOne<{ id: number }>(
+            'SELECT id FROM courses WHERE external_id = ?',
+            [courseExternalId]
+          );
+          if (localId) {
+            this.updateContentHashAndDependencies(
+              'syllabus',
+              courseExternalId,
+              finalData.syllabus_body as string,
+              localId.id
+            );
+          }
+        }
       }
 
       this.log?.info(
@@ -1969,9 +2161,17 @@ export class SyncEngine extends EventEmitter {
 
           for (const assignment of assignments) {
             const localTask = mapAssignment(assignment, localCourseId);
+            const taskExternalId = localTask.external_id;
+
+            // Check if there's an active download for this task's description - if so, skip description update
+            const hasDescriptionDownload = this.hasActiveDownloadFor(
+              'assignment',
+              taskExternalId
+            );
+
             const existing = this.db.executeReadOne<Record<string, unknown>>(
               'SELECT * FROM tasks WHERE external_id = ?',
-              [localTask.external_id]
+              [taskExternalId]
             );
 
             const { autoResolved, conflicts, preservedFields } =
@@ -2046,13 +2246,31 @@ export class SyncEngine extends EventEmitter {
               }
             }
 
+            // Skip description update if download is in progress
+            if (hasDescriptionDownload && finalData.description) {
+              this.log?.info(
+                `Skipping description update for task ${taskExternalId} - download in progress`
+              );
+              if (existing?.description !== undefined) {
+                finalData.description = existing.description;
+              }
+            }
+
+            // Compute and add description hash
+            if (finalData.description && typeof finalData.description === 'string') {
+              finalData.description_hash = this.computeContentHash(finalData.description);
+            }
+
+            // Track old hash for dependency update check
+            const oldDescHash = existing?.description_hash as string | null;
+
             this.db.upsert('tasks', finalData, 'external_id', true, preservedFields);
 
             // Update field_sources if we auto-assigned the due date
             if (autoAssignedDueDate) {
               const row = this.db.executeReadOne<{ id: number }>(
                 'SELECT id FROM tasks WHERE external_id = ?',
-                [localTask.external_id]
+                [taskExternalId]
               );
               if (row) {
                 this.conflictResolver.setFieldSource(
@@ -2062,6 +2280,22 @@ export class SyncEngine extends EventEmitter {
                   'guessed'
                 );
               }
+            }
+
+            // Update dependencies if description content changed
+            const newDescHash = finalData.description_hash as string | null;
+            if (
+              newDescHash &&
+              oldDescHash &&
+              newDescHash !== oldDescHash &&
+              !hasDescriptionDownload
+            ) {
+              this.updateContentHashAndDependencies(
+                'assignment',
+                taskExternalId,
+                finalData.description as string,
+                localCourseId
+              );
             }
 
             counts.tasks++;
@@ -2163,8 +2397,44 @@ export class SyncEngine extends EventEmitter {
           for (const page of pages) {
             const pageType = page.front_page ? 'landing' : 'content';
             const localPage = mapPage(page, localCourseId, pageType);
+
+            // Check if there's an active download for this page - if so, skip update
+            const pageExternalId = localPage.external_id || localPage.url_slug;
+            if (pageExternalId && this.hasActiveDownloadFor('page', pageExternalId)) {
+              this.log?.info(`Skipping page ${pageExternalId} - download in progress`);
+              continue;
+            }
+
+            // Check if content changed by comparing hashes
+            const newHash = this.computeContentHash(localPage.body_html as string | null);
+            const existing = this.db.executeReadOne<{ content_hash: string | null }>(
+              'SELECT content_hash FROM course_pages WHERE external_id = ?',
+              [pageExternalId]
+            );
+
+            // Add content hash to page data
+            (localPage as Record<string, unknown>).content_hash = newHash;
+
             this.db.upsert('course_pages', localPage);
             counts.pages++;
+
+            // If content changed, update dependencies
+            if (
+              pageExternalId &&
+              newHash &&
+              existing?.content_hash &&
+              newHash !== existing.content_hash
+            ) {
+              this.updateContentHashAndDependencies(
+                'page',
+                pageExternalId,
+                localPage.body_html as string,
+                localCourseId
+              );
+              this.log?.debug(
+                `Page ${pageExternalId} content changed, dependencies updated`
+              );
+            }
           }
         }
 

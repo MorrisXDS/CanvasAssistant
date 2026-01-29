@@ -42,8 +42,10 @@ import {
   ICSParser,
   RRuleExpander,
   ExportManager,
+  OperationCoordinator,
 } from './layers/l2-daemon';
 import { HtmlLocalPathManager } from './layers/l2-daemon/HtmlLocalPathManager';
+import { HtmlDependencyResolver } from './layers/l2-daemon/HtmlDependencyResolver';
 import crypto from 'crypto';
 
 // L3 - Intelligence
@@ -180,6 +182,10 @@ let visibleDataProvider: VisibleDataProvider | null = null;
 // HtmlLocalPathManager - manages HTML download with local path dependencies
 // Initialized lazily after database is ready
 let htmlLocalPathManager: HtmlLocalPathManager | null = null;
+
+// OperationCoordinator - coordinates sync/download operations to prevent conflicts
+// Initialized after database is ready
+let operationCoordinator: OperationCoordinator | null = null;
 
 // Initialize Layer 4 controller (after database is ready)
 // Note: CommandDispatcher is initialized lazily after database.initialize()
@@ -428,6 +434,7 @@ function createTray(): void {
   // - Linux: use 22x22 or 24x24, falling back to 32x32
   if (process.platform === 'darwin') {
     iconPath = path.join(__dirname, '../assets/app.iconset/icon_16x16.png');
+    // eslint-disable-next-line cross-platform/require-platform-check -- Windows requires 32x32 icons for system tray display
   } else if (process.platform === 'win32') {
     iconPath = path.join(__dirname, '../assets/app.iconset/icon_32x32.png');
   } else {
@@ -520,6 +527,76 @@ function destroyTray(): void {
 }
 
 /**
+ * Get sync preferences from database
+ * Returns default values if preferences are not set
+ */
+function getSyncPreferences(): {
+  autoSyncEnabled: boolean;
+  autoSyncInterval: number;
+  syncFiles: boolean;
+  syncAnnouncements: boolean;
+  autoAssignDueDate: boolean;
+  saveHtmlContent: boolean;
+  htmlUrlRewriting: 'local' | 'original';
+  downloadImages: boolean;
+  downloadLinkedFiles: boolean;
+} {
+  const defaults = {
+    autoSyncEnabled: true,
+    autoSyncInterval: 30,
+    syncFiles: true,
+    syncAnnouncements: true,
+    autoAssignDueDate: false,
+    saveHtmlContent: true,
+    htmlUrlRewriting: 'original' as const,
+    downloadImages: true,
+    downloadLinkedFiles: false,
+  };
+
+  try {
+    const prefs = database.executeReadOne<{ value: string }>(
+      "SELECT value FROM user_preferences WHERE key = 'syncPreferences'"
+    );
+    if (prefs?.value) {
+      const parsed = JSON.parse(prefs.value);
+      return { ...defaults, ...parsed };
+    }
+  } catch {
+    // Fall through to defaults
+  }
+  return defaults;
+}
+
+/**
+ * Get local HTML paths settings from database
+ * Returns default values if settings are not set
+ */
+function getLocalHtmlPathsSettings(): {
+  enabled: boolean;
+  autoRegenerate: boolean;
+  promptForMissing: boolean;
+} {
+  const defaults = {
+    enabled: false, // Disabled by default - user can enable in Settings
+    autoRegenerate: true,
+    promptForMissing: true,
+  };
+
+  try {
+    const settings = database.executeReadOne<{ value: string }>(
+      "SELECT value FROM user_preferences WHERE key = 'localHtmlPathsSettings'"
+    );
+    if (settings?.value) {
+      const parsed = JSON.parse(settings.value);
+      return { ...defaults, ...parsed };
+    }
+  } catch {
+    // Fall through to defaults
+  }
+  return defaults;
+}
+
+/**
  * Initialize the Canvas client and sync engine when credentials are available
  */
 async function initializeCanvasClient(token: string, baseUrl: string): Promise<boolean> {
@@ -553,6 +630,9 @@ async function initializeCanvasClient(token: string, baseUrl: string): Promise<b
       }
     });
 
+    // Read sync preferences from database for dynamic configuration
+    const syncPrefs = getSyncPreferences();
+
     // Initialize sync engine with HTML content sync and visibility filtering
     syncEngine = new SyncEngine({
       client: canvasClient,
@@ -561,14 +641,15 @@ async function initializeCanvasClient(token: string, baseUrl: string): Promise<b
       downloadManager: fileDownloadManager,
       filesBaseDir: FILES_DIR,
       htmlContentSyncConfig: {
-        enabled: true,
-        urlRewriting: 'local',
-        downloadImages: true,
-        downloadLinkedFiles: true,
+        enabled: syncPrefs.saveHtmlContent,
+        urlRewriting: syncPrefs.htmlUrlRewriting,
+        downloadImages: syncPrefs.downloadImages,
+        downloadLinkedFiles: syncPrefs.downloadLinkedFiles,
         maxConcurrentDownloads: 3,
       },
       logger: logger.child('SyncEngine'),
       visibleDataProvider: visibleDataProvider ?? undefined,
+      operationCoordinator: operationCoordinator ?? undefined,
     });
 
     // Forward sync events to metrics
@@ -3870,6 +3951,19 @@ function registerIpcHandlers(): void {
 
     // Handle HTML content items (pages, assignments, announcements)
     if (resource.external_id.startsWith('html-') && syncEngine?.['htmlContentSync']) {
+      // Check if HTML offline viewing is enabled
+      const syncPrefs = getSyncPreferences();
+      if (!syncPrefs.saveHtmlContent) {
+        logger.info(
+          '[resource:download] HTML offline viewing disabled, skipping HTML download'
+        );
+        return {
+          success: false,
+          error:
+            'HTML offline viewing is disabled. Enable "Save HTML content for offline viewing" in Settings > Sync to download HTML files.',
+        };
+      }
+
       const htmlSync = syncEngine[
         'htmlContentSync'
       ] as import('./layers/l2-daemon/HtmlContentSync').HtmlContentSync;
@@ -3943,85 +4037,1281 @@ function registerIpcHandlers(): void {
     });
   });
 
-  ipcMain.handle('resource:open', (_event, resourceId: number) => {
-    logger.debug(`[resource:open] START resourceId=${resourceId}`);
-    const resource = database.executeReadOne<{ local_path: string | null }>(
-      'SELECT local_path FROM resources WHERE id = ?',
-      [resourceId]
-    );
-
-    if (!resource?.local_path) {
-      logger.debug('[resource:open] No local_path');
-      return { success: false, error: 'File not downloaded' };
-    }
-
-    // Check if file actually exists on disk
-    if (!fs.existsSync(resource.local_path)) {
-      logger.warn(
-        `[resource:open] File not found on disk, clearing local_path: ${resource.local_path}`
+  ipcMain.handle(
+    'resource:open',
+    (_event, resourceId: number, skipDependencyCheck?: boolean) => {
+      logger.debug(
+        `[resource:open] START resourceId=${resourceId}, skipDependencyCheck=${skipDependencyCheck}`
       );
-      // Clear the local_path since file was deleted
-      database.executeWrite(
-        'UPDATE resources SET local_path = NULL WHERE id = ?',
-        [resourceId],
-        'resources'
+      const resource = database.executeReadOne<{
+        local_path: string | null;
+        external_id: string;
+        course_id: number;
+        title: string;
+        mime_type: string | null;
+      }>(
+        'SELECT local_path, external_id, course_id, title, mime_type FROM resources WHERE id = ?',
+        [resourceId]
       );
-      return { success: false, error: 'File was deleted from disk. Please re-download.' };
-    }
 
-    logger.debug(`[resource:open] Opening: ${resource.local_path}`);
+      if (!resource?.local_path) {
+        logger.debug('[resource:open] No local_path');
+        return { success: false, error: 'File not downloaded' };
+      }
 
-    // Check if it's an HTML file - open in Electron to support canvas-file:// protocol
-    const ext = path.extname(resource.local_path).toLowerCase();
-    logger.info(`[resource:open] File extension: "${ext}", path: ${resource.local_path}`);
+      // Check if file actually exists on disk
+      if (!fs.existsSync(resource.local_path)) {
+        logger.warn(
+          `[resource:open] File not found on disk, clearing local_path: ${resource.local_path}`
+        );
+        // Clear the local_path since file was deleted
+        database.executeWrite(
+          'UPDATE resources SET local_path = NULL WHERE id = ?',
+          [resourceId],
+          'resources'
+        );
+        return {
+          success: false,
+          error: 'File was deleted from disk. Please re-download.',
+        };
+      }
 
-    if (ext === '.html' || ext === '.htm') {
+      // Check if it's an HTML file and we should check dependencies
+      const ext = path.extname(resource.local_path).toLowerCase();
+      const isHtml = ext === '.html' || ext === '.htm';
       logger.info(
-        `[resource:open] Detected HTML file, opening in Electron BrowserWindow`
+        `[resource:open] ext=${ext}, isHtml=${isHtml}, skipDependencyCheck=${skipDependencyCheck}`
       );
-      // Open HTML in a new Electron window to support canvas-file:// protocol
-      const htmlWindow = new BrowserWindow({
-        width: 900,
-        height: 700,
-        title: path.basename(resource.local_path),
-        webPreferences: {
-          nodeIntegration: false,
-          contextIsolation: true,
-        },
-      });
 
-      htmlWindow.webContents.on(
-        'did-fail-load',
-        (_event, errorCode, errorDescription) => {
-          logger.error(
-            `[resource:open] HTML window failed to load: ${errorCode} - ${errorDescription}`
+      if (isHtml && !skipDependencyCheck) {
+        // Check if offline HTML feature is enabled
+        const syncPrefs = getSyncPreferences();
+        const htmlSettings = getLocalHtmlPathsSettings();
+
+        // If offline HTML viewing is disabled, use stored body_html from database
+        const useStoredHtml = !syncPrefs.saveHtmlContent || !htmlSettings.enabled;
+        logger.info(
+          `[resource:open] Settings check: saveHtmlContent=${syncPrefs.saveHtmlContent}, htmlEnabled=${htmlSettings.enabled}, useStoredHtml=${useStoredHtml}`
+        );
+
+        if (useStoredHtml) {
+          logger.info(`[resource:open] Offline HTML disabled, using stored body_html`);
+
+          // Parse external_id to get source type and ID
+          const externalIdMatch = resource.external_id.match(
+            /^html-(page|assignment|announcement|syllabus)-(.+)$/
+          );
+          if (externalIdMatch) {
+            const [, sourceType, sourceId] = externalIdMatch;
+            let bodyHtml: string | null = null;
+
+            if (sourceType === 'page') {
+              const page = database.executeReadOne<{ body_html: string | null }>(
+                `SELECT body_html FROM course_pages WHERE course_id = ? AND (external_id = ? OR url_slug = ?)`,
+                [resource.course_id, sourceId, sourceId]
+              );
+              bodyHtml = page?.body_html || null;
+            } else if (sourceType === 'assignment') {
+              const task = database.executeReadOne<{ description_html: string | null }>(
+                `SELECT description_html FROM tasks WHERE external_id = ?`,
+                [sourceId]
+              );
+              bodyHtml = task?.description_html || null;
+            } else if (sourceType === 'syllabus') {
+              const course = database.executeReadOne<{ syllabus_body: string | null }>(
+                `SELECT syllabus_body FROM courses WHERE id = ?`,
+                [resource.course_id]
+              );
+              bodyHtml = course?.syllabus_body || null;
+            }
+
+            if (bodyHtml) {
+              logger.info(
+                `[resource:open] Opening stored HTML content (${bodyHtml.length} bytes)`
+              );
+
+              // Write to temp file and open with system browser
+              const tempDir = path.join(app.getPath('temp'), 'CanvasAssistant');
+              if (!fs.existsSync(tempDir)) {
+                fs.mkdirSync(tempDir, { recursive: true });
+              }
+
+              const tempFileName = `${sourceType}-${sourceId}-${Date.now()}.html`;
+              const tempFilePath = path.join(tempDir, tempFileName);
+
+              // Wrap content with basic HTML structure
+              const htmlContent = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>${resource.title || 'Content'}</title>
+  <base target="_blank">
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 20px; max-width: 900px; margin: 0 auto; line-height: 1.6; }
+    img { max-width: 100%; height: auto; }
+    a { color: #0066cc; }
+  </style>
+</head>
+<body>
+${bodyHtml}
+</body>
+</html>`;
+
+              fs.writeFileSync(tempFilePath, htmlContent, 'utf-8');
+              logger.info(`[resource:open] Written temp file: ${tempFilePath}`);
+
+              const { shell } = require('electron');
+              shell.openPath(tempFilePath).then((error: string) => {
+                if (error) {
+                  logger.error(`[resource:open] Failed to open temp file: ${error}`);
+                }
+              });
+
+              return { success: true, openedStoredHtml: true };
+            }
+          }
+
+          // Fallback: no stored HTML found, open local file anyway
+          logger.warn(
+            `[resource:open] No stored body_html found for ${resource.external_id}, falling back to local file`
           );
         }
-      );
 
-      htmlWindow.webContents.on('did-finish-load', () => {
-        logger.info(`[resource:open] HTML window finished loading`);
+        // Skip dependency checking if user doesn't want prompts (but still view locally)
+        if (!htmlSettings.promptForMissing) {
+          logger.info(
+            `[resource:open] Skipping dependency check (promptForMissing=${htmlSettings.promptForMissing})`
+          );
+          // Skip dependency check and open directly
+        } else {
+          logger.info(
+            `[resource:open] Checking HTML dependencies recursively for resource ${resourceId}`
+          );
+
+          // Parse external_id to get sourceType and sourceId
+          const externalIdMatch = resource.external_id.match(
+            /^html-(page|assignment|announcement|syllabus)-(.+)$/
+          );
+          const htmlSourceType = externalIdMatch?.[1] || null;
+          const htmlSourceId = externalIdMatch?.[2] || null;
+
+          logger.info(
+            `[resource:open] HTML source: type=${htmlSourceType}, id=${htmlSourceId}`
+          );
+
+          // Get course info for page lookups
+          const courseInfo = database.executeReadOne<{ id: number; external_id: string }>(
+            'SELECT id, external_id FROM courses WHERE id = ?',
+            [resource.course_id]
+          );
+
+          const {
+            extractCanvasFileReferences,
+            extractHtmlReferences,
+          } = require('./layers/l2-daemon/HtmlFileExtractor');
+
+          // Track all missing dependencies across all levels
+          const allMissingDeps: Array<{
+            sourceId: string;
+            filename: string;
+            sizeBytes: number;
+            canvasUrl: string;
+            resourceId?: number;
+            type: 'file' | 'page';
+          }> = [];
+
+          // Track visited pages to prevent infinite loops
+          const visitedPages = new Set<string>();
+          const visitedFiles = new Set<string>();
+
+          // Track downloaded files/pages for HTML rewriting
+          const downloadedFiles: Map<string, string> = new Map();
+          const downloadedPages: Map<string, string> = new Map();
+
+          // Check dependencies using html_dependencies table (preferred) or by parsing HTML content
+          const collectMissingDepsFromDb = (
+            parentSourceType: string,
+            parentSourceId: string,
+            depth: number = 0
+          ): void => {
+            if (depth > 10) {
+              logger.warn(
+                `[resource:open] Max recursion depth reached for ${parentSourceType}:${parentSourceId}`
+              );
+              return;
+            }
+
+            // Query recorded dependencies from html_dependencies table
+            const deps = database.executeRead<{
+              child_source_type: string;
+              child_source_id: string;
+            }>(
+              `SELECT child_source_type, child_source_id FROM html_dependencies
+             WHERE parent_source_type = ? AND parent_source_id = ?`,
+              [parentSourceType, parentSourceId]
+            );
+
+            logger.info(
+              `[resource:open] Depth ${depth}: ${parentSourceType}:${parentSourceId} has ${deps.length} recorded dependencies`
+            );
+
+            for (const dep of deps) {
+              if (dep.child_source_type === 'file') {
+                // Check if file exists locally
+                if (visitedFiles.has(dep.child_source_id)) continue;
+                visitedFiles.add(dep.child_source_id);
+
+                const fileResource = database.executeReadOne<{
+                  id: number;
+                  local_path: string | null;
+                  title: string;
+                  size_bytes: number | null;
+                  url: string | null;
+                }>(
+                  'SELECT id, local_path, title, size_bytes, url FROM resources WHERE external_id = ?',
+                  [dep.child_source_id]
+                );
+
+                const isDownloaded =
+                  fileResource?.local_path && fs.existsSync(fileResource.local_path);
+
+                if (!isDownloaded) {
+                  allMissingDeps.push({
+                    sourceId: dep.child_source_id,
+                    filename: fileResource?.title || `file_${dep.child_source_id}`,
+                    sizeBytes: fileResource?.size_bytes || 0,
+                    canvasUrl: fileResource?.url || '',
+                    resourceId: fileResource?.id,
+                    type: 'file',
+                  });
+                  logger.info(`[resource:open] Missing file: ${dep.child_source_id}`);
+                } else {
+                  downloadedFiles.set(dep.child_source_id, fileResource!.local_path!);
+                }
+              } else if (dep.child_source_type === 'page') {
+                // Check if page HTML exists locally
+                if (visitedPages.has(dep.child_source_id)) continue;
+                visitedPages.add(dep.child_source_id);
+
+                // Look up page info
+                const page = database.executeReadOne<{
+                  id: number;
+                  external_id: string;
+                  title: string;
+                  body_html: string | null;
+                }>(
+                  `SELECT id, external_id, title, body_html FROM course_pages
+                 WHERE course_id = ? AND (url_slug = ? OR external_id = ?)`,
+                  [courseInfo?.id, dep.child_source_id, dep.child_source_id]
+                );
+
+                if (!page) {
+                  logger.warn(
+                    `[resource:open] Page not found in database: ${dep.child_source_id}`
+                  );
+                  continue;
+                }
+
+                // Check if page HTML file exists
+                const pageResourceId = `html-page-${page.external_id}`;
+                const pageResource = database.executeReadOne<{
+                  local_path: string | null;
+                }>('SELECT local_path FROM resources WHERE external_id = ?', [
+                  pageResourceId,
+                ]);
+
+                const pageExists =
+                  pageResource?.local_path && fs.existsSync(pageResource.local_path);
+
+                if (!pageExists) {
+                  allMissingDeps.push({
+                    sourceId: dep.child_source_id,
+                    filename: `${page.title}.html`,
+                    sizeBytes: page.body_html?.length || 0,
+                    canvasUrl: `/courses/${courseInfo?.external_id}/pages/${dep.child_source_id}`,
+                    type: 'page',
+                  });
+                  logger.info(`[resource:open] Missing page: ${dep.child_source_id}`);
+                } else {
+                  downloadedPages.set(dep.child_source_id, pageResource!.local_path!);
+                  // Recursively check this page's dependencies
+                  collectMissingDepsFromDb('page', page.external_id, depth + 1);
+                }
+              }
+            }
+          };
+
+          // Recursive function to collect missing dependencies by parsing HTML (fallback)
+          const collectMissingDeps = (htmlPath: string, depth: number = 0): void => {
+            if (depth > 10) {
+              logger.warn(`[resource:open] Max recursion depth reached at ${htmlPath}`);
+              return;
+            }
+
+            if (!fs.existsSync(htmlPath)) return;
+
+            const htmlContent = fs.readFileSync(htmlPath, 'utf-8');
+            const fileRefs = extractCanvasFileReferences(htmlContent);
+            const htmlRefs = extractHtmlReferences(htmlContent);
+
+            logger.info(
+              `[resource:open] Depth ${depth}: ${path.basename(htmlPath)} has ${fileRefs.length} files, ${htmlRefs.length} pages`
+            );
+
+            // Check file references
+            for (const ref of fileRefs) {
+              if (visitedFiles.has(ref.canvasFileId)) continue;
+              visitedFiles.add(ref.canvasFileId);
+
+              const existingResource = database.executeReadOne<{
+                id: number;
+                local_path: string | null;
+                title: string;
+                size_bytes: number | null;
+              }>(
+                'SELECT id, local_path, title, size_bytes FROM resources WHERE external_id = ?',
+                [ref.canvasFileId]
+              );
+
+              const isDownloaded =
+                existingResource?.local_path &&
+                fs.existsSync(existingResource.local_path);
+
+              if (!isDownloaded) {
+                allMissingDeps.push({
+                  sourceId: ref.canvasFileId,
+                  filename:
+                    existingResource?.title || ref.filename || `file_${ref.canvasFileId}`,
+                  sizeBytes: existingResource?.size_bytes || 0,
+                  canvasUrl: ref.matchedUrl,
+                  resourceId: existingResource?.id,
+                  type: 'file',
+                });
+              } else {
+                downloadedFiles.set(ref.matchedUrl, existingResource!.local_path!);
+              }
+            }
+
+            // Check page references (only for same course)
+            if (!courseInfo) return;
+
+            logger.info(
+              `[resource:open] Checking ${htmlRefs.length} HTML refs, courseInfo.external_id=${courseInfo.external_id}`
+            );
+
+            for (const ref of htmlRefs) {
+              logger.info(
+                `[resource:open] HTML ref: refType=${ref.refType}, pageSlug=${ref.pageSlug}, courseId=${ref.courseId}`
+              );
+              if (ref.refType !== 'canvas-page' || !ref.pageSlug) {
+                logger.info(`[resource:open] Skipping: not canvas-page or no pageSlug`);
+                continue;
+              }
+              if (String(ref.courseId) !== String(courseInfo.external_id)) {
+                logger.info(
+                  `[resource:open] Skipping: courseId mismatch (${ref.courseId} vs ${courseInfo.external_id})`
+                );
+                continue;
+              }
+              if (visitedPages.has(ref.pageSlug)) {
+                logger.info(`[resource:open] Skipping: already visited ${ref.pageSlug}`);
+                continue;
+              }
+              visitedPages.add(ref.pageSlug);
+
+              // Look up page by slug
+              const page = database.executeReadOne<{
+                id: number;
+                external_id: string;
+                title: string;
+                body_html: string | null;
+              }>(
+                `SELECT id, external_id, title, body_html FROM course_pages
+               WHERE course_id = ? AND (url_slug = ? OR external_id = ?)`,
+                [courseInfo.id, ref.pageSlug, ref.pageSlug]
+              );
+
+              if (!page || !page.body_html) {
+                logger.warn(`[resource:open] Page not synced: ${ref.pageSlug}`);
+                continue;
+              }
+
+              // Check if HTML file exists
+              const pageResourceExternalId = `html-page-${page.external_id}`;
+              const pageResource = database.executeReadOne<{ local_path: string | null }>(
+                `SELECT local_path FROM resources WHERE external_id = ?`,
+                [pageResourceExternalId]
+              );
+
+              logger.info(
+                `[resource:open] Page ${ref.pageSlug}: external_id=${pageResourceExternalId}, local_path=${pageResource?.local_path}, exists=${pageResource?.local_path ? fs.existsSync(pageResource.local_path) : false}`
+              );
+
+              if (pageResource?.local_path && fs.existsSync(pageResource.local_path)) {
+                downloadedPages.set(ref.pageSlug, pageResource.local_path);
+                // Recursively check this page's dependencies
+                logger.info(
+                  `[resource:open] Recursing into page: ${pageResource.local_path}`
+                );
+                collectMissingDeps(pageResource.local_path, depth + 1);
+              } else {
+                allMissingDeps.push({
+                  sourceId: ref.pageSlug,
+                  filename: `${page.title}.html`,
+                  sizeBytes: page.body_html.length,
+                  canvasUrl: ref.matchedUrl,
+                  type: 'page',
+                });
+                logger.info(`[resource:open] Page ${ref.pageSlug} marked as missing`);
+                // Note: Can't recurse into page content here since it's not generated yet
+                // The download handler will handle recursive generation
+              }
+            }
+          };
+
+          // Check dependencies using recorded data (preferred) or by parsing HTML content (fallback)
+          try {
+            // First, check if we have recorded dependencies for this HTML
+            let hasRecordedDeps = false;
+            if (htmlSourceType && htmlSourceId) {
+              const depCount = database.executeReadOne<{ count: number }>(
+                'SELECT COUNT(*) as count FROM html_dependencies WHERE parent_source_type = ? AND parent_source_id = ?',
+                [htmlSourceType, htmlSourceId]
+              );
+              hasRecordedDeps = (depCount?.count ?? 0) > 0;
+            }
+
+            if (hasRecordedDeps) {
+              logger.info(
+                `[resource:open] Using recorded dependencies from html_dependencies table`
+              );
+              collectMissingDepsFromDb(htmlSourceType!, htmlSourceId!);
+            } else {
+              logger.info(
+                `[resource:open] No recorded dependencies, parsing HTML content`
+              );
+              collectMissingDeps(resource.local_path);
+            }
+
+            const missingFiles = allMissingDeps.filter((d) => d.type === 'file');
+            const missingPages = allMissingDeps.filter((d) => d.type === 'page');
+            logger.info(
+              `[resource:open] Total missing: ${missingFiles.length} files, ${missingPages.length} pages`
+            );
+
+            // Use allMissingDeps for the rest of the logic
+            const missingDeps = allMissingDeps;
+
+            if (missingDeps.length > 0) {
+              const missingFiles = missingDeps.filter((d) => d.type === 'file');
+              const missingPages = missingDeps.filter((d) => d.type === 'page');
+              logger.info(
+                `[resource:open] HTML has ${missingFiles.length} missing files, ${missingPages.length} missing pages`
+              );
+
+              return {
+                success: false,
+                hasMissingDependencies: true,
+                missingDependencies: missingDeps,
+                totalMissingSize: missingDeps.reduce((sum, f) => sum + f.sizeBytes, 0),
+                totalMissingCount: missingDeps.length,
+              };
+            }
+
+            // All dependencies available - rewrite HTML with local paths
+            if (downloadedFiles.size > 0 || downloadedPages.size > 0) {
+              logger.info(
+                `[resource:open] Rewriting HTML with ${downloadedFiles.size} files, ${downloadedPages.size} pages`
+              );
+              const htmlContent = fs.readFileSync(resource.local_path, 'utf-8');
+              let updatedHtml = htmlContent;
+              const htmlDir = path.dirname(resource.local_path);
+              let replacementsMade = 0;
+
+              // Replace file URLs - extract file IDs from visitedFiles set
+              logger.info(
+                `[resource:open] Files to rewrite: ${Array.from(visitedFiles).join(', ')}`
+              );
+              logger.info(
+                `[resource:open] Downloaded files map: ${Array.from(downloadedFiles.keys()).join(', ')}`
+              );
+              for (const fileId of visitedFiles) {
+                // Find the local path for this file - key is the file ID directly
+                const localPath = downloadedFiles.get(fileId);
+                if (!localPath) {
+                  logger.info(
+                    `[resource:open] File ${fileId} has no local path, skipping rewrite`
+                  );
+                  continue;
+                }
+
+                logger.info(`[resource:open] Rewriting file ${fileId} -> ${localPath}`);
+                // Convert Windows backslashes to forward slashes for HTML/URL paths
+                // eslint-disable-next-line cross-platform/no-hardcoded-path-separator
+                const relativePath = path
+                  .relative(htmlDir, localPath)
+                  .replace(/\\/g, '/');
+                // URL patterns in HTML always use forward slashes regardless of platform
+
+                const patterns = [
+                  new RegExp(`(href=["'])([^"']*\\/files\\/${fileId}[^"']*)(["'])`, 'gi'),
+                  new RegExp(`(src=["'])([^"']*\\/files\\/${fileId}[^"']*)(["'])`, 'gi'),
+                  new RegExp(
+                    `(data-api-endpoint=["'])([^"']*\\/files\\/${fileId}[^"']*)(["'])`,
+                    'gi'
+                  ),
+                ];
+
+                for (const pattern of patterns) {
+                  const matches = updatedHtml.match(pattern);
+                  if (matches) {
+                    for (const match of matches) {
+                      const replaced = match.replace(pattern, `$1${relativePath}$3`);
+                      updatedHtml = updatedHtml.replace(match, replaced);
+                      replacementsMade++;
+                    }
+                  }
+                }
+              }
+
+              // Replace page URLs
+              if (courseInfo) {
+                for (const [pageSlug, localPath] of downloadedPages) {
+                  // Convert Windows backslashes to forward slashes for HTML/URL paths
+                  // eslint-disable-next-line cross-platform/no-hardcoded-path-separator
+                  const relativePath = path
+                    .relative(htmlDir, localPath)
+                    .replace(/\\/g, '/');
+                  // URL patterns in HTML always use forward slashes regardless of platform
+
+                  const patterns = [
+                    new RegExp(
+                      `(href=["'])([^"']*\\/courses\\/${courseInfo.external_id}\\/pages\\/${pageSlug}[^"']*)(["'])`,
+                      'gi'
+                    ),
+                    new RegExp(
+                      `(data-api-endpoint=["'])([^"']*\\/pages\\/${pageSlug}[^"']*)(["'])`,
+                      'gi'
+                    ),
+                  ];
+
+                  for (const pattern of patterns) {
+                    const matches = updatedHtml.match(pattern);
+                    if (matches) {
+                      for (const match of matches) {
+                        const replaced = match.replace(pattern, `$1${relativePath}$3`);
+                        updatedHtml = updatedHtml.replace(match, replaced);
+                        replacementsMade++;
+                      }
+                    }
+                  }
+                }
+              }
+
+              if (replacementsMade > 0) {
+                fs.writeFileSync(resource.local_path, updatedHtml, 'utf-8');
+                logger.info(
+                  `[resource:open] HTML updated with ${replacementsMade} replacements`
+                );
+              }
+            }
+          } catch (err) {
+            logger.error(`[resource:open] Error parsing HTML: ${err}`);
+            // Continue to open the file even if parsing fails
+          }
+        } // end else (promptForMissing)
+      }
+
+      logger.info(`[resource:open] Opening local file: ${resource.local_path}`);
+
+      // Use OS default application for all file types (including HTML)
+      // HTML files now use relative paths instead of canvas-file:// protocol,
+      // so they work correctly in any browser
+      const { shell } = require('electron');
+      shell.openPath(resource.local_path).then((error: string) => {
+        if (error) {
+          logger.error(`[resource:open] shell.openPath failed: ${error}`);
+        } else {
+          logger.info(`[resource:open] shell.openPath succeeded`);
+        }
       });
 
-      htmlWindow.loadFile(resource.local_path);
-      logger.info(`[resource:open] Called loadFile for HTML window`);
       return { success: true };
-    } else {
+    }
+  );
+
+  // Check HTML dependencies without opening
+  ipcMain.handle('html:checkDependencies', (_event, resourceId: number) => {
+    logger.debug(`[html:checkDependencies] START resourceId=${resourceId}`);
+
+    // Check if HTML offline viewing is enabled
+    const syncPrefs = getSyncPreferences();
+    if (!syncPrefs.saveHtmlContent) {
+      logger.debug('[html:checkDependencies] HTML offline viewing disabled');
+      return {
+        success: true,
+        totalDependencies: 0,
+        missingCount: 0,
+        missingDependencies: [],
+        totalMissingSize: 0,
+        cycles: [],
+        featureDisabled: true,
+      };
+    }
+
+    const resource = database.executeReadOne<{
+      local_path: string | null;
+      external_id: string;
+      course_id: number;
+      title: string;
+    }>('SELECT local_path, external_id, course_id, title FROM resources WHERE id = ?', [
+      resourceId,
+    ]);
+
+    if (!resource) {
+      return { success: false, error: 'Resource not found' };
+    }
+
+    const course = database.executeReadOne<{ external_id: string; code: string }>(
+      'SELECT external_id, code FROM courses WHERE id = ?',
+      [resource.course_id]
+    );
+
+    if (!course) {
+      return { success: false, error: 'Course not found' };
+    }
+
+    // Determine source type from external_id pattern
+    const externalId = resource.external_id;
+    let sourceType: 'page' | 'assignment' | 'announcement' | 'syllabus' = 'page';
+    let sourceId = externalId;
+
+    if (externalId.startsWith('html-')) {
+      const match = externalId.match(
+        /^html-(page|assignment|announcement|syllabus)-(.+)$/
+      );
+      if (match) {
+        sourceType = match[1] as typeof sourceType;
+        sourceId = match[2];
+      }
+    }
+
+    // Use HtmlDependencyResolver to check dependencies
+    const basePath =
+      resource.local_path || path.join(FILES_DIR, course.code, `${resource.title}.html`);
+    const resolver = new HtmlDependencyResolver(database, { filesBaseDir: FILES_DIR });
+    const resolution = resolver.resolve(
+      sourceType,
+      sourceId,
+      course.external_id,
+      basePath
+    );
+
+    const missingDeps = resolver.getMissingDependencies(resolution);
+
+    return {
+      success: true,
+      totalDependencies: resolution.allDependencies.length,
+      missingCount: resolution.missingCount,
+      missingDependencies: missingDeps.map((dep) => ({
+        sourceId: dep.sourceId,
+        resourceId: dep.resourceId,
+        filename: dep.localPath ? path.basename(dep.localPath) : dep.sourceId,
+        sizeBytes: dep.sizeBytes || 0,
+        canvasUrl: dep.canvasUrl,
+        mimeType: dep.mimeType,
+      })),
+      totalMissingSize: missingDeps.reduce((sum, dep) => sum + (dep.sizeBytes || 0), 0),
+      cycles: resolution.cycles,
+    };
+  });
+
+  // Download missing HTML dependencies and rewrite HTML with local paths
+  // Supports recursive resolution of files AND Canvas pages
+  // Uses OperationCoordinator to prevent sync conflicts during download
+  ipcMain.handle('html:downloadDependencies', async (_event, resourceId: number) => {
+    logger.info(`[html:downloadDependencies] START resourceId=${resourceId}`);
+
+    // Check if HTML offline viewing is enabled
+    const syncPrefs = getSyncPreferences();
+    if (!syncPrefs.saveHtmlContent) {
+      logger.info('[html:downloadDependencies] HTML offline viewing disabled');
+      return {
+        success: false,
+        error:
+          'HTML offline viewing is disabled. Enable "Save HTML content for offline viewing" in Settings > Sync.',
+      };
+    }
+
+    const resource = database.executeReadOne<{
+      local_path: string | null;
+      external_id: string;
+      course_id: number;
+      title: string;
+    }>('SELECT local_path, external_id, course_id, title FROM resources WHERE id = ?', [
+      resourceId,
+    ]);
+
+    if (!resource || !resource.local_path) {
+      return { success: false, error: 'Resource not found or not downloaded' };
+    }
+
+    const course = database.executeReadOne<{
+      external_id: string;
+      code: string;
+      id: number;
+    }>('SELECT external_id, code, id FROM courses WHERE id = ?', [resource.course_id]);
+
+    if (!course) {
+      return { success: false, error: 'Course not found' };
+    }
+
+    // Parse external_id to extract sourceType and sourceId for dependency tracking
+    // Format: html-{sourceType}-{sourceId}, e.g., "html-page-12345" or "html-syllabus-419166"
+    const externalIdMatch = resource.external_id.match(
+      /^html-(page|assignment|announcement|syllabus)-(.+)$/
+    );
+    const sourceType = externalIdMatch?.[1] || null;
+    const sourceId = externalIdMatch?.[2] || null;
+
+    // Helper: Get content hash for an HTML source to detect changes during download
+    const getContentHash = (type: string, id: string): string | null => {
+      if (type === 'page') {
+        const page = database.executeReadOne<{
+          body_html: string | null;
+          content_hash: string | null;
+        }>('SELECT body_html, content_hash FROM course_pages WHERE external_id = ?', [
+          id,
+        ]);
+        // Use stored hash if available, otherwise compute from content
+        if (page?.content_hash) return page.content_hash;
+        if (page?.body_html)
+          return crypto.createHash('md5').update(page.body_html).digest('hex');
+      } else if (type === 'assignment') {
+        const task = database.executeReadOne<{
+          description: string | null;
+          description_hash: string | null;
+        }>('SELECT description, description_hash FROM tasks WHERE external_id = ?', [id]);
+        if (task?.description_hash) return task.description_hash;
+        if (task?.description)
+          return crypto.createHash('md5').update(task.description).digest('hex');
+      } else if (type === 'syllabus') {
+        const syllabus = database.executeReadOne<{
+          syllabus_body: string | null;
+          syllabus_hash: string | null;
+        }>('SELECT syllabus_body, syllabus_hash FROM courses WHERE external_id = ?', [
+          id,
+        ]);
+        if (syllabus?.syllabus_hash) return syllabus.syllabus_hash;
+        if (syllabus?.syllabus_body)
+          return crypto.createHash('md5').update(syllabus.syllabus_body).digest('hex');
+      }
+      return null;
+    };
+
+    // Get original content hash before starting download (to detect changes later)
+    const originalContentHash =
+      sourceType && sourceId ? getContentHash(sourceType, sourceId) : null;
+
+    // Register this download operation with OperationCoordinator
+    // This prevents sync from modifying html_dependencies during download
+    let sessionId: string | undefined;
+    if (operationCoordinator && sourceType && sourceId) {
+      sessionId = operationCoordinator.startOperation(
+        'download_html',
+        sourceType,
+        sourceId,
+        course.id
+      );
       logger.info(
-        `[resource:open] Not an HTML file (ext="${ext}"), will use shell.openPath`
+        `[html:downloadDependencies] Started operation with session=${sessionId.substring(0, 20)}...`
       );
     }
 
-    // Use Electron's shell.openPath for other file types
-    const { shell } = require('electron');
-    shell.openPath(resource.local_path).then((error: string) => {
-      if (error) {
-        logger.error(`[resource:open] Failed to open: ${error}`);
+    // Get auth token
+    const token = await credentialManager.retrieve();
+    if (!token) {
+      // Clean up operation on early exit
+      if (sessionId && operationCoordinator) {
+        operationCoordinator.completeOperation(sessionId);
       }
-    });
+      return { success: false, error: 'No credentials available' };
+    }
 
-    logger.debug('[resource:open] Opening file with default application');
-    return { success: true };
+    const {
+      extractCanvasFileReferences,
+      extractHtmlReferences,
+    } = require('./layers/l2-daemon/HtmlFileExtractor');
+
+    // Track processed items to avoid cycles
+    const processedFiles = new Set<string>();
+    const processedPages = new Set<string>();
+    let totalFilesDownloaded = 0;
+    let totalPagesProcessed = 0;
+
+    // Helper: Record dependencies for an HTML file in the html_dependencies table
+    // sessionId protects these dependencies from being deleted by sync during active download
+    // contentHash is stored to detect if content changes since dependencies were recorded
+    const recordHtmlDependencies = (
+      htmlSourceType: string,
+      htmlSourceId: string,
+      fileIds: string[],
+      pageIds: string[],
+      sessionId?: string,
+      contentHash?: string
+    ) => {
+      // Only delete dependencies that don't have a session ID or have the same session ID
+      // This protects dependencies being used by another concurrent download
+      database.executeWrite(
+        `DELETE FROM html_dependencies
+         WHERE parent_source_type = ? AND parent_source_id = ?
+         AND (download_session_id IS NULL OR download_session_id = ?)`,
+        [htmlSourceType, htmlSourceId, sessionId ?? null],
+        'html_dependencies'
+      );
+
+      // Record file dependencies with session ID and content hash
+      for (const fileId of fileIds) {
+        database.executeWrite(
+          `INSERT OR REPLACE INTO html_dependencies
+           (parent_source_type, parent_source_id, child_source_type, child_source_id, is_cycle, download_session_id, recorded_content_hash)
+           VALUES (?, ?, 'file', ?, 0, ?, ?)`,
+          [htmlSourceType, htmlSourceId, fileId, sessionId ?? null, contentHash ?? null],
+          'html_dependencies'
+        );
+      }
+
+      // Record page dependencies with session ID and content hash
+      for (const pageId of pageIds) {
+        database.executeWrite(
+          `INSERT OR REPLACE INTO html_dependencies
+           (parent_source_type, parent_source_id, child_source_type, child_source_id, is_cycle, download_session_id, recorded_content_hash)
+           VALUES (?, ?, 'page', ?, 0, ?, ?)`,
+          [htmlSourceType, htmlSourceId, pageId, sessionId ?? null, contentHash ?? null],
+          'html_dependencies'
+        );
+      }
+
+      if (fileIds.length > 0 || pageIds.length > 0) {
+        logger.info(
+          `[html:downloadDependencies] Recorded ${fileIds.length} files and ${pageIds.length} pages for ${htmlSourceType}:${htmlSourceId}${sessionId ? ` (session=${sessionId.substring(0, 20)}...)` : ''}`
+        );
+      }
+    };
+
+    // Helper: Generate HTML file for a Canvas page
+    const generatePageHtml = (
+      pageSlug: string,
+      pageTitle: string,
+      bodyHtml: string,
+      targetDir: string
+    ): string => {
+      const safeTitle = pageTitle.replace(/[<>:"/\\|?*]/g, '_');
+      const htmlPath = path.join(targetDir, `${safeTitle}.html`);
+
+      const fullHtml = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${pageTitle}</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; padding: 20px; max-width: 800px; margin: 0 auto; }
+    img { max-width: 100%; height: auto; }
+    a { color: #0066cc; }
+    pre, code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; }
+    pre { padding: 12px; overflow-x: auto; }
+  </style>
+</head>
+<body>
+  <h1>${pageTitle}</h1>
+  ${bodyHtml}
+</body>
+</html>`;
+
+      fs.mkdirSync(targetDir, { recursive: true });
+      fs.writeFileSync(htmlPath, fullHtml, 'utf-8');
+      logger.info(`[html:downloadDependencies] Generated page HTML: ${htmlPath}`);
+      return htmlPath;
+    };
+
+    // Helper: Download a file and return local path
+    const downloadFile = async (fileId: string): Promise<string | null> => {
+      if (processedFiles.has(fileId)) return null;
+      processedFiles.add(fileId);
+
+      const depResource = database.executeReadOne<{
+        id: number;
+        local_path: string | null;
+        url: string | null;
+        title: string;
+        folder_path: string | null;
+      }>(
+        'SELECT id, local_path, url, title, folder_path FROM resources WHERE external_id = ?',
+        [fileId]
+      );
+
+      // Return existing local path if already downloaded
+      if (depResource?.local_path && fs.existsSync(depResource.local_path)) {
+        return depResource.local_path;
+      }
+
+      if (!depResource?.url) {
+        logger.warn(`[html:downloadDependencies] No URL for file ${fileId}`);
+        return null;
+      }
+
+      // Download using FileDownloadManager
+      const downloadId = `html-dep-${fileId}-${Date.now()}`;
+      const downloadPromise = new Promise<string | null>((resolve) => {
+        const onComplete = (result: { id: string; localPath: string }) => {
+          if (result.id === downloadId) {
+            fileDownloadManager.off('download-complete', onComplete);
+            fileDownloadManager.off('download-error', onError);
+            resolve(result.localPath);
+          }
+        };
+
+        const onError = (result: { id: string; error: string }) => {
+          if (result.id === downloadId) {
+            fileDownloadManager.off('download-complete', onComplete);
+            fileDownloadManager.off('download-error', onError);
+            logger.error(`[html:downloadDependencies] Download failed: ${result.error}`);
+            resolve(null);
+          }
+        };
+
+        fileDownloadManager.on('download-complete', onComplete);
+        fileDownloadManager.on('download-error', onError);
+        fileDownloadManager.queueDownload({
+          id: downloadId,
+          url: depResource.url!,
+          courseCode: course.code,
+          filename: depResource.title,
+          authToken: token,
+          contextFolder: depResource.folder_path || undefined,
+        });
+      });
+
+      const localPath = await downloadPromise;
+      if (localPath) {
+        database.executeWrite(
+          'UPDATE resources SET local_path = ? WHERE id = ?',
+          [localPath, depResource.id],
+          'resources'
+        );
+        totalFilesDownloaded++;
+        logger.info(`[html:downloadDependencies] Downloaded file: ${depResource.title}`);
+      }
+      return localPath;
+    };
+
+    // Helper: Process a page and return local HTML path
+    const processPage = async (
+      courseExternalId: string,
+      pageSlug: string,
+      targetDir: string
+    ): Promise<string | null> => {
+      const pageKey = `${courseExternalId}:${pageSlug}`;
+      if (processedPages.has(pageKey)) return null;
+      processedPages.add(pageKey);
+
+      // Look up page by slug in course_pages to get Canvas external_id
+      const page = database.executeReadOne<{
+        id: number;
+        external_id: string;
+        title: string;
+        body_html: string | null;
+        url_slug: string;
+      }>(
+        `SELECT id, external_id, title, body_html, url_slug FROM course_pages
+         WHERE course_id = ? AND (url_slug = ? OR external_id = ?)`,
+        [course.id, pageSlug, pageSlug]
+      );
+
+      if (!page || !page.body_html) {
+        logger.warn(
+          `[html:downloadDependencies] Page not found or no content: ${pageSlug}`
+        );
+        return null;
+      }
+
+      // Check if HTML file already exists in resources (registered via HtmlContentSync)
+      const pageResourceId = `html-page-${page.external_id}`;
+      const existingResource = database.executeReadOne<{
+        local_path: string | null;
+      }>('SELECT local_path FROM resources WHERE external_id = ?', [pageResourceId]);
+
+      if (existingResource?.local_path && fs.existsSync(existingResource.local_path)) {
+        logger.info(
+          `[html:downloadDependencies] Page already exists: ${existingResource.local_path}`
+        );
+        // Still process its dependencies recursively and record them
+        await processHtmlDependencies(
+          existingResource.local_path,
+          targetDir,
+          'page',
+          page.external_id
+        );
+        return existingResource.local_path;
+      }
+
+      // Generate HTML file
+      const htmlPath = generatePageHtml(pageSlug, page.title, page.body_html, targetDir);
+      totalPagesProcessed++;
+
+      // Register in resources table for tracking
+      const stats = fs.statSync(htmlPath);
+      database.executeWrite(
+        `INSERT INTO resources (external_id, course_id, type, title, local_path, folder_path, size_bytes, mime_type, context_type, context_id, synced_at)
+         VALUES (?, ?, 'page', ?, ?, ?, ?, 'text/html', 'page', ?, CURRENT_TIMESTAMP)
+         ON CONFLICT(external_id) DO UPDATE SET
+           local_path = excluded.local_path,
+           size_bytes = excluded.size_bytes,
+           synced_at = CURRENT_TIMESTAMP`,
+        [
+          pageResourceId,
+          course.id,
+          page.title,
+          htmlPath,
+          path.basename(targetDir),
+          stats.size,
+          page.id,
+        ],
+        'resources'
+      );
+
+      // Recursively process this page's dependencies and record them
+      await processHtmlDependencies(htmlPath, targetDir, 'page', page.external_id);
+
+      return htmlPath;
+    };
+
+    // Helper: Process all dependencies in an HTML file
+    // htmlSourceType/htmlSourceId are optional - if provided, dependencies are recorded in html_dependencies table
+    const processHtmlDependencies = async (
+      htmlPath: string,
+      targetDir: string,
+      htmlSourceType?: string,
+      htmlSourceId?: string
+    ): Promise<void> => {
+      const htmlContent = fs.readFileSync(htmlPath, 'utf-8');
+      const htmlDir = path.dirname(htmlPath);
+
+      const fileIdToLocalPath = new Map<string, string>();
+      const pageSlugToLocalPath = new Map<string, string>();
+      const directFileIds: string[] = [];
+      const directPageSlugs: string[] = [];
+
+      // First, check if we have recorded dependencies for this HTML (preferred method)
+      // This handles the case where HTML was already rewritten with local paths
+      let usedRecordedDeps = false;
+      if (htmlSourceType && htmlSourceId) {
+        const recordedDeps = database.executeRead<{
+          child_source_type: string;
+          child_source_id: string;
+        }>(
+          `SELECT child_source_type, child_source_id FROM html_dependencies
+           WHERE parent_source_type = ? AND parent_source_id = ?`,
+          [htmlSourceType, htmlSourceId]
+        );
+
+        if (recordedDeps.length > 0) {
+          logger.info(
+            `[html:downloadDependencies] Using ${recordedDeps.length} recorded dependencies for ${htmlSourceType}:${htmlSourceId}`
+          );
+          usedRecordedDeps = true;
+
+          for (const dep of recordedDeps) {
+            if (dep.child_source_type === 'file') {
+              directFileIds.push(dep.child_source_id);
+              const localPath = await downloadFile(dep.child_source_id);
+              if (localPath) {
+                fileIdToLocalPath.set(dep.child_source_id, localPath);
+              }
+            } else if (dep.child_source_type === 'page') {
+              directPageSlugs.push(dep.child_source_id);
+              const localPath = await processPage(
+                course.external_id,
+                dep.child_source_id,
+                targetDir
+              );
+              if (localPath) {
+                pageSlugToLocalPath.set(dep.child_source_id, localPath);
+              }
+            }
+          }
+        }
+      }
+
+      // Fallback: parse HTML content if no recorded dependencies (first-time download)
+      if (!usedRecordedDeps) {
+        logger.info(`[html:downloadDependencies] Parsing HTML content for dependencies`);
+
+        // Extract file references - track direct file IDs for this HTML
+        const fileRefs = extractCanvasFileReferences(htmlContent);
+
+        for (const ref of fileRefs) {
+          directFileIds.push(ref.canvasFileId);
+          const localPath = await downloadFile(ref.canvasFileId);
+          if (localPath) {
+            fileIdToLocalPath.set(ref.canvasFileId, localPath);
+          }
+        }
+
+        // Extract page references - track direct page slugs for this HTML
+        const htmlRefs = extractHtmlReferences(htmlContent);
+
+        for (const ref of htmlRefs) {
+          if (
+            ref.refType === 'canvas-page' &&
+            ref.pageSlug &&
+            ref.courseId === course.external_id
+          ) {
+            directPageSlugs.push(ref.pageSlug);
+            const localPath = await processPage(ref.courseId, ref.pageSlug, targetDir);
+            if (localPath) {
+              pageSlugToLocalPath.set(ref.pageSlug, localPath);
+            }
+          }
+        }
+
+        // Record dependencies for this HTML if source info provided (only on first download)
+        // Include sessionId to protect from concurrent sync deletion and contentHash for staleness detection
+        if (
+          htmlSourceType &&
+          htmlSourceId &&
+          directFileIds.length + directPageSlugs.length > 0
+        ) {
+          const currentContentHash = getContentHash(htmlSourceType, htmlSourceId);
+          recordHtmlDependencies(
+            htmlSourceType,
+            htmlSourceId,
+            directFileIds,
+            directPageSlugs,
+            sessionId,
+            currentContentHash ?? undefined
+          );
+        }
+      }
+
+      // Rewrite HTML with local paths
+      let updatedHtml = htmlContent;
+      let replacementsMade = 0;
+
+      // Replace file URLs
+      for (const [fileId, localPath] of fileIdToLocalPath) {
+        // Convert Windows backslashes to forward slashes for HTML/URL paths
+        // eslint-disable-next-line cross-platform/no-hardcoded-path-separator
+        const relativePath = path.relative(htmlDir, localPath).replace(/\\/g, '/');
+        // URL patterns in HTML always use forward slashes regardless of platform
+
+        const patterns = [
+          new RegExp(`(href=["'])([^"']*\\/files\\/${fileId}[^"']*)(["'])`, 'gi'),
+          new RegExp(`(src=["'])([^"']*\\/files\\/${fileId}[^"']*)(["'])`, 'gi'),
+          new RegExp(
+            `(data-api-endpoint=["'])([^"']*\\/files\\/${fileId}[^"']*)(["'])`,
+            'gi'
+          ),
+        ];
+
+        for (const pattern of patterns) {
+          const matches = updatedHtml.match(pattern);
+          if (matches) {
+            for (const match of matches) {
+              const replaced = match.replace(pattern, `$1${relativePath}$3`);
+              updatedHtml = updatedHtml.replace(match, replaced);
+              replacementsMade++;
+            }
+          }
+        }
+      }
+
+      // Replace page URLs
+      for (const [pageSlug, localPath] of pageSlugToLocalPath) {
+        // Convert Windows backslashes to forward slashes for HTML/URL paths
+        // eslint-disable-next-line cross-platform/no-hardcoded-path-separator
+        const relativePath = path.relative(htmlDir, localPath).replace(/\\/g, '/');
+        // URL patterns in HTML always use forward slashes regardless of platform
+
+        const patterns = [
+          new RegExp(
+            `(href=["'])([^"']*\\/courses\\/${course.external_id}\\/pages\\/${pageSlug}[^"']*)(["'])`,
+            'gi'
+          ),
+          new RegExp(
+            `(data-api-endpoint=["'])([^"']*\\/pages\\/${pageSlug}[^"']*)(["'])`,
+            'gi'
+          ),
+        ];
+
+        for (const pattern of patterns) {
+          const matches = updatedHtml.match(pattern);
+          if (matches) {
+            for (const match of matches) {
+              const replaced = match.replace(pattern, `$1${relativePath}$3`);
+              updatedHtml = updatedHtml.replace(match, replaced);
+              replacementsMade++;
+            }
+          }
+        }
+      }
+
+      if (replacementsMade > 0) {
+        fs.writeFileSync(htmlPath, updatedHtml, 'utf-8');
+        logger.info(
+          `[html:downloadDependencies] Updated ${htmlPath} with ${replacementsMade} replacements`
+        );
+      }
+    };
+
+    try {
+      // Process the main HTML file and record its dependencies
+      const htmlDir = path.dirname(resource.local_path);
+      await processHtmlDependencies(
+        resource.local_path,
+        htmlDir,
+        sourceType || undefined,
+        sourceId || undefined
+      );
+
+      // Check if content changed during download (sync may have updated HTML while we were downloading)
+      const currentContentHash =
+        sourceType && sourceId ? getContentHash(sourceType, sourceId) : null;
+      const contentChanged =
+        originalContentHash !== null &&
+        currentContentHash !== null &&
+        originalContentHash !== currentContentHash;
+
+      if (contentChanged) {
+        logger.warn(
+          `[html:downloadDependencies] Content changed during download for ${sourceType}:${sourceId}`
+        );
+      }
+
+      return {
+        success: true,
+        filesDownloaded: totalFilesDownloaded,
+        pagesProcessed: totalPagesProcessed,
+        htmlPath: resource.local_path,
+        contentChanged,
+        message: contentChanged
+          ? 'Content was updated during download. Consider re-downloading to get the latest files.'
+          : undefined,
+      };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      logger.error(`[html:downloadDependencies] Failed: ${errorMessage}`);
+      return { success: false, error: errorMessage };
+    } finally {
+      // Always complete the operation to release the lock
+      if (sessionId && operationCoordinator) {
+        operationCoordinator.completeOperation(sessionId);
+        logger.debug(
+          `[html:downloadDependencies] Completed operation session=${sessionId.substring(0, 20)}...`
+        );
+      }
+    }
   });
 
   ipcMain.handle('resource:showInFolder', (_event, resourceId: number) => {
@@ -4129,23 +5419,7 @@ function registerIpcHandlers(): void {
     if (resource.local_path && fs.existsSync(resource.local_path)) {
       logger.debug(`[canvas-file:open] Opening existing file: ${resource.local_path}`);
 
-      // Check if it's an HTML file - open in Electron window
-      const ext = path.extname(resource.local_path).toLowerCase();
-      if (ext === '.html' || ext === '.htm') {
-        const htmlWindow = new BrowserWindow({
-          width: 900,
-          height: 700,
-          title: path.basename(resource.local_path),
-          webPreferences: {
-            nodeIntegration: false,
-            contextIsolation: true,
-          },
-        });
-        htmlWindow.loadFile(resource.local_path);
-        return { success: true, localPath: resource.local_path };
-      }
-
-      // Open with system default application
+      // Open with OS default application (HTML files now use relative paths)
       const { shell } = require('electron');
       const error = await shell.openPath(resource.local_path);
       if (error) {
@@ -4221,23 +5495,8 @@ function registerIpcHandlers(): void {
       return downloadResult;
     }
 
-    // Open the downloaded file
+    // Open the downloaded file with OS default application
     const { shell } = require('electron');
-    const ext = path.extname(downloadResult.localPath!).toLowerCase();
-    if (ext === '.html' || ext === '.htm') {
-      const htmlWindow = new BrowserWindow({
-        width: 900,
-        height: 700,
-        title: path.basename(downloadResult.localPath!),
-        webPreferences: {
-          nodeIntegration: false,
-          contextIsolation: true,
-        },
-      });
-      htmlWindow.loadFile(downloadResult.localPath!);
-      return { success: true, localPath: downloadResult.localPath };
-    }
-
     const error = await shell.openPath(downloadResult.localPath!);
     if (error) {
       logger.error(`[canvas-file:open] Failed to open downloaded file: ${error}`);
@@ -5013,33 +6272,78 @@ function registerIpcHandlers(): void {
         autoSyncEnabled: boolean;
         autoSyncInterval: number;
         autoAssignDueDate?: boolean;
+        saveHtmlContent?: boolean;
+        htmlUrlRewriting?: 'local' | 'original';
+        downloadImages?: boolean;
+        downloadLinkedFiles?: boolean;
+        syncFiles?: boolean;
+        syncAnnouncements?: boolean;
       }
     ) => {
       try {
+        // Merge with existing preferences to preserve fields not being updated
+        const existingPrefs = getSyncPreferences();
+        const mergedPrefs = { ...existingPrefs, ...prefs };
+
         database.executeWrite(
           `INSERT INTO user_preferences (key, value) VALUES ('syncPreferences', ?)
          ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
-          [JSON.stringify(prefs)],
+          [JSON.stringify(mergedPrefs)],
           'user_preferences'
         );
 
         // Restart auto-sync with new settings
-        if (prefs.autoSyncEnabled) {
+        if (mergedPrefs.autoSyncEnabled) {
           startAutoSync();
         } else {
           stopAutoSync();
         }
 
         logger.info(
-          `Auto-sync preferences updated: enabled=${prefs.autoSyncEnabled}, interval=${prefs.autoSyncInterval}min`
+          `Sync preferences updated: enabled=${mergedPrefs.autoSyncEnabled}, interval=${mergedPrefs.autoSyncInterval}min, saveHtmlContent=${mergedPrefs.saveHtmlContent}`
         );
         return { success: true };
       } catch (error) {
-        logger.error('Failed to save auto-sync preferences:', error as Error);
+        logger.error('Failed to save sync preferences:', error as Error);
         return { success: false, error: String(error) };
       }
     }
   );
+
+  // ============ Local HTML Paths Settings Handlers ============
+
+  ipcMain.handle(
+    'settings:setLocalHtmlPathsSettings',
+    (
+      _event,
+      settings: {
+        enabled: boolean;
+        autoRegenerate: boolean;
+        promptForMissing: boolean;
+      }
+    ) => {
+      try {
+        database.executeWrite(
+          `INSERT INTO user_preferences (key, value) VALUES ('localHtmlPathsSettings', ?)
+           ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+          [JSON.stringify(settings)],
+          'user_preferences'
+        );
+
+        logger.info(
+          `Local HTML paths settings updated: enabled=${settings.enabled}, autoRegenerate=${settings.autoRegenerate}`
+        );
+        return { success: true };
+      } catch (error) {
+        logger.error('Failed to save local HTML paths settings:', error as Error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
+  ipcMain.handle('settings:getLocalHtmlPathsSettings', () => {
+    return getLocalHtmlPathsSettings();
+  });
 
   // ============ Academic Settings Handlers ============
 
@@ -5963,6 +7267,7 @@ function registerIpcHandlers(): void {
           logger,
           filesDir: FILES_DIR,
           appVersion: app.getVersion(),
+          syncEngine: syncEngine ?? undefined,
         });
 
         const exportResult = await exportManager.exportTasksCsv(result.filePath, {
@@ -6022,6 +7327,7 @@ function registerIpcHandlers(): void {
           logger,
           filesDir: FILES_DIR,
           appVersion: app.getVersion(),
+          syncEngine: syncEngine ?? undefined,
         });
 
         const exportResult = await exportManager.exportGradesCsv(result.filePath, {
@@ -6110,6 +7416,7 @@ function registerIpcHandlers(): void {
           logger,
           filesDir: FILES_DIR,
           appVersion: app.getVersion(),
+          syncEngine: syncEngine ?? undefined,
         });
 
         const exportOptions = {
@@ -6180,6 +7487,7 @@ function registerIpcHandlers(): void {
         logger,
         filesDir: FILES_DIR,
         appVersion: app.getVersion(),
+        syncEngine: syncEngine ?? undefined,
       });
 
       return exportManager.importEncrypted(result.filePaths[0], password);
@@ -7579,6 +8887,12 @@ app.whenReady().then(async () => {
 
     // Initialize L1 VisibleDataProvider for centralized visibility rules
     visibleDataProvider = new VisibleDataProvider(database);
+
+    // Initialize OperationCoordinator to prevent sync/download conflicts
+    operationCoordinator = new OperationCoordinator({
+      db: database,
+      logger: logger.child('OperationCoordinator'),
+    });
 
     // Initialize HtmlLocalPathManager for HTML download with dependencies
     htmlLocalPathManager = new HtmlLocalPathManager(database, {

@@ -354,8 +354,13 @@ export class HtmlFileExtractor {
 
         const external = isExternalUrl(url);
 
+        // For canvas-page links, we process them even if they're external URLs
+        // because we can resolve them to local pages if they're synced
+        const isCanvasPageLink = pattern.name === 'canvas-page';
+
         // Skip external URLs - they are not local dependencies
-        if (external) {
+        // Exception: Canvas page links can be resolved locally
+        if (external && !isCanvasPageLink) {
           continue;
         }
 

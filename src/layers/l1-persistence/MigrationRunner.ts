@@ -2276,4 +2276,53 @@ export const coreMigrations: Migration[] = [
       DROP TABLE IF EXISTS app_settings;
     `,
   },
+  {
+    version: 76,
+    description: 'Add sync/download operation coordination schema',
+    up: `
+      -- Content hash columns for change detection during downloads
+      ALTER TABLE course_pages ADD COLUMN content_hash TEXT;
+      ALTER TABLE tasks ADD COLUMN description_hash TEXT;
+      ALTER TABLE courses ADD COLUMN syllabus_hash TEXT;
+
+      -- Active operations tracking table
+      -- Prevents sync from interfering with downloads and vice versa
+      CREATE TABLE IF NOT EXISTS active_operations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        operation_type TEXT NOT NULL CHECK(operation_type IN ('sync', 'download_html', 'download_file')),
+        resource_type TEXT,
+        resource_id TEXT,
+        course_id INTEGER,
+        session_id TEXT UNIQUE,
+        started_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        heartbeat_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        status TEXT DEFAULT 'active' CHECK(status IN ('active', 'stale', 'completed')),
+        UNIQUE(operation_type, resource_type, resource_id)
+      );
+
+      CREATE INDEX idx_active_ops_type ON active_operations(operation_type);
+      CREATE INDEX idx_active_ops_status ON active_operations(status);
+      CREATE INDEX idx_active_ops_resource ON active_operations(resource_type, resource_id);
+      CREATE INDEX idx_active_ops_session ON active_operations(session_id);
+
+      -- Session tracking for dependencies (protects from deletion during download)
+      ALTER TABLE html_dependencies ADD COLUMN download_session_id TEXT;
+      ALTER TABLE html_dependencies ADD COLUMN recorded_content_hash TEXT;
+
+      -- Version for optimistic locking on resources
+      ALTER TABLE resources ADD COLUMN version INTEGER DEFAULT 0;
+
+      CREATE INDEX idx_html_deps_session ON html_dependencies(download_session_id);
+    `,
+    down: `
+      DROP INDEX IF EXISTS idx_html_deps_session;
+      DROP INDEX IF EXISTS idx_active_ops_session;
+      DROP INDEX IF EXISTS idx_active_ops_resource;
+      DROP INDEX IF EXISTS idx_active_ops_status;
+      DROP INDEX IF EXISTS idx_active_ops_type;
+      DROP TABLE IF EXISTS active_operations;
+      -- SQLite doesn't support DROP COLUMN easily
+      SELECT 1;
+    `,
+  },
 ];

@@ -511,10 +511,19 @@ export class SyncConflictResolver extends EventEmitter {
 
   /**
    * Resolve a conflict with user's decision
+   *
+   * Returns the resolved field, value, and metadata for updating field_sources.
+   * The caller should update field_sources based on useCanvasValue:
+   * - If useCanvasValue is true, set field_sources[field] = 'canvas'
+   * - If useCanvasValue is false, set field_sources[field] = 'user'
    */
-  resolveConflict(
-    resolution: ConflictResolution
-  ): { field: string; value: unknown } | null {
+  resolveConflict(resolution: ConflictResolution): {
+    field: string;
+    value: unknown;
+    entity: 'course' | 'task' | 'notification';
+    entityId: number;
+    useCanvasValue: boolean;
+  } | null {
     const conflict = this.pendingConflicts.get(resolution.conflictId);
     if (!conflict) return null;
 
@@ -534,25 +543,77 @@ export class SyncConflictResolver extends EventEmitter {
     this.pendingConflicts.delete(resolution.conflictId);
     this.deletePendingConflict(resolution.conflictId);
 
+    // Update field_sources based on resolution
+    const tableName =
+      conflict.entity === 'course'
+        ? 'courses'
+        : conflict.entity === 'task'
+          ? 'tasks'
+          : 'notifications';
+    const newSource = resolution.useCanvasValue ? 'canvas' : 'user';
+    this.setFieldSource(tableName, conflict.entityId, conflict.field, newSource);
+
+    // If choosing local value, also clear the field from local_modified_fields
+    // since the user has explicitly chosen this value
+    if (!resolution.useCanvasValue) {
+      // Keep in local_modified_fields to prevent future auto-override
+    } else {
+      // Clear from local_modified_fields since user chose Canvas value
+      this.clearFieldModified(tableName, conflict.entityId, conflict.field);
+    }
+
     return {
       field: conflict.field,
       value: resolution.useCanvasValue ? conflict.canvasValue : conflict.localValue,
+      entity: conflict.entity,
+      entityId: conflict.entityId,
+      useCanvasValue: resolution.useCanvasValue,
     };
   }
 
   /**
    * Resolve all pending conflicts with a batch decision
+   *
+   * Updates field_sources for all resolved conflicts:
+   * - useCanvasValues=true: sets field_sources to 'canvas'
+   * - useCanvasValues=false: sets field_sources to 'user'
    */
-  resolveAllConflicts(
-    useCanvasValues: boolean
-  ): Array<{ field: string; value: unknown }> {
-    const results: Array<{ field: string; value: unknown }> = [];
+  resolveAllConflicts(useCanvasValues: boolean): Array<{
+    field: string;
+    value: unknown;
+    entity: 'course' | 'task' | 'notification';
+    entityId: number;
+  }> {
+    const results: Array<{
+      field: string;
+      value: unknown;
+      entity: 'course' | 'task' | 'notification';
+      entityId: number;
+    }> = [];
 
     for (const [id, conflict] of this.pendingConflicts) {
       results.push({
         field: conflict.field,
         value: useCanvasValues ? conflict.canvasValue : conflict.localValue,
+        entity: conflict.entity,
+        entityId: conflict.entityId,
       });
+
+      // Update field_sources
+      const tableName =
+        conflict.entity === 'course'
+          ? 'courses'
+          : conflict.entity === 'task'
+            ? 'tasks'
+            : 'notifications';
+      const newSource = useCanvasValues ? 'canvas' : 'user';
+      this.setFieldSource(tableName, conflict.entityId, conflict.field, newSource);
+
+      // Clear from local_modified_fields if choosing Canvas value
+      if (useCanvasValues) {
+        this.clearFieldModified(tableName, conflict.entityId, conflict.field);
+      }
+
       // Delete from database
       this.deletePendingConflict(id);
     }

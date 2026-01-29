@@ -116,3 +116,9 @@ export {
   type ExportManifest,
   type ExportManagerConfig,
 } from './ExportManager';
+export {
+  OperationCoordinator,
+  type OperationType,
+  type ActiveOperation,
+  type OperationCoordinatorConfig,
+} from './OperationCoordinator';

@@ -54,6 +54,7 @@ import {
   DEFAULT_DASHBOARD_SETTINGS,
   DEFAULT_SETTINGS_PAGE_SETTINGS,
   DEFAULT_SETTINGS_SECTION_ORDER,
+  DEFAULT_LOCAL_HTML_PATHS_SETTINGS,
   SETTINGS_CATEGORIES,
   searchSettings,
   type SyncPreferences,
@@ -67,6 +68,7 @@ import {
   type DashboardSettings,
   type SettingsCategory,
   type SettingsPageSettings,
+  type LocalHtmlPathsSettings,
 } from '../../l5-presentation/settings';
 import type { Course } from '../../l5-presentation/types';
 import { ConfirmDialog } from './shared/ConfirmDialog';
@@ -238,6 +240,14 @@ export function SettingsModal({
   const [contentSettings, setContentSettings] = useState<ContentSettings>(
     () => settingsManager.get(STORAGE_KEYS.CONTENT) ?? DEFAULT_CONTENT_SETTINGS
   );
+
+  // Local HTML paths settings (offline HTML with dependencies)
+  const [localHtmlPathsSettings, setLocalHtmlPathsSettings] =
+    useState<LocalHtmlPathsSettings>(
+      () =>
+        settingsManager.get(STORAGE_KEYS.LOCAL_HTML_PATHS) ??
+        DEFAULT_LOCAL_HTML_PATHS_SETTINGS
+    );
 
   // Dashboard settings
   const [dashboardSettings, setDashboardSettings] = useState<DashboardSettings>(
@@ -573,20 +583,22 @@ export function SettingsModal({
     setSyncPrefs(newPrefs);
     settingsManager.set(STORAGE_KEYS.SYNC_PREFS, newPrefs);
 
-    if (
-      'autoSyncEnabled' in updates ||
-      'autoSyncInterval' in updates ||
-      'autoAssignDueDate' in updates
-    ) {
-      try {
-        await window.api.setAutoSyncPreferences({
-          autoSyncEnabled: newPrefs.autoSyncEnabled,
-          autoSyncInterval: newPrefs.autoSyncInterval,
-          autoAssignDueDate: newPrefs.autoAssignDueDate,
-        });
-      } catch (e) {
-        console.error('Failed to sync preferences:', e);
-      }
+    // Sync ALL sync preferences to the main process database
+    // This ensures the main process sees setting changes immediately
+    try {
+      await window.api.setAutoSyncPreferences({
+        autoSyncEnabled: newPrefs.autoSyncEnabled,
+        autoSyncInterval: newPrefs.autoSyncInterval,
+        autoAssignDueDate: newPrefs.autoAssignDueDate,
+        saveHtmlContent: newPrefs.saveHtmlContent,
+        htmlUrlRewriting: newPrefs.htmlUrlRewriting,
+        downloadImages: newPrefs.downloadImages,
+        downloadLinkedFiles: newPrefs.downloadLinkedFiles,
+        syncFiles: newPrefs.syncFiles,
+        syncAnnouncements: newPrefs.syncAnnouncements,
+      });
+    } catch (e) {
+      console.error('Failed to sync preferences to main process:', e);
     }
   };
 
@@ -654,6 +666,21 @@ export function SettingsModal({
     const newSettings = { ...contentSettings, ...updates };
     setContentSettings(newSettings);
     settingsManager.set(STORAGE_KEYS.CONTENT, newSettings);
+  };
+
+  const updateLocalHtmlPathsSettings = async (
+    updates: Partial<LocalHtmlPathsSettings>
+  ) => {
+    const newSettings = { ...localHtmlPathsSettings, ...updates };
+    setLocalHtmlPathsSettings(newSettings);
+    settingsManager.set(STORAGE_KEYS.LOCAL_HTML_PATHS, newSettings);
+    // Persist to main process database for use in resource:open handler
+    try {
+      const result = await window.api.setLocalHtmlPathsSettings(newSettings);
+      console.log('[Settings] Local HTML paths settings saved:', result);
+    } catch (error) {
+      console.error('[Settings] Failed to save local HTML paths settings:', error);
+    }
   };
 
   const updateDashboardSettings = (updates: Partial<DashboardSettings>) => {
@@ -1716,6 +1743,28 @@ export function SettingsModal({
                           { value: 'always-external', label: 'Open in browser' },
                           { value: 'prefer-local', label: 'Prefer local' },
                         ]}
+                      />
+                    </SettingRow>
+
+                    {/* Offline HTML Files */}
+                    <SettingRow
+                      label="Offline HTML files"
+                      description="Prompt to download missing images and linked files when opening HTML content"
+                      isModified={
+                        localHtmlPathsSettings.enabled !==
+                        DEFAULT_LOCAL_HTML_PATHS_SETTINGS.enabled
+                      }
+                      onReset={() =>
+                        updateLocalHtmlPathsSettings({
+                          enabled: DEFAULT_LOCAL_HTML_PATHS_SETTINGS.enabled,
+                        })
+                      }
+                    >
+                      <ToggleSwitch
+                        checked={localHtmlPathsSettings.enabled}
+                        onChange={(checked) =>
+                          updateLocalHtmlPathsSettings({ enabled: checked })
+                        }
                       />
                     </SettingRow>
 

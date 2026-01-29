@@ -263,6 +263,68 @@ Due to critical priority calculation bugs, L3 has additional requirements:
 
 **If tests fail after your changes**: FIX THE CODE OR TESTS. Do not commit failing tests.
 
+### Plan Verification Protocol (MANDATORY)
+
+> **After completing ANY implementation plan, you MUST verify all features were implemented before considering the task complete.**
+
+#### Verification Steps
+
+1. **Review the original plan** - Re-read the plan document or task list
+2. **Create a checklist** - List every feature/change that was planned
+3. **Verify each item**:
+   - [ ] Code exists for the feature
+   - [ ] Code compiles without errors (`npm run build`)
+   - [ ] Feature is accessible (UI wired up, IPC handlers connected)
+   - [ ] Feature works when tested manually
+4. **Document gaps** - If anything is incomplete, document it clearly
+5. **Test the happy path** - Run through the main use case end-to-end
+
+#### Verification Checklist Template
+
+For each planned feature, verify:
+
+```
+Feature: [Name]
+- [ ] Backend implementation complete (IPC handlers, services)
+- [ ] Frontend implementation complete (UI components, state)
+- [ ] Wiring complete (preload API, event handlers)
+- [ ] Build succeeds
+- [ ] Manual test passes
+- [ ] Edge cases handled
+```
+
+#### Common Verification Failures
+
+| Symptom | Likely Cause |
+|---------|--------------|
+| UI doesn't respond | IPC handler not registered or preload API missing |
+| Feature not visible | Component not imported/rendered in parent |
+| Data not flowing | State not connected or event not emitted |
+| Works in dev, fails in build | Import path issues or missing exports |
+
+#### When to Create Documentation
+
+If verification reveals incomplete features, create a status document:
+
+```markdown
+# [Feature] - Implementation Status
+
+## Status: NEEDS VERIFICATION / INCOMPLETE / COMPLETE
+
+## Checklist
+- [ ] Item 1
+- [ ] Item 2
+
+## Known Gaps
+- Gap 1: description
+
+## Next Steps
+- Step 1
+- Step 2
+```
+
+Save to: `docs/[FEATURE]_STATUS.md`
+
 ## 8. Centralized Modules (Avoid Boilerplate)
 
 To reduce code duplication and ensure consistency, use these centralized modules instead of creating local implementations.

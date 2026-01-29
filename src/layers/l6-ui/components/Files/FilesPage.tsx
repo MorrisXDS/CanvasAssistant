@@ -54,6 +54,10 @@ import { FileSyncConfig } from './FileSyncConfig';
 import { FileSelectionBar, DownloadProgress } from './FileSelectionBar';
 import { FileContextMenu, FilePropertiesContent } from './FileContextMenu';
 import {
+  MissingDependenciesDialog,
+  MissingDependency,
+} from './MissingDependenciesDialog';
+import {
   getFolderTypeFromPath,
   getFolderDepth,
   getCourseColor,
@@ -308,6 +312,23 @@ export function FilesPage() {
 
   // Properties dialog state
   const [propertiesFile, setPropertiesFile] = useState<FileItem | null>(null);
+
+  // Missing dependencies dialog state
+  const [missingDepsDialog, setMissingDepsDialog] = useState<{
+    isOpen: boolean;
+    file: FileItem | null;
+    dependencies: MissingDependency[];
+    totalSize: number;
+    isDownloading: boolean;
+    downloadProgress: number;
+  }>({
+    isOpen: false,
+    file: null,
+    dependencies: [],
+    totalSize: 0,
+    isDownloading: false,
+    downloadProgress: 0,
+  });
 
   // Fetch files directory path
   useEffect(() => {
@@ -874,11 +895,12 @@ export function FilesPage() {
     }, 3500);
   };
 
-  const handleOpen = (file: FileItem) => {
+  const handleOpen = async (file: FileItem) => {
     const api = window.api;
     if (!api) return;
 
-    console.log('[FilesPage] handleOpen called, fire-and-forget');
+    console.log('[FilesPage] handleOpen called');
+
     // Fire-and-forget: don't block UI while file opens in external app
     if (file.source === 'attachment') {
       api
@@ -901,14 +923,170 @@ export function FilesPage() {
           console.error('Failed to open page:', error);
         });
     } else {
-      api
-        .openResource(file.id)
-        .then(() => console.log('[FilesPage] openResource resolved'))
-        .catch((error) => {
-          console.error('Failed to open file:', error);
-        });
+      // For resources, check for missing HTML dependencies
+      try {
+        const result = await api.openResource(file.id);
+
+        if (result?.hasMissingDependencies && result.missingDependencies) {
+          // Show missing dependencies dialog
+          console.log(
+            '[FilesPage] HTML has missing dependencies:',
+            result.missingDependencies
+          );
+          setMissingDepsDialog({
+            isOpen: true,
+            file,
+            dependencies: result.missingDependencies,
+            totalSize: result.totalMissingSize || 0,
+            isDownloading: false,
+            downloadProgress: 0,
+          });
+          return;
+        }
+
+        console.log('[FilesPage] openResource resolved');
+      } catch (error) {
+        console.error('Failed to open file:', error);
+      }
     }
-    console.log('[FilesPage] handleOpen returning immediately');
+  };
+
+  // State for content-changed warning
+  const [contentChangedWarning, setContentChangedWarning] = useState<{
+    show: boolean;
+    fileId: number | null;
+    fileName: string | null;
+  }>({ show: false, fileId: null, fileName: null });
+
+  // Handle downloading missing dependencies
+  const handleDownloadDependencies = async () => {
+    const api = window.api;
+    if (!api || !missingDepsDialog.file) return;
+
+    setMissingDepsDialog((prev) => ({
+      ...prev,
+      isDownloading: true,
+      downloadProgress: 0,
+    }));
+
+    try {
+      // Simulate progress since we don't have real-time updates
+      const progressInterval = setInterval(() => {
+        setMissingDepsDialog((prev) => ({
+          ...prev,
+          downloadProgress: Math.min(prev.downloadProgress + 10, 90),
+        }));
+      }, 500);
+
+      const result = await api.downloadHtmlDependencies(missingDepsDialog.file.id);
+
+      clearInterval(progressInterval);
+
+      if (result.success) {
+        setMissingDepsDialog((prev) => ({ ...prev, downloadProgress: 100 }));
+
+        // Check if content changed during download (sync may have updated HTML)
+        const fileForWarning = missingDepsDialog.file;
+        const contentChanged = result.contentChanged === true;
+
+        // Close dialog and open the file after a brief delay
+        setTimeout(async () => {
+          setMissingDepsDialog({
+            isOpen: false,
+            file: null,
+            dependencies: [],
+            totalSize: 0,
+            isDownloading: false,
+            downloadProgress: 0,
+          });
+
+          // Refresh files list
+          await fetchFiles();
+
+          // Show content changed warning if detected
+          if (contentChanged && fileForWarning) {
+            setContentChangedWarning({
+              show: true,
+              fileId: fileForWarning.id,
+              fileName: getFileName(fileForWarning),
+            });
+          }
+
+          // Open the file with skipDependencyCheck=true since we just downloaded
+          if (fileForWarning) {
+            api.openResource(fileForWarning.id, true);
+          }
+        }, 500);
+      } else {
+        throw new Error(result.error || 'Download failed');
+      }
+    } catch (error) {
+      console.error('Failed to download dependencies:', error);
+      setMissingDepsDialog((prev) => ({ ...prev, isDownloading: false }));
+      throw error; // Re-throw so dialog shows error
+    }
+  };
+
+  // Handle re-downloading after content changed warning
+  const handleRedownloadAfterChange = async () => {
+    const api = window.api;
+    if (!api || !contentChangedWarning.fileId) return;
+
+    setContentChangedWarning({ show: false, fileId: null, fileName: null });
+
+    // Check dependencies again and trigger download
+    const checkResult = await api.checkHtmlDependencies(contentChangedWarning.fileId);
+    if (checkResult.success && checkResult.missingCount > 0) {
+      // Re-open the dialog to download new dependencies
+      const file = files.resources.find(
+        (r: FileResource) => r.id === contentChangedWarning.fileId
+      );
+      if (file) {
+        setMissingDepsDialog({
+          isOpen: true,
+          file,
+          dependencies: checkResult.missingDependencies || [],
+          totalSize: checkResult.totalMissingSize || 0,
+          isDownloading: false,
+          downloadProgress: 0,
+        });
+      }
+    } else {
+      // No new missing deps - trigger full re-download by clearing and re-downloading
+      await api.downloadHtmlDependencies(contentChangedWarning.fileId);
+      await fetchFiles();
+    }
+  };
+
+  // Handle opening file without dependencies (broken offline experience)
+  const handleOpenAnyway = () => {
+    const api = window.api;
+    if (!api || !missingDepsDialog.file) return;
+
+    // Close dialog
+    setMissingDepsDialog({
+      isOpen: false,
+      file: null,
+      dependencies: [],
+      totalSize: 0,
+      isDownloading: false,
+      downloadProgress: 0,
+    });
+
+    // Open file with skipDependencyCheck=true
+    api.openResource(missingDepsDialog.file.id, true);
+  };
+
+  const closeMissingDepsDialog = () => {
+    if (missingDepsDialog.isDownloading) return; // Prevent closing during download
+    setMissingDepsDialog({
+      isOpen: false,
+      file: null,
+      dependencies: [],
+      totalSize: 0,
+      isDownloading: false,
+      downloadProgress: 0,
+    });
   };
 
   const handleShowInFolder = (file: FileItem) => {
@@ -1561,6 +1739,48 @@ export function FilesPage() {
           />
         )}
       </ConfirmDialog>
+
+      {/* Missing Dependencies Dialog for HTML files */}
+      <MissingDependenciesDialog
+        isOpen={missingDepsDialog.isOpen}
+        onClose={closeMissingDepsDialog}
+        onDownload={handleDownloadDependencies}
+        onOpenAnyway={handleOpenAnyway}
+        missingDependencies={missingDepsDialog.dependencies}
+        totalSize={missingDepsDialog.totalSize}
+        fileName={missingDepsDialog.file ? getFileName(missingDepsDialog.file) : ''}
+        isDownloading={missingDepsDialog.isDownloading}
+        downloadProgress={missingDepsDialog.downloadProgress}
+      />
+
+      {/* Content Changed Warning Toast */}
+      {contentChangedWarning.show && (
+        <div className={styles.contentChangedWarning}>
+          <div className={styles.contentChangedWarningContent}>
+            <RefreshCw size={16} className={styles.contentChangedWarningIcon} />
+            <span>
+              Content for <strong>{contentChangedWarning.fileName}</strong> was updated
+              while downloading. Consider re-downloading for the latest version.
+            </span>
+          </div>
+          <div className={styles.contentChangedWarningActions}>
+            <button
+              className={styles.contentChangedWarningButton}
+              onClick={handleRedownloadAfterChange}
+            >
+              Re-download
+            </button>
+            <button
+              className={styles.contentChangedWarningDismiss}
+              onClick={() =>
+                setContentChangedWarning({ show: false, fileId: null, fileName: null })
+              }
+            >
+              <X size={14} />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
