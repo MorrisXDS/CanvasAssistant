@@ -188,11 +188,38 @@ export const WindowBehaviorSettingsSchema = z.object({
   showTrayIcon: z.boolean(),
 });
 
+// =============================================================================
+// IMPORTANT WORKS FILTER - Task type filtering for dashboard
+// =============================================================================
+
+/**
+ * Filter configuration for Important Works section
+ * Uses dynamic task types from actual coursework data
+ */
+export const ImportantWorksFilterSchema = z.object({
+  // Global minimum weight threshold (used when perTypeEnabled is false)
+  globalThreshold: z.number().min(0).max(100),
+
+  // Which task types to show (dynamic, based on actual task types in data)
+  enabledTypes: z.array(z.string()),
+
+  // Whether to use per-type thresholds
+  perTypeEnabled: z.boolean(),
+
+  // Per-type thresholds (only used when perTypeEnabled is true)
+  perTypeThresholds: z.record(z.string(), z.number().min(0).max(100)),
+});
+
+export type ImportantWorksFilter = z.infer<typeof ImportantWorksFilterSchema>;
+
 export const DashboardSettingsSchema = z.object({
   // Threshold for showing tasks in "Important Works" section (percentage)
+  // Kept for backward compatibility, use importantWorksFilter.globalThreshold instead
   importantWorksThreshold: z.number().min(0).max(100),
   // Whether to sort tasks by priority score (false = sort by due date only)
   prioritySortingEnabled: z.boolean(),
+  // Advanced filter configuration for Important Works
+  importantWorksFilter: ImportantWorksFilterSchema.optional(),
 });
 
 export const LocalHtmlPathsSettingsSchema = z.object({
@@ -353,9 +380,41 @@ export const DEFAULT_WINDOW_BEHAVIOR_SETTINGS: WindowBehaviorSettings = {
   showTrayIcon: true,
 };
 
+/**
+ * Default filter for Important Works section
+ * All task types enabled by default
+ */
+export const DEFAULT_IMPORTANT_WORKS_FILTER: ImportantWorksFilter = {
+  globalThreshold: 5,
+  enabledTypes: [
+    'assignment',
+    'problem_set',
+    'quiz',
+    'homework',
+    'lab',
+    'essay',
+    'attendance',
+    'participation',
+    'project',
+    'midterm',
+    'termtest',
+    'final_exam',
+    'tutorial',
+    'lab_report',
+    'reading_response',
+    'discussion',
+    'reading',
+    'external',
+    'info',
+  ],
+  perTypeEnabled: false,
+  perTypeThresholds: {},
+};
+
 export const DEFAULT_DASHBOARD_SETTINGS: DashboardSettings = {
-  importantWorksThreshold: 10, // 10% default
+  importantWorksThreshold: 10, // 10% default (legacy, use importantWorksFilter instead)
   prioritySortingEnabled: false, // Default to simple due date sorting
+  importantWorksFilter: DEFAULT_IMPORTANT_WORKS_FILTER,
 };
 
 export const DEFAULT_LOCAL_HTML_PATHS_SETTINGS: LocalHtmlPathsSettings = {

@@ -465,6 +465,8 @@ export function TasksPage() {
             title: contextMenu.task.title,
             isCompleted: contextMenu.task.isCompleted,
             isOptional: contextMenu.task.isOptional,
+            calendarEventId: contextMenu.task.calendarEventId,
+            dueAt: contextMenu.task.dueAt,
           }}
           position={contextMenu.position}
           onClose={() => setContextMenu(null)}
@@ -482,8 +484,35 @@ export function TasksPage() {
             handleToggleComplete();
             setContextMenu(null);
           }}
+          onToggleOptional={async () => {
+            const api = window.api;
+            if (!api?.dispatch) return;
+            try {
+              await api.dispatch('UpdateTask', {
+                taskId: contextMenu.task.id,
+                updates: { isOptional: !contextMenu.task.isOptional },
+              });
+            } catch (error) {
+              console.error('Failed to toggle optional:', error);
+            }
+            setContextMenu(null);
+          }}
           onOpenInCanvas={() => {
             handleOpenInCanvas();
+            setContextMenu(null);
+          }}
+          onViewInCalendar={() => {
+            if (contextMenu.task.dueAt) {
+              const dueDate = new Date(contextMenu.task.dueAt);
+              navigate('/calendar', {
+                state: {
+                  targetDate: dueDate.toISOString(),
+                  taskId: contextMenu.task.id,
+                },
+              });
+            } else {
+              navigate('/calendar');
+            }
             setContextMenu(null);
           }}
           onDelete={() => {

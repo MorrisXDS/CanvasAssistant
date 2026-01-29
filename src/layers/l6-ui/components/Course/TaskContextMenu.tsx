@@ -16,6 +16,7 @@ import {
   Trash2,
   EyeOff,
   Eye,
+  Calendar,
 } from 'lucide-react';
 
 export interface TaskContextMenuProps {
@@ -24,6 +25,8 @@ export interface TaskContextMenuProps {
     title: string;
     isCompleted: boolean;
     isOptional?: boolean;
+    calendarEventId?: number | null;
+    dueAt?: string | null;
   };
   position: { x: number; y: number };
   onClose: () => void;
@@ -33,6 +36,7 @@ export interface TaskContextMenuProps {
   onOpenInCanvas: () => void;
   onDelete: () => void;
   onToggleOptional?: () => void;
+  onViewInCalendar?: () => void;
 }
 
 // Inline styles matching FilesPage.module.css contextMenu classes
@@ -85,6 +89,7 @@ export function TaskContextMenu({
   onOpenInCanvas,
   onDelete,
   onToggleOptional,
+  onViewInCalendar,
 }: TaskContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
   const [hoveredItem, setHoveredItem] = React.useState<string | null>(null);
@@ -243,6 +248,20 @@ export function TaskContextMenu({
         <Globe size={14} />
         <span>Open in Canvas</span>
       </button>
+
+      {/* View in Calendar */}
+      {onViewInCalendar && (
+        <button
+          style={getItemStyle('calendar')}
+          onClick={() => handleAction(onViewInCalendar)}
+          onMouseEnter={() => setHoveredItem('calendar')}
+          onMouseLeave={() => setHoveredItem(null)}
+          role="menuitem"
+        >
+          <Calendar size={14} />
+          <span>View in Calendar</span>
+        </button>
+      )}
 
       {/* Divider */}
       <div style={styles.contextMenuDivider} />

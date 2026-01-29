@@ -2,18 +2,23 @@
  * ImportantWorksCard - Displays high-weight tasks
  */
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Star, Inbox, Calendar } from 'lucide-react';
 import { Card } from '../shared';
+import { ImportantWorksFilter } from './ImportantWorksFilter';
 import { useStore } from '../../../l5-presentation/store';
 import {
   STORAGE_KEYS,
   useSetting,
   DEFAULT_DASHBOARD_SETTINGS,
+  DEFAULT_IMPORTANT_WORKS_FILTER,
+  type ImportantWorksFilter as FilterType,
+  type DashboardSettings,
 } from '../../../l5-presentation/settings';
-import { getBadgeUrgency, formatDueDate } from '../../constants/formatters';
-import type { Task, Course } from '../../../l5-presentation/types';
+import { formatDueDate, getCourseColor } from '../../constants';
+import { isDeadlineEvent, formatDurationDisplay } from '../Calendar/calendarUtils';
+import type { Task, Course, DisplayCalendarEvent } from '../../../l5-presentation/types';
 
 interface ImportantWorksCardProps {
   maxItems?: number;
@@ -38,33 +43,35 @@ function getDaysUntilDue(dueAt: string): number | null {
   return diffDays;
 }
 
-/**
- * Get badge color based on urgency
- */
-function getUrgencyColor(urgency: string): string {
-  switch (urgency) {
-    case 'critical':
-      return 'var(--color-danger)';
-    case 'high':
-      return 'var(--color-warning)';
-    case 'medium':
-      return 'var(--color-blue)';
-    case 'low':
-    default:
-      return 'var(--text-muted)';
-  }
-}
-
 export function ImportantWorksCard({ maxItems = 4 }: ImportantWorksCardProps) {
   const navigate = useNavigate();
   const tasks = useStore((state) => state.tasks);
   const courses = useStore((state) => state.courses);
+  const calendarEvents = useStore((state) => state.calendarEvents);
 
-  // Get threshold from settings
-  const [dashboardSettings] = useSetting(STORAGE_KEYS.DASHBOARD);
-  const threshold =
-    dashboardSettings?.importantWorksThreshold ??
-    DEFAULT_DASHBOARD_SETTINGS.importantWorksThreshold;
+  // Get settings from storage
+  const [dashboardSettings, setDashboardSettings] = useSetting(STORAGE_KEYS.DASHBOARD);
+
+  // Get the filter config (use default if not set)
+  const filter: FilterType = useMemo(
+    () => dashboardSettings?.importantWorksFilter ?? DEFAULT_IMPORTANT_WORKS_FILTER,
+    [dashboardSettings]
+  );
+
+  // Handle filter changes
+  const handleFilterChange = useCallback(
+    (newFilter: FilterType) => {
+      const currentSettings: DashboardSettings =
+        dashboardSettings ?? DEFAULT_DASHBOARD_SETTINGS;
+      setDashboardSettings({
+        ...currentSettings,
+        importantWorksFilter: newFilter,
+        // Sync legacy threshold with global threshold
+        importantWorksThreshold: newFilter.globalThreshold,
+      });
+    },
+    [dashboardSettings, setDashboardSettings]
+  );
 
   // Create course lookup map
   const courseMap = useMemo(() => {
@@ -75,31 +82,57 @@ export function ImportantWorksCard({ maxItems = 4 }: ImportantWorksCardProps) {
     return map;
   }, [courses]);
 
+  // Create calendar event lookup map (by event ID)
+  const calendarEventMap = useMemo(() => {
+    const map = new Map<number, DisplayCalendarEvent>();
+    for (const event of calendarEvents) {
+      map.set(event.id, event);
+    }
+    return map;
+  }, [calendarEvents]);
+
   // Filter and sort important tasks
   const importantTasks = useMemo(() => {
     const filtered = tasks.filter((task) => {
       // Must not be completed
       if (task.isCompleted) return false;
+
+      // Must have a task type
+      const taskType = task.taskType;
+      if (!taskType) return false;
+
+      // Check if type is enabled (if no types enabled, show all)
+      if (filter.enabledTypes.length > 0 && !filter.enabledTypes.includes(taskType)) {
+        return false;
+      }
+
+      // Get applicable threshold
+      const threshold =
+        filter.perTypeEnabled && filter.perTypeThresholds[taskType] !== undefined
+          ? filter.perTypeThresholds[taskType]
+          : filter.globalThreshold;
+
       // Must have weight above threshold
-      if (!task.weight || task.weight <= threshold) return false;
+      if (!task.weight || task.weight < threshold) return false;
+
       return true;
     });
 
-    // Sort by weight descending, then by due date ascending (null at end)
+    // Sort by due date ascending (null at end), then by weight descending
     return filtered
       .sort((a, b) => {
-        // First by weight (descending)
-        const weightDiff = (b.weight ?? 0) - (a.weight ?? 0);
-        if (weightDiff !== 0) return weightDiff;
-
-        // Then by due date (ascending, null at end)
+        // First by due date (ascending, null at end)
         if (!a.dueAt && !b.dueAt) return 0;
         if (!a.dueAt) return 1;
         if (!b.dueAt) return -1;
-        return new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime();
+        const dateDiff = new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime();
+        if (dateDiff !== 0) return dateDiff;
+
+        // Then by weight (descending)
+        return (b.weight ?? 0) - (a.weight ?? 0);
       })
       .slice(0, maxItems);
-  }, [tasks, threshold, maxItems]);
+  }, [tasks, filter, maxItems]);
 
   const handleTaskClick = (task: Task) => {
     // Navigate to course detail with task highlight
@@ -117,6 +150,9 @@ export function ImportantWorksCard({ maxItems = 4 }: ImportantWorksCardProps) {
   return (
     <Card
       title="Important Works"
+      headerAction={
+        <ImportantWorksFilter filter={filter} onFilterChange={handleFilterChange} />
+      }
       padding="md"
       style={{ display: 'flex', flexDirection: 'column', height: '100%' }}
     >
@@ -127,16 +163,40 @@ export function ImportantWorksCard({ maxItems = 4 }: ImportantWorksCardProps) {
             color="var(--text-muted)"
             style={{ marginBottom: 'var(--space-2)' }}
           />
-          <span style={styles.emptyText}>No tasks with weight above {threshold}%</span>
+          <span style={styles.emptyText}>
+            No matching tasks above {filter.globalThreshold}% weight
+          </span>
         </div>
       ) : (
         <div style={styles.list}>
           {importantTasks.map((task, index) => {
             const course = courseMap.get(task.courseId);
-            const daysUntilDue = task.dueAt ? getDaysUntilDue(task.dueAt) : null;
-            const urgency = daysUntilDue !== null ? getBadgeUrgency(daysUntilDue) : 'low';
-            const dueLabel =
-              daysUntilDue !== null ? formatDueDate(task.dueAt!, daysUntilDue) : null;
+            const calendarEvent = task.calendarEventId
+              ? calendarEventMap.get(task.calendarEventId)
+              : undefined;
+
+            // Determine time display:
+            // - Duration event (has real start time): show time range
+            // - Deadline event (start is epoch): show relative deadline
+            // - No due date: show nothing
+            let timeDisplay: string | null = null;
+
+            if (calendarEvent && !isDeadlineEvent(calendarEvent)) {
+              // Duration event - show time range
+              timeDisplay = formatDurationDisplay(calendarEvent);
+            } else if (task.dueAt) {
+              // Deadline event - show relative deadline with time
+              const daysUntilDue = getDaysUntilDue(task.dueAt);
+              if (daysUntilDue !== null) {
+                const deadlineDate = formatDueDate(task.dueAt, daysUntilDue);
+                const deadlineTime = new Date(task.dueAt).toLocaleTimeString('en-US', {
+                  hour: 'numeric',
+                  minute: '2-digit',
+                  hour12: true,
+                });
+                timeDisplay = `${deadlineDate} ${deadlineTime}`;
+              }
+            }
 
             return (
               <div
@@ -155,24 +215,39 @@ export function ImportantWorksCard({ maxItems = 4 }: ImportantWorksCardProps) {
                   }
                 }}
               >
-                <div style={styles.weightBadge}>
-                  <Star size={12} style={{ color: 'var(--color-warning)' }} />
-                  <span style={styles.weightValue}>{task.weight}%</span>
-                </div>
+                {/* Layout B: Title-first card style */}
                 <div style={styles.content}>
-                  <div style={styles.header}>
-                    {course && <span style={styles.courseCode}>{course.code}</span>}
-                    {dueLabel && (
+                  {/* Row 1: Task title */}
+                  <span style={styles.taskTitle}>{task.title}</span>
+
+                  {/* Row 2: Metadata (weight • course • due date) */}
+                  <div style={styles.metadataRow}>
+                    <span style={styles.weightInline}>
+                      <Star size={10} style={{ color: 'var(--color-warning)' }} />
+                      <span>{task.weight}%</span>
+                    </span>
+
+                    <span style={styles.separator}>•</span>
+
+                    {course && (
                       <span
                         style={{
-                          ...styles.dueBadge,
-                          color: getUrgencyColor(urgency),
-                          backgroundColor: `${getUrgencyColor(urgency)}15`,
+                          ...styles.courseCode,
+                          backgroundColor: course.color || getCourseColor(course.id),
                         }}
+                        title={course.code}
                       >
-                        {dueLabel}
+                        {course.code}
                       </span>
                     )}
+
+                    {timeDisplay && (
+                      <>
+                        <span style={styles.separator}>•</span>
+                        <span style={styles.dueText}>{timeDisplay}</span>
+                      </>
+                    )}
+
                     {task.calendarEventId && (
                       <button
                         style={styles.calendarButton}
@@ -183,7 +258,6 @@ export function ImportantWorksCard({ maxItems = 4 }: ImportantWorksCardProps) {
                       </button>
                     )}
                   </div>
-                  <span style={styles.taskTitle}>{task.title}</span>
                 </div>
               </div>
             );
@@ -220,27 +294,9 @@ const styles: Record<string, React.CSSProperties> = {
 
   item: {
     display: 'flex',
-    alignItems: 'flex-start',
-    gap: 'var(--space-3)',
     padding: 'var(--space-3) 24px',
     cursor: 'pointer',
     transition: 'background-color var(--transition-fast)',
-  },
-
-  weightBadge: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 'var(--space-1)',
-    padding: 'var(--space-1) var(--space-2)',
-    backgroundColor: 'var(--color-warning-50)',
-    borderRadius: 'var(--radius-sm)',
-    flexShrink: 0,
-  },
-
-  weightValue: {
-    fontSize: 'var(--text-xs)',
-    fontWeight: 'var(--font-semibold)',
-    color: 'var(--color-warning)',
   },
 
   content: {
@@ -248,32 +304,59 @@ const styles: Record<string, React.CSSProperties> = {
     minWidth: 0,
     display: 'flex',
     flexDirection: 'column',
-    gap: '2px',
+    gap: 'var(--space-1)',
   },
 
-  header: {
+  taskTitle: {
+    fontSize: 'var(--text-sm)',
+    fontWeight: 'var(--font-medium)',
+    color: 'var(--text-primary)',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  },
+
+  metadataRow: {
     display: 'flex',
     alignItems: 'center',
     gap: 'var(--space-2)',
+    flexWrap: 'wrap',
+  },
+
+  weightInline: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '3px',
+    fontSize: 'var(--text-xs)',
+    fontWeight: 'var(--font-semibold)',
+    color: 'var(--color-warning)',
+    minWidth: '45px', // Fixed width for alignment (accommodates up to 99.99%)
+  },
+
+  separator: {
+    color: 'var(--text-muted)',
+    fontSize: 'var(--text-xs)',
   },
 
   courseCode: {
-    fontSize: '10px',
-    fontWeight: 'var(--font-bold)',
-    padding: '2px 6px',
+    fontSize: 'var(--text-xs)',
+    fontWeight: 'var(--font-semibold)',
+    padding: '1px 6px',
     borderRadius: 'var(--radius-sm)',
-    backgroundColor: 'var(--color-blue)',
     color: 'white',
-    textTransform: 'uppercase' as const,
-    letterSpacing: '0.03em',
-    flexShrink: 0,
+    letterSpacing: '0.02em',
+    width: '120px',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+    textAlign: 'center',
+    display: 'inline-block',
   },
 
-  dueBadge: {
-    fontSize: '10px',
+  dueText: {
+    fontSize: 'var(--text-xs)',
     fontWeight: 'var(--font-semibold)',
-    padding: '2px 6px',
-    borderRadius: 'var(--radius-sm)',
+    color: 'var(--text-secondary)',
   },
 
   calendarButton: {
@@ -281,20 +364,13 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     justifyContent: 'center',
     padding: '2px',
+    marginLeft: 'auto',
     background: 'transparent',
     border: 'none',
     cursor: 'pointer',
     color: 'var(--color-blue)',
     borderRadius: 'var(--radius-sm)',
     transition: 'background-color var(--transition-fast)',
-  },
-
-  taskTitle: {
-    fontSize: 'var(--text-sm)',
-    color: 'var(--text-primary)',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap',
   },
 };
 

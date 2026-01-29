@@ -52,3 +52,11 @@ export {
 
 // UI Text
 export { UI_TEXT, type UITextKey } from './uiText';
+
+// Task Types
+export {
+  TASK_TYPES,
+  TASK_TYPE_VALUES,
+  getTaskTypeLabel,
+  type TaskTypeOption,
+} from './taskTypes';

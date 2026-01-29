@@ -426,8 +426,13 @@ export function AnnouncementDetail() {
                     if (fileId && window.api) {
                       try {
                         // Try to find this file in our downloaded resources
-                        const files = await window.api.getFiles();
-                        const file = files.find(
+                        const filesData = await window.api.getFiles();
+                        // getFiles returns { resources: [], attachments: [], pages: [] }
+                        const allFiles = [
+                          ...filesData.resources,
+                          ...filesData.attachments,
+                        ];
+                        const file = allFiles.find(
                           (f: { externalId: string }) => f.externalId === fileId
                         );
                         if (file?.localPath) {

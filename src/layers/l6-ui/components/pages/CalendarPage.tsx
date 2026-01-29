@@ -3,7 +3,8 @@
  * Monthly calendar view with task deadlines and filtering
  */
 
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Calendar,
   ChevronLeft,
@@ -41,25 +42,31 @@ function generateICS(tasks: Task[], courses: Map<number, Course>): string {
 
     // Format date as ICS timestamp (YYYYMMDDTHHMMSSZ)
     const formatICSDate = (date: Date): string => {
-      return date.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+      return date
+        .toISOString()
+        .replace(/[-:]/g, '')
+        .replace(/\.\d{3}/, '');
     };
 
     // Escape special characters in ICS
     const escapeICS = (str: string): string => {
-      return str
-        .replace(/\\/g, '\\\\')
-        .replace(/;/g, '\\;')
-        .replace(/,/g, '\\,')
-        .replace(/\n/g, '\\n');
+      return (
+        str
+          // eslint-disable-next-line cross-platform/no-hardcoded-path-separator -- ICS format escaping, not file paths
+          .replace(/\\/g, '\\\\')
+          .replace(/;/g, '\\;')
+          .replace(/,/g, '\\,')
+          .replace(/\n/g, '\\n')
+      );
     };
 
     const uid = `task-${task.id}@canvasassistant`;
     const summary = escapeICS(task.title);
     const description = escapeICS(
       `Course: ${course?.name || 'Unknown'}\\n` +
-      `Type: ${task.taskType || 'Assignment'}\\n` +
-      `Weight: ${task.weight}%\\n` +
-      (task.description ? `\\n${task.description}` : '')
+        `Type: ${task.taskType || 'Assignment'}\\n` +
+        `Weight: ${task.weight}%\\n` +
+        (task.description ? `\\n${task.description}` : '')
     );
     const location = course ? escapeICS(course.name) : '';
 
@@ -182,8 +189,18 @@ type PriorityFilter = 'all' | 'high' | 'medium' | 'low';
 // Days of week
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MONTHS = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December'
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
 ];
 
 // Get priority from task
@@ -197,7 +214,8 @@ function getTaskPriority(task: Task): 'high' | 'medium' | 'low' {
 function getTaskType(task: Task): string {
   if (task.taskType) return task.taskType;
   const title = task.title.toLowerCase();
-  if (title.includes('exam') || title.includes('midterm') || title.includes('final')) return 'exam';
+  if (title.includes('exam') || title.includes('midterm') || title.includes('final'))
+    return 'exam';
   if (title.includes('quiz')) return 'quiz';
   if (title.includes('lab')) return 'lab';
   if (title.includes('assignment') || title.includes('homework')) return 'assignment';
@@ -207,9 +225,11 @@ function getTaskType(task: Task): string {
 
 // Check if dates are same day
 function isSameDay(d1: Date, d2: Date): boolean {
-  return d1.getFullYear() === d2.getFullYear() &&
+  return (
+    d1.getFullYear() === d2.getFullYear() &&
     d1.getMonth() === d2.getMonth() &&
-    d1.getDate() === d2.getDate();
+    d1.getDate() === d2.getDate()
+  );
 }
 
 // Get calendar days for a month
@@ -242,10 +262,8 @@ function getCalendarDays(year: number, month: number): Date[] {
 function loadCalendarSettings(): { defaultViewMode: ViewMode } {
   try {
     const stored = localStorage.getItem('calendarSettings');
-    console.log('[CalendarPage] loadCalendarSettings - raw:', stored);
     if (stored) {
       const parsed = JSON.parse(stored);
-      console.log('[CalendarPage] loadCalendarSettings - parsed:', parsed);
       if (parsed.defaultViewMode === 'month' || parsed.defaultViewMode === 'week') {
         return { defaultViewMode: parsed.defaultViewMode };
       }
@@ -253,7 +271,6 @@ function loadCalendarSettings(): { defaultViewMode: ViewMode } {
   } catch (e) {
     console.error('[CalendarPage] Failed to load calendar settings:', e);
   }
-  console.log('[CalendarPage] loadCalendarSettings - using default: month');
   return { defaultViewMode: 'month' };
 }
 
@@ -262,29 +279,21 @@ function loadCalendarViewMode(): ViewMode {
   try {
     // First check if user has a saved preference
     const stored = localStorage.getItem('viewMode:calendar');
-    console.log('[CalendarPage] loadCalendarViewMode - viewMode:calendar =', stored);
     if (stored === 'month' || stored === 'week') {
-      console.log('[CalendarPage] loadCalendarViewMode - using saved preference:', stored);
       return stored;
     }
     // Otherwise use default from settings
     const settings = loadCalendarSettings();
-    console.log('[CalendarPage] loadCalendarViewMode - using settings default:', settings.defaultViewMode);
     return settings.defaultViewMode;
   } catch (e) {
     console.error('[CalendarPage] Failed to load calendar view mode:', e);
   }
-  console.log('[CalendarPage] loadCalendarViewMode - fallback to month');
   return 'month';
 }
 
 function saveCalendarViewMode(mode: ViewMode): void {
-  console.log('[CalendarPage] saveCalendarViewMode - saving:', mode);
   try {
     localStorage.setItem('viewMode:calendar', mode);
-    // Verify it was saved
-    const verify = localStorage.getItem('viewMode:calendar');
-    console.log('[CalendarPage] saveCalendarViewMode - verified:', verify);
   } catch (e) {
     console.error('[CalendarPage] Failed to save calendar view mode:', e);
   }
@@ -294,40 +303,61 @@ export function CalendarPage() {
   const { tasks, courses } = useStore();
   const [currentDate, setCurrentDate] = useState(new Date());
 
-  const [viewModeState, setViewModeState] = useState<ViewMode>(() => {
-    console.log('[CalendarPage] useState initializer running...');
-    const loaded = loadCalendarViewMode();
-    console.log('[CalendarPage] Initial viewModeState:', loaded);
-    return loaded;
-  });
+  const [viewModeState, setViewModeState] = useState<ViewMode>(() =>
+    loadCalendarViewMode()
+  );
 
   // Sync viewMode with localStorage on mount (in case component wasn't fully remounted)
   React.useEffect(() => {
-    console.log('[CalendarPage] useEffect running on mount');
-    console.log('[CalendarPage] viewMode:calendar =', localStorage.getItem('viewMode:calendar'));
-    console.log('[CalendarPage] calendarSettings =', localStorage.getItem('calendarSettings'));
-
     // Re-load the view mode from localStorage in case settings changed
     const currentSaved = loadCalendarViewMode();
-    console.log('[CalendarPage] Loaded viewMode from storage:', currentSaved);
-    console.log('[CalendarPage] Current viewModeState:', viewModeState);
 
     // Only update if different from current state
     if (currentSaved !== viewModeState) {
-      console.log('[CalendarPage] Updating viewModeState:', viewModeState, '->', currentSaved);
       setViewModeState(currentSaved);
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Handle URL query parameters for navigation from other pages
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  useEffect(() => {
+    const eventId = searchParams.get('event');
+    const dateParam = searchParams.get('date');
+
+    if (eventId) {
+      // Find the task with this calendar event ID and navigate to its due date
+      const eventIdNum = parseInt(eventId, 10);
+      const task = tasks.find((t) => t.calendarEventId === eventIdNum);
+
+      if (task && task.dueAt) {
+        const dueDate = new Date(task.dueAt);
+        setCurrentDate(dueDate);
+      }
+
+      // Clear the search params after handling
+      setSearchParams({}, { replace: true });
+    } else if (dateParam) {
+      // Navigate to the specified date
+      const targetDate = new Date(dateParam);
+
+      if (!isNaN(targetDate.getTime())) {
+        setCurrentDate(targetDate);
+      }
+
+      // Clear the search params after handling
+      setSearchParams({}, { replace: true });
+    }
+  }, [searchParams, tasks, setSearchParams]);
 
   // Wrap setViewMode to also save to localStorage
   const setViewMode = (mode: ViewMode) => {
-    console.debug('[CalendarPage] setViewMode called with:', mode);
     setViewModeState(mode);
     saveCalendarViewMode(mode);
   };
   const viewMode = viewModeState;
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [importedEvents, setImportedEvents] = useState<ParsedEvent[]>([]);
+  const [_importedEvents, setImportedEvents] = useState<ParsedEvent[]>([]);
 
   // Filter state
   const [showFilters, setShowFilters] = useState(false);
@@ -544,7 +574,6 @@ export function CalendarPage() {
       try {
         const events = parseICS(content);
         setImportedEvents(events);
-        console.log(`Imported ${events.length} events from ICS file`);
 
         // Show summary
         if (events.length > 0) {
@@ -563,7 +592,12 @@ export function CalendarPage() {
     event.target.value = '';
   };
 
-  const hasActiveFilters = searchQuery || selectedCourses.size > 0 || typeFilter !== 'all' || deadlineFilter !== 'all' || priorityFilter !== 'all';
+  const hasActiveFilters =
+    searchQuery ||
+    selectedCourses.size > 0 ||
+    typeFilter !== 'all' ||
+    deadlineFilter !== 'all' ||
+    priorityFilter !== 'all';
   const today = new Date();
 
   return (
@@ -573,7 +607,8 @@ export function CalendarPage() {
         <div style={styles.headerLeft}>
           <h1 style={styles.title}>Calendar</h1>
           <p style={styles.subtitle}>
-            {filteredTasks.length} task{filteredTasks.length !== 1 ? 's' : ''} with deadlines
+            {filteredTasks.length} task{filteredTasks.length !== 1 ? 's' : ''} with
+            deadlines
           </p>
         </div>
 
@@ -594,11 +629,7 @@ export function CalendarPage() {
             <Download size={16} />
             <span>Import</span>
           </button>
-          <button
-            style={styles.icsButton}
-            onClick={handleExportICS}
-            title="Export ICS"
-          >
+          <button style={styles.icsButton} onClick={handleExportICS} title="Export ICS">
             <Upload size={16} />
             <span>Export</span>
           </button>
@@ -624,8 +655,12 @@ export function CalendarPage() {
           <button
             style={{
               ...styles.filterButton,
-              backgroundColor: hasActiveFilters ? 'var(--color-navy-light)' : 'var(--bg-card)',
-              borderColor: hasActiveFilters ? 'var(--color-navy)' : 'var(--border-default)',
+              backgroundColor: hasActiveFilters
+                ? 'var(--color-navy-light)'
+                : 'var(--bg-card)',
+              borderColor: hasActiveFilters
+                ? 'var(--color-navy)'
+                : 'var(--border-default)',
               color: hasActiveFilters ? 'var(--color-navy)' : 'var(--text-secondary)',
             }}
             onClick={() => setShowFilters(!showFilters)}
@@ -648,9 +683,15 @@ export function CalendarPage() {
                   key={course.id}
                   style={{
                     ...styles.filterChip,
-                    backgroundColor: selectedCourses.has(course.id) ? getCourseColor(course.id, course.color) : 'var(--bg-app)',
-                    color: selectedCourses.has(course.id) ? 'white' : 'var(--text-secondary)',
-                    borderColor: selectedCourses.has(course.id) ? getCourseColor(course.id, course.color) : 'var(--border-default)',
+                    backgroundColor: selectedCourses.has(course.id)
+                      ? getCourseColor(course.id, course.color)
+                      : 'var(--bg-app)',
+                    color: selectedCourses.has(course.id)
+                      ? 'white'
+                      : 'var(--text-secondary)',
+                    borderColor: selectedCourses.has(course.id)
+                      ? getCourseColor(course.id, course.color)
+                      : 'var(--border-default)',
                   }}
                   onClick={() => toggleCourse(course.id)}
                 >
@@ -668,9 +709,13 @@ export function CalendarPage() {
                 <button
                   style={{
                     ...styles.filterChip,
-                    backgroundColor: typeFilter === 'all' ? 'var(--color-navy)' : 'var(--bg-app)',
+                    backgroundColor:
+                      typeFilter === 'all' ? 'var(--color-navy)' : 'var(--bg-app)',
                     color: typeFilter === 'all' ? 'white' : 'var(--text-secondary)',
-                    borderColor: typeFilter === 'all' ? 'var(--color-navy)' : 'var(--border-default)',
+                    borderColor:
+                      typeFilter === 'all'
+                        ? 'var(--color-navy)'
+                        : 'var(--border-default)',
                   }}
                   onClick={() => setTypeFilter('all')}
                 >
@@ -681,9 +726,13 @@ export function CalendarPage() {
                     key={type}
                     style={{
                       ...styles.filterChip,
-                      backgroundColor: typeFilter === type ? 'var(--color-navy)' : 'var(--bg-app)',
+                      backgroundColor:
+                        typeFilter === type ? 'var(--color-navy)' : 'var(--bg-app)',
                       color: typeFilter === type ? 'white' : 'var(--text-secondary)',
-                      borderColor: typeFilter === type ? 'var(--color-navy)' : 'var(--border-default)',
+                      borderColor:
+                        typeFilter === type
+                          ? 'var(--color-navy)'
+                          : 'var(--border-default)',
                     }}
                     onClick={() => setTypeFilter(type)}
                   >
@@ -698,18 +747,28 @@ export function CalendarPage() {
           <div style={styles.filterGroup}>
             <label style={styles.filterLabel}>Deadline</label>
             <div style={styles.filterChips}>
-              {(['all', 'overdue', 'today', 'this-week', 'upcoming'] as DeadlineFilter[]).map((filter) => (
+              {(
+                ['all', 'overdue', 'today', 'this-week', 'upcoming'] as DeadlineFilter[]
+              ).map((filter) => (
                 <button
                   key={filter}
                   style={{
                     ...styles.filterChip,
-                    backgroundColor: deadlineFilter === filter ? 'var(--color-navy)' : 'var(--bg-app)',
+                    backgroundColor:
+                      deadlineFilter === filter ? 'var(--color-navy)' : 'var(--bg-app)',
                     color: deadlineFilter === filter ? 'white' : 'var(--text-secondary)',
-                    borderColor: deadlineFilter === filter ? 'var(--color-navy)' : 'var(--border-default)',
+                    borderColor:
+                      deadlineFilter === filter
+                        ? 'var(--color-navy)'
+                        : 'var(--border-default)',
                   }}
                   onClick={() => setDeadlineFilter(filter)}
                 >
-                  {filter === 'all' ? 'All' : filter === 'this-week' ? 'This Week' : filter.charAt(0).toUpperCase() + filter.slice(1)}
+                  {filter === 'all'
+                    ? 'All'
+                    : filter === 'this-week'
+                      ? 'This Week'
+                      : filter.charAt(0).toUpperCase() + filter.slice(1)}
                 </button>
               ))}
             </div>
@@ -724,9 +783,13 @@ export function CalendarPage() {
                   key={filter}
                   style={{
                     ...styles.filterChip,
-                    backgroundColor: priorityFilter === filter ? 'var(--color-navy)' : 'var(--bg-app)',
+                    backgroundColor:
+                      priorityFilter === filter ? 'var(--color-navy)' : 'var(--bg-app)',
                     color: priorityFilter === filter ? 'white' : 'var(--text-secondary)',
-                    borderColor: priorityFilter === filter ? 'var(--color-navy)' : 'var(--border-default)',
+                    borderColor:
+                      priorityFilter === filter
+                        ? 'var(--color-navy)'
+                        : 'var(--border-default)',
                   }}
                   onClick={() => setPriorityFilter(filter)}
                 >
@@ -749,16 +812,21 @@ export function CalendarPage() {
       <Card padding="none">
         <div style={styles.calendarHeader}>
           <div style={styles.calendarNav}>
-            <button style={styles.navButton} onClick={viewMode === 'month' ? goToPrevMonth : goToPrevWeek}>
+            <button
+              style={styles.navButton}
+              onClick={viewMode === 'month' ? goToPrevMonth : goToPrevWeek}
+            >
               <ChevronLeft size={20} />
             </button>
             <h2 style={styles.monthTitle}>
               {viewMode === 'month'
                 ? `${MONTHS[currentDate.getMonth()]} ${currentDate.getFullYear()}`
-                : formatWeekTitle(currentDate)
-              }
+                : formatWeekTitle(currentDate)}
             </h2>
-            <button style={styles.navButton} onClick={viewMode === 'month' ? goToNextMonth : goToNextWeek}>
+            <button
+              style={styles.navButton}
+              onClick={viewMode === 'month' ? goToNextMonth : goToNextWeek}
+            >
               <ChevronRight size={20} />
             </button>
           </div>
@@ -828,11 +896,21 @@ export function CalendarPage() {
                   <div style={styles.dayTasks}>
                     {dayTasks.slice(0, 3).map((task) => {
                       const course = courseMap.get(task.courseId);
-                      const color = course ? getCourseColor(course.id, course.color) : 'var(--text-muted)';
-                      const time = task.dueAt ? new Date(task.dueAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : '';
+                      const color = course
+                        ? getCourseColor(course.id, course.color)
+                        : 'var(--text-muted)';
+                      const time = task.dueAt
+                        ? new Date(task.dueAt).toLocaleTimeString('en-US', {
+                            hour: 'numeric',
+                            minute: '2-digit',
+                          })
+                        : '';
                       // Truncate title for display (short for calendar cells)
                       const maxLen = 12;
-                      const displayTitle = task.title.length > maxLen ? task.title.substring(0, maxLen).trim() + '…' : task.title;
+                      const displayTitle =
+                        task.title.length > maxLen
+                          ? task.title.substring(0, maxLen).trim() + '…'
+                          : task.title;
                       return (
                         <div
                           key={task.id}
@@ -901,8 +979,15 @@ export function CalendarPage() {
                 >
                   {dayTasks.map((task) => {
                     const course = courseMap.get(task.courseId);
-                    const color = course ? getCourseColor(course.id, course.color) : 'var(--text-muted)';
-                    const time = task.dueAt ? new Date(task.dueAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : '';
+                    const color = course
+                      ? getCourseColor(course.id, course.color)
+                      : 'var(--text-muted)';
+                    const time = task.dueAt
+                      ? new Date(task.dueAt).toLocaleTimeString('en-US', {
+                          hour: 'numeric',
+                          minute: '2-digit',
+                        })
+                      : '';
                     return (
                       <div
                         key={task.id}
@@ -914,7 +999,11 @@ export function CalendarPage() {
                       >
                         {time && <span style={styles.weekTaskTime}>{time}</span>}
                         <span style={styles.weekTaskTitle}>{task.title}</span>
-                        {course && <span style={styles.weekTaskCourse}>{course.code.split(' ')[0]}</span>}
+                        {course && (
+                          <span style={styles.weekTaskCourse}>
+                            {course.code.split(' ')[0]}
+                          </span>
+                        )}
                       </div>
                     );
                   })}
@@ -932,10 +1021,16 @@ export function CalendarPage() {
       {filteredTasks.length === 0 && (
         <Card padding="lg">
           <div style={styles.emptyState}>
-            <Calendar size={48} color="var(--text-muted)" style={{ marginBottom: 'var(--space-4)' }} />
+            <Calendar
+              size={48}
+              color="var(--text-muted)"
+              style={{ marginBottom: 'var(--space-4)' }}
+            />
             <h2 style={styles.emptyTitle}>No Tasks Found</h2>
             <p style={styles.emptyText}>
-              {hasActiveFilters ? 'Try adjusting your filters.' : 'No tasks with due dates.'}
+              {hasActiveFilters
+                ? 'Try adjusting your filters.'
+                : 'No tasks with due dates.'}
             </p>
             {hasActiveFilters && (
               <button style={styles.clearFiltersLarge} onClick={clearFilters}>
@@ -951,7 +1046,8 @@ export function CalendarPage() {
 
 const styles: Record<string, React.CSSProperties> = {
   page: {
-    maxWidth: 'min(var(--content-max-width), calc(100vw - var(--sidebar-width) - var(--space-12)))',
+    maxWidth:
+      'min(var(--content-max-width), calc(100vw - var(--sidebar-width) - var(--space-12)))',
     margin: '0 auto',
     width: '100%',
     display: 'flex',

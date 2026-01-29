@@ -46,12 +46,14 @@ function formatICSDate(date: Date): string {
 
 function escapeICSText(text: string | null | undefined): string {
   if (!text) return '';
-  // eslint-disable-next-line cross-platform/no-hardcoded-path-separator -- ICS format escaping, not file paths
-  return text
-    .replace(/\\/g, '\\\\')
-    .replace(/;/g, '\\;')
-    .replace(/,/g, '\\,')
-    .replace(/\n/g, '\\n');
+  return (
+    text
+      // eslint-disable-next-line cross-platform/no-hardcoded-path-separator -- ICS format escaping, not file paths
+      .replace(/\\/g, '\\\\')
+      .replace(/;/g, '\\;')
+      .replace(/,/g, '\\,')
+      .replace(/\n/g, '\\n')
+  );
 }
 
 function generateICS(events: CalendarEvent[]): string {
@@ -177,7 +179,6 @@ type PriorityFilter = 'all' | 'high' | 'medium' | 'low';
 function loadCalendarSettings(): { defaultViewMode: CalendarView } {
   try {
     const stored = localStorage.getItem('calendarSettings');
-    console.log('[Calendar] loadCalendarSettings - raw:', stored);
     if (stored) {
       const parsed = JSON.parse(stored);
       if (
@@ -198,13 +199,10 @@ function loadCalendarSettings(): { defaultViewMode: CalendarView } {
 function loadCalendarViewMode(): CalendarView {
   try {
     const stored = localStorage.getItem('viewMode:calendar');
-    console.log('[Calendar] loadCalendarViewMode - viewMode:calendar =', stored);
     if (stored === 'month' || stored === 'week' || stored === 'day') {
-      console.log('[Calendar] Using saved preference:', stored);
       return stored;
     }
     const settings = loadCalendarSettings();
-    console.log('[Calendar] Using settings default:', settings.defaultViewMode);
     return settings.defaultViewMode;
   } catch (e) {
     console.error('[Calendar] Failed to load view mode:', e);
@@ -213,7 +211,6 @@ function loadCalendarViewMode(): CalendarView {
 }
 
 function saveCalendarViewMode(mode: CalendarView): void {
-  console.log('[Calendar] Saving view mode:', mode);
   try {
     localStorage.setItem('viewMode:calendar', mode);
   } catch (e) {
@@ -240,17 +237,15 @@ export function CalendarPage() {
   } = useStore();
   const location = useLocation();
   const navigate = useNavigate();
-  const [view, setViewState] = useState<CalendarView>(() => {
-    const loaded = loadCalendarViewMode();
-    console.log('[Calendar] Initial view state:', loaded);
-    return loaded;
-  });
+  const [view, setViewState] = useState<CalendarView>(() => loadCalendarViewMode());
   const setView = (newView: CalendarView) => {
-    console.log('[Calendar] setView:', newView);
     setViewState(newView);
     saveCalendarViewMode(newView);
   };
   const [currentDate, setCurrentDate] = useState(new Date());
+
+  // Track the last processed location.key to avoid re-processing
+  const lastProcessedKey = React.useRef<string | null>(null);
 
   // Filter state
   const [showFilters, setShowFilters] = useState(false);
@@ -278,17 +273,46 @@ export function CalendarPage() {
 
   // Fetch imported calendars on mount
   useEffect(() => {
-    console.log('[Calendar] Fetching imported calendars...');
     fetchImportedCalendars();
   }, [fetchImportedCalendars]);
 
-  // Sync view mode from localStorage when navigating to calendar (in case settings changed)
+  // Handle navigation and view mode sync (consolidated to avoid race conditions)
   useEffect(() => {
+    // Skip if we've already processed this navigation
+    if (lastProcessedKey.current === location.key) {
+      return;
+    }
+    lastProcessedKey.current = location.key;
+
+    // Sync view mode from localStorage
     const savedView = loadCalendarViewMode();
-    console.log('[Calendar] Navigation detected, syncing view mode:', savedView);
-    setViewState(savedView); // Use setViewState directly to avoid saving back to localStorage
+    setViewState(savedView);
+
+    // Check for navigation state (from "View in Calendar" context menu)
+    const state = location.state as { taskId?: number; targetDate?: string } | null;
+
+    if (state?.targetDate) {
+      const targetDate = new Date(state.targetDate);
+
+      if (!isNaN(targetDate.getTime())) {
+        setCurrentDate(targetDate);
+
+        // If taskId is provided, open the task detail modal
+        if (state.taskId) {
+          const task = tasks.find((t) => t.id === state.taskId);
+          const course = task ? courses.find((c) => c.id === task.courseId) : null;
+
+          if (task && course) {
+            setSelectedEvent({ type: 'task', task, course });
+          }
+        }
+        return;
+      }
+    }
+
+    // No navigation state - reset to today
     setCurrentDate(new Date());
-  }, [location.key]);
+  }, [location.key, location.state, tasks, courses]);
 
   // Listen for file drops - both from Electron IPC and from window custom event
   useEffect(() => {
@@ -320,7 +344,6 @@ export function CalendarPage() {
     // Window custom event handler (fallback for HTML5 drag-drop)
     const handleWindowDrop = async (e: Event) => {
       const customEvent = e as CustomEvent<{ content: string; filename: string }>;
-      console.log('[Calendar] Received ics-file-dropped event');
       await processICSContent(customEvent.detail.content, customEvent.detail.filename);
     };
 
@@ -649,36 +672,6 @@ export function CalendarPage() {
     return Array.from(courseMap.values()).filter((c) => courseIds.has(c.id));
   }, [visibleEvents, courseMap, coursesWithColors]);
 
-  // Debug: Log state changes
-  useEffect(() => {
-    console.log('[Calendar] State:', {
-      importedCalendars: importedCalendars.length,
-      calendarEvents: calendarEvents.length,
-      taskEvents: taskEvents.length,
-      importedEvents: importedEvents.length,
-      totalEvents: events.length,
-      visibleEvents: visibleEvents.length,
-      visibleRange: {
-        start: visibleRange.start.toISOString(),
-        end: visibleRange.end.toISOString(),
-      },
-    });
-    if (calendarEvents.length > 0) {
-      console.log('[Calendar] Calendar events sample:', calendarEvents.slice(0, 3));
-    }
-    if (importedEvents.length > 0) {
-      console.log('[Calendar] Imported events sample:', importedEvents.slice(0, 3));
-    }
-  }, [
-    importedCalendars,
-    calendarEvents,
-    taskEvents,
-    importedEvents,
-    events,
-    visibleEvents,
-    visibleRange,
-  ]);
-
   // Navigation handlers
   const goToPrevious = () => {
     setCurrentDate((prev) => {
@@ -883,7 +876,7 @@ export function CalendarPage() {
       });
 
       if (result.success) {
-        console.log('Calendar exported to:', result.data?.filePath);
+        // Export successful
       }
     } catch (error) {
       console.error('Export failed:', error);

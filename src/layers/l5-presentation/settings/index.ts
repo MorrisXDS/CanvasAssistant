@@ -25,6 +25,7 @@ export {
   DashboardSettingsSchema,
   SettingsPageSettingsSchema,
   LocalHtmlPathsSettingsSchema,
+  ImportantWorksFilterSchema,
   // TypeScript types
   type StorageKey,
   type SyncPreferences,
@@ -42,6 +43,7 @@ export {
   type LocalHtmlPathsSettings,
   type SettingsValue,
   type SettingsTypeMap,
+  type ImportantWorksFilter,
   // Default values
   DEFAULT_SYNC_PREFERENCES,
   DEFAULT_APPEARANCE_SETTINGS,
@@ -59,6 +61,7 @@ export {
   DEFAULT_SETTINGS_SECTION_ORDER,
   DEFAULT_DASHBOARD_ORDER,
   DEFAULT_NAV_ORDER,
+  DEFAULT_IMPORTANT_WORKS_FILTER,
   SETTINGS_DEFAULTS,
   SETTINGS_SCHEMAS,
   // Settings metadata for UI

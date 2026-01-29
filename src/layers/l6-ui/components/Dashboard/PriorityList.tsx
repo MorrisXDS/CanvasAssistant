@@ -62,7 +62,7 @@ export function PriorityList({
 
   return (
     <Card
-      padding="none"
+      padding="md"
       title="Upcoming Courseworks"
       headerAction={
         items.length > 0 && (
@@ -123,25 +123,6 @@ export function PriorityList({
                 }}
               />
 
-              {/* Submission status indicator (only show if no checkbox) */}
-              {!onToggleComplete &&
-                (item.task.submissionStatus === 'submitted' ||
-                  item.task.submissionStatus === 'graded') && (
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      marginRight: 'var(--space-2)',
-                    }}
-                  >
-                    <CheckCircle
-                      size={16}
-                      color="var(--color-success)"
-                      style={{ animation: 'fadeIn 0.3s ease-out' }}
-                    />
-                  </div>
-                )}
-
               {/* Content */}
               <div style={styles.content}>
                 <div style={styles.topRow}>
@@ -192,16 +173,17 @@ const styles: Record<string, React.CSSProperties> = {
   list: {
     display: 'flex',
     flexDirection: 'column',
-    // FIX 1: Removed 'gap' to prevent floating borders
+    margin: '0 -24px -24px -24px',
   },
 
   listItem: {
     display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-3)',
     padding: 'var(--space-3) 24px',
     cursor: 'pointer',
     transition: 'background-color var(--transition-fast)',
     position: 'relative',
-    alignItems: 'stretch', // Ensures priority bar spans full height
   },
 
   checkbox: {
@@ -219,10 +201,9 @@ const styles: Record<string, React.CSSProperties> = {
 
   priorityBar: {
     width: '4px',
-    borderRadius: '2px',
-    marginRight: 'var(--space-3)',
+    alignSelf: 'stretch',
+    borderRadius: 'var(--radius-sm)',
     flexShrink: 0,
-    // FIX 2: Removed explicit height so it stretches automatically via flexbox
   },
 
   content: {

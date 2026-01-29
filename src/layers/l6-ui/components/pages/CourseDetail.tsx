@@ -77,6 +77,32 @@ function getShortCode(code: string): string {
   return match ? match[1] : code.split(/\s/)[0];
 }
 
+/**
+ * Get the user's link behavior preference from localStorage
+ */
+function getLinkBehaviorPreference(): 'always-external' | 'prefer-local' {
+  try {
+    const stored = localStorage.getItem('contentSettings');
+    if (stored) {
+      const settings = JSON.parse(stored);
+      return settings.linkBehavior ?? 'always-external';
+    }
+  } catch {
+    // Ignore parse errors
+  }
+  return 'always-external';
+}
+
+/**
+ * Extract Canvas file ID from a URL if possible
+ * Returns null if not a Canvas file URL
+ */
+function extractCanvasFileId(url: string): string | null {
+  // Match patterns like /files/12345 or /files/12345/download
+  const match = url.match(/\/files\/(\d+)/);
+  return match ? match[1] : null;
+}
+
 interface CourseDetailData {
   id: number;
   externalId: string;
@@ -277,6 +303,13 @@ export function CourseDetail() {
   const [taskContextMenu, setTaskContextMenu] = useState<{
     task: Task;
     position: { x: number; y: number };
+  } | null>(null);
+
+  // Pending file download state (for link click handling)
+  const [pendingFileDownload, setPendingFileDownload] = useState<{
+    fileId: number;
+    title: string;
+    href: string;
   } | null>(null);
 
   // Archived course warning state
@@ -1745,6 +1778,35 @@ export function CourseDetail() {
                             taskRef={(el) => {
                               if (el) taskRefs.current.set(task.id, el);
                             }}
+                            onFileDownloadRequest={(file, href) => {
+                              setPendingFileDownload({
+                                fileId: file.id,
+                                title: file.title,
+                                href,
+                              });
+                              setConfirmDialog({
+                                isOpen: true,
+                                title: 'Download File',
+                                message: `"${file.title}" is not downloaded yet. Would you like to download it to your Files folder?`,
+                                type: 'info',
+                                confirmText: 'Download',
+                                onConfirm: async () => {
+                                  try {
+                                    const result = await window.api?.downloadResource(
+                                      file.id
+                                    );
+                                    if (result?.success && result.localPath) {
+                                      await window.api?.openResource(file.id);
+                                    } else {
+                                      window.api?.openExternal(href);
+                                    }
+                                  } catch {
+                                    window.api?.openExternal(href);
+                                  }
+                                  setPendingFileDownload(null);
+                                },
+                              });
+                            }}
                           />
                         ))}
                       </div>
@@ -2007,9 +2069,19 @@ export function CourseDetail() {
         message={confirmDialog.message}
         type={confirmDialog.type}
         confirmText={confirmDialog.confirmText}
-        cancelText="Cancel"
-        onConfirm={confirmDialog.onConfirm}
-        onCancel={() => setConfirmDialog((prev) => ({ ...prev, isOpen: false }))}
+        cancelText={pendingFileDownload ? 'Open in Canvas' : 'Cancel'}
+        onConfirm={() => {
+          confirmDialog.onConfirm();
+          setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
+        }}
+        onCancel={() => {
+          // If there's a pending file download, open in Canvas instead
+          if (pendingFileDownload) {
+            window.api?.openExternal(pendingFileDownload.href);
+            setPendingFileDownload(null);
+          }
+          setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
+        }}
       />
 
       {/* Task List Modal */}
@@ -2059,6 +2131,8 @@ export function CourseDetail() {
             title: taskContextMenu.task.title,
             isCompleted: taskContextMenu.task.isCompleted,
             isOptional: taskContextMenu.task.isOptional,
+            calendarEventId: taskContextMenu.task.calendarEventId,
+            dueAt: taskContextMenu.task.dueAt,
           }}
           position={taskContextMenu.position}
           onClose={() => setTaskContextMenu(null)}
@@ -2072,6 +2146,20 @@ export function CourseDetail() {
             handleDeleteTask(taskContextMenu.task.id, taskContextMenu.task.title)
           }
           onToggleOptional={() => handleToggleOptional(taskContextMenu.task)}
+          onViewInCalendar={() => {
+            // Navigate to calendar with task info in state (more reliable than URL params with HashRouter)
+            if (taskContextMenu.task.dueAt) {
+              const dueDate = new Date(taskContextMenu.task.dueAt);
+              navigate('/calendar', {
+                state: {
+                  targetDate: dueDate.toISOString(),
+                  taskId: taskContextMenu.task.id,
+                },
+              });
+            } else {
+              navigate('/calendar');
+            }
+          }}
         />
       )}
 
@@ -2121,6 +2209,7 @@ interface TaskItemProps {
   onEditTaskTypeChange: (value: string) => void;
   onContextMenu?: (e: React.MouseEvent) => void;
   taskRef?: (el: HTMLDivElement | null) => void;
+  onFileDownloadRequest?: (file: { id: number; title: string }, href: string) => void;
 }
 
 function TaskItem({
@@ -2152,6 +2241,7 @@ function TaskItem({
   onEditTaskTypeChange,
   onContextMenu,
   taskRef,
+  onFileDownloadRequest,
 }: TaskItemProps) {
   const [isHovered, setIsHovered] = React.useState(false);
   const wrapperRef = React.useRef<HTMLDivElement | null>(null);
@@ -2343,15 +2433,56 @@ function TaskItem({
                       ADD_ATTR: ['target'], // Allow target="_blank" on links
                     }),
                   }}
-                  onClick={(e) => {
-                    // Intercept link clicks and open in external browser
+                  onClick={async (e) => {
+                    // Intercept link clicks and handle based on user preference
                     const target = e.target as HTMLElement;
                     if (target.tagName === 'A') {
                       e.preventDefault();
                       const href = (target as HTMLAnchorElement).href;
-                      if (href) {
-                        window.api?.openExternal(href);
+                      if (!href) return;
+
+                      const linkBehavior = getLinkBehaviorPreference();
+
+                      if (linkBehavior === 'prefer-local') {
+                        // Check if this is a Canvas file link and try to open locally
+                        const fileId = extractCanvasFileId(href);
+
+                        if (fileId && window.api) {
+                          try {
+                            // Try to find this file in our downloaded resources
+                            const filesData = await window.api.getFiles();
+                            const allFiles = [
+                              ...filesData.resources,
+                              ...filesData.attachments,
+                            ];
+
+                            const file = allFiles.find(
+                              (f: { externalId: string }) => f.externalId === fileId
+                            );
+
+                            if (file) {
+                              if (file.localPath) {
+                                // File is downloaded, open it locally
+                                await window.api.openResource(file.id);
+                                return;
+                              } else if (onFileDownloadRequest) {
+                                // File exists but not downloaded - request download via callback
+                                onFileDownloadRequest(
+                                  { id: file.id, title: file.title },
+                                  href
+                                );
+                                return; // Don't open externally yet - parent will handle
+                              }
+                            }
+                          } catch (err) {
+                            console.error('[CourseDetail] Error handling link:', err);
+                            // Fall through to open externally
+                          }
+                        }
                       }
+
+                      // Default: open in browser
+                      window.api?.openExternal(href);
                     }
                   }}
                 />
