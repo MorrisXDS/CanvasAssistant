@@ -18,6 +18,7 @@ import type {
   CourseRowMinimal,
   CompletionEventRow,
 } from '../../l1-persistence/DatabaseRowTypes';
+import { ILogger, createNoopLogger } from '../../l0-utilities/Logger';
 import {
   generateAllInsights,
   getInsightIcon,
@@ -74,17 +75,20 @@ export class InsightOrchestrator extends EventEmitter {
   private refreshTimer: NodeJS.Timeout | null = null;
   private cachedInsights: Insight[] = [];
   private probationService: MessageProbationService;
+  private log: ILogger;
 
   constructor(
     db: Database,
     config?: InsightOrchestratorConfig,
-    visibleDataProvider?: VisibleDataProvider
+    visibleDataProvider?: VisibleDataProvider,
+    logger?: ILogger
   ) {
     super();
     this.db = db;
     this.visibleDataProvider = visibleDataProvider ?? null;
     this.config = { ...DEFAULT_CONFIG, ...config };
     this.probationService = new MessageProbationService(db);
+    this.log = logger || createNoopLogger('insightOrchestrator');
 
     // Clear cache on visibility changes
     if (this.visibleDataProvider) {
@@ -245,10 +249,17 @@ export class InsightOrchestrator extends EventEmitter {
    * Generate insights based on available data
    */
   generateInsights(): Insight[] {
+    const timer = this.log.startTimer();
     const currentTime = new Date();
     const events = this.fetchCompletionEvents();
     const tasks = this.fetchTasks();
     const courses = this.fetchCourses();
+
+    this.log.debug(`Generating insights`, {
+      completionEvents: events.length,
+      taskCount: tasks.length,
+      courseCount: courses.length,
+    });
 
     // Calculate patterns
     const rhythm = analyzeWeeklyRhythm(events);
@@ -324,6 +335,17 @@ export class InsightOrchestrator extends EventEmitter {
     this.pruneOldInsights();
 
     this.cachedInsights = insights;
+
+    // Log completion
+    this.log.endTimer(timer, 'Insight generation completed', {
+      insightsGenerated: insights.length,
+      bySeverity: {
+        critical: insights.filter(i => i.severity === 'critical').length,
+        warning: insights.filter(i => i.severity === 'warning').length,
+        info: insights.filter(i => i.severity === 'info').length,
+      },
+    });
+
     this.emit('insights-generated', insights);
 
     return insights;

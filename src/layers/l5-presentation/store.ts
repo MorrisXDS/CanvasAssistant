@@ -177,6 +177,21 @@ function getApi() {
 }
 
 /**
+ * Log user actions to the main process logger
+ * All user actions are logged at 'info' level for comprehensive tracking
+ */
+function logUserAction(action: string, data?: Record<string, unknown>): void {
+  const api = getApi();
+  if (!api?.log) return;
+
+  const message = data
+    ? `[UI] ${action}: ${JSON.stringify(data)}`
+    : `[UI] ${action}`;
+
+  api.log.info(message, 'store');
+}
+
+/**
  * Create the Zustand store
  */
 export const useStore = create<Store>()(
@@ -596,8 +611,10 @@ export const useStore = create<Store>()(
         if (!api) return false;
 
         try {
+          const calendar = get().importedCalendars.find((c) => c.id === calendarId);
           const result = await api.deleteImportedCalendar(calendarId);
           if (result.success) {
+            logUserAction('Calendar deleted', { calendarId, name: calendar?.name });
             set((state) => ({
               importedCalendars: state.importedCalendars.filter(
                 (c) => c.id !== calendarId
@@ -839,6 +856,7 @@ export const useStore = create<Store>()(
             targetGrade,
           });
           if (result.success) {
+            logUserAction('Target grade updated', { courseId, targetGrade });
             // Mark optimistic update to skip db:commit refresh
             markOptimisticUpdate('courses');
             // Update local state directly (no re-fetch needed)
@@ -866,6 +884,12 @@ export const useStore = create<Store>()(
         try {
           const result = await api.dispatch('MarkTaskComplete', { taskId, isComplete });
           if (result.success) {
+            // Get task title for logging
+            const task = get().tasks.find((t) => t.id === taskId);
+            logUserAction(isComplete ? 'Task completed' : 'Task uncompleted', {
+              taskId,
+              title: task?.title,
+            });
             // Mark optimistic updates (task + course assessed grade)
             markOptimisticUpdate('tasks');
             markOptimisticUpdate('courses');
@@ -900,6 +924,7 @@ export const useStore = create<Store>()(
         try {
           const result = await api.dispatch('DismissNotification', { notificationId });
           if (result.success) {
+            logUserAction('Notification dismissed', { notificationId });
             // Mark optimistic update
             markOptimisticUpdate('notifications');
             // Update local state directly
@@ -990,6 +1015,8 @@ export const useStore = create<Store>()(
           }
         };
 
+        logUserAction('Sync started', { type, isAutoSync });
+
         set({
           syncStatus: 'syncing',
           syncMessage: getSyncMessage(type === 'full' ? 'courses' : type),
@@ -1040,6 +1067,12 @@ export const useStore = create<Store>()(
               errors: syncResult?.errors || [],
               timestamp,
             };
+            logUserAction('Sync completed', {
+              type,
+              courses: summary.courses?.synced,
+              tasks: summary.tasks?.synced,
+              newItems: (summary.courses?.new || 0) + (summary.tasks?.new || 0),
+            });
             set({
               syncStatus: 'idle',
               syncMessage: null,

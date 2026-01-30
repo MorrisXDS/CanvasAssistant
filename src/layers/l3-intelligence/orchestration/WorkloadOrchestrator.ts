@@ -17,6 +17,7 @@ import type {
   WorkloadSnapshotRow,
   CompletionEventRow,
 } from '../../l1-persistence/DatabaseRowTypes';
+import { ILogger, createNoopLogger } from '../../l0-utilities/Logger';
 import {
   analyzeWorkloadDistribution,
   calculateClusteringScore,
@@ -68,16 +69,19 @@ export class WorkloadOrchestrator extends EventEmitter {
   private config: Required<WorkloadOrchestratorConfig>;
   private cachedDistribution: WorkloadDistribution | null = null;
   private effortEstimatesCache: Map<number, EffortEstimate> = new Map();
+  private log: ILogger;
 
   constructor(
     db: Database,
     config?: WorkloadOrchestratorConfig,
-    visibleDataProvider?: VisibleDataProvider
+    visibleDataProvider?: VisibleDataProvider,
+    logger?: ILogger
   ) {
     super();
     this.db = db;
     this.visibleDataProvider = visibleDataProvider ?? null;
     this.config = { ...DEFAULT_CONFIG, ...config };
+    this.log = logger || createNoopLogger('workloadOrchestrator');
 
     // Clear cache on visibility changes
     if (this.visibleDataProvider) {

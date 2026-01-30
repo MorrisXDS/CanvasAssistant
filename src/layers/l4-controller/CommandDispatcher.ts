@@ -20,6 +20,7 @@ import { Database } from '../l1-persistence/Database';
 import { VisibleDataProvider } from '../l1-persistence/VisibleDataProvider';
 import { PriorityEngine } from '../l3-intelligence/PriorityEngine';
 import { SimulationManager } from './SimulationManager';
+import { ILogger, createTimer, createNoopLogger } from '../l0-utilities/Logger';
 
 // Import all commands
 import { UpdateTargetGradeCommand } from './commands/UpdateTargetGradeCommand';
@@ -47,6 +48,7 @@ export interface CommandDispatcherOptions {
   db: Database;
   priorityEngine?: PriorityEngine;
   visibleDataProvider?: VisibleDataProvider;
+  logger?: ILogger;
 }
 
 /**
@@ -87,6 +89,7 @@ export class CommandDispatcher extends EventEmitter {
   private commands: Map<string, Command<unknown, unknown>> = new Map();
   private context: CommandContext;
   private simulationManager: SimulationManager;
+  private log: ILogger;
   // Store event handler references for cleanup
   private simulationStartedHandler: ((data: unknown) => void) | null = null;
   private simulationUpdatedHandler: ((data: unknown) => void) | null = null;
@@ -94,6 +97,7 @@ export class CommandDispatcher extends EventEmitter {
 
   constructor(options: CommandDispatcherOptions) {
     super();
+    this.log = options.logger || createNoopLogger('commandDispatcher');
 
     // Initialize simulation context
     const simulationContext = createSimulationContext();
@@ -179,11 +183,15 @@ export class CommandDispatcher extends EventEmitter {
     const command = this.commands.get(commandName);
 
     if (!command) {
+      this.log.warn(`Unknown command: ${commandName}`);
       return {
         success: false,
         error: `Unknown command: ${commandName}`,
       };
     }
+
+    const timer = createTimer();
+    this.log.debug(`Executing command: ${commandName}`, { params });
 
     // Emit start event
     this.emit('command-started', { command: commandName, params });
@@ -197,6 +205,9 @@ export class CommandDispatcher extends EventEmitter {
             success: false,
             error: validation.error,
           };
+          this.log.warn(`Command validation failed: ${commandName}`, {
+            error: validation.error,
+          });
           this.emit('command-failed', {
             command: commandName,
             params,
@@ -212,9 +223,18 @@ export class CommandDispatcher extends EventEmitter {
         params
       )) as CommandResult<TResult>;
 
+      const timing = timer.end();
+
       if (result.success) {
+        this.log.info(`Command completed: ${commandName} - ${timing.durationFormatted}`, {
+          durationMs: timing.durationMs,
+        });
         this.emit('command-completed', { command: commandName, params, result });
       } else {
+        this.log.warn(`Command failed: ${commandName}`, {
+          error: result.error,
+          durationMs: timing.durationMs,
+        });
         this.emit('command-failed', {
           command: commandName,
           params,
@@ -224,7 +244,13 @@ export class CommandDispatcher extends EventEmitter {
 
       return result;
     } catch (error) {
+      const timing = timer.end();
       const errorMessage = error instanceof Error ? error.message : String(error);
+
+      this.log.error(`Command execution error: ${commandName}`, error instanceof Error ? error : undefined, {
+        durationMs: timing.durationMs,
+      });
+
       this.emit('command-failed', { command: commandName, params, error: errorMessage });
 
       return {

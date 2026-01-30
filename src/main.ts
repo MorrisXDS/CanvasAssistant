@@ -66,7 +66,8 @@ const APP_DATA_DIR = path.join(app.getPath('userData'), 'CanvasAssistant');
 const PROJECT_DB_DIR = path.join(process.cwd(), 'database');
 const DB_PATH = path.join(PROJECT_DB_DIR, 'canvas.db');
 const METRICS_DB_PATH = path.join(PROJECT_DB_DIR, 'metrics.db');
-const LOG_DIR = path.join(APP_DATA_DIR, 'logs');
+// Logs in project folder for easier development access
+const LOG_DIR = path.join(process.cwd(), 'logs');
 // Default files directory is in project root's Downloads folder
 const FILES_DIR = path.join(process.cwd(), 'Downloads');
 const CREDENTIAL_FILE = path.join(APP_DATA_DIR, '.credentials');
@@ -174,8 +175,17 @@ if (!fs.existsSync(PROJECT_DB_DIR)) {
   fs.mkdirSync(PROJECT_DB_DIR, { recursive: true });
 }
 
+// Create component loggers for each layer
+const databaseLogger = logger.child('database');
+const commandDispatcherLogger = logger.child('commandDispatcher');
+const priorityEngineLogger = logger.child('priorityEngine');
+const priorityOrchestratorLogger = logger.child('priorityOrchestrator');
+const insightOrchestratorLogger = logger.child('insightOrchestrator');
+const recommendationOrchestratorLogger = logger.child('recommendationOrchestrator');
+const workloadOrchestratorLogger = logger.child('workloadOrchestrator');
+
 // Initialize Layer 1 persistence
-const database = new Database({ dbPath: DB_PATH, verbose: false });
+const database = new Database({ dbPath: DB_PATH, verbose: false, logger: databaseLogger });
 const migrationRunner = new MigrationRunner(database);
 let visibleDataProvider: VisibleDataProvider | null = null;
 
@@ -8902,13 +8912,14 @@ app.whenReady().then(async () => {
     });
 
     // Initialize L3 PriorityEngine for simulation support
-    priorityEngine = new PriorityEngine(database);
+    priorityEngine = new PriorityEngine(database, undefined, priorityEngineLogger);
 
     // Initialize L4 CommandDispatcher with PriorityEngine and VisibleDataProvider
     commandDispatcher = new CommandDispatcher({
       db: database,
       priorityEngine,
       visibleDataProvider: visibleDataProvider ?? undefined,
+      logger: commandDispatcherLogger,
     });
 
     // Initialize L3 PriorityOrchestrator with visibility filtering
@@ -8918,14 +8929,19 @@ app.whenReady().then(async () => {
         refreshIntervalMs: 15 * 60 * 1000, // 15 minutes
         autoRefresh: true,
       },
-      visibleDataProvider ?? undefined
+      visibleDataProvider ?? undefined,
+      priorityOrchestratorLogger
     );
 
     // Initialize L3 Intelligence Orchestrators with visibility filtering
-    recommendationOrchestrator = new RecommendationOrchestrator(database, {
-      refreshIntervalMs: 30 * 60 * 1000, // 30 minutes
-      autoRefresh: true,
-    });
+    recommendationOrchestrator = new RecommendationOrchestrator(
+      database,
+      {
+        refreshIntervalMs: 30 * 60 * 1000, // 30 minutes
+        autoRefresh: true,
+      },
+      recommendationOrchestratorLogger
+    );
 
     insightOrchestrator = new InsightOrchestrator(
       database,
@@ -8933,7 +8949,8 @@ app.whenReady().then(async () => {
         refreshIntervalMs: 6 * 60 * 60 * 1000, // 6 hours
         autoRefresh: true,
       },
-      visibleDataProvider ?? undefined
+      visibleDataProvider ?? undefined,
+      insightOrchestratorLogger
     );
 
     workloadOrchestrator = new WorkloadOrchestrator(
@@ -8942,7 +8959,8 @@ app.whenReady().then(async () => {
         defaultAvailableHoursPerDay: 4,
         defaultLookAheadDays: 14,
       },
-      visibleDataProvider ?? undefined
+      visibleDataProvider ?? undefined,
+      workloadOrchestratorLogger
     );
 
     behaviorTrackingOrchestrator = new BehaviorTrackingOrchestrator(

@@ -1,8 +1,16 @@
 export {
   Logger,
   ComponentLogger,
+  createTimer,
+  getLogFilePath,
+  createNoopLogger,
   type LoggerOptions,
   type RotationConfig,
+  type DirectoryStructureConfig,
+  type LogFormat,
+  type TimingResult,
+  type StructuredLogEntry,
+  type ILogger,
 } from './Logger';
 export {
   SystemMonitor,

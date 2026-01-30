@@ -12,6 +12,7 @@ import {
   PolicyForPriority,
   CourseForPriority,
 } from './types';
+import { ILogger, createNoopLogger } from '../l0-utilities/Logger';
 
 /**
  * Grace token policy configuration
@@ -169,6 +170,12 @@ export interface PolicyEvaluationResult {
  * Analyzes course policies and determines their impact on task priority.
  */
 export class PolicyEvaluator {
+  private log: ILogger;
+
+  constructor(logger?: ILogger) {
+    this.log = logger || createNoopLogger('policyEvaluator');
+  }
+
   /**
    * Evaluate all policies for a task
    */
@@ -208,7 +215,12 @@ export class PolicyEvaluator {
     }
 
     // Evaluate each active policy
-    for (const policy of policies.filter((p) => p.isActive)) {
+    const activePolicies = policies.filter((p) => p.isActive);
+    if (activePolicies.length > 0) {
+      this.log.debug(`Evaluating ${activePolicies.length} policies for task "${task.title}"`);
+    }
+
+    for (const policy of activePolicies) {
       const config = policy.policyConfig;
 
       // Use type guards for safe casting
@@ -221,6 +233,11 @@ export class PolicyEvaluator {
           isPastDue,
           hoursPastDue
         );
+        this.log.debug(`Policy "${policy.policyName}" (grace_tokens) evaluated`, {
+          taskId: task.id,
+          graceTokensAvailable: result.graceTokensAvailable,
+          adjustment: result.adjustment,
+        });
       } else if (policy.policyType === 'late_penalty' && isLatePenaltyPolicy(config)) {
         this.evaluateLatePenalty(
           task,
@@ -230,10 +247,28 @@ export class PolicyEvaluator {
           isPastDue,
           hoursPastDue
         );
+        this.log.debug(`Policy "${policy.policyName}" (late_penalty) evaluated`, {
+          taskId: task.id,
+          isPastDue,
+          hoursPastDue: isPastDue ? Math.round(hoursPastDue * 10) / 10 : 0,
+        });
       } else if (policy.policyType === 'drop_lowest' && isDropLowestPolicy(config)) {
         this.evaluateDropLowest(task, config, result);
+        if (result.isDroppable) {
+          this.log.debug(`Policy "${policy.policyName}" (drop_lowest): task is droppable`, {
+            taskId: task.id,
+            category: config.category,
+          });
+        }
       } else if (policy.policyType === 'weight_transfer' && isWeightTransferPolicy(config)) {
         this.evaluateWeightTransfer(task, config, result);
+        if (result.canTransferWeight) {
+          this.log.debug(`Policy "${policy.policyName}" (weight_transfer): weight can transfer`, {
+            taskId: task.id,
+            from: config.from_task,
+            to: config.to_task,
+          });
+        }
       }
       // Skip policies that don't pass type guards (malformed config)
     }

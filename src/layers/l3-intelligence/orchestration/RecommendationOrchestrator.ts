@@ -17,6 +17,7 @@ import type {
   CourseRowMinimal,
   CompletionEventRow,
 } from '../../l1-persistence/DatabaseRowTypes';
+import { ILogger, createNoopLogger } from '../../l0-utilities/Logger';
 import { generateAllRecommendations } from '../domain/RecommendationEngine';
 import {
   identifyStrugglePatterns,
@@ -68,12 +69,14 @@ export class RecommendationOrchestrator extends EventEmitter {
   private refreshTimer: NodeJS.Timeout | null = null;
   private cachedRecommendations: Recommendation[] = [];
   private probationService: MessageProbationService;
+  private log: ILogger;
 
-  constructor(db: Database, config?: RecommendationOrchestratorConfig) {
+  constructor(db: Database, config?: RecommendationOrchestratorConfig, logger?: ILogger) {
     super();
     this.db = db;
     this.config = { ...DEFAULT_CONFIG, ...config };
     this.probationService = new MessageProbationService(db);
+    this.log = logger || createNoopLogger('recommendationOrchestrator');
 
     if (this.config.autoRefresh) {
       this.startAutoRefresh();

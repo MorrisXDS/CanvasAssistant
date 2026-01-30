@@ -17,6 +17,7 @@ import type {
   PolicyRowMinimal,
   GraceTokenRowMinimal,
 } from '../../l1-persistence/DatabaseRowTypes';
+import { ILogger, createNoopLogger } from '../../l0-utilities/Logger';
 import { calculatePriority } from '../domain/PriorityCalculator';
 import { ORCHESTRATOR_DEFAULTS } from '../domain/Constants';
 import {
@@ -61,16 +62,19 @@ export class PriorityOrchestrator extends EventEmitter {
   // Store bound handlers for cleanup (#25)
   private visibilityChangedHandler: (() => void) | null = null;
   private settingsChangedHandler: (() => void) | null = null;
+  private log: ILogger;
 
   constructor(
     db: Database,
     config?: PriorityOrchestratorConfig,
-    visibleDataProvider?: VisibleDataProvider
+    visibleDataProvider?: VisibleDataProvider,
+    logger?: ILogger
   ) {
     super();
     this.db = db;
     this.visibleDataProvider = visibleDataProvider ?? null;
     this.config = { ...DEFAULT_CONFIG, ...config };
+    this.log = logger || createNoopLogger('priorityOrchestrator');
 
     // Listen for visibility changes to recalculate (#25: store handlers for cleanup)
     if (this.visibleDataProvider) {
@@ -388,12 +392,20 @@ export class PriorityOrchestrator extends EventEmitter {
    * Calculate priorities for all incomplete tasks
    */
   calculateAll(now: Date = new Date()): PriorityCalculationResult {
+    const timer = this.log.startTimer();
+
     try {
       // Fetch all data
       const tasks = this.fetchTasks();
       const courses = this.fetchCourses();
       const policies = this.fetchPolicies();
       const graceTokenPolicies = this.fetchGraceTokenPolicies();
+
+      this.log.debug(`Loaded data for priority calculation`, {
+        taskCount: tasks.length,
+        courseCount: courses.size,
+        policyCount: policies.length,
+      });
 
       // Initialize result queues
       const queues: PriorityCalculationResult['queues'] = {
@@ -463,10 +475,25 @@ export class PriorityOrchestrator extends EventEmitter {
       };
 
       this.lastResult = result;
+
+      // Log completion with queue stats
+      this.log.endTimer(timer, 'Priority calculation completed', {
+        taskCount: tasks.length,
+        queues: {
+          pinned: queues.pinned.length,
+          active: queues.active.length,
+          overdue: queues.overdue.length,
+          deadlines: queues.deadlines.length,
+          upcoming: queues.upcoming.length,
+        },
+        noticeCount: notices.length,
+      });
+
       this.emit('priorities-calculated', result);
 
       return result;
     } catch (error) {
+      this.log.error('Priority calculation failed', error instanceof Error ? error : undefined);
       this.emit('calculation-error', error);
       throw error;
     }

@@ -12,6 +12,7 @@ import type {
   CourseRowMinimal,
   PolicyRowMinimal,
 } from '../l1-persistence/DatabaseRowTypes';
+import { ILogger, createNoopLogger } from '../l0-utilities/Logger';
 import { PriorityConfig } from './PriorityConfig';
 import { PolicyEvaluator } from './PolicyEvaluator';
 import { DependencyResolver } from './DependencyResolver';
@@ -39,12 +40,14 @@ export class PriorityEngine extends EventEmitter {
   private policyEvaluator: PolicyEvaluator;
   private dependencyResolver: DependencyResolver;
   private preferences: PriorityPreferences;
+  private log: ILogger;
 
-  constructor(db: Database, config?: PriorityConfig) {
+  constructor(db: Database, config?: PriorityConfig, logger?: ILogger) {
     super();
     this.db = db;
     this.config = config || new PriorityConfig();
-    this.policyEvaluator = new PolicyEvaluator();
+    this.log = logger || createNoopLogger('priorityEngine');
+    this.policyEvaluator = new PolicyEvaluator(this.log);
     this.dependencyResolver = new DependencyResolver(db);
     this.preferences = {
       dismissedNotices: new Map(),
@@ -57,6 +60,8 @@ export class PriorityEngine extends EventEmitter {
    * Calculate priorities for all tasks
    */
   calculateAll(now: Date = new Date()): PriorityCalculationResult {
+    const timer = this.log.startTimer();
+
     const result: PriorityCalculationResult = {
       queues: {
         pinned: [],
@@ -72,6 +77,8 @@ export class PriorityEngine extends EventEmitter {
 
     // Load all active tasks
     const tasks = this.loadTasks();
+    this.log.debug(`Calculating priorities for ${tasks.length} tasks`);
+
     const courseCache = new Map<number, CourseForPriority>();
     const policyCache = new Map<number, PolicyForPriority[]>();
 
@@ -128,6 +135,19 @@ export class PriorityEngine extends EventEmitter {
       const safeRefreshMs = Math.max(earliestRefreshMs, MIN_REFRESH_MS);
       result.nextRefreshAt = new Date(now.getTime() + safeRefreshMs);
     }
+
+    // Log completion with queue stats
+    this.log.endTimer(timer, 'Priority calculation completed', {
+      taskCount: tasks.length,
+      queues: {
+        pinned: result.queues.pinned.length,
+        active: result.queues.active.length,
+        overdue: result.queues.overdue.length,
+        deadlines: result.queues.deadlines.length,
+        upcoming: result.queues.upcoming.length,
+      },
+      noticeCount: result.notices.length,
+    });
 
     this.emit('priorities-calculated', result);
     return result;
@@ -218,9 +238,29 @@ export class PriorityEngine extends EventEmitter {
     // Calculate expiration
     const refreshInterval = this.config.getRefreshIntervalForTask(hoursUntilDue);
 
+    const finalScore = Math.round(score * 100) / 100;
+
+    // Log detailed factor breakdown for each task at debug level
+    this.log.debug(`Task "${task.title}" scored ${finalScore}`, {
+      taskId: task.id,
+      queue,
+      factors: factors.map(f => ({
+        id: f.id,
+        name: f.name,
+        impact: f.impact,
+      })),
+      hoursUntilDue: hoursUntilDue ? Math.round(hoursUntilDue * 10) / 10 : null,
+      weight: task.weight,
+      gradeImpact: {
+        currentGrade: gradeImpact.currentGrade,
+        targetGrade: gradeImpact.targetGrade,
+        riskLevel: gradeImpact.riskLevel,
+      },
+    });
+
     return {
       taskId: task.id,
-      finalScore: Math.round(score * 100) / 100,
+      finalScore,
       queue,
       factors,
       submissionWindows: policyResult.submissionWindows,

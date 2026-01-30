@@ -3,6 +3,7 @@ import { EventEmitter } from 'events';
 import path from 'path';
 import fs from 'fs';
 import { DatabaseConfig as AppDatabaseConfig } from '../l0-utilities/AppConfig';
+import { ILogger, createTimer, createNoopLogger } from '../l0-utilities/Logger';
 
 export interface DatabaseConfig {
   dbPath: string;
@@ -16,6 +17,8 @@ export interface DatabaseConfig {
   walCheckpointThreshold?: number;
   /** Maximum time writes can be locked in ms (default: 30 seconds) */
   maxWriteLockDurationMs?: number;
+  /** Logger for database operations */
+  logger?: ILogger;
 }
 
 export interface CommitEvent {
@@ -77,10 +80,12 @@ export class Database extends EventEmitter {
   private writeLockStartTime: number | null = null;
   private writeLockWatchdog: NodeJS.Timeout | null = null;
   private readonly maxWriteLockDurationMs: number;
+  private readonly log: ILogger;
 
   constructor(config: DatabaseConfig) {
     super();
     this.dbPath = config.dbPath;
+    this.log = config.logger || createNoopLogger('database');
 
     // Performance settings from config or defaults
     this.cacheSizeKb = config.performance?.cacheSizeKb ?? DEFAULT_CACHE_SIZE_KB;
@@ -250,9 +255,22 @@ export class Database extends EventEmitter {
    */
   transaction<T>(fn: () => T): T {
     if (this.writeLocked) {
+      this.log.warn('Transaction blocked - database is locked for writes');
       throw new Error('Database is locked for writes');
     }
-    return this.db.transaction(fn)();
+
+    const timer = createTimer();
+    this.log.debug('Transaction started');
+
+    try {
+      const result = this.db.transaction(fn)();
+      const timing = timer.end();
+      this.log.debug(`Transaction committed - ${timing.durationFormatted}`);
+      return result;
+    } catch (error) {
+      this.log.error('Transaction failed', error instanceof Error ? error : undefined);
+      throw error;
+    }
   }
 
   /**
@@ -264,31 +282,51 @@ export class Database extends EventEmitter {
     tableName?: string
   ): { changes: number; lastInsertRowid: number } {
     if (this.writeLocked) {
+      this.log.warn('Write blocked - database is locked', { table: tableName });
       throw new Error('Database is locked for writes');
     }
-    const stmt = this.db.prepare(sql);
-    const result = stmt.run(...params);
 
-    // Convert BigInt to Number for serialization compatibility
-    const normalizedResult = {
-      changes: result.changes,
-      lastInsertRowid: Number(result.lastInsertRowid),
-    };
+    const timer = createTimer();
+    const operation = this.detectOperation(sql);
 
-    // Track write time for idle checkpoint
-    this.recordWrite();
+    try {
+      const stmt = this.db.prepare(sql);
+      const result = stmt.run(...params);
 
-    // Emit commit event if table name provided
-    if (tableName) {
-      const operation = this.detectOperation(sql);
-      this.emit('commit', {
+      // Convert BigInt to Number for serialization compatibility
+      const normalizedResult = {
+        changes: result.changes,
+        lastInsertRowid: Number(result.lastInsertRowid),
+      };
+
+      // Track write time for idle checkpoint
+      this.recordWrite();
+
+      const timing = timer.end();
+      this.log.debug(`Write: ${operation} on ${tableName || 'unknown'} - ${timing.durationFormatted}`, {
         table: tableName,
         operation,
-        rowId: normalizedResult.lastInsertRowid || undefined,
-      } as CommitEvent);
-    }
+        changes: normalizedResult.changes,
+        durationMs: timing.durationMs,
+      });
 
-    return normalizedResult;
+      // Emit commit event if table name provided
+      if (tableName) {
+        this.emit('commit', {
+          table: tableName,
+          operation,
+          rowId: normalizedResult.lastInsertRowid || undefined,
+        } as CommitEvent);
+      }
+
+      return normalizedResult;
+    } catch (error) {
+      this.log.error(`Write failed on ${tableName || 'unknown'}`, error instanceof Error ? error : undefined, {
+        table: tableName,
+        operation,
+      });
+      throw error;
+    }
   }
 
   /**
@@ -501,13 +539,19 @@ export class Database extends EventEmitter {
    * Perform idle checkpoint
    */
   private performIdleCheckpoint(): void {
+    const timer = createTimer();
     try {
       this.checkpoint();
+      const timing = timer.end();
+      this.log.debug(`WAL checkpoint (idle) - ${timing.durationFormatted}`, {
+        idleDurationMs: Date.now() - this.lastWriteTime,
+      });
       this.emit('idle-checkpoint', {
         timestamp: new Date().toISOString(),
         idleDurationMs: Date.now() - this.lastWriteTime,
       });
     } catch (error) {
+      this.log.error('WAL checkpoint (idle) failed', error instanceof Error ? error : undefined);
       this.emit('checkpoint-error', {
         type: 'idle',
         error: error instanceof Error ? error.message : String(error),
@@ -525,7 +569,13 @@ export class Database extends EventEmitter {
 
       const stats = fs.statSync(walPath);
       if (stats.size >= this.walCheckpointThreshold) {
+        const timer = createTimer();
         this.checkpoint();
+        const timing = timer.end();
+        this.log.info(`WAL checkpoint (size threshold) - ${timing.durationFormatted}`, {
+          walSizeBytes: stats.size,
+          threshold: this.walCheckpointThreshold,
+        });
         this.emit('wal-size-checkpoint', {
           timestamp: new Date().toISOString(),
           walSizeBytes: stats.size,
