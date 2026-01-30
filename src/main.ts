@@ -262,8 +262,8 @@ function createWindow() {
   logger.info('Creating main window...');
 
   mainWindow = new BrowserWindow({
-    width: 1536,
-    height: 960,
+    width: 1382,
+    height: 864,
     minWidth: 1080,
     minHeight: 720,
     frame: false,
@@ -4547,7 +4547,7 @@ ${bodyHtml}
 
                 logger.info(`[resource:open] Rewriting file ${fileId} -> ${localPath}`);
                 // Convert Windows backslashes to forward slashes for HTML/URL paths
-                // eslint-disable-next-line cross-platform/no-hardcoded-path-separator
+                 
                 const relativePath = path
                   .relative(htmlDir, localPath)
                   .replace(/\\/g, '/');
@@ -4578,7 +4578,7 @@ ${bodyHtml}
               if (courseInfo) {
                 for (const [pageSlug, localPath] of downloadedPages) {
                   // Convert Windows backslashes to forward slashes for HTML/URL paths
-                  // eslint-disable-next-line cross-platform/no-hardcoded-path-separator
+                   
                   const relativePath = path
                     .relative(htmlDir, localPath)
                     .replace(/\\/g, '/');
