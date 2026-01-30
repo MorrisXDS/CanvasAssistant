@@ -6,7 +6,7 @@
 import React, { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Clock, AlertTriangle, CheckCircle, Circle, Plus } from 'lucide-react';
-import { Card, Badge, BadgeVariant } from '../shared';
+import { Card, Badge, BadgeVariant, RichTextEditor } from '../shared';
 import { useStore } from '../../../l5-presentation/store';
 import { formatDueDate, getBadgeUrgency, getCleanCourseName } from '../../constants';
 import type { Task, Course } from '../../../l5-presentation/types';
@@ -405,12 +405,11 @@ export function TasksPage() {
                 style={styles.formInput}
                 autoFocus
               />
-              <textarea
-                placeholder="Description (optional)"
+              <RichTextEditor
                 value={newTaskDescription}
-                onChange={(e) => setNewTaskDescription(e.target.value)}
-                style={styles.formTextarea}
-                rows={2}
+                onChange={setNewTaskDescription}
+                placeholder="Task description (optional)..."
+                minHeight={80}
               />
               <div style={styles.formRow}>
                 <select

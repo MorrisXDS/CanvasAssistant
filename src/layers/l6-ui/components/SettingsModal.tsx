@@ -42,6 +42,7 @@ import {
 import { useStore } from '../../l5-presentation/store';
 import {
   STORAGE_KEYS,
+  LINK_BEHAVIOR,
   settingsManager,
   DEFAULT_SYNC_PREFERENCES,
   DEFAULT_APPEARANCE_SETTINGS,
@@ -1942,11 +1943,11 @@ export function SettingsModal({
                           }
                           options={[
                             {
-                              value: 'always-external',
+                              value: LINK_BEHAVIOR.ALWAYS_EXTERNAL,
                               label: SETTINGS_LABELS.options.linkBehavior.browser,
                             },
                             {
-                              value: 'prefer-local',
+                              value: LINK_BEHAVIOR.PREFER_LOCAL,
                               label: SETTINGS_LABELS.options.linkBehavior.local,
                             },
                           ]}

@@ -158,8 +158,16 @@ export const CalendarSettingsSchema = z.object({
   defaultViewMode: z.enum(['month', 'week']),
 });
 
+// Link behavior values
+export const LINK_BEHAVIOR = {
+  ALWAYS_EXTERNAL: 'always-external',
+  PREFER_LOCAL: 'prefer-local',
+} as const;
+
+export type LinkBehavior = (typeof LINK_BEHAVIOR)[keyof typeof LINK_BEHAVIOR];
+
 export const ContentSettingsSchema = z.object({
-  linkBehavior: z.enum(['always-external', 'prefer-local']),
+  linkBehavior: z.enum([LINK_BEHAVIOR.ALWAYS_EXTERNAL, LINK_BEHAVIOR.PREFER_LOCAL]),
 });
 
 export const AIConfigSchema = z.object({

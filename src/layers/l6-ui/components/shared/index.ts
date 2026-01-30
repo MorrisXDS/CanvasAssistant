@@ -45,13 +45,33 @@ export { Button } from './Button';
 export type { ButtonProps, ButtonVariant, ButtonSize } from './Button';
 
 export { Accordion, AccordionItem, AccordionSection } from './Accordion';
-export type { AccordionProps, AccordionItemProps, AccordionSectionProps } from './Accordion';
+export type {
+  AccordionProps,
+  AccordionItemProps,
+  AccordionSectionProps,
+} from './Accordion';
 
 export { Dropdown, DropdownSection, DropdownSubmenu, DropdownItem } from './Dropdown';
-export type { DropdownProps, DropdownSectionProps, DropdownSubmenuProps, DropdownItemProps } from './Dropdown';
+export type {
+  DropdownProps,
+  DropdownSectionProps,
+  DropdownSubmenuProps,
+  DropdownItemProps,
+} from './Dropdown';
 
 export { PolicyBadge } from './PolicyBadge';
-export type { PolicyBadgeProps, PolicyBadgeData, PolicyBadgeVariant, PolicyType as PolicyBadgeType } from './PolicyBadge';
+export type {
+  PolicyBadgeProps,
+  PolicyBadgeData,
+  PolicyBadgeVariant,
+  PolicyType as PolicyBadgeType,
+} from './PolicyBadge';
 
 export { PolicyBadgeGroup } from './PolicyBadgeGroup';
 export type { PolicyBadgeGroupProps } from './PolicyBadgeGroup';
+
+export { RichTextEditor } from './RichTextEditor';
+export type { RichTextEditorProps } from './RichTextEditor';
+
+export { HtmlContent, extractCanvasFileId } from './HtmlContent';
+export type { HtmlContentProps } from './HtmlContent';

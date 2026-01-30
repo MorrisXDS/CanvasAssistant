@@ -25,6 +25,8 @@ export default defineConfig({
     alias: {
       '@': path.resolve(__dirname, './src'),
     },
+    // Ensure single React instance for TipTap and other dependencies
+    dedupe: ['react', 'react-dom'],
   },
   server: {
     port: 5173,

@@ -5,7 +5,6 @@
 
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import DOMPurify from 'dompurify';
 import {
   X,
   Calendar,
@@ -19,7 +18,7 @@ import {
 } from 'lucide-react';
 import type { Task } from '../../../l5-presentation/types';
 import type { CalendarEvent } from './CalendarGrid';
-import { PolicyBadgeGroup } from '../shared';
+import { PolicyBadgeGroup, HtmlContent } from '../shared';
 import { useStore } from '../../../l5-presentation/store';
 
 interface TaskDetailModalProps {
@@ -232,13 +231,10 @@ export function TaskDetailModal({
               {task.description && (
                 <div style={styles.section}>
                   <div style={styles.descriptionLabel}>Description</div>
-                  <div
+                  <HtmlContent
+                    html={task.description}
                     style={styles.description}
-                    dangerouslySetInnerHTML={{
-                      __html: DOMPurify.sanitize(task.description, {
-                        ADD_ATTR: ['target'], // Allow target="_blank" on links
-                      }),
-                    }}
+                    maxHeight={200}
                   />
                 </div>
               )}

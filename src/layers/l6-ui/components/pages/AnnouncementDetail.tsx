@@ -6,7 +6,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import DOMPurify from 'dompurify';
+import { HtmlContent, extractCanvasFileId } from '../shared';
 import {
   ArrowLeft,
   ExternalLink,
@@ -20,6 +20,11 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { useStore } from '../../../l5-presentation/store';
+import {
+  STORAGE_KEYS,
+  LINK_BEHAVIOR,
+  type LinkBehavior,
+} from '../../../l5-presentation/settings';
 import { formatFileSize } from '../../constants';
 import type {
   NotificationAttachment,
@@ -43,27 +48,17 @@ function formatDate(dateStr: string): string {
 /**
  * Get the user's link behavior preference from localStorage
  */
-function getLinkBehaviorPreference(): 'always-external' | 'prefer-local' {
+function getLinkBehaviorPreference(): LinkBehavior {
   try {
-    const stored = localStorage.getItem('contentSettings');
+    const stored = localStorage.getItem(STORAGE_KEYS.CONTENT);
     if (stored) {
       const settings = JSON.parse(stored);
-      return settings.linkBehavior ?? 'always-external';
+      return settings.linkBehavior ?? LINK_BEHAVIOR.ALWAYS_EXTERNAL;
     }
   } catch {
     // Ignore parse errors
   }
-  return 'always-external';
-}
-
-/**
- * Extract Canvas file ID from a URL if possible
- * Returns null if not a Canvas file URL
- */
-function extractCanvasFileId(url: string): string | null {
-  // Match patterns like /files/12345 or /files/12345/download
-  const match = url.match(/\/files\/(\d+)/);
-  return match ? match[1] : null;
+  return LINK_BEHAVIOR.ALWAYS_EXTERNAL;
 }
 
 /**
@@ -344,6 +339,37 @@ export function AnnouncementDetail() {
     });
   };
 
+  // Handle link clicks in HTML content (for Canvas file links)
+  const handleHtmlLinkClick = async (href: string, isCanvasFile: boolean) => {
+    const linkBehavior = getLinkBehaviorPreference();
+
+    if (linkBehavior === LINK_BEHAVIOR.PREFER_LOCAL && isCanvasFile) {
+      // Check if this is a Canvas file link and try to open locally
+      const fileId = extractCanvasFileId(href);
+      if (fileId && window.api) {
+        try {
+          // Try to find this file in our downloaded resources
+          const filesData = await window.api.getFiles();
+          // getFiles returns { resources: [], attachments: [], pages: [] }
+          const allFiles = [...filesData.resources, ...filesData.attachments];
+          const file = allFiles.find(
+            (f: { externalId: string }) => f.externalId === fileId
+          );
+          if (file?.localPath) {
+            // File is downloaded, open it locally
+            await window.api.openResource(file.id);
+            return;
+          }
+        } catch {
+          // Fall through to open externally
+        }
+      }
+    }
+
+    // Default: open in browser
+    window.api?.openExternal(href);
+  };
+
   // Handle clicking on inline file links (from file references)
   const handleFileReferenceClick = (ref: AnnouncementFileReference) => {
     if (ref.attachment) {
@@ -402,54 +428,11 @@ export function AnnouncementDetail() {
 
           {/* Message Content - render HTML if available, otherwise plain text with file links */}
           {notification.messageHtml ? (
-            <div
+            <HtmlContent
+              html={notification.messageHtml}
               className="announcement-content"
               style={styles.htmlContent}
-              dangerouslySetInnerHTML={{
-                __html: DOMPurify.sanitize(notification.messageHtml, {
-                  ADD_ATTR: ['target'], // Allow target="_blank" on links
-                }),
-              }}
-              onClick={async (e) => {
-                // Intercept link clicks and handle based on user preference
-                const target = e.target as HTMLElement;
-                if (target.tagName === 'A') {
-                  e.preventDefault();
-                  const href = (target as HTMLAnchorElement).href;
-                  if (!href) return;
-
-                  const linkBehavior = getLinkBehaviorPreference();
-
-                  if (linkBehavior === 'prefer-local') {
-                    // Check if this is a Canvas file link and try to open locally
-                    const fileId = extractCanvasFileId(href);
-                    if (fileId && window.api) {
-                      try {
-                        // Try to find this file in our downloaded resources
-                        const filesData = await window.api.getFiles();
-                        // getFiles returns { resources: [], attachments: [], pages: [] }
-                        const allFiles = [
-                          ...filesData.resources,
-                          ...filesData.attachments,
-                        ];
-                        const file = allFiles.find(
-                          (f: { externalId: string }) => f.externalId === fileId
-                        );
-                        if (file?.localPath) {
-                          // File is downloaded, open it locally
-                          await window.api.openResource(file.id);
-                          return;
-                        }
-                      } catch {
-                        // Fall through to open externally
-                      }
-                    }
-                  }
-
-                  // Default: open in browser
-                  window.api?.openExternal(href);
-                }
-              }}
+              onLinkClick={handleHtmlLinkClick}
             />
           ) : (
             <div style={styles.content}>

@@ -32,9 +32,20 @@ import {
   GripVertical,
   Archive,
 } from 'lucide-react';
-import { Card, PolicyModal, ConfirmDialog, PolicyBadgeGroup } from '../shared';
+import {
+  Card,
+  PolicyModal,
+  ConfirmDialog,
+  PolicyBadgeGroup,
+  RichTextEditor,
+} from '../shared';
 import type { PolicyModalData, PolicyType } from '../shared';
 import { useStore } from '../../../l5-presentation/store';
+import {
+  STORAGE_KEYS,
+  LINK_BEHAVIOR,
+  type LinkBehavior,
+} from '../../../l5-presentation/settings';
 import type { Task, Notification, Policy } from '../../../l5-presentation/types';
 import { COURSE_COLORS, getCourseColor } from '../../constants';
 import { ColorPicker } from '../primitives';
@@ -80,17 +91,17 @@ function getShortCode(code: string): string {
 /**
  * Get the user's link behavior preference from localStorage
  */
-function getLinkBehaviorPreference(): 'always-external' | 'prefer-local' {
+function getLinkBehaviorPreference(): LinkBehavior {
   try {
-    const stored = localStorage.getItem('contentSettings');
+    const stored = localStorage.getItem(STORAGE_KEYS.CONTENT);
     if (stored) {
       const settings = JSON.parse(stored);
-      return settings.linkBehavior ?? 'always-external';
+      return settings.linkBehavior ?? LINK_BEHAVIOR.ALWAYS_EXTERNAL;
     }
   } catch {
     // Ignore parse errors
   }
-  return 'always-external';
+  return LINK_BEHAVIOR.ALWAYS_EXTERNAL;
 }
 
 /**
@@ -141,15 +152,6 @@ interface GradeHistoryEntry {
   courseId: number;
   grade: number;
   recordedAt: string;
-}
-
-// Strip HTML tags from text
-function stripHtml(html: string | null): string {
-  if (!html) return '';
-  // Create a temporary element to parse HTML and extract text
-  const tmp = document.createElement('div');
-  tmp.innerHTML = html;
-  return tmp.textContent || tmp.innerText || '';
 }
 
 // Format date for display
@@ -246,6 +248,7 @@ export function CourseDetail() {
   const [editingTaskId, setEditingTaskId] = useState<number | null>(null);
   const [editTaskTitle, setEditTaskTitle] = useState('');
   const [editTaskDescription, setEditTaskDescription] = useState('');
+  const [editTaskOriginalDescription, setEditTaskOriginalDescription] = useState(''); // Track original stripped description
   const [editTaskDueDate, setEditTaskDueDate] = useState('');
   const [editTaskWeight, setEditTaskWeight] = useState('');
   const [editTaskGrade, setEditTaskGrade] = useState('');
@@ -599,7 +602,11 @@ export function CourseDetail() {
   const startEditingTask = (task: Task) => {
     // Set all edit fields first
     setEditTaskTitle(task.title);
-    setEditTaskDescription(stripHtml(task.description));
+    // Keep original HTML to preserve links and formatting
+    // User can edit around HTML tags to keep links intact
+    const originalDescription = task.description || '';
+    setEditTaskDescription(originalDescription);
+    setEditTaskOriginalDescription(originalDescription);
     // Convert UTC ISO string to local datetime-local format (YYYY-MM-DDTHH:MM)
     if (task.dueAt) {
       const localDate = new Date(task.dueAt);
@@ -626,10 +633,14 @@ export function CourseDetail() {
     if (!api?.dispatch || !editingTaskId) return;
 
     try {
+      // Only include description if it was actually changed
+      const descriptionChanged = editTaskDescription !== editTaskOriginalDescription;
+
       await api.dispatch('UpdateTask', {
         taskId: editingTaskId,
         title: editTaskTitle.trim() || undefined,
-        description: editTaskDescription.trim() || null,
+        // Only send description if user actually modified it (preserves HTML/links if unchanged)
+        ...(descriptionChanged && { description: editTaskDescription || null }),
         dueAt: editTaskDueDate || null,
         weight: editTaskWeight ? parseFloat(editTaskWeight) : undefined,
         grade: editTaskGrade ? parseFloat(editTaskGrade) : null,
@@ -2443,7 +2454,7 @@ function TaskItem({
 
                       const linkBehavior = getLinkBehaviorPreference();
 
-                      if (linkBehavior === 'prefer-local') {
+                      if (linkBehavior === LINK_BEHAVIOR.PREFER_LOCAL) {
                         // Check if this is a Canvas file link and try to open locally
                         const fileId = extractCanvasFileId(href);
 
@@ -2550,11 +2561,11 @@ function TaskItem({
             </div>
             <div style={styles.taskEditRow}>
               <label style={styles.taskEditLabel}>Description</label>
-              <textarea
+              <RichTextEditor
                 value={editDescription}
-                onChange={(e) => onEditDescriptionChange(e.target.value)}
-                style={styles.taskEditTextarea}
-                rows={2}
+                onChange={onEditDescriptionChange}
+                placeholder="Enter task description..."
+                minHeight={100}
               />
             </div>
             <div style={styles.taskEditRow}>
@@ -3689,6 +3700,12 @@ const styles: Record<string, React.CSSProperties> = {
     backgroundColor: 'var(--bg-card)',
     resize: 'vertical',
     fontFamily: 'inherit',
+  },
+
+  taskEditHint: {
+    fontSize: 'var(--text-xs)',
+    color: 'var(--text-muted)',
+    marginTop: 'var(--space-1)',
   },
 
   taskEditSelect: {

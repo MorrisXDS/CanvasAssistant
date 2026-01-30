@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import type { DisplayCalendarEvent, Course } from '../../../l5-presentation/types';
 import { ConfirmDialog } from '../shared/ConfirmDialog';
+import { RichTextEditor } from '../shared/RichTextEditor';
 import { getCleanCourseName } from '../../constants';
 
 /**
@@ -647,11 +648,11 @@ export function EventFormModal({
               <AlignLeft size={14} />
               Description
             </label>
-            <textarea
+            <RichTextEditor
               value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Add description"
-              style={styles.textareaSmall}
+              onChange={setDescription}
+              placeholder="Event description..."
+              minHeight={80}
             />
           </div>
 

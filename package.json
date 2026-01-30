@@ -43,6 +43,11 @@
   "author": "UofT Students",
   "license": "MIT",
   "dependencies": {
+    "@tiptap/extension-link": "^3.18.0",
+    "@tiptap/extension-placeholder": "^3.18.0",
+    "@tiptap/pm": "^3.18.0",
+    "@tiptap/react": "^3.18.0",
+    "@tiptap/starter-kit": "^3.18.0",
     "@types/archiver": "^7.0.0",
     "@types/html-to-text": "^9.0.4",
     "archiver": "^7.0.1",

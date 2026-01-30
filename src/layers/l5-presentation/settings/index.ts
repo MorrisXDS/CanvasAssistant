@@ -11,6 +11,9 @@
 // Schema exports (keys, types, defaults)
 export {
   STORAGE_KEYS,
+  // Link behavior constants
+  LINK_BEHAVIOR,
+  type LinkBehavior,
   // Zod schemas
   SyncPreferencesSchema,
   AppearanceSettingsSchema,

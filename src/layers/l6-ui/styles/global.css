@@ -228,7 +228,127 @@ textarea:focus-visible {
   }
 }
 
+/* ============ HTML Content Styles (Unified) ============ */
+.html-content {
+  font-size: var(--text-sm);
+  line-height: var(--leading-relaxed);
+  color: var(--text-primary);
+}
+
+.html-content p {
+  margin-bottom: var(--space-3);
+}
+
+.html-content p:last-child {
+  margin-bottom: 0;
+}
+
+.html-content strong {
+  font-weight: var(--font-semibold);
+}
+
+.html-content em {
+  font-style: italic;
+}
+
+.html-content a {
+  color: var(--color-blue);
+  text-decoration: underline;
+}
+
+.html-content a:hover {
+  color: var(--color-blue-light);
+}
+
+.html-content ul,
+.html-content ol {
+  padding-left: var(--space-6);
+  margin-bottom: var(--space-3);
+}
+
+.html-content li {
+  margin-bottom: var(--space-1);
+}
+
+.html-content h1,
+.html-content h2,
+.html-content h3,
+.html-content h4,
+.html-content h5,
+.html-content h6 {
+  margin-top: var(--space-4);
+  margin-bottom: var(--space-2);
+  font-weight: var(--font-semibold);
+}
+
+.html-content h1:first-child,
+.html-content h2:first-child,
+.html-content h3:first-child {
+  margin-top: 0;
+}
+
+.html-content blockquote {
+  border-left: 3px solid var(--color-navy);
+  padding-left: var(--space-4);
+  margin: var(--space-3) 0;
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.html-content pre {
+  background-color: var(--color-gray-100);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  overflow-x: auto;
+  margin: var(--space-3) 0;
+}
+
+.html-content code {
+  background-color: var(--color-gray-100);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}
+
+.html-content pre code {
+  background: none;
+  padding: 0;
+}
+
+.html-content img {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius-md);
+  margin: var(--space-3) 0;
+}
+
+.html-content table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: var(--space-3) 0;
+}
+
+.html-content th,
+.html-content td {
+  padding: var(--space-2);
+  border: 1px solid var(--border-default);
+  text-align: left;
+}
+
+.html-content th {
+  background-color: var(--color-gray-50);
+  font-weight: var(--font-semibold);
+}
+
+.html-content hr {
+  border: none;
+  border-top: 1px solid var(--border-default);
+  margin: var(--space-4) 0;
+}
+
 /* ============ Announcement Content Styles ============ */
+/* Extends .html-content with larger spacing for announcements */
 .announcement-content p {
   margin-bottom: var(--space-4);
 }
