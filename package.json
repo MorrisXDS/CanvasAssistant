@@ -21,16 +21,7 @@
     "package:mac": "electron-builder --mac",
     "package:win": "electron-builder --win",
     "package:linux": "electron-builder --linux",
-    "prepare": "husky",
-    "postinstall": "electron-builder install-app-deps",
-    "rebuild": "electron-rebuild -f -w better-sqlite3",
-    "check-node": "node -e \"const v = parseInt(process.versions.node.split('.')[0]); if (v < 20) { console.error('\\x1b[31mError: Node 20+ required (you have ' + process.version + '). Run: nvm use\\x1b[0m'); process.exit(1); }\""
-  },
-  "lint-staged": {
-    "src/**/*.{ts,tsx}": [
-      "eslint --fix",
-      "prettier --write"
-    ]
+    "postinstall": "electron-builder install-app-deps"
   },
   "keywords": [
     "canvas",
@@ -40,7 +31,10 @@
     "uoft",
     "electron"
   ],
-  "author": "UofT Students",
+  "author": {
+    "name": "Morris Sun",
+    "email": "mcl211204@gmail.com"
+  },
   "license": "MIT",
   "dependencies": {
     "@tiptap/extension-link": "^3.18.0",
@@ -104,5 +98,61 @@
   "bugs": {
     "url": "https://github.com/MorrisXDS/CanvasAssistant/issues"
   },
-  "homepage": "https://github.com/MorrisXDS/CanvasAssistant#readme"
+  "homepage": "https://github.com/MorrisXDS/CanvasAssistant#readme",
+  "build": {
+    "appId": "com.quercus.desktop",
+    "productName": "Quercus Desktop",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json",
+      "node_modules/**/*"
+    ],
+    "asarUnpack": [
+      "node_modules/better-sqlite3/**/*",
+      "node_modules/keytar/**/*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico",
+      "installerHeaderIcon": "assets/icon.ico"
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "icon": "assets/icon.png",
+      "category": "public.app-category.education"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "icon": "assets/icon.png",
+      "category": "Education"
+    }
+  }
 }
