@@ -269,9 +269,9 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: 'column',
     alignItems: 'center',
     zIndex: 100,
-    paddingTop: 'var(--space-4)',
-    // Wrapper captures all hover events
-    minHeight: 40,
+    paddingTop: 'var(--space-1)',
+    // Wrapper captures hover events - keep small for tight activation region
+    minHeight: 12,
   },
 
   hintLine: {
