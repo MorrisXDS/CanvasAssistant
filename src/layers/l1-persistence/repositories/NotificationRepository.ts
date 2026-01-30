@@ -116,7 +116,7 @@ export class NotificationRepository extends BaseRepository<Notification, Notific
       'SELECT id FROM notifications WHERE id = ?',
       [id]
     );
-    return row !== null;
+    return row !== undefined;
   }
 
   /**
@@ -127,7 +127,10 @@ export class NotificationRepository extends BaseRepository<Notification, Notific
       'SELECT dismissed_at FROM notifications WHERE id = ?',
       [id]
     );
-    return row?.dismissed_at !== null;
+    // If row doesn't exist, notification is not dismissed (it doesn't exist)
+    // Only return true if row exists AND dismissed_at is not null
+    if (!row) return false;
+    return row.dismissed_at !== null;
   }
 
   /**

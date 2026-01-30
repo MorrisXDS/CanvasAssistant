@@ -5,6 +5,7 @@
  */
 
 import { StoreState, Course, Task, PriorityItem, CourseSummary } from '../types';
+import { isPriorityTask, isOverdueTask, isUpcomingTask } from '../selectors';
 
 /**
  * Dashboard statistics
@@ -54,13 +55,20 @@ function getUrgencyLevel(task: Task): 'critical' | 'high' | 'medium' | 'low' {
 }
 
 /**
- * Calculate days until due (negative if overdue)
+ * Calculate days until due using calendar days (not 24-hour periods)
+ * Returns 0 for "due today", 1 for "due tomorrow", -1 for "1 day overdue", etc.
  */
 function getDaysUntilDue(dueAt: string | null): number | null {
   if (!dueAt) return null;
   const now = new Date();
   const due = new Date(dueAt);
-  return Math.ceil((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+
+  // Compare dates at midnight to get calendar days
+  const nowDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const dueDate = new Date(due.getFullYear(), due.getMonth(), due.getDate());
+
+  const diffMs = dueDate.getTime() - nowDate.getTime();
+  return Math.round(diffMs / (1000 * 60 * 60 * 24));
 }
 
 /**
@@ -74,7 +82,11 @@ function getEffectiveGrade(task: Task, state: StoreState): number | null {
 /**
  * Calculate simulated assessed grade for a course
  */
-function calculateEffectiveAssessedGrade(course: Course, tasks: Task[], state: StoreState): number | null {
+function calculateEffectiveAssessedGrade(
+  course: Course,
+  tasks: Task[],
+  state: StoreState
+): number | null {
   const courseTasks = tasks.filter((t) => t.courseId === course.id);
 
   let weightedSum = 0;
@@ -92,14 +104,26 @@ function calculateEffectiveAssessedGrade(course: Course, tasks: Task[], state: S
 }
 
 /**
+ * Options for creating priority items
+ */
+interface PriorityItemsOptions {
+  /** Whether to use priority-based sorting (default: false = due date only) */
+  prioritySortingEnabled?: boolean;
+}
+
+/**
  * Create priority items from tasks
  */
-function createPriorityItems(state: StoreState): PriorityItem[] {
-  const { tasks, courses, simulation } = state;
+function createPriorityItems(
+  state: StoreState,
+  options: PriorityItemsOptions = {}
+): PriorityItem[] {
+  const { tasks, courses } = state;
+  const { prioritySortingEnabled = false } = options;
   const courseMap = new Map(courses.map((c) => [c.id, c]));
 
   return tasks
-    .filter((task) => !task.isCompleted && !!task.dueAt)
+    .filter(isPriorityTask)
     .map((task) => {
       const course = courseMap.get(task.courseId);
       if (!course) return null;
@@ -113,7 +137,22 @@ function createPriorityItems(state: StoreState): PriorityItem[] {
       };
     })
     .filter((item): item is PriorityItem => item !== null)
-    .sort((a, b) => b.task.priorityScore - a.task.priorityScore);
+    .sort((a, b) => {
+      if (prioritySortingEnabled) {
+        // Priority sorting: by urgency level, then priority score, then due date
+        const urgencyOrder = { critical: 0, high: 1, medium: 2, low: 3 };
+        const urgencyDiff = urgencyOrder[a.urgencyLevel] - urgencyOrder[b.urgencyLevel];
+        if (urgencyDiff !== 0) return urgencyDiff;
+
+        const scoreDiff = b.task.priorityScore - a.task.priorityScore;
+        if (scoreDiff !== 0) return scoreDiff;
+      }
+
+      // Default/fallback: sort by due date (ascending - earliest first)
+      const aDue = a.task.dueAt ? new Date(a.task.dueAt).getTime() : Infinity;
+      const bDue = b.task.dueAt ? new Date(b.task.dueAt).getTime() : Infinity;
+      return aDue - bDue;
+    });
 }
 
 /**
@@ -141,10 +180,15 @@ function createCourseSummaries(state: StoreState): CourseSummary[] {
         return due < now;
       }).length;
 
-      const effectiveAssessedGrade = calculateEffectiveAssessedGrade(course, tasks, state);
-      const targetDelta = effectiveAssessedGrade !== null
-        ? Math.max(0, course.targetGrade - effectiveAssessedGrade)
-        : course.targetGrade;
+      const effectiveAssessedGrade = calculateEffectiveAssessedGrade(
+        course,
+        tasks,
+        state
+      );
+      const targetDelta =
+        effectiveAssessedGrade !== null
+          ? Math.max(0, course.targetGrade - effectiveAssessedGrade)
+          : course.targetGrade;
 
       return {
         course,
@@ -161,34 +205,34 @@ function createCourseSummaries(state: StoreState): CourseSummary[] {
 /**
  * Calculate dashboard statistics
  */
-function calculateStats(state: StoreState, courseSummaries: CourseSummary[]): DashboardStats {
-  const { tasks, simulation } = state;
-  const now = new Date();
+function calculateStats(
+  state: StoreState,
+  courseSummaries: CourseSummary[]
+): DashboardStats {
+  const { tasks, courses, simulation } = state;
 
-  const completedTasks = tasks.filter((t) => t.isCompleted).length;
-  const upcomingTasks = tasks.filter((t) => {
-    if (t.isCompleted || !t.dueAt) return false;
-    const due = new Date(t.dueAt);
-    return due > now;
-  }).length;
-  const overdueTasks = tasks.filter((t) => {
-    if (t.isCompleted || !t.dueAt) return false;
-    const due = new Date(t.dueAt);
-    return due < now;
-  }).length;
+  // Only count tasks from visible (non-hidden) courses
+  // This ensures archived courses' tasks don't appear in stats
+  const visibleCourseIds = new Set(courses.filter((c) => !c.isHidden).map((c) => c.id));
+  const visibleTasks = tasks.filter((t) => visibleCourseIds.has(t.courseId));
+
+  const completedTasks = visibleTasks.filter((t) => t.isCompleted).length;
+  const upcomingTasks = visibleTasks.filter(isUpcomingTask).length;
+  const overdueTasks = visibleTasks.filter(isOverdueTask).length;
 
   // Calculate average grade across courses
   const gradesWithValues = courseSummaries
     .map((s) => s.effectiveAssessedGrade)
     .filter((g): g is number => g !== null);
 
-  const averageGrade = gradesWithValues.length > 0
-    ? gradesWithValues.reduce((a, b) => a + b, 0) / gradesWithValues.length
-    : null;
+  const averageGrade =
+    gradesWithValues.length > 0
+      ? gradesWithValues.reduce((a, b) => a + b, 0) / gradesWithValues.length
+      : null;
 
   return {
     totalCourses: courseSummaries.length,
-    totalTasks: tasks.length,
+    totalTasks: visibleTasks.length,
     completedTasks,
     upcomingTasks,
     overdueTasks,
@@ -198,10 +242,23 @@ function calculateStats(state: StoreState, courseSummaries: CourseSummary[]): Da
 }
 
 /**
+ * Options for computing dashboard view model
+ */
+export interface DashboardViewModelOptions {
+  /** Whether to use priority-based sorting (default: false = due date only) */
+  prioritySortingEnabled?: boolean;
+}
+
+/**
  * Compute the complete dashboard view model from store state
  */
-export function computeDashboardViewModel(state: StoreState): DashboardViewModel {
-  const priorityQueue = createPriorityItems(state);
+export function computeDashboardViewModel(
+  state: StoreState,
+  options: DashboardViewModelOptions = {}
+): DashboardViewModel {
+  const priorityQueue = createPriorityItems(state, {
+    prioritySortingEnabled: options.prioritySortingEnabled,
+  });
   const courseSummaries = createCourseSummaries(state);
   const stats = calculateStats(state, courseSummaries);
 
@@ -218,6 +275,9 @@ export function computeDashboardViewModel(state: StoreState): DashboardViewModel
  * React hook for dashboard view model
  * Uses selector pattern for optimal re-renders
  */
-export function useDashboardViewModel(state: StoreState): DashboardViewModel {
-  return computeDashboardViewModel(state);
+export function useDashboardViewModel(
+  state: StoreState,
+  options: DashboardViewModelOptions = {}
+): DashboardViewModel {
+  return computeDashboardViewModel(state, options);
 }

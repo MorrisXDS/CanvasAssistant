@@ -10,6 +10,7 @@ import { BaseRepository, CourseRow } from './BaseRepository';
 
 export interface CourseUpdates {
   targetGrade?: number;
+  targetGradeSource?: 'default' | 'manual';
   assessedGrade?: number | null;
   currentGrade?: number | null;
   color?: string | null;
@@ -29,6 +30,7 @@ export class CourseRepository extends BaseRepository<Course, CourseRow> {
       code: row.code,
       name: row.name,
       targetGrade: row.target_grade,
+      targetGradeSource: row.target_grade_source ?? 'default',
       assessedGrade: row.assessed_grade,
       currentGrade: row.current_grade,
       color: row.color,
@@ -36,12 +38,16 @@ export class CourseRepository extends BaseRepository<Course, CourseRow> {
       isHidden: Boolean(row.is_hidden),
       lastSyncedAt: row.last_synced_at,
       enrollmentTermId: row.enrollment_term_id,
+      archivedAt: row.archived_at ?? null,
+      archiveSource: row.archive_source ?? null,
     };
   }
 
   protected mapEntityToRow(entity: Partial<Course>): Record<string, unknown> {
     const row: Record<string, unknown> = {};
     if (entity.targetGrade !== undefined) row.target_grade = entity.targetGrade;
+    if (entity.targetGradeSource !== undefined)
+      row.target_grade_source = entity.targetGradeSource;
     if (entity.assessedGrade !== undefined) row.assessed_grade = entity.assessedGrade;
     if (entity.currentGrade !== undefined) row.current_grade = entity.currentGrade;
     if (entity.color !== undefined) row.color = entity.color;
@@ -68,7 +74,9 @@ export class CourseRepository extends BaseRepository<Course, CourseRow> {
    * Find a course by its Canvas external ID.
    */
   findByExternalId(externalId: string): Course | null {
-    return this.queryOne<CourseRow>('SELECT * FROM courses WHERE external_id = ?', [externalId]);
+    return this.queryOne<CourseRow>('SELECT * FROM courses WHERE external_id = ?', [
+      externalId,
+    ]);
   }
 
   /**
@@ -94,10 +102,9 @@ export class CourseRepository extends BaseRepository<Course, CourseRow> {
    * Get detailed course information including syllabus.
    */
   findDetailById(id: number): CourseDetail | null {
-    const row = this.db.executeReadOne<CourseRow>(
-      'SELECT * FROM courses WHERE id = ?',
-      [id]
-    );
+    const row = this.db.executeReadOne<CourseRow>('SELECT * FROM courses WHERE id = ?', [
+      id,
+    ]);
 
     if (!row) return null;
 
@@ -114,12 +121,18 @@ export class CourseRepository extends BaseRepository<Course, CourseRow> {
   update(id: number, updates: CourseUpdates): Course | null {
     const mappedUpdates: Record<string, unknown> = {};
 
-    if (updates.targetGrade !== undefined) mappedUpdates.target_grade = updates.targetGrade;
-    if (updates.assessedGrade !== undefined) mappedUpdates.assessed_grade = updates.assessedGrade;
-    if (updates.currentGrade !== undefined) mappedUpdates.current_grade = updates.currentGrade;
+    if (updates.targetGrade !== undefined)
+      mappedUpdates.target_grade = updates.targetGrade;
+    if (updates.targetGradeSource !== undefined)
+      mappedUpdates.target_grade_source = updates.targetGradeSource;
+    if (updates.assessedGrade !== undefined)
+      mappedUpdates.assessed_grade = updates.assessedGrade;
+    if (updates.currentGrade !== undefined)
+      mappedUpdates.current_grade = updates.currentGrade;
     if (updates.color !== undefined) mappedUpdates.color = updates.color;
     if (updates.nickname !== undefined) mappedUpdates.nickname = updates.nickname;
-    if (updates.isHidden !== undefined) mappedUpdates.is_hidden = updates.isHidden ? 1 : 0;
+    if (updates.isHidden !== undefined)
+      mappedUpdates.is_hidden = updates.isHidden ? 1 : 0;
 
     const keys = Object.keys(mappedUpdates);
     if (keys.length === 0) {
@@ -136,6 +149,39 @@ export class CourseRepository extends BaseRepository<Course, CourseRow> {
     );
 
     return this.findById(id);
+  }
+
+  /**
+   * Update target grade for a course, marking it as manually set.
+   * Use this when user explicitly changes the target grade.
+   */
+  updateTargetGradeManual(id: number, targetGrade: number): Course | null {
+    return this.update(id, { targetGrade, targetGradeSource: 'manual' });
+  }
+
+  /**
+   * Find all courses that are using the default target grade.
+   * These courses will auto-update when the app default changes.
+   */
+  findWithDefaultTargetGrade(): Course[] {
+    return this.queryAll<CourseRow>(
+      "SELECT * FROM courses WHERE target_grade_source = 'default' ORDER BY name"
+    );
+  }
+
+  /**
+   * Update all courses with default target grade to a new value.
+   * Called when user changes the app-wide default target grade.
+   * @returns Number of courses updated
+   */
+  updateDefaultTargetGrades(newTargetGrade: number): number {
+    const result = this.db.executeWrite(
+      `UPDATE courses SET target_grade = ?, updated_at = CURRENT_TIMESTAMP
+       WHERE target_grade_source = 'default'`,
+      [newTargetGrade],
+      'courses'
+    );
+    return result.changes;
   }
 
   /**
@@ -168,7 +214,7 @@ export class CourseRepository extends BaseRepository<Course, CourseRow> {
       'SELECT id FROM courses WHERE id = ?',
       [id]
     );
-    return row !== null;
+    return row !== undefined;
   }
 
   /**

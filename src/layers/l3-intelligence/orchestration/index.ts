@@ -21,3 +21,21 @@ export type { InsightOrchestratorConfig } from './InsightOrchestrator';
 
 export { AdaptiveLearningOrchestrator } from './AdaptiveLearningOrchestrator';
 export type { AdaptiveLearningOrchestratorConfig } from './AdaptiveLearningOrchestrator';
+
+export { ContentAnalysisOrchestrator } from './ContentAnalysisOrchestrator';
+export type {
+  ContentAnalysisOrchestratorConfig,
+  ContentSourceType,
+  DocumentType,
+  AnalysisLevel,
+  ContentAnalysis,
+  AnalysisResult,
+} from './ContentAnalysisOrchestrator';
+
+export { PolicyOrchestrator } from './PolicyOrchestrator';
+export type {
+  PolicyOrchestratorConfig,
+  PolicyWithStaleness,
+  TokenUsageSummary,
+  UseGraceTokenResult,
+} from './PolicyOrchestrator';

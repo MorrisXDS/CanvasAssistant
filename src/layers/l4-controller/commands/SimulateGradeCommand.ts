@@ -16,22 +16,23 @@ import {
   SimulationResult,
 } from '../types';
 
-export class SimulateGradeCommand
-  implements Command<SimulateGradeParams, SimulationResult>
-{
+export class SimulateGradeCommand implements Command<
+  SimulateGradeParams,
+  SimulationResult
+> {
   readonly name = 'SimulateGrade';
 
   validate(params: SimulateGradeParams): { valid: boolean; error?: string } {
     if (!params.taskId || params.taskId <= 0) {
-      return { valid: false, error: 'Invalid task ID' };
+      return { valid: false, error: 'Task not found or invalid' };
     }
 
     if (typeof params.grade !== 'number' || isNaN(params.grade)) {
       return { valid: false, error: 'Grade must be a number' };
     }
 
-    if (params.grade < 0 || params.grade > 100) {
-      return { valid: false, error: 'Grade must be between 0 and 100' };
+    if (params.grade < 0 || params.grade > 150) {
+      return { valid: false, error: 'Grade must be between 0 and 150' };
     }
 
     return { valid: true };
@@ -84,7 +85,7 @@ export class SimulateGradeCommand
     } catch (error) {
       return {
         success: false,
-        error: `Failed to simulate grade: ${error}`,
+        error: `Failed to simulate grade: ${error instanceof Error ? error.message : String(error)}`,
       };
     }
   }
@@ -93,20 +94,16 @@ export class SimulateGradeCommand
     const course = context.db.executeReadOne<{
       assessed_grade: number | null;
       target_grade: number;
-    }>(
-      'SELECT assessed_grade, target_grade FROM courses WHERE id = ?',
-      [courseId]
-    );
+    }>('SELECT assessed_grade, target_grade FROM courses WHERE id = ?', [courseId]);
 
     const tasks = context.db.executeRead<{
       id: number;
       grade: number | null;
       weight: number;
       priority_score: number;
-    }>(
-      'SELECT id, grade, weight, priority_score FROM tasks WHERE course_id = ?',
-      [courseId]
-    );
+    }>('SELECT id, grade, weight, priority_score FROM tasks WHERE course_id = ?', [
+      courseId,
+    ]);
 
     const originalAssessedGrade = course?.assessed_grade ?? 0;
     const targetGrade = course?.target_grade ?? 85;
@@ -126,10 +123,23 @@ export class SimulateGradeCommand
       }
 
       if (simulation) {
+        // Calculate simulated priority using PriorityEngine if available
+        let simulatedPriority = task.priority_score;
+
+        if (context.priorityEngine && simulation.simulatedGrade !== null) {
+          const calculated = context.priorityEngine.getSimulatedTaskPriority(
+            task.id,
+            simulation.simulatedGrade
+          );
+          if (calculated !== null) {
+            simulatedPriority = calculated;
+          }
+        }
+
         affectedTasks.push({
           id: task.id,
           originalPriority: task.priority_score,
-          simulatedPriority: task.priority_score, // TODO: Recalculate
+          simulatedPriority,
         });
       }
     }

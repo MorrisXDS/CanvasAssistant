@@ -4,33 +4,40 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import {
-  BrowserRouter,
-  Routes,
-  Route,
-  Navigate,
-} from 'react-router-dom';
+import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 
 import { useStore, subscribeToIpcEvents } from '../l5-presentation/store';
+import {
+  settingsManager,
+  STORAGE_KEYS,
+  type AppearanceSettings,
+  type FileExplorerSettings,
+  DEFAULT_APPEARANCE_SETTINGS,
+} from '../l5-presentation/settings';
 import { Layout } from './components/Layout';
 import { Dashboard } from './components/Dashboard';
 import { Onboarding } from './components/Onboarding';
-import { AnnouncementDetail, AnnouncementsPage, CalendarPage, CourseDetail, CoursesPage, FilesPage, SettingsPage, TasksPage } from './components/pages';
+import { ReAuthModal } from './components/shared/ReAuthModal';
+import { RecoveryBanner, type RecoveryStatus } from './components/shared/RecoveryBanner';
+import {
+  CorruptionDialog,
+  type CorruptionInfo,
+} from './components/shared/CorruptionDialog';
+import {
+  AnnouncementDetail,
+  AnnouncementsPage,
+  CalendarPage,
+  CourseDetail,
+  CoursesPage,
+  FilesPage,
+  SettingsPage,
+  TasksPage,
+} from './components/pages';
 
 import './styles/global.css';
 
 // ============ Settings Preload ============
-// Apply saved settings immediately on app load
-
-const STORAGE_KEYS = {
-  APPEARANCE: 'appearanceSettings',
-  FILE_EXPLORER: 'fileExplorerSettings',
-};
-
-interface AppearanceSettings {
-  theme: 'light' | 'dark' | 'system';
-  sidebarCollapsed: boolean;
-}
+// Apply saved settings immediately on app load (before React renders)
 
 function applyTheme(theme: 'light' | 'dark' | 'system') {
   const root = document.documentElement;
@@ -43,56 +50,54 @@ function applyTheme(theme: 'light' | 'dark' | 'system') {
 }
 
 function initializeSettings() {
-  // Load and apply appearance settings
-  try {
-    const stored = localStorage.getItem(STORAGE_KEYS.APPEARANCE);
-    if (stored) {
-      const appearance: AppearanceSettings = JSON.parse(stored);
-      applyTheme(appearance.theme || 'system');
-    } else {
-      applyTheme('system');
-    }
-  } catch {
-    applyTheme('system');
-  }
+  // Initialize settings manager
+  settingsManager.initialize();
 
-  // Listen for system theme changes if using 'system' theme
-  const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-  mediaQuery.addEventListener('change', () => {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEYS.APPEARANCE);
-      if (stored) {
-        const appearance: AppearanceSettings = JSON.parse(stored);
-        if (appearance.theme === 'system') {
-          applyTheme('system');
-        }
-      } else {
-        applyTheme('system');
-      }
-    } catch {
-      applyTheme('system');
-    }
-  });
+  // Apply theme immediately
+  const appearance = settingsManager.get(STORAGE_KEYS.APPEARANCE) as
+    | AppearanceSettings
+    | undefined;
+  const theme = appearance?.theme ?? DEFAULT_APPEARANCE_SETTINGS.theme;
+  applyTheme(theme);
+
+  // Note: System theme change listener is set up in useSystemThemeListener()
+  // to ensure proper cleanup and avoid memory leaks
 
   // Restore custom download location if saved
-  try {
-    const fileSettings = localStorage.getItem(STORAGE_KEYS.FILE_EXPLORER);
-    if (fileSettings) {
-      const parsed = JSON.parse(fileSettings);
-      if (parsed.downloadLocation) {
-        // Async restore - don't block startup
-        window.api?.setFilesDirectory?.(parsed.downloadLocation).catch((err: Error) => {
-          console.warn('[App] Failed to restore download location:', err);
-        });
-      }
-    }
-  } catch {
-    // Ignore errors in download location restoration
+  const fileSettings = settingsManager.get(STORAGE_KEYS.FILE_EXPLORER) as
+    | FileExplorerSettings
+    | undefined;
+  if (fileSettings?.downloadLocation) {
+    // Async restore - don't block startup
+    window.api?.setFilesDirectory?.(fileSettings.downloadLocation).catch((err: Error) => {
+      console.warn('[App] Failed to restore download location:', err);
+    });
   }
 }
 
 // Initialize settings immediately (before React renders)
 initializeSettings();
+
+/**
+ * Hook to listen for system theme changes with proper cleanup
+ */
+function useSystemThemeListener() {
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+
+    const handleChange = () => {
+      const currentAppearance = settingsManager.get(STORAGE_KEYS.APPEARANCE) as
+        | AppearanceSettings
+        | undefined;
+      if (!currentAppearance?.theme || currentAppearance.theme === 'system') {
+        applyTheme('system');
+      }
+    };
+
+    mediaQuery.addEventListener('change', handleChange);
+    return () => mediaQuery.removeEventListener('change', handleChange);
+  }, []);
+}
 
 /**
  * Loading Screen
@@ -112,27 +117,126 @@ function LoadingScreen() {
  * Main App with auth routing
  */
 function AppContent() {
-  const { isInitialized, isAuthenticated, initialize, setAuthenticated, refreshAll } =
-    useStore();
+  const {
+    isInitialized,
+    isAuthenticated,
+    authError,
+    initialize,
+    setAuthenticated,
+    clearAuthError,
+    refreshAll,
+  } = useStore();
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+
+  // Recovery and corruption state
+  const [recoveryStatus, setRecoveryStatus] = useState<RecoveryStatus | null>(null);
+  const [corruptionInfo, setCorruptionInfo] = useState<CorruptionInfo | null>(null);
+
+  // Listen for system theme changes with proper cleanup
+  useSystemThemeListener();
 
   useEffect(() => {
     // Initialize store (checks auth, loads data)
     const init = async () => {
       await initialize();
       setIsCheckingAuth(false);
+
+      // Check for recovery status on startup
+      try {
+        const status = await window.api?.getRecoveryStatus?.();
+        if (status && (status.safeMode || status.lastCrash)) {
+          setRecoveryStatus(status);
+        }
+      } catch {
+        // Ignore errors
+      }
     };
     init();
 
     // Subscribe to IPC events from main process
     const unsubscribe = subscribeToIpcEvents();
-    return unsubscribe;
+
+    // Listen for recovery status updates
+    const unsubscribeRecovery = window.api?.onRecoveryStatus?.((status) => {
+      if (status.safeMode || status.lastCrash) {
+        setRecoveryStatus(status);
+      } else {
+        setRecoveryStatus(null);
+      }
+    });
+
+    // Listen for database corruption
+    const unsubscribeCorruption = window.api?.onDatabaseCorruption?.((info) => {
+      setCorruptionInfo(info);
+    });
+
+    // Listen for shutdown notification
+    const unsubscribeShutdown = window.api?.onShutdownRequested?.(() => {
+      // Acknowledge shutdown immediately
+      window.api?.acknowledgeShutdown?.();
+    });
+
+    return () => {
+      unsubscribe();
+      unsubscribeRecovery?.();
+      unsubscribeCorruption?.();
+      unsubscribeShutdown?.();
+    };
   }, [initialize]);
 
   // Handle onboarding completion
   const handleOnboardingComplete = async () => {
     setAuthenticated(true);
     await refreshAll();
+  };
+
+  // Handle successful re-authentication
+  const handleReauthSuccess = async () => {
+    clearAuthError();
+    await refreshAll();
+  };
+
+  // Handle disconnect from re-auth modal
+  const handleReauthDisconnect = () => {
+    clearAuthError();
+    setAuthenticated(false);
+  };
+
+  // Handle recovery banner dismissal
+  const handleRecoveryDismiss = async () => {
+    try {
+      await window.api?.dismissCrashNotification?.();
+    } catch {
+      // Ignore errors
+    }
+    setRecoveryStatus(null);
+  };
+
+  // Handle exit safe mode
+  const handleExitSafeMode = async () => {
+    try {
+      await window.api?.exitSafeMode?.();
+      setRecoveryStatus(null);
+    } catch {
+      // Ignore errors
+    }
+  };
+
+  // Handle corruption action
+  const handleCorruptionAction = async (action: 'reset' | 'continue' | 'export') => {
+    if (!window.api?.handleCorruption) {
+      return { success: false, error: 'API not available' };
+    }
+    const result = await window.api.handleCorruption(action);
+    if (result.success && action === 'continue') {
+      setCorruptionInfo(null);
+    }
+    return result;
+  };
+
+  // Handle corruption dialog close
+  const handleCorruptionClose = () => {
+    setCorruptionInfo(null);
   };
 
   // Show loading while checking auth
@@ -145,22 +249,51 @@ function AppContent() {
     return <Onboarding onComplete={handleOnboardingComplete} />;
   }
 
-  // Show main app
+  // Show main app with modals and overlays
   return (
-    <Routes>
-      <Route element={<Layout />}>
-        <Route path="/" element={<Dashboard />} />
-        <Route path="/announcement/:id" element={<AnnouncementDetail />} />
-        <Route path="/announcements" element={<AnnouncementsPage />} />
-        <Route path="/calendar" element={<CalendarPage />} />
-        <Route path="/courses" element={<CoursesPage />} />
-        <Route path="/course/:id" element={<CourseDetail />} />
-        <Route path="/files" element={<FilesPage />} />
-        <Route path="/settings" element={<SettingsPage />} />
-        <Route path="/tasks" element={<TasksPage />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Route>
-    </Routes>
+    <>
+      {/* Database corruption dialog - highest priority */}
+      {corruptionInfo && (
+        <CorruptionDialog
+          corruption={corruptionInfo}
+          onAction={handleCorruptionAction}
+          onClose={handleCorruptionClose}
+        />
+      )}
+
+      {/* Re-auth modal */}
+      {authError && (
+        <ReAuthModal
+          reason={authError.reason}
+          onReauthSuccess={handleReauthSuccess}
+          onDisconnect={handleReauthDisconnect}
+        />
+      )}
+
+      {/* Recovery banner at top */}
+      {recoveryStatus && (
+        <RecoveryBanner
+          status={recoveryStatus}
+          onDismiss={handleRecoveryDismiss}
+          onExitSafeMode={handleExitSafeMode}
+        />
+      )}
+
+      <Routes>
+        <Route element={<Layout />}>
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/announcement/:id" element={<AnnouncementDetail />} />
+          <Route path="/announcements" element={<AnnouncementsPage />} />
+          <Route path="/calendar" element={<CalendarPage />} />
+          <Route path="/courses" element={<CoursesPage />} />
+          <Route path="/course/:id" element={<CourseDetail />} />
+          <Route path="/files" element={<FilesPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/tasks" element={<TasksPage />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Route>
+      </Routes>
+    </>
   );
 }
 
@@ -168,10 +301,12 @@ function AppContent() {
  * App wrapper with Router
  */
 export default function App() {
+  // HashRouter is required for Electron's file:// protocol in production
+  // BrowserRouter only works with http:// URLs (dev server)
   return (
-    <BrowserRouter>
+    <HashRouter>
       <AppContent />
-    </BrowserRouter>
+    </HashRouter>
   );
 }
 

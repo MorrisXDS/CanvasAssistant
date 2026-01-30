@@ -48,7 +48,10 @@ export { DismissNotificationCommand } from './commands/DismissNotificationComman
 export { MarkTaskCompleteCommand } from './commands/MarkTaskCompleteCommand';
 export { TriggerSyncCommand, SyncRequestEvent } from './commands/TriggerSyncCommand';
 export { SimulateGradeCommand } from './commands/SimulateGradeCommand';
-export { ClearSimulationCommand, ClearSimulationResult } from './commands/ClearSimulationCommand';
+export {
+  ClearSimulationCommand,
+  ClearSimulationResult,
+} from './commands/ClearSimulationCommand';
 export {
   UseGraceTokenCommand,
   UseGraceTokenParams,
@@ -65,3 +68,13 @@ export {
   AddPolicyResult,
   PolicyType,
 } from './commands/AddPolicyCommand';
+export {
+  ArchiveCourseCommand,
+  ArchiveCourseParams,
+  ArchiveCourseResult,
+} from './commands/ArchiveCourseCommand';
+export {
+  UnarchiveCourseCommand,
+  UnarchiveCourseParams,
+  UnarchiveCourseResult,
+} from './commands/UnarchiveCourseCommand';

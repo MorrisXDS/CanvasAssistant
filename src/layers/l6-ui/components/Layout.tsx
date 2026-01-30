@@ -3,7 +3,7 @@
  * Application shell with collapsible sidebar navigation
  */
 
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import {
@@ -23,17 +23,20 @@ import {
   GripVertical,
   type LucideIcon,
 } from 'lucide-react';
-import { useStore, SyncResultSummary } from '../../l5-presentation/store';
+import { useStore } from '../../l5-presentation/store';
+import type { EnrollmentTerm } from '../../../shared/ipc-contract';
+import {
+  useSidebarState,
+  useNavOrder,
+  useLandingPage,
+} from '../../l5-presentation/settings';
+import { formatTimeAgo } from '../constants';
 import { TitleBar } from './TitleBar';
-import { SyncResultToast, SyncConflictModal } from './shared';
+import { SyncResultToast, SyncConflictModal, CloseBehaviorDialog } from './shared';
+import { useScrollbarVisibility } from '../hooks/useScrollbarVisibility';
 
-// Debug flag - set to true for debugging
-const DEBUG_LAYOUT = true;
-
-// Storage keys
-const SIDEBAR_COLLAPSED_KEY = 'sidebarCollapsed';
-const NAV_ORDER_KEY = 'navItemOrder';
-const LANDING_PAGE_KEY = 'landingPage';
+// Debug flag - set to true only when debugging layout issues
+const DEBUG_LAYOUT = false;
 
 /** Navigation item configuration */
 interface NavItem {
@@ -51,30 +54,11 @@ const defaultNavItems: NavItem[] = [
   { id: 'settings', path: '/settings', label: 'Settings', icon: Settings },
 ];
 
-// Load nav order from localStorage
-function loadNavOrder(): string[] | null {
-  try {
-    const stored = localStorage.getItem(NAV_ORDER_KEY);
-    return stored ? JSON.parse(stored) : null;
-  } catch {
-    return null;
-  }
-}
-
-// Save nav order to localStorage
-function saveNavOrder(order: string[]): void {
-  try {
-    localStorage.setItem(NAV_ORDER_KEY, JSON.stringify(order));
-  } catch (e) {
-    console.error('Failed to save nav order:', e);
-  }
-}
-
 // Get ordered nav items based on saved order
-function getOrderedNavItems(savedOrder: string[] | null): NavItem[] {
-  if (!savedOrder) return defaultNavItems;
+function getOrderedNavItems(savedOrder: string[]): NavItem[] {
+  if (!savedOrder || savedOrder.length === 0) return defaultNavItems;
 
-  const itemMap = new Map(defaultNavItems.map(item => [item.id, item]));
+  const itemMap = new Map(defaultNavItems.map((item) => [item.id, item]));
   const ordered: NavItem[] = [];
 
   // Add items in saved order
@@ -94,44 +78,6 @@ function getOrderedNavItems(savedOrder: string[] | null): NavItem[] {
   return ordered;
 }
 
-// Load landing page from localStorage
-export function loadLandingPage(): string {
-  try {
-    const stored = localStorage.getItem(LANDING_PAGE_KEY);
-    return stored || '/';
-  } catch {
-    return '/';
-  }
-}
-
-// Save landing page to localStorage
-export function saveLandingPage(path: string): void {
-  try {
-    localStorage.setItem(LANDING_PAGE_KEY, path);
-  } catch (e) {
-    console.error('Failed to save landing page:', e);
-  }
-}
-
-// Load sidebar state from localStorage
-function loadSidebarState(): boolean {
-  try {
-    const stored = localStorage.getItem(SIDEBAR_COLLAPSED_KEY);
-    return stored === 'true';
-  } catch {
-    return false;
-  }
-}
-
-// Save sidebar state to localStorage
-function saveSidebarState(collapsed: boolean): void {
-  try {
-    localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(collapsed));
-  } catch (e) {
-    console.error('Failed to save sidebar state:', e);
-  }
-}
-
 export function Layout() {
   const {
     syncStatus,
@@ -149,27 +95,140 @@ export function Layout() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Sidebar collapse state
-  const [isCollapsed, setIsCollapsed] = useState(() => loadSidebarState());
-  const [isSidebarHovered, setIsSidebarHovered] = useState(false);
+  // Auto-hide scrollbar on main content area (show on scroll, hide after 1.5s)
+  useScrollbarVisibility(mainRef, 1500);
+
+  // Sidebar collapse state from settings
+  const { collapsed: isCollapsed, setCollapsed } = useSidebarState();
   const [lockAnimation, setLockAnimation] = useState<'lock' | 'unlock' | null>(null);
 
-  // Nav items with drag and drop
-  const [navItems, setNavItems] = useState<NavItem[]>(() => getOrderedNavItems(loadNavOrder()));
+  // Term end date for sync conflict expiration default
+  const [termEndDate, setTermEndDate] = useState<string | null>(null);
+
+  // Close behavior dialog state (shown on first close when preference not set)
+  const [showCloseBehaviorDialog, setShowCloseBehaviorDialog] = useState(false);
+
+  // Listen for close behavior prompt from main process
+  useEffect(() => {
+    const unsubscribe = window.api?.onPromptCloseBehavior?.(() => {
+      setShowCloseBehaviorDialog(true);
+    });
+    return () => {
+      unsubscribe?.();
+    };
+  }, []);
+
+  // Handle close behavior choice
+  const handleCloseBehaviorChoice = async (choice: 'minimize-to-tray' | 'quit') => {
+    setShowCloseBehaviorDialog(false);
+    await window.api?.setCloseBehaviorAndApply?.(choice);
+  };
+
+  // Fetch term end date when sync conflicts modal opens
+  useEffect(() => {
+    if (syncConflicts.length > 0 && !termEndDate) {
+      // Get current term end date from enrollment terms
+      window.api
+        ?.getEnrollmentTerms?.()
+        .then((terms: EnrollmentTerm[]) => {
+          if (terms && terms.length > 0) {
+            const now = new Date();
+
+            // Find currently active terms (started and not yet ended)
+            const activeTerms = terms.filter((t: EnrollmentTerm) => {
+              if (!t.endAt) return false;
+              const endDate = new Date(t.endAt);
+              // Term must end in the future
+              if (endDate <= now) return false;
+              // If term has a start date, it must have started already
+              if (t.startAt) {
+                const startDate = new Date(t.startAt);
+                if (startDate > now) return false;
+              }
+              return true;
+            });
+
+            // Sort by latest end date (prefer the term that ends furthest in the future)
+            // This handles cases where multiple terms overlap - pick the main/longer one
+            const sortedTerms = activeTerms.sort(
+              (a: EnrollmentTerm, b: EnrollmentTerm) => {
+                if (!a.endAt || !b.endAt) return 0;
+                return new Date(b.endAt).getTime() - new Date(a.endAt).getTime();
+              }
+            );
+
+            if (sortedTerms.length > 0 && sortedTerms[0].endAt) {
+              setTermEndDate(sortedTerms[0].endAt);
+            } else {
+              // Fallback: find any term ending in the future
+              const futureTerms = terms
+                .filter((t: EnrollmentTerm) => t.endAt && new Date(t.endAt) > now)
+                .sort((a: EnrollmentTerm, b: EnrollmentTerm) => {
+                  if (!a.endAt || !b.endAt) return 0;
+                  return new Date(b.endAt).getTime() - new Date(a.endAt).getTime();
+                });
+              if (futureTerms.length > 0 && futureTerms[0].endAt) {
+                setTermEndDate(futureTerms[0].endAt);
+              }
+            }
+          }
+        })
+        .catch(() => {
+          // Ignore errors - term end date is optional
+        });
+    }
+  }, [syncConflicts.length, termEndDate]);
+
+  // Nav items with drag and drop - use settings hook
+  const { order: savedNavOrder, setOrder: saveNavOrder } = useNavOrder();
+  const navItems = useMemo(() => getOrderedNavItems(savedNavOrder), [savedNavOrder]);
   const [draggedItem, setDraggedItem] = useState<string | null>(null);
   const [dragOverItem, setDragOverItem] = useState<string | null>(null);
+
+  // Landing page from settings
+  const { landingPage } = useLandingPage();
 
   // Redirect to landing page on initial mount
   const hasRedirected = useRef(false);
   useEffect(() => {
     if (!hasRedirected.current && location.pathname === '/') {
-      const landingPage = loadLandingPage();
       if (landingPage !== '/') {
         navigate(landingPage, { replace: true });
       }
       hasRedirected.current = true;
     }
-  }, [location.pathname, navigate]);
+  }, [location.pathname, navigate, landingPage]);
+
+  // Debug: Log when route changes to analyze gap on each page
+  useEffect(() => {
+    if (!DEBUG_LAYOUT) return;
+
+    // Delay to let the new page render
+    const timer = setTimeout(() => {
+      console.log(`[Layout Debug] Route changed to: ${location.pathname}`);
+      if (mainRef.current) {
+        const mainRect = mainRef.current.getBoundingClientRect();
+        const mainStyle = getComputedStyle(mainRef.current);
+        const firstChild = mainRef.current.firstElementChild;
+
+        console.log(`[Layout Debug] Page: ${location.pathname}`);
+        console.log(`[Layout Debug]   Main top: ${mainRect.top}px`);
+        console.log(`[Layout Debug]   Main paddingTop: ${mainStyle.paddingTop}`);
+
+        if (firstChild) {
+          const childRect = firstChild.getBoundingClientRect();
+          const childStyle = getComputedStyle(firstChild);
+          console.log(`[Layout Debug]   Page content top: ${childRect.top}px`);
+          console.log(`[Layout Debug]   Page content marginTop: ${childStyle.marginTop}`);
+          console.log(
+            `[Layout Debug]   GAP (content top - main top): ${childRect.top - mainRect.top}px`
+          );
+        }
+      }
+    }, 200);
+
+    return () => clearTimeout(timer);
+  }, [location.pathname]);
 
   // Drag handlers for nav items
   const handleDragStart = (e: React.DragEvent, itemId: string) => {
@@ -205,23 +264,20 @@ export function Layout() {
     if (!draggedItem || draggedItem === targetId) return;
 
     const newItems = [...navItems];
-    const draggedIndex = newItems.findIndex(item => item.id === draggedItem);
-    const targetIndex = newItems.findIndex(item => item.id === targetId);
+    const draggedIndex = newItems.findIndex((item) => item.id === draggedItem);
+    const targetIndex = newItems.findIndex((item) => item.id === targetId);
 
     if (draggedIndex !== -1 && targetIndex !== -1) {
       // Remove dragged item and insert at target position
       const [removed] = newItems.splice(draggedIndex, 1);
       newItems.splice(targetIndex, 0, removed);
-      setNavItems(newItems);
-      saveNavOrder(newItems.map(item => item.id));
+      // Save new order via settings hook
+      saveNavOrder(newItems.map((item) => item.id));
     }
 
     setDraggedItem(null);
     setDragOverItem(null);
   };
-
-  // Effective collapsed state: collapsed unless hovered
-  const effectiveCollapsed = isCollapsed && !isSidebarHovered;
 
   // User profile state (will be populated from Canvas API)
   const [userProfile, setUserProfile] = useState<{
@@ -229,8 +285,6 @@ export function Layout() {
     email: string | null;
     avatarUrl: string | null;
   } | null>(null);
-
-
 
   // Profile dropdown state
   const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
@@ -242,8 +296,10 @@ export function Layout() {
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as Node;
-      const isOutsideButton = profileButtonRef.current && !profileButtonRef.current.contains(target);
-      const isOutsideDropdown = profileDropdownRef.current && !profileDropdownRef.current.contains(target);
+      const isOutsideButton =
+        profileButtonRef.current && !profileButtonRef.current.contains(target);
+      const isOutsideDropdown =
+        profileDropdownRef.current && !profileDropdownRef.current.contains(target);
       if (isOutsideButton && isOutsideDropdown) {
         setIsProfileDropdownOpen(false);
       }
@@ -270,8 +326,8 @@ export function Layout() {
     const newState = !isCollapsed;
     // Trigger animation: locking (expanded->collapsed) or unlocking (collapsed->expanded)
     setLockAnimation(newState ? 'unlock' : 'lock');
-    setIsCollapsed(newState);
-    saveSidebarState(newState);
+    // Update via settings hook
+    setCollapsed(newState);
     // Clear animation after it completes
     setTimeout(() => setLockAnimation(null), 500);
   };
@@ -289,9 +345,16 @@ export function Layout() {
           console.debug('[Layout] User profile response:', profile);
           if (profile) {
             setUserProfile(profile);
-            console.debug('[Layout] User profile set:', profile.name, 'avatar:', profile.avatarUrl ? 'yes' : 'no');
+            console.debug(
+              '[Layout] User profile set:',
+              profile.name,
+              'avatar:',
+              profile.avatarUrl ? 'yes' : 'no'
+            );
           } else {
-            console.warn('[Layout] User profile returned null - Canvas client may not be connected');
+            console.warn(
+              '[Layout] User profile returned null - Canvas client may not be connected'
+            );
           }
         } catch (error) {
           console.error('[Layout] Failed to fetch user profile:', error);
@@ -308,27 +371,91 @@ export function Layout() {
     if (!DEBUG_LAYOUT) return;
 
     const logDimensions = () => {
-      console.debug('[Layout] Window:', { width: window.innerWidth, height: window.innerHeight });
+      console.log('[Layout Debug] ========== LAYOUT GAP ANALYSIS ==========');
+      console.log('[Layout Debug] Window:', {
+        width: window.innerWidth,
+        height: window.innerHeight,
+      });
 
       if (containerRef.current) {
         const rect = containerRef.current.getBoundingClientRect();
-        console.debug('[Layout] Container:', { width: rect.width, height: rect.height });
+        const style = getComputedStyle(containerRef.current);
+        console.log('[Layout Debug] Container:', {
+          top: rect.top,
+          left: rect.left,
+          width: rect.width,
+          height: rect.height,
+          marginTop: style.marginTop,
+          paddingTop: style.paddingTop,
+        });
       }
 
       if (mainRef.current) {
         const rect = mainRef.current.getBoundingClientRect();
         const style = getComputedStyle(mainRef.current);
-        console.debug('[Layout] Main:', {
+        console.log('[Layout Debug] Main content area:', {
+          top: rect.top,
+          left: rect.left,
           width: rect.width,
           height: rect.height,
+          marginTop: style.marginTop,
           marginLeft: style.marginLeft,
+          paddingTop: style.paddingTop,
+          paddingRight: style.paddingRight,
+          paddingBottom: style.paddingBottom,
+          paddingLeft: style.paddingLeft,
           padding: style.padding,
         });
+
+        // Check first child (the page content)
+        const firstChild = mainRef.current.firstElementChild;
+        if (firstChild) {
+          const childRect = firstChild.getBoundingClientRect();
+          const childStyle = getComputedStyle(firstChild);
+          console.log('[Layout Debug] First child (page content):', {
+            tagName: firstChild.tagName,
+            className: firstChild.className,
+            top: childRect.top,
+            marginTop: childStyle.marginTop,
+            paddingTop: childStyle.paddingTop,
+            distanceFromMainTop: childRect.top - rect.top,
+          });
+
+          // Check the header/title element if it exists
+          const header = firstChild.querySelector(
+            'header, h1, [class*="header"], [class*="title"]'
+          );
+          if (header) {
+            const headerRect = header.getBoundingClientRect();
+            const headerStyle = getComputedStyle(header);
+            console.log('[Layout Debug] Header/Title element:', {
+              tagName: header.tagName,
+              top: headerRect.top,
+              marginTop: headerStyle.marginTop,
+              paddingTop: headerStyle.paddingTop,
+              distanceFromWindowTop: headerRect.top,
+            });
+          }
+        }
       }
+
+      // Check TitleBar
+      const titleBar = document.querySelector(
+        '[style*="position: fixed"][style*="top: 0"]'
+      );
+      if (titleBar) {
+        const tbRect = titleBar.getBoundingClientRect();
+        console.log('[Layout Debug] TitleBar:', {
+          height: tbRect.height,
+          bottom: tbRect.bottom,
+        });
+      }
+
+      console.log('[Layout Debug] ==========================================');
     };
 
-    // Initial log
-    logDimensions();
+    // Initial log after a short delay to ensure DOM is ready
+    setTimeout(logDimensions, 100);
 
     // Use ResizeObserver for reliable resize detection (including maximize)
     const resizeObserver = new ResizeObserver(() => {
@@ -348,27 +475,58 @@ export function Layout() {
     };
   }, []);
 
-  // Format time ago
-  const formatTimeAgo = (dateStr: string | null): string => {
-    if (!dateStr) return 'Never';
-    const date = new Date(dateStr);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
+  // Force layout recalculation on mount to prevent gap/bar issues
+  // This ensures the browser properly computes flexbox layout
+  useEffect(() => {
+    if (DEBUG_LAYOUT) return; // Debug mode already handles this
 
-    if (diffMins < 1) return 'Just now';
-    if (diffMins < 60) return `${diffMins}m ago`;
-    const diffHours = Math.floor(diffMins / 60);
-    if (diffHours < 24) return `${diffHours}h ago`;
-    const diffDays = Math.floor(diffHours / 24);
-    return `${diffDays}d ago`;
-  };
+    // Force layout recalculation by reading layout properties and triggering scroll
+    const forceLayoutRecalc = () => {
+      if (containerRef.current) {
+        // Reading getBoundingClientRect forces synchronous layout
+        void containerRef.current.getBoundingClientRect();
+      }
+      if (mainRef.current) {
+        void mainRef.current.getBoundingClientRect();
+        // Trigger a tiny scroll to force browser repaint (fixes cyan bar issue)
+        // This mimics what happens when user navigates to a task
+        const currentScroll = mainRef.current.scrollTop;
+        mainRef.current.scrollTop = 1;
+        // Use requestAnimationFrame to ensure the scroll is rendered
+        requestAnimationFrame(() => {
+          if (mainRef.current) {
+            mainRef.current.scrollTop = currentScroll;
+          }
+        });
+      }
+    };
+
+    // Run after initial render with a slight delay
+    const timer = setTimeout(forceLayoutRecalc, 100);
+
+    // Also use ResizeObserver to handle window maximize/restore
+    const resizeObserver = new ResizeObserver(forceLayoutRecalc);
+    if (containerRef.current) {
+      resizeObserver.observe(containerRef.current);
+    }
+
+    return () => {
+      clearTimeout(timer);
+      resizeObserver.disconnect();
+    };
+  }, []);
 
   // Determine sync display based on actual state
   const getSyncDisplay = () => {
     if (syncStatus === 'syncing') {
       return {
-        icon: <Loader2 size={14} color="var(--color-info)" style={{ animation: 'spin 1s linear infinite' }} />,
+        icon: (
+          <Loader2
+            size={14}
+            color="var(--color-info)"
+            style={{ animation: 'spin 1s linear infinite' }}
+          />
+        ),
         text: 'Syncing...',
       };
     }
@@ -379,7 +537,7 @@ export function Layout() {
       };
     }
     // Check if we have any synced data
-    const hasData = courses.some(c => c.lastSyncedAt);
+    const hasData = courses.some((c) => c.lastSyncedAt);
     if (!hasData) {
       return {
         icon: <AlertCircle size={14} color="var(--color-warning)" />,
@@ -393,26 +551,28 @@ export function Layout() {
   };
 
   const syncDisplay = getSyncDisplay();
-  const sidebarWidth = effectiveCollapsed ? 64 : 220;
+  const sidebarWidth = isCollapsed ? 64 : 220;
 
   // Debug: Log sidebar state changes
   useEffect(() => {
-    console.debug('[Layout] Sidebar state:', { isCollapsed, sidebarWidth, userProfile: userProfile?.name });
+    console.debug('[Layout] Sidebar state:', {
+      isCollapsed,
+      sidebarWidth,
+      userProfile: userProfile?.name,
+    });
   }, [isCollapsed, sidebarWidth, userProfile]);
 
   return (
     <>
       <TitleBar sidebarWidth={sidebarWidth} onSidebarToggle={toggleSidebar} />
       <div ref={containerRef} style={styles.container}>
-        {/* Sidebar - double-click to toggle, hover to temporarily expand */}
+        {/* Sidebar - double-click to toggle */}
         <aside
           style={{
             ...styles.sidebar,
             width: `${sidebarWidth}px`,
           }}
           onDoubleClick={toggleSidebar}
-          onMouseEnter={() => setIsSidebarHovered(true)}
-          onMouseLeave={() => setIsSidebarHovered(false)}
         >
           {/* User Profile / Logo - clickable for dropdown */}
           <div style={{ position: 'relative' }}>
@@ -426,7 +586,7 @@ export function Layout() {
                 width: '100%',
               }}
               onClick={handleProfileClick}
-              title={effectiveCollapsed ? 'Profile menu' : undefined}
+              title={isCollapsed ? 'Profile menu' : undefined}
             >
               {userProfile?.avatarUrl ? (
                 <img
@@ -439,15 +599,13 @@ export function Layout() {
                   <User size={20} />
                 </div>
               )}
-              {!effectiveCollapsed && (
+              {!isCollapsed && (
                 <>
                   <div style={styles.profileInfo}>
                     <span style={styles.userName}>
                       {userProfile?.name || 'Canvas Student'}
                     </span>
-                    <span style={styles.userEmail}>
-                      {userProfile?.email || ''}
-                    </span>
+                    <span style={styles.userEmail}>{userProfile?.email || ''}</span>
                   </div>
                   <ChevronDown
                     size={16}
@@ -465,10 +623,11 @@ export function Layout() {
 
           {/* Navigation - drag to reorder */}
           <nav style={styles.nav}>
-            {navItems.map((item) => {
+            {navItems.map((item, index) => {
               const Icon = item.icon;
               const isDragging = draggedItem === item.id;
               const isDragOver = dragOverItem === item.id;
+              const isLastItem = index === navItems.length - 1;
               return (
                 <div
                   key={item.id}
@@ -480,7 +639,12 @@ export function Layout() {
                   onDrop={(e) => handleDrop(e, item.id)}
                   style={{
                     position: 'relative',
-                    borderTop: isDragOver ? '2px solid var(--color-blue)' : '2px solid transparent',
+                    borderTop: isDragOver
+                      ? '2px solid var(--color-blue)'
+                      : '2px solid transparent',
+                    borderBottom: isLastItem
+                      ? 'none'
+                      : '1px solid rgba(255, 255, 255, 0.1)',
                     transition: 'border-color 150ms ease',
                   }}
                 >
@@ -489,14 +653,14 @@ export function Layout() {
                     style={({ isActive }) => ({
                       ...styles.navLink,
                       ...(isActive ? styles.navLinkActive : {}),
-                      justifyContent: effectiveCollapsed ? 'center' : 'flex-start',
-                      paddingLeft: effectiveCollapsed ? 0 : 'var(--space-3)',
-                      paddingRight: effectiveCollapsed ? 0 : 'var(--space-5)',
+                      justifyContent: isCollapsed ? 'center' : 'flex-start',
+                      paddingLeft: isCollapsed ? 0 : 'var(--space-3)',
+                      paddingRight: isCollapsed ? 0 : 'var(--space-5)',
                       opacity: isDragging ? 0.5 : 1,
                     })}
-                    title={effectiveCollapsed ? item.label : undefined}
+                    title={isCollapsed ? item.label : undefined}
                   >
-                    {!effectiveCollapsed && (
+                    {!isCollapsed && (
                       <GripVertical
                         size={14}
                         style={{
@@ -506,7 +670,7 @@ export function Layout() {
                       />
                     )}
                     <Icon size={18} style={{ flexShrink: 0 }} />
-                    {!effectiveCollapsed && <span>{item.label}</span>}
+                    {!isCollapsed && <span>{item.label}</span>}
                   </NavLink>
                 </div>
               );
@@ -520,12 +684,8 @@ export function Layout() {
               backgroundColor: isCollapsed
                 ? 'rgba(255, 255, 255, 0.1)'
                 : 'rgba(59, 130, 246, 0.35)',
-              color: isCollapsed
-                ? 'rgba(255, 255, 255, 0.6)'
-                : '#60a5fa',
-              boxShadow: isCollapsed
-                ? 'none'
-                : '0 0 8px rgba(96, 165, 250, 0.4)',
+              color: isCollapsed ? 'rgba(255, 255, 255, 0.6)' : '#60a5fa',
+              boxShadow: isCollapsed ? 'none' : '0 0 8px rgba(96, 165, 250, 0.4)',
               transition: 'all 300ms ease',
             }}
             onClick={toggleSidebar}
@@ -536,24 +696,35 @@ export function Layout() {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                animation: lockAnimation === 'lock'
-                  ? 'lockShake 400ms ease-out'
-                  : lockAnimation === 'unlock'
-                    ? 'unlockWiggle 400ms ease-out'
-                    : 'none',
+                animation:
+                  lockAnimation === 'lock'
+                    ? 'lockShake 400ms ease-out'
+                    : lockAnimation === 'unlock'
+                      ? 'unlockWiggle 400ms ease-out'
+                      : 'none',
               }}
             >
               {isCollapsed ? <Unlock size={16} /> : <Lock size={16} />}
             </span>
           </button>
 
-          {/* Footer - Sync Status Centered */}
-          <div style={styles.sidebarFooter}>
-            <div style={styles.syncStatusCentered} title={syncDisplay.text}>
+          {/* Footer - Sync Status Always Centered */}
+          <div
+            style={{
+              ...styles.sidebarFooter,
+              justifyContent: 'center',
+              padding: isCollapsed ? 'var(--space-3) 0' : 'var(--space-3) var(--space-4)',
+            }}
+          >
+            <div
+              style={{
+                ...styles.syncStatusCentered,
+                gap: isCollapsed ? 0 : 'var(--space-2)',
+              }}
+              title={syncDisplay.text}
+            >
               {syncDisplay.icon}
-              {!effectiveCollapsed && (
-                <span style={styles.syncText}>{syncDisplay.text}</span>
-              )}
+              {!isCollapsed && <span style={styles.syncText}>{syncDisplay.text}</span>}
             </div>
           </div>
         </aside>
@@ -570,8 +741,6 @@ export function Layout() {
         </main>
       </div>
 
-
-
       {/* Sync Result Toast */}
       <SyncResultToast
         result={lastSyncResult}
@@ -583,12 +752,14 @@ export function Layout() {
       <SyncConflictModal
         isOpen={syncConflicts.length > 0}
         conflicts={syncConflicts}
+        termEndDate={termEndDate}
         onResolve={(resolution) => {
           resolveSyncConflict(
             resolution.conflictId,
             resolution.useCanvasValue,
             resolution.rememberChoice,
-            resolution.rememberForAll
+            resolution.rememberForAll,
+            resolution.expiresAt
           );
         }}
         onResolveAll={(useCanvasValues) => {
@@ -598,35 +769,42 @@ export function Layout() {
       />
 
       {/* Profile Dropdown - rendered via portal to escape sidebar overflow */}
-      {isProfileDropdownOpen && createPortal(
-        <div
-          ref={profileDropdownRef}
-          style={{
-            position: 'fixed',
-            top: dropdownPosition.top,
-            left: dropdownPosition.left,
-            width: dropdownPosition.width,
-            backgroundColor: 'var(--bg-card)',
-            borderRadius: 'var(--radius-md)',
-            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
-            padding: 'var(--space-2)',
-            zIndex: 1000,
-          }}
-        >
-          <button
-            style={{ ...styles.dropdownItem, color: 'var(--color-error)' }}
-            onClick={async () => {
-              setIsProfileDropdownOpen(false);
-              await window.api.deleteCredential();
-              window.location.reload();
+      {isProfileDropdownOpen &&
+        createPortal(
+          <div
+            ref={profileDropdownRef}
+            style={{
+              position: 'fixed',
+              top: dropdownPosition.top,
+              left: dropdownPosition.left,
+              width: dropdownPosition.width,
+              backgroundColor: 'var(--bg-card)',
+              borderRadius: 'var(--radius-md)',
+              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+              padding: 'var(--space-2)',
+              zIndex: 1000,
             }}
           >
-            <LogOut size={16} />
-            <span>Log Out</span>
-          </button>
-        </div>,
-        document.body
-      )}
+            <button
+              style={{ ...styles.dropdownItem, color: 'var(--color-error)' }}
+              onClick={async () => {
+                setIsProfileDropdownOpen(false);
+                await window.api.deleteCredential();
+                window.location.reload();
+              }}
+            >
+              <LogOut size={16} />
+              <span>Log Out</span>
+            </button>
+          </div>,
+          document.body
+        )}
+
+      {/* Close Behavior Dialog - shown on first close when no preference set */}
+      <CloseBehaviorDialog
+        isOpen={showCloseBehaviorDialog}
+        onChoice={handleCloseBehaviorChoice}
+      />
     </>
   );
 }
@@ -752,8 +930,8 @@ const styles: Record<string, React.CSSProperties> = {
     padding: 'var(--space-4) 0',
     display: 'flex',
     flexDirection: 'column',
-    gap: 'var(--space-1)',
     overflow: 'hidden',
+    // Remove gap - use borders for separation like right panel cards
   },
 
   navLink: {
@@ -766,7 +944,9 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 'var(--text-sm)',
     fontWeight: 'var(--font-medium)',
     transition: 'all var(--transition-fast)',
-    borderLeft: '3px solid transparent',
+    borderLeftWidth: '3px',
+    borderLeftStyle: 'solid',
+    borderLeftColor: 'transparent',
     whiteSpace: 'nowrap',
     overflow: 'hidden',
   },
@@ -824,14 +1004,13 @@ const styles: Record<string, React.CSSProperties> = {
     flex: 1,
     backgroundColor: 'var(--bg-app)',
     height: `calc(100vh - ${TITLE_BAR_HEIGHT}px)`,
-    padding: 'var(--space-6)',
+    padding: 'var(--space-4) var(--space-6) var(--space-6) var(--space-6)',
     overflowY: 'auto',
     overflowX: 'hidden',
     transition: 'margin-left 250ms cubic-bezier(0.33, 1, 0.68, 1)',
     display: 'flex',
     flexDirection: 'column',
   },
-
 };
 
 export default Layout;

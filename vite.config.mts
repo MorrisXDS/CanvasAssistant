@@ -8,11 +8,25 @@ export default defineConfig({
   build: {
     outDir: 'dist/renderer',
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          // React core
+          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+          // UI libraries
+          'vendor-ui': ['lucide-react', 'react-window'],
+          // State & utilities
+          'vendor-utils': ['zustand', 'zod', 'axios'],
+        },
+      },
+    },
   },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
     },
+    // Ensure single React instance for TipTap and other dependencies
+    dedupe: ['react', 'react-dom'],
   },
   server: {
     port: 5173,

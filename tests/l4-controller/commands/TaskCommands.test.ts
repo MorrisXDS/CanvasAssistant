@@ -1,0 +1,737 @@
+/**
+ * TaskCommands Tests
+ *
+ * Tests for L4 task-related commands:
+ * - CreateTaskCommand
+ * - DeleteTaskCommand
+ * - MarkTaskCompleteCommand
+ * - UpdateTaskCommand
+ * - DuplicateTaskCommand
+ */
+
+import fs from 'fs';
+import path from 'path';
+import { Database } from '../../../src/layers/l1-persistence/Database';
+import {
+  MigrationRunner,
+  coreMigrations,
+} from '../../../src/layers/l1-persistence/MigrationRunner';
+import { CreateTaskCommand } from '../../../src/layers/l4-controller/commands/CreateTaskCommand';
+import { DeleteTaskCommand } from '../../../src/layers/l4-controller/commands/DeleteTaskCommand';
+import { MarkTaskCompleteCommand } from '../../../src/layers/l4-controller/commands/MarkTaskCompleteCommand';
+import { UpdateTaskCommand } from '../../../src/layers/l4-controller/commands/UpdateTaskCommand';
+import { DuplicateTaskCommand } from '../../../src/layers/l4-controller/commands/DuplicateTaskCommand';
+import { CommandContext, createSimulationContext } from '../../../src/layers/l4-controller/types';
+
+// Test directory for database
+const TEST_DIR = path.join(__dirname, '../../temp-l4-commands');
+const TEST_DB_PATH = path.join(TEST_DIR, 'test-commands.db');
+
+describe('Task Commands', () => {
+  let db: Database;
+  let context: CommandContext;
+  let testCourseId: number;
+
+  beforeAll(() => {
+    // Setup test directory
+    if (!fs.existsSync(TEST_DIR)) {
+      fs.mkdirSync(TEST_DIR, { recursive: true });
+    }
+  });
+
+  afterAll(() => {
+    // Cleanup test directory
+    if (fs.existsSync(TEST_DIR)) {
+      fs.rmSync(TEST_DIR, { recursive: true, force: true });
+    }
+  });
+
+  beforeEach(() => {
+    // Remove test database before each test
+    if (fs.existsSync(TEST_DB_PATH)) {
+      fs.unlinkSync(TEST_DB_PATH);
+    }
+
+    // Initialize fresh database
+    db = new Database({ dbPath: TEST_DB_PATH, verbose: false });
+    db.initialize();
+
+    // Run migrations
+    const migrationRunner = new MigrationRunner(db);
+    migrationRunner.loadMigrations(coreMigrations);
+    migrationRunner.runAll();
+
+    // Create command context
+    context = { db, simulationContext: createSimulationContext() };
+
+    // Create a test course
+    const result = db.executeWrite(
+      `INSERT INTO courses (external_id, code, name, target_grade)
+       VALUES ('test_course_1', 'TEST101', 'Test Course', 80)`,
+      [],
+      'courses'
+    );
+    testCourseId = result.lastInsertRowid as number;
+  });
+
+  afterEach(() => {
+    db.close();
+  });
+
+  describe('CreateTaskCommand', () => {
+    let command: CreateTaskCommand;
+
+    beforeEach(() => {
+      command = new CreateTaskCommand();
+    });
+
+    describe('validate', () => {
+      it('should reject invalid course ID', () => {
+        const result = command.validate({ courseId: 0, title: 'Test Task' });
+        expect(result.valid).toBe(false);
+        expect(result.error).toContain('Course not found or invalid');
+      });
+
+      it('should reject empty title', () => {
+        const result = command.validate({ courseId: 1, title: '' });
+        expect(result.valid).toBe(false);
+        expect(result.error).toContain('title is required');
+      });
+
+      it('should reject title over 500 characters', () => {
+        const longTitle = 'a'.repeat(501);
+        const result = command.validate({ courseId: 1, title: longTitle });
+        expect(result.valid).toBe(false);
+        expect(result.error).toContain('500 characters');
+      });
+
+      it('should reject invalid weight', () => {
+        const result = command.validate({
+          courseId: 1,
+          title: 'Test',
+          weight: 150,
+        });
+        expect(result.valid).toBe(false);
+        expect(result.error).toContain('Weight must be between');
+      });
+
+      it('should reject negative points possible', () => {
+        const result = command.validate({
+          courseId: 1,
+          title: 'Test',
+          pointsPossible: -10,
+        });
+        expect(result.valid).toBe(false);
+        expect(result.error).toContain('non-negative');
+      });
+
+      it('should accept valid params', () => {
+        const result = command.validate({
+          courseId: 1,
+          title: 'Test Task',
+          weight: 10,
+        });
+        expect(result.valid).toBe(true);
+      });
+    });
+
+    describe('execute', () => {
+      it('should create a task successfully', async () => {
+        const result = await command.execute(context, {
+          courseId: testCourseId,
+          title: 'My New Task',
+          description: 'Task description',
+          weight: 15,
+        });
+
+        expect(result.success).toBe(true);
+        expect(result.data?.taskId).toBeGreaterThan(0);
+
+        // Verify task was created
+        const task = db.executeReadOne<{ title: string; weight: number }>(
+          'SELECT title, weight FROM tasks WHERE id = ?',
+          [result.data!.taskId]
+        );
+        expect(task?.title).toBe('My New Task');
+        expect(task?.weight).toBe(15);
+      });
+
+      it('should fail for non-existent course', async () => {
+        const result = await command.execute(context, {
+          courseId: 99999,
+          title: 'Test Task',
+        });
+
+        expect(result.success).toBe(false);
+        expect(result.error).toContain('Course not found');
+      });
+
+      it('should trim whitespace from title', async () => {
+        const result = await command.execute(context, {
+          courseId: testCourseId,
+          title: '  Trimmed Title  ',
+        });
+
+        expect(result.success).toBe(true);
+
+        const task = db.executeReadOne<{ title: string }>(
+          'SELECT title FROM tasks WHERE id = ?',
+          [result.data!.taskId]
+        );
+        expect(task?.title).toBe('Trimmed Title');
+      });
+
+      it('should set source_type to user', async () => {
+        const result = await command.execute(context, {
+          courseId: testCourseId,
+          title: 'User Task',
+        });
+
+        const task = db.executeReadOne<{ source_type: string }>(
+          'SELECT source_type FROM tasks WHERE id = ?',
+          [result.data!.taskId]
+        );
+        expect(task?.source_type).toBe('user');
+      });
+    });
+  });
+
+  describe('DeleteTaskCommand', () => {
+    let command: DeleteTaskCommand;
+    let userTaskId: number;
+    let canvasTaskId: number;
+
+    beforeEach(() => {
+      command = new DeleteTaskCommand();
+
+      // Create a user task
+      const userResult = db.executeWrite(
+        `INSERT INTO tasks (external_id, source_type, course_id, title, weight)
+         VALUES ('user_task_1', 'user', ?, 'User Task', 10)`,
+        [testCourseId],
+        'tasks'
+      );
+      userTaskId = userResult.lastInsertRowid as number;
+
+      // Create a Canvas task
+      const canvasResult = db.executeWrite(
+        `INSERT INTO tasks (external_id, source_type, course_id, title, weight)
+         VALUES ('canvas_123', 'canvas', ?, 'Canvas Task', 20)`,
+        [testCourseId],
+        'tasks'
+      );
+      canvasTaskId = canvasResult.lastInsertRowid as number;
+    });
+
+    describe('validate', () => {
+      it('should reject invalid task ID', () => {
+        const result = command.validate({ taskId: 0 });
+        expect(result.valid).toBe(false);
+        expect(result.error).toContain('Task not found or invalid');
+      });
+
+      it('should accept valid task ID', () => {
+        const result = command.validate({ taskId: 1 });
+        expect(result.valid).toBe(true);
+      });
+    });
+
+    describe('execute', () => {
+      it('should delete user-created task', async () => {
+        const result = await command.execute(context, { taskId: userTaskId });
+
+        expect(result.success).toBe(true);
+        expect(result.data?.deleted).toBe(true);
+
+        // Verify task was deleted
+        const task = db.executeReadOne(
+          'SELECT id FROM tasks WHERE id = ?',
+          [userTaskId]
+        );
+        expect(task).toBeUndefined();
+      });
+
+      it('should reject deleting Canvas task without force', async () => {
+        const result = await command.execute(context, { taskId: canvasTaskId });
+
+        expect(result.success).toBe(false);
+        expect(result.error).toContain('This assignment was imported from Canvas');
+      });
+
+      it('should delete Canvas task with force flag', async () => {
+        const result = await command.execute(context, {
+          taskId: canvasTaskId,
+          force: true,
+        });
+
+        expect(result.success).toBe(true);
+        expect(result.data?.deleted).toBe(true);
+      });
+
+      it('should fail for non-existent task', async () => {
+        const result = await command.execute(context, { taskId: 99999 });
+
+        expect(result.success).toBe(false);
+        expect(result.error).toContain('Task not found');
+      });
+    });
+  });
+
+  describe('MarkTaskCompleteCommand', () => {
+    let command: MarkTaskCompleteCommand;
+    let taskId: number;
+
+    beforeEach(() => {
+      command = new MarkTaskCompleteCommand();
+
+      // Create a test task
+      const result = db.executeWrite(
+        `INSERT INTO tasks (external_id, source_type, course_id, title, weight, grade, is_completed)
+         VALUES ('task_1', 'user', ?, 'Test Task', 20, 85, 0)`,
+        [testCourseId],
+        'tasks'
+      );
+      taskId = result.lastInsertRowid as number;
+    });
+
+    describe('validate', () => {
+      it('should reject invalid task ID', () => {
+        const result = command.validate({ taskId: 0, isComplete: true });
+        expect(result.valid).toBe(false);
+        expect(result.error).toContain('Task not found or invalid');
+      });
+
+      it('should reject non-boolean isComplete', () => {
+        const result = command.validate({
+          taskId: 1,
+          isComplete: 'yes' as unknown as boolean,
+        });
+        expect(result.valid).toBe(false);
+        expect(result.error).toContain('Invalid completion status');
+      });
+
+      it('should accept valid params', () => {
+        const result = command.validate({ taskId: 1, isComplete: true });
+        expect(result.valid).toBe(true);
+      });
+    });
+
+    describe('execute', () => {
+      it('should mark task as complete', async () => {
+        const result = await command.execute(context, {
+          taskId,
+          isComplete: true,
+        });
+
+        expect(result.success).toBe(true);
+        expect(result.data?.previousState).toBe(false);
+        expect(result.data?.completedAt).not.toBeNull();
+
+        // Verify task was updated
+        const task = db.executeReadOne<{ is_completed: number }>(
+          'SELECT is_completed FROM tasks WHERE id = ?',
+          [taskId]
+        );
+        expect(task?.is_completed).toBe(1);
+      });
+
+      it('should mark task as incomplete', async () => {
+        // First mark as complete
+        await command.execute(context, { taskId, isComplete: true });
+
+        // Then mark as incomplete
+        const result = await command.execute(context, {
+          taskId,
+          isComplete: false,
+        });
+
+        expect(result.success).toBe(true);
+        expect(result.data?.previousState).toBe(true);
+        expect(result.data?.completedAt).toBeNull();
+
+        // Verify task was updated
+        const task = db.executeReadOne<{ is_completed: number }>(
+          'SELECT is_completed FROM tasks WHERE id = ?',
+          [taskId]
+        );
+        expect(task?.is_completed).toBe(0);
+      });
+
+      it('should fail for non-existent task', async () => {
+        const result = await command.execute(context, {
+          taskId: 99999,
+          isComplete: true,
+        });
+
+        expect(result.success).toBe(false);
+        expect(result.error).toContain('Task not found');
+      });
+
+      it('should mark field as locally modified', async () => {
+        await command.execute(context, { taskId, isComplete: true });
+
+        // Check if the field was marked as modified in local_modified_fields JSON
+        const task = db.executeReadOne<{ local_modified_fields: string | null }>(
+          `SELECT local_modified_fields FROM tasks WHERE id = ?`,
+          [taskId]
+        );
+        expect(task).not.toBeNull();
+        const modifiedFields = task?.local_modified_fields
+          ? JSON.parse(task.local_modified_fields)
+          : [];
+        expect(modifiedFields).toContain('is_completed');
+      });
+    });
+  });
+
+  describe('UpdateTaskCommand', () => {
+    let command: UpdateTaskCommand;
+    let taskId: number;
+
+    beforeEach(() => {
+      command = new UpdateTaskCommand();
+
+      // Create a test task
+      const result = db.executeWrite(
+        `INSERT INTO tasks (external_id, source_type, course_id, title, description, weight, grade, is_completed)
+         VALUES ('task_1', 'user', ?, 'Original Title', 'Original description', 20, NULL, 0)`,
+        [testCourseId],
+        'tasks'
+      );
+      taskId = result.lastInsertRowid as number;
+    });
+
+    describe('validate', () => {
+      it('should reject invalid task ID', () => {
+        const result = command.validate({ taskId: 0, title: 'Test' });
+        expect(result.valid).toBe(false);
+        expect(result.error).toContain('Task not found or invalid');
+      });
+
+      it('should reject empty title', () => {
+        const result = command.validate({ taskId: 1, title: '' });
+        expect(result.valid).toBe(false);
+        expect(result.error).toContain('title cannot be empty');
+      });
+
+      it('should reject title over 500 characters', () => {
+        const longTitle = 'a'.repeat(501);
+        const result = command.validate({ taskId: 1, title: longTitle });
+        expect(result.valid).toBe(false);
+        expect(result.error).toContain('500 characters');
+      });
+
+      it('should reject weight out of range', () => {
+        const result = command.validate({ taskId: 1, weight: 150 });
+        expect(result.valid).toBe(false);
+        expect(result.error).toContain('between 0 and 100');
+      });
+
+      it('should reject grade out of range', () => {
+        const result = command.validate({ taskId: 1, grade: 200 });
+        expect(result.valid).toBe(false);
+        expect(result.error).toContain('between 0 and 150');
+      });
+
+      it('should accept valid params', () => {
+        const result = command.validate({ taskId: 1, title: 'New Title', weight: 25 });
+        expect(result.valid).toBe(true);
+      });
+
+      it('should allow null grade', () => {
+        const result = command.validate({ taskId: 1, grade: null });
+        expect(result.valid).toBe(true);
+      });
+    });
+
+    describe('execute', () => {
+      it('should update task title', async () => {
+        const result = await command.execute(context, {
+          taskId,
+          title: 'Updated Title',
+        });
+
+        expect(result.success).toBe(true);
+
+        const task = db.executeReadOne<{ title: string }>(
+          'SELECT title FROM tasks WHERE id = ?',
+          [taskId]
+        );
+        expect(task?.title).toBe('Updated Title');
+      });
+
+      it('should update task description', async () => {
+        const result = await command.execute(context, {
+          taskId,
+          description: 'New description',
+        });
+
+        expect(result.success).toBe(true);
+
+        const task = db.executeReadOne<{ description: string }>(
+          'SELECT description FROM tasks WHERE id = ?',
+          [taskId]
+        );
+        expect(task?.description).toBe('New description');
+      });
+
+      it('should update task weight', async () => {
+        const result = await command.execute(context, {
+          taskId,
+          weight: 35,
+        });
+
+        expect(result.success).toBe(true);
+
+        const task = db.executeReadOne<{ weight: number }>(
+          'SELECT weight FROM tasks WHERE id = ?',
+          [taskId]
+        );
+        expect(task?.weight).toBe(35);
+      });
+
+      it('should update task due date', async () => {
+        const dueAt = '2025-02-15T23:59:00Z';
+        const result = await command.execute(context, {
+          taskId,
+          dueAt,
+        });
+
+        expect(result.success).toBe(true);
+
+        const task = db.executeReadOne<{ due_at: string }>(
+          'SELECT due_at FROM tasks WHERE id = ?',
+          [taskId]
+        );
+        expect(task?.due_at).toBe(dueAt);
+      });
+
+      it('should update multiple fields at once', async () => {
+        const result = await command.execute(context, {
+          taskId,
+          title: 'Multi-Update',
+          weight: 50,
+          grade: 90,
+        });
+
+        expect(result.success).toBe(true);
+
+        const task = db.executeReadOne<{ title: string; weight: number; grade: number }>(
+          'SELECT title, weight, grade FROM tasks WHERE id = ?',
+          [taskId]
+        );
+        expect(task?.title).toBe('Multi-Update');
+        expect(task?.weight).toBe(50);
+        expect(task?.grade).toBe(90);
+      });
+
+      it('should fail for non-existent task', async () => {
+        const result = await command.execute(context, {
+          taskId: 99999,
+          title: 'Test',
+        });
+
+        expect(result.success).toBe(false);
+        expect(result.error).toContain('Task not found');
+      });
+
+      it('should succeed with no actual updates', async () => {
+        const result = await command.execute(context, { taskId });
+
+        expect(result.success).toBe(true);
+        expect(result.data?.taskId).toBe(taskId);
+      });
+
+      it('should trim whitespace from title', async () => {
+        const result = await command.execute(context, {
+          taskId,
+          title: '  Trimmed  ',
+        });
+
+        expect(result.success).toBe(true);
+
+        const task = db.executeReadOne<{ title: string }>(
+          'SELECT title FROM tasks WHERE id = ?',
+          [taskId]
+        );
+        expect(task?.title).toBe('Trimmed');
+      });
+    });
+  });
+
+  describe('DuplicateTaskCommand', () => {
+    let command: DuplicateTaskCommand;
+    let originalTaskId: number;
+
+    beforeEach(() => {
+      command = new DuplicateTaskCommand();
+
+      // Create original task
+      const result = db.executeWrite(
+        `INSERT INTO tasks (external_id, source_type, course_id, title, description, due_at, weight, points_possible, is_completed)
+         VALUES ('original_1', 'canvas', ?, 'Original Task', 'Original description', '2025-02-01T23:59:00Z', 25, 100, 0)`,
+        [testCourseId],
+        'tasks'
+      );
+      originalTaskId = result.lastInsertRowid as number;
+    });
+
+    describe('validate', () => {
+      it('should reject invalid task ID', () => {
+        const result = command.validate({ taskId: 0 });
+        expect(result.valid).toBe(false);
+        expect(result.error).toContain('Invalid task ID');
+      });
+
+      it('should reject empty title override', () => {
+        const result = command.validate({ taskId: 1, overrides: { title: '' } });
+        expect(result.valid).toBe(false);
+        expect(result.error).toContain('title cannot be empty');
+      });
+
+      it('should reject invalid weight override', () => {
+        const result = command.validate({ taskId: 1, overrides: { weight: 150 } });
+        expect(result.valid).toBe(false);
+        expect(result.error).toContain('between 0 and 100');
+      });
+
+      it('should accept valid params', () => {
+        const result = command.validate({ taskId: 1 });
+        expect(result.valid).toBe(true);
+      });
+
+      it('should accept valid params with overrides', () => {
+        const result = command.validate({
+          taskId: 1,
+          overrides: { title: 'New Title', weight: 30 },
+        });
+        expect(result.valid).toBe(true);
+      });
+    });
+
+    describe('execute', () => {
+      it('should duplicate task with default title', async () => {
+        const result = await command.execute(context, { taskId: originalTaskId });
+
+        expect(result.success).toBe(true);
+        expect(result.data?.taskId).toBeGreaterThan(originalTaskId);
+
+        const task = db.executeReadOne<{ title: string; description: string; weight: number }>(
+          'SELECT title, description, weight FROM tasks WHERE id = ?',
+          [result.data?.taskId]
+        );
+        expect(task?.title).toBe('Original Task (Copy)');
+        expect(task?.description).toBe('Original description');
+        expect(task?.weight).toBe(25);
+      });
+
+      it('should apply title override', async () => {
+        const result = await command.execute(context, {
+          taskId: originalTaskId,
+          overrides: { title: 'Custom Title' },
+        });
+
+        expect(result.success).toBe(true);
+
+        const task = db.executeReadOne<{ title: string }>(
+          'SELECT title FROM tasks WHERE id = ?',
+          [result.data?.taskId]
+        );
+        expect(task?.title).toBe('Custom Title');
+      });
+
+      it('should apply weight override', async () => {
+        const result = await command.execute(context, {
+          taskId: originalTaskId,
+          overrides: { weight: 50 },
+        });
+
+        expect(result.success).toBe(true);
+
+        const task = db.executeReadOne<{ weight: number }>(
+          'SELECT weight FROM tasks WHERE id = ?',
+          [result.data?.taskId]
+        );
+        expect(task?.weight).toBe(50);
+      });
+
+      it('should apply due date override', async () => {
+        const newDueAt = '2025-03-15T23:59:00Z';
+        const result = await command.execute(context, {
+          taskId: originalTaskId,
+          overrides: { dueAt: newDueAt },
+        });
+
+        expect(result.success).toBe(true);
+
+        const task = db.executeReadOne<{ due_at: string }>(
+          'SELECT due_at FROM tasks WHERE id = ?',
+          [result.data?.taskId]
+        );
+        expect(task?.due_at).toBe(newDueAt);
+      });
+
+      it('should set source_type to user', async () => {
+        const result = await command.execute(context, { taskId: originalTaskId });
+
+        expect(result.success).toBe(true);
+
+        const task = db.executeReadOne<{ source_type: string }>(
+          'SELECT source_type FROM tasks WHERE id = ?',
+          [result.data?.taskId]
+        );
+        expect(task?.source_type).toBe('user');
+      });
+
+      it('should create new task as incomplete', async () => {
+        // Mark original as complete
+        db.executeWrite(
+          'UPDATE tasks SET is_completed = 1 WHERE id = ?',
+          [originalTaskId],
+          'tasks'
+        );
+
+        const result = await command.execute(context, { taskId: originalTaskId });
+
+        expect(result.success).toBe(true);
+
+        const task = db.executeReadOne<{ is_completed: number }>(
+          'SELECT is_completed FROM tasks WHERE id = ?',
+          [result.data?.taskId]
+        );
+        expect(task?.is_completed).toBe(0);
+      });
+
+      it('should fail for non-existent task', async () => {
+        const result = await command.execute(context, { taskId: 99999 });
+
+        expect(result.success).toBe(false);
+        expect(result.error).toContain('Original task not found');
+      });
+
+      it('should allow duplicating to different course', async () => {
+        // Create second course
+        const courseResult = db.executeWrite(
+          `INSERT INTO courses (external_id, code, name, target_grade)
+           VALUES ('course_2', 'OTHER', 'Other Course', 80)`,
+          [],
+          'courses'
+        );
+        const otherCourseId = courseResult.lastInsertRowid as number;
+
+        const result = await command.execute(context, {
+          taskId: originalTaskId,
+          overrides: { courseId: otherCourseId },
+        });
+
+        expect(result.success).toBe(true);
+
+        const task = db.executeReadOne<{ course_id: number }>(
+          'SELECT course_id FROM tasks WHERE id = ?',
+          [result.data?.taskId]
+        );
+        expect(task?.course_id).toBe(otherCourseId);
+      });
+    });
+  });
+});

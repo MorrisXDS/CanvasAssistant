@@ -15,6 +15,7 @@ yarn-debug.log*
 yarn-error.log*
 
 # Database files
+database/
 *.db
 *.db-shm
 *.db-wal

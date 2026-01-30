@@ -3,7 +3,7 @@
  * Course glossary with grid/list view toggle and pin functionality
  */
 
-import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { FixedSizeList as VirtualList } from 'react-window';
 import {
@@ -19,25 +19,19 @@ import {
   X,
   Eye,
   EyeOff,
-  Palette,
   GripVertical,
-  RotateCcw,
+  Archive,
+  ArchiveRestore,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { useStore, getCachedCourseGrades } from '../../../l5-presentation/store';
-import { Card, Badge, InfoTrigger } from '../shared';
+import { Card } from '../shared';
+import { useShallow } from 'zustand/react/shallow';
+import { ColorPickerPopup } from '../primitives';
 import { useCourseDragDrop } from './useCourseDragDrop';
+import { formatTimeAgo, COURSE_COLORS, getCourseColor } from '../../constants';
 import type { Course } from '../../../l5-presentation/types';
-
-// Course color palette
-const COURSE_COLORS = [
-  '#007FA3', '#E53935', '#43A047', '#FB8C00', '#8E24AA',
-  '#1E88E5', '#D81B60', '#00ACC1', '#7CB342', '#6D4C41',
-];
-
-function getCourseColor(courseId: number, existingColor: string | null): string {
-  if (existingColor) return existingColor;
-  return COURSE_COLORS[courseId % COURSE_COLORS.length];
-}
 
 function getShortCode(code: string): string {
   // Stop before a letter followed by a digit and then space/end (e.g., "H1 " or "Y1")
@@ -95,7 +89,10 @@ function savePinnedCourses(pinned: Set<number>): void {
 }
 
 // Load course settings from localStorage
-function loadCourseSettings(): { defaultViewMode: ViewMode; showHiddenByDefault: boolean } {
+function loadCourseSettings(): {
+  defaultViewMode: ViewMode;
+  showHiddenByDefault: boolean;
+} {
   try {
     const stored = localStorage.getItem('courseSettings');
     if (stored) {
@@ -135,7 +132,14 @@ function saveViewMode(pageKey: string, mode: ViewMode): void {
 
 export function CoursesPage() {
   const navigate = useNavigate();
-  const { courses, fetchCourses, tasks } = useStore();
+  const { courses, fetchCourses, refreshAll, tasks } = useStore(
+    useShallow((state) => ({
+      courses: state.courses,
+      fetchCourses: state.fetchCourses,
+      refreshAll: state.refreshAll,
+      tasks: state.tasks,
+    }))
+  );
   const [viewMode, setViewModeState] = useState<ViewMode>(() =>
     loadViewMode('courses', loadCourseSettings().defaultViewMode)
   );
@@ -145,7 +149,9 @@ export function CoursesPage() {
     setViewModeState(mode);
     saveViewMode('courses', mode);
   };
-  const [pinnedCourses, setPinnedCourses] = useState<Set<number>>(() => loadPinnedCourses());
+  const [pinnedCourses, setPinnedCourses] = useState<Set<number>>(() =>
+    loadPinnedCourses()
+  );
 
   // Drag-and-drop reordering
   const courseIds = useMemo(() => courses.map((c) => c.id), [courses]);
@@ -158,8 +164,8 @@ export function CoursesPage() {
     handleDragLeave,
     handleDragEnd,
     handleDrop,
-    resetOrder,
-    hasCustomOrder,
+    resetOrder: _resetOrder,
+    hasCustomOrder: _hasCustomOrder,
   } = useCourseDragDrop(courseIds);
 
   // Color picker state
@@ -171,8 +177,35 @@ export function CoursesPage() {
   const [gradeFilter, setGradeFilter] = useState<GradeFilter>('all');
   const [prefixFilter, setPrefixFilter] = useState<string>('all');
   const [typeFilter, setTypeFilter] = useState<string>('all');
-  const [showHidden, setShowHidden] = useState(() => loadCourseSettings().showHiddenByDefault);
+  const [showHidden, setShowHidden] = useState(
+    () => loadCourseSettings().showHiddenByDefault
+  );
   const [showFilters, setShowFilters] = useState(false);
+
+  // Archived courses state
+  const [archivedCourses, setArchivedCourses] = useState<Course[]>([]);
+  const [showArchived, setShowArchived] = useState(false);
+  const [loadingArchived, setLoadingArchived] = useState(false);
+
+  // Archive dropdown state
+  const [showArchiveDropdown, setShowArchiveDropdown] = useState(false);
+  const archiveDropdownRef = React.useRef<HTMLDivElement>(null);
+
+  // Close archive dropdown when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (
+        archiveDropdownRef.current &&
+        !archiveDropdownRef.current.contains(event.target as Node)
+      ) {
+        setShowArchiveDropdown(false);
+      }
+    }
+    if (showArchiveDropdown) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [showArchiveDropdown]);
 
   // Get unique prefixes and types from visible courses (respects showHidden toggle)
   const { availablePrefixes, availableTypes } = useMemo(() => {
@@ -197,24 +230,86 @@ export function CoursesPage() {
   // Reset filters when selected option is no longer available
   useEffect(() => {
     if (prefixFilter !== 'all' && !availablePrefixes.includes(prefixFilter)) {
-      console.debug('[CoursesPage] Resetting prefix filter - option no longer available:', prefixFilter);
+      console.debug(
+        '[CoursesPage] Resetting prefix filter - option no longer available:',
+        prefixFilter
+      );
       setPrefixFilter('all');
     }
     if (typeFilter !== 'all' && !availableTypes.includes(typeFilter)) {
-      console.debug('[CoursesPage] Resetting type filter - option no longer available:', typeFilter);
+      console.debug(
+        '[CoursesPage] Resetting type filter - option no longer available:',
+        typeFilter
+      );
       setTypeFilter('all');
     }
   }, [availablePrefixes, availableTypes, prefixFilter, typeFilter]);
 
   // Navigate to course detail - memoized to prevent unnecessary re-renders
-  const handleCourseClick = useCallback((courseId: number) => {
-    navigate(`/course/${courseId}`);
-  }, [navigate]);
+  const handleCourseClick = useCallback(
+    (courseId: number) => {
+      navigate(`/course/${courseId}`);
+    },
+    [navigate]
+  );
 
   // Save pinned courses when they change
   useEffect(() => {
     savePinnedCourses(pinnedCourses);
   }, [pinnedCourses]);
+
+  // Fetch archived courses when section is expanded
+  useEffect(() => {
+    const fetchArchivedCourses = async () => {
+      if (!showArchived) return;
+      setLoadingArchived(true);
+      try {
+        const result = await window.api?.getArchivedCourses?.();
+        if (result) {
+          setArchivedCourses(result);
+        }
+      } catch (error) {
+        console.error('Failed to fetch archived courses:', error);
+      } finally {
+        setLoadingArchived(false);
+      }
+    };
+    fetchArchivedCourses();
+  }, [showArchived]);
+
+  // Handle unarchive course
+  const handleUnarchiveCourse = async (courseId: number) => {
+    try {
+      const result = await window.api.dispatch('UnarchiveCourse', { courseId });
+      if (result.success) {
+        // Remove from archived list
+        setArchivedCourses((prev) => prev.filter((c) => c.id !== courseId));
+        // Refresh all data (courses, tasks, notifications) so Dashboard updates correctly
+        await refreshAll();
+      }
+    } catch (error) {
+      console.error('Failed to unarchive course:', error);
+    }
+  };
+
+  // Handle archive course
+  const handleArchiveCourse = async (courseId: number) => {
+    try {
+      const result = await window.api.dispatch('ArchiveCourse', { courseId });
+      if (result.success) {
+        // Refresh all data (courses, tasks, notifications) so Dashboard updates correctly
+        await refreshAll();
+        // Also refresh archived courses list and expand section to show user where it went
+        const archivedResult = await window.api?.getArchivedCourses?.();
+        if (archivedResult) {
+          setArchivedCourses(archivedResult);
+          setShowArchived(true); // Expand to show the archived course
+        }
+      }
+    } catch (error) {
+      console.error('Failed to archive course:', error);
+    }
+  };
 
   // Toggle pin status
   const togglePin = (courseId: number, e: React.MouseEvent) => {
@@ -231,7 +326,11 @@ export function CoursesPage() {
   };
 
   // Open color picker for a course
-  const openColorPicker = (courseId: number, currentColor: string, e: React.MouseEvent) => {
+  const openColorPicker = (
+    courseId: number,
+    currentColor: string,
+    e: React.MouseEvent
+  ) => {
     e.stopPropagation();
     setColorPickerCourseId(courseId);
     setCustomColor(currentColor);
@@ -249,14 +348,26 @@ export function CoursesPage() {
 
   // Toggle course hidden status
   const handleToggleHide = async (courseId: number, currentlyHidden: boolean) => {
-    console.debug('[CoursesPage] Toggling hide for course:', courseId, 'from', currentlyHidden, 'to', !currentlyHidden);
+    console.debug(
+      '[CoursesPage] Toggling hide for course:',
+      courseId,
+      'from',
+      currentlyHidden,
+      'to',
+      !currentlyHidden
+    );
     const result = await window.api.dispatch('UpdateCoursePreferences', {
       courseId,
       preferences: { isHidden: !currentlyHidden },
     });
     console.debug('[CoursesPage] Dispatch result:', result);
     await fetchCourses();
-    console.debug('[CoursesPage] Courses after fetchCourses:', courses.length, 'hidden:', courses.filter(c => c.isHidden).length);
+    console.debug(
+      '[CoursesPage] Courses after fetchCourses:',
+      courses.length,
+      'hidden:',
+      courses.filter((c) => c.isHidden).length
+    );
   };
 
   // Close color picker
@@ -321,11 +432,25 @@ export function CoursesPage() {
     });
 
     return result;
-  }, [courses, pinnedCourses, searchQuery, gradeFilter, prefixFilter, typeFilter, showHidden, sortByCustomOrder]);
+  }, [
+    courses,
+    pinnedCourses,
+    searchQuery,
+    gradeFilter,
+    prefixFilter,
+    typeFilter,
+    showHidden,
+    sortByCustomOrder,
+  ]);
 
   const pinnedCount = filteredCourses.filter((c) => pinnedCourses.has(c.id)).length;
   const hiddenCount = courses.filter((c) => c.isHidden).length;
-  const hasActiveFilters = searchQuery || gradeFilter !== 'all' || prefixFilter !== 'all' || typeFilter !== 'all' || showHidden;
+  const hasActiveFilters =
+    searchQuery ||
+    gradeFilter !== 'all' ||
+    prefixFilter !== 'all' ||
+    typeFilter !== 'all' ||
+    showHidden;
 
   // Clear all filters
   const clearFilters = () => {
@@ -343,7 +468,8 @@ export function CoursesPage() {
         <div style={styles.headerLeft}>
           <h1 style={styles.title}>Courses</h1>
           <p style={styles.subtitle}>
-            {filteredCourses.length} of {courses.length} course{courses.length !== 1 ? 's' : ''}
+            {filteredCourses.length} of {courses.length} course
+            {courses.length !== 1 ? 's' : ''}
             {pinnedCount > 0 && ` • ${pinnedCount} pinned`}
             {hiddenCount > 0 && !showHidden && ` • ${hiddenCount} hidden`}
           </p>
@@ -371,8 +497,12 @@ export function CoursesPage() {
           <button
             style={{
               ...styles.filterButton,
-              backgroundColor: hasActiveFilters ? 'var(--color-navy-light)' : 'var(--bg-card)',
-              borderColor: hasActiveFilters ? 'var(--color-navy)' : 'var(--border-default)',
+              backgroundColor: hasActiveFilters
+                ? 'var(--color-navy-light)'
+                : 'var(--bg-card)',
+              borderColor: hasActiveFilters
+                ? 'var(--color-navy)'
+                : 'var(--border-default)',
               color: hasActiveFilters ? 'var(--color-navy)' : 'var(--text-secondary)',
             }}
             onClick={() => setShowFilters(!showFilters)}
@@ -386,7 +516,8 @@ export function CoursesPage() {
             <button
               style={{
                 ...styles.viewButton,
-                backgroundColor: viewMode === 'grid' ? 'var(--color-navy)' : 'transparent',
+                backgroundColor:
+                  viewMode === 'grid' ? 'var(--color-navy)' : 'transparent',
                 color: viewMode === 'grid' ? 'white' : 'var(--text-secondary)',
               }}
               onClick={() => setViewMode('grid')}
@@ -397,7 +528,8 @@ export function CoursesPage() {
             <button
               style={{
                 ...styles.viewButton,
-                backgroundColor: viewMode === 'list' ? 'var(--color-navy)' : 'transparent',
+                backgroundColor:
+                  viewMode === 'list' ? 'var(--color-navy)' : 'transparent',
                 color: viewMode === 'list' ? 'white' : 'var(--text-secondary)',
               }}
               onClick={() => setViewMode('list')}
@@ -405,6 +537,57 @@ export function CoursesPage() {
             >
               <List size={18} />
             </button>
+          </div>
+
+          {/* Archive Button with Dropdown */}
+          <div style={{ position: 'relative' }} ref={archiveDropdownRef}>
+            <button
+              style={styles.archiveButton}
+              onClick={() => setShowArchiveDropdown(!showArchiveDropdown)}
+              title="Archive a course"
+            >
+              <Archive size={16} />
+              <span>Archive</span>
+              <ChevronDown size={14} style={{ marginLeft: '2px' }} />
+            </button>
+
+            {showArchiveDropdown && (
+              <div style={styles.archiveDropdown}>
+                <div style={styles.archiveDropdownHeader}>Select course to archive</div>
+                {courses.length === 0 ? (
+                  <div style={styles.archiveDropdownEmpty}>No courses available</div>
+                ) : (
+                  <div style={styles.archiveDropdownList}>
+                    {courses.map((course) => (
+                      <button
+                        key={course.id}
+                        style={styles.archiveDropdownItem}
+                        onClick={() => {
+                          handleArchiveCourse(course.id);
+                          setShowArchiveDropdown(false);
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: '8px',
+                            height: '8px',
+                            borderRadius: '50%',
+                            backgroundColor: getCourseColor(course.id, course.color),
+                            flexShrink: 0,
+                          }}
+                        />
+                        <span style={styles.archiveDropdownCode}>
+                          {getShortCode(course.code)}
+                        </span>
+                        <span style={styles.archiveDropdownName}>
+                          {course.nickname || course.name}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </header>
@@ -423,7 +606,9 @@ export function CoursesPage() {
               >
                 <option value="all">All</option>
                 {availablePrefixes.map((prefix) => (
-                  <option key={prefix} value={prefix}>{prefix}</option>
+                  <option key={prefix} value={prefix}>
+                    {prefix}
+                  </option>
                 ))}
               </select>
             </div>
@@ -437,9 +622,13 @@ export function CoursesPage() {
                 <button
                   style={{
                     ...styles.filterChip,
-                    backgroundColor: typeFilter === 'all' ? 'var(--color-navy)' : 'var(--bg-app)',
+                    backgroundColor:
+                      typeFilter === 'all' ? 'var(--color-navy)' : 'var(--bg-app)',
                     color: typeFilter === 'all' ? 'white' : 'var(--text-secondary)',
-                    borderColor: typeFilter === 'all' ? 'var(--color-navy)' : 'var(--border-default)',
+                    borderColor:
+                      typeFilter === 'all'
+                        ? 'var(--color-navy)'
+                        : 'var(--border-default)',
                   }}
                   onClick={() => setTypeFilter('all')}
                 >
@@ -450,9 +639,13 @@ export function CoursesPage() {
                     key={type}
                     style={{
                       ...styles.filterChip,
-                      backgroundColor: typeFilter === type ? 'var(--color-navy)' : 'var(--bg-app)',
+                      backgroundColor:
+                        typeFilter === type ? 'var(--color-navy)' : 'var(--bg-app)',
                       color: typeFilter === type ? 'white' : 'var(--text-secondary)',
-                      borderColor: typeFilter === type ? 'var(--color-navy)' : 'var(--border-default)',
+                      borderColor:
+                        typeFilter === type
+                          ? 'var(--color-navy)'
+                          : 'var(--border-default)',
                     }}
                     onClick={() => setTypeFilter(type)}
                   >
@@ -467,20 +660,32 @@ export function CoursesPage() {
           <div style={styles.filterGroup}>
             <label style={styles.filterLabel}>Grade</label>
             <div style={styles.filterChips}>
-              {(['all', 'on-track', 'at-risk', 'behind'] as GradeFilter[]).map((filter) => (
-                <button
-                  key={filter}
-                  style={{
-                    ...styles.filterChip,
-                    backgroundColor: gradeFilter === filter ? 'var(--color-navy)' : 'var(--bg-app)',
-                    color: gradeFilter === filter ? 'white' : 'var(--text-secondary)',
-                    borderColor: gradeFilter === filter ? 'var(--color-navy)' : 'var(--border-default)',
-                  }}
-                  onClick={() => setGradeFilter(filter)}
-                >
-                  {filter === 'all' ? 'All' : filter === 'on-track' ? 'On Track' : filter === 'at-risk' ? 'At Risk' : 'Behind'}
-                </button>
-              ))}
+              {(['all', 'on-track', 'at-risk', 'behind'] as GradeFilter[]).map(
+                (filter) => (
+                  <button
+                    key={filter}
+                    style={{
+                      ...styles.filterChip,
+                      backgroundColor:
+                        gradeFilter === filter ? 'var(--color-navy)' : 'var(--bg-app)',
+                      color: gradeFilter === filter ? 'white' : 'var(--text-secondary)',
+                      borderColor:
+                        gradeFilter === filter
+                          ? 'var(--color-navy)'
+                          : 'var(--border-default)',
+                    }}
+                    onClick={() => setGradeFilter(filter)}
+                  >
+                    {filter === 'all'
+                      ? 'All'
+                      : filter === 'on-track'
+                        ? 'On Track'
+                        : filter === 'at-risk'
+                          ? 'At Risk'
+                          : 'Behind'}
+                  </button>
+                )
+              )}
             </div>
           </div>
 
@@ -513,7 +718,11 @@ export function CoursesPage() {
       {courses.length === 0 ? (
         <Card padding="lg">
           <div style={styles.emptyState}>
-            <BookOpen size={64} color="var(--color-navy)" style={{ marginBottom: 'var(--space-4)' }} />
+            <BookOpen
+              size={64}
+              color="var(--color-navy)"
+              style={{ marginBottom: 'var(--space-4)' }}
+            />
             <h2 style={styles.emptyTitle}>No Courses Found</h2>
             <p style={styles.emptyText}>
               Sync with Canvas to load your enrolled courses.
@@ -524,11 +733,13 @@ export function CoursesPage() {
         /* No results after filtering */
         <Card padding="lg">
           <div style={styles.emptyState}>
-            <Search size={48} color="var(--text-muted)" style={{ marginBottom: 'var(--space-4)' }} />
+            <Search
+              size={48}
+              color="var(--text-muted)"
+              style={{ marginBottom: 'var(--space-4)' }}
+            />
             <h2 style={styles.emptyTitle}>No Courses Match</h2>
-            <p style={styles.emptyText}>
-              Try adjusting your search or filters.
-            </p>
+            <p style={styles.emptyText}>Try adjusting your search or filters.</p>
             <button style={styles.clearFiltersLarge} onClick={clearFilters}>
               Clear Filters
             </button>
@@ -552,7 +763,9 @@ export function CoursesPage() {
                 onClick={() => handleCourseClick(course.id)}
                 onColorClick={openColorPicker}
                 showColorPicker={colorPickerCourseId === course.id}
-                colorPickerValue={colorPickerCourseId === course.id ? customColor : undefined}
+                colorPickerValue={
+                  colorPickerCourseId === course.id ? customColor : undefined
+                }
                 onColorChange={handleColorChange}
                 onColorInputChange={setCustomColor}
                 onColorPickerClose={closeColorPicker}
@@ -588,7 +801,9 @@ export function CoursesPage() {
                   onClick={() => handleCourseClick(course.id)}
                   onColorClick={openColorPicker}
                   showColorPicker={colorPickerCourseId === course.id}
-                  colorPickerValue={colorPickerCourseId === course.id ? customColor : undefined}
+                  colorPickerValue={
+                    colorPickerCourseId === course.id ? customColor : undefined
+                  }
                   onColorChange={handleColorChange}
                   onColorInputChange={setCustomColor}
                   onColorPickerClose={closeColorPicker}
@@ -622,6 +837,87 @@ export function CoursesPage() {
           )}
         </div>
       )}
+
+      {/* Archived Courses Section */}
+      <div style={styles.archivedSection}>
+        <button
+          style={styles.archivedHeader}
+          onClick={() => setShowArchived(!showArchived)}
+        >
+          <div style={styles.archivedHeaderLeft}>
+            <Archive size={18} color="var(--text-muted)" />
+            <span style={styles.archivedTitle}>Archived Courses</span>
+            {archivedCourses.length > 0 && (
+              <span style={styles.archivedCount}>{archivedCourses.length}</span>
+            )}
+          </div>
+          {showArchived ? (
+            <ChevronUp size={18} color="var(--text-muted)" />
+          ) : (
+            <ChevronDown size={18} color="var(--text-muted)" />
+          )}
+        </button>
+
+        {showArchived && (
+          <div style={styles.archivedContent}>
+            {loadingArchived ? (
+              <div style={styles.archivedLoading}>Loading archived courses...</div>
+            ) : archivedCourses.length === 0 ? (
+              <div style={styles.archivedEmpty}>
+                <Archive size={32} color="var(--text-muted)" />
+                <p>No archived courses</p>
+              </div>
+            ) : (
+              <div style={styles.archivedList}>
+                {archivedCourses.map((course) => {
+                  const isAutoArchived = course.archiveSource === 'auto';
+                  return (
+                    <div key={course.id} style={styles.archivedItem}>
+                      <div
+                        style={{
+                          ...styles.archivedColorBar,
+                          backgroundColor: getCourseColor(course.id, course.color),
+                        }}
+                      />
+                      <div
+                        style={styles.archivedInfoClickable}
+                        onClick={() => navigate(`/course/${course.id}`)}
+                        title="View course details"
+                      >
+                        <span style={styles.archivedCode}>
+                          {getShortCode(course.code)}
+                        </span>
+                        <span style={styles.archivedName}>{course.name}</span>
+                        {isAutoArchived && (
+                          <span style={styles.autoArchivedBadge}>Term ended</span>
+                        )}
+                      </div>
+                      <button
+                        style={{
+                          ...styles.unarchiveButton,
+                          ...(isAutoArchived ? styles.unarchiveButtonDisabled : {}),
+                        }}
+                        onClick={() =>
+                          !isAutoArchived && handleUnarchiveCourse(course.id)
+                        }
+                        title={
+                          isAutoArchived
+                            ? 'Cannot restore - term has ended'
+                            : 'Restore this course'
+                        }
+                        disabled={isAutoArchived}
+                      >
+                        <ArchiveRestore size={16} />
+                        Restore
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -664,7 +960,7 @@ function CourseGridCard({
   showColorPicker,
   colorPickerValue,
   onColorChange,
-  onColorInputChange,
+  onColorInputChange: _onColorInputChange,
   onColorPickerClose,
   isDragging,
   isDragOver,
@@ -675,21 +971,6 @@ function CourseGridCard({
   onDrop,
 }: CourseCardProps) {
   const color = getCourseColor(course.id, course.color);
-  const colorPickerRef = useRef<HTMLDivElement>(null);
-
-  // Close color picker when clicking outside
-  useEffect(() => {
-    if (!showColorPicker) return;
-
-    const handleClickOutside = (event: MouseEvent) => {
-      if (colorPickerRef.current && !colorPickerRef.current.contains(event.target as Node)) {
-        onColorPickerClose?.();
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [showColorPicker, onColorPickerClose]);
 
   return (
     <div
@@ -709,69 +990,25 @@ function CourseGridCard({
     >
       {/* Color accent bar - click to change color */}
       <div
-        style={{ ...styles.colorBar, backgroundColor: color, cursor: 'pointer', position: 'relative' }}
+        style={{
+          ...styles.colorBar,
+          backgroundColor: color,
+          cursor: 'pointer',
+          position: 'relative',
+        }}
         onClick={(e) => onColorClick?.(course.id, color, e)}
         title="Click to change color"
       >
-        {showColorPicker && (
-          <div ref={colorPickerRef} style={styles.colorPickerPopup} onClick={(e) => e.stopPropagation()}>
-            {/* Preset colors */}
-            <div style={styles.colorPresets}>
-              {COURSE_COLORS.map((presetColor) => (
-                <button
-                  key={presetColor}
-                  style={{
-                    ...styles.colorPresetBtn,
-                    backgroundColor: presetColor,
-                    border: colorPickerValue === presetColor ? '2px solid var(--text-primary)' : '2px solid transparent',
-                  }}
-                  onClick={() => onColorChange?.(course.id, presetColor)}
-                  title={presetColor}
-                />
-              ))}
-            </div>
-            {/* Custom HEX input */}
-            <div style={styles.hexInputRow}>
-              <span style={styles.hexLabel}>HEX</span>
-              <input
-                type="text"
-                value={colorPickerValue || color}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  if (val.match(/^#?[0-9A-Fa-f]{0,6}$/)) {
-                    onColorInputChange?.(val);
-                  }
-                }}
-                onBlur={(e) => {
-                  let val = e.target.value.trim();
-                  if (!val.startsWith('#')) val = '#' + val;
-                  if (val.match(/^#[0-9A-Fa-f]{6}$/)) {
-                    onColorChange?.(course.id, val.toUpperCase());
-                  }
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    let val = (e.target as HTMLInputElement).value.trim();
-                    if (!val.startsWith('#')) val = '#' + val;
-                    if (val.match(/^#[0-9A-Fa-f]{6}$/)) {
-                      onColorChange?.(course.id, val.toUpperCase());
-                    }
-                  }
-                }}
-                style={styles.hexInput}
-                placeholder="#007FA3"
-                maxLength={7}
-              />
-              <input
-                type="color"
-                value={colorPickerValue || color}
-                onChange={(e) => onColorChange?.(course.id, e.target.value.toUpperCase())}
-                style={styles.nativeColorPicker}
-                title="Use color picker"
-              />
-            </div>
-          </div>
-        )}
+        <ColorPickerPopup
+          isOpen={showColorPicker || false}
+          onClose={() => onColorPickerClose?.()}
+          value={colorPickerValue || color}
+          onChange={(newColor) => onColorChange?.(course.id, newColor)}
+          presets={COURSE_COLORS}
+          allowCustom={true}
+          swatchSize={24}
+          position="bottom-left"
+        />
       </div>
 
       {/* Use display: contents to allow children to participate in parent grid */}
@@ -779,37 +1016,9 @@ function CourseGridCard({
         {/* Header row - Grid row 1 */}
         <div style={styles.gridCardHeader}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-            {/* Drag handle */}
-            <div
-              style={styles.dragHandle}
-              title="Drag to reorder"
-              data-drag-handle
-            >
-              <GripVertical size={14} />
-            </div>
             <span style={{ ...styles.courseCodeBadge, backgroundColor: color }}>
               {getShortCode(course.code)}
             </span>
-            <InfoTrigger
-              summary={`${course.code} - ${course.nickname || course.name}`}
-              title={course.code}
-              details={
-                <div>
-                  <p><strong>Full Name:</strong> {course.name}</p>
-                  {course.nickname && <p><strong>Nickname:</strong> {course.nickname}</p>}
-                  <p><strong>Target Grade:</strong> {course.targetGrade}%</p>
-                  <p><strong>Current Grade:</strong> {course.currentGrade !== null ? `${course.currentGrade.toFixed(1)}%` : 'Not yet assessed'}</p>
-                  {course.assessedGrade !== null && (
-                    <p><strong>Assessed Grade:</strong> {course.assessedGrade.toFixed(1)}%</p>
-                  )}
-                  {course.lastSyncedAt && (
-                    <p><strong>Last Synced:</strong> {new Date(course.lastSyncedAt).toLocaleString()}</p>
-                  )}
-                </div>
-              }
-              size="sm"
-              position="right"
-            />
           </div>
           <div style={{ display: 'flex', gap: 'var(--space-1)' }}>
             <button
@@ -839,9 +1048,7 @@ function CourseGridCard({
         </div>
 
         {/* Course name - Grid row 2 */}
-        <h3 style={styles.gridCourseName}>
-          {course.nickname || course.name}
-        </h3>
+        <h3 style={styles.gridCourseName}>{course.nickname || course.name}</h3>
 
         {/* Full code - Grid row 3 (flex spacer) */}
         <span style={styles.fullCode}>{course.code}</span>
@@ -864,8 +1071,8 @@ function CourseGridCard({
                       trend >= course.targetGrade
                         ? 'var(--color-success)'
                         : trend >= course.targetGrade - 10
-                        ? 'var(--color-medium)'
-                        : 'var(--color-high)',
+                          ? 'var(--color-medium)'
+                          : 'var(--color-high)',
                   }}
                 >
                   {earned.toFixed(1)}%
@@ -880,8 +1087,8 @@ function CourseGridCard({
                       trend >= course.targetGrade
                         ? 'var(--color-success)'
                         : trend >= course.targetGrade - 10
-                        ? 'var(--color-medium)'
-                        : 'var(--color-high)',
+                          ? 'var(--color-medium)'
+                          : 'var(--color-high)',
                   }}
                 >
                   {trend.toFixed(1)}%
@@ -891,9 +1098,17 @@ function CourseGridCard({
           )}
         </div>
 
-        {/* Sync time - Grid row 5 */}
-        <div style={styles.syncTime}>
-          {course.lastSyncedAt ? `Synced ${new Date(course.lastSyncedAt).toLocaleDateString()}` : '\u00A0'}
+        {/* Footer row - Grid row 5: Sync time + Drag handle */}
+        <div style={styles.cardFooter}>
+          <div style={styles.syncTime}>
+            {course.lastSyncedAt
+              ? `Synced ${formatTimeAgo(course.lastSyncedAt)}`
+              : '\u00A0'}
+          </div>
+          {/* Drag handle */}
+          <div style={styles.dragHandle} title="Drag to reorder" data-drag-handle>
+            <GripVertical size={14} />
+          </div>
         </div>
       </div>
     </div>
@@ -918,25 +1133,10 @@ function CourseListItem({
   showColorPicker,
   colorPickerValue,
   onColorChange,
-  onColorInputChange,
+  onColorInputChange: _onColorInputChange,
   onColorPickerClose,
 }: CourseListItemProps) {
   const color = getCourseColor(course.id, course.color);
-  const colorPickerRef = useRef<HTMLDivElement>(null);
-
-  // Close color picker when clicking outside
-  useEffect(() => {
-    if (!showColorPicker) return;
-
-    const handleClickOutside = (event: MouseEvent) => {
-      if (colorPickerRef.current && !colorPickerRef.current.contains(event.target as Node)) {
-        onColorPickerClose?.();
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [showColorPicker, onColorPickerClose]);
 
   return (
     <div
@@ -950,69 +1150,25 @@ function CourseListItem({
       {/* Color indicator - click to change color */}
       <div style={{ position: 'relative' }}>
         <button
-          style={{ ...styles.listColorDot, backgroundColor: color, cursor: 'pointer', border: 'none' }}
+          style={{
+            ...styles.listColorDot,
+            backgroundColor: color,
+            cursor: 'pointer',
+            border: 'none',
+          }}
           onClick={(e) => onColorClick?.(course.id, color, e)}
           title="Click to change color"
         />
-        {showColorPicker && (
-          <div ref={colorPickerRef} style={styles.colorPickerPopupList} onClick={(e) => e.stopPropagation()}>
-            {/* Preset colors */}
-            <div style={styles.colorPresets}>
-              {COURSE_COLORS.map((presetColor) => (
-                <button
-                  key={presetColor}
-                  style={{
-                    ...styles.colorPresetBtn,
-                    backgroundColor: presetColor,
-                    border: colorPickerValue === presetColor ? '2px solid var(--text-primary)' : '2px solid transparent',
-                  }}
-                  onClick={() => onColorChange?.(course.id, presetColor)}
-                  title={presetColor}
-                />
-              ))}
-            </div>
-            {/* Custom HEX input */}
-            <div style={styles.hexInputRow}>
-              <span style={styles.hexLabel}>HEX</span>
-              <input
-                type="text"
-                value={colorPickerValue || color}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  if (val.match(/^#?[0-9A-Fa-f]{0,6}$/)) {
-                    onColorInputChange?.(val);
-                  }
-                }}
-                onBlur={(e) => {
-                  let val = e.target.value.trim();
-                  if (!val.startsWith('#')) val = '#' + val;
-                  if (val.match(/^#[0-9A-Fa-f]{6}$/)) {
-                    onColorChange?.(course.id, val.toUpperCase());
-                  }
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    let val = (e.target as HTMLInputElement).value.trim();
-                    if (!val.startsWith('#')) val = '#' + val;
-                    if (val.match(/^#[0-9A-Fa-f]{6}$/)) {
-                      onColorChange?.(course.id, val.toUpperCase());
-                    }
-                  }
-                }}
-                style={styles.hexInput}
-                placeholder="#007FA3"
-                maxLength={7}
-              />
-              <input
-                type="color"
-                value={colorPickerValue || color}
-                onChange={(e) => onColorChange?.(course.id, e.target.value.toUpperCase())}
-                style={styles.nativeColorPicker}
-                title="Use color picker"
-              />
-            </div>
-          </div>
-        )}
+        <ColorPickerPopup
+          isOpen={showColorPicker || false}
+          onClose={() => onColorPickerClose?.()}
+          value={colorPickerValue || color}
+          onChange={(newColor) => onColorChange?.(course.id, newColor)}
+          presets={COURSE_COLORS}
+          allowCustom={true}
+          swatchSize={24}
+          position="bottom-left"
+        />
       </div>
 
       {/* Course info */}
@@ -1022,30 +1178,8 @@ function CourseListItem({
             {getShortCode(course.code)}
           </span>
           <span style={styles.listFullCode}>{course.code}</span>
-          <InfoTrigger
-            summary={`${course.code} - ${course.nickname || course.name}`}
-            title={course.code}
-            details={
-              <div>
-                <p><strong>Full Name:</strong> {course.name}</p>
-                {course.nickname && <p><strong>Nickname:</strong> {course.nickname}</p>}
-                <p><strong>Target Grade:</strong> {course.targetGrade}%</p>
-                <p><strong>Current Grade:</strong> {course.currentGrade !== null ? `${course.currentGrade.toFixed(1)}%` : 'Not yet assessed'}</p>
-                {course.assessedGrade !== null && (
-                  <p><strong>Assessed Grade:</strong> {course.assessedGrade.toFixed(1)}%</p>
-                )}
-                {course.lastSyncedAt && (
-                  <p><strong>Last Synced:</strong> {new Date(course.lastSyncedAt).toLocaleString()}</p>
-                )}
-              </div>
-            }
-            size="sm"
-            position="right"
-          />
         </div>
-        <h3 style={styles.listCourseName}>
-          {course.nickname || course.name}
-        </h3>
+        <h3 style={styles.listCourseName}>{course.nickname || course.name}</h3>
       </div>
 
       {/* Grades */}
@@ -1065,8 +1199,8 @@ function CourseListItem({
                     trend >= course.targetGrade
                       ? 'var(--color-success)'
                       : trend >= course.targetGrade - 10
-                      ? 'var(--color-medium)'
-                      : 'var(--color-high)',
+                        ? 'var(--color-medium)'
+                        : 'var(--color-high)',
                 }}
               >
                 {earned.toFixed(1)}%
@@ -1081,8 +1215,8 @@ function CourseListItem({
                     trend >= course.targetGrade
                       ? 'var(--color-success)'
                       : trend >= course.targetGrade - 10
-                      ? 'var(--color-medium)'
-                      : 'var(--color-high)',
+                        ? 'var(--color-medium)'
+                        : 'var(--color-high)',
                 }}
               >
                 {trend.toFixed(1)}%
@@ -1169,7 +1303,9 @@ function VirtualizedListItem({
         onClick={() => data.handleCourseClick(course.id)}
         onColorClick={data.openColorPicker}
         showColorPicker={data.colorPickerCourseId === course.id}
-        colorPickerValue={data.colorPickerCourseId === course.id ? data.customColor : undefined}
+        colorPickerValue={
+          data.colorPickerCourseId === course.id ? data.customColor : undefined
+        }
         onColorChange={data.handleColorChange}
         onColorInputChange={data.setCustomColor}
         onColorPickerClose={data.closeColorPicker}
@@ -1389,6 +1525,88 @@ const styles: Record<string, React.CSSProperties> = {
     transition: 'all var(--transition-fast)',
   },
 
+  archiveButton: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-1)',
+    height: '36px',
+    padding: '0 var(--space-3)',
+    fontSize: 'var(--text-sm)',
+    fontWeight: 'var(--font-medium)',
+    color: 'var(--text-secondary)',
+    backgroundColor: 'var(--bg-card)',
+    border: '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-md)',
+    cursor: 'pointer',
+    transition: 'all var(--transition-fast)',
+  },
+
+  archiveDropdown: {
+    position: 'absolute',
+    top: '100%',
+    right: 0,
+    marginTop: 'var(--space-1)',
+    width: '280px',
+    maxHeight: '320px',
+    backgroundColor: 'var(--bg-card)',
+    border: '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-md)',
+    boxShadow: 'var(--shadow-lg)',
+    zIndex: 100,
+    overflow: 'hidden',
+  },
+
+  archiveDropdownHeader: {
+    padding: 'var(--space-2) var(--space-3)',
+    fontSize: 'var(--text-xs)',
+    fontWeight: 'var(--font-medium)',
+    color: 'var(--text-muted)',
+    borderBottom: '1px solid var(--border-light)',
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px',
+  },
+
+  archiveDropdownEmpty: {
+    padding: 'var(--space-4)',
+    textAlign: 'center' as const,
+    color: 'var(--text-muted)',
+    fontSize: 'var(--text-sm)',
+  },
+
+  archiveDropdownList: {
+    maxHeight: '280px',
+    overflowY: 'auto' as const,
+  },
+
+  archiveDropdownItem: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-2)',
+    width: '100%',
+    padding: 'var(--space-2) var(--space-3)',
+    fontSize: 'var(--text-sm)',
+    color: 'var(--text-primary)',
+    backgroundColor: 'transparent',
+    border: 'none',
+    cursor: 'pointer',
+    textAlign: 'left' as const,
+    transition: 'background-color var(--transition-fast)',
+  },
+
+  archiveDropdownCode: {
+    fontWeight: 'var(--font-bold)',
+    color: 'var(--text-secondary)',
+    fontSize: 'var(--text-xs)',
+    flexShrink: 0,
+  },
+
+  archiveDropdownName: {
+    flex: 1,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap' as const,
+  },
+
   resetOrderButton: {
     display: 'flex',
     alignItems: 'center',
@@ -1529,7 +1747,8 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: 'clamp(12px, 1.5vw, 20px) clamp(12px, 1.5vw, 20px) clamp(6px, 0.8vw, 12px) clamp(12px, 1.5vw, 20px)',
+    padding:
+      'clamp(12px, 1.5vw, 20px) clamp(12px, 1.5vw, 20px) clamp(6px, 0.8vw, 12px) clamp(12px, 1.5vw, 20px)',
   },
 
   courseCodeBadge: {
@@ -1596,10 +1815,17 @@ const styles: Record<string, React.CSSProperties> = {
     color: 'var(--text-primary)',
   },
 
+  cardFooter: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding:
+      '0 clamp(12px, 1.5vw, 20px) clamp(12px, 1.5vw, 20px) clamp(12px, 1.5vw, 20px)',
+  },
+
   syncTime: {
     fontSize: 'clamp(10px, 0.8vw, 13px)',
     color: 'var(--text-muted)',
-    padding: '0 clamp(12px, 1.5vw, 20px) clamp(12px, 1.5vw, 20px) clamp(12px, 1.5vw, 20px)',
   },
 
   // List View Styles - fills available space
@@ -1711,6 +1937,155 @@ const styles: Record<string, React.CSSProperties> = {
 
   emptyText: {
     color: 'var(--text-secondary)',
+  },
+
+  // Archived Section
+  archivedSection: {
+    marginTop: 'var(--space-6)',
+    backgroundColor: 'var(--bg-card)',
+    borderRadius: 'var(--radius-lg)',
+    border: '1px solid var(--border-default)',
+    overflow: 'hidden',
+  },
+
+  archivedHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+    padding: 'var(--space-4)',
+    backgroundColor: 'transparent',
+    border: 'none',
+    cursor: 'pointer',
+  },
+
+  archivedHeaderLeft: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-2)',
+  },
+
+  archivedTitle: {
+    fontSize: 'var(--text-sm)',
+    fontWeight: 'var(--font-medium)',
+    color: 'var(--text-secondary)',
+  },
+
+  archivedCount: {
+    fontSize: 'var(--text-xs)',
+    padding: '2px 6px',
+    backgroundColor: 'var(--bg-app)',
+    borderRadius: 'var(--radius-sm)',
+    color: 'var(--text-muted)',
+  },
+
+  archivedContent: {
+    borderTop: '1px solid var(--border-light)',
+  },
+
+  archivedLoading: {
+    padding: 'var(--space-6)',
+    textAlign: 'center' as const,
+    color: 'var(--text-muted)',
+    fontSize: 'var(--text-sm)',
+  },
+
+  archivedEmpty: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    alignItems: 'center',
+    gap: 'var(--space-2)',
+    padding: 'var(--space-6)',
+    color: 'var(--text-muted)',
+    fontSize: 'var(--text-sm)',
+  },
+
+  archivedList: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+  },
+
+  archivedItem: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-3)',
+    padding: 'var(--space-3) var(--space-4)',
+    borderTop: '1px solid var(--border-light)',
+  },
+
+  archivedColorBar: {
+    width: '4px',
+    height: '40px',
+    borderRadius: 'var(--radius-sm)',
+    flexShrink: 0,
+  },
+
+  archivedInfo: {
+    flex: 1,
+    minWidth: 0,
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: '2px',
+  },
+
+  archivedInfoClickable: {
+    flex: 1,
+    minWidth: 0,
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: '2px',
+    cursor: 'pointer',
+    padding: 'var(--space-1)',
+    marginLeft: 'calc(-1 * var(--space-1))',
+    borderRadius: 'var(--radius-sm)',
+    transition: 'background-color var(--transition-fast)',
+  },
+
+  archivedCode: {
+    fontSize: 'var(--text-xs)',
+    fontWeight: 'var(--font-bold)',
+    color: 'var(--text-muted)',
+    textTransform: 'uppercase' as const,
+  },
+
+  archivedName: {
+    fontSize: 'var(--text-sm)',
+    color: 'var(--text-secondary)',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap' as const,
+  },
+
+  unarchiveButton: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-1)',
+    padding: 'var(--space-2) var(--space-3)',
+    fontSize: 'var(--text-xs)',
+    fontWeight: 'var(--font-medium)',
+    color: 'var(--color-blue)',
+    backgroundColor: 'var(--color-blue-50)',
+    border: '1px solid var(--color-blue)',
+    borderRadius: 'var(--radius-md)',
+    cursor: 'pointer',
+    flexShrink: 0,
+  },
+
+  unarchiveButtonDisabled: {
+    color: 'var(--text-tertiary)',
+    backgroundColor: 'var(--color-gray-100)',
+    border: '1px solid var(--color-gray-300)',
+    cursor: 'not-allowed',
+    opacity: 0.6,
+  },
+
+  autoArchivedBadge: {
+    fontSize: 'var(--text-xs)',
+    color: 'var(--text-tertiary)',
+    backgroundColor: 'var(--color-gray-100)',
+    padding: '2px 6px',
+    borderRadius: 'var(--radius-sm)',
+    marginLeft: 'var(--space-2)',
   },
 };
 

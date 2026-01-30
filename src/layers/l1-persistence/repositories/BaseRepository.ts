@@ -7,6 +7,14 @@
 
 import type { Database } from '../Database';
 
+// Re-export row types from centralized location for backwards compatibility
+export type {
+  CourseRow,
+  TaskRow,
+  PolicyRow,
+  NotificationRow,
+} from '../DatabaseRowTypes';
+
 /**
  * Base class for repositories providing common database operations.
  */
@@ -36,7 +44,10 @@ export abstract class BaseRepository<TEntity, TRow> {
   /**
    * Execute a read query expecting a single result.
    */
-  protected queryOne<T extends TRow>(sql: string, params: unknown[] = []): TEntity | null {
+  protected queryOne<T extends TRow>(
+    sql: string,
+    params: unknown[] = []
+  ): TEntity | null {
     const row = this.db.executeReadOne<T>(sql, params);
     return row ? this.mapRowToEntity(row) : null;
   }
@@ -71,74 +82,4 @@ export abstract class BaseRepository<TEntity, TRow> {
   protected toCamelCase(str: string): string {
     return str.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
   }
-}
-
-/**
- * Common database row types used across repositories.
- */
-export interface CourseRow {
-  id: number;
-  external_id: string;
-  code: string;
-  name: string;
-  target_grade: number;
-  assessed_grade: number | null;
-  current_grade: number | null;
-  total_weight: number;
-  color: string | null;
-  nickname: string | null;
-  is_hidden: number;
-  syllabus_body: string | null;
-  last_synced_at: string | null;
-  enrollment_term_id: number | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface TaskRow {
-  id: number;
-  external_id: string;
-  course_id: number;
-  title: string;
-  description: string | null;
-  due_at: string | null;
-  weight: number;
-  grade: number | null;
-  points_possible: number | null;
-  priority_score: number;
-  is_completed: number;
-  completed_at: string | null;
-  submission_status: string | null;
-  task_type: string | null;
-  task_group_id: number | null;
-  local_modified_at: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface PolicyRow {
-  id: number;
-  course_id: number;
-  policy_type: string;
-  policy_name: string;
-  policy_config: string;
-  raw_text: string | null;
-  is_user_verified: number;
-  is_active: number;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface NotificationRow {
-  id: number;
-  source_type: string;
-  source_id: string;
-  course_id: number | null;
-  title: string;
-  message: string;
-  message_html: string | null;
-  published_at: string;
-  dismissed_at: string | null;
-  url: string | null;
-  created_at: string;
 }

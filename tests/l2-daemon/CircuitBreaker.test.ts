@@ -508,4 +508,266 @@ describe('CircuitBreaker', () => {
       expect(result).toBe('success');
     });
   });
+
+  describe('error type differentiation', () => {
+    beforeEach(() => {
+      breaker = new CircuitBreaker({
+        failureThreshold: 2,
+        resetTimeoutMs: 100,
+        logger,
+      });
+    });
+
+    describe('isTransientError', () => {
+      it('should classify 500 server error as transient', () => {
+        const error = { response: { status: 500 } };
+        expect(breaker.isTransientError(error)).toBe(true);
+      });
+
+      it('should classify 502 bad gateway as transient', () => {
+        const error = { response: { status: 502 } };
+        expect(breaker.isTransientError(error)).toBe(true);
+      });
+
+      it('should classify 503 service unavailable as transient', () => {
+        const error = { response: { status: 503 } };
+        expect(breaker.isTransientError(error)).toBe(true);
+      });
+
+      it('should classify 504 gateway timeout as transient', () => {
+        const error = { response: { status: 504 } };
+        expect(breaker.isTransientError(error)).toBe(true);
+      });
+
+      it('should classify 429 rate limit as transient', () => {
+        const error = { response: { status: 429 } };
+        expect(breaker.isTransientError(error)).toBe(true);
+      });
+
+      it('should classify 401 unauthorized as non-transient', () => {
+        const error = { response: { status: 401 } };
+        expect(breaker.isTransientError(error)).toBe(false);
+      });
+
+      it('should classify 403 forbidden as non-transient', () => {
+        const error = { response: { status: 403 } };
+        expect(breaker.isTransientError(error)).toBe(false);
+      });
+
+      it('should classify 404 not found as non-transient', () => {
+        const error = { response: { status: 404 } };
+        expect(breaker.isTransientError(error)).toBe(false);
+      });
+
+      it('should classify 400 bad request as non-transient', () => {
+        const error = { response: { status: 400 } };
+        expect(breaker.isTransientError(error)).toBe(false);
+      });
+
+      it('should classify 422 unprocessable entity as non-transient', () => {
+        const error = { response: { status: 422 } };
+        expect(breaker.isTransientError(error)).toBe(false);
+      });
+
+      it('should classify ECONNREFUSED as transient', () => {
+        const error = { code: 'ECONNREFUSED' };
+        expect(breaker.isTransientError(error)).toBe(true);
+      });
+
+      it('should classify ETIMEDOUT as transient', () => {
+        const error = { code: 'ETIMEDOUT' };
+        expect(breaker.isTransientError(error)).toBe(true);
+      });
+
+      it('should classify ECONNRESET as transient', () => {
+        const error = { code: 'ECONNRESET' };
+        expect(breaker.isTransientError(error)).toBe(true);
+      });
+
+      it('should classify timeout message as transient', () => {
+        const error = { message: 'Request timed out' };
+        expect(breaker.isTransientError(error)).toBe(true);
+      });
+
+      it('should classify status on error directly', () => {
+        const error = { status: 503 };
+        expect(breaker.isTransientError(error)).toBe(true);
+      });
+
+      it('should classify direct 401 status as non-transient', () => {
+        const error = { status: 401 };
+        expect(breaker.isTransientError(error)).toBe(false);
+      });
+
+      it('should return true for null/undefined error', () => {
+        expect(breaker.isTransientError(null)).toBe(true);
+        expect(breaker.isTransientError(undefined)).toBe(true);
+      });
+
+      it('should return true for generic Error', () => {
+        expect(breaker.isTransientError(new Error('Generic error'))).toBe(true);
+      });
+    });
+
+    describe('recordFailure with error classification', () => {
+      it('should not count 401 errors as failures', () => {
+        const error = { response: { status: 401 } };
+
+        breaker.recordFailure(undefined, error);
+        breaker.recordFailure(undefined, error);
+
+        expect(breaker.getFailureCount()).toBe(0);
+        expect(breaker.getState()).toBe('closed');
+      });
+
+      it('should not count 404 errors as failures', () => {
+        const error = { response: { status: 404 } };
+
+        breaker.recordFailure(undefined, error);
+        breaker.recordFailure(undefined, error);
+
+        expect(breaker.getFailureCount()).toBe(0);
+        expect(breaker.getState()).toBe('closed');
+      });
+
+      it('should count 500 errors as failures and open circuit', () => {
+        const error = { response: { status: 500 } };
+
+        breaker.recordFailure(undefined, error);
+        breaker.recordFailure(undefined, error);
+
+        expect(breaker.getFailureCount()).toBe(2);
+        expect(breaker.getState()).toBe('open');
+      });
+
+      it('should count 503 errors as failures', () => {
+        const error = { response: { status: 503 } };
+
+        breaker.recordFailure(undefined, error);
+
+        expect(breaker.getFailureCount()).toBe(1);
+      });
+
+      it('should count network errors as failures', () => {
+        const error = { code: 'ECONNREFUSED' };
+
+        breaker.recordFailure(undefined, error);
+        breaker.recordFailure(undefined, error);
+
+        expect(breaker.getFailureCount()).toBe(2);
+        expect(breaker.getState()).toBe('open');
+      });
+
+      it('should count failures without error info (backward compat)', () => {
+        breaker.recordFailure();
+        breaker.recordFailure();
+
+        expect(breaker.getFailureCount()).toBe(2);
+        expect(breaker.getState()).toBe('open');
+      });
+    });
+
+    describe('execute with error classification', () => {
+      it('should not open circuit on 401 errors', async () => {
+        const error = { response: { status: 401 } };
+
+        for (let i = 0; i < 5; i++) {
+          await breaker.execute(() => Promise.reject(error)).catch(() => {});
+        }
+
+        // Circuit should remain closed for auth errors
+        expect(breaker.getState()).toBe('closed');
+        expect(breaker.getFailureCount()).toBe(0);
+      });
+
+      it('should not open circuit on 403 errors', async () => {
+        const error = { response: { status: 403 } };
+
+        for (let i = 0; i < 5; i++) {
+          await breaker.execute(() => Promise.reject(error)).catch(() => {});
+        }
+
+        expect(breaker.getState()).toBe('closed');
+      });
+
+      it('should not open circuit on 404 errors', async () => {
+        const error = { response: { status: 404 } };
+
+        for (let i = 0; i < 5; i++) {
+          await breaker.execute(() => Promise.reject(error)).catch(() => {});
+        }
+
+        expect(breaker.getState()).toBe('closed');
+      });
+
+      it('should open circuit on 500 errors', async () => {
+        const error = { response: { status: 500 } };
+
+        await breaker.execute(() => Promise.reject(error)).catch(() => {});
+        await breaker.execute(() => Promise.reject(error)).catch(() => {});
+
+        expect(breaker.getState()).toBe('open');
+      });
+
+      it('should open circuit on network errors', async () => {
+        const error = { code: 'ECONNREFUSED', message: 'Connection refused' };
+
+        await breaker.execute(() => Promise.reject(error)).catch(() => {});
+        await breaker.execute(() => Promise.reject(error)).catch(() => {});
+
+        expect(breaker.getState()).toBe('open');
+      });
+
+      it('should still throw the error even if not counted', async () => {
+        const error = { response: { status: 401 }, message: 'Unauthorized' };
+
+        await expect(breaker.execute(() => Promise.reject(error))).rejects.toMatchObject({
+          response: { status: 401 },
+        });
+
+        // Error was thrown but circuit not affected
+        expect(breaker.getState()).toBe('closed');
+      });
+    });
+
+    describe('mixed error scenarios', () => {
+      it('should only count transient errors toward threshold', async () => {
+        // Non-transient errors
+        await breaker.execute(() => Promise.reject({ response: { status: 401 } })).catch(() => {});
+        await breaker.execute(() => Promise.reject({ response: { status: 404 } })).catch(() => {});
+
+        expect(breaker.getFailureCount()).toBe(0);
+
+        // One transient error
+        await breaker.execute(() => Promise.reject({ response: { status: 500 } })).catch(() => {});
+
+        expect(breaker.getFailureCount()).toBe(1);
+        expect(breaker.getState()).toBe('closed');
+
+        // Another transient error - should open
+        await breaker.execute(() => Promise.reject({ response: { status: 503 } })).catch(() => {});
+
+        expect(breaker.getFailureCount()).toBe(2);
+        expect(breaker.getState()).toBe('open');
+      });
+
+      it('should handle half-open state correctly with non-transient errors', async () => {
+        // Open circuit with transient errors
+        await breaker.execute(() => Promise.reject({ response: { status: 500 } })).catch(() => {});
+        await breaker.execute(() => Promise.reject({ response: { status: 500 } })).catch(() => {});
+
+        expect(breaker.getState()).toBe('open');
+
+        // Wait for half-open
+        await new Promise(resolve => setTimeout(resolve, 150));
+        expect(breaker.getState()).toBe('half-open');
+
+        // Non-transient error in half-open should NOT reopen (doesn't count as failure)
+        await breaker.execute(() => Promise.reject({ response: { status: 401 } })).catch(() => {});
+
+        // Should remain in half-open since 401 doesn't count
+        expect(breaker.getState()).toBe('half-open');
+      });
+    });
+  });
 });

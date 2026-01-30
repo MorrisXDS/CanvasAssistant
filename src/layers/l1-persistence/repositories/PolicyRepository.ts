@@ -13,12 +13,11 @@ export interface PolicyConfig {
 }
 
 export interface GraceTokenConfig extends PolicyConfig {
-  total_tokens: number;
+  task_type: string; // Which task type this policy applies to
+  total_tokens: number; // Token pool for this type
   tokens_used: number;
   hours_per_token: number;
-  max_tokens_per_task: number;
-  applies_to: string[];
-  excludes: string[];
+  max_tokens_per_task: number | null; // null = no limit per task
 }
 
 export interface PolicyUpdates {
@@ -211,5 +210,42 @@ export class PolicyRepository extends BaseRepository<Policy, PolicyRow> {
       [courseId, policyType]
     );
     return row !== null;
+  }
+
+  /**
+   * Find a policy by name and type within a course (case-insensitive).
+   * Used for duplicate detection during create/update.
+   */
+  findByNameAndType(
+    courseId: number,
+    policyName: string,
+    policyType: string,
+    excludeId?: number
+  ): Policy | null {
+    const sql = excludeId
+      ? 'SELECT * FROM course_policies WHERE course_id = ? AND LOWER(policy_name) = LOWER(?) AND policy_type = ? AND is_active = 1 AND id != ?'
+      : 'SELECT * FROM course_policies WHERE course_id = ? AND LOWER(policy_name) = LOWER(?) AND policy_type = ? AND is_active = 1';
+
+    const params = excludeId
+      ? [courseId, policyName, policyType, excludeId]
+      : [courseId, policyName, policyType];
+
+    return this.queryOne<PolicyRow>(sql, params);
+  }
+
+  /**
+   * Find a policy by name within a course (case-insensitive, any type).
+   * Used for duplicate name detection across all policy types.
+   */
+  findByName(courseId: number, policyName: string, excludeId?: number): Policy | null {
+    const sql = excludeId
+      ? 'SELECT * FROM course_policies WHERE course_id = ? AND LOWER(policy_name) = LOWER(?) AND is_active = 1 AND id != ?'
+      : 'SELECT * FROM course_policies WHERE course_id = ? AND LOWER(policy_name) = LOWER(?) AND is_active = 1';
+
+    const params = excludeId
+      ? [courseId, policyName, excludeId]
+      : [courseId, policyName];
+
+    return this.queryOne<PolicyRow>(sql, params);
   }
 }

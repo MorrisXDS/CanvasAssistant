@@ -6,6 +6,8 @@
 import React, { useState } from 'react';
 import { Eye, EyeOff, Trash2, Edit2, Check, X, Calendar } from 'lucide-react';
 import type { ImportedCalendar } from '../../../l5-presentation/types';
+import { CALENDAR_COLORS } from '../../constants';
+import { ColorPicker } from '../primitives';
 
 interface CalendarManagerPanelProps {
   calendars: ImportedCalendar[];
@@ -13,18 +15,6 @@ interface CalendarManagerPanelProps {
   onDelete: (id: number) => void;
   onEdit: (id: number, updates: { name?: string; color?: string }) => void;
 }
-
-// Color palette for editing
-const CALENDAR_COLORS = [
-  '#6366F1', // Indigo
-  '#EC4899', // Pink
-  '#10B981', // Emerald
-  '#F59E0B', // Amber
-  '#3B82F6', // Blue
-  '#8B5CF6', // Violet
-  '#EF4444', // Red
-  '#14B8A6', // Teal
-];
 
 export function CalendarManagerPanel({
   calendars,
@@ -91,19 +81,14 @@ export function CalendarManagerPanel({
                     autoFocus
                   />
                 </div>
-                <div style={styles.colorRow}>
-                  {CALENDAR_COLORS.map((color) => (
-                    <button
-                      key={color}
-                      style={{
-                        ...styles.colorDot,
-                        backgroundColor: color,
-                        border: editColor === color ? '2px solid var(--text-primary)' : '2px solid transparent',
-                      }}
-                      onClick={() => setEditColor(color)}
-                    />
-                  ))}
-                </div>
+                <ColorPicker
+                  value={editColor}
+                  onChange={setEditColor}
+                  presets={CALENDAR_COLORS}
+                  allowCustom={true}
+                  swatchSize={20}
+                  compact={true}
+                />
                 <div style={styles.editActions}>
                   <button style={styles.saveButton} onClick={() => saveEditing(calendar.id)}>
                     <Check size={14} />

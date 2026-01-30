@@ -33,16 +33,18 @@ export function TargetBar({
 }: TargetBarProps) {
   const [isHovered, setIsHovered] = useState(false);
 
-  // Clamp values to valid ranges
-  const earned = Math.max(0, Math.min(100, currentGrade));
-  const assessed = Math.max(earned, Math.min(100, assessedPercent));
-  const hasMetTarget = earned >= targetGrade && targetGrade > 0;
+  // Clamp visual widths to 100% but allow display values to exceed for bonus grades
+  const earnedDisplay = Math.max(0, currentGrade);
+  const assessedDisplay = Math.max(earnedDisplay, assessedPercent);
+  const earnedWidth = Math.min(100, earnedDisplay);
+  const assessedWidth = Math.min(100, assessedDisplay) - earnedWidth;
+  const hasMetTarget = earnedDisplay >= targetGrade && targetGrade > 0;
 
-  // Calculate segment widths
-  const earnedWidth = `${earned}%`;
-  const assessedWidth = `${assessed - earned}%`;
+  // Calculate segment widths as percentages
+  const earnedWidthStr = `${earnedWidth}%`;
+  const assessedWidthStr = `${assessedWidth}%`;
 
-  const tooltipText = `${earned.toFixed(1)}% earned, ${assessed.toFixed(1)}% assessed`;
+  const tooltipText = `${earnedDisplay.toFixed(1)}% earned, ${assessedDisplay.toFixed(1)}% assessed`;
 
   return (
     <div style={styles.container}>
@@ -59,19 +61,19 @@ export function TargetBar({
         <div
           style={{
             ...styles.segment,
-            width: earnedWidth,
+            width: earnedWidthStr,
             backgroundColor: courseColor,
-            borderRadius: assessed <= earned
+            borderRadius: assessedDisplay <= earnedDisplay
               ? `${height / 2}px`
               : `${height / 2}px 0 0 ${height / 2}px`,
           }}
         />
         {/* Assessed segment (grey) */}
-        {assessed > earned && (
+        {assessedDisplay > earnedDisplay && (
           <div
             style={{
               ...styles.segment,
-              width: assessedWidth,
+              width: assessedWidthStr,
               backgroundColor: 'var(--bg-tertiary)',
               borderRadius: `0 ${height / 2}px ${height / 2}px 0`,
             }}
@@ -90,7 +92,7 @@ export function TargetBar({
       <div style={styles.labelRow}>
         {showLabel && (
           <span style={styles.label}>
-            {earned.toFixed(0)}% earned
+            {earnedDisplay.toFixed(0)}% earned
           </span>
         )}
         {hasMetTarget && (

@@ -4,10 +4,18 @@ export {
   type LoggerOptions,
   type RotationConfig,
 } from './Logger';
-export { SystemMonitor, type SystemState, type SystemMonitorOptions } from './SystemMonitor';
+export {
+  SystemMonitor,
+  type SystemState,
+  type SystemMonitorOptions,
+} from './SystemMonitor';
 
 // Dependency Injection
-export { ServiceRegistry, type ServiceFactory, type ServiceCleanup } from './ServiceRegistry';
+export {
+  ServiceRegistry,
+  type ServiceFactory,
+  type ServiceCleanup,
+} from './ServiceRegistry';
 export type {
   ServiceToken,
   ServiceDefinitions,
@@ -16,12 +24,7 @@ export type {
 export { DEFAULT_REGISTRY_CONFIG } from './ServiceTokens';
 
 // Feature Flags
-export {
-  FeatureFlags,
-  FlagType,
-  FlagCategory,
-  FLAG_DEFINITIONS,
-} from './FeatureFlags';
+export { FeatureFlags, FlagType, FlagCategory, FLAG_DEFINITIONS } from './FeatureFlags';
 export type {
   FlagKey,
   FlagValue,
@@ -33,6 +36,12 @@ export {
   type CredentialManagerOptions,
   type CredentialStatus,
 } from './CredentialManager';
+export {
+  CryptoManager,
+  type CryptoManagerOptions,
+  type EncryptedData,
+  type PasswordStrength,
+} from './CryptoManager';
 export {
   HealthCheck,
   type HealthCheckOptions,
@@ -62,11 +71,7 @@ export {
   type DownloadResult,
   type DownloadProgress,
 } from './FileDownloadManager';
-export {
-  FileWatcher,
-  type FileWatcherConfig,
-  type FileChangeEvent,
-} from './FileWatcher';
+export { FileWatcher, type FileWatcherConfig, type FileChangeEvent } from './FileWatcher';
 export {
   IdleStateManager,
   type IdleStateManagerConfig,

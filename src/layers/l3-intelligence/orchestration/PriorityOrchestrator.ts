@@ -10,9 +10,15 @@
 
 import { EventEmitter } from 'events';
 import { Database } from '../../l1-persistence/Database';
-import {
-  calculatePriority,
-} from '../domain/PriorityCalculator';
+import { VisibleDataProvider } from '../../l1-persistence/VisibleDataProvider';
+import type {
+  TaskRowMinimal,
+  CourseRowMinimal,
+  PolicyRowMinimal,
+  GraceTokenRowMinimal,
+} from '../../l1-persistence/DatabaseRowTypes';
+import { calculatePriority } from '../domain/PriorityCalculator';
+import { ORCHESTRATOR_DEFAULTS } from '../domain/Constants';
 import {
   TaskForPriority,
   CourseForPriority,
@@ -22,63 +28,7 @@ import {
   PriorityInput,
   PriorityResult,
   GraceTokenPolicy,
-  TaskQueue,
 } from '../types';
-
-/**
- * Raw task data from database for priority calculation
- */
-interface TaskRow {
-  id: number;
-  course_id: number;
-  title: string;
-  due_at: string | null;
-  unlock_at: string | null;
-  lock_at: string | null;
-  points_possible: number | null;
-  weight: number | null;
-  is_completed: number;
-  grade: number | null;
-  completed_at: string | null;
-  task_type: string | null;
-  task_group_id: number | null;
-  submission_status: string | null;
-}
-
-/**
- * Raw course data from database
- */
-interface CourseRow {
-  id: number;
-  code: string;
-  name: string;
-  current_grade: number | null;
-  target_grade: number;
-  total_weight: number;
-}
-
-/**
- * Raw policy data from database
- */
-interface PolicyRow {
-  id: number;
-  course_id: number;
-  policy_type: string;
-  policy_name: string;
-  policy_config: string;
-  is_active: number;
-}
-
-/**
- * Raw grace token data from database
- */
-interface GraceTokenRow {
-  course_id: number;
-  total_tokens: number;
-  tokens_remaining: number;
-  hours_per_token: number;
-  max_tokens_per_task: number;
-}
 
 /**
  * Configuration for PriorityOrchestrator
@@ -91,8 +41,7 @@ export interface PriorityOrchestratorConfig {
 }
 
 const DEFAULT_CONFIG: Required<PriorityOrchestratorConfig> = {
-  refreshIntervalMs: 15 * 60 * 1000, // 15 minutes
-  autoRefresh: true,
+  ...ORCHESTRATOR_DEFAULTS.PRIORITY,
 };
 
 /**
@@ -104,15 +53,32 @@ const DEFAULT_CONFIG: Required<PriorityOrchestratorConfig> = {
  */
 export class PriorityOrchestrator extends EventEmitter {
   private db: Database;
+  private visibleDataProvider: VisibleDataProvider | null;
   private config: Required<PriorityOrchestratorConfig>;
   private refreshTimer: NodeJS.Timeout | null = null;
   private lastResult: PriorityCalculationResult | null = null;
   private pinnedTaskIds: Set<number> = new Set();
+  // Store bound handlers for cleanup (#25)
+  private visibilityChangedHandler: (() => void) | null = null;
+  private settingsChangedHandler: (() => void) | null = null;
 
-  constructor(db: Database, config?: PriorityOrchestratorConfig) {
+  constructor(
+    db: Database,
+    config?: PriorityOrchestratorConfig,
+    visibleDataProvider?: VisibleDataProvider
+  ) {
     super();
     this.db = db;
+    this.visibleDataProvider = visibleDataProvider ?? null;
     this.config = { ...DEFAULT_CONFIG, ...config };
+
+    // Listen for visibility changes to recalculate (#25: store handlers for cleanup)
+    if (this.visibleDataProvider) {
+      this.visibilityChangedHandler = () => this.calculateAll();
+      this.settingsChangedHandler = () => this.calculateAll();
+      this.visibleDataProvider.on('visibility-changed', this.visibilityChangedHandler);
+      this.visibleDataProvider.on('settings-changed', this.settingsChangedHandler);
+    }
 
     if (this.config.autoRefresh) {
       this.startAutoRefresh();
@@ -137,12 +103,24 @@ export class PriorityOrchestrator extends EventEmitter {
   }
 
   /**
-   * Stop auto-refresh timer
+   * Stop auto-refresh timer and clean up event listeners (#25)
    */
   stop(): void {
     if (this.refreshTimer) {
       clearInterval(this.refreshTimer);
       this.refreshTimer = null;
+    }
+
+    // Remove visibility provider listeners to prevent memory leaks (#25)
+    if (this.visibleDataProvider) {
+      if (this.visibilityChangedHandler) {
+        this.visibleDataProvider.off('visibility-changed', this.visibilityChangedHandler);
+        this.visibilityChangedHandler = null;
+      }
+      if (this.settingsChangedHandler) {
+        this.visibleDataProvider.off('settings-changed', this.settingsChangedHandler);
+        this.settingsChangedHandler = null;
+      }
     }
   }
 
@@ -166,23 +144,39 @@ export class PriorityOrchestrator extends EventEmitter {
 
   /**
    * Fetch tasks for priority calculation
+   * Uses VisibleDataProvider to filter to visible courses only
    */
   private fetchTasks(): TaskForPriority[] {
-    const rows = this.db.executeRead<TaskRow>(`
+    // Get visible course IDs from VisibleDataProvider if available
+    const visibleCourseIds = this.visibleDataProvider?.getVisibleCourseIds();
+
+    let sql = `
       SELECT
-        t.id, t.course_id, t.title, t.due_at, t.unlock_at, t.lock_at,
+        t.id, t.course_id, t.title, t.due_at, t.due_time_known, t.unlock_at, t.lock_at,
         t.points_possible, t.weight, t.is_completed, t.grade, t.completed_at,
         t.task_type, t.task_group_id, t.submission_status
       FROM tasks t
       WHERE t.is_completed = 0
-      ORDER BY t.due_at ASC
-    `);
+    `;
+
+    // Filter by visible courses if VisibleDataProvider is available
+    if (visibleCourseIds && visibleCourseIds.length > 0) {
+      sql += ` AND t.course_id IN (${visibleCourseIds.join(',')})`;
+    } else if (visibleCourseIds && visibleCourseIds.length === 0) {
+      // No visible courses means no tasks to process
+      return [];
+    }
+
+    sql += ` ORDER BY t.due_at ASC`;
+
+    const rows = this.db.executeRead<TaskRowMinimal>(sql);
 
     return rows.map((row) => ({
       id: row.id,
       courseId: row.course_id,
       title: row.title,
       dueAt: row.due_at ? new Date(row.due_at) : null,
+      dueTimeKnown: Boolean(row.due_time_known),
       unlockAt: row.unlock_at ? new Date(row.unlock_at) : null,
       lockAt: row.lock_at ? new Date(row.lock_at) : null,
       pointsPossible: row.points_possible,
@@ -199,13 +193,27 @@ export class PriorityOrchestrator extends EventEmitter {
 
   /**
    * Fetch courses for priority calculation
+   * Uses VisibleDataProvider to filter to visible courses only
    */
   private fetchCourses(): Map<number, CourseForPriority> {
-    const rows = this.db.executeRead<CourseRow>(`
+    // Get visible course IDs from VisibleDataProvider if available
+    const visibleCourseIds = this.visibleDataProvider?.getVisibleCourseIds();
+
+    let sql = `
       SELECT id, code, name, current_grade, target_grade, total_weight
       FROM courses
       WHERE deleted_at IS NULL
-    `);
+    `;
+
+    // Filter by visible courses if VisibleDataProvider is available
+    if (visibleCourseIds && visibleCourseIds.length > 0) {
+      sql += ` AND id IN (${visibleCourseIds.join(',')})`;
+    } else if (visibleCourseIds && visibleCourseIds.length === 0) {
+      // No visible courses
+      return new Map();
+    }
+
+    const rows = this.db.executeRead<CourseRowMinimal>(sql);
 
     const map = new Map<number, CourseForPriority>();
     for (const row of rows) {
@@ -225,7 +233,7 @@ export class PriorityOrchestrator extends EventEmitter {
    * Fetch policies for priority calculation
    */
   private fetchPolicies(): PolicyForPriority[] {
-    const rows = this.db.executeRead<PolicyRow>(`
+    const rows = this.db.executeRead<PolicyRowMinimal>(`
       SELECT id, course_id, policy_type, policy_name, policy_config, is_active
       FROM course_policies
       WHERE is_active = 1
@@ -245,7 +253,7 @@ export class PriorityOrchestrator extends EventEmitter {
    * Fetch grace token policies
    */
   private fetchGraceTokenPolicies(): Map<number, GraceTokenPolicy> {
-    const rows = this.db.executeRead<GraceTokenRow>(`
+    const rows = this.db.executeRead<GraceTokenRowMinimal>(`
       SELECT course_id, total_tokens, tokens_remaining, hours_per_token, max_tokens_per_task
       FROM grace_tokens
     `);
@@ -260,6 +268,109 @@ export class PriorityOrchestrator extends EventEmitter {
       });
     }
     return map;
+  }
+
+  // ============ Course-specific fetch methods (fix N+1 query pattern #26) ============
+
+  /**
+   * Fetch tasks for a specific course (avoids N+1 query)
+   */
+  private fetchTasksForCourse(courseId: number): TaskForPriority[] {
+    const sql = `
+      SELECT
+        t.id, t.course_id, t.title, t.due_at, t.due_time_known, t.unlock_at, t.lock_at,
+        t.points_possible, t.weight, t.is_completed, t.grade, t.completed_at,
+        t.task_type, t.task_group_id, t.submission_status
+      FROM tasks t
+      WHERE t.is_completed = 0 AND t.course_id = ?
+      ORDER BY t.due_at ASC
+    `;
+
+    const rows = this.db.executeRead<TaskRowMinimal>(sql, [courseId]);
+
+    return rows.map((row) => ({
+      id: row.id,
+      courseId: row.course_id,
+      title: row.title,
+      dueAt: row.due_at ? new Date(row.due_at) : null,
+      dueTimeKnown: Boolean(row.due_time_known),
+      unlockAt: row.unlock_at ? new Date(row.unlock_at) : null,
+      lockAt: row.lock_at ? new Date(row.lock_at) : null,
+      pointsPossible: row.points_possible,
+      weight: row.weight,
+      isCompleted: Boolean(row.is_completed),
+      isPinned: this.pinnedTaskIds.has(row.id),
+      grade: row.grade,
+      submittedAt: row.completed_at ? new Date(row.completed_at) : null,
+      taskType: row.task_type || 'assignment',
+      taskGroupId: row.task_group_id,
+      submissionStatus: row.submission_status as TaskForPriority['submissionStatus'],
+    }));
+  }
+
+  /**
+   * Fetch policies for a specific course (avoids N+1 query)
+   */
+  private fetchPoliciesForCourse(courseId: number): PolicyForPriority[] {
+    const rows = this.db.executeRead<PolicyRowMinimal>(
+      `SELECT id, course_id, policy_type, policy_name, policy_config, is_active
+       FROM course_policies
+       WHERE is_active = 1 AND course_id = ?`,
+      [courseId]
+    );
+
+    return rows.map((row) => ({
+      id: row.id,
+      courseId: row.course_id,
+      policyType: row.policy_type,
+      policyName: row.policy_name,
+      policyConfig: JSON.parse(row.policy_config || '{}'),
+      isActive: Boolean(row.is_active),
+    }));
+  }
+
+  /**
+   * Fetch a single course by ID (avoids N+1 query)
+   */
+  private fetchCourseById(courseId: number): CourseForPriority | null {
+    const row = this.db.executeReadOne<CourseRowMinimal>(
+      `SELECT id, code, name, current_grade, target_grade, total_weight
+       FROM courses
+       WHERE id = ? AND deleted_at IS NULL`,
+      [courseId]
+    );
+
+    if (!row) return null;
+
+    return {
+      id: row.id,
+      code: row.code,
+      name: row.name,
+      currentGrade: row.current_grade,
+      targetGrade: row.target_grade,
+      totalWeight: row.total_weight,
+    };
+  }
+
+  /**
+   * Fetch grace token policy for a specific course (avoids N+1 query)
+   */
+  private fetchGraceTokenPolicyForCourse(courseId: number): GraceTokenPolicy | null {
+    const row = this.db.executeReadOne<GraceTokenRowMinimal>(
+      `SELECT course_id, total_tokens, tokens_remaining, hours_per_token, max_tokens_per_task
+       FROM grace_tokens
+       WHERE course_id = ?`,
+      [courseId]
+    );
+
+    if (!row) return null;
+
+    return {
+      totalTokens: row.total_tokens,
+      tokensRemaining: row.tokens_remaining,
+      hoursPerToken: row.hours_per_token,
+      maxTokensPerTask: row.max_tokens_per_task,
+    };
   }
 
   /**
@@ -376,21 +487,27 @@ export class PriorityOrchestrator extends EventEmitter {
     }
 
     // Calculate fresh
-    const taskRow = this.db.executeReadOne<TaskRow>(`
+    const taskRow = this.db.executeReadOne<TaskRowMinimal>(
+      `
       SELECT
-        t.id, t.course_id, t.title, t.due_at, t.unlock_at, t.lock_at,
+        t.id, t.course_id, t.title, t.due_at, t.due_time_known, t.unlock_at, t.lock_at,
         t.points_possible, t.weight, t.is_completed, t.grade, t.completed_at,
         t.task_type, t.task_group_id, t.submission_status
       FROM tasks t
       WHERE t.id = ?
-    `, [taskId]);
+    `,
+      [taskId]
+    );
 
     if (!taskRow) return null;
 
-    const courseRow = this.db.executeReadOne<CourseRow>(`
+    const courseRow = this.db.executeReadOne<CourseRowMinimal>(
+      `
       SELECT id, code, name, current_grade, target_grade, total_weight
       FROM courses WHERE id = ?
-    `, [taskRow.course_id]);
+    `,
+      [taskRow.course_id]
+    );
 
     if (!courseRow) return null;
 
@@ -399,6 +516,7 @@ export class PriorityOrchestrator extends EventEmitter {
       courseId: taskRow.course_id,
       title: taskRow.title,
       dueAt: taskRow.due_at ? new Date(taskRow.due_at) : null,
+      dueTimeKnown: Boolean(taskRow.due_time_known),
       unlockAt: taskRow.unlock_at ? new Date(taskRow.unlock_at) : null,
       lockAt: taskRow.lock_at ? new Date(taskRow.lock_at) : null,
       pointsPossible: taskRow.points_possible,
@@ -421,8 +539,9 @@ export class PriorityOrchestrator extends EventEmitter {
       totalWeight: courseRow.total_weight,
     };
 
-    const policies = this.fetchPolicies().filter((p) => p.courseId === task.courseId);
-    const graceTokenPolicy = this.fetchGraceTokenPolicies().get(task.courseId) || null;
+    // Use course-specific fetch methods to avoid N+1 queries (#26)
+    const policies = this.fetchPoliciesForCourse(task.courseId);
+    const graceTokenPolicy = this.fetchGraceTokenPolicyForCourse(task.courseId);
 
     const input: PriorityInput = {
       task,
@@ -438,15 +557,16 @@ export class PriorityOrchestrator extends EventEmitter {
 
   /**
    * Recalculate priorities for tasks in a specific course
+   * Fixed N+1 query pattern (#26) - uses course-specific fetch methods
    */
   recalculateForCourse(courseId: number, now: Date = new Date()): void {
-    const course = this.fetchCourses().get(courseId);
+    // Use course-specific fetch methods to avoid N+1 queries
+    const course = this.fetchCourseById(courseId);
     if (!course) return;
 
-    const policies = this.fetchPolicies().filter((p) => p.courseId === courseId);
-    const graceTokenPolicy = this.fetchGraceTokenPolicies().get(courseId) || null;
-
-    const tasks = this.fetchTasks().filter((t) => t.courseId === courseId);
+    const policies = this.fetchPoliciesForCourse(courseId);
+    const graceTokenPolicy = this.fetchGraceTokenPolicyForCourse(courseId);
+    const tasks = this.fetchTasksForCourse(courseId);
 
     for (const task of tasks) {
       const input: PriorityInput = {

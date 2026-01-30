@@ -9,8 +9,8 @@ import { useState, useCallback, useEffect } from 'react';
 const SECTION_ORDER_KEY = 'dashboardSectionOrder';
 const COLLAPSED_SECTIONS_KEY = 'dashboardCollapsedSections';
 
-// Default section order
-const DEFAULT_ORDER = ['priority', 'notifications', 'recommendations', 'insights'];
+// Default section order - must match section IDs in UnifiedDashboardGrid.tsx
+const DEFAULT_ORDER = ['priority', 'notifications', 'schedule', 'importantWorks'];
 
 export interface DashboardDragDropState {
   sectionOrder: string[];
@@ -36,7 +36,7 @@ function loadSectionOrder(): string[] {
       const parsed = JSON.parse(stored);
       // Ensure all default sections are present
       const validOrder = parsed.filter((id: string) => DEFAULT_ORDER.includes(id));
-      const missing = DEFAULT_ORDER.filter(id => !validOrder.includes(id));
+      const missing = DEFAULT_ORDER.filter((id) => !validOrder.includes(id));
       return [...validOrder, ...missing];
     }
   } catch {
@@ -73,9 +73,12 @@ function saveCollapsedSections(collapsed: Set<string>): void {
   }
 }
 
-export function useDashboardDragDrop(): DashboardDragDropState & DashboardDragDropActions {
+export function useDashboardDragDrop(): DashboardDragDropState &
+  DashboardDragDropActions {
   const [sectionOrder, setSectionOrder] = useState<string[]>(() => loadSectionOrder());
-  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(() => loadCollapsedSections());
+  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(() =>
+    loadCollapsedSections()
+  );
   const [draggedItem, setDraggedItem] = useState<string | null>(null);
   const [dragOverItem, setDragOverItem] = useState<string | null>(null);
 
@@ -105,42 +108,48 @@ export function useDashboardDragDrop(): DashboardDragDropState & DashboardDragDr
     setDragOverItem(null);
   }, []);
 
-  const handleDragOver = useCallback((e: React.DragEvent, sectionId: string) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-    if (draggedItem && sectionId !== draggedItem) {
-      setDragOverItem(sectionId);
-    }
-  }, [draggedItem]);
+  const handleDragOver = useCallback(
+    (e: React.DragEvent, sectionId: string) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      if (draggedItem && sectionId !== draggedItem) {
+        setDragOverItem(sectionId);
+      }
+    },
+    [draggedItem]
+  );
 
   const handleDragLeave = useCallback(() => {
     setDragOverItem(null);
   }, []);
 
-  const handleDrop = useCallback((e: React.DragEvent, targetId: string) => {
-    e.preventDefault();
-    if (!draggedItem || draggedItem === targetId) return;
+  const handleDrop = useCallback(
+    (e: React.DragEvent, targetId: string) => {
+      e.preventDefault();
+      if (!draggedItem || draggedItem === targetId) return;
 
-    setSectionOrder(prev => {
-      const newOrder = [...prev];
-      const draggedIndex = newOrder.indexOf(draggedItem);
-      const targetIndex = newOrder.indexOf(targetId);
+      setSectionOrder((prev) => {
+        const newOrder = [...prev];
+        const draggedIndex = newOrder.indexOf(draggedItem);
+        const targetIndex = newOrder.indexOf(targetId);
 
-      if (draggedIndex !== -1 && targetIndex !== -1) {
-        // Swap positions instead of insert
-        newOrder[draggedIndex] = targetId;
-        newOrder[targetIndex] = draggedItem;
-      }
+        if (draggedIndex !== -1 && targetIndex !== -1) {
+          // Swap positions instead of insert
+          newOrder[draggedIndex] = targetId;
+          newOrder[targetIndex] = draggedItem;
+        }
 
-      return newOrder;
-    });
+        return newOrder;
+      });
 
-    setDraggedItem(null);
-    setDragOverItem(null);
-  }, [draggedItem]);
+      setDraggedItem(null);
+      setDragOverItem(null);
+    },
+    [draggedItem]
+  );
 
   const toggleCollapsed = useCallback((sectionId: string) => {
-    setCollapsedSections(prev => {
+    setCollapsedSections((prev) => {
       const next = new Set(prev);
       if (next.has(sectionId)) {
         next.delete(sectionId);

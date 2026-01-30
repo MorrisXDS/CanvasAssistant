@@ -8,9 +8,9 @@ import { DashboardSection } from './DashboardSection';
 import { useDashboardDragDrop } from './useDashboardDragDrop';
 import { PriorityList } from './PriorityList';
 import { NotificationsFeed } from './NotificationsFeed';
-import { RecommendationsCard } from './RecommendationsCard';
-import { InsightsCard } from './InsightsCard';
-import type { PriorityItem } from '../../../l5-presentation/types';
+import { ScheduleCard } from './ScheduleCard';
+import { ImportantWorksCard } from './ImportantWorksCard';
+import type { PriorityItem, Task } from '../../../l5-presentation/types';
 import type { Notification } from '../../../l5-presentation/types';
 
 // Section configuration
@@ -22,8 +22,8 @@ interface SectionConfig {
 const SECTIONS: SectionConfig[] = [
   { id: 'priority', title: 'Upcoming Assignments' },
   { id: 'notifications', title: 'Recent Updates' },
-  { id: 'recommendations', title: 'Recommendations' },
-  { id: 'insights', title: 'Insights' },
+  { id: 'schedule', title: "Today's Schedule" },
+  { id: 'importantWorks', title: 'Important Works' },
 ];
 
 export interface UnifiedDashboardGridProps {
@@ -31,7 +31,12 @@ export interface UnifiedDashboardGridProps {
   totalPendingTasks: number;
   notifications: Notification[];
   onTaskClick: (taskId: number) => void;
+  onTaskDoubleClick?: (taskId: number) => void;
+  onTaskContextMenu?: (e: React.MouseEvent, task: Task) => void;
+  onToggleComplete?: (taskId: number, isCompleted: boolean) => void;
   onDismissNotification: (id: number) => void;
+  /** Whether priority sorting is enabled (controls urgency badge visibility) */
+  prioritySortingEnabled?: boolean;
 }
 
 export function UnifiedDashboardGrid({
@@ -39,7 +44,11 @@ export function UnifiedDashboardGrid({
   totalPendingTasks,
   notifications,
   onTaskClick,
+  onTaskDoubleClick,
+  onTaskContextMenu,
+  onToggleComplete,
   onDismissNotification,
+  prioritySortingEnabled = false,
 }: UnifiedDashboardGridProps) {
   const {
     sectionOrder,
@@ -61,7 +70,11 @@ export function UnifiedDashboardGrid({
             items={priorityItems}
             totalPendingTasks={totalPendingTasks}
             onTaskClick={onTaskClick}
+            onTaskDoubleClick={onTaskDoubleClick}
+            onTaskContextMenu={onTaskContextMenu}
+            onToggleComplete={onToggleComplete}
             maxItems={6}
+            showUrgencyBadges={prioritySortingEnabled}
           />
         );
       case 'notifications':
@@ -72,10 +85,10 @@ export function UnifiedDashboardGrid({
             maxItems={4}
           />
         );
-      case 'recommendations':
-        return <RecommendationsCard maxItems={4} />;
-      case 'insights':
-        return <InsightsCard maxItems={4} />;
+      case 'schedule':
+        return <ScheduleCard maxItems={4} />;
+      case 'importantWorks':
+        return <ImportantWorksCard maxItems={4} />;
       default:
         return null;
     }
@@ -83,14 +96,14 @@ export function UnifiedDashboardGrid({
 
   // Get section config by ID
   const getSectionConfig = (id: string): SectionConfig | undefined => {
-    return SECTIONS.find(s => s.id === id);
+    return SECTIONS.find((s) => s.id === id);
   };
 
   return (
     <div style={styles.wrapper}>
       {/* 2x2 Grid */}
       <div style={styles.grid}>
-        {sectionOrder.map(sectionId => {
+        {sectionOrder.map((sectionId) => {
           const config = getSectionConfig(sectionId);
           if (!config) return null;
 
@@ -127,6 +140,7 @@ const styles: Record<string, React.CSSProperties> = {
     gridTemplateRows: 'repeat(2, 1fr)',
     columnGap: 'var(--space-4)',
     rowGap: 'var(--space-4)',
+    alignItems: 'stretch', // Ensure cards stretch to fill cells
     width: '100%',
     // Fill available vertical space: viewport - header(~80px) - stats(~100px) - spacing(~120px)
     height: 'calc(100vh - 300px)',

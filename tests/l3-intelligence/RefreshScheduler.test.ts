@@ -280,9 +280,13 @@ describe('RefreshScheduler', () => {
   describe('notifySyncComplete', () => {
     it('should schedule full refresh when running', () => {
       scheduler.start();
-      scheduler.stop(); // Stop initial refresh
+      scheduler.stop(); // Stop initial refresh and clear jobs
 
+      // Start fresh - this schedules initial full refresh
       scheduler.start();
+
+      // Advance time past the coalescing window (100ms) to allow new schedule
+      jest.advanceTimersByTime(150);
 
       const handler = jest.fn();
       scheduler.on('job-scheduled', handler);

@@ -4,29 +4,25 @@
  * Uses repositories for data access and domain services for grade calculation.
  */
 
-import {
-  Command,
-  CommandContext,
-  CommandResult,
-  MarkTaskCompleteParams,
-} from '../types';
+import { Command, CommandContext, CommandResult, MarkTaskCompleteParams } from '../types';
 import { TaskRepository, CourseRepository } from '../../l1-persistence/repositories';
 import { GradeCalculationService } from '../../l3-intelligence/domain';
 
-export class MarkTaskCompleteCommand
-  implements Command<MarkTaskCompleteParams, { previousState: boolean; completedAt: Date | null }>
-{
+export class MarkTaskCompleteCommand implements Command<
+  MarkTaskCompleteParams,
+  { previousState: boolean; completedAt: Date | null }
+> {
   readonly name = 'MarkTaskComplete';
 
   private readonly gradeService = new GradeCalculationService();
 
   validate(params: MarkTaskCompleteParams): { valid: boolean; error?: string } {
     if (!params.taskId || params.taskId <= 0) {
-      return { valid: false, error: 'Invalid task ID' };
+      return { valid: false, error: 'Task not found or invalid' };
     }
 
     if (typeof params.isComplete !== 'boolean') {
-      return { valid: false, error: 'isComplete must be a boolean' };
+      return { valid: false, error: 'Invalid completion status' };
     }
 
     return { valid: true };
@@ -70,9 +66,11 @@ export class MarkTaskCompleteCommand
         data: { previousState, completedAt },
       };
     } catch (error) {
+      // Fix #22: Proper error coercion to avoid [object Object]
+      const errorMessage = error instanceof Error ? error.message : String(error);
       return {
         success: false,
-        error: `Failed to mark task complete: ${error}`,
+        error: `Failed to mark task complete: ${errorMessage}`,
       };
     }
   }

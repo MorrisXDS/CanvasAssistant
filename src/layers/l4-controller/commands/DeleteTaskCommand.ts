@@ -5,21 +5,17 @@
  * Canvas-synced tasks should not be deleted (they'll return on next sync).
  */
 
-import {
-  Command,
-  CommandContext,
-  CommandResult,
-  DeleteTaskParams,
-} from '../types';
+import { Command, CommandContext, CommandResult, DeleteTaskParams } from '../types';
 
-export class DeleteTaskCommand
-  implements Command<DeleteTaskParams, { deleted: boolean }>
-{
+export class DeleteTaskCommand implements Command<
+  DeleteTaskParams,
+  { deleted: boolean }
+> {
   readonly name = 'DeleteTask';
 
   validate(params: DeleteTaskParams): { valid: boolean; error?: string } {
     if (!params.taskId || params.taskId <= 0) {
-      return { valid: false, error: 'Invalid task ID' };
+      return { valid: false, error: 'Task not found or invalid' };
     }
 
     return { valid: true };
@@ -41,10 +37,9 @@ export class DeleteTaskCommand
         course_id: number;
         source_type: string;
         title: string;
-      }>(
-        'SELECT id, course_id, source_type, title FROM tasks WHERE id = ?',
-        [params.taskId]
-      );
+      }>('SELECT id, course_id, source_type, title FROM tasks WHERE id = ?', [
+        params.taskId,
+      ]);
 
       if (!task) {
         return { success: false, error: 'Task not found' };
@@ -54,16 +49,13 @@ export class DeleteTaskCommand
       if (task.source_type !== 'user' && !params.force) {
         return {
           success: false,
-          error: 'Cannot delete Canvas-synced task. Use force=true to override (task will return on next sync).',
+          error:
+            'This assignment was imported from Canvas. Deleting it will only remove it temporarily—it will reappear on the next sync.',
         };
       }
 
       // Delete the task
-      context.db.executeWrite(
-        'DELETE FROM tasks WHERE id = ?',
-        [params.taskId],
-        'tasks'
-      );
+      context.db.executeWrite('DELETE FROM tasks WHERE id = ?', [params.taskId], 'tasks');
 
       // Recalculate course grade
       this.updateCourseAssessedGrade(context, task.course_id);
@@ -75,7 +67,7 @@ export class DeleteTaskCommand
     } catch (error) {
       return {
         success: false,
-        error: `Failed to delete task: ${error}`,
+        error: `Failed to delete task: ${error instanceof Error ? error.message : String(error)}`,
       };
     }
   }

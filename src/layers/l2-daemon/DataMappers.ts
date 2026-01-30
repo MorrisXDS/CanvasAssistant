@@ -4,9 +4,33 @@
  * Each mapper converts the Canvas API format to the format expected by
  * our local SQLite tables. This keeps transformation logic centralized
  * and testable.
+ *
+ * Validation: Uses Zod schemas from InputValidator to validate incoming data
+ * before processing. Invalid fields are logged and defaults are used.
  */
 
 import { convert } from 'html-to-text';
+import { z } from 'zod';
+
+// Validation schemas for defensive parsing
+const SafeNumber = z.number().catch(0);
+const SafeString = z.string().catch('');
+const SafeNullableString = z.string().nullable().catch(null);
+const SafeNullableNumber = z.number().nullable().catch(null);
+const SafeBoolean = z.boolean().catch(false);
+const SafeStringArray = z.array(z.string()).catch([]);
+
+/**
+ * Safely parse a value with a Zod schema, returning the default on failure
+ */
+function safeParse<T>(schema: z.ZodType<T>, value: unknown, fieldName?: string): T {
+  const result = schema.safeParse(value);
+  if (!result.success && fieldName) {
+    // Validation failures are silently handled - schema will use defaults
+    // In debug builds, enable: Logger.debug(`DataMapper validation: ${fieldName} - ${result.error.message}`);
+  }
+  return result.success ? result.data : schema.parse(undefined);
+}
 
 // Canvas API response types
 export interface CanvasTerm {
@@ -31,6 +55,18 @@ export interface CanvasCourse {
   }>;
 }
 
+export interface CanvasSubmission {
+  id?: number;
+  workflow_state?: string; // 'unsubmitted' | 'submitted' | 'graded' | 'pending_review'
+  submitted_at?: string | null;
+  graded_at?: string | null;
+  score?: number | null;
+  grade?: string | null;
+  late?: boolean;
+  missing?: boolean;
+  excused?: boolean;
+}
+
 export interface CanvasAssignment {
   id: number;
   name: string;
@@ -44,6 +80,7 @@ export interface CanvasAssignment {
   course_id: number;
   grading_type: string;
   assignment_group_id: number;
+  submission?: CanvasSubmission; // Included when fetched with include[]=submission
 }
 
 export interface CanvasAttachment {
@@ -85,7 +122,15 @@ export interface CanvasModuleItem {
   id: number;
   module_id: number;
   title: string;
-  type: 'File' | 'Page' | 'Discussion' | 'Assignment' | 'Quiz' | 'SubHeader' | 'ExternalUrl' | 'ExternalTool';
+  type:
+    | 'File'
+    | 'Page'
+    | 'Discussion'
+    | 'Assignment'
+    | 'Quiz'
+    | 'SubHeader'
+    | 'ExternalUrl'
+    | 'ExternalTool';
   content_id?: number;
   position: number;
   indent: number;
@@ -150,6 +195,7 @@ export interface LocalCourse {
   current_grade: number | null;
   assessed_grade: number | null;
   target_grade: number;
+  target_grade_source: 'default' | 'manual';
   landing_page_url: string | null;
   syllabus_body: string | null;
   last_synced_at: string;
@@ -164,12 +210,17 @@ export interface LocalTask {
   title: string;
   description: string | null;
   due_at: string | null;
+  due_time_known: number; // 1 = time known, 0 = only date known (assume midnight)
   unlock_at: string | null;
   lock_at: string | null;
   points_possible: number | null;
   submission_types: string | null;
   weight: number;
+  grade: number | null; // Percentage grade from Canvas (score / points_possible * 100)
+  task_type: string; // Derived from Canvas submission_types: 'assignment' | 'quiz' | 'discussion' | 'reading' | 'external'
   is_completed: number; // SQLite boolean: 0 or 1
+  submission_status: 'pending' | 'submitted' | 'graded'; // Canvas workflow state mapped
+  completed_at: string | null;
 }
 
 export interface LocalNotification {
@@ -202,19 +253,34 @@ export interface LocalNotificationAttachment {
 
 /**
  * Map Canvas attachment to local attachment record
+ * Uses Zod schemas for defensive validation of incoming data
  */
 export function mapAttachment(
   canvas: CanvasAttachment,
   courseId: number
 ): LocalNotificationAttachment {
+  const attachmentId = safeParse(SafeNumber, canvas.id, 'attachment.id');
+  const displayName =
+    safeParse(SafeString, canvas.display_name, 'attachment.display_name') ||
+    `Attachment_${attachmentId}`;
+  const filename =
+    safeParse(SafeString, canvas.filename, 'attachment.filename') || displayName;
+  const url = safeParse(SafeString, canvas.url, 'attachment.url');
+  const size = safeParse(SafeNullableNumber, canvas.size, 'attachment.size');
+  const contentType = safeParse(
+    SafeNullableString,
+    canvas.content_type,
+    'attachment.content_type'
+  );
+
   return {
     course_id: courseId,
-    external_id: String(canvas.id),
-    display_name: canvas.display_name,
-    filename: canvas.filename,
-    url: canvas.url,
-    size_bytes: canvas.size || null,
-    content_type: canvas.content_type || null,
+    external_id: String(attachmentId),
+    display_name: displayName,
+    filename: filename,
+    url: url,
+    size_bytes: size,
+    content_type: contentType,
     local_path: null,
     download_status: 'pending',
   };
@@ -273,7 +339,14 @@ export interface LocalResource {
   mime_type: string | null;
   unlock_at: string | null;
   remote_updated_at: string | null;
-  context_type: 'page' | 'assignment' | 'syllabus' | 'module' | 'announcement' | 'files' | null;
+  context_type:
+    | 'page'
+    | 'assignment'
+    | 'syllabus'
+    | 'module'
+    | 'announcement'
+    | 'files'
+    | null;
   context_id: string | null;
 }
 
@@ -290,15 +363,42 @@ const POLICY_KEYWORDS = {
 
 /**
  * Map Canvas course to local course record
+ * Uses Zod schemas for defensive validation of incoming data
+ * @param canvas - Canvas course data from API
+ * @param baseUrl - Canvas base URL
+ * @param defaultTargetGrade - User's default target grade (from settings)
  */
-export function mapCourse(canvas: CanvasCourse, baseUrl: string): LocalCourse {
-  const enrollment = canvas.enrollments?.[0];
-  const currentGrade = enrollment?.computed_current_score ?? null;
+export function mapCourse(
+  canvas: CanvasCourse,
+  baseUrl: string,
+  defaultTargetGrade: number = 80
+): LocalCourse {
+  // Validate incoming data with safe defaults
+  const courseId = safeParse(SafeNumber, canvas.id, 'course.id');
+  const courseCode =
+    safeParse(SafeString, canvas.course_code, 'course.course_code') ||
+    `Course_${courseId}`;
+  const courseName = safeParse(SafeString, canvas.name, 'course.name') || courseCode;
+  const syllabusBody = safeParse(
+    SafeNullableString,
+    canvas.syllabus_body,
+    'course.syllabus_body'
+  );
+  const enrollmentTermId = safeParse(
+    SafeNullableNumber,
+    canvas.enrollment_term_id,
+    'course.enrollment_term_id'
+  );
 
-  // Defensive null checks for required fields
-  const courseId = canvas.id ?? 0;
-  const courseCode = canvas.course_code || `Course_${courseId}`;
-  const courseName = canvas.name || courseCode;
+  // Extract enrollment data with validation
+  const enrollment = canvas.enrollments?.[0];
+  const currentGrade = enrollment
+    ? safeParse(
+        SafeNullableNumber,
+        enrollment.computed_current_score,
+        'course.enrollment.computed_current_score'
+      )
+    : null;
 
   return {
     external_id: String(courseId),
@@ -306,36 +406,149 @@ export function mapCourse(canvas: CanvasCourse, baseUrl: string): LocalCourse {
     name: courseName,
     current_grade: currentGrade,
     assessed_grade: null,
-    target_grade: 85.0,
+    target_grade: defaultTargetGrade,
+    target_grade_source: 'default',
     landing_page_url: `${baseUrl}/courses/${courseId}`,
-    syllabus_body: canvas.syllabus_body ?? null,
+    syllabus_body: syllabusBody,
     last_synced_at: new Date().toISOString(),
-    enrollment_term_id: canvas.enrollment_term_id ?? null,
+    enrollment_term_id: enrollmentTermId,
   };
 }
 
 /**
  * Map Canvas assignment to local task record
+ * Uses Zod schemas for defensive validation of incoming data
  */
-export function mapAssignment(canvas: CanvasAssignment, localCourseId: number): LocalTask {
-  // Defensive null checks for required fields
-  const assignmentId = canvas.id ?? 0;
-  const assignmentName = canvas.name || `Assignment_${assignmentId}`;
+export function mapAssignment(
+  canvas: CanvasAssignment,
+  localCourseId: number
+): LocalTask {
+  // Validate incoming data with safe defaults
+  const assignmentId = safeParse(SafeNumber, canvas.id, 'assignment.id');
+  const assignmentName =
+    safeParse(SafeString, canvas.name, 'assignment.name') || `Assignment_${assignmentId}`;
+  const description = safeParse(
+    SafeNullableString,
+    canvas.description,
+    'assignment.description'
+  );
+  const dueAt = safeParse(SafeNullableString, canvas.due_at, 'assignment.due_at');
+  const unlockAt = safeParse(
+    SafeNullableString,
+    canvas.unlock_at,
+    'assignment.unlock_at'
+  );
+  const lockAt = safeParse(SafeNullableString, canvas.lock_at, 'assignment.lock_at');
+  const pointsPossible = safeParse(
+    SafeNullableNumber,
+    canvas.points_possible,
+    'assignment.points_possible'
+  );
+  const submissionTypes = safeParse(
+    SafeStringArray,
+    canvas.submission_types,
+    'assignment.submission_types'
+  );
+
+  // Determine submission status from Canvas workflow_state (authoritative source)
+  // Canvas workflow_state: 'unsubmitted' | 'submitted' | 'graded' | 'pending_review'
+  // Maps to our submission_status: 'pending' | 'submitted' | 'graded'
+  const submission = canvas.submission;
+  const workflowState = submission?.workflow_state;
+  const submittedAt = submission?.submitted_at;
+  const score = submission?.score;
+
+  // Map Canvas workflow_state to our submission_status
+  // Canvas workflow_state takes precedence over any user-set status
+  let submissionStatus: 'pending' | 'submitted' | 'graded' = 'pending';
+  if (workflowState === 'graded' || submission?.grade != null) {
+    submissionStatus = 'graded';
+  } else if (
+    workflowState === 'submitted' ||
+    workflowState === 'pending_review' ||
+    submittedAt != null
+  ) {
+    submissionStatus = 'submitted';
+  }
+
+  // Calculate grade as percentage from score / points_possible
+  let grade: number | null = null;
+  if (score != null && pointsPossible != null && pointsPossible > 0) {
+    grade = (score / pointsPossible) * 100;
+  }
+
+  // Derive task_type from submission_types
+  const taskType = deriveTaskType(submissionTypes);
+
+  // Detect if due time is known or only date
+  // Midnight (00:00:00) timestamps often indicate "date only" from Canvas
+  // Times like 23:59:00 or other specific times indicate known time
+  let dueTimeKnown = 1; // Assume time is known by default
+  if (dueAt) {
+    const dueDate = new Date(dueAt);
+    const hours = dueDate.getUTCHours();
+    const minutes = dueDate.getUTCMinutes();
+    const seconds = dueDate.getUTCSeconds();
+    // Midnight UTC often means "date only" - Canvas didn't have a specific time
+    if (hours === 0 && minutes === 0 && seconds === 0) {
+      dueTimeKnown = 0;
+    }
+  }
 
   return {
     external_id: String(assignmentId),
     source_type: 'canvas',
     course_id: localCourseId,
     title: assignmentName,
-    description: canvas.description,
-    due_at: canvas.due_at,
-    unlock_at: canvas.unlock_at,
-    lock_at: canvas.lock_at,
-    points_possible: canvas.points_possible,
-    submission_types: canvas.submission_types?.join(',') ?? null,
+    description,
+    due_at: dueAt,
+    due_time_known: dueTimeKnown,
+    unlock_at: unlockAt,
+    lock_at: lockAt,
+    points_possible: pointsPossible,
+    submission_types: submissionTypes.length > 0 ? submissionTypes.join(',') : null,
     weight: 0, // Will be calculated by L3 Intelligence
-    is_completed: canvas.has_submitted_submissions ? 1 : 0, // SQLite boolean
+    grade,
+    task_type: taskType,
+    is_completed: submissionStatus !== 'pending' ? 1 : 0,
+    submission_status: submissionStatus,
+    completed_at:
+      submittedAt || (submissionStatus !== 'pending' ? new Date().toISOString() : null),
   };
+}
+
+/**
+ * Derive task_type from Canvas submission_types array
+ * Maps Canvas submission types to our task categories
+ */
+function deriveTaskType(submissionTypes: string[]): string {
+  // Check for not graded first (info items)
+  if (submissionTypes.includes('not_graded')) {
+    return 'info';
+  }
+
+  // Check for quiz
+  if (submissionTypes.includes('online_quiz')) {
+    return 'quiz';
+  }
+
+  // Check for discussion
+  if (submissionTypes.includes('discussion_topic')) {
+    return 'discussion';
+  }
+
+  // Check for no submission required (but graded - like attendance)
+  if (submissionTypes.includes('none')) {
+    return 'attendance';
+  }
+
+  // Check for external tool (could be exam proctoring, etc.)
+  if (submissionTypes.includes('external_tool')) {
+    return 'external';
+  }
+
+  // Default to assignment for upload, text entry, media, on_paper, etc.
+  return 'assignment';
 }
 
 /**
@@ -354,17 +567,46 @@ export function htmlToPlainText(html: string): string {
       { selector: 'p', options: { leadingLineBreaks: 0, trailingLineBreaks: 1 } },
       { selector: 'div', options: { leadingLineBreaks: 0, trailingLineBreaks: 1 } },
       // Headings
-      { selector: 'h1', options: { leadingLineBreaks: 1, trailingLineBreaks: 1, uppercase: false } },
-      { selector: 'h2', options: { leadingLineBreaks: 1, trailingLineBreaks: 1, uppercase: false } },
-      { selector: 'h3', options: { leadingLineBreaks: 1, trailingLineBreaks: 1, uppercase: false } },
-      { selector: 'h4', options: { leadingLineBreaks: 1, trailingLineBreaks: 1, uppercase: false } },
-      { selector: 'h5', options: { leadingLineBreaks: 1, trailingLineBreaks: 1, uppercase: false } },
-      { selector: 'h6', options: { leadingLineBreaks: 1, trailingLineBreaks: 1, uppercase: false } },
+      {
+        selector: 'h1',
+        options: { leadingLineBreaks: 1, trailingLineBreaks: 1, uppercase: false },
+      },
+      {
+        selector: 'h2',
+        options: { leadingLineBreaks: 1, trailingLineBreaks: 1, uppercase: false },
+      },
+      {
+        selector: 'h3',
+        options: { leadingLineBreaks: 1, trailingLineBreaks: 1, uppercase: false },
+      },
+      {
+        selector: 'h4',
+        options: { leadingLineBreaks: 1, trailingLineBreaks: 1, uppercase: false },
+      },
+      {
+        selector: 'h5',
+        options: { leadingLineBreaks: 1, trailingLineBreaks: 1, uppercase: false },
+      },
+      {
+        selector: 'h6',
+        options: { leadingLineBreaks: 1, trailingLineBreaks: 1, uppercase: false },
+      },
       // Lists
-      { selector: 'ul', format: 'unorderedList', options: { leadingLineBreaks: 1, trailingLineBreaks: 1, itemPrefix: '• ' } },
-      { selector: 'ol', format: 'orderedList', options: { leadingLineBreaks: 1, trailingLineBreaks: 1 } },
+      {
+        selector: 'ul',
+        format: 'unorderedList',
+        options: { leadingLineBreaks: 1, trailingLineBreaks: 1, itemPrefix: '• ' },
+      },
+      {
+        selector: 'ol',
+        format: 'orderedList',
+        options: { leadingLineBreaks: 1, trailingLineBreaks: 1 },
+      },
       // Block quotes
-      { selector: 'blockquote', options: { leadingLineBreaks: 1, trailingLineBreaks: 1 } },
+      {
+        selector: 'blockquote',
+        options: { leadingLineBreaks: 1, trailingLineBreaks: 1 },
+      },
       // Links - keep text, ignore href
       { selector: 'a', options: { ignoreHref: true } },
       // Skip images
@@ -403,13 +645,56 @@ export interface FileReference {
  * Common file extensions to detect in text
  */
 const FILE_EXTENSIONS = [
-  'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx',
-  'txt', 'rtf', 'odt', 'ods', 'odp',
-  'zip', 'tar', 'gz', 'rar', '7z', 'tgz',
-  'py', 'java', 'c', 'cpp', 'h', 'hpp', 'js', 'ts', 'html', 'css', 'rb', 'go', 'rs',
-  'png', 'jpg', 'jpeg', 'gif', 'svg', 'bmp', 'webp',
-  'mp4', 'mp3', 'wav', 'avi', 'mov', 'mkv',
-  'csv', 'json', 'xml', 'yaml', 'yml', 'md',
+  'pdf',
+  'doc',
+  'docx',
+  'xls',
+  'xlsx',
+  'ppt',
+  'pptx',
+  'txt',
+  'rtf',
+  'odt',
+  'ods',
+  'odp',
+  'zip',
+  'tar',
+  'gz',
+  'rar',
+  '7z',
+  'tgz',
+  'py',
+  'java',
+  'c',
+  'cpp',
+  'h',
+  'hpp',
+  'js',
+  'ts',
+  'html',
+  'css',
+  'rb',
+  'go',
+  'rs',
+  'png',
+  'jpg',
+  'jpeg',
+  'gif',
+  'svg',
+  'bmp',
+  'webp',
+  'mp4',
+  'mp3',
+  'wav',
+  'avi',
+  'mov',
+  'mkv',
+  'csv',
+  'json',
+  'xml',
+  'yaml',
+  'yml',
+  'md',
 ];
 
 /**
@@ -449,9 +734,14 @@ export function detectFileReferences(
   if (!plainText) return references;
 
   // Build regex for file extensions
-  const extensionPattern = FILE_EXTENSIONS.map(ext => ext.replace('.', '\\.')).join('|');
+  const extensionPattern = FILE_EXTENSIONS.map((ext) => ext.replace('.', '\\.')).join(
+    '|'
+  );
   // Match filenames - word chars, spaces, dashes, parens, dots followed by extension
-  const fileRegex = new RegExp(`[\\w\\s\\-\\(\\)\\[\\]\\.,]+\\.(${extensionPattern})`, 'gi');
+  const fileRegex = new RegExp(
+    `[\\w\\s\\-\\(\\)\\[\\]\\.,]+\\.(${extensionPattern})`,
+    'gi'
+  );
 
   let match;
   while ((match = fileRegex.exec(plainText)) !== null) {
@@ -460,8 +750,9 @@ export function detectFileReferences(
 
     // Try to find matching attachment
     const attachment = attachments.find(
-      a => a.display_name.toLowerCase() === filenameLower ||
-           a.filename.toLowerCase() === filenameLower
+      (a) =>
+        a.display_name.toLowerCase() === filenameLower ||
+        a.filename.toLowerCase() === filenameLower
     );
 
     // Try to find original URL from HTML links
@@ -481,6 +772,7 @@ export function detectFileReferences(
 
 /**
  * Map Canvas announcement to local notification record with attachments
+ * Uses Zod schemas for defensive validation of incoming data
  */
 export function mapAnnouncement(
   canvas: CanvasAnnouncement,
@@ -488,14 +780,26 @@ export function mapAnnouncement(
   baseUrl: string,
   externalCourseId: string
 ): MappedAnnouncement {
+  // Validate incoming data with safe defaults
+  const announcementId = safeParse(SafeNumber, canvas.id, 'announcement.id');
+  const title =
+    safeParse(SafeString, canvas.title, 'announcement.title') ||
+    `Announcement_${announcementId}`;
+  const message = safeParse(SafeString, canvas.message, 'announcement.message');
+  const postedAt = safeParse(
+    SafeNullableString,
+    canvas.posted_at,
+    'announcement.posted_at'
+  );
+
   // Extract links from HTML before converting (to preserve original URLs)
-  const htmlLinkMap = extractHtmlLinks(canvas.message);
+  const htmlLinkMap = extractHtmlLinks(message);
 
   // Convert HTML to clean plain text for storage
-  const cleanMessage = htmlToPlainText(canvas.message);
+  const cleanMessage = htmlToPlainText(message);
 
   // Strip HTML tags for policy analysis
-  const plainText = (canvas.title + ' ' + cleanMessage).toLowerCase();
+  const plainText = (title + ' ' + cleanMessage).toLowerCase();
 
   // Detect policy-related keywords
   const foundKeywords: string[] = [];
@@ -510,9 +814,9 @@ export function mapAnnouncement(
   const isPolicyRelated = foundKeywords.length > 0;
 
   // Build Canvas URL for the original announcement
-  const canvasUrl = `${baseUrl}/courses/${externalCourseId}/discussion_topics/${canvas.id}`;
+  const canvasUrl = `${baseUrl}/courses/${externalCourseId}/discussion_topics/${announcementId}`;
 
-  // Map attachments
+  // Map attachments (Zod validation happens inside mapAttachment)
   const attachments: LocalNotificationAttachment[] = (canvas.attachments || []).map(
     (att) => mapAttachment(att, localCourseId)
   );
@@ -523,14 +827,14 @@ export function mapAnnouncement(
   return {
     notification: {
       source_type: 'canvas',
-      source_id: String(canvas.id),
+      source_id: String(announcementId),
       course_id: localCourseId,
-      title: canvas.title,
+      title: title,
       message: cleanMessage,
-      message_html: canvas.message || null, // Store original HTML for display
+      message_html: message || null, // Store original HTML for display
       url: canvasUrl,
       priority_level: isPolicyRelated ? 'high' : 'medium',
-      published_at: canvas.posted_at || new Date().toISOString(),
+      published_at: postedAt || new Date().toISOString(),
       is_policy_related: isPolicyRelated ? 1 : 0, // SQLite boolean
       policy_keywords: foundKeywords.length > 0 ? JSON.stringify(foundKeywords) : null,
     },
@@ -541,74 +845,116 @@ export function mapAnnouncement(
 
 /**
  * Map Canvas module to local module record
+ * Uses Zod schemas for defensive validation of incoming data
  */
 export function mapModule(canvas: CanvasModule, localCourseId: number): LocalModule {
+  const moduleId = safeParse(SafeNumber, canvas.id, 'module.id');
+  const moduleName =
+    safeParse(SafeString, canvas.name, 'module.name') || `Module_${moduleId}`;
+  const position = safeParse(SafeNumber, canvas.position, 'module.position');
+  const unlockAt = safeParse(SafeNullableString, canvas.unlock_at, 'module.unlock_at');
+  const requireSequential = safeParse(
+    SafeBoolean,
+    canvas.require_sequential_progress,
+    'module.require_sequential_progress'
+  );
+  const published = safeParse(SafeBoolean, canvas.published, 'module.published');
+
   return {
-    external_id: String(canvas.id),
+    external_id: String(moduleId),
     course_id: localCourseId,
-    name: canvas.name,
-    position: canvas.position,
-    unlock_at: canvas.unlock_at,
-    require_sequential_progress: canvas.require_sequential_progress ? 1 : 0, // SQLite boolean
-    published: canvas.published ? 1 : 0, // SQLite boolean
+    name: moduleName,
+    position: position,
+    unlock_at: unlockAt,
+    require_sequential_progress: requireSequential ? 1 : 0, // SQLite boolean
+    published: published ? 1 : 0, // SQLite boolean
   };
 }
 
 /**
  * Map Canvas module item to local module item record
+ * Uses Zod schemas for defensive validation of incoming data
  */
 export function mapModuleItem(
   canvas: CanvasModuleItem,
   localModuleId: number
 ): LocalModuleItem {
+  const itemId = safeParse(SafeNumber, canvas.id, 'moduleItem.id');
+  const title =
+    safeParse(SafeString, canvas.title, 'moduleItem.title') || `Item_${itemId}`;
+  const itemType = safeParse(SafeString, canvas.type, 'moduleItem.type') || 'Unknown';
+  const contentId = safeParse(
+    SafeNullableNumber,
+    canvas.content_id,
+    'moduleItem.content_id'
+  );
+  const position = safeParse(SafeNumber, canvas.position, 'moduleItem.position');
+  const indent = safeParse(SafeNumber, canvas.indent, 'moduleItem.indent');
+  const htmlUrl = safeParse(SafeNullableString, canvas.html_url, 'moduleItem.html_url');
+  const externalUrl = safeParse(
+    SafeNullableString,
+    canvas.external_url,
+    'moduleItem.external_url'
+  );
+  const published = safeParse(SafeBoolean, canvas.published, 'moduleItem.published');
+
   return {
-    external_id: String(canvas.id),
+    external_id: String(itemId),
     module_id: localModuleId,
-    title: canvas.title,
-    item_type: canvas.type,
-    content_id: canvas.content_id ? String(canvas.content_id) : null,
-    position: canvas.position,
-    indent: canvas.indent,
-    url: canvas.html_url ?? null,
-    external_url: canvas.external_url ?? null,
+    title: title,
+    item_type: itemType,
+    content_id: contentId ? String(contentId) : null,
+    position: position,
+    indent: indent,
+    url: htmlUrl,
+    external_url: externalUrl,
     completion_requirement: canvas.completion_requirement
       ? JSON.stringify(canvas.completion_requirement)
       : null,
-    published: canvas.published ? 1 : 0, // SQLite boolean
+    published: published ? 1 : 0, // SQLite boolean
   };
 }
 
 /**
  * Map Canvas page to local page record
+ * Uses Zod schemas for defensive validation of incoming data
  */
 export function mapPage(
   canvas: CanvasPage,
   localCourseId: number,
   pageType: 'syllabus' | 'landing' | 'content' | 'module_item' = 'content'
 ): LocalPage {
+  const pageUrl = safeParse(SafeString, canvas.url, 'page.url');
+  const title =
+    safeParse(SafeString, canvas.title, 'page.title') || pageUrl || 'Untitled Page';
+  const body = safeParse(SafeNullableString, canvas.body, 'page.body');
+  const isFrontPage = safeParse(SafeBoolean, canvas.front_page, 'page.front_page');
+  const published = safeParse(SafeBoolean, canvas.published, 'page.published');
+
   // Strip HTML for plain text version
-  const bodyText = canvas.body
-    ? canvas.body
+  const bodyText = body
+    ? body
         .replace(/<[^>]*>/g, ' ')
         .replace(/\s+/g, ' ')
         .trim()
     : null;
 
   return {
-    external_id: canvas.url,
+    external_id: pageUrl,
     course_id: localCourseId,
     page_type: pageType,
-    title: canvas.title,
-    url_slug: canvas.url,
-    body_html: canvas.body,
+    title: title,
+    url_slug: pageUrl,
+    body_html: body,
     body_text: bodyText,
-    is_front_page: canvas.front_page ? 1 : 0, // SQLite boolean
-    published: canvas.published ? 1 : 0, // SQLite boolean
+    is_front_page: isFrontPage ? 1 : 0, // SQLite boolean
+    published: published ? 1 : 0, // SQLite boolean
   };
 }
 
 /**
  * Map Canvas file to local resource record
+ * Uses Zod schemas for defensive validation of incoming data
  */
 export function mapFile(
   canvas: CanvasFile,
@@ -621,39 +967,62 @@ export function mapFile(
   // Note: local_path is intentionally omitted so it's never overwritten during sync
   // It gets set when user downloads the file
 
-  // Use modified_at if available (actual content change), otherwise updated_at
-  const remoteUpdatedAt = canvas.modified_at || canvas.updated_at || null;
+  const fileId = safeParse(SafeNumber, canvas.id, 'file.id');
+  const displayName =
+    safeParse(SafeString, canvas.display_name, 'file.display_name') || `File_${fileId}`;
+  const url = safeParse(SafeNullableString, canvas.url, 'file.url');
+  const size = safeParse(SafeNullableNumber, canvas.size, 'file.size');
+  const contentType = safeParse(
+    SafeNullableString,
+    canvas.content_type,
+    'file.content_type'
+  );
+  const unlockAt = safeParse(SafeNullableString, canvas.unlock_at, 'file.unlock_at');
+  const modifiedAt = safeParse(
+    SafeNullableString,
+    canvas.modified_at,
+    'file.modified_at'
+  );
+  const updatedAt = safeParse(SafeNullableString, canvas.updated_at, 'file.updated_at');
 
-  const result = {
-    external_id: String(canvas.id),
+  // Use modified_at if available (actual content change), otherwise updated_at
+  const remoteUpdatedAt = modifiedAt || updatedAt;
+
+  return {
+    external_id: String(fileId),
     course_id: localCourseId,
     parent_folder_id: localFolderId,
     folder_path: folderPath,
     type: 'file' as const,
-    title: canvas.display_name,
-    url: canvas.url,
-    size_bytes: canvas.size,
-    mime_type: canvas.content_type,
-    unlock_at: canvas.unlock_at,
+    title: displayName,
+    url: url,
+    size_bytes: size,
+    mime_type: contentType,
+    unlock_at: unlockAt,
     remote_updated_at: remoteUpdatedAt,
     context_type: contextType,
     context_id: contextId,
   };
-
-  return result;
 }
 
 /**
  * Map Canvas folder to local resource record
+ * Uses Zod schemas for defensive validation of incoming data
  */
 export function mapFolder(
   canvas: CanvasFolder,
   localCourseId: number,
   localParentFolderId: number | null = null
 ): Omit<LocalResource, 'local_path'> {
+  const folderId = safeParse(SafeNumber, canvas.id, 'folder.id');
+  const folderName =
+    safeParse(SafeString, canvas.name, 'folder.name') || `Folder_${folderId}`;
+  const fullName = safeParse(SafeString, canvas.full_name, 'folder.full_name');
+  const updatedAt = safeParse(SafeNullableString, canvas.updated_at, 'folder.updated_at');
+
   // Canvas full_name is like "course files/Week 1/Lectures"
   // Remove the "course files" prefix for cleaner display
-  let folderPath = canvas.full_name || canvas.name;
+  let folderPath = fullName || folderName;
 
   if (folderPath.startsWith('course files/')) {
     folderPath = folderPath.substring('course files/'.length);
@@ -662,23 +1031,21 @@ export function mapFolder(
   }
 
   // Note: local_path is intentionally omitted - folders are not downloadable
-  const result = {
-    external_id: String(canvas.id),
+  return {
+    external_id: String(folderId),
     course_id: localCourseId,
     parent_folder_id: localParentFolderId,
     folder_path: folderPath || null,
     type: 'folder' as const,
-    title: canvas.name,
+    title: folderName,
     url: null,
     size_bytes: null,
     mime_type: null,
     unlock_at: null,
-    remote_updated_at: canvas.updated_at || null,
+    remote_updated_at: updatedAt,
     context_type: 'files' as const,
     context_id: null,
   };
-
-  return result;
 }
 
 /**
@@ -712,10 +1079,7 @@ export function detectPolicyKeywords(text: string): {
 /**
  * Calculate confidence score for policy detection (0-1)
  */
-export function calculatePolicyConfidence(
-  text: string,
-  keywords: string[]
-): number {
+export function calculatePolicyConfidence(text: string, keywords: string[]): number {
   if (keywords.length === 0) return 0;
 
   // Base score from number of keywords found

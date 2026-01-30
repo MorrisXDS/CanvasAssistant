@@ -10,6 +10,13 @@
 
 import { EventEmitter } from 'events';
 import { Database } from '../../l1-persistence/Database';
+import { VisibleDataProvider } from '../../l1-persistence/VisibleDataProvider';
+import type {
+  TaskRowWithPriority,
+  CourseRowMinimal,
+  WorkloadSnapshotRow,
+  CompletionEventRow,
+} from '../../l1-persistence/DatabaseRowTypes';
 import {
   analyzeWorkloadDistribution,
   calculateClusteringScore,
@@ -19,7 +26,8 @@ import {
   identifyDeadlineClusters,
   calculateCourseBalanceScore,
 } from '../domain/WorkloadAnalyzer';
-import { estimateEffort, batchEstimateEffort } from '../domain/EffortEstimator';
+import { batchEstimateEffort } from '../domain/EffortEstimator';
+import { ORCHESTRATOR_DEFAULTS } from '../domain/Constants';
 import {
   WorkloadSnapshot,
   WorkloadDistribution,
@@ -33,51 +41,6 @@ import {
 } from '../types';
 
 /**
- * Raw task from database
- */
-interface TaskRow {
-  id: number;
-  course_id: number;
-  title: string;
-  due_at: string | null;
-  unlock_at: string | null;
-  lock_at: string | null;
-  points_possible: number | null;
-  weight: number | null;
-  is_completed: number;
-  grade: number | null;
-  task_type: string | null;
-  task_group_id: number | null;
-  submission_status: string | null;
-  priority_score: number;
-}
-
-/**
- * Raw course from database
- */
-interface CourseRow {
-  id: number;
-  code: string;
-  name: string;
-  current_grade: number | null;
-  target_grade: number;
-  total_weight: number;
-}
-
-/**
- * Raw snapshot from database
- */
-interface SnapshotRow {
-  id: number;
-  snapshot_date: string;
-  total_tasks_due: number;
-  total_estimated_minutes: number;
-  tasks_by_course: string;
-  tasks_by_urgency: string;
-  deadline_clustering_score: number;
-}
-
-/**
  * Configuration for WorkloadOrchestrator
  */
 export interface WorkloadOrchestratorConfig {
@@ -88,8 +51,7 @@ export interface WorkloadOrchestratorConfig {
 }
 
 const DEFAULT_CONFIG: Required<WorkloadOrchestratorConfig> = {
-  defaultAvailableHoursPerDay: 4,
-  defaultLookAheadDays: 14,
+  ...ORCHESTRATOR_DEFAULTS.WORKLOAD,
 };
 
 /**
@@ -102,35 +64,64 @@ const DEFAULT_CONFIG: Required<WorkloadOrchestratorConfig> = {
  */
 export class WorkloadOrchestrator extends EventEmitter {
   private db: Database;
+  private visibleDataProvider: VisibleDataProvider | null;
   private config: Required<WorkloadOrchestratorConfig>;
   private cachedDistribution: WorkloadDistribution | null = null;
   private effortEstimatesCache: Map<number, EffortEstimate> = new Map();
 
-  constructor(db: Database, config?: WorkloadOrchestratorConfig) {
+  constructor(
+    db: Database,
+    config?: WorkloadOrchestratorConfig,
+    visibleDataProvider?: VisibleDataProvider
+  ) {
     super();
     this.db = db;
+    this.visibleDataProvider = visibleDataProvider ?? null;
     this.config = { ...DEFAULT_CONFIG, ...config };
+
+    // Clear cache on visibility changes
+    if (this.visibleDataProvider) {
+      this.visibleDataProvider.on('visibility-changed', () => {
+        this.cachedDistribution = null;
+      });
+      this.visibleDataProvider.on('settings-changed', () => {
+        this.cachedDistribution = null;
+      });
+    }
   }
 
   /**
    * Fetch incomplete tasks from database
+   * Uses VisibleDataProvider to filter to visible courses only
    */
   private fetchTasks(): TaskForPriority[] {
-    const rows = this.db.executeRead<TaskRow>(`
+    const visibleCourseIds = this.visibleDataProvider?.getVisibleCourseIds();
+
+    let sql = `
       SELECT
-        id, course_id, title, due_at, unlock_at, lock_at,
+        id, course_id, title, due_at, due_time_known, unlock_at, lock_at,
         points_possible, weight, is_completed, grade,
         task_type, task_group_id, submission_status, priority_score
       FROM tasks
       WHERE is_completed = 0
-      ORDER BY due_at ASC
-    `);
+    `;
+
+    if (visibleCourseIds && visibleCourseIds.length > 0) {
+      sql += ` AND course_id IN (${visibleCourseIds.join(',')})`;
+    } else if (visibleCourseIds && visibleCourseIds.length === 0) {
+      return [];
+    }
+
+    sql += ` ORDER BY due_at ASC`;
+
+    const rows = this.db.executeRead<TaskRowWithPriority>(sql);
 
     return rows.map((row) => ({
       id: row.id,
       courseId: row.course_id,
       title: row.title,
       dueAt: row.due_at ? new Date(row.due_at) : null,
+      dueTimeKnown: Boolean(row.due_time_known ?? 1),
       unlockAt: row.unlock_at ? new Date(row.unlock_at) : null,
       lockAt: row.lock_at ? new Date(row.lock_at) : null,
       pointsPossible: row.points_possible,
@@ -147,12 +138,23 @@ export class WorkloadOrchestrator extends EventEmitter {
 
   /**
    * Fetch courses from database
+   * Uses VisibleDataProvider to filter to visible courses only
    */
   private fetchCourses(): CourseForPriority[] {
-    const rows = this.db.executeRead<CourseRow>(`
+    const visibleCourseIds = this.visibleDataProvider?.getVisibleCourseIds();
+
+    let sql = `
       SELECT id, code, name, current_grade, target_grade, total_weight
       FROM courses WHERE deleted_at IS NULL
-    `);
+    `;
+
+    if (visibleCourseIds && visibleCourseIds.length > 0) {
+      sql += ` AND id IN (${visibleCourseIds.join(',')})`;
+    } else if (visibleCourseIds && visibleCourseIds.length === 0) {
+      return [];
+    }
+
+    const rows = this.db.executeRead<CourseRowMinimal>(sql);
 
     return rows.map((row) => ({
       id: row.id,
@@ -168,22 +170,9 @@ export class WorkloadOrchestrator extends EventEmitter {
    * Fetch completion events from database (needed for effort estimation)
    */
   private fetchCompletionEvents(): TaskCompletionEvent[] {
-    const rows = this.db.executeRead<{
-      id: number;
-      task_id: number;
-      course_id: number;
-      task_type: string;
-      started_at: string | null;
-      completed_at: string;
-      due_at: string | null;
-      time_to_complete_minutes: number | null;
-      day_of_week: number;
-      hour_of_day: number;
-      days_before_due: number | null;
-      was_late: number;
-      score_achieved: number | null;
-      points_possible: number | null;
-    }>(`SELECT * FROM task_completion_events ORDER BY completed_at DESC`);
+    const rows = this.db.executeRead<CompletionEventRow>(
+      `SELECT * FROM task_completion_events ORDER BY completed_at DESC`
+    );
 
     return rows.map((row) => ({
       id: row.id,
@@ -206,7 +195,9 @@ export class WorkloadOrchestrator extends EventEmitter {
   /**
    * Calculate effort estimates for all tasks
    */
-  private calculateEffortEstimates(tasks: TaskForPriority[]): Map<number, EffortEstimate> {
+  private calculateEffortEstimates(
+    tasks: TaskForPriority[]
+  ): Map<number, EffortEstimate> {
     const events = this.fetchCompletionEvents();
     const estimates = batchEstimateEffort(tasks, events);
 
@@ -254,10 +245,7 @@ export class WorkloadOrchestrator extends EventEmitter {
   /**
    * Analyze workload distribution for a date range
    */
-  analyzeWorkload(
-    startDate: Date = new Date(),
-    endDate?: Date
-  ): WorkloadDistribution {
+  analyzeWorkload(startDate: Date = new Date(), endDate?: Date): WorkloadDistribution {
     const defaultEnd = new Date(startDate);
     defaultEnd.setDate(defaultEnd.getDate() + this.config.defaultLookAheadDays);
     const actualEndDate = endDate || defaultEnd;
@@ -332,7 +320,9 @@ export class WorkloadOrchestrator extends EventEmitter {
   /**
    * Get deadline clusters
    */
-  getDeadlineClusters(windowHours: number = 48): ReturnType<typeof identifyDeadlineClusters> {
+  getDeadlineClusters(
+    windowHours: number = 48
+  ): ReturnType<typeof identifyDeadlineClusters> {
     const tasks = this.fetchTasks();
     return identifyDeadlineClusters(tasks, windowHours);
   }
@@ -417,7 +407,7 @@ export class WorkloadOrchestrator extends EventEmitter {
 
     const summary = this.getDailySummary(today);
     const tasks = this.fetchTasks();
-    const effortEstimates = this.effortEstimatesCache;
+    const _effortEstimates = this.effortEstimatesCache;
 
     // Build tasks by course
     const tasksByCourse: Record<number, number> = {};
@@ -470,7 +460,7 @@ export class WorkloadOrchestrator extends EventEmitter {
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - days);
 
-    const rows = this.db.executeRead<SnapshotRow>(
+    const rows = this.db.executeRead<WorkloadSnapshotRow>(
       `SELECT * FROM workload_snapshots
        WHERE snapshot_date >= ?
        ORDER BY snapshot_date ASC`,

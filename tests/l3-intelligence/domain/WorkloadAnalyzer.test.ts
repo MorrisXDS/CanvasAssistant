@@ -25,6 +25,7 @@ describe('WorkloadAnalyzer', () => {
     courseId: 1,
     title: 'Test Task',
     dueAt: new Date(),
+    dueTimeKnown: true,
     unlockAt: null,
     lockAt: null,
     pointsPossible: 100,

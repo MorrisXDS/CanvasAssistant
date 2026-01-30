@@ -47,11 +47,22 @@ export function calculateTaskTypeBoost(taskType: string): number {
 
 /**
  * Calculate urgency score based on time until due date
+ * When due time is unknown, assumes end of day (23:59:59) for less artificial urgency
+ * User decision: End of day is more reasonable than midnight start which inflates priority
  */
 export function calculateUrgencyScore(task: TaskForPriority, now: Date): number {
   if (!task.dueAt) return 30; // Medium urgency for no due date
 
-  const msUntilDue = task.dueAt.getTime() - now.getTime();
+  // Get effective due time - use actual time or end of day if time unknown
+  let effectiveDueAt = task.dueAt;
+  if (!task.dueTimeKnown) {
+    // Time unknown - assume end of day (23:59:59) per user decision
+    // This prevents artificially inflated priority scores for tasks with unknown times
+    effectiveDueAt = new Date(task.dueAt);
+    effectiveDueAt.setHours(23, 59, 59, 0);
+  }
+
+  const msUntilDue = effectiveDueAt.getTime() - now.getTime();
   const hoursUntilDue = msUntilDue / (1000 * 60 * 60);
 
   if (hoursUntilDue < 0) {
@@ -127,6 +138,9 @@ export function calculateGraceTokenFactor(
 
   const hoursOverdue = (now.getTime() - task.dueAt.getTime()) / (1000 * 60 * 60);
   if (hoursOverdue <= 0) return 0; // Not overdue
+
+  // Guard against division by zero
+  if (policy.hoursPerToken <= 0) return 0;
 
   const tokensNeeded = Math.ceil(hoursOverdue / policy.hoursPerToken);
 
@@ -273,6 +287,7 @@ export function calculateFinalScore(factors: PriorityFactors): number {
 
 /**
  * Format relative time for display
+ * Fixed boundary issue (#27): Use "~1 day" for 20-24 hours instead of "23 hours"
  */
 function formatRelativeTime(date: Date, now: Date): string {
   const diff = date.getTime() - now.getTime();
@@ -282,13 +297,21 @@ function formatRelativeTime(date: Date, now: Date): string {
   if (days >= 1) {
     return `${Math.floor(days)} day${Math.floor(days) !== 1 ? 's' : ''}`;
   }
+  // Use "~1 day" for 20-24 hours to avoid confusing "23 hours" display
+  if (hours >= 20) {
+    return '~1 day';
+  }
   return `${Math.floor(hours)} hour${Math.floor(hours) !== 1 ? 's' : ''}`;
 }
 
 /**
  * Build priority factors for explanation
  */
-function buildPriorityFactors(factors: PriorityFactors, task: TaskForPriority, now: Date): PriorityFactor[] {
+function buildPriorityFactors(
+  factors: PriorityFactors,
+  task: TaskForPriority,
+  now: Date
+): PriorityFactor[] {
   const result: PriorityFactor[] = [];
 
   // Urgency factor
@@ -351,7 +374,9 @@ function buildPriorityFactors(factors: PriorityFactors, task: TaskForPriority, n
       name: 'Lock Deadline',
       icon: 'lock',
       impact: factors.lockTimeUrgency,
-      description: task.lockAt ? `Locks in ${formatRelativeTime(task.lockAt, now)}` : 'Lock deadline approaching',
+      description: task.lockAt
+        ? `Locks in ${formatRelativeTime(task.lockAt, now)}`
+        : 'Lock deadline approaching',
     });
   }
 
@@ -362,7 +387,8 @@ function buildPriorityFactors(factors: PriorityFactors, task: TaskForPriority, n
       name: 'Grace Tokens',
       icon: 'ticket',
       impact: factors.graceTokenFactor,
-      description: factors.graceTokenFactor > 0 ? 'Salvageable with tokens' : 'Not salvageable',
+      description:
+        factors.graceTokenFactor > 0 ? 'Salvageable with tokens' : 'Not salvageable',
     });
   }
 
@@ -394,7 +420,11 @@ function buildPriorityFactors(factors: PriorityFactors, task: TaskForPriority, n
 /**
  * Build submission windows for task
  */
-function buildSubmissionWindows(task: TaskForPriority, graceTokenPolicy: GraceTokenPolicy | null, now: Date): SubmissionWindow[] {
+function buildSubmissionWindows(
+  task: TaskForPriority,
+  graceTokenPolicy: GraceTokenPolicy | null,
+  now: Date
+): SubmissionWindow[] {
   const windows: SubmissionWindow[] = [];
 
   if (!task.dueAt) return windows;
@@ -414,9 +444,11 @@ function buildSubmissionWindows(task: TaskForPriority, graceTokenPolicy: GraceTo
 
   // Grace token window
   if (graceTokenPolicy && graceTokenPolicy.tokensRemaining > 0) {
-    const maxExtension = graceTokenPolicy.maxTokensPerTask * graceTokenPolicy.hoursPerToken;
+    const maxExtension =
+      graceTokenPolicy.maxTokensPerTask * graceTokenPolicy.hoursPerToken;
     const tokenDeadline = new Date(task.dueAt.getTime() + maxExtension * 60 * 60 * 1000);
-    const hoursUntilTokenDeadline = (tokenDeadline.getTime() - now.getTime()) / (1000 * 60 * 60);
+    const hoursUntilTokenDeadline =
+      (tokenDeadline.getTime() - now.getTime()) / (1000 * 60 * 60);
 
     if (hoursUntilTokenDeadline > 0) {
       windows.push({
@@ -446,26 +478,84 @@ function buildSubmissionWindows(task: TaskForPriority, graceTokenPolicy: GraceTo
 }
 
 /**
- * Build grade impact analysis
+ * Build grade impact analysis using points-based calculation
+ *
+ * Uses the formula:
+ * - Grade = totalPointsEarned / totalPointsPossible * 100
+ * - If task skipped: newGrade = currentPointsEarned / (currentPointsPossible + taskPoints)
+ * - If task aced: newGrade = (currentPointsEarned + taskPoints) / (currentPointsPossible + taskPoints)
+ *
+ * Note: currentGrade null means "no grade yet" (semantically different from 0%)
  */
 function buildGradeImpact(task: TaskForPriority, course: CourseForPriority): GradeImpact {
-  const currentGrade = course.currentGrade ?? 0;
+  // Fix #28: Distinguish null (no grade yet) from 0 (actual zero grade)
+  // Fix #16: Guard against NaN values
+  const rawCurrentGrade = course.currentGrade;
+  const currentGrade =
+    rawCurrentGrade === null ||
+    rawCurrentGrade === undefined ||
+    Number.isNaN(rawCurrentGrade)
+      ? 0
+      : rawCurrentGrade;
   const targetGrade = course.targetGrade;
-  const taskWeight = task.weight ?? 0;
+  const taskWeight = task.weight;
+  const taskPoints = task.pointsPossible ?? 0;
 
-  // Calculate projected grades
-  const gradeIfSkipped = currentGrade - taskWeight * (currentGrade / 100);
-  const gradeIfAverage = currentGrade + taskWeight * 0.1; // Assuming average adds 10% of weight
+  // Guard against zero/null weight - this is a deadline-only task with no grade impact
+  if (taskWeight === null || taskWeight === 0) {
+    return {
+      currentGrade,
+      targetGrade,
+      gapToTarget: targetGrade - currentGrade,
+      gradeIfSkipped: currentGrade,
+      gradeIfAverage: currentGrade,
+      minScoreForTarget: null,
+      riskLevel: 'low',
+    };
+  }
+
+  // Points-based grading calculation
+  // Estimate current points based on course total weight and current grade
+  const coursePointsBasis = course.totalWeight || 100;
+  const currentPointsPossible = (coursePointsBasis / 100) * 1000; // Normalize to 1000-point scale
+  const currentPointsEarned = (currentGrade / 100) * currentPointsPossible;
+  const totalPointsAfterTask = currentPointsPossible + taskPoints;
+
+  // Guard against zero total points
+  if (totalPointsAfterTask === 0) {
+    return {
+      currentGrade,
+      targetGrade,
+      gapToTarget: targetGrade - currentGrade,
+      gradeIfSkipped: currentGrade,
+      gradeIfAverage: currentGrade,
+      minScoreForTarget: null,
+      riskLevel: 'low',
+    };
+  }
+
+  // Calculate grade projections
+  const gradeIfSkipped = (currentPointsEarned / totalPointsAfterTask) * 100;
+  const gradeIfAverage =
+    ((currentPointsEarned + taskPoints * (currentGrade / 100)) / totalPointsAfterTask) *
+    100;
 
   // Calculate minimum score needed
   const gapToTarget = targetGrade - currentGrade;
-  const minScoreForTarget = taskWeight > 0 ? Math.max(0, (gapToTarget / taskWeight) * 100) : null;
+  let minScoreForTarget: number | null = null;
+  if (currentGrade < targetGrade && taskPoints > 0) {
+    const neededPoints = (targetGrade / 100) * totalPointsAfterTask - currentPointsEarned;
+    const neededScore = (neededPoints / taskPoints) * 100;
+    // Allow values > 100 to indicate bonus points needed
+    minScoreForTarget = Math.min(Math.max(neededScore, 0), 150);
+  }
 
-  // Determine risk level
+  // Determine risk level based on grade drop if skipped
+  const dropIfSkipped = currentGrade - gradeIfSkipped;
   let riskLevel: 'low' | 'medium' | 'high' | 'critical' = 'low';
-  if (gapToTarget > 15) riskLevel = 'critical';
-  else if (gapToTarget > 10) riskLevel = 'high';
-  else if (gapToTarget > 5) riskLevel = 'medium';
+  if (dropIfSkipped >= 10) riskLevel = 'critical';
+  else if (dropIfSkipped >= 5) riskLevel = 'high';
+  else if (dropIfSkipped >= 2) riskLevel = 'medium';
 
   return {
     currentGrade,
@@ -481,7 +571,12 @@ function buildGradeImpact(task: TaskForPriority, course: CourseForPriority): Gra
 /**
  * Generate summary string for task
  */
-function generateSummary(task: TaskForPriority, queue: TaskQueue, score: number, now: Date): string {
+function generateSummary(
+  task: TaskForPriority,
+  queue: TaskQueue,
+  score: number,
+  now: Date
+): string {
   if (queue === 'upcoming' && task.unlockAt) {
     return `Unlocks in ${formatRelativeTime(task.unlockAt, now)}`;
   }
@@ -528,7 +623,9 @@ export function calculatePriority(input: PriorityInput): PriorityResult {
       queue,
       score: 0,
       factors,
-      reason: task.unlockAt ? `Unlocks ${formatRelativeTime(task.unlockAt, now)}` : 'Not yet available',
+      reason: task.unlockAt
+        ? `Unlocks ${formatRelativeTime(task.unlockAt, now)}`
+        : 'Not yet available',
       explanation: {
         taskId: task.id,
         finalScore: 0,
@@ -536,7 +633,9 @@ export function calculatePriority(input: PriorityInput): PriorityResult {
         factors: [],
         submissionWindows: [],
         gradeImpact: buildGradeImpact(task, course),
-        summary: task.unlockAt ? `Unlocks in ${formatRelativeTime(task.unlockAt, now)}` : 'Not yet available',
+        summary: task.unlockAt
+          ? `Unlocks in ${formatRelativeTime(task.unlockAt, now)}`
+          : 'Not yet available',
         calculatedAt: now,
         expiresAt: new Date(now.getTime() + 15 * 60 * 1000), // 15 minutes
       },

@@ -4,65 +4,58 @@
  * Prevents the same insight or recommendation from being shown too frequently.
  * Uses exponential backoff for grounding time when messages repeat.
  *
+ * Type-specific settings are defined in MessageFrequencyConfig.ts
+ *
  * Algorithm:
  * - First occurrence: Show immediately, no grounding
- * - Second occurrence within window: Ground for BASE_GROUNDING_HOURS
+ * - Second occurrence: Ground for baseGroundingHours (type-specific)
  * - Each subsequent occurrence: Double the grounding time (exponential backoff)
- * - After QUIET_PERIOD_HOURS without showing: Reset occurrence count
+ * - After quietPeriodHours without showing: Reset occurrence count (type-specific)
  */
 
 import { Database } from '../../l1-persistence/Database';
+import type { DisplayHistoryRow } from '../../l1-persistence/DatabaseRowTypes';
 import crypto from 'crypto';
+import {
+  getFrequencySettings,
+  type MessageFrequencySettings,
+} from './MessageFrequencyConfig';
 
 /**
- * Configuration for probation behavior
+ * @deprecated Use MessageFrequencyConfig instead for type-specific settings
  */
 export interface MessageProbationConfig {
-  /** Base grounding time in hours after second occurrence (default: 2) */
+  /** Base grounding time in hours after second occurrence */
   baseGroundingHours?: number;
-  /** Maximum grounding time in hours (default: 168 = 1 week) */
+  /** Maximum grounding time in hours */
   maxGroundingHours?: number;
-  /** Quiet period before resetting count (default: 72 = 3 days) */
+  /** Quiet period before resetting count */
   quietPeriodHours?: number;
-  /** Time window for counting occurrences (default: 24) */
+  /** Time window for counting occurrences */
   windowHours?: number;
 }
 
-const DEFAULT_CONFIG: Required<MessageProbationConfig> = {
-  baseGroundingHours: 2,
-  maxGroundingHours: 168, // 1 week
-  quietPeriodHours: 72, // 3 days
-  windowHours: 24,
-};
-
 type MessageType = 'insight' | 'recommendation';
 
-interface DisplayHistoryRow {
-  id: number;
-  message_type: string;
-  content_hash: string;
-  display_count: number;
-  first_shown_at: string;
-  last_shown_at: string;
-  grounded_until: string | null;
-  quiet_period_start: string | null;
-}
+// DisplayHistoryRow imported from DatabaseRowTypes.ts
 
 /**
  * MessageProbationService manages duplicate prevention with exponential backoff
+ *
+ * Uses centralized type-specific frequency settings from MessageFrequencyConfig.ts
  */
 export class MessageProbationService {
   private db: Database;
-  private config: Required<MessageProbationConfig>;
 
-  constructor(db: Database, config?: MessageProbationConfig) {
+  constructor(db: Database, _config?: MessageProbationConfig) {
     this.db = db;
-    this.config = { ...DEFAULT_CONFIG, ...config };
+    // Note: _config parameter kept for backward compatibility but is deprecated
+    // Type-specific settings are now loaded from MessageFrequencyConfig
   }
 
   /**
    * Generate a content hash for deduplication
-   * Uses type + title + key data fields to create unique identifier
+   * Uses type + subType + title + key data fields to create unique identifier
    */
   generateContentHash(
     messageType: MessageType,
@@ -80,13 +73,23 @@ export class MessageProbationService {
   }
 
   /**
+   * Get frequency settings for a message type
+   */
+  private getSettings(
+    messageType: MessageType,
+    subType: string
+  ): MessageFrequencySettings {
+    return getFrequencySettings(messageType, subType);
+  }
+
+  /**
    * Check if a message is currently grounded (should not be shown)
    */
-  isGrounded(messageType: MessageType, contentHash: string): boolean {
+  isGrounded(messageType: MessageType, contentHash: string, subType: string): boolean {
     const now = new Date();
 
     // First check for quiet period reset
-    this.checkQuietPeriodReset(messageType, contentHash);
+    this.checkQuietPeriodReset(messageType, contentHash, subType);
 
     const row = this.db.executeReadOne<DisplayHistoryRow>(
       `SELECT * FROM message_display_history
@@ -105,7 +108,11 @@ export class MessageProbationService {
   /**
    * Check if quiet period has passed and reset if so
    */
-  private checkQuietPeriodReset(messageType: MessageType, contentHash: string): void {
+  private checkQuietPeriodReset(
+    messageType: MessageType,
+    contentHash: string,
+    subType: string
+  ): void {
     const now = new Date();
     const row = this.db.executeReadOne<DisplayHistoryRow>(
       `SELECT * FROM message_display_history
@@ -117,8 +124,11 @@ export class MessageProbationService {
       return;
     }
 
+    // Use type-specific quiet period, or stored subType if available
+    const settings = this.getSettings(messageType, row.sub_type || subType);
     const quietStart = new Date(row.quiet_period_start);
-    const quietEndTime = quietStart.getTime() + this.config.quietPeriodHours * 60 * 60 * 1000;
+    const quietEndTime =
+      quietStart.getTime() + settings.quietPeriodHours * 60 * 60 * 1000;
 
     if (now.getTime() >= quietEndTime) {
       // Reset the record - quiet period has passed
@@ -135,8 +145,9 @@ export class MessageProbationService {
   /**
    * Record that a message was displayed and calculate grounding
    */
-  recordDisplay(messageType: MessageType, contentHash: string): void {
+  recordDisplay(messageType: MessageType, contentHash: string, subType: string): void {
     const now = new Date();
+    const settings = this.getSettings(messageType, subType);
 
     const existing = this.db.executeReadOne<DisplayHistoryRow>(
       `SELECT * FROM message_display_history
@@ -148,9 +159,16 @@ export class MessageProbationService {
       // First time seeing this message - no grounding
       this.db.executeWrite(
         `INSERT INTO message_display_history
-         (message_type, content_hash, display_count, first_shown_at, last_shown_at, quiet_period_start)
-         VALUES (?, ?, 1, ?, ?, ?)`,
-        [messageType, contentHash, now.toISOString(), now.toISOString(), now.toISOString()],
+         (message_type, sub_type, content_hash, display_count, first_shown_at, last_shown_at, quiet_period_start)
+         VALUES (?, ?, ?, 1, ?, ?, ?)`,
+        [
+          messageType,
+          subType,
+          contentHash,
+          now.toISOString(),
+          now.toISOString(),
+          now.toISOString(),
+        ],
         'message_display_history'
       );
       return;
@@ -167,26 +185,28 @@ export class MessageProbationService {
     // etc.
     let groundingHours = 0;
     if (newCount >= 2) {
-      groundingHours = this.config.baseGroundingHours * Math.pow(2, newCount - 2);
-      groundingHours = Math.min(groundingHours, this.config.maxGroundingHours);
+      groundingHours = settings.baseGroundingHours * Math.pow(2, newCount - 2);
+      groundingHours = Math.min(groundingHours, settings.maxGroundingHours);
     }
 
-    const groundedUntil = groundingHours > 0
-      ? new Date(now.getTime() + groundingHours * 60 * 60 * 1000)
-      : null;
+    const groundedUntil =
+      groundingHours > 0
+        ? new Date(now.getTime() + groundingHours * 60 * 60 * 1000)
+        : null;
 
+    // Update record with new grounding, also update sub_type in case it changed
     this.db.executeWrite(
       `UPDATE message_display_history
        SET display_count = ?,
+           sub_type = ?,
            last_shown_at = ?,
-           grounded_until = ?,
-           quiet_period_start = ?
+           grounded_until = ?
        WHERE message_type = ? AND content_hash = ?`,
       [
         newCount,
+        subType,
         now.toISOString(),
         groundedUntil?.toISOString() ?? null,
-        now.toISOString(), // Reset quiet period on each display
         messageType,
         contentHash,
       ],
@@ -197,11 +217,15 @@ export class MessageProbationService {
   /**
    * Get grounding info for a message
    */
-  getGroundingInfo(messageType: MessageType, contentHash: string): {
+  getGroundingInfo(
+    messageType: MessageType,
+    contentHash: string
+  ): {
     isGrounded: boolean;
     displayCount: number;
     groundedUntil: Date | null;
     hoursRemaining: number | null;
+    subType: string | null;
   } | null {
     const row = this.db.executeReadOne<DisplayHistoryRow>(
       `SELECT * FROM message_display_history
@@ -225,33 +249,40 @@ export class MessageProbationService {
       displayCount: row.display_count,
       groundedUntil,
       hoursRemaining,
+      subType: row.sub_type || null,
     };
   }
 
   /**
    * Filter a list of items, removing grounded ones
-   * @param items Array of items with content hash
-   * @param getHash Function to extract content hash from item
+   * @param items Array of items to filter
    * @param messageType Type of message (insight or recommendation)
+   * @param getHash Function to extract content hash from item
+   * @param getSubType Function to extract subType from item
    * @returns Filtered array with non-grounded items only
    */
   filterGrounded<T>(
     items: T[],
     messageType: MessageType,
-    getHash: (item: T) => string
+    getHash: (item: T) => string,
+    getSubType?: (item: T) => string
   ): T[] {
     return items.filter((item) => {
       const hash = getHash(item);
-      return !this.isGrounded(messageType, hash);
+      const subType = getSubType ? getSubType(item) : '';
+      return !this.isGrounded(messageType, hash, subType);
     });
   }
 
   /**
    * Record display for multiple items at once
    */
-  recordDisplayBatch(messageType: MessageType, contentHashes: string[]): void {
-    for (const hash of contentHashes) {
-      this.recordDisplay(messageType, hash);
+  recordDisplayBatch(
+    messageType: MessageType,
+    items: Array<{ contentHash: string; subType: string }>
+  ): void {
+    for (const item of items) {
+      this.recordDisplay(messageType, item.contentHash, item.subType);
     }
   }
 
@@ -273,6 +304,7 @@ export class MessageProbationService {
     totalTracked: number;
     currentlyGrounded: number;
     byType: Record<MessageType, number>;
+    bySubType: Record<string, number>;
     averageDisplayCount: number;
   } {
     const now = new Date();
@@ -291,6 +323,10 @@ export class MessageProbationService {
       `SELECT message_type, COUNT(*) as count FROM message_display_history GROUP BY message_type`
     );
 
+    const bySubTypeCounts = this.db.executeRead<{ sub_type: string; count: number }>(
+      `SELECT sub_type, COUNT(*) as count FROM message_display_history WHERE sub_type IS NOT NULL GROUP BY sub_type`
+    );
+
     const avgCount = this.db.executeReadOne<{ avg: number }>(
       `SELECT AVG(display_count) as avg FROM message_display_history`
     );
@@ -303,10 +339,16 @@ export class MessageProbationService {
       byType[row.message_type as MessageType] = row.count;
     }
 
+    const bySubType: Record<string, number> = {};
+    for (const row of bySubTypeCounts) {
+      bySubType[row.sub_type] = row.count;
+    }
+
     return {
       totalTracked: total?.count ?? 0,
       currentlyGrounded: grounded?.count ?? 0,
       byType,
+      bySubType,
       averageDisplayCount: avgCount?.avg ?? 0,
     };
   }

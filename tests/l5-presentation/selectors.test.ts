@@ -14,6 +14,7 @@ function createBaseState(overrides: Partial<StoreState> = {}): StoreState {
     courses: [],
     tasks: [],
     notifications: [],
+    policies: [],
     simulation: {
       isActive: false,
       startedAt: null,
@@ -32,6 +33,7 @@ function createBaseState(overrides: Partial<StoreState> = {}): StoreState {
     importedCalendars: [],
     calendarEvents: [],
     syncConflicts: [],
+    authError: null,
     ...overrides,
   };
 }
@@ -44,6 +46,7 @@ function createCourse(overrides: Partial<Course> = {}): Course {
     code: 'CS101',
     name: 'Intro to Computer Science',
     targetGrade: 85,
+    targetGradeSource: 'default',
     assessedGrade: 80,
     currentGrade: 78,
     color: '#FF5733',
@@ -51,6 +54,8 @@ function createCourse(overrides: Partial<Course> = {}): Course {
     isHidden: false,
     lastSyncedAt: '2024-01-15T10:00:00Z',
     enrollmentTermId: null,
+    archivedAt: null,
+    archiveSource: null,
     ...overrides,
   };
 }
@@ -64,15 +69,20 @@ function createTask(overrides: Partial<Task> = {}): Task {
     title: 'Assignment 1',
     description: 'First assignment',
     dueAt: null,
+    dueTimeKnown: true,
     weight: 10,
     grade: null,
     pointsPossible: 100,
     priorityScore: 50,
     isCompleted: false,
+    isOptional: false,
     completedAt: null,
     submissionStatus: null,
+    userSubmissionStatus: null,
+    effectiveSubmissionStatus: null,
     taskType: null,
     taskGroupId: null,
+    calendarEventId: null,
     ...overrides,
   };
 }

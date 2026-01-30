@@ -5,19 +5,12 @@
 
 import React, { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import {
-  ArrowLeft,
-  Clock,
-  AlertTriangle,
-  CheckCircle,
-  Circle,
-  Calendar,
-  Filter,
-  ChevronDown,
-} from 'lucide-react';
-import { Card, Badge, BadgeVariant } from '../shared';
+import { ArrowLeft, Clock, AlertTriangle, CheckCircle, Circle, Plus } from 'lucide-react';
+import { Card, Badge, BadgeVariant, RichTextEditor } from '../shared';
 import { useStore } from '../../../l5-presentation/store';
+import { formatDueDate, getBadgeUrgency, getCleanCourseName } from '../../constants';
 import type { Task, Course } from '../../../l5-presentation/types';
+import { TaskContextMenu } from '../Course/TaskContextMenu';
 
 type FilterType = 'all' | 'pending' | 'overdue' | 'completed';
 
@@ -32,42 +25,34 @@ function getDaysUntilDue(dueAt: string | null): number | null {
   if (!dueAt) return null;
   const now = new Date();
   const due = new Date(dueAt);
-  return Math.ceil((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-}
 
-function getUrgencyLevel(daysUntilDue: number | null): 'critical' | 'high' | 'medium' | 'low' {
-  if (daysUntilDue === null) return 'low';
-  if (daysUntilDue < 0) return 'critical';
-  if (daysUntilDue <= 1) return 'critical';
-  if (daysUntilDue <= 3) return 'high';
-  if (daysUntilDue <= 7) return 'medium';
-  return 'low';
-}
+  // Compare dates at midnight to get calendar days
+  const nowDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const dueDate = new Date(due.getFullYear(), due.getMonth(), due.getDate());
 
-function formatDueDate(dueAt: string | null, daysUntilDue: number | null): string {
-  if (!dueAt) return 'No due date';
-
-  if (daysUntilDue === null) return 'No due date';
-  if (daysUntilDue < 0) return `${Math.abs(daysUntilDue)}d overdue`;
-  if (daysUntilDue === 0) return 'Due today';
-  if (daysUntilDue === 1) return 'Due tomorrow';
-  if (daysUntilDue <= 7) return `Due in ${daysUntilDue} days`;
-
-  const date = new Date(dueAt);
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  const diffMs = dueDate.getTime() - nowDate.getTime();
+  return Math.round(diffMs / (1000 * 60 * 60 * 24));
 }
 
 export function TasksPage() {
   const navigate = useNavigate();
   const { tasks, courses } = useStore();
   const [filter, setFilter] = useState<FilterType>('all');
-  const [showFilterDropdown, setShowFilterDropdown] = useState(false);
+  const [_showFilterDropdown, _setShowFilterDropdown] = useState(false);
 
-  const courseMap = useMemo(() => new Map(courses.map(c => [c.id, c])), [courses]);
+  // Add Task state
+  const [showAddTask, setShowAddTask] = useState(false);
+  const [newTaskCourseId, setNewTaskCourseId] = useState<number | ''>('');
+  const [newTaskTitle, setNewTaskTitle] = useState('');
+  const [newTaskDescription, setNewTaskDescription] = useState('');
+  const [newTaskDueDate, setNewTaskDueDate] = useState('');
+  const [newTaskWeight, setNewTaskWeight] = useState('');
+  const [newTaskType, setNewTaskType] = useState('');
+
+  const courseMap = useMemo(() => new Map(courses.map((c) => [c.id, c])), [courses]);
 
   // Process all tasks with course info
   const allTasks = useMemo(() => {
-    const now = new Date();
     const result: TaskWithCourse[] = [];
 
     for (const task of tasks) {
@@ -79,7 +64,7 @@ export function TasksPage() {
         task,
         course,
         daysUntilDue,
-        urgencyLevel: getUrgencyLevel(daysUntilDue),
+        urgencyLevel: getBadgeUrgency(daysUntilDue),
       });
     }
 
@@ -93,13 +78,17 @@ export function TasksPage() {
 
     switch (filter) {
       case 'pending':
-        filtered = allTasks.filter(t => !t.task.isCompleted && (!t.task.dueAt || new Date(t.task.dueAt) >= now));
+        filtered = allTasks.filter(
+          (t) => !t.task.isCompleted && (!t.task.dueAt || new Date(t.task.dueAt) >= now)
+        );
         break;
       case 'overdue':
-        filtered = allTasks.filter(t => !t.task.isCompleted && t.task.dueAt && new Date(t.task.dueAt) < now);
+        filtered = allTasks.filter(
+          (t) => !t.task.isCompleted && t.task.dueAt && new Date(t.task.dueAt) < now
+        );
         break;
       case 'completed':
-        filtered = allTasks.filter(t => t.task.isCompleted);
+        filtered = allTasks.filter((t) => t.task.isCompleted);
         break;
     }
 
@@ -121,14 +110,109 @@ export function TasksPage() {
     const now = new Date();
     return {
       all: allTasks.length,
-      pending: allTasks.filter(t => !t.task.isCompleted && (!t.task.dueAt || new Date(t.task.dueAt) >= now)).length,
-      overdue: allTasks.filter(t => !t.task.isCompleted && t.task.dueAt && new Date(t.task.dueAt) < now).length,
-      completed: allTasks.filter(t => t.task.isCompleted).length,
+      pending: allTasks.filter(
+        (t) => !t.task.isCompleted && (!t.task.dueAt || new Date(t.task.dueAt) >= now)
+      ).length,
+      overdue: allTasks.filter(
+        (t) => !t.task.isCompleted && t.task.dueAt && new Date(t.task.dueAt) < now
+      ).length,
+      completed: allTasks.filter((t) => t.task.isCompleted).length,
     };
   }, [allTasks]);
 
-  const handleTaskClick = (task: Task, course: Course) => {
+  // Context menu state
+  const [contextMenu, setContextMenu] = useState<{
+    task: Task & { isOptional?: boolean };
+    course: Course;
+    position: { x: number; y: number };
+  } | null>(null);
+
+  const handleTaskDoubleClick = (task: Task, course: Course) => {
     navigate(`/course/${course.id}?highlightTask=${task.id}`);
+  };
+
+  const handleTaskContextMenu = (e: React.MouseEvent, task: Task, course: Course) => {
+    e.preventDefault();
+    setContextMenu({
+      task: { ...task, isOptional: task.isOptional ?? false },
+      course,
+      position: { x: e.clientX, y: e.clientY },
+    });
+  };
+
+  const handleToggleComplete = async (taskId?: number, currentlyCompleted?: boolean) => {
+    const api = window.api;
+    if (!api?.dispatch) return;
+
+    // Use passed params or fall back to context menu
+    const id = taskId ?? contextMenu?.task.id;
+    const isCompleted = currentlyCompleted ?? contextMenu?.task.isCompleted;
+
+    if (id === undefined || isCompleted === undefined) return;
+
+    try {
+      await api.dispatch('MarkTaskComplete', {
+        taskId: id,
+        isComplete: !isCompleted,
+      });
+    } catch (error) {
+      console.error('Failed to toggle task complete:', error);
+    }
+  };
+
+  const handleDuplicateTask = async () => {
+    if (!contextMenu) return;
+    const api = window.api;
+    if (!api?.dispatch) return;
+    try {
+      await api.dispatch('DuplicateTask', { taskId: contextMenu.task.id });
+    } catch (error) {
+      console.error('Failed to duplicate task:', error);
+    }
+  };
+
+  const handleDeleteTask = async () => {
+    if (!contextMenu) return;
+    const api = window.api;
+    if (!api?.dispatch) return;
+    try {
+      await api.dispatch('DeleteTask', { taskId: contextMenu.task.id, force: true });
+    } catch (error) {
+      console.error('Failed to delete task:', error);
+    }
+  };
+
+  const handleOpenInCanvas = () => {
+    if (!contextMenu) return;
+    // Navigate to course detail with task highlight
+    navigate(`/course/${contextMenu.course.id}?highlightTask=${contextMenu.task.id}`);
+  };
+
+  // Create new task
+  const handleCreateTask = async () => {
+    const api = window.api;
+    if (!api?.dispatch || !newTaskTitle.trim() || !newTaskCourseId) return;
+
+    try {
+      await api.dispatch('CreateTask', {
+        courseId: newTaskCourseId,
+        title: newTaskTitle.trim(),
+        description: newTaskDescription.trim() || undefined,
+        dueAt: newTaskDueDate || undefined,
+        weight: newTaskWeight ? parseFloat(newTaskWeight) : undefined,
+        taskType: newTaskType || undefined,
+      });
+      // Reset form
+      setNewTaskCourseId('');
+      setNewTaskTitle('');
+      setNewTaskDescription('');
+      setNewTaskDueDate('');
+      setNewTaskWeight('');
+      setNewTaskType('');
+      setShowAddTask(false);
+    } catch (error) {
+      console.error('Failed to create task:', error);
+    }
   };
 
   const filterOptions: { value: FilterType; label: string; count: number }[] = [
@@ -142,19 +226,25 @@ export function TasksPage() {
     <div style={styles.page}>
       {/* Header */}
       <div style={styles.header}>
-        <button onClick={() => navigate('/')} style={styles.backButton}>
-          <ArrowLeft size={16} />
-          <span>Dashboard</span>
-        </button>
-        <div style={styles.headerContent}>
-          <h1 style={styles.title}>All Tasks</h1>
-          <p style={styles.subtitle}>{filteredTasks.length} tasks</p>
+        <div>
+          <button onClick={() => navigate('/')} style={styles.backButton}>
+            <ArrowLeft size={16} />
+            <span>Dashboard</span>
+          </button>
+          <div style={styles.headerContent}>
+            <h1 style={styles.title}>All Tasks</h1>
+            <p style={styles.subtitle}>{filteredTasks.length} tasks</p>
+          </div>
         </div>
+        <button style={styles.addButton} onClick={() => setShowAddTask(true)}>
+          <Plus size={16} />
+          Add Task
+        </button>
       </div>
 
       {/* Filter Tabs */}
       <div style={styles.filterRow}>
-        {filterOptions.map(option => (
+        {filterOptions.map((option) => (
           <button
             key={option.value}
             style={{
@@ -187,14 +277,16 @@ export function TasksPage() {
                   ...styles.taskItem,
                   borderTop: index === 0 ? 'none' : '1px solid var(--border-light)',
                   opacity: item.task.isCompleted ? 0.7 : 1,
+                  cursor: 'pointer',
                 }}
-                onClick={() => handleTaskClick(item.task, item.course)}
+                onDoubleClick={() => handleTaskDoubleClick(item.task, item.course)}
+                onContextMenu={(e) => handleTaskContextMenu(e, item.task, item.course)}
                 role="button"
                 tabIndex={0}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
+                  if (e.key === 'Enter') {
                     e.preventDefault();
-                    handleTaskClick(item.task, item.course);
+                    handleTaskDoubleClick(item.task, item.course);
                   }
                 }}
               >
@@ -214,12 +306,15 @@ export function TasksPage() {
                   }}
                 />
 
-                {/* Completion indicator */}
+                {/* Submission status indicator */}
                 <div style={styles.statusIcon}>
-                  {item.task.isCompleted ? (
-                    <CheckCircle size={20} color="var(--color-success)" />
-                  ) : (
-                    <Circle size={20} color="var(--text-muted)" />
+                  {(item.task.submissionStatus === 'submitted' ||
+                    item.task.submissionStatus === 'graded') && (
+                    <CheckCircle
+                      size={18}
+                      color="var(--color-success)"
+                      style={{ animation: 'fadeIn 0.3s ease-out' }}
+                    />
                   )}
                 </div>
 
@@ -260,11 +355,171 @@ export function TasksPage() {
                     </span>
                   </div>
                 </div>
+
+                {/* Checkbox - right side */}
+                <button
+                  style={styles.checkbox}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleToggleComplete(item.task.id, item.task.isCompleted);
+                  }}
+                  aria-label={item.task.isCompleted ? 'Mark incomplete' : 'Mark complete'}
+                >
+                  {item.task.isCompleted ? (
+                    <CheckCircle size={24} color="var(--color-success)" />
+                  ) : (
+                    <Circle size={24} color="var(--text-muted)" />
+                  )}
+                </button>
               </div>
             ))}
           </div>
         )}
       </Card>
+
+      {/* Add Task Modal */}
+      {showAddTask && (
+        <div style={styles.modalOverlay} onClick={() => setShowAddTask(false)}>
+          <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+            <h2 style={styles.modalTitle}>Add Task</h2>
+            <div style={styles.modalForm}>
+              <select
+                value={newTaskCourseId}
+                onChange={(e) =>
+                  setNewTaskCourseId(e.target.value ? Number(e.target.value) : '')
+                }
+                style={styles.formSelect}
+              >
+                <option value="">Select course...</option>
+                {courses.map((course) => (
+                  <option key={course.id} value={course.id}>
+                    {course.code} - {course.nickname || getCleanCourseName(course.name)}
+                  </option>
+                ))}
+              </select>
+              <input
+                type="text"
+                placeholder="Task title"
+                value={newTaskTitle}
+                onChange={(e) => setNewTaskTitle(e.target.value)}
+                style={styles.formInput}
+                autoFocus
+              />
+              <RichTextEditor
+                value={newTaskDescription}
+                onChange={setNewTaskDescription}
+                placeholder="Task description (optional)..."
+                minHeight={80}
+              />
+              <div style={styles.formRow}>
+                <select
+                  value={newTaskType}
+                  onChange={(e) => setNewTaskType(e.target.value)}
+                  style={styles.formSelect}
+                >
+                  <option value="">Select type...</option>
+                  <option value="assignment">Assignment</option>
+                  <option value="quiz">Quiz</option>
+                  <option value="discussion">Discussion</option>
+                  <option value="exam">Exam</option>
+                </select>
+                <input
+                  type="date"
+                  value={newTaskDueDate}
+                  onChange={(e) => setNewTaskDueDate(e.target.value)}
+                  style={styles.formInput}
+                />
+                <input
+                  type="number"
+                  placeholder="Weight %"
+                  value={newTaskWeight}
+                  onChange={(e) => setNewTaskWeight(e.target.value)}
+                  style={styles.formInputSmall}
+                  min="0"
+                  max="100"
+                />
+              </div>
+              <div style={styles.formActions}>
+                <button style={styles.cancelButton} onClick={() => setShowAddTask(false)}>
+                  Cancel
+                </button>
+                <button
+                  style={styles.saveButton}
+                  onClick={handleCreateTask}
+                  disabled={!newTaskTitle.trim() || !newTaskCourseId}
+                >
+                  Create Task
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Task Context Menu */}
+      {contextMenu && (
+        <TaskContextMenu
+          task={{
+            id: contextMenu.task.id,
+            title: contextMenu.task.title,
+            isCompleted: contextMenu.task.isCompleted,
+            isOptional: contextMenu.task.isOptional,
+            calendarEventId: contextMenu.task.calendarEventId,
+            dueAt: contextMenu.task.dueAt,
+          }}
+          position={contextMenu.position}
+          onClose={() => setContextMenu(null)}
+          onEdit={() => {
+            navigate(
+              `/course/${contextMenu.course.id}?highlightTask=${contextMenu.task.id}`
+            );
+            setContextMenu(null);
+          }}
+          onDuplicate={() => {
+            handleDuplicateTask();
+            setContextMenu(null);
+          }}
+          onToggleComplete={() => {
+            handleToggleComplete();
+            setContextMenu(null);
+          }}
+          onToggleOptional={async () => {
+            const api = window.api;
+            if (!api?.dispatch) return;
+            try {
+              await api.dispatch('UpdateTask', {
+                taskId: contextMenu.task.id,
+                updates: { isOptional: !contextMenu.task.isOptional },
+              });
+            } catch (error) {
+              console.error('Failed to toggle optional:', error);
+            }
+            setContextMenu(null);
+          }}
+          onOpenInCanvas={() => {
+            handleOpenInCanvas();
+            setContextMenu(null);
+          }}
+          onViewInCalendar={() => {
+            if (contextMenu.task.dueAt) {
+              const dueDate = new Date(contextMenu.task.dueAt);
+              navigate('/calendar', {
+                state: {
+                  targetDate: dueDate.toISOString(),
+                  taskId: contextMenu.task.id,
+                },
+              });
+            } else {
+              navigate('/calendar');
+            }
+            setContextMenu(null);
+          }}
+          onDelete={() => {
+            handleDeleteTask();
+            setContextMenu(null);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -282,6 +537,9 @@ const styles: Record<string, React.CSSProperties> = {
 
   header: {
     marginBottom: 'var(--space-6)',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
   },
 
   backButton: {
@@ -355,6 +613,19 @@ const styles: Record<string, React.CSSProperties> = {
     padding: 'var(--space-4) var(--space-5)',
     cursor: 'pointer',
     transition: 'background-color var(--transition-fast)',
+  },
+
+  checkbox: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 0,
+    marginLeft: 'var(--space-3)',
+    background: 'none',
+    border: 'none',
+    cursor: 'pointer',
+    flexShrink: 0,
+    transition: 'transform var(--transition-fast)',
   },
 
   priorityBar: {
@@ -434,6 +705,127 @@ const styles: Record<string, React.CSSProperties> = {
     padding: 'var(--space-8)',
     color: 'var(--text-muted)',
     fontSize: 'var(--text-sm)',
+  },
+
+  addButton: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-2)',
+    padding: 'var(--space-2) var(--space-4)',
+    backgroundColor: 'var(--color-navy)',
+    color: 'white',
+    border: 'none',
+    borderRadius: 'var(--radius-md)',
+    fontSize: 'var(--text-sm)',
+    fontWeight: 'var(--font-medium)',
+    cursor: 'pointer',
+  },
+
+  modalOverlay: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1000,
+  },
+
+  modal: {
+    backgroundColor: 'var(--bg-card)',
+    borderRadius: 'var(--radius-lg)',
+    padding: 'var(--space-6)',
+    width: '100%',
+    maxWidth: '480px',
+    boxShadow: 'var(--shadow-lg)',
+  },
+
+  modalTitle: {
+    fontSize: 'var(--text-lg)',
+    fontWeight: 'var(--font-semibold)',
+    color: 'var(--text-primary)',
+    marginBottom: 'var(--space-4)',
+  },
+
+  modalForm: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 'var(--space-3)',
+  },
+
+  formInput: {
+    padding: 'var(--space-3)',
+    fontSize: 'var(--text-sm)',
+    border: '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-md)',
+    backgroundColor: 'var(--bg-app)',
+    color: 'var(--text-primary)',
+  },
+
+  formInputSmall: {
+    width: '100px',
+    padding: 'var(--space-2) var(--space-3)',
+    fontSize: 'var(--text-sm)',
+    border: '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-md)',
+    backgroundColor: 'var(--bg-app)',
+    color: 'var(--text-primary)',
+  },
+
+  formTextarea: {
+    padding: 'var(--space-3)',
+    fontSize: 'var(--text-sm)',
+    border: '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-md)',
+    backgroundColor: 'var(--bg-app)',
+    color: 'var(--text-primary)',
+    resize: 'vertical',
+  },
+
+  formSelect: {
+    flex: 1,
+    padding: 'var(--space-2) var(--space-3)',
+    fontSize: 'var(--text-sm)',
+    border: '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-md)',
+    backgroundColor: 'var(--bg-app)',
+    color: 'var(--text-primary)',
+  },
+
+  formRow: {
+    display: 'flex',
+    gap: 'var(--space-3)',
+  },
+
+  formActions: {
+    display: 'flex',
+    justifyContent: 'flex-end',
+    gap: 'var(--space-2)',
+    marginTop: 'var(--space-2)',
+  },
+
+  cancelButton: {
+    padding: 'var(--space-2) var(--space-4)',
+    backgroundColor: 'transparent',
+    color: 'var(--text-secondary)',
+    border: '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-md)',
+    fontSize: 'var(--text-sm)',
+    cursor: 'pointer',
+  },
+
+  saveButton: {
+    padding: 'var(--space-2) var(--space-4)',
+    backgroundColor: 'var(--color-navy)',
+    color: 'white',
+    border: 'none',
+    borderRadius: 'var(--radius-md)',
+    fontSize: 'var(--text-sm)',
+    fontWeight: 'var(--font-medium)',
+    cursor: 'pointer',
   },
 };
 

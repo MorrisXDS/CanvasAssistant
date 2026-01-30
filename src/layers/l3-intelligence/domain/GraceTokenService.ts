@@ -26,11 +26,12 @@ export interface TokenApplicationResult {
 }
 
 export interface TokenStatus {
+  taskType: string;
   totalTokens: number;
   usedTokens: number;
   availableTokens: number;
   hoursPerToken: number;
-  maxTokensPerTask: number;
+  maxTokensPerTask: number | null; // null = no limit
 }
 
 /**
@@ -42,6 +43,7 @@ export class GraceTokenService {
    */
   getStatus(config: GraceTokenConfig): TokenStatus {
     return {
+      taskType: config.task_type,
       totalTokens: config.total_tokens,
       usedTokens: config.tokens_used,
       availableTokens: config.total_tokens - config.tokens_used,
@@ -65,6 +67,26 @@ export class GraceTokenService {
     const config = policy.policyConfig;
     const availableTokens = config.total_tokens - config.tokens_used;
 
+    // Check if task has a due date first
+    if (!task.dueAt) {
+      return {
+        canUse: false,
+        error: 'Task has no due date',
+        availableTokens,
+        requestedTokens: tokensToUse,
+      };
+    }
+
+    // Check if task type matches this policy's task type
+    if (!this.isTaskTypeMatch(task, config.task_type)) {
+      return {
+        canUse: false,
+        error: `This policy only applies to ${config.task_type} tasks`,
+        availableTokens,
+        requestedTokens: tokensToUse,
+      };
+    }
+
     // Check if enough tokens available
     if (tokensToUse > availableTokens) {
       return {
@@ -75,41 +97,11 @@ export class GraceTokenService {
       };
     }
 
-    // Check max per task limit
-    if (tokensToUse > config.max_tokens_per_task) {
+    // Check max per task limit (null means no limit)
+    if (config.max_tokens_per_task !== null && tokensToUse > config.max_tokens_per_task) {
       return {
         canUse: false,
         error: `Cannot use more than ${config.max_tokens_per_task} tokens per task`,
-        availableTokens,
-        requestedTokens: tokensToUse,
-      };
-    }
-
-    // Check if task has a due date
-    if (!task.dueAt) {
-      return {
-        canUse: false,
-        error: 'Task has no due date',
-        availableTokens,
-        requestedTokens: tokensToUse,
-      };
-    }
-
-    // Check if task type is excluded
-    if (this.isTaskExcluded(task, config)) {
-      return {
-        canUse: false,
-        error: 'Grace tokens cannot be used for this task type',
-        availableTokens,
-        requestedTokens: tokensToUse,
-      };
-    }
-
-    // Check if task type applies (if applies_to is specified)
-    if (config.applies_to.length > 0 && !this.isTaskIncluded(task, config)) {
-      return {
-        canUse: false,
-        error: 'Grace tokens do not apply to this task type',
         availableTokens,
         requestedTokens: tokensToUse,
       };
@@ -169,31 +161,19 @@ export class GraceTokenService {
   }
 
   /**
-   * Check if a task is excluded from grace token usage.
+   * Check if a task matches the policy's task type.
    */
-  private isTaskExcluded(task: Task, config: GraceTokenConfig): boolean {
-    if (config.excludes.length === 0) {
+  private isTaskTypeMatch(task: Task, policyTaskType: string): boolean {
+    if (!policyTaskType) {
       return false;
     }
 
+    const taskType = task.taskType?.toLowerCase();
     const titleLower = task.title.toLowerCase();
-    return config.excludes.some((pattern) =>
-      titleLower.includes(pattern.toLowerCase())
-    );
-  }
+    const policyTypeLower = policyTaskType.toLowerCase();
 
-  /**
-   * Check if a task is included in grace token eligibility.
-   */
-  private isTaskIncluded(task: Task, config: GraceTokenConfig): boolean {
-    if (config.applies_to.length === 0) {
-      return true; // If no applies_to specified, all tasks are included
-    }
-
-    const titleLower = task.title.toLowerCase();
-    return config.applies_to.some((pattern) =>
-      titleLower.includes(pattern.toLowerCase())
-    );
+    // Match by task type field or by title containing the type
+    return taskType === policyTypeLower || titleLower.includes(policyTypeLower);
   }
 
   /**
@@ -201,12 +181,11 @@ export class GraceTokenService {
    */
   createDefaultConfig(overrides?: Partial<GraceTokenConfig>): GraceTokenConfig {
     return {
+      task_type: overrides?.task_type ?? '',
       total_tokens: overrides?.total_tokens ?? 3,
       tokens_used: overrides?.tokens_used ?? 0,
       hours_per_token: overrides?.hours_per_token ?? 24,
-      max_tokens_per_task: overrides?.max_tokens_per_task ?? 1,
-      applies_to: overrides?.applies_to ?? [],
-      excludes: overrides?.excludes ?? ['exam', 'final', 'midterm'],
+      max_tokens_per_task: overrides?.max_tokens_per_task ?? null, // null = no limit
     };
   }
 
@@ -223,6 +202,8 @@ export class GraceTokenService {
    */
   calculateMaxExtension(config: GraceTokenConfig): number {
     const available = config.total_tokens - config.tokens_used;
-    return Math.min(available, config.max_tokens_per_task) * config.hours_per_token;
+    // If no per-task limit, can use all available tokens
+    const maxPerTask = config.max_tokens_per_task ?? available;
+    return Math.min(available, maxPerTask) * config.hours_per_token;
   }
 }

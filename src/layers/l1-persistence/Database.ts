@@ -14,6 +14,8 @@ export interface DatabaseConfig {
   idleCheckpointMs?: number;
   /** WAL file size threshold for checkpoint in bytes (default: 100MB) */
   walCheckpointThreshold?: number;
+  /** Maximum time writes can be locked in ms (default: 30 seconds) */
+  maxWriteLockDurationMs?: number;
 }
 
 export interface CommitEvent {
@@ -37,6 +39,7 @@ const DEFAULT_CACHE_SIZE_KB = 64000; // 64MB
 const DEFAULT_MMAP_SIZE_BYTES = 268435456; // 256MB
 const DEFAULT_IDLE_CHECKPOINT_MS = 5 * 60 * 1000; // 5 minutes
 const DEFAULT_WAL_CHECKPOINT_THRESHOLD = 100 * 1024 * 1024; // 100MB
+const DEFAULT_MAX_WRITE_LOCK_DURATION_MS = 60 * 1000; // 60 seconds - increased from 30s to handle long reset operations (#8)
 
 // SQL identifier validation - prevents SQL injection via table/column names
 const VALID_SQL_IDENTIFIER = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
@@ -47,7 +50,9 @@ const VALID_SQL_IDENTIFIER = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
  */
 function validateSqlIdentifier(name: string, type: 'table' | 'column'): void {
   if (!VALID_SQL_IDENTIFIER.test(name)) {
-    throw new Error(`Invalid ${type} name: "${name}". Must match pattern ${VALID_SQL_IDENTIFIER}`);
+    throw new Error(
+      `Invalid ${type} name: "${name}". Must match pattern ${VALID_SQL_IDENTIFIER}`
+    );
   }
 }
 
@@ -55,6 +60,7 @@ export class Database extends EventEmitter {
   private db: SQLiteDatabase;
   private dbPath: string;
   private isInitialized: boolean = false;
+  private _isOpen: boolean = false;
   private readonly cacheSizeKb: number;
   private readonly mmapSizeBytes: number;
   private readonly walMode: boolean;
@@ -66,6 +72,12 @@ export class Database extends EventEmitter {
   private lastWriteTime: number = 0;
   private walCheckInterval: NodeJS.Timeout | null = null;
 
+  // Write lock - prevents further writes after app reset
+  private writeLocked: boolean = false;
+  private writeLockStartTime: number | null = null;
+  private writeLockWatchdog: NodeJS.Timeout | null = null;
+  private readonly maxWriteLockDurationMs: number;
+
   constructor(config: DatabaseConfig) {
     super();
     this.dbPath = config.dbPath;
@@ -75,7 +87,10 @@ export class Database extends EventEmitter {
     this.mmapSizeBytes = config.performance?.mmapSizeBytes ?? DEFAULT_MMAP_SIZE_BYTES;
     this.walMode = config.performance?.walMode ?? true;
     this.idleCheckpointMs = config.idleCheckpointMs ?? DEFAULT_IDLE_CHECKPOINT_MS;
-    this.walCheckpointThreshold = config.walCheckpointThreshold ?? DEFAULT_WAL_CHECKPOINT_THRESHOLD;
+    this.walCheckpointThreshold =
+      config.walCheckpointThreshold ?? DEFAULT_WAL_CHECKPOINT_THRESHOLD;
+    this.maxWriteLockDurationMs =
+      config.maxWriteLockDurationMs ?? DEFAULT_MAX_WRITE_LOCK_DURATION_MS;
 
     // Ensure directory exists
     const dbDir = path.dirname(this.dbPath);
@@ -95,6 +110,15 @@ export class Database extends EventEmitter {
     if (this.walMode) {
       this.startCheckpointManagement();
     }
+
+    this._isOpen = true;
+  }
+
+  /**
+   * Check if the database connection is open
+   */
+  get isOpen(): boolean {
+    return this._isOpen;
   }
 
   /**
@@ -155,16 +179,79 @@ export class Database extends EventEmitter {
    */
   recordMigration(version: number, description: string): void {
     this.db
-      .prepare(
-        'INSERT INTO schema_version (version, description) VALUES (?, ?)'
-      )
+      .prepare('INSERT INTO schema_version (version, description) VALUES (?, ?)')
       .run(version, description);
+  }
+
+  /**
+   * Lock the database to prevent further writes.
+   * Used during app reset to prevent stray writes from in-flight operations.
+   * Includes a watchdog that automatically releases the lock after maxWriteLockDurationMs.
+   */
+  lockWrites(): void {
+    this.writeLocked = true;
+    this.writeLockStartTime = Date.now();
+
+    // Clear any existing watchdog
+    if (this.writeLockWatchdog) {
+      clearTimeout(this.writeLockWatchdog);
+    }
+
+    // Set up watchdog to auto-release lock after max duration
+    this.writeLockWatchdog = setTimeout(() => {
+      if (this.writeLocked) {
+        const lockDuration = Date.now() - (this.writeLockStartTime ?? Date.now());
+        this.emit('write-lock-timeout', {
+          lockDuration,
+          maxDuration: this.maxWriteLockDurationMs,
+        });
+        this.unlockWrites();
+      }
+    }, this.maxWriteLockDurationMs);
+
+    this.emit('write-lock-acquired');
+  }
+
+  /**
+   * Check if database writes are locked
+   */
+  isWriteLocked(): boolean {
+    return this.writeLocked;
+  }
+
+  /**
+   * Get how long the write lock has been held (0 if not locked)
+   */
+  getWriteLockDuration(): number {
+    if (!this.writeLocked || this.writeLockStartTime === null) {
+      return 0;
+    }
+    return Date.now() - this.writeLockStartTime;
+  }
+
+  /**
+   * Unlock the database to allow writes again.
+   * Called when re-connecting after an app reset.
+   */
+  unlockWrites(): void {
+    // Clear watchdog timer
+    if (this.writeLockWatchdog) {
+      clearTimeout(this.writeLockWatchdog);
+      this.writeLockWatchdog = null;
+    }
+
+    this.writeLocked = false;
+    this.writeLockStartTime = null;
+    this.emit('write-lock-released');
   }
 
   /**
    * Execute SQL within a transaction with commit event emission
    */
   transaction<T>(fn: () => T): T {
+    if (this.writeLocked) {
+      throw new Error('Database is locked for writes');
+    }
     return this.db.transaction(fn)();
   }
 
@@ -176,6 +263,9 @@ export class Database extends EventEmitter {
     params: unknown[] = [],
     tableName?: string
   ): { changes: number; lastInsertRowid: number } {
+    if (this.writeLocked) {
+      throw new Error('Database is locked for writes');
+    }
     const stmt = this.db.prepare(sql);
     const result = stmt.run(...params);
 
@@ -247,10 +337,12 @@ export class Database extends EventEmitter {
     // Validate identifiers to prevent SQL injection
     validateSqlIdentifier(tableName, 'table');
     const columns = Object.keys(data);
-    columns.forEach(col => validateSqlIdentifier(col, 'column'));
-    const conflictColArray = Array.isArray(conflictColumns) ? conflictColumns : [conflictColumns];
-    conflictColArray.forEach(col => validateSqlIdentifier(col, 'column'));
-    preserveColumns.forEach(col => validateSqlIdentifier(col, 'column'));
+    columns.forEach((col) => validateSqlIdentifier(col, 'column'));
+    const conflictColArray = Array.isArray(conflictColumns)
+      ? conflictColumns
+      : [conflictColumns];
+    conflictColArray.forEach((col) => validateSqlIdentifier(col, 'column'));
+    preserveColumns.forEach((col) => validateSqlIdentifier(col, 'column'));
     const values = Object.values(data);
     const placeholders = columns.map(() => '?').join(', ');
     const conflictClause = conflictColArray.join(', ');
@@ -301,10 +393,12 @@ export class Database extends EventEmitter {
     // Validate identifiers to prevent SQL injection
     validateSqlIdentifier(tableName, 'table');
     const columns = Object.keys(data);
-    columns.forEach(col => validateSqlIdentifier(col, 'column'));
-    const conflictColArray = Array.isArray(conflictColumns) ? conflictColumns : [conflictColumns];
-    conflictColArray.forEach(col => validateSqlIdentifier(col, 'column'));
-    updateColumns.forEach(col => validateSqlIdentifier(col, 'column'));
+    columns.forEach((col) => validateSqlIdentifier(col, 'column'));
+    const conflictColArray = Array.isArray(conflictColumns)
+      ? conflictColumns
+      : [conflictColumns];
+    conflictColArray.forEach((col) => validateSqlIdentifier(col, 'column'));
+    updateColumns.forEach((col) => validateSqlIdentifier(col, 'column'));
 
     const values = Object.values(data);
     const placeholders = columns.map(() => '?').join(', ');
@@ -312,8 +406,10 @@ export class Database extends EventEmitter {
 
     // Only update the specified columns (Canvas-provided data)
     const updates = updateColumns
-      .filter(col => !conflictColArray.includes(col) && col !== 'id' && columns.includes(col))
-      .map(col => `${col} = excluded.${col}`);
+      .filter(
+        (col) => !conflictColArray.includes(col) && col !== 'id' && columns.includes(col)
+      )
+      .map((col) => `${col} = excluded.${col}`);
 
     // Always update updated_at
     updates.push('updated_at = CURRENT_TIMESTAMP');
@@ -331,9 +427,7 @@ export class Database extends EventEmitter {
   /**
    * Detect SQL operation type from query
    */
-  private detectOperation(
-    sql: string
-  ): 'INSERT' | 'UPDATE' | 'DELETE' {
+  private detectOperation(sql: string): 'INSERT' | 'UPDATE' | 'DELETE' {
     const upperSql = sql.trim().toUpperCase();
     if (upperSql.startsWith('INSERT')) return 'INSERT';
     if (upperSql.startsWith('UPDATE')) return 'UPDATE';
@@ -438,7 +532,7 @@ export class Database extends EventEmitter {
           threshold: this.walCheckpointThreshold,
         });
       }
-    } catch (error) {
+    } catch {
       // Ignore errors - WAL file may not exist
     }
   }
@@ -468,6 +562,178 @@ export class Database extends EventEmitter {
   }
 
   /**
+   * Check database integrity
+   * Uses quick_check for fast validation, falls back to full integrity_check if issues found
+   *
+   * @returns Object with ok status and any error messages
+   */
+  checkIntegrity(): { ok: boolean; errors: string[] } {
+    const errors: string[] = [];
+
+    try {
+      // Quick check is faster and catches most corruption
+      const quickResult = this.db.pragma('quick_check') as Array<{ quick_check: string }>;
+
+      // SQLite returns 'ok' if no issues found
+      if (quickResult.length === 1 && quickResult[0].quick_check === 'ok') {
+        return { ok: true, errors: [] };
+      }
+
+      // If quick_check found issues, run full integrity_check for details
+      const fullResult = this.db.pragma('integrity_check') as Array<{
+        integrity_check: string;
+      }>;
+
+      for (const row of fullResult) {
+        if (row.integrity_check !== 'ok') {
+          errors.push(row.integrity_check);
+        }
+      }
+
+      // If we got here but have no specific errors, add the quick_check results
+      if (errors.length === 0) {
+        for (const row of quickResult) {
+          if (row.quick_check !== 'ok') {
+            errors.push(row.quick_check);
+          }
+        }
+      }
+
+      this.emit('integrity-check', {
+        ok: errors.length === 0,
+        errors,
+        timestamp: new Date().toISOString(),
+      });
+
+      return { ok: errors.length === 0, errors };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      errors.push(`Integrity check failed: ${errorMessage}`);
+      return { ok: false, errors };
+    }
+  }
+
+  /**
+   * Perform WAL recovery - forces checkpoint to recover from incomplete transactions
+   * Should be called after crash detection to ensure WAL changes are applied
+   *
+   * @returns Object with success status and any error message
+   */
+  recoverWal(): { success: boolean; error?: string; walSizeBeforeBytes?: number } {
+    const walPath = `${this.dbPath}-wal`;
+    let walSizeBeforeBytes: number | undefined;
+
+    try {
+      // Check if WAL file exists
+      if (!fs.existsSync(walPath)) {
+        return { success: true }; // No WAL file, nothing to recover
+      }
+
+      // Get WAL size before recovery
+      try {
+        const stats = fs.statSync(walPath);
+        walSizeBeforeBytes = stats.size;
+      } catch {
+        // Ignore stat errors
+      }
+
+      // Force a truncating checkpoint to apply all WAL changes
+      const result = this.db.pragma('wal_checkpoint(TRUNCATE)') as Array<{
+        busy: number;
+        log: number;
+        checkpointed: number;
+      }>;
+
+      this.emit('wal-recovery', {
+        success: true,
+        walSizeBeforeBytes,
+        result: result[0],
+        timestamp: new Date().toISOString(),
+      });
+
+      return { success: true, walSizeBeforeBytes };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      this.emit('wal-recovery', {
+        success: false,
+        error: errorMessage,
+        walSizeBeforeBytes,
+        timestamp: new Date().toISOString(),
+      });
+      return { success: false, error: errorMessage, walSizeBeforeBytes };
+    }
+  }
+
+  /**
+   * Export all data to JSON for backup before reset
+   *
+   * @returns Object mapping table names to their data
+   */
+  exportAllData(): Record<string, unknown[]> {
+    const data: Record<string, unknown[]> = {};
+
+    // Get list of all tables (excluding SQLite internal tables)
+    const tables = this.db
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%'"
+      )
+      .all() as Array<{ name: string }>;
+
+    for (const { name } of tables) {
+      try {
+        data[name] = this.db.prepare(`SELECT * FROM ${name}`).all();
+      } catch {
+        // Skip tables that can't be read
+        data[name] = [];
+      }
+    }
+
+    return data;
+  }
+
+  /**
+   * Get the underlying database file size and WAL size
+   */
+  getDatabaseStats(): {
+    dbSizeBytes: number;
+    walSizeBytes: number;
+    shmSizeBytes: number;
+  } {
+    const walPath = `${this.dbPath}-wal`;
+    const shmPath = `${this.dbPath}-shm`;
+
+    let dbSizeBytes = 0;
+    let walSizeBytes = 0;
+    let shmSizeBytes = 0;
+
+    try {
+      if (fs.existsSync(this.dbPath)) {
+        dbSizeBytes = fs.statSync(this.dbPath).size;
+      }
+    } catch {
+      // Ignore
+    }
+
+    try {
+      if (fs.existsSync(walPath)) {
+        walSizeBytes = fs.statSync(walPath).size;
+      }
+    } catch {
+      // Ignore
+    }
+
+    try {
+      if (fs.existsSync(shmPath)) {
+        shmSizeBytes = fs.statSync(shmPath).size;
+      }
+    } catch {
+      // Ignore
+    }
+
+    return { dbSizeBytes, walSizeBytes, shmSizeBytes };
+  }
+
+  /**
    * Close database connection
    */
   close(): void {
@@ -479,6 +745,11 @@ export class Database extends EventEmitter {
     if (this.walCheckInterval) {
       clearInterval(this.walCheckInterval);
       this.walCheckInterval = null;
+    }
+    // Clear write lock watchdog
+    if (this.writeLockWatchdog) {
+      clearTimeout(this.writeLockWatchdog);
+      this.writeLockWatchdog = null;
     }
 
     // Checkpoint before close to ensure all data is written
@@ -493,6 +764,7 @@ export class Database extends EventEmitter {
       });
     } finally {
       this.db.close();
+      this._isOpen = false;
     }
   }
 }

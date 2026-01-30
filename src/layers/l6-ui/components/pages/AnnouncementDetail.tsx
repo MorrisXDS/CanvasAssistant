@@ -6,6 +6,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
+import { HtmlContent, extractCanvasFileId } from '../shared';
 import {
   ArrowLeft,
   ExternalLink,
@@ -19,10 +20,19 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { useStore } from '../../../l5-presentation/store';
-import type { NotificationAttachment, AnnouncementFileReference } from '../../../l5-presentation/types';
+import {
+  STORAGE_KEYS,
+  LINK_BEHAVIOR,
+  type LinkBehavior,
+} from '../../../l5-presentation/settings';
+import { formatFileSize } from '../../constants';
+import type {
+  NotificationAttachment,
+  AnnouncementFileReference,
+} from '../../../l5-presentation/types';
 
 /**
- * Format date for display
+ * Format date for display (with weekday)
  */
 function formatDate(dateStr: string): string {
   const date = new Date(dateStr);
@@ -36,13 +46,19 @@ function formatDate(dateStr: string): string {
 }
 
 /**
- * Format file size for display
+ * Get the user's link behavior preference from localStorage
  */
-function formatFileSize(bytes: number | null): string {
-  if (bytes === null) return '';
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+function getLinkBehaviorPreference(): LinkBehavior {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEYS.CONTENT);
+    if (stored) {
+      const settings = JSON.parse(stored);
+      return settings.linkBehavior ?? LINK_BEHAVIOR.ALWAYS_EXTERNAL;
+    }
+  } catch {
+    // Ignore parse errors
+  }
+  return LINK_BEHAVIOR.ALWAYS_EXTERNAL;
 }
 
 /**
@@ -63,7 +79,12 @@ interface MessageWithFileLinksProps {
   loadingAttachment: number | null;
 }
 
-function MessageWithFileLinks({ message, fileReferences, onFileClick, loadingAttachment }: MessageWithFileLinksProps) {
+function MessageWithFileLinks({
+  message,
+  fileReferences,
+  onFileClick,
+  loadingAttachment,
+}: MessageWithFileLinksProps) {
   if (fileReferences.length === 0) {
     return <>{message}</>;
   }
@@ -73,7 +94,9 @@ function MessageWithFileLinks({ message, fileReferences, onFileClick, loadingAtt
   let lastIndex = 0;
 
   // Sort by start position
-  const sortedRefs = [...fileReferences].sort((a, b) => a.startPosition - b.startPosition);
+  const sortedRefs = [...fileReferences].sort(
+    (a, b) => a.startPosition - b.startPosition
+  );
 
   sortedRefs.forEach((ref, i) => {
     // Add text before this reference
@@ -94,7 +117,9 @@ function MessageWithFileLinks({ message, fileReferences, onFileClick, loadingAtt
         style={{
           ...inlineStyles.fileLink,
           ...(hasAttachment
-            ? (isDownloaded ? inlineStyles.fileLinkDownloaded : inlineStyles.fileLinkPending)
+            ? isDownloaded
+              ? inlineStyles.fileLinkDownloaded
+              : inlineStyles.fileLinkPending
             : inlineStyles.fileLinkExternal),
           cursor: isLoading ? 'wait' : 'pointer',
         }}
@@ -105,16 +130,19 @@ function MessageWithFileLinks({ message, fileReferences, onFileClick, loadingAtt
         }}
         title={
           hasAttachment
-            ? (isDownloaded
-                ? `Open ${ref.matchedText} (downloaded locally)`
-                : `Download ${ref.matchedText}`)
-            : (ref.originalUrl
-                ? `Open ${ref.matchedText} on Canvas`
-                : ref.matchedText)
+            ? isDownloaded
+              ? `Open ${ref.matchedText} (downloaded locally)`
+              : `Download ${ref.matchedText}`
+            : ref.originalUrl
+              ? `Open ${ref.matchedText} on Canvas`
+              : ref.matchedText
         }
       >
         {isLoading ? (
-          <Loader2 size={12} style={{ animation: 'spin 1s linear infinite', marginRight: 4 }} />
+          <Loader2
+            size={12}
+            style={{ animation: 'spin 1s linear infinite', marginRight: 4 }}
+          />
         ) : hasAttachment ? (
           isDownloaded ? (
             <CheckCircle size={12} style={{ marginRight: 4 }} />
@@ -175,7 +203,9 @@ export function AnnouncementDetail() {
   const [attachments, setAttachments] = useState<NotificationAttachment[]>([]);
   const [fileReferences, setFileReferences] = useState<AnnouncementFileReference[]>([]);
   const [loadingAttachment, setLoadingAttachment] = useState<number | null>(null);
-  const [fetchedNotification, setFetchedNotification] = useState<typeof notifications[0] | null>(null);
+  const [fetchedNotification, setFetchedNotification] = useState<
+    (typeof notifications)[0] | null
+  >(null);
   const [loading, setLoading] = useState(true);
 
   // Try to find notification in store first, otherwise fetch it
@@ -309,6 +339,37 @@ export function AnnouncementDetail() {
     });
   };
 
+  // Handle link clicks in HTML content (for Canvas file links)
+  const handleHtmlLinkClick = async (href: string, isCanvasFile: boolean) => {
+    const linkBehavior = getLinkBehaviorPreference();
+
+    if (linkBehavior === LINK_BEHAVIOR.PREFER_LOCAL && isCanvasFile) {
+      // Check if this is a Canvas file link and try to open locally
+      const fileId = extractCanvasFileId(href);
+      if (fileId && window.api) {
+        try {
+          // Try to find this file in our downloaded resources
+          const filesData = await window.api.getFiles();
+          // getFiles returns { resources: [], attachments: [], pages: [] }
+          const allFiles = [...filesData.resources, ...filesData.attachments];
+          const file = allFiles.find(
+            (f: { externalId: string }) => f.externalId === fileId
+          );
+          if (file?.localPath) {
+            // File is downloaded, open it locally
+            await window.api.openResource(file.id);
+            return;
+          }
+        } catch {
+          // Fall through to open externally
+        }
+      }
+    }
+
+    // Default: open in browser
+    window.api?.openExternal(href);
+  };
+
   // Handle clicking on inline file links (from file references)
   const handleFileReferenceClick = (ref: AnnouncementFileReference) => {
     if (ref.attachment) {
@@ -355,7 +416,9 @@ export function AnnouncementDetail() {
                     <span style={styles.metaDot}>•</span>
                   </>
                 )}
-                <span style={styles.dateText}>{formatDate(notification.publishedAt)}</span>
+                <span style={styles.dateText}>
+                  {formatDate(notification.publishedAt)}
+                </span>
               </div>
             </div>
           </header>
@@ -365,21 +428,11 @@ export function AnnouncementDetail() {
 
           {/* Message Content - render HTML if available, otherwise plain text with file links */}
           {notification.messageHtml ? (
-            <div
+            <HtmlContent
+              html={notification.messageHtml}
               className="announcement-content"
               style={styles.htmlContent}
-              dangerouslySetInnerHTML={{ __html: notification.messageHtml }}
-              onClick={(e) => {
-                // Intercept link clicks and open externally
-                const target = e.target as HTMLElement;
-                if (target.tagName === 'A') {
-                  e.preventDefault();
-                  const href = (target as HTMLAnchorElement).href;
-                  if (href) {
-                    window.api?.openExternal(href);
-                  }
-                }
-              }}
+              onLinkClick={handleHtmlLinkClick}
             />
           ) : (
             <div style={styles.content}>
@@ -406,7 +459,10 @@ export function AnnouncementDetail() {
                       <div style={styles.attachmentName}>{attachment.displayName}</div>
                       <div style={styles.attachmentMeta}>
                         {formatFileSize(attachment.sizeBytes)}
-                        {attachment.contentType && ` • ${attachment.contentType.split('/')[1]?.toUpperCase()}`}
+                        {/* eslint-disable cross-platform/no-hardcoded-path-separator -- MIME type separator, not path */}
+                        {attachment.contentType &&
+                          ` • ${attachment.contentType.split('/')[1]?.toUpperCase()}`}
+                        {/* eslint-enable cross-platform/no-hardcoded-path-separator */}
                       </div>
                     </div>
                     <div style={styles.attachmentActions}>

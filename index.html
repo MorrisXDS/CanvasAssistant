@@ -8,6 +8,67 @@
       content="default-src 'self' blob:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' file: data:;"
     />
     <title>Canvas Integration Dashboard</title>
+    <!-- Critical CSS - prevent white flash on startup -->
+    <style>
+      html, body {
+        margin: 0;
+        padding: 0;
+        background-color: #F5F7FA; /* Light default */
+      }
+      html[data-theme="dark"], html[data-theme="dark"] body {
+        background-color: #0f172a; /* Dark mode */
+      }
+    </style>
+    <!-- Handle file drops -->
+    <script>
+      console.log('[HTML] Setting up drag listeners...');
+
+      window.ondragover = function(e) {
+        e.preventDefault();
+        return false;
+      };
+
+      window.ondrop = function(e) {
+        e.preventDefault();
+        console.log('[WINDOW] DROP via ondrop!', e.dataTransfer?.files?.length);
+
+        var files = e.dataTransfer?.files;
+        if (files && files.length > 0) {
+          var file = files[0];
+          console.log('[WINDOW] File:', file.name, file.type, file.size);
+
+          // If it's an ICS file, read it and dispatch custom event
+          if (file.name.toLowerCase().endsWith('.ics')) {
+            var reader = new FileReader();
+            reader.onload = function(evt) {
+              console.log('[WINDOW] File read, dispatching event');
+              window.dispatchEvent(new CustomEvent('ics-file-dropped', {
+                detail: { content: evt.target.result, filename: file.name }
+              }));
+            };
+            reader.readAsText(file);
+          }
+        }
+        return false;
+      };
+
+      console.log('[HTML] Drag listeners attached via on* properties');
+    </script>
+    <!-- Apply theme immediately before content loads -->
+    <script>
+      (function() {
+        var stored = localStorage.getItem('appearanceSettings');
+        var theme = 'system';
+        try {
+          if (stored) theme = JSON.parse(stored).theme || 'system';
+        } catch(e) {}
+
+        if (theme === 'system') {
+          theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        }
+        document.documentElement.setAttribute('data-theme', theme);
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

@@ -14,14 +14,15 @@ import {
 } from '../types';
 import { CourseRepository } from '../../l1-persistence/repositories';
 
-export class UpdateTargetGradeCommand
-  implements Command<UpdateTargetGradeParams, { previousGrade: number }>
-{
+export class UpdateTargetGradeCommand implements Command<
+  UpdateTargetGradeParams,
+  { previousGrade: number }
+> {
   readonly name = 'UpdateTargetGrade';
 
   validate(params: UpdateTargetGradeParams): { valid: boolean; error?: string } {
     if (!params.courseId || params.courseId <= 0) {
-      return { valid: false, error: 'Invalid course ID' };
+      return { valid: false, error: 'Course not found or invalid' };
     }
 
     if (typeof params.targetGrade !== 'number' || isNaN(params.targetGrade)) {
@@ -53,8 +54,9 @@ export class UpdateTargetGradeCommand
         return { success: false, error: 'Course not found' };
       }
 
-      // Update target grade using repository
-      courseRepo.update(params.courseId, { targetGrade: params.targetGrade });
+      // Update target grade using repository, marking as manually set
+      // This ensures the course won't auto-update when app default changes
+      courseRepo.updateTargetGradeManual(params.courseId, params.targetGrade);
 
       // Mark the field as locally modified for sync conflict detection
       courseRepo.markFieldModified(params.courseId, 'target_grade');
@@ -69,7 +71,7 @@ export class UpdateTargetGradeCommand
     } catch (error) {
       return {
         success: false,
-        error: `Failed to update target grade: ${error}`,
+        error: `Failed to update target grade: ${error instanceof Error ? error.message : String(error)}`,
       };
     }
   }

@@ -2,7 +2,7 @@
  * TaskTypeSelector - Dropdown with task types and "Add more" option
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Plus, X } from 'lucide-react';
 
 interface TaskType {
@@ -40,22 +40,49 @@ export function TaskTypeSelector({
   multiple = true,
   placeholder = 'Select task types...',
   showAddNew = true,
+  courseId,
 }: TaskTypeSelectorProps) {
   const [taskTypes, setTaskTypes] = useState<TaskType[]>(DEFAULT_TASK_TYPES);
   const [showDropdown, setShowDropdown] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
   const [newTypeName, setNewTypeName] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
   // Load custom task types from API
+  const loadCustomTypes = useCallback(async () => {
+    try {
+      const result = await window.api.getTaskTypes(courseId);
+      if (result.success && result.data) {
+        // Merge custom types with default types, avoiding duplicates
+        const customTypes: TaskType[] = result.data.map(
+          (ct: { id: number; name: string; displayName: string }) => ({
+            id: ct.id + 1000, // Offset to avoid ID conflicts with system types
+            name: ct.name,
+            displayName: ct.displayName,
+            isSystem: false,
+          })
+        );
+
+        // Filter out any custom types that have the same name as system types
+        const uniqueCustomTypes = customTypes.filter(
+          (ct) => !DEFAULT_TASK_TYPES.some((dt) => dt.name === ct.name)
+        );
+
+        setTaskTypes([...DEFAULT_TASK_TYPES, ...uniqueCustomTypes]);
+      }
+    } catch (error) {
+      console.error('Failed to load custom task types:', error);
+    }
+  }, [courseId]);
+
   useEffect(() => {
-    // TODO: Load from database via API
-    // For now, use defaults
-  }, []);
+    loadCustomTypes();
+  }, [loadCustomTypes]);
 
   const handleToggleType = (typeName: string) => {
     if (multiple) {
       if (value.includes(typeName)) {
-        onChange(value.filter(t => t !== typeName));
+        onChange(value.filter((t) => t !== typeName));
       } else {
         onChange([...value, typeName]);
       }
@@ -65,27 +92,47 @@ export function TaskTypeSelector({
     }
   };
 
-  const handleAddNewType = () => {
-    if (!newTypeName.trim()) return;
+  const handleAddNewType = async () => {
+    if (!newTypeName.trim() || isLoading) return;
 
     const name = newTypeName.toLowerCase().replace(/\s+/g, '_');
-    const newType: TaskType = {
-      id: Date.now(),
-      name,
-      displayName: newTypeName.trim(),
-      isSystem: false,
-    };
 
-    setTaskTypes([...taskTypes, newType]);
-    onChange([...value, name]);
-    setNewTypeName('');
-    setShowAddForm(false);
+    // Check if type already exists
+    if (taskTypes.some((t) => t.name === name)) {
+      return; // Type already exists
+    }
 
-    // TODO: Save to database via API
+    setIsLoading(true);
+
+    try {
+      const result = await window.api.createTaskType({
+        name,
+        displayName: newTypeName.trim(),
+        courseId,
+      });
+
+      if (result.success && result.data) {
+        const newType: TaskType = {
+          id: result.data.id + 1000,
+          name: result.data.name,
+          displayName: result.data.displayName,
+          isSystem: false,
+        };
+
+        setTaskTypes([...taskTypes, newType]);
+        onChange([...value, name]);
+        setNewTypeName('');
+        setShowAddForm(false);
+      }
+    } catch (error) {
+      console.error('Failed to create task type:', error);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleSelectAll = () => {
-    onChange(taskTypes.map(t => t.name));
+    onChange(taskTypes.map((t) => t.name));
   };
 
   const handleClearAll = () => {
@@ -95,18 +142,15 @@ export function TaskTypeSelector({
   return (
     <div style={styles.container}>
       {/* Selected Types Display */}
-      <div
-        style={styles.selector}
-        onClick={() => setShowDropdown(!showDropdown)}
-      >
+      <div style={styles.selector} onClick={() => setShowDropdown(!showDropdown)}>
         {value.length === 0 ? (
           <span style={styles.placeholder}>{placeholder}</span>
         ) : value.length === taskTypes.length ? (
           <span style={styles.allSelected}>All types</span>
         ) : (
           <div style={styles.selectedTags}>
-            {value.slice(0, 3).map(typeName => {
-              const type = taskTypes.find(t => t.name === typeName);
+            {value.slice(0, 3).map((typeName) => {
+              const type = taskTypes.find((t) => t.name === typeName);
               return (
                 <span key={typeName} style={styles.tag}>
                   {type?.displayName || typeName}
@@ -146,7 +190,7 @@ export function TaskTypeSelector({
 
           {/* Type List */}
           <div style={styles.typeList}>
-            {taskTypes.map(type => (
+            {taskTypes.map((type) => (
               <label key={type.name} style={styles.typeOption}>
                 <input
                   type={multiple ? 'checkbox' : 'radio'}
@@ -155,9 +199,7 @@ export function TaskTypeSelector({
                   style={styles.checkbox}
                 />
                 <span style={styles.typeName}>{type.displayName}</span>
-                {!type.isSystem && (
-                  <span style={styles.customBadge}>Custom</span>
-                )}
+                {!type.isSystem && <span style={styles.customBadge}>Custom</span>}
               </label>
             ))}
           </div>
@@ -182,18 +224,12 @@ export function TaskTypeSelector({
                   <button style={styles.addBtn} onClick={handleAddNewType}>
                     Add
                   </button>
-                  <button
-                    style={styles.cancelBtn}
-                    onClick={() => setShowAddForm(false)}
-                  >
+                  <button style={styles.cancelBtn} onClick={() => setShowAddForm(false)}>
                     <X size={14} />
                   </button>
                 </div>
               ) : (
-                <button
-                  style={styles.addNewBtn}
-                  onClick={() => setShowAddForm(true)}
-                >
+                <button style={styles.addNewBtn} onClick={() => setShowAddForm(true)}>
                   <Plus size={14} />
                   Add new type
                 </button>
@@ -205,10 +241,7 @@ export function TaskTypeSelector({
 
       {/* Click outside to close */}
       {showDropdown && (
-        <div
-          style={styles.overlay}
-          onClick={() => setShowDropdown(false)}
-        />
+        <div style={styles.overlay} onClick={() => setShowDropdown(false)} />
       )}
     </div>
   );

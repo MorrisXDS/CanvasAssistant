@@ -15,13 +15,13 @@ import type {
   DisplayCalendarEvent,
 } from '../../shared/ipc-contract';
 
-// Re-export types from repositories for convenience
+// Re-export types from centralized location for convenience
 export type {
   CourseRow,
   TaskRow,
   PolicyRow,
   NotificationRow,
-} from '../l1-persistence/repositories';
+} from '../l1-persistence/DatabaseRowTypes';
 
 /**
  * Map a course database row to a Course entity.
@@ -32,6 +32,7 @@ export function mapCourseRowToEntity(row: {
   code: string;
   name: string;
   target_grade: number;
+  target_grade_source?: 'default' | 'manual';
   assessed_grade: number | null;
   current_grade: number | null;
   color: string | null;
@@ -39,6 +40,8 @@ export function mapCourseRowToEntity(row: {
   is_hidden: number | boolean;
   last_synced_at: string | null;
   enrollment_term_id: number | null;
+  archived_at?: string | null;
+  archive_source?: 'manual' | 'auto' | null;
 }): Course {
   return {
     id: row.id,
@@ -46,6 +49,7 @@ export function mapCourseRowToEntity(row: {
     code: row.code,
     name: row.name,
     targetGrade: row.target_grade,
+    targetGradeSource: row.target_grade_source ?? 'default',
     assessedGrade: row.assessed_grade,
     currentGrade: row.current_grade,
     color: row.color,
@@ -53,6 +57,8 @@ export function mapCourseRowToEntity(row: {
     isHidden: Boolean(row.is_hidden),
     lastSyncedAt: row.last_synced_at,
     enrollmentTermId: row.enrollment_term_id,
+    archivedAt: row.archived_at ?? null,
+    archiveSource: row.archive_source ?? null,
   };
 }
 
@@ -65,6 +71,7 @@ export function mapCourseRowToDetail(row: {
   code: string;
   name: string;
   target_grade: number;
+  target_grade_source?: 'default' | 'manual';
   assessed_grade: number | null;
   current_grade: number | null;
   total_weight: number;
@@ -85,6 +92,19 @@ export function mapCourseRowToDetail(row: {
 /**
  * Map a task database row to a Task entity.
  */
+/**
+ * Calculate effective submission status using OR logic.
+ * If either Canvas or user status is 'graded' or 'submitted', use that.
+ */
+function getEffectiveSubmissionStatus(
+  canvasStatus: string | null,
+  userStatus: string | null
+): string | null {
+  if (canvasStatus === 'graded' || userStatus === 'graded') return 'graded';
+  if (canvasStatus === 'submitted' || userStatus === 'submitted') return 'submitted';
+  return canvasStatus ?? userStatus ?? 'pending';
+}
+
 export function mapTaskRowToEntity(row: {
   id: number;
   external_id: string;
@@ -92,16 +112,28 @@ export function mapTaskRowToEntity(row: {
   title: string;
   description: string | null;
   due_at: string | null;
+  due_time_known?: number | boolean;
   weight: number;
   grade: number | null;
   points_possible: number | null;
   priority_score: number;
   is_completed: number | boolean;
+  is_optional?: number | boolean;
   completed_at: string | null;
   submission_status: string | null;
+  user_submission_status?: string | null;
   task_type?: string | null;
   task_group_id?: number | null;
+  calendar_event_id?: number | null;
+  field_sources?: string | null;
 }): Task {
+  const fieldSources = row.field_sources ? JSON.parse(row.field_sources) : undefined;
+  const userSubmissionStatus = row.user_submission_status ?? null;
+  const effectiveStatus = getEffectiveSubmissionStatus(
+    row.submission_status,
+    userSubmissionStatus
+  );
+
   return {
     id: row.id,
     externalId: row.external_id,
@@ -109,15 +141,21 @@ export function mapTaskRowToEntity(row: {
     title: row.title,
     description: row.description,
     dueAt: row.due_at,
+    dueTimeKnown: Boolean(row.due_time_known ?? 1), // Default true for backward compat
     weight: row.weight,
     grade: row.grade,
     pointsPossible: row.points_possible,
     priorityScore: row.priority_score,
     isCompleted: Boolean(row.is_completed),
+    isOptional: Boolean(row.is_optional),
     completedAt: row.completed_at,
     submissionStatus: row.submission_status,
+    userSubmissionStatus,
+    effectiveSubmissionStatus: effectiveStatus,
     taskType: row.task_type ?? null,
     taskGroupId: row.task_group_id ?? null,
+    calendarEventId: row.calendar_event_id ?? null,
+    fieldSources,
   };
 }
 
@@ -215,6 +253,7 @@ export function mapCalendarEventRowToEntity(row: {
   source_type: string;
   course_id: number | null;
   imported_calendar_id: number | null;
+  task_id?: number | null;
   title: string;
   description: string | null;
   start_at: string;
@@ -225,6 +264,9 @@ export function mapCalendarEventRowToEntity(row: {
   recurrence_rule: string | null;
   recurrence_exception_dates: string | null;
   parent_event_id: number | null;
+  event_color?: string | null;
+  notes?: string | null;
+  reminder_minutes?: number | null;
   calendar_name?: string | null;
   calendar_color?: string | null;
 }): DisplayCalendarEvent {
@@ -234,6 +276,7 @@ export function mapCalendarEventRowToEntity(row: {
     sourceType: row.source_type as 'canvas' | 'user' | 'imported',
     courseId: row.course_id,
     importedCalendarId: row.imported_calendar_id,
+    taskId: row.task_id ?? null,
     title: row.title,
     description: row.description,
     startAt: row.start_at,
@@ -244,8 +287,11 @@ export function mapCalendarEventRowToEntity(row: {
     recurrenceRule: row.recurrence_rule,
     recurrenceExceptionDates: row.recurrence_exception_dates,
     parentEventId: row.parent_event_id,
+    eventColor: row.event_color ?? null,
+    notes: row.notes ?? null,
+    reminderMinutes: row.reminder_minutes ?? null,
     isRecurrenceInstance: false,
-    color: row.calendar_color || '#6366F1',
+    color: row.event_color || row.calendar_color || '#6366F1',
     calendarName: row.calendar_name ?? undefined,
   };
 }
@@ -276,10 +322,7 @@ export function removeEntityById<T extends { id: number }>(
 /**
  * Helper to add or update an entity in a list.
  */
-export function upsertEntity<T extends { id: number }>(
-  entities: T[],
-  entity: T
-): T[] {
+export function upsertEntity<T extends { id: number }>(entities: T[], entity: T): T[] {
   const existingIndex = entities.findIndex((e) => e.id === entity.id);
   if (existingIndex >= 0) {
     return [
@@ -311,5 +354,5 @@ export function mapLocalCourseIdsToExternal(
     localIds
   );
 
-  return rows.map(r => parseInt(r.external_id, 10)).filter(id => !isNaN(id));
+  return rows.map((r) => parseInt(r.external_id, 10)).filter((id) => !isNaN(id));
 }

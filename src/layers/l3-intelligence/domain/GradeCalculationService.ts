@@ -56,17 +56,31 @@ export class GradeCalculationService {
 
   /**
    * Calculate grade from a list of tasks.
+   * Safely handles null/undefined weights by treating them as 0.
    */
   calculateFromTasks(tasks: Task[]): GradeCalculationResult {
+    // Guard against empty or null/undefined input
+    if (!tasks || tasks.length === 0) {
+      return {
+        assessedGrade: null,
+        totalWeight: 0,
+        completedWeight: 0,
+        remainingWeight: 0,
+      };
+    }
+
     const completedWithGrades = tasks.filter((t) => t.isCompleted && t.grade !== null);
-    const totalWeight = tasks.reduce((sum, t) => sum + t.weight, 0);
-    const completedWeight = completedWithGrades.reduce((sum, t) => sum + t.weight, 0);
+
+    // Guard against null/undefined weights by treating them as 0
+    const totalWeight = tasks.reduce((sum, t) => sum + (t.weight ?? 0), 0);
+    const completedWeight = completedWithGrades.reduce((sum, t) => sum + (t.weight ?? 0), 0);
 
     const weightedSum = completedWithGrades.reduce(
-      (sum, t) => sum + (t.grade ?? 0) * t.weight,
+      (sum, t) => sum + (t.grade ?? 0) * (t.weight ?? 0),
       0
     );
 
+    // Guard against division by zero
     const assessedGrade = completedWeight > 0 ? weightedSum / completedWeight : null;
 
     return {
@@ -132,6 +146,17 @@ export class GradeCalculationService {
     }
 
     const totalWeight = currentWeight + remainingWeight;
+
+    // Guard against zero or negative total weight
+    if (totalWeight <= 0) {
+      return {
+        currentGrade,
+        projectedGrade: currentGrade ?? 0,
+        neededAverage: null,
+        isAchievable: false,
+      };
+    }
+
     const currentContribution = (currentGrade ?? 0) * (currentWeight / totalWeight);
     const neededContribution = targetGrade - currentContribution;
     const neededAverage = neededContribution / (remainingWeight / totalWeight);

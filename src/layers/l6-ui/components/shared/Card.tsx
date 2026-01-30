@@ -55,7 +55,10 @@ export function Card({
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: '24px 24px var(--space-3) 24px',
+    padding: '20px 24px',
+    height: '64px', // Fixed height for consistent alignment across cards
+    boxSizing: 'border-box',
+    borderBottom: '1px solid var(--border-light)',
   };
 
   const titleStyle: React.CSSProperties = {
@@ -66,9 +69,7 @@ export function Card({
   };
 
   const bodyStyle: React.CSSProperties = {
-    padding: title || headerAction
-      ? '0 24px 24px 24px'
-      : paddingStyles[padding],
+    padding: title || headerAction ? '0 24px 24px 24px' : paddingStyles[padding],
     flex: 1,
     overflow: 'auto',
   };

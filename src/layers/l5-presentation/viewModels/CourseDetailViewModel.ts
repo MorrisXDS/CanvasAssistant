@@ -189,8 +189,8 @@ function calculateGradeBreakdown(
     const totalWeight = completedTotalWeight + remainingWeight;
     const neededPoints = targetGrade * totalWeight - completedWeightedSum;
     requiredAverage = neededPoints / remainingWeight;
-    // Cap at reasonable bounds
-    requiredAverage = Math.max(0, Math.min(100, requiredAverage));
+    // Cap at reasonable bounds - allow values > 100 for bonus/extra credit scenarios
+    requiredAverage = Math.max(0, Math.min(150, requiredAverage));
   }
 
   return {

@@ -222,9 +222,16 @@ export class ServiceRegistry extends EventEmitter {
       return new MigrationRunner(this.get('database'));
     });
 
+    this.register('visibleDataProvider', () => {
+      const { VisibleDataProvider } = require('../l1-persistence/VisibleDataProvider');
+      return new VisibleDataProvider(this.get('database'));
+    });
+
     // L1 Repositories
     this.register('courseRepository', () => {
-      const { CourseRepository } = require('../l1-persistence/repositories/CourseRepository');
+      const {
+        CourseRepository,
+      } = require('../l1-persistence/repositories/CourseRepository');
       return new CourseRepository(this.get('database'));
     });
 
@@ -234,19 +241,25 @@ export class ServiceRegistry extends EventEmitter {
     });
 
     this.register('policyRepository', () => {
-      const { PolicyRepository } = require('../l1-persistence/repositories/PolicyRepository');
+      const {
+        PolicyRepository,
+      } = require('../l1-persistence/repositories/PolicyRepository');
       return new PolicyRepository(this.get('database'));
     });
 
     this.register('notificationRepository', () => {
-      const { NotificationRepository } = require('../l1-persistence/repositories/NotificationRepository');
+      const {
+        NotificationRepository,
+      } = require('../l1-persistence/repositories/NotificationRepository');
       return new NotificationRepository(this.get('database'));
     });
 
     // L2 Daemon
     this.register('rateLimiter', () => {
       const { RateLimiter } = require('../l2-daemon/RateLimiter');
-      return new RateLimiter({ maxConcurrent: 3, minDelayMs: 100 });
+      // Canvas allows ~700 requests/min (~11.7 req/sec)
+      // Use 6 concurrent with 50ms min delay for ~12 req/sec throughput
+      return new RateLimiter({ maxConcurrent: 6, minDelayMs: 50 });
     });
 
     this.register('circuitBreaker', () => {
@@ -272,7 +285,9 @@ export class ServiceRegistry extends EventEmitter {
     });
 
     this.register('priorityOrchestrator', () => {
-      const { PriorityOrchestrator } = require('../l3-intelligence/orchestration/PriorityOrchestrator');
+      const {
+        PriorityOrchestrator,
+      } = require('../l3-intelligence/orchestration/PriorityOrchestrator');
       const db = this.get('database');
       return new PriorityOrchestrator(db, {
         refreshIntervalMs: 15 * 60 * 1000, // 15 minutes
@@ -280,13 +295,70 @@ export class ServiceRegistry extends EventEmitter {
       });
     });
 
+    this.register('recommendationOrchestrator', () => {
+      const {
+        RecommendationOrchestrator,
+      } = require('../l3-intelligence/orchestration/RecommendationOrchestrator');
+      const db = this.get('database');
+      return new RecommendationOrchestrator(db, {
+        refreshIntervalMs: 30 * 60 * 1000, // 30 minutes
+        autoRefresh: true,
+      });
+    });
+
+    this.register('insightOrchestrator', () => {
+      const {
+        InsightOrchestrator,
+      } = require('../l3-intelligence/orchestration/InsightOrchestrator');
+      const db = this.get('database');
+      return new InsightOrchestrator(db, {
+        refreshIntervalMs: 6 * 60 * 60 * 1000, // 6 hours
+        autoRefresh: true,
+      });
+    });
+
+    this.register('workloadOrchestrator', () => {
+      const {
+        WorkloadOrchestrator,
+      } = require('../l3-intelligence/orchestration/WorkloadOrchestrator');
+      const db = this.get('database');
+      return new WorkloadOrchestrator(db, {
+        defaultAvailableHoursPerDay: 4,
+        defaultLookAheadDays: 14,
+      });
+    });
+
+    this.register('behaviorTrackingOrchestrator', () => {
+      const {
+        BehaviorTrackingOrchestrator,
+      } = require('../l3-intelligence/orchestration/BehaviorTrackingOrchestrator');
+      const db = this.get('database');
+      return new BehaviorTrackingOrchestrator(db, {
+        autoRefresh: true,
+      });
+    });
+
+    this.register('adaptiveLearningOrchestrator', () => {
+      const {
+        AdaptiveLearningOrchestrator,
+      } = require('../l3-intelligence/orchestration/AdaptiveLearningOrchestrator');
+      const db = this.get('database');
+      return new AdaptiveLearningOrchestrator(db, {
+        autoRefresh: true,
+      });
+    });
+
     this.register('gradeCalculationService', () => {
-      const { GradeCalculationService } = require('../l3-intelligence/domain/GradeCalculationService');
+      const {
+        GradeCalculationService,
+      } = require('../l3-intelligence/domain/GradeCalculationService');
       return new GradeCalculationService();
     });
 
     this.register('graceTokenService', () => {
-      const { GraceTokenService } = require('../l3-intelligence/domain/GraceTokenService');
+      const {
+        GraceTokenService,
+      } = require('../l3-intelligence/domain/GraceTokenService');
       return new GraceTokenService();
     });
 
@@ -308,14 +380,20 @@ export class ServiceRegistry extends EventEmitter {
       const { CanvasClient } = require('../l2-daemon/CanvasClient');
       const { SyncEngine } = require('../l2-daemon/SyncEngine');
 
+      // Get rate limiter for adaptive throttling
+      const rateLimiter = this.get('rateLimiter');
+
       const client = new CanvasClient({
-        baseUrl: baseUrl || this.config.canvasBaseUrl || 'https://utoronto.instructure.com',
+        baseUrl:
+          baseUrl || this.config.canvasBaseUrl || 'https://utoronto.instructure.com',
         accessToken: token,
+        // Wire up rate limit feedback for adaptive throttling
+        onRateLimit: (remaining: number) => rateLimiter?.updateRateLimit?.(remaining),
       });
 
       // Validate token
       const circuitBreaker = this.get('circuitBreaker');
-      const validation = await circuitBreaker.execute(() => client.validateToken()) as {
+      const validation = (await circuitBreaker.execute(() => client.validateToken())) as {
         valid: boolean;
         user?: { name: string };
         error?: string;
@@ -328,11 +406,12 @@ export class ServiceRegistry extends EventEmitter {
       // Store client
       this.override('canvasClient', client);
 
-      // Initialize sync engine
+      // Initialize sync engine with visibility filtering
       const syncEngine = new SyncEngine({
         client,
         db: this.get('database'),
         rateLimiter: this.get('rateLimiter'),
+        visibleDataProvider: this.get('visibleDataProvider'),
       });
       this.override('syncEngine', syncEngine);
 
@@ -373,8 +452,13 @@ export class ServiceRegistry extends EventEmitter {
         }
       } catch (error) {
         // Use logger if available, otherwise silently fail during shutdown
-        const logger = this.instances.get('logger') as { error?: (msg: string, err?: Error) => void } | undefined;
-        logger?.error?.(`Error shutting down ${token}`, error instanceof Error ? error : undefined);
+        const logger = this.instances.get('logger') as
+          | { error?: (msg: string, err?: Error) => void }
+          | undefined;
+        logger?.error?.(
+          `Error shutting down ${token}`,
+          error instanceof Error ? error : undefined
+        );
       }
     }
 

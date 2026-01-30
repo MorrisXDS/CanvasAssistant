@@ -25,8 +25,7 @@ export class MigrationRunner {
 
   constructor(db: Database, migrationsPath?: string) {
     this.db = db;
-    this.migrationsPath =
-      migrationsPath || path.join(process.cwd(), 'migrations');
+    this.migrationsPath = migrationsPath || path.join(process.cwd(), 'migrations');
   }
 
   /**
@@ -43,13 +42,13 @@ export class MigrationRunner {
       return;
     }
 
-    const files = fs.readdirSync(this.migrationsPath).filter((f) =>
-      f.match(/^\d{3}_.*\.(ts|js)$/)
-    );
+    const files = fs
+      .readdirSync(this.migrationsPath)
+      .filter((f) => f.match(/^\d{3}_.*\.(ts|js)$/));
 
     for (const file of files) {
       const filePath = path.join(this.migrationsPath, file);
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
+
       const migration = require(filePath);
       if (migration.default) {
         this.migrations.push(migration.default);
@@ -80,8 +79,7 @@ export class MigrationRunner {
         this.runMigration(migration);
         applied++;
       } catch (error) {
-        const message =
-          error instanceof Error ? error.message : String(error);
+        const message = error instanceof Error ? error.message : String(error);
         errors.push(`Migration ${migration.version}: ${message}`);
         break; // Stop on first error
       }
@@ -92,11 +90,23 @@ export class MigrationRunner {
 
   /**
    * Run a single migration
+   * Handles common SQLite errors like duplicate columns gracefully
    */
   private runMigration(migration: Migration): void {
     this.db.transaction(() => {
-      // Execute migration SQL
-      this.db.exec(migration.up);
+      try {
+        // Execute migration SQL
+        this.db.exec(migration.up);
+      } catch (error) {
+        // Handle "duplicate column name" errors gracefully
+        // This happens when a column was manually added or migration was partially applied
+        const message = error instanceof Error ? error.message : String(error);
+        if (message.includes('duplicate column name')) {
+          // Column already exists - this is OK, continue with migration silently
+        } else {
+          throw error;
+        }
+      }
 
       // Record migration as applied
       this.db.recordMigration(migration.version, migration.description);
@@ -122,23 +132,21 @@ export class MigrationRunner {
 
     for (const migration of toRollback) {
       if (!migration.down) {
-        errors.push(
-          `Migration ${migration.version} has no rollback SQL`
-        );
+        errors.push(`Migration ${migration.version} has no rollback SQL`);
         break;
       }
 
       try {
         this.db.transaction(() => {
           this.db.exec(migration.down!);
-          this.db.exec(
-            `DELETE FROM schema_version WHERE version = ${migration.version}`
-          );
+          // Use parameterized query to prevent SQL injection
+          this.db.executeWrite('DELETE FROM schema_version WHERE version = ?', [
+            migration.version,
+          ]);
         });
         rolledBack++;
       } catch (error) {
-        const message =
-          error instanceof Error ? error.message : String(error);
+        const message = error instanceof Error ? error.message : String(error);
         errors.push(`Rollback ${migration.version}: ${message}`);
         break;
       }
@@ -670,7 +678,8 @@ export const coreMigrations: Migration[] = [
   },
   {
     version: 23,
-    description: 'Create course_task_groups table for course-specific task categorization',
+    description:
+      'Create course_task_groups table for course-specific task categorization',
     up: `
       CREATE TABLE course_task_groups (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -982,7 +991,8 @@ export const coreMigrations: Migration[] = [
   },
   {
     version: 34,
-    description: 'Add announcement_file_references table for tracking file mentions in announcements',
+    description:
+      'Add announcement_file_references table for tracking file mentions in announcements',
     up: `
       -- Table to map file references in announcement messages to attachments
       CREATE TABLE IF NOT EXISTS announcement_file_references (
@@ -1043,7 +1053,8 @@ export const coreMigrations: Migration[] = [
   },
   {
     version: 37,
-    description: 'Create endpoint_backoff table for tracking auth failures with exponential backoff',
+    description:
+      'Create endpoint_backoff table for tracking auth failures with exponential backoff',
     up: `
       CREATE TABLE endpoint_backoff (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1069,7 +1080,8 @@ export const coreMigrations: Migration[] = [
   },
   {
     version: 38,
-    description: 'Create sync_preferences table for remembering user sync conflict choices',
+    description:
+      'Create sync_preferences table for remembering user sync conflict choices',
     up: `
       CREATE TABLE IF NOT EXISTS sync_preferences (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1110,7 +1122,8 @@ export const coreMigrations: Migration[] = [
   },
   {
     version: 40,
-    description: 'Add content_file_references, html_exports tables and resource version tracking',
+    description:
+      'Add content_file_references, html_exports tables and resource version tracking',
     up: `
       -- Table to track file references extracted from HTML content (pages, assignments, syllabus, etc.)
       CREATE TABLE IF NOT EXISTS content_file_references (
@@ -1362,7 +1375,8 @@ export const coreMigrations: Migration[] = [
   },
   {
     version: 44,
-    description: 'Create field_notification_suppressions table for data completeness alerts',
+    description:
+      'Create field_notification_suppressions table for data completeness alerts',
     up: `
       CREATE TABLE field_notification_suppressions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1382,7 +1396,8 @@ export const coreMigrations: Migration[] = [
   },
   {
     version: 45,
-    description: 'Create message_display_history table for duplicate prevention with probation',
+    description:
+      'Create message_display_history table for duplicate prevention with probation',
     up: `
       -- Track display history for insights/recommendations to prevent duplicates
       CREATE TABLE message_display_history (
@@ -1403,6 +1418,911 @@ export const coreMigrations: Migration[] = [
       DROP INDEX IF EXISTS idx_message_display_grounded;
       DROP INDEX IF EXISTS idx_message_display_hash;
       DROP TABLE IF EXISTS message_display_history;
+    `,
+  },
+  {
+    version: 46,
+    description: 'Add target_grade_source column to courses for default/manual tracking',
+    up: `
+      -- Add column to track whether target grade is using app default or was manually set
+      -- 'default' = follows app default changes automatically
+      -- 'manual' = user explicitly set, independent of app default
+      ALTER TABLE courses ADD COLUMN target_grade_source TEXT DEFAULT 'default' CHECK(target_grade_source IN ('default', 'manual'));
+
+      -- Set existing courses with non-85 target grades as 'manual' (likely user-modified)
+      -- Courses with exactly 85.0 (the old hardcoded default) stay as 'default'
+      UPDATE courses SET target_grade_source = 'manual' WHERE target_grade != 85.0;
+    `,
+    down: `
+      -- SQLite doesn't support DROP COLUMN easily
+      SELECT 1;
+    `,
+  },
+  {
+    version: 47,
+    description: 'Add field_sources tracking for guessed vs user-set fields',
+    up: `
+      -- Track source of field values: 'canvas' (from API), 'user' (manually set), 'guessed' (auto-filled)
+      -- JSON object: {"due_at": "guessed", "title": "canvas", "grade": "user"}
+      ALTER TABLE tasks ADD COLUMN field_sources TEXT;
+      ALTER TABLE courses ADD COLUMN field_sources TEXT;
+
+      -- Per-course setting to control whether Canvas can silently override guessed values
+      -- 1 = allow Canvas to override guessed values (default), 0 = treat guessed as user
+      ALTER TABLE courses ADD COLUMN allow_guessed_override INTEGER DEFAULT 1;
+
+      -- Initialize field_sources as empty JSON for existing records
+      UPDATE tasks SET field_sources = '{}' WHERE field_sources IS NULL;
+      UPDATE courses SET field_sources = '{}' WHERE field_sources IS NULL;
+    `,
+    down: `
+      -- SQLite doesn't support DROP COLUMN easily
+      SELECT 1;
+    `,
+  },
+  {
+    version: 48,
+    description: 'Add per-course auto_assign_due_date setting',
+    up: `
+      -- Per-course setting for auto-assigning due dates to tasks without one
+      -- NULL = inherit from app default, 0 = disabled, 1 = enabled
+      ALTER TABLE courses ADD COLUMN auto_assign_due_date INTEGER DEFAULT NULL;
+    `,
+    down: `
+      -- SQLite doesn't support DROP COLUMN easily
+      SELECT 1;
+    `,
+  },
+  {
+    version: 49,
+    description: 'Add local_modified_fields column for sync conflict tracking',
+    up: `
+      -- Track which fields the user has explicitly modified
+      -- Used to detect conflicts when Canvas values change
+      ALTER TABLE tasks ADD COLUMN local_modified_fields TEXT;
+    `,
+    down: `
+      -- SQLite doesn't support DROP COLUMN easily
+      SELECT 1;
+    `,
+  },
+  {
+    version: 50,
+    description: 'Add ON DELETE CASCADE to tasks and notifications foreign keys',
+    up: `
+      -- Rebuild tasks table with CASCADE on course_id foreign key
+      -- This prevents orphaned task records when courses are deleted
+      CREATE TABLE tasks_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        external_id TEXT UNIQUE,
+        source_type TEXT CHECK(source_type IN ('canvas', 'user')) DEFAULT 'canvas',
+        course_id INTEGER,
+        title TEXT NOT NULL,
+        description TEXT,
+        due_at DATETIME,
+        unlock_at DATETIME,
+        lock_at DATETIME,
+        points_possible REAL,
+        submission_types TEXT,
+        weight REAL DEFAULT 0.0,
+        grade REAL,
+        priority_score REAL DEFAULT 0.0,
+        is_completed BOOLEAN DEFAULT FALSE,
+        completed_at DATETIME,
+        local_modified_at DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        task_group_id INTEGER,
+        task_type TEXT DEFAULT 'assignment',
+        canvas_assignment_group_id TEXT,
+        original_grade REAL,
+        effective_grade REAL,
+        grade_override_reason TEXT,
+        submission_status TEXT,
+        pain_index REAL DEFAULT 0.0,
+        penalty_severity REAL DEFAULT 0.0,
+        has_safety_net BOOLEAN DEFAULT FALSE,
+        days_until_cutoff INTEGER,
+        field_sources TEXT,
+        local_modified_fields TEXT,
+        FOREIGN KEY(course_id) REFERENCES courses(id) ON DELETE CASCADE,
+        FOREIGN KEY(task_group_id) REFERENCES course_task_groups(id)
+      );
+
+      -- Copy existing data
+      INSERT INTO tasks_new SELECT
+        id, external_id, source_type, course_id, title, description,
+        due_at, unlock_at, lock_at, points_possible, submission_types,
+        weight, grade, priority_score, is_completed, completed_at,
+        local_modified_at, created_at, updated_at, task_group_id,
+        task_type, canvas_assignment_group_id, original_grade,
+        effective_grade, grade_override_reason, submission_status,
+        pain_index, penalty_severity, has_safety_net, days_until_cutoff,
+        field_sources, local_modified_fields
+      FROM tasks;
+
+      -- Drop old table and rename
+      DROP TABLE tasks;
+      ALTER TABLE tasks_new RENAME TO tasks;
+
+      -- Recreate indexes
+      CREATE INDEX idx_tasks_priority ON tasks(priority_score DESC);
+      CREATE INDEX idx_tasks_due_date ON tasks(due_at);
+      CREATE INDEX idx_tasks_course ON tasks(course_id);
+      CREATE INDEX idx_tasks_source ON tasks(source_type);
+      CREATE INDEX idx_tasks_group ON tasks(task_group_id);
+      CREATE INDEX idx_tasks_type ON tasks(task_type);
+      CREATE INDEX idx_tasks_pain_index ON tasks(pain_index DESC);
+      CREATE INDEX idx_tasks_lock_at ON tasks(lock_at);
+
+      -- Rebuild notifications table with CASCADE on course_id foreign key
+      CREATE TABLE notifications_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        source_type TEXT CHECK(source_type IN ('canvas', 'system')),
+        source_id TEXT,
+        course_id INTEGER,
+        title TEXT NOT NULL,
+        message TEXT NOT NULL,
+        message_html TEXT,
+        priority_level TEXT CHECK(priority_level IN ('critical', 'high', 'medium', 'low')) DEFAULT 'medium',
+        priority_score REAL DEFAULT 0.0,
+        published_at DATETIME NOT NULL,
+        dismissed_at DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        url TEXT,
+        is_policy_related BOOLEAN DEFAULT FALSE,
+        policy_keywords TEXT,
+        linked_policy_id INTEGER,
+        FOREIGN KEY(course_id) REFERENCES courses(id) ON DELETE CASCADE,
+        FOREIGN KEY(linked_policy_id) REFERENCES course_policies(id),
+        UNIQUE(source_type, source_id)
+      );
+
+      -- Copy existing data
+      INSERT INTO notifications_new SELECT
+        id, source_type, source_id, course_id, title, message,
+        message_html, priority_level, priority_score, published_at,
+        dismissed_at, created_at, url, is_policy_related,
+        policy_keywords, linked_policy_id
+      FROM notifications;
+
+      -- Drop old table and rename
+      DROP TABLE notifications;
+      ALTER TABLE notifications_new RENAME TO notifications;
+
+      -- Recreate indexes
+      CREATE INDEX idx_notifications_dismissed ON notifications(dismissed_at);
+      CREATE INDEX idx_notifications_course ON notifications(course_id);
+    `,
+    down: `
+      -- Reverting CASCADE requires table rebuild (complex)
+      -- This down migration just ensures the schema remains valid
+      SELECT 1;
+    `,
+  },
+  {
+    version: 51,
+    description: 'Add sync_checkpoints table for resumable sync',
+    up: `
+      -- Track sync progress for resumable partial syncs
+      CREATE TABLE IF NOT EXISTS sync_checkpoints (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        sync_id TEXT UNIQUE NOT NULL,
+        started_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        phase TEXT CHECK(phase IN ('fetch', 'commit', 'completed', 'failed')) DEFAULT 'fetch',
+        options_json TEXT,
+        -- Course IDs that have been fully fetched
+        fetched_course_ids TEXT DEFAULT '[]',
+        -- Cached fetch data for courses (JSON)
+        fetched_data_json TEXT,
+        -- Progress tracking
+        total_courses INTEGER DEFAULT 0,
+        completed_courses INTEGER DEFAULT 0,
+        -- Error tracking
+        last_error TEXT,
+        error_count INTEGER DEFAULT 0,
+        -- Timestamps
+        last_updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        completed_at DATETIME
+      );
+
+      -- Index for finding incomplete syncs
+      CREATE INDEX IF NOT EXISTS idx_sync_checkpoints_phase ON sync_checkpoints(phase);
+      CREATE INDEX IF NOT EXISTS idx_sync_checkpoints_started ON sync_checkpoints(started_at);
+    `,
+    down: `
+      DROP INDEX IF EXISTS idx_sync_checkpoints_phase;
+      DROP INDEX IF EXISTS idx_sync_checkpoints_started;
+      DROP TABLE IF EXISTS sync_checkpoints;
+    `,
+  },
+  {
+    version: 52,
+    description: 'Add visibility_settings table for centralized visibility management',
+    up: `
+      -- Store visibility settings in database (accessible from both main and renderer)
+      CREATE TABLE IF NOT EXISTS visibility_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
+      -- Migrate term selection from localStorage to database
+      -- Default: 'auto' (matches existing UI default)
+      INSERT OR IGNORE INTO visibility_settings (key, value) VALUES ('term_selection', 'auto');
+    `,
+    down: `
+      DROP TABLE IF EXISTS visibility_settings;
+    `,
+  },
+  {
+    version: 53,
+    description: 'Create content_analysis table for document intelligence',
+    up: `
+      -- Table to store content analysis results for documents (PDFs, pages, syllabus, etc.)
+      CREATE TABLE IF NOT EXISTS content_analysis (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        source_type TEXT NOT NULL CHECK(source_type IN ('course_page', 'resource', 'attachment', 'syllabus')),
+        source_id INTEGER NOT NULL,
+        course_id INTEGER,
+        document_type TEXT CHECK(document_type IN ('syllabus', 'rubric', 'assignment', 'reading', 'lecture', 'notes', 'other', 'unknown')),
+        extracted_text TEXT,
+        extracted_entities TEXT, -- JSON: { dates: [], percentages: [], policies: [], keywords: [] }
+        embeddings BLOB, -- Vector for semantic search (future ML layer)
+        analysis_level INTEGER DEFAULT 1 CHECK(analysis_level IN (1, 2, 3, 4)),
+        -- Level 1 = text extraction only
+        -- Level 2 = rule-based extraction (regex)
+        -- Level 3 = local ML (Transformers.js)
+        -- Level 4 = LLM analysis
+        analyzed_at DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(course_id) REFERENCES courses(id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX idx_content_analysis_source ON content_analysis(source_type, source_id);
+      CREATE INDEX idx_content_analysis_course ON content_analysis(course_id);
+      CREATE INDEX idx_content_analysis_type ON content_analysis(document_type);
+      CREATE INDEX idx_content_analysis_level ON content_analysis(analysis_level);
+      CREATE UNIQUE INDEX idx_content_analysis_unique ON content_analysis(source_type, source_id);
+    `,
+    down: `
+      DROP INDEX IF EXISTS idx_content_analysis_unique;
+      DROP INDEX IF EXISTS idx_content_analysis_level;
+      DROP INDEX IF EXISTS idx_content_analysis_type;
+      DROP INDEX IF EXISTS idx_content_analysis_course;
+      DROP INDEX IF EXISTS idx_content_analysis_source;
+      DROP TABLE IF EXISTS content_analysis;
+    `,
+  },
+  {
+    version: 54,
+    description:
+      'Create course_syllabuses table and add based_on_syllabus_reviewed_at to course_policies',
+    up: `
+      -- Table for user-designated syllabus files per course
+      -- Users explicitly mark which file is the syllabus, enabling:
+      -- 1. Change detection: Monitor if Canvas shows the file was modified
+      -- 2. Review tracking: Track when user last reviewed the syllabus
+      -- 3. Policy staleness: Link policies to syllabus review dates
+      CREATE TABLE IF NOT EXISTS course_syllabuses (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        course_id INTEGER NOT NULL UNIQUE,
+        resource_id INTEGER NOT NULL,
+        -- Canvas updated_at when file was marked (for change detection)
+        resource_updated_at TEXT,
+        -- When user last reviewed the syllabus
+        last_reviewed_at DATETIME NOT NULL,
+        -- When we detected the file was modified on Canvas (NULL if no change)
+        change_detected_at DATETIME,
+        -- When user marked this file as syllabus
+        marked_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(course_id) REFERENCES courses(id) ON DELETE CASCADE,
+        FOREIGN KEY(resource_id) REFERENCES resources(id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX idx_course_syllabuses_course ON course_syllabuses(course_id);
+      CREATE INDEX idx_course_syllabuses_resource ON course_syllabuses(resource_id);
+
+      -- Add column to track when policies were entered relative to syllabus review
+      -- If syllabus is updated after this date, warn that policy may be stale
+      ALTER TABLE course_policies ADD COLUMN based_on_syllabus_reviewed_at DATETIME;
+    `,
+    down: `
+      DROP INDEX IF EXISTS idx_course_syllabuses_resource;
+      DROP INDEX IF EXISTS idx_course_syllabuses_course;
+      DROP TABLE IF EXISTS course_syllabuses;
+      -- SQLite doesn't support DROP COLUMN easily
+      SELECT 1;
+    `,
+  },
+  {
+    version: 55,
+    description: 'Add source_type column to course_syllabuses for attachment support',
+    up: `
+      -- Add source_type column to distinguish between resources and attachments
+      -- 'resource' = from resources table (file synced from Canvas)
+      -- 'attachment' = from notification_attachments table (announcement attachment)
+      ALTER TABLE course_syllabuses ADD COLUMN source_type TEXT NOT NULL DEFAULT 'resource';
+    `,
+    down: `
+      -- SQLite doesn't support DROP COLUMN easily
+      SELECT 1;
+    `,
+  },
+  {
+    version: 56,
+    description:
+      'Add sub_type column to message_display_history for type-specific frequency settings',
+    up: `
+      -- Add sub_type column to store the specific type (e.g., 'work_now', 'course_struggle')
+      -- This enables type-specific grounding/quiet period settings
+      ALTER TABLE message_display_history ADD COLUMN sub_type TEXT;
+
+      -- Create index for querying by sub_type
+      CREATE INDEX idx_message_display_subtype ON message_display_history(sub_type);
+    `,
+    down: `
+      DROP INDEX IF EXISTS idx_message_display_subtype;
+      -- SQLite doesn't support DROP COLUMN easily
+      SELECT 1;
+    `,
+  },
+  {
+    version: 57,
+    description: 'Fix completed_at for tasks marked complete without timestamp',
+    up: `
+      -- Fix inconsistency where is_completed = 1 but completed_at is NULL
+      -- Set completed_at to current timestamp for these tasks
+      UPDATE tasks
+      SET completed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+      WHERE is_completed = 1 AND completed_at IS NULL;
+    `,
+  },
+  {
+    version: 58,
+    description:
+      'Reset incorrectly completed tasks - will be fixed on next sync with submission data',
+    up: `
+      -- Tasks marked complete but without grade should be re-evaluated on next sync
+      -- Reset is_completed for tasks that:
+      -- 1. Have no grade (not graded by instructor)
+      -- 2. Have no weight (not a graded assignment we track)
+      -- These will get proper status from Canvas submission.workflow_state on next sync
+      UPDATE tasks
+      SET is_completed = 0, completed_at = NULL, updated_at = CURRENT_TIMESTAMP
+      WHERE is_completed = 1
+        AND grade IS NULL
+        AND source_type = 'canvas';
+    `,
+  },
+  {
+    version: 59,
+    description: 'Populate submission_status based on existing task state',
+    up: `
+      -- Set submission_status based on current is_completed and grade
+      -- This will be overwritten by Canvas workflow_state on next sync
+      UPDATE tasks
+      SET submission_status = CASE
+        WHEN grade IS NOT NULL THEN 'graded'
+        WHEN is_completed = 1 THEN 'submitted'
+        ELSE 'pending'
+      END,
+      updated_at = CURRENT_TIMESTAMP
+      WHERE submission_status IS NULL;
+    `,
+  },
+  {
+    version: 60,
+    description: 'Add is_optional column to tasks for user-marked optional coursework',
+    up: `
+      -- Add is_optional flag - user can mark any task as optional
+      -- Optional tasks appear in "Not for Grade" section and are not overwritten by Canvas sync
+      ALTER TABLE tasks ADD COLUMN is_optional INTEGER DEFAULT 0;
+    `,
+  },
+  {
+    version: 61,
+    description:
+      'Add suppressed_forever columns for permanent dismissal of recommendations/insights',
+    up: `
+      -- Add suppressed_forever to recommendations for "never show again" feature
+      ALTER TABLE recommendations ADD COLUMN suppressed_forever INTEGER DEFAULT 0;
+      CREATE INDEX idx_recommendations_suppressed ON recommendations(suppressed_forever);
+
+      -- Add suppressed_forever to user_insights for "never show again" feature
+      ALTER TABLE user_insights ADD COLUMN suppressed_forever INTEGER DEFAULT 0;
+      CREATE INDEX idx_user_insights_suppressed ON user_insights(suppressed_forever);
+    `,
+    down: `
+      DROP INDEX IF EXISTS idx_recommendations_suppressed;
+      DROP INDEX IF EXISTS idx_user_insights_suppressed;
+      -- SQLite doesn't support DROP COLUMN easily
+      SELECT 1;
+    `,
+  },
+  {
+    version: 62,
+    description: 'Add due_time_known column to track whether task due time is certain',
+    up: `
+      -- Track whether the due time is known or only the date
+      -- 1 = time is known (e.g., 11:59 PM from Canvas)
+      -- 0 = only date known, time is assumed (midnight start of day)
+      ALTER TABLE tasks ADD COLUMN due_time_known INTEGER DEFAULT 1;
+
+      -- Existing tasks with due_at assume time is known (Canvas provided it)
+      UPDATE tasks SET due_time_known = 1 WHERE due_at IS NOT NULL;
+    `,
+  },
+  {
+    version: 63,
+    description: 'Create pending_downloads table for crash recovery',
+    up: `
+      -- Track download queue for crash recovery
+      -- On app quit: save queued downloads
+      -- On app startup: restore pending downloads
+      CREATE TABLE IF NOT EXISTS pending_downloads (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        resource_id TEXT NOT NULL,
+        course_code TEXT NOT NULL,
+        url TEXT NOT NULL,
+        filename TEXT NOT NULL,
+        context_folder TEXT,
+        folder_path TEXT,
+        expected_size INTEGER,
+        priority INTEGER DEFAULT 0,
+        status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'in_progress', 'failed')),
+        retry_count INTEGER DEFAULT 0,
+        error_message TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(resource_id)
+      );
+
+      CREATE INDEX idx_pending_downloads_status ON pending_downloads(status);
+      CREATE INDEX idx_pending_downloads_priority ON pending_downloads(priority DESC);
+    `,
+    down: `
+      DROP INDEX IF EXISTS idx_pending_downloads_priority;
+      DROP INDEX IF EXISTS idx_pending_downloads_status;
+      DROP TABLE IF EXISTS pending_downloads;
+    `,
+  },
+  {
+    version: 64,
+    description: 'Create pending_sync_data table for crash-safe conflict resolution',
+    up: `
+      -- Store pending conflict data in database instead of memory
+      -- Prevents data loss if app crashes during sync pause for conflict resolution
+      CREATE TABLE IF NOT EXISTS pending_sync_data (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        conflict_id TEXT UNIQUE NOT NULL,
+        table_name TEXT NOT NULL,
+        entity_id INTEGER,
+        data_json TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE INDEX idx_pending_sync_data_conflict ON pending_sync_data(conflict_id);
+    `,
+    down: `
+      DROP INDEX IF EXISTS idx_pending_sync_data_conflict;
+      DROP TABLE IF EXISTS pending_sync_data;
+    `,
+  },
+  {
+    version: 65,
+    description: 'Add ON DELETE CASCADE to tables missing it',
+    up: `
+      -- First, clean up orphaned records that reference non-existent courses
+      -- This prevents FOREIGN KEY constraint failures when recreating tables
+      DELETE FROM calendar_events WHERE course_id IS NOT NULL AND course_id NOT IN (SELECT id FROM courses);
+      DELETE FROM resources WHERE course_id NOT IN (SELECT id FROM courses);
+      DELETE FROM grade_history WHERE course_id NOT IN (SELECT id FROM courses);
+      DELETE FROM course_pages WHERE course_id NOT IN (SELECT id FROM courses);
+      DELETE FROM modules WHERE course_id NOT IN (SELECT id FROM courses);
+
+      -- calendar_events: Add CASCADE for course_id
+      -- Note: parent_event_id self-reference already handled
+      CREATE TABLE calendar_events_v65 (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        external_id TEXT UNIQUE,
+        source_type TEXT CHECK(source_type IN ('canvas', 'user', 'imported')),
+        course_id INTEGER,
+        imported_calendar_id INTEGER REFERENCES imported_calendars(id) ON DELETE CASCADE,
+        title TEXT NOT NULL,
+        description TEXT,
+        start_at DATETIME NOT NULL,
+        end_at DATETIME,
+        all_day BOOLEAN DEFAULT FALSE,
+        location TEXT,
+        uid TEXT,
+        recurrence_rule TEXT,
+        recurrence_exception_dates TEXT,
+        parent_event_id INTEGER,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        deleted_at DATETIME,
+        FOREIGN KEY(course_id) REFERENCES courses(id) ON DELETE CASCADE,
+        FOREIGN KEY(parent_event_id) REFERENCES calendar_events_v65(id) ON DELETE CASCADE
+      );
+
+      INSERT INTO calendar_events_v65 SELECT * FROM calendar_events;
+      DROP TABLE calendar_events;
+      ALTER TABLE calendar_events_v65 RENAME TO calendar_events;
+
+      CREATE INDEX idx_calendar_events_start ON calendar_events(start_at);
+      CREATE INDEX idx_calendar_events_imported_calendar ON calendar_events(imported_calendar_id);
+      CREATE INDEX idx_calendar_events_uid ON calendar_events(uid);
+
+      -- resources: Add CASCADE for course_id
+      CREATE TABLE resources_v65 (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        external_id TEXT UNIQUE NOT NULL,
+        course_id INTEGER NOT NULL,
+        parent_folder_id INTEGER,
+        type TEXT CHECK(type IN ('file', 'folder', 'external_url', 'page')),
+        title TEXT NOT NULL,
+        url TEXT,
+        local_path TEXT,
+        size_bytes INTEGER,
+        mime_type TEXT,
+        unlock_at DATETIME,
+        synced_at DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        folder_path TEXT,
+        remote_updated_at TEXT,
+        context_type TEXT CHECK(context_type IN ('page', 'assignment', 'syllabus', 'module', 'announcement', 'files')),
+        context_id TEXT,
+        FOREIGN KEY(course_id) REFERENCES courses(id) ON DELETE CASCADE,
+        FOREIGN KEY(parent_folder_id) REFERENCES resources_v65(id) ON DELETE SET NULL
+      );
+
+      INSERT INTO resources_v65 SELECT * FROM resources;
+      DROP TABLE resources;
+      ALTER TABLE resources_v65 RENAME TO resources;
+
+      CREATE INDEX idx_resources_course ON resources(course_id);
+      CREATE INDEX idx_resources_folder_path ON resources(folder_path);
+      CREATE INDEX idx_resources_remote_updated ON resources(remote_updated_at);
+      CREATE INDEX idx_resources_context ON resources(context_type, context_id);
+
+      -- grade_history: Add CASCADE for course_id
+      CREATE TABLE grade_history_v65 (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        course_id INTEGER NOT NULL,
+        grade REAL NOT NULL,
+        recorded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(course_id) REFERENCES courses(id) ON DELETE CASCADE
+      );
+
+      INSERT INTO grade_history_v65 SELECT * FROM grade_history;
+      DROP TABLE grade_history;
+      ALTER TABLE grade_history_v65 RENAME TO grade_history;
+
+      CREATE INDEX idx_grade_history_course ON grade_history(course_id);
+
+      -- course_pages: Add CASCADE for course_id
+      CREATE TABLE course_pages_v65 (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        external_id TEXT UNIQUE,
+        course_id INTEGER NOT NULL,
+        page_type TEXT CHECK(page_type IN ('syllabus', 'landing', 'content', 'module_item')),
+        title TEXT NOT NULL,
+        url_slug TEXT,
+        body_html TEXT,
+        body_text TEXT,
+        is_front_page BOOLEAN DEFAULT FALSE,
+        published BOOLEAN DEFAULT TRUE,
+        last_synced_at DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(course_id) REFERENCES courses(id) ON DELETE CASCADE
+      );
+
+      INSERT INTO course_pages_v65 SELECT * FROM course_pages;
+      DROP TABLE course_pages;
+      ALTER TABLE course_pages_v65 RENAME TO course_pages;
+
+      CREATE INDEX idx_course_pages_course ON course_pages(course_id);
+      CREATE INDEX idx_course_pages_type ON course_pages(page_type);
+
+      -- modules: Add CASCADE for course_id
+      CREATE TABLE modules_v65 (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        external_id TEXT UNIQUE NOT NULL,
+        course_id INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        position INTEGER,
+        unlock_at DATETIME,
+        require_sequential_progress BOOLEAN DEFAULT FALSE,
+        published BOOLEAN DEFAULT TRUE,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(course_id) REFERENCES courses(id) ON DELETE CASCADE
+      );
+
+      INSERT INTO modules_v65 SELECT * FROM modules;
+      DROP TABLE modules;
+      ALTER TABLE modules_v65 RENAME TO modules;
+
+      CREATE INDEX idx_modules_course ON modules(course_id);
+    `,
+    down: `
+      -- Complex reversal - not easily reversible
+      SELECT 1;
+    `,
+  },
+  {
+    version: 66,
+    description: 'Create custom_task_types table for user-defined task types',
+    up: `
+      CREATE TABLE custom_task_types (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE,
+        display_name TEXT NOT NULL,
+        course_id INTEGER,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(course_id) REFERENCES courses(id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX idx_custom_task_types_course ON custom_task_types(course_id);
+    `,
+    down: `
+      DROP INDEX IF EXISTS idx_custom_task_types_course;
+      DROP TABLE IF EXISTS custom_task_types;
+    `,
+  },
+  {
+    version: 67,
+    description: 'Add archived_at column to courses for course archiving',
+    up: `
+      -- Add archived_at column to courses
+      -- NULL = active course, non-NULL = archived at that timestamp
+      -- Archived courses are hidden from dashboard, priorities, tasks pages but recoverable
+      ALTER TABLE courses ADD COLUMN archived_at DATETIME DEFAULT NULL;
+      CREATE INDEX idx_courses_archived ON courses(archived_at);
+    `,
+    down: `
+      DROP INDEX IF EXISTS idx_courses_archived;
+      -- SQLite doesn't support DROP COLUMN easily
+      SELECT 1;
+    `,
+  },
+  {
+    version: 68,
+    description:
+      'Add user_submission_status column to tasks for user-override submission tracking',
+    up: `
+      -- Add user_submission_status for OR logic with Canvas submission_status
+      -- NULL = no user override, 'submitted' = user marked as submitted, 'graded' = user marked as graded
+      -- Effective status = canvas OR user (if either is submitted/graded, effective is submitted/graded)
+      ALTER TABLE tasks ADD COLUMN user_submission_status TEXT DEFAULT NULL;
+      CREATE INDEX idx_tasks_user_submission ON tasks(user_submission_status);
+    `,
+    down: `
+      DROP INDEX IF EXISTS idx_tasks_user_submission;
+      -- SQLite doesn't support DROP COLUMN easily
+      SELECT 1;
+    `,
+  },
+  {
+    version: 69,
+    description: 'Add calendar_event_id to tasks for task-calendar event linking',
+    up: `
+      -- Add calendar_event_id for optional task-calendar event linking
+      -- NULL = no linked event, non-NULL = linked to calendar event
+      -- ON DELETE SET NULL: if event is deleted, task link is cleared (not task itself)
+      -- Bidirectional sync: task due_at changes update event, event time changes update task
+      ALTER TABLE tasks ADD COLUMN calendar_event_id INTEGER DEFAULT NULL
+        REFERENCES calendar_events(id) ON DELETE SET NULL;
+      CREATE INDEX idx_tasks_calendar_event ON tasks(calendar_event_id);
+    `,
+    down: `
+      DROP INDEX IF EXISTS idx_tasks_calendar_event;
+      -- SQLite doesn't support DROP COLUMN easily
+      SELECT 1;
+    `,
+  },
+  {
+    version: 70,
+    description:
+      'Add task_id and calendar-specific fields to calendar_events for task-calendar unification',
+    up: `
+      -- Add task_id to calendar_events for bidirectional task-event linking
+      -- Each task can have one auto-generated calendar event
+      ALTER TABLE calendar_events ADD COLUMN task_id INTEGER REFERENCES tasks(id) ON DELETE CASCADE;
+
+      -- Add calendar-specific fields that don't affect the underlying task
+      ALTER TABLE calendar_events ADD COLUMN color TEXT;
+      ALTER TABLE calendar_events ADD COLUMN notes TEXT;
+      ALTER TABLE calendar_events ADD COLUMN reminder_minutes INTEGER;
+
+      -- Index for efficient task-event lookups
+      CREATE INDEX idx_calendar_events_task ON calendar_events(task_id);
+    `,
+    down: `
+      DROP INDEX IF EXISTS idx_calendar_events_task;
+      -- SQLite doesn't support DROP COLUMN easily
+      SELECT 1;
+    `,
+  },
+  {
+    version: 71,
+    description: 'Add archive_source to courses to track manual vs auto archives',
+    up: `
+      -- Track how a course was archived: 'manual' (user action) or 'auto' (term expired)
+      -- Auto-archived courses cannot be restored by the user
+      ALTER TABLE courses ADD COLUMN archive_source TEXT;
+
+      -- Backfill: archived courses with expired terms are 'auto', others are 'manual'
+      UPDATE courses SET archive_source = 'auto'
+      WHERE archived_at IS NOT NULL
+        AND enrollment_term_id IN (
+          SELECT CAST(external_id AS INTEGER) FROM enrollment_terms
+          WHERE end_at IS NOT NULL AND end_at < datetime('now')
+        );
+
+      UPDATE courses SET archive_source = 'manual'
+      WHERE archived_at IS NOT NULL AND archive_source IS NULL;
+    `,
+    down: `
+      -- SQLite doesn't support DROP COLUMN easily
+      SELECT 1;
+    `,
+  },
+  {
+    version: 72,
+    description: 'Fix archive_source for courses with expired terms',
+    up: `
+      -- Correct archive_source: courses with expired terms should be 'auto'
+      UPDATE courses SET archive_source = 'auto'
+      WHERE archived_at IS NOT NULL
+        AND enrollment_term_id IN (
+          SELECT CAST(external_id AS INTEGER) FROM enrollment_terms
+          WHERE end_at IS NOT NULL AND end_at < datetime('now')
+        );
+    `,
+    down: `
+      SELECT 1;
+    `,
+  },
+  {
+    version: 73,
+    description: 'Add HTML local paths schema for offline HTML with dependencies',
+    up: `
+      -- Store original HTML content (never modified by local path rewriting)
+      -- This allows regeneration of local-path HTMLs when files change
+      ALTER TABLE tasks ADD COLUMN description_original TEXT;
+      ALTER TABLE notifications ADD COLUMN message_html_original TEXT;
+      ALTER TABLE course_pages ADD COLUMN body_html_original TEXT;
+      ALTER TABLE courses ADD COLUMN syllabus_body_original TEXT;
+
+      -- Track HTML-to-HTML dependencies (for recursive resolution and cycle detection)
+      CREATE TABLE IF NOT EXISTS html_dependencies (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        parent_source_type TEXT NOT NULL CHECK(parent_source_type IN ('page', 'assignment', 'syllabus', 'module', 'announcement')),
+        parent_source_id TEXT NOT NULL,
+        child_source_type TEXT NOT NULL CHECK(child_source_type IN ('page', 'assignment', 'syllabus', 'module', 'announcement', 'file')),
+        child_source_id TEXT NOT NULL,
+        child_canvas_url TEXT,
+        is_cycle INTEGER DEFAULT 0,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(parent_source_type, parent_source_id, child_source_type, child_source_id)
+      );
+
+      CREATE INDEX idx_html_deps_parent ON html_dependencies(parent_source_type, parent_source_id);
+      CREATE INDEX idx_html_deps_child ON html_dependencies(child_source_type, child_source_id);
+      CREATE INDEX idx_html_deps_cycle ON html_dependencies(is_cycle);
+
+      -- Add ref_type to content_file_references for distinguishing file vs HTML refs
+      ALTER TABLE content_file_references ADD COLUMN ref_type TEXT DEFAULT 'file';
+      -- ref_type: 'file' (image, PDF, etc.) | 'html' (embedded HTML page/iframe)
+
+      -- Track which HTML first triggered a file download (Option B - shared files)
+      -- Format: 'assignment:123' or 'page:front-page'
+      ALTER TABLE resources ADD COLUMN first_referenced_by TEXT;
+    `,
+    down: `
+      DROP INDEX IF EXISTS idx_html_deps_cycle;
+      DROP INDEX IF EXISTS idx_html_deps_child;
+      DROP INDEX IF EXISTS idx_html_deps_parent;
+      DROP TABLE IF EXISTS html_dependencies;
+      -- SQLite doesn't support DROP COLUMN easily
+      SELECT 1;
+    `,
+  },
+  {
+    version: 74,
+    description: 'Create export_history table for tracking backup operations',
+    up: `
+      CREATE TABLE IF NOT EXISTS export_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        export_type TEXT NOT NULL CHECK(export_type IN ('full', 'selective', 'csv', 'scheduled')),
+        file_path TEXT,
+        file_size INTEGER,
+        encrypted INTEGER DEFAULT 0,
+        courses_included TEXT,
+        tasks_exported INTEGER DEFAULT 0,
+        files_exported INTEGER DEFAULT 0,
+        status TEXT DEFAULT 'completed' CHECK(status IN ('completed', 'failed', 'deleted')),
+        error_message TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE INDEX idx_export_history_type ON export_history(export_type);
+      CREATE INDEX idx_export_history_created ON export_history(created_at DESC);
+      CREATE INDEX idx_export_history_status ON export_history(status);
+    `,
+    down: `
+      DROP INDEX IF EXISTS idx_export_history_status;
+      DROP INDEX IF EXISTS idx_export_history_created;
+      DROP INDEX IF EXISTS idx_export_history_type;
+      DROP TABLE IF EXISTS export_history;
+    `,
+  },
+  {
+    version: 75,
+    description:
+      'Create app_settings table for persistent settings (backup schedule, etc)',
+    up: `
+      CREATE TABLE IF NOT EXISTS app_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      );
+    `,
+    down: `
+      DROP TABLE IF EXISTS app_settings;
+    `,
+  },
+  {
+    version: 76,
+    description: 'Add sync/download operation coordination schema',
+    up: `
+      -- Content hash columns for change detection during downloads
+      ALTER TABLE course_pages ADD COLUMN content_hash TEXT;
+      ALTER TABLE tasks ADD COLUMN description_hash TEXT;
+      ALTER TABLE courses ADD COLUMN syllabus_hash TEXT;
+
+      -- Active operations tracking table
+      -- Prevents sync from interfering with downloads and vice versa
+      CREATE TABLE IF NOT EXISTS active_operations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        operation_type TEXT NOT NULL CHECK(operation_type IN ('sync', 'download_html', 'download_file')),
+        resource_type TEXT,
+        resource_id TEXT,
+        course_id INTEGER,
+        session_id TEXT UNIQUE,
+        started_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        heartbeat_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        status TEXT DEFAULT 'active' CHECK(status IN ('active', 'stale', 'completed')),
+        UNIQUE(operation_type, resource_type, resource_id)
+      );
+
+      CREATE INDEX idx_active_ops_type ON active_operations(operation_type);
+      CREATE INDEX idx_active_ops_status ON active_operations(status);
+      CREATE INDEX idx_active_ops_resource ON active_operations(resource_type, resource_id);
+      CREATE INDEX idx_active_ops_session ON active_operations(session_id);
+
+      -- Session tracking for dependencies (protects from deletion during download)
+      ALTER TABLE html_dependencies ADD COLUMN download_session_id TEXT;
+      ALTER TABLE html_dependencies ADD COLUMN recorded_content_hash TEXT;
+
+      -- Version for optimistic locking on resources
+      ALTER TABLE resources ADD COLUMN version INTEGER DEFAULT 0;
+
+      CREATE INDEX idx_html_deps_session ON html_dependencies(download_session_id);
+    `,
+    down: `
+      DROP INDEX IF EXISTS idx_html_deps_session;
+      DROP INDEX IF EXISTS idx_active_ops_session;
+      DROP INDEX IF EXISTS idx_active_ops_resource;
+      DROP INDEX IF EXISTS idx_active_ops_status;
+      DROP INDEX IF EXISTS idx_active_ops_type;
+      DROP TABLE IF EXISTS active_operations;
+      -- SQLite doesn't support DROP COLUMN easily
+      SELECT 1;
     `,
   },
 ];

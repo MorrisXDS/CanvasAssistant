@@ -1,6 +1,7 @@
 import axios, { AxiosInstance, AxiosResponse, AxiosError } from 'axios';
 import { EventEmitter } from 'events';
 import type { ComponentLogger } from '../l0-utilities/Logger';
+import { InputValidator } from './InputValidator';
 
 export interface CanvasClientConfig {
   baseUrl: string; // e.g., 'https://utoronto.instructure.com'
@@ -8,6 +9,8 @@ export interface CanvasClientConfig {
   timeout?: number;
   /** Optional logger for debugging API calls */
   logger?: ComponentLogger;
+  /** Optional callback to receive rate limit updates from response headers */
+  onRateLimit?: (remaining: number) => void;
 }
 
 export interface CanvasUser {
@@ -23,7 +26,9 @@ export interface CanvasUser {
 export interface CanvasApiError {
   status: number;
   message: string;
-  errors?: Array<{ message: string }>;
+  errors?: Array<{ message: string; error_code?: string; field?: string }>;
+  endpoint?: string;
+  method?: string;
 }
 
 export interface PaginationLinks {
@@ -55,12 +60,16 @@ export class CanvasClient extends EventEmitter {
   private baseUrl: string;
   private accessToken: string;
   private log: ComponentLogger | null;
+  private validator: InputValidator;
+  private onRateLimit: ((remaining: number) => void) | null;
 
   constructor(config: CanvasClientConfig) {
     super();
     this.baseUrl = config.baseUrl.replace(/\/+$/, ''); // Remove trailing slashes
     this.accessToken = config.accessToken;
     this.log = config.logger ?? null;
+    this.validator = new InputValidator({ strictness: 'lenient', logWarnings: true });
+    this.onRateLimit = config.onRateLimit ?? null;
 
     this.client = axios.create({
       baseURL: `${this.baseUrl}/api/v1`,
@@ -92,7 +101,9 @@ export class CanvasClient extends EventEmitter {
       (cfg) => {
         const url = cfg.url || '';
         const params = cfg.params ? JSON.stringify(cfg.params) : '';
-        this.log?.debug(`REQUEST: ${cfg.method?.toUpperCase()} ${url}${params ? ` params=${params}` : ''}`);
+        this.log?.debug(
+          `REQUEST: ${cfg.method?.toUpperCase()} ${url}${params ? ` params=${params}` : ''}`
+        );
         return cfg;
       },
       (error) => {
@@ -107,22 +118,33 @@ export class CanvasClient extends EventEmitter {
         const url = response.config.url || '';
         const status = response.status;
         const isArray = Array.isArray(response.data);
-        const dataLength = isArray ? response.data.length : (response.data ? 1 : 0);
+        const dataLength = isArray ? response.data.length : response.data ? 1 : 0;
         const rateLimitRemaining = response.headers['x-rate-limit-remaining'];
         const linkHeader = response.headers['link'];
         const hasNextPage = linkHeader?.includes('rel="next"');
 
-        this.log?.debug(`RESPONSE: ${status} ${url} - ${dataLength} items, rate_limit_remaining=${rateLimitRemaining || 'N/A'}${hasNextPage ? ', has_next_page=true' : ''}`);
+        this.log?.debug(
+          `RESPONSE: ${status} ${url} - ${dataLength} items, rate_limit_remaining=${rateLimitRemaining || 'N/A'}${hasNextPage ? ', has_next_page=true' : ''}`
+        );
+
+        // Update rate limiter with current quota (enables adaptive throttling)
+        if (rateLimitRemaining !== undefined && this.onRateLimit) {
+          this.onRateLimit(Number(rateLimitRemaining));
+        }
 
         // Log first few items for debugging (truncated) - only for arrays
         if (this.log && isArray && response.data.length > 0) {
-          const sample = response.data.slice(0, 2).map((item: Record<string, unknown>) => {
-            if (!item || typeof item !== 'object') return '{invalid}';
-            const id = item.id || item.url || 'unknown';
-            const name = item.name || item.display_name || item.title || '';
-            return `{id:${id}, name:"${String(name).slice(0, 30)}"}`;
-          });
-          this.log.debug(`SAMPLE: [${sample.join(', ')}${response.data.length > 2 ? ', ...' : ''}]`);
+          const sample = response.data
+            .slice(0, 2)
+            .map((item: Record<string, unknown>) => {
+              if (!item || typeof item !== 'object') return '{invalid}';
+              const id = item.id || item.url || 'unknown';
+              const name = item.name || item.display_name || item.title || '';
+              return `{id:${id}, name:"${String(name).slice(0, 30)}"}`;
+            });
+          this.log.debug(
+            `SAMPLE: [${sample.join(', ')}${response.data.length > 2 ? ', ...' : ''}]`
+          );
         }
 
         return response;
@@ -204,10 +226,7 @@ export class CanvasClient extends EventEmitter {
    * GET request with automatic pagination
    * Fetches all pages and returns combined results
    */
-  async getAll<T>(
-    endpoint: string,
-    params?: Record<string, unknown>
-  ): Promise<T[]> {
+  async getAll<T>(endpoint: string, params?: Record<string, unknown>): Promise<T[]> {
     const results: T[] = [];
     let url: string | null = endpoint;
     const queryParams = { ...params, per_page: 100 };
@@ -222,17 +241,25 @@ export class CanvasClient extends EventEmitter {
 
       // Validate response is an array before spreading
       if (!Array.isArray(response.data)) {
-        this.log?.warn(`getAll: expected array but got ${typeof response.data} for ${endpoint}`);
+        this.log?.warn(
+          `getAll: expected array but got ${typeof response.data} for ${endpoint}`
+        );
         break; // Stop pagination if response format is unexpected
       }
 
       results.push(...response.data);
-      this.log?.debug(`getAll page ${pageNum}: got ${response.data.length} items, total=${results.length}`);
+      this.log?.debug(
+        `getAll page ${pageNum}: got ${response.data.length} items, total=${results.length}`
+      );
 
       // Parse Link header for next page (handle string or string[] header)
       const linkHeader = response.headers['link'];
       const links = this.parseLinkHeader(
-        typeof linkHeader === 'string' ? linkHeader : Array.isArray(linkHeader) ? linkHeader[0] : undefined
+        typeof linkHeader === 'string'
+          ? linkHeader
+          : Array.isArray(linkHeader)
+            ? linkHeader[0]
+            : undefined
       );
       url = links.next || null;
 
@@ -242,7 +269,9 @@ export class CanvasClient extends EventEmitter {
       }
     }
 
-    this.log?.debug(`getAll COMPLETE: ${endpoint} - ${results.length} total items in ${pageNum} pages`);
+    this.log?.debug(
+      `getAll COMPLETE: ${endpoint} - ${results.length} total items in ${pageNum} pages`
+    );
     return results;
   }
 
@@ -305,16 +334,32 @@ export class CanvasClient extends EventEmitter {
   }
 
   /**
-   * Handle API errors
+   * Handle API errors with enhanced context extraction
    */
   private handleError(error: AxiosError): Promise<never> {
     const url = error.config?.url || 'unknown';
+    const method = error.config?.method?.toUpperCase() || 'UNKNOWN';
 
     if (error.response) {
       const status = error.response.status;
-      const data = error.response.data as { errors?: Array<{ message: string }>; message?: string };
+      const data = error.response.data as {
+        errors?: Array<{ message: string; error_code?: string; field?: string }>;
+        message?: string;
+        status?: string;
+      };
 
-      this.log?.debug(`ERROR: ${status} ${url} - ${JSON.stringify(data)}`);
+      // Extract all error messages from the errors array for comprehensive debugging
+      const allErrorMessages =
+        data?.errors?.map((e, i) => {
+          const parts = [`[${i}] ${e.message}`];
+          if (e.error_code) parts.push(`code=${e.error_code}`);
+          if (e.field) parts.push(`field=${e.field}`);
+          return parts.join(' ');
+        }) || [];
+
+      this.log?.debug(
+        `ERROR: ${method} ${url} - ${status}${allErrorMessages.length > 0 ? ` - Errors: ${allErrorMessages.join('; ')}` : ''}`
+      );
 
       // Emit rate limit event
       if (status === 429) {
@@ -322,13 +367,17 @@ export class CanvasClient extends EventEmitter {
         this.log?.debug(`RATE LIMITED: retry-after=${retryAfter}`);
         this.emit('rate-limited', {
           retryAfter,
+          endpoint: url,
         });
       }
 
       // Emit auth error event
       if (status === 401) {
         this.log?.debug('AUTH ERROR: 401 Unauthorized');
-        this.emit('auth-error', { message: 'Invalid or expired access token' });
+        this.emit('auth-error', {
+          message: 'Invalid or expired access token',
+          endpoint: url,
+        });
       }
 
       if (status === 403) {
@@ -339,16 +388,18 @@ export class CanvasClient extends EventEmitter {
         this.log?.debug(`NOT FOUND: 404 - resource not found at ${url}`);
       }
 
+      // Build comprehensive error message from all available sources
       const errorMessage =
-        data?.errors?.[0]?.message ||
-        data?.message ||
-        error.message ||
-        'Unknown Canvas API error';
+        allErrorMessages.length > 0
+          ? allErrorMessages.join('; ')
+          : data?.message || error.message || 'Unknown Canvas API error';
 
       const apiError: CanvasApiError = {
         status,
         message: errorMessage,
         errors: data?.errors,
+        endpoint: url,
+        method,
       };
 
       return Promise.reject(apiError);
@@ -356,17 +407,21 @@ export class CanvasClient extends EventEmitter {
 
     // Network error
     if (error.request) {
-      this.log?.debug(`NETWORK ERROR: Could not reach server for ${url}`);
+      this.log?.debug(`NETWORK ERROR: ${method} ${url} - Could not reach server`);
       return Promise.reject({
         status: 0,
         message: 'Network error - could not reach Canvas server',
+        endpoint: url,
+        method,
       });
     }
 
-    this.log?.debug(`UNKNOWN ERROR: ${error.message}`);
+    this.log?.debug(`UNKNOWN ERROR: ${method} ${url} - ${error.message}`);
     return Promise.reject({
       status: 0,
       message: error.message || 'Unknown error',
+      endpoint: url,
+      method,
     });
   }
 

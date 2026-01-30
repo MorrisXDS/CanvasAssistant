@@ -42,6 +42,12 @@ export interface DownloadRequest {
   contextFolder?: string;
   /** Original folder path from Canvas (used for files from /files endpoint) */
   folderPath?: string;
+  /**
+   * Parent HTML file path (for HTML dependency downloads).
+   * When set, file will be downloaded to {parentHtmlBaseName}_files/ folder.
+   * E.g., parentHtml="CSC108/Assignment1.html" -> "CSC108/Assignment1_files/filename.ext"
+   */
+  parentHtml?: string;
 }
 
 export interface DownloadResult {
@@ -103,7 +109,23 @@ export class FileDownloadManager extends EventEmitter {
    */
   private ensureDirectory(dirPath: string): void {
     if (!fs.existsSync(dirPath)) {
-      fs.mkdirSync(dirPath, { recursive: true });
+      try {
+        fs.mkdirSync(dirPath, { recursive: true });
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        const isPermissionError =
+          errorMessage.includes('EPERM') ||
+          errorMessage.includes('EACCES') ||
+          errorMessage.includes('operation not permitted') ||
+          errorMessage.includes('permission denied');
+
+        if (isPermissionError) {
+          throw new Error(
+            `Permission denied creating directory: ${dirPath}. Please run the application as Administrator (Windows) or with sudo (Mac/Linux).`
+          );
+        }
+        throw error;
+      }
     }
   }
 
@@ -125,7 +147,7 @@ export class FileDownloadManager extends EventEmitter {
 
   /**
    * Get the full directory path for a download request
-   * Handles context folders and folder paths
+   * Handles context folders, folder paths, and parentHtml (for HTML dependencies)
    *
    * Structure: {baseDir}/{courseCode}/{contextFolder|folderPath}/{filename}
    *
@@ -135,8 +157,14 @@ export class FileDownloadManager extends EventEmitter {
    * - Syllabus: TEP327/Syllabus/outline.pdf
    * - Module: TEP327/Modules/Week_1/homework.pdf
    * - Assignment: TEP327/Assignments/Project_1/rubric.pdf
+   * - HTML dependency: TEP327/Assignment1_files/image.png (when parentHtml="TEP327/Assignment1.html")
    */
   getDownloadDirectory(request: DownloadRequest): string {
+    // Special case: downloading as a dependency of an HTML file
+    if (request.parentHtml) {
+      return this.getHtmlFilesFolderPath(request.parentHtml);
+    }
+
     const courseDir = this.getCourseFilesPath(request.courseCode);
 
     // Determine subfolder: contextFolder takes priority, then folderPath
@@ -144,15 +172,16 @@ export class FileDownloadManager extends EventEmitter {
 
     if (request.contextFolder) {
       // Context folder can contain path separators (e.g., "Modules/Week_1")
+      // Canvas API always uses forward slashes regardless of platform
       subfolder = request.contextFolder
-        .split('/')
-        .map(c => this.sanitizePathComponent(c))
+        .split(/[/\\]/)
+        .map((c) => this.sanitizePathComponent(c))
         .join(path.sep);
     } else if (request.folderPath) {
-      // Canvas folder path
+      // Canvas folder path - Canvas API always uses forward slashes regardless of platform
       subfolder = request.folderPath
-        .split('/')
-        .map(c => this.sanitizePathComponent(c))
+        .split(/[/\\]/)
+        .map((c) => this.sanitizePathComponent(c))
         .join(path.sep);
     }
 
@@ -164,11 +193,27 @@ export class FileDownloadManager extends EventEmitter {
   }
 
   /**
+   * Get the _files folder path for an HTML file
+   * E.g., "CSC108/Assignment1.html" -> "CSC108/Assignment1_files"
+   *
+   * Used for HTML dependency downloads following the convention:
+   * - Assignment1.html has dependencies in Assignment1_files/
+   * - instructions.html (nested) has dependencies in instructions_files/
+   */
+  getHtmlFilesFolderPath(htmlPath: string): string {
+    const parsed = path.parse(htmlPath);
+    const filesFolder = `${parsed.name}_files`;
+    return path.join(parsed.dir, filesFolder);
+  }
+
+  /**
    * Queue a file for download
    */
   queueDownload(request: DownloadRequest): void {
     this.queue.push(request);
-    this.logger?.debug(`Queued download: ${request.filename} for course ${request.courseCode}`);
+    this.logger?.debug(
+      `Queued download: ${request.filename} for course ${request.courseCode}`
+    );
     this.processQueue();
   }
 
@@ -254,11 +299,23 @@ export class FileDownloadManager extends EventEmitter {
         duration: Date.now() - startTime,
       };
 
-      this.logger?.info(`Download complete: ${request.filename} (${bytesDownloaded} bytes)`);
+      this.logger?.info(
+        `Download complete: ${request.filename} (${bytesDownloaded} bytes)`
+      );
       this.emit('download-complete', result);
-
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
+      let errorMessage = error instanceof Error ? error.message : String(error);
+
+      // Detect permission errors and provide helpful guidance
+      const isPermissionError =
+        errorMessage.includes('EPERM') ||
+        errorMessage.includes('EACCES') ||
+        errorMessage.includes('operation not permitted') ||
+        errorMessage.includes('permission denied');
+
+      if (isPermissionError) {
+        errorMessage = `Permission denied. Please run the application as Administrator (Windows) or with sudo (Mac/Linux). Original error: ${errorMessage}`;
+      }
 
       const result: DownloadResult = {
         id: request.id,
@@ -270,7 +327,6 @@ export class FileDownloadManager extends EventEmitter {
 
       this.logger?.error(`Download failed: ${request.filename} - ${errorMessage}`);
       this.emit('download-error', result);
-
     } finally {
       this.activeDownloads.delete(request.id);
       this.processQueue();
@@ -284,7 +340,10 @@ export class FileDownloadManager extends EventEmitter {
     url: string,
     localPath: string,
     authToken?: string,
-    onProgress?: (progress: { bytesDownloaded: number; totalBytes: number | null }) => void,
+    onProgress?: (progress: {
+      bytesDownloaded: number;
+      totalBytes: number | null;
+    }) => void,
     signal?: AbortSignal
   ): Promise<number> {
     return new Promise((resolve, reject) => {
@@ -383,7 +442,7 @@ export class FileDownloadManager extends EventEmitter {
     }
 
     // Also remove from queue if not started
-    const queueIndex = this.queue.findIndex(r => r.id === id);
+    const queueIndex = this.queue.findIndex((r) => r.id === id);
     if (queueIndex !== -1) {
       this.queue.splice(queueIndex, 1);
       return true;
@@ -469,6 +528,42 @@ export class FileDownloadManager extends EventEmitter {
       }
     }
     return totalSize;
+  }
+
+  /**
+   * Get pending downloads for persistence
+   * Returns the current queue as serializable objects
+   * Used during app shutdown to save queue state
+   */
+  getPendingDownloads(): DownloadRequest[] {
+    return [...this.queue];
+  }
+
+  /**
+   * Get active downloads that should be requeued
+   * Returns currently downloading items (will be requeued as pending on restart)
+   */
+  getActiveDownloadRequests(): string[] {
+    return Array.from(this.activeDownloads.keys());
+  }
+
+  /**
+   * Restore pending downloads from persisted state
+   * Used during app startup to restore queue from previous session
+   * @param requests Array of download requests to restore
+   */
+  restoreDownloads(requests: DownloadRequest[]): void {
+    if (requests.length === 0) return;
+
+    this.logger?.info(
+      `Restoring ${requests.length} pending downloads from previous session`
+    );
+
+    // Add to queue (don't use queueDownloads to avoid duplicate processing)
+    this.queue.push(...requests);
+
+    // Start processing
+    this.processQueue();
   }
 }
 

@@ -3,66 +3,126 @@
  * Displays tasks ranked by ROI/priority score
  */
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { PartyPopper } from 'lucide-react';
+import { PartyPopper, CheckCircle, Circle } from 'lucide-react';
 import { Card, Badge, BadgeVariant } from '../shared';
-import type { PriorityItem } from '../../../l5-presentation/types';
+import { formatDueDate } from '../../constants';
+import { useStore } from '../../../l5-presentation/store';
+import { isDeadlineEvent, formatDurationDisplay } from '../Calendar/calendarUtils';
+import type { PriorityItem, DisplayCalendarEvent } from '../../../l5-presentation/types';
+import type { Task } from '../../../l5-presentation/types';
 
 export interface PriorityListProps {
   items: PriorityItem[];
   totalPendingTasks?: number;
   onTaskClick?: (taskId: number) => void;
+  onTaskDoubleClick?: (taskId: number) => void;
+  onTaskContextMenu?: (e: React.MouseEvent, task: Task) => void;
+  onToggleComplete?: (taskId: number, isCompleted: boolean) => void;
   maxItems?: number;
+  /** Whether to show urgency badges (only when priority sorting is enabled) */
+  showUrgencyBadges?: boolean;
 }
 
 function urgencyToVariant(urgency: PriorityItem['urgencyLevel']): BadgeVariant {
   return urgency;
 }
 
-function formatDueDate(dueAt: string | null, daysUntilDue: number | null): string {
-  if (!dueAt) return 'No due date';
-
-  if (daysUntilDue === null) return 'No due date';
-  if (daysUntilDue < 0) return `${Math.abs(daysUntilDue)}d overdue`;
-  if (daysUntilDue === 0) return 'Due today';
-  if (daysUntilDue === 1) return 'Due tomorrow';
-  if (daysUntilDue <= 7) return `Due in ${daysUntilDue} days`;
-
-  const date = new Date(dueAt);
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-}
-
 export function PriorityList({
   items,
   totalPendingTasks,
   onTaskClick,
+  onTaskDoubleClick,
+  onTaskContextMenu,
+  onToggleComplete,
   maxItems = 10,
+  showUrgencyBadges = true,
 }: PriorityListProps) {
   const navigate = useNavigate();
+  const calendarEvents = useStore((state) => state.calendarEvents);
   const displayItems = items.slice(0, maxItems);
   // Use totalPendingTasks if provided, otherwise fall back to items length
-  const hasPendingTasks = totalPendingTasks !== undefined ? totalPendingTasks > 0 : items.length > 0;
+  const hasPendingTasks =
+    totalPendingTasks !== undefined ? totalPendingTasks > 0 : items.length > 0;
+
+  // Create calendar event lookup map
+  const calendarEventMap = useMemo(() => {
+    const map = new Map<number, DisplayCalendarEvent>();
+    for (const event of calendarEvents) {
+      map.set(event.id, event);
+    }
+    return map;
+  }, [calendarEvents]);
+
+  /**
+   * Format time display for a task:
+   * - Duration event: show time range
+   * - Deadline event: show "Due [date] [time]"
+   * - No due date: return null
+   */
+  const formatTimeDisplay = (task: Task, daysUntilDue: number | null): string | null => {
+    const calendarEvent = task.calendarEventId
+      ? calendarEventMap.get(task.calendarEventId)
+      : undefined;
+
+    if (calendarEvent && !isDeadlineEvent(calendarEvent)) {
+      // Duration event - show time range
+      return formatDurationDisplay(calendarEvent);
+    } else if (task.dueAt) {
+      // Deadline event - show relative deadline with time
+      if (daysUntilDue !== null) {
+        const deadlineDate = formatDueDate(task.dueAt, daysUntilDue);
+        const deadlineTime = new Date(task.dueAt).toLocaleTimeString('en-US', {
+          hour: 'numeric',
+          minute: '2-digit',
+          hour12: true,
+        });
+        // Always prefix with "Due" if not already present
+        const duePrefix = deadlineDate.toLowerCase().startsWith('due') ? '' : 'Due ';
+        return `${duePrefix}${deadlineDate} ${deadlineTime}`;
+      }
+    }
+    return null;
+  };
+
+  // Handle double-click to navigate and expand
+  const handleDoubleClick = (taskId: number) => {
+    if (onTaskDoubleClick) {
+      onTaskDoubleClick(taskId);
+    } else if (onTaskClick) {
+      onTaskClick(taskId);
+    }
+  };
+
+  // Handle context menu
+  const handleContextMenu = (e: React.MouseEvent, task: Task) => {
+    e.preventDefault();
+    if (onTaskContextMenu) {
+      onTaskContextMenu(e, task);
+    }
+  };
 
   return (
     <Card
-      padding="none"
+      padding="md"
       title="Upcoming Courseworks"
       headerAction={
         items.length > 0 && (
-          <button
-            style={styles.viewAll}
-            onClick={() => navigate('/tasks')}
-          >
+          <button style={styles.viewAll} onClick={() => navigate('/tasks')}>
             View all ({totalPendingTasks ?? items.length})
           </button>
         )
       }
-      style={{ flex: 1, display: 'flex', flexDirection: 'column' }}
+      style={{ display: 'flex', flexDirection: 'column', height: '100%' }}
     >
       {!hasPendingTasks ? (
         <div style={styles.emptyState}>
-          <PartyPopper size={32} color="var(--color-success)" style={{ marginBottom: 'var(--space-2)' }} />
+          <PartyPopper
+            size={32}
+            color="var(--color-success)"
+            style={{ marginBottom: 'var(--space-2)' }}
+          />
           <span style={styles.emptyText}>All caught up!</span>
           <span style={styles.emptySubtext}>No pending tasks</span>
         </div>
@@ -79,11 +139,12 @@ export function PriorityList({
                 ...styles.listItem,
                 borderTop: index === 0 ? 'none' : '1px solid var(--border-light)',
               }}
-              onClick={() => onTaskClick?.(item.task.id)}
+              onDoubleClick={() => handleDoubleClick(item.task.id)}
+              onContextMenu={(e) => handleContextMenu(e, item.task)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
+                if (e.key === 'Enter') {
                   e.preventDefault();
-                  onTaskClick?.(item.task.id);
+                  handleDoubleClick(item.task.id);
                 }
               }}
               role="button"
@@ -93,8 +154,9 @@ export function PriorityList({
               <div
                 style={{
                   ...styles.priorityBar,
-                  backgroundColor:
-                    item.urgencyLevel === 'critical'
+                  backgroundColor: item.task.isCompleted
+                    ? 'var(--color-success)'
+                    : item.urgencyLevel === 'critical'
                       ? 'var(--color-critical)'
                       : item.urgencyLevel === 'high'
                         ? 'var(--color-high)'
@@ -108,20 +170,42 @@ export function PriorityList({
               <div style={styles.content}>
                 <div style={styles.topRow}>
                   <span style={styles.courseCode}>{item.course.code}</span>
-                  <Badge variant={urgencyToVariant(item.urgencyLevel)} size="sm">
-                    {item.urgencyLevel}
-                  </Badge>
+                  {showUrgencyBadges && (
+                    <Badge variant={urgencyToVariant(item.urgencyLevel)} size="sm">
+                      {item.urgencyLevel}
+                    </Badge>
+                  )}
                 </div>
                 <div style={styles.title}>{item.task.title}</div>
                 <div style={styles.bottomRow}>
-                  <span style={styles.dueDate}>
-                    {formatDueDate(item.task.dueAt, item.daysUntilDue)}
-                  </span>
+                  {formatTimeDisplay(item.task, item.daysUntilDue) && (
+                    <span style={styles.dueDate}>
+                      {formatTimeDisplay(item.task, item.daysUntilDue)}
+                    </span>
+                  )}
                   {item.task.weight > 0 && (
                     <span style={styles.weight}>{item.task.weight}% weight</span>
                   )}
                 </div>
               </div>
+
+              {/* Checkbox - right side */}
+              {onToggleComplete && (
+                <button
+                  style={styles.checkbox}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onToggleComplete(item.task.id, item.task.isCompleted);
+                  }}
+                  aria-label={item.task.isCompleted ? 'Mark incomplete' : 'Mark complete'}
+                >
+                  {item.task.isCompleted ? (
+                    <CheckCircle size={24} color="var(--color-success)" />
+                  ) : (
+                    <Circle size={24} color="var(--text-muted)" />
+                  )}
+                </button>
+              )}
             </div>
           ))}
         </div>
@@ -134,24 +218,37 @@ const styles: Record<string, React.CSSProperties> = {
   list: {
     display: 'flex',
     flexDirection: 'column',
-    // FIX 1: Removed 'gap' to prevent floating borders
+    margin: '0 -24px -24px -24px',
   },
 
   listItem: {
     display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-3)',
     padding: 'var(--space-3) 24px',
     cursor: 'pointer',
     transition: 'background-color var(--transition-fast)',
     position: 'relative',
-    alignItems: 'stretch', // Ensures priority bar spans full height
+  },
+
+  checkbox: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 0,
+    marginLeft: 'var(--space-3)',
+    background: 'none',
+    border: 'none',
+    cursor: 'pointer',
+    flexShrink: 0,
+    alignSelf: 'center',
   },
 
   priorityBar: {
     width: '4px',
-    borderRadius: '2px',
-    marginRight: 'var(--space-3)',
+    alignSelf: 'stretch',
+    borderRadius: 'var(--radius-sm)',
     flexShrink: 0,
-    // FIX 2: Removed explicit height so it stretches automatically via flexbox
   },
 
   content: {

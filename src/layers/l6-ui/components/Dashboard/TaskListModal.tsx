@@ -6,9 +6,11 @@
 
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { X, Calendar, AlertTriangle, Clock, ExternalLink } from 'lucide-react';
-import { Badge } from '../shared';
-import type { Task, Course } from '../../../l5-presentation/types';
+import { X, AlertTriangle, Clock, ExternalLink } from 'lucide-react';
+import { Badge, PolicyBadgeGroup } from '../shared';
+import { formatDueDate, getBadgeUrgency } from '../../constants';
+import type { Task, Course, Policy } from '../../../l5-presentation/types';
+import { useStore } from '../../../l5-presentation/store';
 
 export interface TaskWithCourse {
   task: Task;
@@ -24,30 +26,15 @@ export interface TaskListModalProps {
   type: 'pending' | 'overdue';
 }
 
-function formatDueDate(dueAt: string | null, daysUntilDue: number | null): string {
-  if (!dueAt) return 'No due date';
-
-  if (daysUntilDue === null) return 'No due date';
-  if (daysUntilDue < 0) return `${Math.abs(daysUntilDue)} days overdue`;
-  if (daysUntilDue === 0) return 'Due today';
-  if (daysUntilDue === 1) return 'Due tomorrow';
-  if (daysUntilDue <= 7) return `Due in ${daysUntilDue} days`;
-
-  const date = new Date(dueAt);
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-}
-
-function getUrgencyLevel(daysUntilDue: number | null): 'critical' | 'high' | 'medium' | 'low' {
-  if (daysUntilDue === null) return 'low';
-  if (daysUntilDue < 0) return 'critical';
-  if (daysUntilDue <= 1) return 'critical';
-  if (daysUntilDue <= 3) return 'high';
-  if (daysUntilDue <= 7) return 'medium';
-  return 'low';
-}
-
-export function TaskListModal({ isOpen, onClose, title, tasks, type }: TaskListModalProps) {
+export function TaskListModal({
+  isOpen,
+  onClose,
+  title,
+  tasks,
+  type,
+}: TaskListModalProps) {
   const navigate = useNavigate();
+  const policies = useStore((state) => state.policies);
 
   if (!isOpen) return null;
 
@@ -112,11 +99,11 @@ export function TaskListModal({ isOpen, onClose, title, tasks, type }: TaskListM
                     style={{
                       ...styles.priorityBar,
                       backgroundColor:
-                        getUrgencyLevel(item.daysUntilDue) === 'critical'
+                        getBadgeUrgency(item.daysUntilDue) === 'critical'
                           ? 'var(--color-critical)'
-                          : getUrgencyLevel(item.daysUntilDue) === 'high'
+                          : getBadgeUrgency(item.daysUntilDue) === 'high'
                             ? 'var(--color-high)'
-                            : getUrgencyLevel(item.daysUntilDue) === 'medium'
+                            : getBadgeUrgency(item.daysUntilDue) === 'medium'
                               ? 'var(--color-medium)'
                               : 'var(--color-low)',
                     }}
@@ -126,7 +113,7 @@ export function TaskListModal({ isOpen, onClose, title, tasks, type }: TaskListM
                   <div style={styles.taskContent}>
                     <div style={styles.taskTopRow}>
                       <span style={styles.courseCode}>{item.course.code}</span>
-                      <Badge variant={getUrgencyLevel(item.daysUntilDue)} size="sm">
+                      <Badge variant={getBadgeUrgency(item.daysUntilDue)} size="sm">
                         {formatDueDate(item.task.dueAt, item.daysUntilDue)}
                       </Badge>
                     </div>
@@ -135,6 +122,12 @@ export function TaskListModal({ isOpen, onClose, title, tasks, type }: TaskListM
                       {item.task.weight > 0 && (
                         <span style={styles.taskWeight}>{item.task.weight}% weight</span>
                       )}
+                      <PolicyBadgeGroup
+                        task={item.task}
+                        policies={policies}
+                        maxBadges={2}
+                        size="sm"
+                      />
                     </div>
                   </div>
 

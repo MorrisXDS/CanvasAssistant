@@ -14,6 +14,7 @@ function createBaseState(overrides: Partial<StoreState> = {}): StoreState {
     courses: [],
     tasks: [],
     notifications: [],
+    policies: [],
     simulation: {
       isActive: false,
       startedAt: null,
@@ -32,6 +33,7 @@ function createBaseState(overrides: Partial<StoreState> = {}): StoreState {
     importedCalendars: [],
     calendarEvents: [],
     syncConflicts: [],
+    authError: null,
     ...overrides,
   };
 }
@@ -44,6 +46,7 @@ function createCourse(overrides: Partial<Course> = {}): Course {
     code: 'CS101',
     name: 'Intro to Computer Science',
     targetGrade: 85,
+    targetGradeSource: 'default',
     assessedGrade: 80,
     currentGrade: 78,
     color: '#FF5733',
@@ -51,28 +54,39 @@ function createCourse(overrides: Partial<Course> = {}): Course {
     isHidden: false,
     lastSyncedAt: '2024-01-15T10:00:00Z',
     enrollmentTermId: null,
+    archivedAt: null,
+    archiveSource: null,
     ...overrides,
   };
 }
 
 // Helper to create a task
 function createTask(overrides: Partial<Task> = {}): Task {
+  // Default due date is 3 days from now to ensure tasks appear in priority queue
+  const defaultDueAt = new Date();
+  defaultDueAt.setDate(defaultDueAt.getDate() + 3);
+
   return {
     id: 1,
     externalId: 'task-1',
     courseId: 1,
     title: 'Assignment 1',
     description: 'First assignment',
-    dueAt: null,
+    dueAt: defaultDueAt.toISOString(),
+    dueTimeKnown: true,
     weight: 10,
     grade: null,
     pointsPossible: 100,
     priorityScore: 50,
     isCompleted: false,
+    isOptional: false,
     completedAt: null,
     submissionStatus: null,
+    userSubmissionStatus: null,
+    effectiveSubmissionStatus: null,
     taskType: null,
     taskGroupId: null,
+    calendarEventId: null,
     ...overrides,
   };
 }
@@ -111,7 +125,7 @@ describe('DashboardViewModel', () => {
         expect(viewModel.priorityQueue[0].task.id).toBe(1);
       });
 
-      it('sorts by priority score descending', () => {
+      it('sorts by priority score descending when prioritySortingEnabled', () => {
         const course = createCourse();
         const lowPriority = createTask({ id: 1, priorityScore: 30 });
         const highPriority = createTask({ id: 2, priorityScore: 90 });
@@ -122,7 +136,8 @@ describe('DashboardViewModel', () => {
           tasks: [lowPriority, highPriority, mediumPriority],
         });
 
-        const viewModel = computeDashboardViewModel(state);
+        // Must enable priority sorting to sort by priorityScore
+        const viewModel = computeDashboardViewModel(state, { prioritySortingEnabled: true });
 
         expect(viewModel.priorityQueue[0].task.id).toBe(2); // High priority
         expect(viewModel.priorityQueue[1].task.id).toBe(3); // Medium priority
@@ -226,18 +241,21 @@ describe('DashboardViewModel', () => {
         expect(viewModel.priorityQueue[0].daysUntilDue).toBe(3);
       });
 
-      it('returns null for days until due when no due date', () => {
+      it('excludes tasks without due date from priority queue', () => {
         const course = createCourse();
-        const task = createTask({ id: 1, dueAt: null });
+        const taskWithDue = createTask({ id: 1 }); // Has default dueAt
+        const taskWithoutDue = createTask({ id: 2, dueAt: null });
 
         const state = createBaseState({
           courses: [course],
-          tasks: [task],
+          tasks: [taskWithDue, taskWithoutDue],
         });
 
         const viewModel = computeDashboardViewModel(state);
 
-        expect(viewModel.priorityQueue[0].daysUntilDue).toBeNull();
+        // Only task with due date should be in priority queue
+        expect(viewModel.priorityQueue).toHaveLength(1);
+        expect(viewModel.priorityQueue[0].task.id).toBe(1);
       });
     });
 

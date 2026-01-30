@@ -123,7 +123,8 @@ export class ResilienceWrapper extends EventEmitter {
         this.circuitBreaker.recordSuccess(endpoint);
         return result;
       } catch (error) {
-        this.circuitBreaker.recordFailure(endpoint);
+        // Pass error so circuit breaker can differentiate transient vs non-transient
+        this.circuitBreaker.recordFailure(endpoint, error);
         throw error;
       }
     };

@@ -5,6 +5,7 @@
  */
 
 import { Database } from '../l1-persistence/Database';
+import { VisibleDataProvider } from '../l1-persistence/VisibleDataProvider';
 import { PriorityEngine } from '../l3-intelligence/PriorityEngine';
 
 /**
@@ -13,6 +14,7 @@ import { PriorityEngine } from '../l3-intelligence/PriorityEngine';
 export interface CommandContext {
   db: Database;
   priorityEngine?: PriorityEngine;
+  visibleDataProvider?: VisibleDataProvider;
   simulationContext: SimulationContext;
 }
 
@@ -141,6 +143,10 @@ export interface UpdateTaskParams {
   weight?: number;
   grade?: number | null;
   pointsPossible?: number | null;
+  isOptional?: boolean;
+  taskType?: string | null;
+  /** User-set submission status, independent of Canvas */
+  userSubmissionStatus?: string | null;
 }
 
 export interface DeleteTaskParams {

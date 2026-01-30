@@ -12,12 +12,19 @@ import { z } from 'zod';
 export const SyncStatusSchema = z.enum(['idle', 'syncing', 'error', 'offline']);
 export type SyncStatus = z.infer<typeof SyncStatusSchema>;
 
+export const TargetGradeSourceSchema = z.enum(['default', 'manual']);
+export type TargetGradeSource = z.infer<typeof TargetGradeSourceSchema>;
+
+export const ArchiveSourceSchema = z.enum(['manual', 'auto']);
+export type ArchiveSource = z.infer<typeof ArchiveSourceSchema>;
+
 export const CourseSchema = z.object({
   id: z.number(),
   externalId: z.string(),
   code: z.string(),
   name: z.string(),
   targetGrade: z.number(),
+  targetGradeSource: TargetGradeSourceSchema,
   assessedGrade: z.number().nullable(),
   currentGrade: z.number().nullable(),
   color: z.string().nullable(),
@@ -25,6 +32,10 @@ export const CourseSchema = z.object({
   isHidden: z.boolean(),
   lastSyncedAt: z.string().nullable(),
   enrollmentTermId: z.number().nullable(),
+  /** ISO timestamp when course was archived, null if active */
+  archivedAt: z.string().nullable(),
+  /** How the course was archived: 'manual' (user) or 'auto' (term expired). Auto-archived cannot be restored. */
+  archiveSource: ArchiveSourceSchema.nullable(),
 });
 export type Course = z.infer<typeof CourseSchema>;
 
@@ -50,19 +61,33 @@ export const TaskSchema = z.object({
   title: z.string(),
   description: z.string().nullable(),
   dueAt: z.string().nullable(),
+  dueTimeKnown: z.boolean(), // true = time known, false = only date known (assume midnight)
   weight: z.number(),
   grade: z.number().nullable(),
   pointsPossible: z.number().nullable(),
   priorityScore: z.number(),
   isCompleted: z.boolean(),
+  isOptional: z.boolean(),
   completedAt: z.string().nullable(),
   submissionStatus: z.string().nullable(),
+  /** User-set submission status, independent of Canvas */
+  userSubmissionStatus: z.string().nullable(),
+  /** Effective status: OR of submissionStatus and userSubmissionStatus */
+  effectiveSubmissionStatus: z.string().nullable(),
   taskType: z.string().nullable(),
   taskGroupId: z.number().nullable(),
+  /** FK to calendar event for task-calendar linking */
+  calendarEventId: z.number().nullable(),
+  fieldSources: z.record(z.string(), z.enum(['canvas', 'user', 'guessed'])).optional(),
 });
 export type Task = z.infer<typeof TaskSchema>;
 
-export const DownloadStatusSchema = z.enum(['pending', 'downloading', 'completed', 'failed']);
+export const DownloadStatusSchema = z.enum([
+  'pending',
+  'downloading',
+  'completed',
+  'failed',
+]);
 
 export const NotificationAttachmentSchema = z.object({
   id: z.number(),
@@ -126,10 +151,13 @@ export const HealthProbeStatusSchema = z.enum(['healthy', 'degraded', 'unhealthy
 
 export const HealthStatusSchema = z.object({
   overall: HealthProbeStatusSchema,
-  probes: z.record(z.string(), z.object({
-    status: HealthProbeStatusSchema,
-    lastChecked: z.string().nullable(),
-  })),
+  probes: z.record(
+    z.string(),
+    z.object({
+      status: HealthProbeStatusSchema,
+      lastChecked: z.string().nullable(),
+    })
+  ),
 });
 export type HealthStatus = z.infer<typeof HealthStatusSchema>;
 
@@ -165,6 +193,8 @@ export const ExternalCalendarEventSchema = z.object({
   sourceType: CalendarSourceTypeSchema,
   courseId: z.number().nullable(),
   importedCalendarId: z.number().nullable(),
+  /** FK to task if this event was auto-generated from a task */
+  taskId: z.number().nullable(),
   title: z.string(),
   description: z.string().nullable(),
   startAt: z.string(),
@@ -175,6 +205,12 @@ export const ExternalCalendarEventSchema = z.object({
   recurrenceRule: z.string().nullable(),
   recurrenceExceptionDates: z.string().nullable(),
   parentEventId: z.number().nullable(),
+  /** Custom color override for this event */
+  eventColor: z.string().nullable(),
+  /** Calendar-specific notes (don't affect task) */
+  notes: z.string().nullable(),
+  /** Reminder offset in minutes */
+  reminderMinutes: z.number().nullable(),
 });
 export type ExternalCalendarEvent = z.infer<typeof ExternalCalendarEventSchema>;
 
@@ -182,8 +218,15 @@ export const DisplayCalendarEventSchema = ExternalCalendarEventSchema.extend({
   isRecurrenceInstance: z.boolean(),
   recurrenceDate: z.string().optional(),
   originalEventId: z.number().optional(),
+  /** Display color (from event, calendar, or course) */
   color: z.string(),
   calendarName: z.string().optional(),
+  /** Task details when event is task-generated */
+  taskTitle: z.string().optional(),
+  taskWeight: z.number().optional(),
+  taskType: z.string().optional(),
+  courseCode: z.string().optional(),
+  courseName: z.string().optional(),
 });
 export type DisplayCalendarEvent = z.infer<typeof DisplayCalendarEventSchema>;
 
@@ -210,6 +253,49 @@ export const ICSImportPreviewSchema = z.object({
   warnings: z.array(z.string()),
 });
 export type ICSImportPreview = z.infer<typeof ICSImportPreviewSchema>;
+
+// Calendar Event CRUD Schemas
+export const CreateCalendarEventSchema = z.object({
+  title: z.string().min(1),
+  description: z.string().optional(),
+  startAt: z.string(),
+  endAt: z.string().optional(),
+  allDay: z.boolean().default(false),
+  location: z.string().optional(),
+  courseId: z.number().optional(),
+});
+export type CreateCalendarEventInput = z.infer<typeof CreateCalendarEventSchema>;
+
+export const UpdateCalendarEventSchema = z.object({
+  title: z.string().min(1).optional(),
+  description: z.string().optional(),
+  startAt: z.string().optional(),
+  endAt: z.string().optional(),
+  allDay: z.boolean().optional(),
+  location: z.string().optional(),
+  /** Custom color override */
+  color: z.string().optional(),
+  /** Calendar-specific notes (don't affect task) */
+  notes: z.string().optional(),
+  /** Reminder offset in minutes */
+  reminderMinutes: z.number().optional(),
+});
+export type UpdateCalendarEventInput = z.infer<typeof UpdateCalendarEventSchema>;
+
+export const ExportBatchOptionsSchema = z.object({
+  mode: z.enum(['all', 'selected']),
+  calendarIds: z.array(z.number()).optional(),
+  courseIds: z.array(z.number()).optional(),
+  includeUserEvents: z.boolean().default(true),
+  consolidate: z.boolean().default(true),
+  dateRange: z
+    .object({
+      start: z.string(),
+      end: z.string(),
+    })
+    .optional(),
+});
+export type ExportBatchOptions = z.infer<typeof ExportBatchOptionsSchema>;
 
 export const UrgencyLevelSchema = z.enum(['critical', 'high', 'medium', 'low']);
 
@@ -305,6 +391,11 @@ export const UserProfileSchema = z.object({
 });
 export type UserProfile = z.infer<typeof UserProfileSchema>;
 
+export const ClearDataOptionsSchema = z.object({
+  deleteToken: z.boolean().optional().default(false),
+});
+export type ClearDataOptions = z.infer<typeof ClearDataOptionsSchema>;
+
 export const CoursePageSchema = z.object({
   id: z.number(),
   externalId: z.string().nullable(),
@@ -356,6 +447,11 @@ export const InsightTypeSchema = z.enum([
   'streak',
   'improvement',
   'data_completeness',
+  'grade_at_risk',
+  'grade_trend',
+  'crunch_period',
+  'unset_weight',
+  'guessed_due_date',
 ]);
 export type InsightType = z.infer<typeof InsightTypeSchema>;
 
@@ -524,6 +620,14 @@ export const IpcContract = {
     params: z.number(),
     result: z.array(PolicySchema),
   },
+  'data:getAllPolicies': {
+    params: z
+      .object({
+        courseIds: z.array(z.number()).optional(),
+      })
+      .optional(),
+    result: z.array(PolicySchema),
+  },
   'data:getGradeHistory': {
     params: z.number(),
     result: z.array(GradeHistoryEntrySchema),
@@ -531,6 +635,62 @@ export const IpcContract = {
   'data:getFiles': {
     params: z.void(),
     result: FilesDataSchema,
+  },
+  'data:getCourseSyllabus': {
+    params: z.number(),
+    result: z
+      .object({
+        id: z.number(),
+        courseId: z.number(),
+        resourceId: z.number(),
+        sourceType: z.string(),
+        resourceUpdatedAt: z.string().nullable(),
+        lastReviewedAt: z.string().nullable(),
+        changeDetectedAt: z.string().nullable(),
+        markedAt: z.string(),
+      })
+      .nullable(),
+  },
+  'data:getCourseFiles': {
+    params: z.number(),
+    result: z.object({
+      resources: z.array(FileResourceSchema),
+      attachments: z.array(FileAttachmentSchema),
+    }),
+  },
+  'data:getTaskCanvasUrl': {
+    params: z.number(),
+    result: z.string().nullable(),
+  },
+  'data:clearAll': {
+    params: ClearDataOptionsSchema.optional(),
+    result: ApiResultSchema(z.void()),
+  },
+  'data:exportDatabase': {
+    params: z.void(),
+    result: ApiResultSchema(z.object({ filePath: z.string() })),
+  },
+  'data:importDatabase': {
+    params: z.void(),
+    result: ApiResultSchema(z.void()),
+  },
+  'data:exportCourseData': {
+    params: z
+      .object({
+        courseIds: z.array(z.number()).optional(),
+        includeFiles: z.boolean().optional(),
+      })
+      .optional(),
+    result: ApiResultSchema(z.object({ filePath: z.string() })),
+  },
+  'data:importCourseData': {
+    params: z.void(),
+    result: ApiResultSchema(
+      z.object({
+        coursesImported: z.number(),
+        tasksImported: z.number(),
+      })
+    ),
   },
 
   // ============ Attachments ============
@@ -560,6 +720,10 @@ export const IpcContract = {
     params: z.number(),
     result: ApiResultSchema(z.void()),
   },
+  'resource:deleteLocal': {
+    params: z.number(),
+    result: ApiResultSchema(z.void()),
+  },
 
   // ============ Files Directory ============
   'files:getDirectory': {
@@ -568,6 +732,14 @@ export const IpcContract = {
   },
   'files:openDirectory': {
     params: z.void(),
+    result: ApiResultSchema(z.void()),
+  },
+  'files:selectDirectory': {
+    params: z.void(),
+    result: ApiResultSchema(z.object({ path: z.string() })),
+  },
+  'files:setDirectory': {
+    params: z.string(),
     result: ApiResultSchema(z.void()),
   },
   'files:clearSync': {
@@ -644,6 +816,25 @@ export const IpcContract = {
     }),
     result: z.array(DisplayCalendarEventSchema),
   },
+  'calendar:createEvent': {
+    params: CreateCalendarEventSchema,
+    result: ApiResultSchema(z.object({ id: z.number() })),
+  },
+  'calendar:updateEvent': {
+    params: z.object({
+      id: z.number(),
+      data: UpdateCalendarEventSchema,
+    }),
+    result: ApiResultSchema(z.void()),
+  },
+  'calendar:deleteEvent': {
+    params: z.number(),
+    result: ApiResultSchema(z.void()),
+  },
+  'calendar:exportBatch': {
+    params: ExportBatchOptionsSchema,
+    result: ApiResultSchema(z.object({ content: z.string(), eventCount: z.number() })),
+  },
 
   // ============ Commands ============
   'command:dispatch': {
@@ -712,15 +903,53 @@ export const IpcContract = {
     params: z.void(),
     result: UserProfileSchema.nullable(),
   },
+  'canvas:debugFetch': {
+    params: z.string(),
+    result: z.unknown(),
+  },
+
+  // ============ Priorities ============
+  'priorities:calculate': {
+    params: z.void(),
+    result: z.array(PriorityItemSchema),
+  },
+  'priorities:refresh': {
+    params: z.void(),
+    result: ApiResultSchema(z.void()),
+  },
+  'priorities:getExplanation': {
+    params: z.object({ taskId: z.number() }),
+    result: z
+      .object({
+        taskId: z.number(),
+        finalScore: z.number(),
+        queue: z.string(),
+        factors: z.record(z.string(), z.unknown()),
+        breakdown: z.array(
+          z.object({
+            factor: z.string(),
+            value: z.number(),
+            contribution: z.number(),
+            explanation: z.string(),
+          })
+        ),
+        reasoning: z.string(),
+      })
+      .nullable(),
+  },
 
   // ============ Sync ============
   'sync:full': {
-    params: z.object({
-      termSelection: z.union([z.literal('all'), z.literal('auto'), z.string()]).optional(),
-      syncCanvasFiles: z.boolean().optional(),
-      syncAnnouncements: z.boolean().optional(),
-      courseIds: z.array(z.number()).optional(),
-    }).optional(),
+    params: z
+      .object({
+        termSelection: z
+          .union([z.literal('all'), z.literal('auto'), z.string()])
+          .optional(),
+        syncCanvasFiles: z.boolean().optional(),
+        syncAnnouncements: z.boolean().optional(),
+        courseIds: z.array(z.number()).optional(),
+      })
+      .optional(),
     result: ApiResultSchema(z.unknown()),
   },
   'sync:courses': {
@@ -733,22 +962,98 @@ export const IpcContract = {
       localCourseId: z.number(),
       forceRefresh: z.boolean().optional(),
     }),
-    result: ApiResultSchema(z.object({
-      success: z.boolean(),
-      count: z.number(),
-      errors: z.array(z.string()),
-    })),
+    result: ApiResultSchema(
+      z.object({
+        success: z.boolean(),
+        count: z.number(),
+        errors: z.array(z.string()),
+      })
+    ),
   },
   'sync:folderByPath': {
     params: z.object({
       courseId: z.number(),
       folderPath: z.string(),
     }),
-    result: ApiResultSchema(z.object({
-      success: z.boolean(),
-      count: z.number(),
-      errors: z.array(z.string()),
-    })),
+    result: ApiResultSchema(
+      z.object({
+        success: z.boolean(),
+        count: z.number(),
+        errors: z.array(z.string()),
+      })
+    ),
+  },
+  'sync:getPendingConflicts': {
+    params: z.void(),
+    result: z.array(
+      z.object({
+        id: z.string(),
+        entity: z.enum(['course', 'task', 'notification']),
+        entityId: z.number(),
+        externalId: z.string(),
+        entityName: z.string(),
+        field: z.string(),
+        fieldLabel: z.string(),
+        localValue: z.unknown(),
+        canvasValue: z.unknown(),
+        timestamp: z.string(),
+        courseName: z.string().optional(),
+        courseId: z.number().optional(),
+      })
+    ),
+  },
+  'sync:resolveConflict': {
+    params: z.object({
+      conflictId: z.string(),
+      useCanvasValue: z.boolean(),
+      rememberChoice: z.boolean().optional(),
+      rememberForAll: z.boolean().optional(),
+      expiresAt: z.string().nullable().optional(),
+    }),
+    result: ApiResultSchema(z.void()),
+  },
+  'sync:resolveAllConflicts': {
+    params: z.boolean(),
+    result: ApiResultSchema(z.object({ resolved: z.number() })),
+  },
+  'sync:getSyncPreferences': {
+    params: z.void(),
+    result: z.array(
+      z.object({
+        entity: z.string(),
+        field: z.string(),
+        useCanvasValue: z.boolean(),
+        expiresAt: z.string().nullable(),
+        createdAt: z.string(),
+      })
+    ),
+  },
+  'sync:deleteSyncPreference': {
+    params: z.object({
+      entity: z.string(),
+      field: z.string(),
+    }),
+    result: ApiResultSchema(z.void()),
+  },
+  'sync:getLastSyncTime': {
+    params: z.void(),
+    result: z.string().nullable(),
+  },
+  'sync:getAutoSyncPreferences': {
+    params: z.void(),
+    result: z.object({
+      enabled: z.boolean(),
+      autoSyncInterval: z.number(),
+      autoAssignDueDate: z.boolean().optional(),
+    }),
+  },
+  'sync:setAutoSyncPreferences': {
+    params: z.object({
+      enabled: z.boolean(),
+      autoSyncInterval: z.number(),
+      autoAssignDueDate: z.boolean().optional(),
+    }),
+    result: ApiResultSchema(z.void()),
   },
 
   // ============ File Operations ============
@@ -756,10 +1061,14 @@ export const IpcContract = {
     params: z.object({
       defaultName: z.string(),
       content: z.string(),
-      filters: z.array(z.object({
-        name: z.string(),
-        extensions: z.array(z.string()),
-      })).optional(),
+      filters: z
+        .array(
+          z.object({
+            name: z.string(),
+            extensions: z.array(z.string()),
+          })
+        )
+        .optional(),
     }),
     result: ApiResultSchema(z.object({ filePath: z.string() })),
   },
@@ -785,6 +1094,10 @@ export const IpcContract = {
     params: z.void(),
     result: RecommendationStatsSchema,
   },
+  'intelligence:suppressRecommendation': {
+    params: z.number(),
+    result: ApiResultSchema(z.void()),
+  },
 
   // ============ Intelligence - Insights ============
   'intelligence:getActiveInsights': {
@@ -807,13 +1120,19 @@ export const IpcContract = {
     params: z.void(),
     result: InsightStatsSchema,
   },
+  'intelligence:suppressInsight': {
+    params: z.number(),
+    result: ApiResultSchema(z.void()),
+  },
 
   // ============ Intelligence - Workload ============
   'intelligence:getWorkloadDistribution': {
-    params: z.object({
-      startDate: z.string().optional(),
-      endDate: z.string().optional(),
-    }).optional(),
+    params: z
+      .object({
+        startDate: z.string().optional(),
+        endDate: z.string().optional(),
+      })
+      .optional(),
     result: WorkloadDistributionSchema.nullable(),
   },
   'intelligence:getDailyPlan': {
@@ -828,14 +1147,297 @@ export const IpcContract = {
     params: z.object({ windowDays: z.number().optional() }).optional(),
     result: z.number(),
   },
+  'intelligence:getCourseBalanceScore': {
+    params: z.void(),
+    result: z.number(),
+  },
+  'intelligence:getNeglectedCourses': {
+    params: z.object({ windowDays: z.number().optional() }).optional(),
+    result: z.array(
+      z.object({
+        courseId: z.number(),
+        courseName: z.string(),
+        lastCompletedAt: z.string().nullable(),
+        daysSinceActivity: z.number(),
+      })
+    ),
+  },
+  'intelligence:getDeadlineClusters': {
+    params: z.object({ windowHours: z.number().optional() }).optional(),
+    result: z.array(
+      z.object({
+        startTime: z.string(),
+        endTime: z.string(),
+        taskCount: z.number(),
+        taskIds: z.array(z.number()),
+      })
+    ),
+  },
+  'intelligence:getWorkloadSnapshots': {
+    params: z.object({ days: z.number().optional() }).optional(),
+    result: z.array(WorkloadSnapshotSchema),
+  },
+
+  // ============ Intelligence - Behavior Analytics ============
+  'intelligence:getWeeklyRhythm': {
+    params: z.void(),
+    result: z.object({
+      weeklyPattern: z.array(
+        z.object({
+          dayOfWeek: z.number(),
+          dayName: z.string(),
+          completionCount: z.number(),
+          avgCompletionHour: z.number().nullable(),
+        })
+      ),
+      peakDay: z.string(),
+      peakHour: z.number().nullable(),
+    }),
+  },
+  'intelligence:getCoursePerformance': {
+    params: z.void(),
+    result: z.array(
+      z.object({
+        courseId: z.number(),
+        courseName: z.string(),
+        avgCompletionTime: z.number().nullable(),
+        onTimeRate: z.number(),
+        tasksCompleted: z.number(),
+      })
+    ),
+  },
+  'intelligence:getStrugglePatterns': {
+    params: z.void(),
+    result: z.array(
+      z.object({
+        courseId: z.number(),
+        courseName: z.string(),
+        pattern: z.string(),
+        severity: z.enum(['low', 'medium', 'high']),
+        recommendation: z.string(),
+      })
+    ),
+  },
+  'intelligence:getCompletionTiming': {
+    params: z.void(),
+    result: z.object({
+      earlyCompletions: z.number(),
+      onTimeCompletions: z.number(),
+      lateCompletions: z.number(),
+      avgDaysBeforeDue: z.number(),
+    }),
+  },
+  'intelligence:getBehaviorEventCount': {
+    params: z.void(),
+    result: z.number(),
+  },
+
+  // ============ Intelligence - Adaptive Learning ============
+  'intelligence:getAdaptiveWeights': {
+    params: z.void(),
+    result: z.object({
+      urgency: z.number(),
+      weight: z.number(),
+      courseGap: z.number(),
+      taskType: z.number(),
+      submissionStatus: z.number(),
+    }),
+  },
+  'intelligence:getWeightAdjustments': {
+    params: z.void(),
+    result: z.array(
+      z.object({
+        id: z.number(),
+        factor: z.string(),
+        adjustment: z.number(),
+        reason: z.string(),
+        createdAt: z.string(),
+      })
+    ),
+  },
+  'intelligence:getAdaptiveSummary': {
+    params: z.void(),
+    result: z.object({
+      totalAdjustments: z.number(),
+      lastCalculatedAt: z.string().nullable(),
+      currentWeights: z.record(z.string(), z.number()),
+      drift: z.number(),
+    }),
+  },
+  'intelligence:getAdaptiveStatistics': {
+    params: z.void(),
+    result: z.object({
+      completionEvents: z.number(),
+      adjustmentsMade: z.number(),
+      accuracyImprovement: z.number().nullable(),
+    }),
+  },
+  'intelligence:recalculateAdaptiveWeights': {
+    params: z.void(),
+    result: ApiResultSchema(z.void()),
+  },
+
+  // ============ Settings ============
+  'settings:getDefaultTargetGrade': {
+    params: z.void(),
+    result: z.number(),
+  },
+  'settings:setDefaultTargetGrade': {
+    params: z.number(),
+    result: ApiResultSchema(z.void()),
+  },
+  'settings:getTermSelection': {
+    params: z.void(),
+    result: z.object({
+      value: z.union([z.literal('all'), z.literal('auto'), z.number()]),
+      autoDetectedTermId: z.number().nullable(),
+    }),
+  },
+  'settings:setTermSelection': {
+    params: z.union([z.literal('all'), z.literal('auto'), z.number()]),
+    result: ApiResultSchema(z.void()),
+  },
+
+  // ============ Visibility ============
+  'visibility:getVisibleCourseIds': {
+    params: z.void(),
+    result: z.array(z.number()),
+  },
+
+  // ============ Course Settings ============
+  'course:getSettings': {
+    params: z.number(),
+    result: z
+      .object({
+        courseId: z.number(),
+        autoAssignDueDate: z.number().nullable(),
+        allowGuessedOverride: z.number(),
+      })
+      .nullable(),
+  },
+  'course:updateSettings': {
+    params: z.object({
+      courseId: z.number(),
+      settings: z.object({
+        autoAssignDueDate: z.number().nullable().optional(),
+        allowGuessedOverride: z.number().optional(),
+      }),
+    }),
+    result: ApiResultSchema(z.void()),
+  },
+
+  // ============ App Recovery ============
+  'app:getCrashInfo': {
+    params: z.void(),
+    result: z
+      .object({
+        timestamp: z.string(),
+        reason: z.string(),
+        stack: z.string().optional(),
+      })
+      .nullable(),
+  },
+  'app:getRecoveryStatus': {
+    params: z.void(),
+    result: z.object({
+      safeMode: z.boolean(),
+      lastCrash: z
+        .object({
+          timestamp: z.string(),
+          reason: z.string(),
+        })
+        .nullable(),
+      crashCount: z.number(),
+      message: z.string().nullable(),
+    }),
+  },
+  'app:exitSafeMode': {
+    params: z.void(),
+    result: ApiResultSchema(z.void()),
+  },
+  'app:dismissCrashNotification': {
+    params: z.void(),
+    result: ApiResultSchema(z.void()),
+  },
+  'app:handleCorruption': {
+    params: z.enum(['export', 'reset', 'continue']),
+    result: ApiResultSchema(
+      z.object({
+        exportPath: z.string().optional(),
+      })
+    ),
+  },
+  'app:reportError': {
+    params: z.object({
+      message: z.string(),
+      stack: z.string().optional(),
+      componentStack: z.string().optional(),
+      timestamp: z.string(),
+    }),
+    result: ApiResultSchema(z.void()),
+  },
+
+  // ============ Window Behavior Settings ============
+  'settings:getWindowBehavior': {
+    params: z.void(),
+    result: z.object({
+      closeAction: z.enum(['quit', 'minimize-to-tray']).nullable(),
+      showTrayIcon: z.boolean(),
+    }),
+  },
+  'settings:setWindowBehavior': {
+    params: z.object({
+      closeAction: z.enum(['quit', 'minimize-to-tray']).nullable(),
+      showTrayIcon: z.boolean(),
+    }),
+    result: z.object({
+      success: z.boolean(),
+      error: z.string().optional(),
+    }),
+  },
+
+  // ============ Custom Task Types ============
+  'taskTypes:getAll': {
+    params: z.number().optional(),
+    result: ApiResultSchema(
+      z.array(
+        z.object({
+          id: z.number(),
+          name: z.string(),
+          displayName: z.string(),
+          courseId: z.number().nullable(),
+          createdAt: z.string(),
+        })
+      )
+    ),
+  },
+  'taskTypes:create': {
+    params: z.object({
+      name: z.string(),
+      displayName: z.string(),
+      courseId: z.number().optional(),
+    }),
+    result: ApiResultSchema(
+      z.object({
+        id: z.number(),
+        name: z.string(),
+        displayName: z.string(),
+        courseId: z.number().nullable(),
+      })
+    ),
+  },
+  'taskTypes:delete': {
+    params: z.number(),
+    result: ApiResultSchema(z.void()),
+  },
 } as const;
 
 // ============ Type Utilities ============
 
 export type IpcChannel = keyof typeof IpcContract;
 
-export type IpcParams<T extends IpcChannel> = z.infer<typeof IpcContract[T]['params']>;
-export type IpcResult<T extends IpcChannel> = z.infer<typeof IpcContract[T]['result']>;
+export type IpcParams<T extends IpcChannel> = z.infer<(typeof IpcContract)[T]['params']>;
+export type IpcResult<T extends IpcChannel> = z.infer<(typeof IpcContract)[T]['result']>;
 
 // ============ Push Event Channels ============
 
@@ -846,7 +1448,9 @@ export const PushEventContract = {
 } as const;
 
 export type PushEventChannel = keyof typeof PushEventContract;
-export type PushEventPayload<T extends PushEventChannel> = z.infer<typeof PushEventContract[T]>;
+export type PushEventPayload<T extends PushEventChannel> = z.infer<
+  (typeof PushEventContract)[T]
+>;
 
 // ============ One-Way Channels (send, not invoke) ============
 
@@ -854,8 +1458,16 @@ export const OneWayContract = {
   'window:minimize': z.void(),
   'window:maximize': z.void(),
   'window:close': z.void(),
+  'window:hide': z.void(),
   'shell:openExternal': z.string(),
 } as const;
 
+// ============ Push Events from Main to Renderer ============
+
+export const WindowBehaviorPromptSchema = z.object({
+  showPrompt: z.boolean(),
+});
+export type WindowBehaviorPrompt = z.infer<typeof WindowBehaviorPromptSchema>;
+
 export type OneWayChannel = keyof typeof OneWayContract;
-export type OneWayParams<T extends OneWayChannel> = z.infer<typeof OneWayContract[T]>;
+export type OneWayParams<T extends OneWayChannel> = z.infer<(typeof OneWayContract)[T]>;

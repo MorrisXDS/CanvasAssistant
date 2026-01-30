@@ -49,6 +49,7 @@ describe('InsightGenerator', () => {
     courseId: 1,
     title: 'Test Task',
     dueAt: new Date(),
+    dueTimeKnown: true,
     unlockAt: null,
     lockAt: null,
     pointsPossible: 100,
@@ -74,11 +75,16 @@ describe('InsightGenerator', () => {
       // Create events with Friday having high late rate
       const events: TaskCompletionEvent[] = [];
 
+      // Find a Friday - getDay() returns 0-6 where 5 is Friday
+      const friday = new Date();
+      const currentDay = friday.getDay();
+      const daysUntilFriday = (5 - currentDay + 7) % 7;
+      friday.setDate(friday.getDate() + daysUntilFriday);
+
       // Friday (day 5) - mostly late
       for (let i = 0; i < 5; i++) {
-        const dueDate = new Date();
-        dueDate.setDate(dueDate.getDate() - i * 7); // Different Fridays
-        // Override to make it Friday
+        const dueDate = new Date(friday);
+        dueDate.setDate(dueDate.getDate() - i * 7); // Different Fridays (going back in time)
         events.push(createEvent({
           taskId: i + 1,
           dueAt: dueDate,
@@ -87,10 +93,18 @@ describe('InsightGenerator', () => {
         }));
       }
 
-      // Other days - on time
+      // Find a Monday for other days
+      const monday = new Date();
+      const daysUntilMonday = (1 - monday.getDay() + 7) % 7;
+      monday.setDate(monday.getDate() + daysUntilMonday);
+
+      // Other days - on time (on Mondays)
       for (let i = 0; i < 10; i++) {
+        const dueDate = new Date(monday);
+        dueDate.setDate(dueDate.getDate() - i * 7); // Different Mondays
         events.push(createEvent({
           taskId: 100 + i,
+          dueAt: dueDate,
           wasLate: false,
           dayOfWeek: 1, // Monday
         }));
@@ -106,11 +120,19 @@ describe('InsightGenerator', () => {
     it('should not generate insight if no day has >30% late rate', () => {
       const events: TaskCompletionEvent[] = [];
 
+      // Find the closest Sunday to start from
+      const baseDate = new Date();
+      const daysFromSunday = baseDate.getDay();
+      baseDate.setDate(baseDate.getDate() - daysFromSunday); // Go to Sunday
+
       // All on time across different days
       for (let day = 0; day < 7; day++) {
         for (let i = 0; i < 3; i++) {
+          const dueDate = new Date(baseDate);
+          dueDate.setDate(dueDate.getDate() + day - i * 7); // day offset + weeks back
           events.push(createEvent({
             taskId: day * 10 + i,
+            dueAt: dueDate,
             wasLate: false,
             dayOfWeek: day,
           }));

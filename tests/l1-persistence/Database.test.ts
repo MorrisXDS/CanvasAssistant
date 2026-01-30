@@ -329,4 +329,160 @@ describe('Database', () => {
       expect(db.getSchemaVersion()).toBe(3);
     });
   });
+
+  describe('Write Lock', () => {
+    beforeEach(() => {
+      db.exec(`
+        CREATE TABLE test_items (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL
+        )
+      `);
+    });
+
+    it('should start unlocked', () => {
+      expect(db.isWriteLocked()).toBe(false);
+    });
+
+    it('should lock writes when lockWrites is called', () => {
+      db.lockWrites();
+      expect(db.isWriteLocked()).toBe(true);
+    });
+
+    it('should prevent writes when locked', () => {
+      db.lockWrites();
+
+      expect(() => {
+        db.executeWrite('INSERT INTO test_items (name) VALUES (?)', ['item1'], 'test_items');
+      }).toThrow('Database is locked for writes');
+    });
+
+    it('should prevent transactions when locked', () => {
+      db.lockWrites();
+
+      expect(() => {
+        db.transaction(() => {
+          db.executeWrite('INSERT INTO test_items (name) VALUES (?)', ['item1']);
+        });
+      }).toThrow('Database is locked for writes');
+    });
+
+    it('should allow writes after unlock', () => {
+      db.lockWrites();
+      db.unlockWrites();
+
+      expect(() => {
+        db.executeWrite('INSERT INTO test_items (name) VALUES (?)', ['item1'], 'test_items');
+      }).not.toThrow();
+    });
+
+    it('should emit write-lock-acquired event', (done) => {
+      db.on('write-lock-acquired', () => {
+        done();
+      });
+
+      db.lockWrites();
+    });
+
+    it('should emit write-lock-released event', (done) => {
+      db.lockWrites();
+
+      db.on('write-lock-released', () => {
+        done();
+      });
+
+      db.unlockWrites();
+    });
+
+    it('should track lock duration', async () => {
+      db.lockWrites();
+
+      // Wait a bit
+      await new Promise((r) => setTimeout(r, 50));
+
+      const duration = db.getWriteLockDuration();
+      expect(duration).toBeGreaterThanOrEqual(50);
+    });
+
+    it('should return 0 duration when not locked', () => {
+      expect(db.getWriteLockDuration()).toBe(0);
+    });
+  });
+
+  describe('Write Lock Watchdog', () => {
+    it('should auto-release lock after maxWriteLockDurationMs', async () => {
+      // Create db with short max lock duration
+      const shortLockDb = new Database({
+        dbPath: path.join(TEST_DB_DIR, 'short-lock.db'),
+        maxWriteLockDurationMs: 50, // 50ms max
+      });
+      shortLockDb.initialize();
+
+      const timeoutHandler = jest.fn();
+      shortLockDb.on('write-lock-timeout', timeoutHandler);
+
+      shortLockDb.lockWrites();
+      expect(shortLockDb.isWriteLocked()).toBe(true);
+
+      // Wait for watchdog
+      await new Promise((r) => setTimeout(r, 100));
+
+      expect(shortLockDb.isWriteLocked()).toBe(false);
+      expect(timeoutHandler).toHaveBeenCalledWith(
+        expect.objectContaining({
+          maxDuration: 50,
+        })
+      );
+
+      shortLockDb.close();
+    });
+
+    it('should not trigger watchdog if unlocked manually', async () => {
+      const shortLockDb = new Database({
+        dbPath: path.join(TEST_DB_DIR, 'short-lock2.db'),
+        maxWriteLockDurationMs: 100,
+      });
+      shortLockDb.initialize();
+
+      const timeoutHandler = jest.fn();
+      shortLockDb.on('write-lock-timeout', timeoutHandler);
+
+      shortLockDb.lockWrites();
+      shortLockDb.unlockWrites();
+
+      // Wait past max duration
+      await new Promise((r) => setTimeout(r, 150));
+
+      // Watchdog should not have triggered
+      expect(timeoutHandler).not.toHaveBeenCalled();
+
+      shortLockDb.close();
+    });
+
+    it('should reset watchdog on re-lock', async () => {
+      const shortLockDb = new Database({
+        dbPath: path.join(TEST_DB_DIR, 'short-lock3.db'),
+        maxWriteLockDurationMs: 100,
+      });
+      shortLockDb.initialize();
+
+      const timeoutHandler = jest.fn();
+      shortLockDb.on('write-lock-timeout', timeoutHandler);
+
+      // Lock, wait 50ms, re-lock (should reset timer)
+      shortLockDb.lockWrites();
+      await new Promise((r) => setTimeout(r, 50));
+      shortLockDb.lockWrites(); // Re-lock resets watchdog
+
+      // After another 50ms, we should still be locked (total 100ms since re-lock)
+      await new Promise((r) => setTimeout(r, 60));
+      expect(shortLockDb.isWriteLocked()).toBe(true);
+
+      // Wait for original timeout from re-lock
+      await new Promise((r) => setTimeout(r, 60));
+      expect(shortLockDb.isWriteLocked()).toBe(false);
+
+      shortLockDb.close();
+    });
+  });
 });

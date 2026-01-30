@@ -34,6 +34,7 @@ function createTask(overrides: Partial<TaskForPriority> = {}): TaskForPriority {
     courseId: 100,
     title: 'Test Assignment',
     dueAt: null,
+    dueTimeKnown: true,
     unlockAt: null,
     lockAt: null,
     pointsPossible: 100,
@@ -449,6 +450,189 @@ describe('PriorityCalculator', () => {
     });
   });
 
+  describe('calculateGradeImpact (points-based)', () => {
+    it('correctly calculates impact for 100-point task with 85% current grade', () => {
+      // Current: 850 points earned out of 1000 possible (85%)
+      // New task: 100 points possible
+      // Skip: 850 / 1100 = 77.3%
+      // Ace: 950 / 1100 = 86.4%
+      // Average: (850 + 85) / 1100 = 85% (maintains current grade)
+      const input: PriorityInput = {
+        task: createTask({
+          dueAt: new Date(now.getTime() + 24 * 60 * 60 * 1000),
+          weight: 10,
+          pointsPossible: 100,
+        }),
+        course: createCourse({
+          currentGrade: 85,
+          targetGrade: 90,
+          totalWeight: 100,
+        }),
+        policies: [],
+        graceTokenPolicy: null,
+        now,
+      };
+
+      const result = calculatePriority(input);
+      const impact = result.explanation.gradeImpact;
+
+      // gradeIfSkipped = 850 / 1100 = 77.27%
+      expect(impact.gradeIfSkipped).toBeCloseTo(77.3, 0);
+      // gradeIfAverage = (850 + 85) / 1100 = 85%
+      expect(impact.gradeIfAverage).toBeCloseTo(85, 0);
+    });
+
+    it('handles first task in course (no current points means 0% grade)', () => {
+      const input: PriorityInput = {
+        task: createTask({
+          dueAt: new Date(now.getTime() + 24 * 60 * 60 * 1000),
+          weight: 100, // First and only task
+          pointsPossible: 100,
+        }),
+        course: createCourse({
+          currentGrade: 0, // No grade yet
+          targetGrade: 90,
+          totalWeight: 100,
+        }),
+        policies: [],
+        graceTokenPolicy: null,
+        now,
+      };
+
+      const result = calculatePriority(input);
+      const impact = result.explanation.gradeImpact;
+
+      // gradeIfSkipped: 0 / 1100 = 0%
+      expect(impact.gradeIfSkipped).toBe(0);
+      // gradeIfAverage with 0% current: (0 + 0) / 1100 = 0%
+      expect(impact.gradeIfAverage).toBe(0);
+    });
+
+    it('handles task worth >50% of total points', () => {
+      // Current: 100 points earned out of 100 possible (100%)
+      // New task: 200 points possible
+      // Skip: 100 / 300 = 33.3%
+      // Large tasks should show proportionally larger impact
+      const input: PriorityInput = {
+        task: createTask({
+          dueAt: new Date(now.getTime() + 24 * 60 * 60 * 1000),
+          weight: 20,
+          pointsPossible: 200, // Double the existing points
+        }),
+        course: createCourse({
+          currentGrade: 100,
+          targetGrade: 90,
+          totalWeight: 10, // Small course weight (100 points basis)
+        }),
+        policies: [],
+        graceTokenPolicy: null,
+        now,
+      };
+
+      const result = calculatePriority(input);
+      const impact = result.explanation.gradeImpact;
+
+      // With 10% totalWeight: currentPointsPossible = 100, earned = 100
+      // totalPointsAfterTask = 100 + 200 = 300
+      // gradeIfSkipped = 100 / 300 = 33.3%
+      expect(impact.gradeIfSkipped).toBeCloseTo(33.3, 0);
+      // Large drop indicates high risk
+      expect(impact.riskLevel).toBe('critical');
+    });
+
+    it('uses pointsPossible for grade calculation', () => {
+      // Verify that pointsPossible (not weight) drives the calculation
+      const input: PriorityInput = {
+        task: createTask({
+          dueAt: new Date(now.getTime() + 24 * 60 * 60 * 1000),
+          weight: 10, // Weight for priority
+          pointsPossible: 50, // Actual points for grade
+        }),
+        course: createCourse({
+          currentGrade: 80,
+          targetGrade: 90,
+          totalWeight: 100,
+        }),
+        policies: [],
+        graceTokenPolicy: null,
+        now,
+      };
+
+      const result = calculatePriority(input);
+      const impact = result.explanation.gradeImpact;
+
+      // currentPointsPossible = 1000, earned = 800
+      // totalPointsAfterTask = 1000 + 50 = 1050
+      // gradeIfSkipped = 800 / 1050 = 76.2%
+      expect(impact.gradeIfSkipped).toBeCloseTo(76.2, 0);
+    });
+  });
+
+  describe('zero weight handling', () => {
+    it('returns neutral impact for weight=0 task', () => {
+      const input: PriorityInput = {
+        task: createTask({ weight: 0, pointsPossible: 100 }),
+        course: createCourse({ currentGrade: 85, targetGrade: 90 }),
+        policies: [],
+        graceTokenPolicy: null,
+        now,
+      };
+
+      const result = calculatePriority(input);
+      const impact = result.explanation.gradeImpact;
+
+      expect(impact.riskLevel).toBe('low');
+      expect(impact.gradeIfSkipped).toBe(85); // No change from current
+      expect(impact.gradeIfAverage).toBe(85); // No change from current
+      expect(impact.minScoreForTarget).toBeNull();
+    });
+
+    it('returns neutral impact for weight=null task', () => {
+      const input: PriorityInput = {
+        task: createTask({ weight: null, pointsPossible: 100 }),
+        course: createCourse({ currentGrade: 85, targetGrade: 90 }),
+        policies: [],
+        graceTokenPolicy: null,
+        now,
+      };
+
+      const result = calculatePriority(input);
+      const impact = result.explanation.gradeImpact;
+
+      expect(impact.riskLevel).toBe('low');
+      expect(impact.gradeIfSkipped).toBe(85);
+      expect(impact.minScoreForTarget).toBeNull();
+    });
+
+    it('handles pointsPossible=0 (extra credit or deadline-only)', () => {
+      const input: PriorityInput = {
+        task: createTask({ weight: 10, pointsPossible: 0 }),
+        course: createCourse({ currentGrade: 85, targetGrade: 90 }),
+        policies: [],
+        graceTokenPolicy: null,
+        now,
+      };
+
+      // Should not crash
+      const result = calculatePriority(input);
+      expect(result.explanation.gradeImpact).toBeDefined();
+    });
+
+    it('handles both weight=0 and pointsPossible=0', () => {
+      const input: PriorityInput = {
+        task: createTask({ weight: 0, pointsPossible: 0 }),
+        course: createCourse({ currentGrade: 85, targetGrade: 90 }),
+        policies: [],
+        graceTokenPolicy: null,
+        now,
+      };
+
+      // Should not crash and return neutral impact
+      const result = calculatePriority(input);
+      expect(result.explanation.gradeImpact.riskLevel).toBe('low');
+    });
+  });
+
   describe('calculatePriority (integration)', () => {
     it('should return complete priority result for active task', () => {
       const input: PriorityInput = {
@@ -524,6 +708,7 @@ describe('PriorityCalculator', () => {
         task: createTask({
           dueAt: new Date(now.getTime() + 24 * 60 * 60 * 1000),
           weight: 10,
+          pointsPossible: 100,
         }),
         course: createCourse({ currentGrade: 80, targetGrade: 90 }),
         policies: [],
@@ -537,7 +722,9 @@ describe('PriorityCalculator', () => {
       expect(impact.currentGrade).toBe(80);
       expect(impact.targetGrade).toBe(90);
       expect(impact.gapToTarget).toBe(10);
-      expect(impact.riskLevel).toBe('medium');
+      // Risk level is now based on grade drop if skipped (points-based calculation)
+      // With 100pt task on 1000pt basis, drop is ~7.3% → high risk
+      expect(impact.riskLevel).toBe('high');
     });
   });
 });

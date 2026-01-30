@@ -4,21 +4,14 @@
  * Allows editing task title, description, due date, weight, and grade.
  */
 
-import {
-  Command,
-  CommandContext,
-  CommandResult,
-  UpdateTaskParams,
-} from '../types';
+import { Command, CommandContext, CommandResult, UpdateTaskParams } from '../types';
 
-export class UpdateTaskCommand
-  implements Command<UpdateTaskParams, { taskId: number }>
-{
+export class UpdateTaskCommand implements Command<UpdateTaskParams, { taskId: number }> {
   readonly name = 'UpdateTask';
 
   validate(params: UpdateTaskParams): { valid: boolean; error?: string } {
     if (!params.taskId || params.taskId <= 0) {
-      return { valid: false, error: 'Invalid task ID' };
+      return { valid: false, error: 'Task not found or invalid' };
     }
 
     if (params.title !== undefined && params.title.trim().length === 0) {
@@ -33,8 +26,12 @@ export class UpdateTaskCommand
       return { valid: false, error: 'Weight must be between 0 and 100' };
     }
 
-    if (params.grade !== undefined && params.grade !== null && (params.grade < 0 || params.grade > 100)) {
-      return { valid: false, error: 'Grade must be between 0 and 100' };
+    if (
+      params.grade !== undefined &&
+      params.grade !== null &&
+      (params.grade < 0 || params.grade > 150)
+    ) {
+      return { valid: false, error: 'Grade must be between 0 and 150' };
     }
 
     return { valid: true };
@@ -94,6 +91,23 @@ export class UpdateTaskCommand
         values.push(params.pointsPossible);
       }
 
+      if (params.isOptional !== undefined) {
+        updates.push('is_optional = ?');
+        values.push(params.isOptional ? 1 : 0);
+      }
+
+      if (params.taskType !== undefined) {
+        updates.push('task_type = ?');
+        values.push(params.taskType);
+        // Mark task_type as user-modified so sync will trigger conflict if Canvas differs
+        this.markFieldAsUserModified(context, params.taskId, 'task_type');
+      }
+
+      if (params.userSubmissionStatus !== undefined) {
+        updates.push('user_submission_status = ?');
+        values.push(params.userSubmissionStatus);
+      }
+
       if (updates.length === 0) {
         return { success: true, data: { taskId: params.taskId } };
       }
@@ -116,6 +130,26 @@ export class UpdateTaskCommand
         this.updateCourseAssessedGrade(context, task.course_id);
       }
 
+      // Bidirectional sync: if due_at changed and task has linked calendar event, update event
+      if (params.dueAt !== undefined) {
+        const taskWithLink = context.db.executeReadOne<{
+          calendar_event_id: number | null;
+        }>('SELECT calendar_event_id FROM tasks WHERE id = ?', [params.taskId]);
+
+        if (taskWithLink?.calendar_event_id) {
+          const newDueAt = params.dueAt || null;
+          if (newDueAt) {
+            context.db.executeWrite(
+              `UPDATE calendar_events
+               SET start_at = ?, end_at = datetime(?, '+1 hour'), updated_at = CURRENT_TIMESTAMP
+               WHERE id = ?`,
+              [newDueAt, newDueAt, taskWithLink.calendar_event_id],
+              'calendar_events'
+            );
+          }
+        }
+      }
+
       return {
         success: true,
         data: { taskId: params.taskId },
@@ -123,9 +157,54 @@ export class UpdateTaskCommand
     } catch (error) {
       return {
         success: false,
-        error: `Failed to update task: ${error}`,
+        error: `Failed to update task: ${error instanceof Error ? error.message : String(error)}`,
       };
     }
+  }
+
+  /**
+   * Mark a field as user-modified in field_sources
+   * This ensures sync will trigger a conflict if Canvas has a different value
+   */
+  private markFieldAsUserModified(
+    context: CommandContext,
+    taskId: number,
+    field: string
+  ): void {
+    // Get current field_sources
+    const task = context.db.executeReadOne<{ field_sources: string | null }>(
+      'SELECT field_sources FROM tasks WHERE id = ?',
+      [taskId]
+    );
+
+    const sources: Record<string, string> = task?.field_sources
+      ? JSON.parse(task.field_sources)
+      : {};
+    sources[field] = 'user';
+
+    context.db.executeWrite(
+      'UPDATE tasks SET field_sources = ? WHERE id = ?',
+      [JSON.stringify(sources), taskId],
+      'tasks'
+    );
+
+    // Also update local_modified_fields for backwards compatibility
+    const taskWithModified = context.db.executeReadOne<{
+      local_modified_fields: string | null;
+    }>('SELECT local_modified_fields FROM tasks WHERE id = ?', [taskId]);
+
+    const modified = new Set<string>(
+      taskWithModified?.local_modified_fields
+        ? JSON.parse(taskWithModified.local_modified_fields)
+        : []
+    );
+    modified.add(field);
+
+    context.db.executeWrite(
+      'UPDATE tasks SET local_modified_fields = ? WHERE id = ?',
+      [JSON.stringify(Array.from(modified)), taskId],
+      'tasks'
+    );
   }
 
   private updateCourseAssessedGrade(context: CommandContext, courseId: number): void {

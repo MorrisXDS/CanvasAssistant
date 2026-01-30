@@ -44,7 +44,10 @@ export class TaskSyncStrategy extends BaseSyncStrategy {
   private onDiagnostic?: (entry: TaskDiagnosticEntry) => void;
   private onTaskMerged?: (event: TaskMergedEvent) => void;
   private onConflicts?: (conflicts: unknown[]) => void;
-  private pendingConflictData?: Map<string, { tableName: string; data: Record<string, unknown> }>;
+  private pendingConflictData?: Map<
+    string,
+    { tableName: string; data: Record<string, unknown> }
+  >;
 
   constructor(context: SyncContext, options: TaskSyncOptions) {
     super(context);
@@ -56,18 +59,28 @@ export class TaskSyncStrategy extends BaseSyncStrategy {
     this.pendingConflictData = options.pendingConflictData;
   }
 
-  async syncForCourse(canvasCourseId: number, localCourseId: number): Promise<SyncResult> {
+  async syncForCourse(
+    canvasCourseId: number,
+    localCourseId: number
+  ): Promise<SyncResult> {
     const startTime = Date.now();
     const errors: string[] = [];
     let count = 0;
 
+    // Get course name for conflict display
+    const courseRow = this.db.executeReadOne<{ name: string }>(
+      'SELECT name FROM courses WHERE id = ?',
+      [localCourseId]
+    );
+    const courseName = courseRow?.name;
+
     try {
       const assignments = await this.rateLimiter.enqueue(
         () =>
-          this.client.getAll<CanvasAssignment>(
-            `/courses/${canvasCourseId}/assignments`,
-            { order_by: 'due_at' }
-          ),
+          this.client.getAll<CanvasAssignment>(`/courses/${canvasCourseId}/assignments`, {
+            order_by: 'due_at',
+            'include[]': 'submission',
+          }),
         5 // Medium priority
       );
 
@@ -90,6 +103,7 @@ export class TaskSyncStrategy extends BaseSyncStrategy {
 
             if (existingByTitle && existingByTitle.source_type === 'user') {
               // Merge: link the user task to Canvas, preserve user-set fields
+              // Keep local is_completed if user modified it (don't overwrite user completion)
               this.db.executeWrite(
                 `UPDATE tasks SET
                   external_id = ?,
@@ -99,7 +113,6 @@ export class TaskSyncStrategy extends BaseSyncStrategy {
                   unlock_at = COALESCE(?, unlock_at),
                   points_possible = COALESCE(?, points_possible),
                   submission_types = COALESCE(?, submission_types),
-                  is_completed = ?,
                   updated_at = CURRENT_TIMESTAMP
                 WHERE id = ?`,
                 [
@@ -109,7 +122,6 @@ export class TaskSyncStrategy extends BaseSyncStrategy {
                   localTask.unlock_at,
                   localTask.points_possible,
                   localTask.submission_types,
-                  localTask.is_completed,
                   existingByTitle.id,
                 ],
                 'tasks'
@@ -128,15 +140,17 @@ export class TaskSyncStrategy extends BaseSyncStrategy {
               );
 
               // Detect conflicts
-              const { autoResolved, conflicts, preservedFields } = this.conflictResolver.detectConflicts(
-                'task',
-                'tasks',
-                existing?.id as number || 0,
-                localTask.external_id,
-                localTask.title,
-                existing,
-                localTask
-              );
+              const { autoResolved, conflicts, preservedFields } =
+                this.conflictResolver.detectConflicts(
+                  'task',
+                  'tasks',
+                  (existing?.id as number) || 0,
+                  localTask.external_id,
+                  localTask.title,
+                  existing,
+                  localTask,
+                  { courseName, courseId: localCourseId }
+                );
 
               if (conflicts.length > 0) {
                 // Emit conflicts for UI to handle
@@ -179,16 +193,24 @@ export class TaskSyncStrategy extends BaseSyncStrategy {
                   entity: 'task',
                   externalId: localTask.external_id,
                   action: existing ? 'update' : 'insert',
-                  preservedFields: preservedFields.length > 0 ?
-                    Object.fromEntries(preservedFields.map(f => [f, { before: existing?.[f], after: finalData[f] }])) :
-                    undefined,
+                  preservedFields:
+                    preservedFields.length > 0
+                      ? Object.fromEntries(
+                          preservedFields.map((f) => [
+                            f,
+                            { before: existing?.[f], after: finalData[f] },
+                          ])
+                        )
+                      : undefined,
                 });
               }
             }
 
             count++;
           } catch (error) {
-            errors.push(`Task ${assignment.id}: ${error instanceof Error ? error.message : String(error)}`);
+            errors.push(
+              `Task ${assignment.id}: ${error instanceof Error ? error.message : String(error)}`
+            );
           }
         }
       });

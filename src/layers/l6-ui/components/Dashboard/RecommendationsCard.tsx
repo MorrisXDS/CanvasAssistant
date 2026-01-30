@@ -2,7 +2,8 @@
  * RecommendationsCard - Displays AI-generated recommendations
  */
 
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Play,
   Clock,
@@ -13,9 +14,22 @@ import {
   Check,
   RefreshCw,
   Inbox,
+  EyeOff,
 } from 'lucide-react';
 import { Card } from '../shared';
 import type { Recommendation } from '../../../../shared/ipc-contract';
+
+/**
+ * Recommendation types that should navigate to CourseDetail when clicked
+ * These are task/course-specific recommendations (not general advice)
+ */
+const NAVIGABLE_TYPES = [
+  'work_now',
+  'start_early',
+  'course_focus',
+  'preemptive_start',
+  'focus_at_risk',
+];
 
 interface RecommendationsCardProps {
   maxItems?: number;
@@ -67,13 +81,43 @@ const RECOMMENDATION_COLORS: Record<string, string> = {
 export function RecommendationsCard({ maxItems = 3 }: RecommendationsCardProps) {
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   const [loading, setLoading] = useState(true);
+  const navigate = useNavigate();
+
+  /**
+   * Check if a recommendation is navigable (can click to go to CourseDetail)
+   */
+  const isNavigable = useCallback((rec: Recommendation): boolean => {
+    return (
+      NAVIGABLE_TYPES.includes(rec.type) && (rec.courseId !== null || rec.taskId !== null)
+    );
+  }, []);
+
+  /**
+   * Navigate to CourseDetail page, optionally highlighting a specific task
+   */
+  const handleNavigate = useCallback(
+    (rec: Recommendation) => {
+      if (!isNavigable(rec)) return;
+
+      if (rec.courseId) {
+        // Navigate to course detail, with taskId as query param for highlighting
+        const url = rec.taskId
+          ? `/course/${rec.courseId}?task=${rec.taskId}`
+          : `/course/${rec.courseId}`;
+        navigate(url);
+      }
+    },
+    [navigate, isNavigable]
+  );
 
   const fetchRecommendations = useCallback(async () => {
     try {
       setLoading(true);
       const data = await window.api.getActiveRecommendations();
       // Sort by priority score (highest first)
-      const sorted = [...data].sort((a, b) => (b.priorityScore ?? 0) - (a.priorityScore ?? 0));
+      const sorted = [...data].sort(
+        (a, b) => (b.priorityScore ?? 0) - (a.priorityScore ?? 0)
+      );
       setRecommendations(sorted.slice(0, maxItems));
     } catch (err) {
       console.error('Failed to fetch recommendations:', err);
@@ -106,6 +150,16 @@ export function RecommendationsCard({ maxItems = 3 }: RecommendationsCardProps) 
     }
   };
 
+  const handleSuppress = async (id: number | undefined) => {
+    if (!id) return;
+    try {
+      await window.api.suppressRecommendation(id);
+      setRecommendations((prev) => prev.filter((r) => r.id !== id));
+    } catch (err) {
+      console.error('Failed to suppress recommendation:', err);
+    }
+  };
+
   return (
     <Card
       title="Recommendations"
@@ -127,63 +181,91 @@ export function RecommendationsCard({ maxItems = 3 }: RecommendationsCardProps) 
         </div>
       ) : recommendations.length === 0 ? (
         <div style={styles.emptyState}>
-          <Inbox size={28} color="var(--text-muted)" style={{ marginBottom: 'var(--space-2)' }} />
+          <Inbox
+            size={28}
+            color="var(--text-muted)"
+            style={{ marginBottom: 'var(--space-2)' }}
+          />
           <span style={styles.emptyText}>No recommendations</span>
         </div>
       ) : (
         <div style={styles.list}>
-          {recommendations.map((rec, index) => (
-            <div
-              key={rec.id}
-              style={{
-                ...styles.item,
-                borderTop: index === 0 ? 'none' : '1px solid var(--border-light)',
-              }}
-            >
+          {recommendations.map((rec, index) => {
+            const navigable = isNavigable(rec);
+            return (
               <div
+                key={rec.id}
                 style={{
-                  ...styles.itemIcon,
-                  backgroundColor: `${RECOMMENDATION_COLORS[rec.type]}15`,
-                  color: RECOMMENDATION_COLORS[rec.type],
+                  ...styles.item,
+                  borderTop: index === 0 ? 'none' : '1px solid var(--border-light)',
+                  cursor: navigable ? 'pointer' : 'default',
                 }}
+                onClick={navigable ? () => handleNavigate(rec) : undefined}
+                role={navigable ? 'button' : undefined}
+                tabIndex={navigable ? 0 : undefined}
+                onKeyDown={
+                  navigable
+                    ? (e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          handleNavigate(rec);
+                        }
+                      }
+                    : undefined
+                }
               >
-                {RECOMMENDATION_ICONS[rec.type] || <Clock size={14} />}
-              </div>
-              <div style={styles.itemContent}>
-                <div style={styles.itemTitleRow}>
-                  <div style={styles.itemTitle}>{rec.title}</div>
-                  {rec.priorityScore !== undefined && (
-                    <span
-                      style={{
-                        ...styles.priorityBadge,
-                        backgroundColor: `${PRIORITY_COLORS[getPriorityLevel(rec.priorityScore)]}15`,
-                        color: PRIORITY_COLORS[getPriorityLevel(rec.priorityScore)],
-                      }}
-                    >
-                      {PRIORITY_LABELS[getPriorityLevel(rec.priorityScore)]}
-                    </span>
-                  )}
+                <div
+                  style={{
+                    ...styles.itemIcon,
+                    backgroundColor: `${RECOMMENDATION_COLORS[rec.type]}15`,
+                    color: RECOMMENDATION_COLORS[rec.type],
+                  }}
+                >
+                  {RECOMMENDATION_ICONS[rec.type] || <Clock size={14} />}
                 </div>
-                <div style={styles.itemDescription}>{rec.description}</div>
+                <div style={styles.itemContent}>
+                  <div style={styles.itemTitleRow}>
+                    <div style={styles.itemTitle}>{rec.title}</div>
+                    {rec.priorityScore !== undefined && (
+                      <span
+                        style={{
+                          ...styles.priorityBadge,
+                          backgroundColor: `${PRIORITY_COLORS[getPriorityLevel(rec.priorityScore)]}15`,
+                          color: PRIORITY_COLORS[getPriorityLevel(rec.priorityScore)],
+                        }}
+                      >
+                        {PRIORITY_LABELS[getPriorityLevel(rec.priorityScore)]}
+                      </span>
+                    )}
+                  </div>
+                  <div style={styles.itemDescription}>{rec.description}</div>
+                </div>
+                <div style={styles.itemActions} onClick={(e) => e.stopPropagation()}>
+                  <button
+                    style={styles.actionButton}
+                    onClick={() => handleAct(rec.id)}
+                    title="Mark as done"
+                  >
+                    <Check size={14} />
+                  </button>
+                  <button
+                    style={styles.dismissButton}
+                    onClick={() => handleDismiss(rec.id)}
+                    title="Dismiss"
+                  >
+                    <X size={14} />
+                  </button>
+                  <button
+                    style={styles.suppressButton}
+                    onClick={() => handleSuppress(rec.id)}
+                    title="Never show again"
+                  >
+                    <EyeOff size={14} />
+                  </button>
+                </div>
               </div>
-              <div style={styles.itemActions}>
-                <button
-                  style={styles.actionButton}
-                  onClick={() => handleAct(rec.id)}
-                  title="Mark as done"
-                >
-                  <Check size={14} />
-                </button>
-                <button
-                  style={styles.dismissButton}
-                  onClick={() => handleDismiss(rec.id)}
-                  title="Dismiss"
-                >
-                  <X size={14} />
-                </button>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </Card>
@@ -318,6 +400,22 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
     color: 'var(--text-muted)',
     opacity: 0.7,
+    transition: 'opacity var(--transition-fast)',
+  },
+
+  suppressButton: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '24px',
+    height: '24px',
+    padding: 0,
+    background: 'none',
+    border: 'none',
+    borderRadius: 'var(--radius-sm)',
+    cursor: 'pointer',
+    color: 'var(--color-warning)',
+    opacity: 0.6,
     transition: 'opacity var(--transition-fast)',
   },
 };

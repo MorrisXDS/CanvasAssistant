@@ -15,8 +15,7 @@ import {
   StrugglePattern,
   CourseForPriority,
 } from '../types';
-
-const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+import { DAY_NAMES, BEHAVIOR_THRESHOLDS } from './Constants';
 
 /**
  * Analyze weekly rhythm from completion events
@@ -403,4 +402,301 @@ export function analyzeCompletionTiming(events: TaskCompletionEvent[]): {
     percentLastMinute: (lastMinuteCount / total) * 100,
     percentLate: (lateCount / total) * 100,
   };
+}
+
+// ============================================================================
+// Submission Timing Analysis
+// ============================================================================
+// Note: We can only analyze WHEN tasks were submitted relative to deadlines.
+// We cannot make claims about when users started working or if they
+// "procrastinated" since we don't track work-start times.
+
+/**
+ * Submission timing pattern for a task type
+ * Based on observable data: when tasks were submitted relative to due dates
+ */
+export interface SubmissionTimingPattern {
+  taskType: string;
+  /** Average days before due when work was submitted (negative = late) */
+  avgDaysBeforeDue: number;
+  /** Percentage of tasks submitted last-minute (< 1 day before due) */
+  lastMinuteRate: number;
+  /** Conditions associated with late/last-minute submissions */
+  riskFactors: string[];
+  /** Risk level for deadline stress with this task type */
+  deadlineRisk: 'low' | 'medium' | 'high';
+  /** Sample size for this pattern */
+  sampleSize: number;
+}
+
+/**
+ * Deadline risk assessment for a specific task
+ * Based on historical submission patterns and task characteristics
+ */
+export interface DeadlineRiskAssessment {
+  taskId: number;
+  taskType: string;
+  riskLevel: 'low' | 'medium' | 'high';
+  riskScore: number; // 0-100
+  riskFactors: string[];
+  suggestions: string[];
+}
+
+/**
+ * Analyze submission timing patterns from completion events
+ * Identifies task types where submissions tend to be close to deadlines
+ *
+ * Note: This analyzes WHEN tasks were submitted, not when work started.
+ */
+export function analyzeSubmissionPatterns(
+  events: TaskCompletionEvent[]
+): SubmissionTimingPattern[] {
+  // Group events by task type
+  const typeEvents: Map<string, TaskCompletionEvent[]> = new Map();
+  for (const event of events) {
+    const existing = typeEvents.get(event.taskType) || [];
+    existing.push(event);
+    typeEvents.set(event.taskType, existing);
+  }
+
+  const patterns: SubmissionTimingPattern[] = [];
+
+  for (const [taskType, typeEventList] of typeEvents) {
+    if (typeEventList.length < 3) continue; // Need enough data
+
+    // Calculate submission timing stats
+    const daysBeforeDueList: number[] = [];
+    let lastMinuteCount = 0;
+    let lateCount = 0;
+
+    for (const event of typeEventList) {
+      if (event.daysBeforeDue !== null) {
+        daysBeforeDueList.push(event.daysBeforeDue);
+        if (event.daysBeforeDue < 1 && !event.wasLate) {
+          lastMinuteCount++;
+        }
+      }
+      if (event.wasLate) {
+        lateCount++;
+      }
+    }
+
+    if (daysBeforeDueList.length === 0) continue;
+
+    const avgDaysBeforeDue =
+      daysBeforeDueList.reduce((sum, d) => sum + d, 0) / daysBeforeDueList.length;
+    const lastMinuteRate = lastMinuteCount / typeEventList.length;
+    const lateRate = lateCount / typeEventList.length;
+
+    // Identify risk factors based on observable patterns
+    const riskFactors: string[] = [];
+
+    if (lastMinuteRate >= 0.5) {
+      riskFactors.push('Frequently submitted last minute');
+    }
+    if (lateRate >= 0.3) {
+      riskFactors.push('High late submission rate');
+    }
+    if (avgDaysBeforeDue < 1 && avgDaysBeforeDue >= 0) {
+      riskFactors.push('Typically submitted day-of');
+    }
+
+    // Check for weight correlation
+    const weightedEvents = typeEventList.filter(
+      (e) => e.pointsPossible && e.pointsPossible > 0
+    );
+    if (weightedEvents.length >= 3) {
+      const highPointEvents = weightedEvents.filter(
+        (e) => (e.pointsPossible ?? 0) >= 50
+      );
+      if (highPointEvents.length > 0) {
+        const highPointLastMinute = highPointEvents.filter(
+          (e) => (e.daysBeforeDue ?? 0) < 1
+        ).length;
+        if (highPointLastMinute / highPointEvents.length > 0.5) {
+          riskFactors.push('High-weight tasks often submitted last minute');
+        }
+      }
+    }
+
+    // Determine deadline risk level
+    let deadlineRisk: SubmissionTimingPattern['deadlineRisk'] = 'low';
+    if (avgDaysBeforeDue < 0.5 || lateRate >= 0.4) {
+      deadlineRisk = 'high';
+    } else if (avgDaysBeforeDue < 1 || lateRate >= 0.2 || lastMinuteRate >= 0.5) {
+      deadlineRisk = 'medium';
+    }
+
+    patterns.push({
+      taskType,
+      avgDaysBeforeDue,
+      lastMinuteRate,
+      riskFactors,
+      deadlineRisk,
+      sampleSize: typeEventList.length,
+    });
+  }
+
+  // Sort by risk level (high first)
+  const riskOrder: Record<SubmissionTimingPattern['deadlineRisk'], number> = {
+    high: 0,
+    medium: 1,
+    low: 2,
+  };
+  patterns.sort((a, b) => riskOrder[a.deadlineRisk] - riskOrder[b.deadlineRisk]);
+
+  return patterns;
+}
+
+/**
+ * Assess deadline risk for a specific task
+ * Based on historical submission patterns and task characteristics
+ */
+export function assessDeadlineRisk(
+  task: {
+    id: number;
+    taskType: string;
+    dueAt: Date | null;
+    weight: number | null;
+    courseId: number;
+  },
+  patterns: SubmissionTimingPattern[],
+  coursePerformance: CoursePerformance[],
+  currentTime: Date
+): DeadlineRiskAssessment {
+  const riskFactors: string[] = [];
+  let riskScore = 0;
+
+  // Check submission pattern for this task type
+  const typePattern = patterns.find((p) => p.taskType === task.taskType);
+  if (typePattern) {
+    if (typePattern.deadlineRisk === 'high') {
+      riskScore += 40;
+      riskFactors.push(`${task.taskType}s often submitted close to deadline`);
+    } else if (typePattern.deadlineRisk === 'medium') {
+      riskScore += 25;
+      riskFactors.push(`${task.taskType}s sometimes submitted last minute`);
+    }
+
+    // Add specific factors from pattern
+    for (const factor of typePattern.riskFactors) {
+      if (!riskFactors.includes(factor)) {
+        riskFactors.push(factor);
+      }
+    }
+  }
+
+  // Check time until due
+  if (task.dueAt) {
+    const daysUntilDue = (task.dueAt.getTime() - currentTime.getTime()) / (1000 * 60 * 60 * 24);
+
+    if (daysUntilDue <= 2 && daysUntilDue > 0) {
+      riskScore += 30;
+      riskFactors.push('Due very soon');
+    } else if (daysUntilDue <= 5 && daysUntilDue > 2) {
+      riskScore += 15;
+      riskFactors.push('Due within a week');
+    }
+  }
+
+  // Check task weight
+  if (task.weight && task.weight >= 20) {
+    riskScore += 15;
+    riskFactors.push('High-weight task');
+  } else if (task.weight && task.weight >= 10) {
+    riskScore += 10;
+    riskFactors.push('Significant weight');
+  }
+
+  // Check course difficulty
+  const courseDifficulty = coursePerformance.find((c) => c.courseId === task.courseId);
+  if (courseDifficulty && courseDifficulty.struggleScore >= 50) {
+    riskScore += 15;
+    riskFactors.push('Challenging course');
+  }
+
+  // Determine overall risk level
+  let riskLevel: DeadlineRiskAssessment['riskLevel'] = 'low';
+  if (riskScore >= 60) {
+    riskLevel = 'high';
+  } else if (riskScore >= 35) {
+    riskLevel = 'medium';
+  }
+
+  // Generate suggestions based on observable data
+  const suggestions: string[] = [];
+  if (riskLevel === 'high') {
+    suggestions.push('This task has multiple risk factors');
+    suggestions.push('Consider prioritizing this task');
+  } else if (riskLevel === 'medium') {
+    suggestions.push('Plan time for this task');
+  }
+
+  if (task.weight && task.weight >= 15) {
+    suggestions.push('High grade impact');
+  }
+
+  return {
+    taskId: task.id,
+    taskType: task.taskType,
+    riskLevel,
+    riskScore: Math.min(100, riskScore),
+    riskFactors,
+    suggestions,
+  };
+}
+
+/**
+ * Identify common submission timing patterns across all events
+ * Based on observable data: when tasks were submitted relative to deadlines
+ */
+export function identifySubmissionPatterns(
+  events: TaskCompletionEvent[]
+): string[] {
+  const patterns: string[] = [];
+
+  if (events.length < 10) return patterns;
+
+  // Analyze timing patterns
+  const timing = analyzeCompletionTiming(events);
+
+  if (timing.percentLastMinute >= 40) {
+    patterns.push('Many tasks submitted last minute');
+  }
+
+  if (timing.percentLate >= 25) {
+    patterns.push('Frequent late submissions');
+  }
+
+  // Analyze day of week patterns
+  const dayLateRates = new Map<number, { total: number; late: number }>();
+  for (let i = 0; i < 7; i++) {
+    dayLateRates.set(i, { total: 0, late: 0 });
+  }
+
+  for (const event of events) {
+    const data = dayLateRates.get(event.dayOfWeek)!;
+    data.total++;
+    if (event.wasLate) data.late++;
+  }
+
+  const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  for (let i = 0; i < 7; i++) {
+    const data = dayLateRates.get(i)!;
+    if (data.total >= 5 && data.late / data.total >= 0.4) {
+      patterns.push(`Higher late rate on ${dayNames[i]}s`);
+    }
+  }
+
+  // Analyze task type patterns
+  const strugglePatterns = identifyStrugglePatterns(events);
+  const highStruggleTypes = strugglePatterns
+    .filter((p) => p.struggleScore >= 50)
+    .slice(0, 2);
+
+  for (const pattern of highStruggleTypes) {
+    patterns.push(`Lower scores on ${pattern.taskType}s`);
+  }
+
+  return patterns;
 }

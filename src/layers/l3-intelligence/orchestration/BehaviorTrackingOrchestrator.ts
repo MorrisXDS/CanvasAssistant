@@ -10,12 +10,19 @@
 
 import { EventEmitter } from 'events';
 import { Database } from '../../l1-persistence/Database';
+import { VisibleDataProvider } from '../../l1-persistence/VisibleDataProvider';
+import type {
+  CompletionEventRow,
+  BehaviorPatternRow,
+  CourseRowMinimal,
+} from '../../l1-persistence/DatabaseRowTypes';
 import {
   analyzeWeeklyRhythm,
   calculateCourseDifficulty,
   identifyStrugglePatterns,
   analyzeCompletionTiming,
 } from '../domain/BehaviorAnalytics';
+import { ORCHESTRATOR_DEFAULTS } from '../domain/Constants';
 import {
   TaskCompletionEvent,
   UserBehaviorPattern,
@@ -24,51 +31,6 @@ import {
   StrugglePattern,
   CourseForPriority,
 } from '../types';
-
-/**
- * Raw completion event from database
- */
-interface CompletionEventRow {
-  id: number;
-  task_id: number;
-  course_id: number;
-  task_type: string;
-  started_at: string | null;
-  completed_at: string;
-  due_at: string | null;
-  time_to_complete_minutes: number | null;
-  day_of_week: number;
-  hour_of_day: number;
-  days_before_due: number | null;
-  was_late: number;
-  score_achieved: number | null;
-  points_possible: number | null;
-}
-
-/**
- * Raw pattern from database
- */
-interface PatternRow {
-  id: number;
-  pattern_type: string;
-  pattern_key: string;
-  pattern_value: string;
-  sample_size: number;
-  confidence: number;
-  last_updated_at: string;
-}
-
-/**
- * Raw course data from database
- */
-interface CourseRow {
-  id: number;
-  code: string;
-  name: string;
-  current_grade: number | null;
-  target_grade: number;
-  total_weight: number;
-}
 
 /**
  * Configuration for BehaviorTrackingOrchestrator
@@ -83,9 +45,7 @@ export interface BehaviorTrackingOrchestratorConfig {
 }
 
 const DEFAULT_CONFIG: Required<BehaviorTrackingOrchestratorConfig> = {
-  refreshIntervalMs: 60 * 60 * 1000, // 1 hour
-  maxEventAgeDays: 180,
-  autoRefresh: true,
+  ...ORCHESTRATOR_DEFAULTS.BEHAVIOR_TRACKING,
 };
 
 /**
@@ -98,16 +58,36 @@ const DEFAULT_CONFIG: Required<BehaviorTrackingOrchestratorConfig> = {
  */
 export class BehaviorTrackingOrchestrator extends EventEmitter {
   private db: Database;
+  private visibleDataProvider: VisibleDataProvider | null;
   private config: Required<BehaviorTrackingOrchestratorConfig>;
   private refreshTimer: NodeJS.Timeout | null = null;
   private cachedRhythm: WeeklyRhythm | null = null;
   private cachedCoursePerformance: CoursePerformance[] = [];
   private cachedStrugglePatterns: StrugglePattern[] = [];
 
-  constructor(db: Database, config?: BehaviorTrackingOrchestratorConfig) {
+  constructor(
+    db: Database,
+    config?: BehaviorTrackingOrchestratorConfig,
+    visibleDataProvider?: VisibleDataProvider
+  ) {
     super();
     this.db = db;
+    this.visibleDataProvider = visibleDataProvider ?? null;
     this.config = { ...DEFAULT_CONFIG, ...config };
+
+    // Clear cache on visibility changes
+    if (this.visibleDataProvider) {
+      this.visibleDataProvider.on('visibility-changed', () => {
+        this.cachedRhythm = null;
+        this.cachedCoursePerformance = [];
+        this.cachedStrugglePatterns = [];
+      });
+      this.visibleDataProvider.on('settings-changed', () => {
+        this.cachedRhythm = null;
+        this.cachedCoursePerformance = [];
+        this.cachedStrugglePatterns = [];
+      });
+    }
 
     if (this.config.autoRefresh) {
       this.startAutoRefresh();
@@ -270,12 +250,23 @@ export class BehaviorTrackingOrchestrator extends EventEmitter {
 
   /**
    * Fetch courses from database
+   * Uses VisibleDataProvider to filter to visible courses only
    */
   private fetchCourses(): CourseForPriority[] {
-    const rows = this.db.executeRead<CourseRow>(
-      `SELECT id, code, name, current_grade, target_grade, total_weight
-       FROM courses WHERE deleted_at IS NULL`
-    );
+    const visibleCourseIds = this.visibleDataProvider?.getVisibleCourseIds();
+
+    let sql = `
+      SELECT id, code, name, current_grade, target_grade, total_weight
+      FROM courses WHERE deleted_at IS NULL
+    `;
+
+    if (visibleCourseIds && visibleCourseIds.length > 0) {
+      sql += ` AND id IN (${visibleCourseIds.join(',')})`;
+    } else if (visibleCourseIds && visibleCourseIds.length === 0) {
+      return [];
+    }
+
+    const rows = this.db.executeRead<CourseRowMinimal>(sql);
 
     return rows.map((row) => ({
       id: row.id,

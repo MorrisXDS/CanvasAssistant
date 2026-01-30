@@ -69,6 +69,8 @@ export class FileWatcher extends EventEmitter {
         pollInterval: 100,
       },
       usePolling: false,
+      // Ignore permission errors (common on Windows with locked files)
+      ignorePermissionErrors: true,
       // Ignore hidden files and temp files
       ignored: [
         /(^|[\/\\])\../, // dotfiles

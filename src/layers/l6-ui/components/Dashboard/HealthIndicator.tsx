@@ -6,6 +6,7 @@
 import React from 'react';
 import { CheckCircle, AlertTriangle, XCircle } from 'lucide-react';
 import { Card } from '../shared';
+import { formatTimeAgo } from '../../constants';
 
 export type HealthState = 'healthy' | 'degraded' | 'unhealthy';
 
@@ -39,28 +40,8 @@ const statusConfig: Record<
   },
 };
 
-export function HealthIndicator({
-  status,
-  lastSyncedAt,
-  dbSize,
-}: HealthIndicatorProps) {
+export function HealthIndicator({ status, lastSyncedAt, dbSize }: HealthIndicatorProps) {
   const config = statusConfig[status];
-
-  const formatLastSync = (dateStr: string | null | undefined): string => {
-    if (!dateStr) return 'Never';
-    const date = new Date(dateStr);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-
-    if (diffMins < 1) return 'Just now';
-    if (diffMins < 60) return `${diffMins}m ago`;
-    const diffHours = Math.floor(diffMins / 60);
-    if (diffHours < 24) return `${diffHours}h ago`;
-    const diffDays = Math.floor(diffHours / 24);
-    return `${diffDays}d ago`;
-  };
-
   const StatusIcon = config.Icon;
 
   return (
@@ -83,7 +64,7 @@ export function HealthIndicator({
         <div style={styles.details}>
           <div style={styles.detailItem}>
             <span style={styles.detailLabel}>Last Sync</span>
-            <span style={styles.detailValue}>{formatLastSync(lastSyncedAt)}</span>
+            <span style={styles.detailValue}>{formatTimeAgo(lastSyncedAt ?? null)}</span>
           </div>
           {dbSize && (
             <div style={styles.detailItem}>
