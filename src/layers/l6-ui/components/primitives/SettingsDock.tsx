@@ -44,6 +44,9 @@ const BASE_SIZE = 40;
 const MAX_SIZE = 48;
 const MAGNIFICATION_RANGE = 80;
 const HINT_LINE_HEIGHT = 3;
+// Trigger zone dimensions - rectangular area that activates the dock
+const TRIGGER_ZONE_WIDTH = 280;
+const TRIGGER_ZONE_HEIGHT = 20;
 
 const SECTION_ITEMS: DockItem[] = [
   { id: 'account', label: 'Account', icon: <Link size={18} /> },
@@ -179,39 +182,43 @@ export function SettingsDock({
   );
 
   return (
-    <div
-      style={styles.wrapper}
-      onMouseEnter={handleWrapperMouseEnter}
-      onMouseLeave={handleWrapperMouseLeave}
-    >
-      {/* Hint line - only visible when auto-hide is enabled and dock is hidden */}
-      {autoHide && (
+    <div style={styles.wrapper}>
+      {/* Hover Group - contains both trigger zone and dock, handles visibility */}
+      <div
+        style={styles.hoverGroup}
+        onMouseEnter={handleWrapperMouseEnter}
+        onMouseLeave={handleWrapperMouseLeave}
+      >
+        {/* Trigger Zone - the rectangular area at the bottom */}
+        <div style={styles.triggerZone}>
+          {/* Hint line - only visible when auto-hide is enabled and dock is hidden */}
+          {autoHide && (
+            <div
+              style={{
+                ...styles.hintLine,
+                opacity: isVisible ? 0 : 1,
+              }}
+            />
+          )}
+        </div>
+
+        {/* Dock Container */}
         <div
           style={{
-            ...styles.hintLine,
-            opacity: isVisible ? 0 : 1,
-            pointerEvents: isVisible ? 'none' : 'auto',
+            ...styles.dockContainer,
+            maxHeight: isVisible ? 200 : 0,
+            opacity: isVisible ? 1 : 0,
+            marginTop: isVisible ? 'var(--space-2)' : 0,
+            marginBottom: isVisible ? 'var(--space-3)' : 0,
           }}
-        />
-      )}
-
-      {/* Dock Container */}
-      <div
-        style={{
-          ...styles.dockContainer,
-          maxHeight: isVisible ? 200 : 0,
-          opacity: isVisible ? 1 : 0,
-          marginTop: isVisible ? 'var(--space-2)' : 0,
-          marginBottom: isVisible ? 'var(--space-3)' : 0,
-        }}
-      >
-        <div
-          ref={dockRef}
-          style={styles.dock}
-          onMouseMove={handleMouseMove}
-          onMouseEnter={handleDockMouseEnter}
-          onMouseLeave={handleDockMouseLeave}
         >
+          <div
+            ref={dockRef}
+            style={styles.dock}
+            onMouseMove={handleMouseMove}
+            onMouseEnter={handleDockMouseEnter}
+            onMouseLeave={handleDockMouseLeave}
+          >
           {sortedItems.map((item) => {
             const scale = getItemScale(item.id);
             const isOpen = openSections.includes(item.id);
@@ -250,6 +257,7 @@ export function SettingsDock({
             );
           })}
         </div>
+        </div>
       </div>
     </div>
   );
@@ -269,9 +277,28 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: 'column',
     alignItems: 'center',
     zIndex: 100,
-    paddingTop: 'var(--space-1)',
-    // Wrapper captures hover events - keep small for tight activation region
-    minHeight: 12,
+    // Wrapper does NOT capture hover - only the hover group does
+    pointerEvents: 'none',
+  },
+
+  hoverGroup: {
+    // Contains trigger zone + dock, captures all hover events
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    pointerEvents: 'auto',
+    // Width matches trigger zone so hover area is bounded
+    width: TRIGGER_ZONE_WIDTH,
+  },
+
+  triggerZone: {
+    // The visible activation area at the bottom
+    width: '100%',
+    height: TRIGGER_ZONE_HEIGHT,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    cursor: 'default',
   },
 
   hintLine: {
@@ -280,7 +307,6 @@ const styles: Record<string, React.CSSProperties> = {
     backgroundColor: 'var(--border-default)',
     borderRadius: 'var(--radius-full)',
     transition: 'opacity 150ms ease',
-    cursor: 'default',
   },
 
   dockContainer: {
