@@ -100,8 +100,8 @@
   },
   "homepage": "https://github.com/MorrisXDS/CanvasAssistant#readme",
   "build": {
-    "appId": "com.quercus.desktop",
-    "productName": "Quercus Desktop",
+    "appId": "com.canvasassistant.app",
+    "productName": "Canvas Assistant",
     "directories": {
       "output": "release"
     },
