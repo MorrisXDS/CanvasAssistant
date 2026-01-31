@@ -9,7 +9,7 @@ import { AccordionSection } from '../shared';
 import styles from './FilesPage.module.css';
 
 // Types
-export type SourceFilter = 'all' | 'canvas' | 'announcements';
+export type SourceFilter = 'all' | 'canvas' | 'announcements' | 'modules';
 export type StatusFilter = 'all' | 'pending' | 'downloaded';
 export type SizeFilter = 'all' | 'small' | 'medium' | 'large';
 
@@ -158,6 +158,7 @@ export function FileFilterPanel({
               { value: 'all' as const, label: 'All Sources' },
               { value: 'canvas' as const, label: 'Canvas Files' },
               { value: 'announcements' as const, label: 'Announcements' },
+              { value: 'modules' as const, label: 'Modules' },
             ].map((option) => (
               <button
                 key={option.value}
