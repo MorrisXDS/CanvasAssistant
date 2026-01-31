@@ -17,6 +17,7 @@ import styles from './FilesPage.module.css';
 import {
   FileItem,
   FileResource,
+  FileModuleItem,
   getFileName,
   isFileDownloaded,
   categorizeFile,
@@ -51,6 +52,9 @@ export function FileGridItem({
   onContextMenu,
 }: FileGridItemProps) {
   const isDownloaded = isFileDownloaded(file);
+  const isModuleItem = file.source === 'module';
+  // Check if this is an ExternalUrl module item (not downloadable)
+  const isExternalUrl = isModuleItem && (file as FileModuleItem).itemType === 'ExternalUrl';
 
   // Get metadata
   const filename = getFileName(file);
@@ -64,7 +68,8 @@ export function FileGridItem({
   const handleClick = () => {
     if (selectMode) {
       onToggleSelect();
-    } else if (isDownloaded) {
+    } else if (isExternalUrl || isDownloaded) {
+      // ExternalUrl items should always open (they're not downloadable)
       onOpen();
     } else {
       onDownload();
@@ -134,7 +139,17 @@ export function FileGridItem({
       {/* Hover overlay with actions */}
       {!selectMode && (
         <div className={styles.gridOverlay}>
-          {isDownloaded ? (
+          {isExternalUrl ? (
+            // ExternalUrl items: just show open button
+            <button
+              className={styles.gridActionButton}
+              onClick={(e) => { e.stopPropagation(); onOpen(); }}
+              title="Open external link"
+              aria-label="Open external link"
+            >
+              <ExternalLink size={18} />
+            </button>
+          ) : isDownloaded ? (
             <>
               <button
                 className={styles.gridActionButton}

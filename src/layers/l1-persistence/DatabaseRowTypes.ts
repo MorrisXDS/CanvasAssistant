@@ -419,3 +419,28 @@ export interface TokenUsageRow {
   used_at: string;
   notes: string | null;
 }
+
+// =============================================================================
+// Module Item Rows
+// =============================================================================
+
+/**
+ * Module item row with joined module and course info
+ * Used by: data:getModuleItems IPC handler for Files page
+ */
+export interface ModuleItemRow {
+  id: number;
+  external_id: string;
+  title: string;
+  item_type: string; // Dynamic - any Canvas type (File, Page, Assignment, Quiz, etc.)
+  content_id: string | null;
+  url: string | null;
+  external_url: string | null;
+  position: number;
+  indent: number;
+  module_name: string;
+  module_position: number;
+  course_id: number;
+  course_code: string;
+  course_name: string;
+}

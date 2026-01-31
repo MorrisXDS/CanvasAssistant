@@ -22,6 +22,13 @@ import {
   Square,
   CheckSquare,
   ScrollText,
+  // Module item icons
+  HelpCircle,
+  ClipboardList,
+  MessageSquare,
+  ExternalLink,
+  Wrench,
+  FileQuestion,
 } from 'lucide-react';
 import styles from './FilesPage.module.css';
 import { formatFileSize } from '../../constants';
@@ -78,7 +85,28 @@ export interface FilePage {
   source: 'page';
 }
 
-export type FileItem = FileAttachment | FileResource | FilePage;
+export interface FileModuleItem {
+  id: number;
+  externalId: string;
+  courseId: number;
+  title: string;
+  itemType: string; // Dynamic - any Canvas type (File, Page, Assignment, Quiz, etc.)
+  contentId: string | null;
+  url: string | null;
+  externalUrl: string | null;
+  pageUrl: string | null; // Page slug for Page type items (e.g., "lab-kit")
+  position: number;
+  indent: number;
+  moduleName: string;
+  modulePosition: number;
+  courseCode: string;
+  courseName: string;
+  sizeBytes: null; // Module items don't have a file size
+  hasLocalContent: boolean; // True if Page has body_html or File has local_path
+  source: 'module';
+}
+
+export type FileItem = FileAttachment | FileResource | FilePage | FileModuleItem;
 
 // Content category types
 export type ContentCategory =
@@ -105,7 +133,16 @@ export type FileIconType =
   | 'audio'
   | 'video'
   | 'page'
-  | 'generic';
+  | 'generic'
+  // Module item types
+  | 'module-file'
+  | 'module-page'
+  | 'module-quiz'
+  | 'module-assignment'
+  | 'module-discussion'
+  | 'module-external-url'
+  | 'module-external-tool'
+  | 'module-unknown';
 
 // Categorize file based on filename and folder path
 export function categorizeFile(
@@ -186,6 +223,11 @@ export function getFileName(file: FileItem): string {
   return file.title;
 }
 
+// Get folder path for module items (uses module name as top-level folder)
+export function getModuleItemFolderPath(file: FileModuleItem): string {
+  return file.moduleName;
+}
+
 // Check if file is downloaded/available
 export function isFileDownloaded(file: FileItem): boolean {
   if (file.source === 'attachment') {
@@ -195,17 +237,48 @@ export function isFileDownloaded(file: FileItem): boolean {
     // Pages are always "available" - they're HTML content
     return (file as FilePage).hasContent;
   }
+  if (file.source === 'module') {
+    // Module items: Page types with body_html or File types with local_path
+    return (file as FileModuleItem).hasLocalContent;
+  }
   return file.localPath !== null;
 }
 
 // Re-export formatFileSize from constants for backwards compatibility
 export { formatFileSize } from '../../constants';
 
+// Map module item types to icon types
+function getModuleItemIconType(itemType: string): FileIconType {
+  switch (itemType) {
+    case 'File':
+      return 'module-file';
+    case 'Page':
+      return 'module-page';
+    case 'Quiz':
+      return 'module-quiz';
+    case 'Assignment':
+      return 'module-assignment';
+    case 'Discussion':
+      return 'module-discussion';
+    case 'ExternalUrl':
+      return 'module-external-url';
+    case 'ExternalTool':
+      return 'module-external-tool';
+    default:
+      return 'module-unknown';
+  }
+}
+
 // Determine file icon type based on content type and extension
 export function getFileIconType(file: FileItem): FileIconType {
   // Pages are always 'page' type
   if (file.source === 'page') {
     return 'page';
+  }
+
+  // Module items use their Canvas type
+  if (file.source === 'module') {
+    return getModuleItemIconType((file as FileModuleItem).itemType);
   }
 
   const contentType =
@@ -271,6 +344,23 @@ export function getFileIcon(file: FileItem, size: number = 18): React.ReactNode 
       return <Video size={size} />;
     case 'page':
       return <ScrollText size={size} />;
+    // Module item types
+    case 'module-file':
+      return <File size={size} />;
+    case 'module-page':
+      return <FileText size={size} />;
+    case 'module-quiz':
+      return <HelpCircle size={size} />;
+    case 'module-assignment':
+      return <ClipboardList size={size} />;
+    case 'module-discussion':
+      return <MessageSquare size={size} />;
+    case 'module-external-url':
+      return <ExternalLink size={size} />;
+    case 'module-external-tool':
+      return <Wrench size={size} />;
+    case 'module-unknown':
+      return <FileQuestion size={size} />;
     default:
       return <File size={size} />;
   }
@@ -290,6 +380,15 @@ export function getFileIconClass(iconType: FileIconType): string {
     video: styles.fileIconVideo,
     page: styles.fileIconPage,
     generic: styles.fileIconGeneric,
+    // Module item types use generic styling
+    'module-file': styles.fileIconGeneric,
+    'module-page': styles.fileIconPage,
+    'module-quiz': styles.fileIconGeneric,
+    'module-assignment': styles.fileIconGeneric,
+    'module-discussion': styles.fileIconGeneric,
+    'module-external-url': styles.fileIconGeneric,
+    'module-external-tool': styles.fileIconGeneric,
+    'module-unknown': styles.fileIconGeneric,
   };
   return classMap[iconType] || styles.fileIconGeneric;
 }
@@ -319,6 +418,7 @@ export function FileListItem({
   onContextMenu,
 }: FileListItemProps) {
   const isAttachment = file.source === 'attachment';
+  const isModuleItem = file.source === 'module';
   const downloadStatus = isAttachment ? (file as FileAttachment).downloadStatus : null;
   const isDownloaded = isFileDownloaded(file);
 
@@ -333,14 +433,25 @@ export function FileListItem({
   const iconType = getFileIconType(file);
   const iconClass = getFileIconClass(iconType);
 
+  // Check if this is an ExternalUrl module item (not downloadable)
+  const isExternalUrl = isModuleItem && (file as FileModuleItem).itemType === 'ExternalUrl';
+
   // Handle double-click
   const handleDoubleClick = () => {
     if (selectMode) return;
-    if (isDownloaded) {
+    // ExternalUrl items should always open (they're not downloadable)
+    if (isExternalUrl || isDownloaded) {
       onOpen();
     } else {
       onDownload();
     }
+  };
+
+  // Determine tooltip based on item type
+  const getTooltip = () => {
+    if (isExternalUrl) return 'Double-click to open external link, right-click for options';
+    if (isDownloaded) return 'Double-click to open, right-click for options';
+    return 'Double-click to download, right-click for options';
   };
 
   return (
@@ -348,11 +459,7 @@ export function FileListItem({
       className={styles.fileListItem}
       onDoubleClick={handleDoubleClick}
       onContextMenu={onContextMenu}
-      title={
-        isDownloaded
-          ? 'Double-click to open, right-click for options'
-          : 'Double-click to download, right-click for options'
-      }
+      title={getTooltip()}
       role="row"
       tabIndex={0}
       onKeyDown={(e) => {
@@ -422,8 +529,18 @@ export function FileListItem({
             </>
           )}
 
+          {/* Source info for module items */}
+          {isModuleItem && (
+            <>
+              <span className={styles.metaSeparator}>•</span>
+              <span className={styles.fileSource}>
+                {(file as FileModuleItem).itemType}
+              </span>
+            </>
+          )}
+
           {/* Download status indicator */}
-          {isDownloaded && (
+          {isDownloaded && !isModuleItem && (
             <>
               <span className={styles.metaSeparator}>•</span>
               <CheckCircle size={12} color="var(--color-success)" />
@@ -433,7 +550,20 @@ export function FileListItem({
       </div>
 
       <div className={styles.fileActions}>
-        {isDownloading ? (
+        {/* ExternalUrl items: show external link icon, no download */}
+        {isModuleItem && (file as FileModuleItem).itemType === 'ExternalUrl' ? (
+          <button
+            className={styles.fileActionButton}
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpen();
+            }}
+            title="Open external link"
+            aria-label="Open external link"
+          >
+            <ExternalLink size={14} color="var(--text-muted)" />
+          </button>
+        ) : isDownloading ? (
           <Loader2 size={14} className={styles.spinner} color="var(--text-secondary)" />
         ) : isDownloaded ? (
           <>

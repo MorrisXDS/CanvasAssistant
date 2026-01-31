@@ -147,6 +147,7 @@ export const FileExplorerSettingsSchema = z.object({
   defaultState: z.enum(['collapsed', 'expanded', 'remember']),
   defaultViewMode: z.enum(['list', 'grid']),
   downloadLocation: z.string().nullable(),
+  skipExternalLinkWarning: z.boolean(),
 });
 
 export const CourseSettingsSchema = z.object({
@@ -351,6 +352,7 @@ export const DEFAULT_FILE_EXPLORER_SETTINGS: FileExplorerSettings = {
   defaultViewMode: 'list',
   // null = use system default ({USER_DOWNLOADS}/CanvasAssistant)
   downloadLocation: null,
+  skipExternalLinkWarning: false,
 };
 
 export const DEFAULT_COURSE_SETTINGS: CourseSettings = {
@@ -394,7 +396,7 @@ export const DEFAULT_WINDOW_BEHAVIOR_SETTINGS: WindowBehaviorSettings = {
  * All task types enabled by default
  */
 export const DEFAULT_IMPORTANT_WORKS_FILTER: ImportantWorksFilter = {
-  globalThreshold: 5,
+  globalThreshold: 10,
   enabledTypes: [
     'assignment',
     'problem_set',
@@ -812,6 +814,14 @@ export const SETTINGS_METADATA: SettingMetadata[] = [
     category: 'academic',
     component: 'toggle',
     keywords: ['offline', 'local', 'images', 'dependencies'],
+  },
+  {
+    key: 'fileExplorer.skipExternalLinkWarning',
+    label: 'Skip external link warning',
+    description: 'Open external links from modules without showing a confirmation dialog',
+    category: 'academic',
+    component: 'toggle',
+    keywords: ['external', 'url', 'link', 'warning', 'confirm', 'dialog'],
   },
 
   // =================================

@@ -40,8 +40,10 @@ import {
   FileAttachment,
   FileResource,
   FilePage,
+  FileModuleItem,
   getFileName,
   isFileDownloaded,
+  getModuleItemFolderPath,
 } from './FileListItem';
 import { FileGridItem } from './FileGridItem';
 import {
@@ -57,6 +59,7 @@ import {
   MissingDependenciesDialog,
   MissingDependency,
 } from './MissingDependenciesDialog';
+import { ExternalLinkDialog } from './ExternalLinkDialog';
 import {
   getFolderTypeFromPath,
   getFolderDepth,
@@ -93,6 +96,7 @@ interface FilesData {
   resources: FileResource[];
   attachments: FileAttachment[];
   pages: FilePage[];
+  moduleItems: FileModuleItem[];
 }
 
 type ViewMode = 'list' | 'grid';
@@ -206,6 +210,7 @@ export function FilesPage() {
     resources: [],
     attachments: [],
     pages: [],
+    moduleItems: [],
   });
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -259,6 +264,7 @@ export function FilesPage() {
     handleDragEnd: folderDragEnd,
     handleDrop: folderDrop,
     sortFoldersByCustomOrder,
+    hasCustomOrder: hasFolderCustomOrder,
     resetAllOrders: _resetFolderOrders,
     hasAnyCustomOrder: _hasCustomFolderOrder,
   } = useFolderDragDrop();
@@ -330,6 +336,17 @@ export function FilesPage() {
     downloadProgress: 0,
   });
 
+  // External link dialog state
+  const [externalLinkDialog, setExternalLinkDialog] = useState<{
+    isOpen: boolean;
+    url: string;
+    title: string;
+  }>({
+    isOpen: false,
+    url: '',
+    title: '',
+  });
+
   // Fetch files directory path
   useEffect(() => {
     const api = window.api;
@@ -349,8 +366,14 @@ export function FilesPage() {
     }
 
     try {
-      const data = await api.getFiles();
-      setFiles(data);
+      const [filesData, moduleItemsData] = await Promise.all([
+        api.getFiles(),
+        api.getModuleItems?.() ?? [],
+      ]);
+      setFiles({
+        ...filesData,
+        moduleItems: moduleItemsData,
+      });
     } catch (error) {
       console.error('Failed to fetch files:', error);
     } finally {
@@ -386,6 +409,7 @@ export function FilesPage() {
         ...files.attachments.map((a) => a.courseId),
         ...files.resources.map((r) => r.courseId),
         ...files.pages.map((p) => p.courseId),
+        ...files.moduleItems.map((m) => m.courseId),
       ]);
       setExpandedCourses(courseIds);
 
@@ -400,6 +424,9 @@ export function FilesPage() {
       });
       files.pages.forEach((p) => {
         folderKeys.add(`${p.courseId}:${p.folderPath}`);
+      });
+      files.moduleItems.forEach((m) => {
+        folderKeys.add(`${m.courseId}:${getModuleItemFolderPath(m)}`);
       });
       setExpandedFolders(folderKeys);
       setHasAppliedDefaultExpand(true);
@@ -420,6 +447,7 @@ export function FilesPage() {
     const allCourseIds = new Set([
       ...files.attachments.map((a) => a.courseId),
       ...files.resources.map((r) => r.courseId),
+      ...files.moduleItems.map((m) => m.courseId),
     ]);
 
     for (const courseId of allCourseIds) {
@@ -430,12 +458,13 @@ export function FilesPage() {
       }
     }
 
-    const allFiles: FileItem[] = [
+    const allFilesForExtensions: FileItem[] = [
       ...files.attachments,
       ...files.resources,
       ...files.pages,
+      ...files.moduleItems,
     ];
-    for (const file of allFiles) {
+    for (const file of allFilesForExtensions) {
       const ext = getFileExtension(file);
       if (ext) {
         extensions.set(ext, (extensions.get(ext) || 0) + 1);
@@ -458,6 +487,7 @@ export function FilesPage() {
     const courseIds = new Set([
       ...files.attachments.map((a) => a.courseId),
       ...files.resources.map((r) => r.courseId),
+      ...files.moduleItems.map((m) => m.courseId),
     ]);
     return courses
       .filter((c) => courseIds.has(c.id))
@@ -485,6 +515,9 @@ export function FilesPage() {
     if (file.source === 'page') {
       return (file as FilePage).folderPath || 'Pages';
     }
+    if (file.source === 'module') {
+      return getModuleItemFolderPath(file as FileModuleItem);
+    }
     return 'Announcements';
   };
 
@@ -494,6 +527,7 @@ export function FilesPage() {
       ...files.attachments,
       ...files.resources,
       ...files.pages,
+      ...files.moduleItems,
     ];
 
     const filtered = allFiles.filter((f) => {
@@ -518,6 +552,7 @@ export function FilesPage() {
       if (sourceFilter !== 'all') {
         if (sourceFilter === 'canvas' && f.source !== 'resource') return false;
         if (sourceFilter === 'announcements' && f.source !== 'attachment') return false;
+        if (sourceFilter === 'modules' && f.source !== 'module') return false;
       }
 
       if (statusFilter !== 'all') {
@@ -575,9 +610,31 @@ export function FilesPage() {
     selectedCourseIds,
   ]);
 
+  // Build a map of folder path -> module position for default sorting
+  // Module folders should appear in Canvas module order
+  const folderModulePositions = useMemo(() => {
+    const positions = new Map<number, Map<string, number>>();
+    for (const item of files.moduleItems) {
+      const courseId = item.courseId;
+      const folderPath = getModuleItemFolderPath(item);
+
+      if (!positions.has(courseId)) {
+        positions.set(courseId, new Map());
+      }
+      const coursePositions = positions.get(courseId)!;
+
+      // Use the minimum module position for each folder
+      const existing = coursePositions.get(folderPath);
+      if (existing === undefined || item.modulePosition < existing) {
+        coursePositions.set(folderPath, item.modulePosition);
+      }
+    }
+    return positions;
+  }, [files.moduleItems]);
+
   // Counts
   const totalFiles =
-    files.attachments.length + files.resources.length + files.pages.length;
+    files.attachments.length + files.resources.length + files.pages.length + files.moduleItems.length;
   const filteredCount = Array.from(groupedFiles.values()).reduce((sum, folderMap) => {
     return (
       sum + Array.from(folderMap.values()).reduce((fSum, list) => fSum + list.length, 0)
@@ -587,6 +644,7 @@ export function FilesPage() {
     ...files.attachments,
     ...files.resources,
     ...files.pages,
+    ...files.moduleItems,
   ].filter(isFileDownloaded).length;
   const hasActiveFilters =
     selectedPrefixes.size > 0 ||
@@ -787,6 +845,16 @@ export function FilesPage() {
             bodyHtml: pageResult.data.bodyHtml,
           });
         }
+      } else if (file.source === 'module') {
+        // For module items, check if it's a Page type
+        const moduleItem = file as FileModuleItem;
+        if (moduleItem.itemType === 'Page') {
+          // Download page content from Canvas and save as HTML file
+          result = await api.downloadPageContent(moduleItem.id);
+        } else {
+          // For File type module items, download the associated resource
+          result = await api.downloadResource(file.id);
+        }
       } else {
         result = await api.downloadResource(file.id);
       }
@@ -922,6 +990,65 @@ export function FilesPage() {
         .catch((error) => {
           console.error('Failed to open page:', error);
         });
+    } else if (file.source === 'module') {
+      // For module items, check the type
+      const moduleItem = file as FileModuleItem;
+
+      // ExternalUrl items: Show confirmation dialog or open directly
+      if (moduleItem.itemType === 'ExternalUrl') {
+        // Get the URL - try externalUrl first, then url field
+        const externalLink = moduleItem.externalUrl || moduleItem.url;
+
+        if (!externalLink) {
+          console.error('[FilesPage] ExternalUrl item has no URL');
+          return;
+        }
+
+        // Check if user has disabled the warning
+        let skipWarning = false;
+        try {
+          const storedSettings = localStorage.getItem('fileExplorerSettings');
+          if (storedSettings) {
+            const settings = JSON.parse(storedSettings);
+            skipWarning = settings.skipExternalLinkWarning === true;
+          }
+        } catch (e) {
+          console.error('Failed to read file explorer settings:', e);
+        }
+
+        if (skipWarning) {
+          // Open directly in default browser
+          api.openExternal(externalLink);
+        } else {
+          // Show confirmation dialog
+          setExternalLinkDialog({
+            isOpen: true,
+            url: externalLink,
+            title: moduleItem.title,
+          });
+        }
+        return;
+      }
+
+      // If it's a Page type, try to open the downloaded HTML file
+      if (moduleItem.itemType === 'Page') {
+        try {
+          // Try to open the already-downloaded HTML file
+          const openResult = await api.openPageFile?.(moduleItem.id);
+          if (openResult?.success) {
+            console.log('[FilesPage] Opened module page file');
+            return;
+          }
+        } catch (error) {
+          console.log('[FilesPage] Failed to open module page file, falling back to Canvas URL');
+        }
+      }
+
+      // Fall back to opening Canvas URL (for non-ExternalUrl items only)
+      const url = moduleItem.externalUrl || moduleItem.url;
+      if (url) {
+        api.openExternal(url);
+      }
     } else {
       // For resources, check for missing HTML dependencies
       try {
@@ -1089,6 +1216,36 @@ export function FilesPage() {
     });
   };
 
+  // Handle external link confirmation
+  const handleExternalLinkConfirm = (dontShowAgain: boolean) => {
+    const api = window.api;
+    if (!api) return;
+
+    // Save preference if user checked "Don't show again"
+    if (dontShowAgain) {
+      try {
+        const storedSettings = localStorage.getItem('fileExplorerSettings');
+        const settings = storedSettings ? JSON.parse(storedSettings) : {};
+        settings.skipExternalLinkWarning = true;
+        localStorage.setItem('fileExplorerSettings', JSON.stringify(settings));
+      } catch (e) {
+        console.error('Failed to save file explorer settings:', e);
+      }
+    }
+
+    // Open the external link
+    if (externalLinkDialog.url) {
+      api.openExternal(externalLinkDialog.url);
+    }
+
+    // Close dialog
+    setExternalLinkDialog({ isOpen: false, url: '', title: '' });
+  };
+
+  const closeExternalLinkDialog = () => {
+    setExternalLinkDialog({ isOpen: false, url: '', title: '' });
+  };
+
   const handleShowInFolder = (file: FileItem) => {
     const api = window.api;
     if (!api) return;
@@ -1177,14 +1334,18 @@ export function FilesPage() {
     if (!api?.deleteResourceLocal) return;
 
     // Only resources can be deleted (not pages or attachments for now)
-    if (file.source !== 'resource') return;
+    if (file.source !== 'resource') {
+      return;
+    }
 
     try {
       const result = await api.deleteResourceLocal(file.id);
-      if (!result.success) {
+      if (result.success) {
+        // Refresh file list to reflect the deletion
+        await fetchFiles();
+      } else {
         console.error('Delete failed:', result.error);
       }
-      // UI will refresh via file-status-changed event from FileWatcher
     } catch (error) {
       console.error('Failed to delete local copy:', error);
     }
@@ -1213,6 +1374,12 @@ export function FilesPage() {
         const result = await api.getResourceCanvasUrl(file.id, 'attachment');
         if (result?.success && result.data?.canvasUrl) {
           api.openExternal(result.data.canvasUrl);
+        }
+      } else if (file.source === 'module') {
+        // Module item - use the html_url stored in the url field
+        const moduleItem = file as FileModuleItem;
+        if (moduleItem.url) {
+          api.openExternal(moduleItem.url);
         }
       }
     } catch (err) {
@@ -1472,10 +1639,34 @@ export function FilesPage() {
                 downloadedInCourse += fileList.filter(isFileDownloaded).length;
               }
 
-              // Sort folders: Apply custom order first, then default sorting
+              // Sort folders: Custom order takes priority, then module position, then alphabetical
               const folderPaths = Array.from(folderMap.keys());
-              const orderedPaths = sortFoldersByCustomOrder(courseId, folderPaths);
-              const sortedFolders = orderedPaths.map(
+
+              let sortedPaths: string[];
+              if (hasFolderCustomOrder(courseId)) {
+                // User has manually reordered - respect their custom order
+                sortedPaths = sortFoldersByCustomOrder(courseId, folderPaths);
+              } else {
+                // No custom order - use module position for module folders, alphabetical for others
+                const courseModulePositions = folderModulePositions.get(courseId);
+                sortedPaths = [...folderPaths].sort((a, b) => {
+                  const posA = courseModulePositions?.get(a);
+                  const posB = courseModulePositions?.get(b);
+
+                  // If both have module positions, sort by Canvas module position
+                  if (posA !== undefined && posB !== undefined) {
+                    return posA - posB;
+                  }
+                  // Module folders come after non-module folders
+                  if (posA !== undefined) return 1;
+                  if (posB !== undefined) return -1;
+
+                  // Non-module folders: alphabetical order
+                  return a.localeCompare(b);
+                });
+              }
+
+              const sortedFolders = sortedPaths.map(
                 (path) => [path, folderMap.get(path)!] as [string, FileItem[]]
               );
 
@@ -1751,6 +1942,15 @@ export function FilesPage() {
         fileName={missingDepsDialog.file ? getFileName(missingDepsDialog.file) : ''}
         isDownloading={missingDepsDialog.isDownloading}
         downloadProgress={missingDepsDialog.downloadProgress}
+      />
+
+      {/* External Link Confirmation Dialog */}
+      <ExternalLinkDialog
+        isOpen={externalLinkDialog.isOpen}
+        url={externalLinkDialog.url}
+        title={externalLinkDialog.title}
+        onClose={closeExternalLinkDialog}
+        onConfirm={handleExternalLinkConfirm}
       />
 
       {/* Content Changed Warning Toast */}

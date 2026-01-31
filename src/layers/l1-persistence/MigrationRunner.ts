@@ -2325,4 +2325,61 @@ export const coreMigrations: Migration[] = [
       SELECT 1;
     `,
   },
+  {
+    version: 77,
+    description: 'Remove item_type CHECK constraint from module_items to allow any Canvas type',
+    up: `
+      -- Recreate module_items without CHECK constraint on item_type
+      -- Canvas can return various item types beyond the original 8, so we accept any string
+      CREATE TABLE module_items_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        external_id TEXT UNIQUE NOT NULL,
+        module_id INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        item_type TEXT NOT NULL,
+        content_id TEXT,
+        position INTEGER,
+        indent INTEGER DEFAULT 0,
+        url TEXT,
+        external_url TEXT,
+        completion_requirement TEXT,
+        published BOOLEAN DEFAULT TRUE,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(module_id) REFERENCES modules(id) ON DELETE CASCADE
+      );
+
+      -- Copy existing data
+      INSERT INTO module_items_new SELECT * FROM module_items;
+
+      -- Drop old table and rename
+      DROP TABLE module_items;
+      ALTER TABLE module_items_new RENAME TO module_items;
+
+      -- Recreate index
+      CREATE INDEX idx_module_items_module ON module_items(module_id);
+    `,
+    down: `
+      -- Reverting adds CHECK constraint back (may fail if unknown types exist)
+      SELECT 1;
+    `,
+  },
+  {
+    version: 78,
+    description: 'Add page_url column to module_items for Page type item slugs',
+    up: `
+      ALTER TABLE module_items ADD COLUMN page_url TEXT;
+    `,
+    down: `
+      -- SQLite doesn't support DROP COLUMN in older versions, so we recreate
+      CREATE TABLE module_items_backup AS SELECT
+        id, external_id, module_id, title, item_type, content_id,
+        position, indent, url, external_url, completion_requirement,
+        published, created_at, updated_at
+      FROM module_items;
+      DROP TABLE module_items;
+      ALTER TABLE module_items_backup RENAME TO module_items;
+      CREATE INDEX idx_module_items_module ON module_items(module_id);
+    `,
+  },
 ];

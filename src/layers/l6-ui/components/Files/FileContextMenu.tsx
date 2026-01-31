@@ -45,6 +45,14 @@ export function FileContextMenu({
   const menuRef = useRef<HTMLDivElement>(null);
   const isDownloaded = isFileDownloaded(file);
   const isPage = file.source === 'page';
+  const isModuleItem = file.source === 'module';
+  const isResource = file.source === 'resource';
+  // Check if this is a Page type module item (can be downloaded on demand)
+  const isModulePageItem = isModuleItem && (file as { itemType?: string }).itemType === 'Page';
+  const modulePageHasContent = isModulePageItem && (file as { hasLocalContent?: boolean }).hasLocalContent;
+  // Check if this is an ExternalUrl module item (not downloadable, opens external link)
+  const isExternalUrlItem = isModuleItem && (file as { itemType?: string }).itemType === 'ExternalUrl';
+  const externalUrl = isExternalUrlItem ? (file as { externalUrl?: string | null }).externalUrl : null;
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -110,8 +118,20 @@ export function FileContextMenu({
       style={{ left: position.x, top: position.y }}
       role="menu"
     >
-      {/* Open */}
-      {isDownloaded && !isPage && (
+      {/* External URL: Open External Link as primary action */}
+      {isExternalUrlItem && externalUrl && (
+        <button
+          className={styles.contextMenuItem}
+          onClick={() => handleAction(onOpen)}
+          role="menuitem"
+        >
+          <ExternalLink size={14} />
+          <span>Open External Link</span>
+        </button>
+      )}
+
+      {/* Open - for downloaded files (not ExternalUrl) */}
+      {isDownloaded && !isPage && !isExternalUrlItem && (
         <button
           className={styles.contextMenuItem}
           onClick={() => handleAction(onOpen)}
@@ -122,8 +142,8 @@ export function FileContextMenu({
         </button>
       )}
 
-      {/* Open in Canvas (for pages) */}
-      {isPage && (
+      {/* Open in Canvas (for pages, module Page items, and ExternalUrl items) */}
+      {(isPage || isModulePageItem || isExternalUrlItem) && (
         <button
           className={styles.contextMenuItem}
           onClick={() => handleAction(onOpenInCanvas)}
@@ -134,27 +154,27 @@ export function FileContextMenu({
         </button>
       )}
 
-      {/* Download */}
-      {!isDownloaded && !isPage && (
+      {/* Download - for files/resources that aren't downloaded, or module Page items without content (not ExternalUrl) */}
+      {!isExternalUrlItem && ((!isDownloaded && !isPage && !isModulePageItem) || (isModulePageItem && !modulePageHasContent)) && (
         <button
           className={styles.contextMenuItem}
           onClick={() => handleAction(onDownload)}
           role="menuitem"
         >
           <Download size={14} />
-          <span>Download</span>
+          <span>{isModulePageItem ? 'Download Page Content' : 'Download'}</span>
         </button>
       )}
 
-      {/* Re-download */}
-      {isDownloaded && !isPage && (
+      {/* Re-download - for downloaded files/resources, or module Page items with content (not ExternalUrl) */}
+      {!isExternalUrlItem && ((isDownloaded && !isPage && !isModulePageItem) || (isModulePageItem && modulePageHasContent)) && (
         <button
           className={styles.contextMenuItem}
           onClick={() => handleAction(onDownload)}
           role="menuitem"
         >
           <RefreshCw size={14} />
-          <span>Re-download</span>
+          <span>{isModulePageItem ? 'Re-download Page Content' : 'Re-download'}</span>
         </button>
       )}
 
@@ -200,8 +220,8 @@ export function FileContextMenu({
       {/* Divider */}
       <div className={styles.contextMenuDivider} />
 
-      {/* Delete Local Copy */}
-      {isDownloaded && !isPage && onDeleteLocal && (
+      {/* Delete Local Copy - only for resources that have been downloaded */}
+      {isDownloaded && isResource && onDeleteLocal && (
         <button
           className={`${styles.contextMenuItem} ${styles.contextMenuItemDanger}`}
           onClick={() => handleAction(onDeleteLocal)}

@@ -122,21 +122,14 @@ export interface CanvasModuleItem {
   id: number;
   module_id: number;
   title: string;
-  type:
-    | 'File'
-    | 'Page'
-    | 'Discussion'
-    | 'Assignment'
-    | 'Quiz'
-    | 'SubHeader'
-    | 'ExternalUrl'
-    | 'ExternalTool';
+  type: string; // Accept any type Canvas returns (File, Page, Discussion, Assignment, Quiz, SubHeader, ExternalUrl, ExternalTool, etc.)
   content_id?: number;
   position: number;
   indent: number;
-  url?: string;
+  url?: string; // API URL for the content (e.g., /api/v1/courses/123/pages/my-page)
   external_url?: string;
-  html_url?: string;
+  html_url?: string; // Browser URL for viewing in Canvas
+  page_url?: string; // Page slug for Page type items (e.g., "my-page")
   completion_requirement?: {
     type: string;
     min_score?: number;
@@ -308,6 +301,7 @@ export interface LocalModuleItem {
   indent: number;
   url: string | null;
   external_url: string | null;
+  page_url: string | null; // Page slug for Page type items
   completion_requirement: string | null;
   published: number; // SQLite boolean: 0 or 1
 }
@@ -896,6 +890,11 @@ export function mapModuleItem(
     canvas.external_url,
     'moduleItem.external_url'
   );
+  const pageUrl = safeParse(
+    SafeNullableString,
+    canvas.page_url,
+    'moduleItem.page_url'
+  );
   const published = safeParse(SafeBoolean, canvas.published, 'moduleItem.published');
 
   return {
@@ -908,6 +907,7 @@ export function mapModuleItem(
     indent: indent,
     url: htmlUrl,
     external_url: externalUrl,
+    page_url: pageUrl,
     completion_requirement: canvas.completion_requirement
       ? JSON.stringify(canvas.completion_requirement)
       : null,

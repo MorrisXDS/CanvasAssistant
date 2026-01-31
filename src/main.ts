@@ -43,6 +43,8 @@ import {
   RRuleExpander,
   ExportManager,
   OperationCoordinator,
+  mapPage,
+  type CanvasPage,
 } from './layers/l2-daemon';
 import { HtmlLocalPathManager } from './layers/l2-daemon/HtmlLocalPathManager';
 import { HtmlDependencyResolver } from './layers/l2-daemon/HtmlDependencyResolver';
@@ -1963,6 +1965,87 @@ function registerIpcHandlers(): void {
     }
   });
 
+  // Get module items for visible courses (for Files page)
+  ipcMain.handle('data:getModuleItems', () => {
+    try {
+      const visibleIds = visibleDataProvider?.getVisibleCourseIds() ?? [];
+      if (visibleIds.length === 0) return [];
+
+      const placeholders = visibleIds.map(() => '?').join(', ');
+      const rows = database.executeRead<{
+        id: number;
+        external_id: string;
+        title: string;
+        item_type: string;
+        content_id: string | null;
+        url: string | null;
+        external_url: string | null;
+        page_url: string | null;
+        position: number;
+        indent: number;
+        module_name: string;
+        module_position: number;
+        course_id: number;
+        course_code: string;
+        course_name: string;
+        has_local_content: number;
+      }>(
+        `SELECT
+          mi.id, mi.external_id, mi.title, mi.item_type,
+          mi.content_id, mi.url, mi.external_url, mi.page_url,
+          mi.position, mi.indent,
+          m.name as module_name, m.position as module_position,
+          c.id as course_id, c.code as course_code, c.name as course_name,
+          CASE
+            WHEN mi.item_type = 'Page' THEN (
+              SELECT CASE WHEN cp.body_html IS NOT NULL THEN 1 ELSE 0 END
+              FROM course_pages cp
+              WHERE (cp.url_slug = mi.page_url OR cp.title = mi.title) AND cp.course_id = c.id
+              LIMIT 1
+            )
+            WHEN mi.item_type = 'File' THEN (
+              SELECT CASE WHEN r.local_path IS NOT NULL THEN 1 ELSE 0 END
+              FROM resources r
+              WHERE r.external_id = mi.content_id
+              LIMIT 1
+            )
+            ELSE 0
+          END as has_local_content
+        FROM module_items mi
+        JOIN modules m ON mi.module_id = m.id
+        JOIN courses c ON m.course_id = c.id
+        WHERE c.id IN (${placeholders})
+          AND mi.item_type != 'SubHeader'
+        ORDER BY c.id, m.position, mi.position`,
+        visibleIds
+      );
+
+      return rows.map((row) => ({
+        id: row.id,
+        externalId: row.external_id,
+        title: row.title,
+        itemType: row.item_type,
+        contentId: row.content_id,
+        url: row.url,
+        externalUrl: row.external_url,
+        pageUrl: row.page_url,
+        position: row.position,
+        indent: row.indent,
+        moduleName: row.module_name,
+        modulePosition: row.module_position,
+        courseId: row.course_id,
+        courseCode: row.course_code,
+        courseName: row.course_name,
+        sizeBytes: null, // Module items don't have file sizes
+        hasLocalContent: row.has_local_content === 1,
+        source: 'module' as const,
+      }));
+    } catch (error) {
+      logger.error(`Failed to get module items: ${error}`);
+      throw error;
+    }
+  });
+
   // Get announcements for a specific course
   ipcMain.handle('data:getCourseNotifications', (_event, courseId: number) => {
     try {
@@ -2713,6 +2796,411 @@ function registerIpcHandlers(): void {
       },
     };
   });
+
+  // Get page by title (for module items linking to pages)
+  // Module items have numeric content_id but pages use URL slug as external_id,
+  // so we match by title instead
+  ipcMain.handle('pages:getByTitle', (_event, title: string, courseId: number) => {
+    const page = database.executeReadOne<{
+      id: number;
+      external_id: string | null;
+      course_id: number;
+      page_type: string;
+      title: string;
+      url_slug: string | null;
+      body_html: string | null;
+      body_text: string | null;
+      is_front_page: number;
+      published: number;
+    }>(
+      'SELECT * FROM course_pages WHERE title = ? AND course_id = ?',
+      [title, courseId]
+    );
+
+    if (!page) {
+      return { success: false, error: 'Page not found' };
+    }
+
+    // Construct Canvas URL for the page
+    let canvasUrl: string | null = null;
+    if (canvasClient && page.url_slug) {
+      const baseUrl = canvasClient.getBaseUrl();
+      canvasUrl = `${baseUrl}/courses/${page.course_id}/pages/${page.url_slug}`;
+    }
+
+    return {
+      success: true,
+      data: {
+        id: page.id,
+        externalId: page.external_id,
+        courseId: page.course_id,
+        pageType: page.page_type,
+        title: page.title,
+        urlSlug: page.url_slug,
+        bodyHtml: page.body_html,
+        bodyText: page.body_text,
+        isFrontPage: page.is_front_page === 1,
+        published: page.published === 1,
+        canvasUrl,
+      },
+    };
+  });
+
+  // Download page content on demand (for module items of type Page)
+  // Fetches the page HTML from Canvas and saves it as an HTML file to the course folder
+  ipcMain.handle(
+    'pages:downloadContent',
+    async (_event, moduleItemId: number): Promise<{ success: boolean; localPath?: string; error?: string }> => {
+      try {
+        if (!canvasClient) {
+          return { success: false, error: 'Canvas client not connected' };
+        }
+
+        // Get module item to find page_url and course info
+        const moduleItem = database.executeReadOne<{
+          id: number;
+          module_id: number;
+          title: string;
+          item_type: string;
+          page_url: string | null;
+          url: string | null;
+        }>('SELECT id, module_id, title, item_type, page_url, url FROM module_items WHERE id = ?', [
+          moduleItemId,
+        ]);
+
+        if (!moduleItem) {
+          return { success: false, error: 'Module item not found' };
+        }
+
+        if (moduleItem.item_type !== 'Page') {
+          return { success: false, error: 'Module item is not a Page type' };
+        }
+
+        // Get course info through module -> course chain
+        const moduleInfo = database.executeReadOne<{
+          course_id: number;
+          name: string;
+        }>('SELECT course_id, name as module_name FROM modules WHERE id = ?', [moduleItem.module_id]);
+
+        if (!moduleInfo) {
+          return { success: false, error: 'Module not found' };
+        }
+
+        const course = database.executeReadOne<{
+          id: number;
+          external_id: string;
+          code: string;
+        }>('SELECT id, external_id, code FROM courses WHERE id = ?', [moduleInfo.course_id]);
+
+        if (!course) {
+          return { success: false, error: 'Course not found' };
+        }
+
+        // Determine page slug - prefer page_url, fall back to extracting from url or title
+        let pageSlug = moduleItem.page_url;
+
+        if (!pageSlug && moduleItem.url) {
+          // Try to extract slug from html_url like /courses/123/pages/my-page
+          const urlMatch = moduleItem.url.match(/\/pages\/([^/?#]+)/);
+          if (urlMatch) {
+            pageSlug = urlMatch[1];
+          }
+        }
+
+        if (!pageSlug) {
+          // Fall back to converting title to slug format
+          pageSlug = moduleItem.title
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/^-|-$/g, '');
+        }
+
+        logger.info(
+          `[pages:downloadContent] Fetching page "${pageSlug}" for course ${course.external_id}`
+        );
+
+        // Fetch page content from Canvas API
+        const canvasCourseId = parseInt(course.external_id, 10);
+        const endpoint = `/courses/${canvasCourseId}/pages/${encodeURIComponent(pageSlug)}`;
+
+        const response = await canvasClient.get<CanvasPage>(endpoint);
+
+        if (!response.data) {
+          return { success: false, error: 'Page not found on Canvas' };
+        }
+
+        // Store in course_pages for offline access
+        const localPage = mapPage(response.data, course.id, 'module_item');
+        database.upsert('course_pages', localPage);
+
+        // Create HTML file and save to course folder
+        const safeTitle = moduleItem.title.replace(/[<>:"/\\|?*]/g, '_').substring(0, 50);
+        const filename = `${safeTitle}.html`;
+
+        // Sanitize course code for filesystem (same as FileDownloadManager)
+        const sanitizedCourseCode = course.code
+          .replace(/[^a-zA-Z0-9_\-. ]/g, '_')
+          .replace(/\s+/g, '_');
+
+        // Create course folder if it doesn't exist
+        const courseFolder = path.join(FILES_DIR, sanitizedCourseCode);
+        if (!fs.existsSync(courseFolder)) {
+          fs.mkdirSync(courseFolder, { recursive: true });
+        }
+
+        const localPath = path.join(courseFolder, filename);
+        const filesFolder = path.join(courseFolder, `${safeTitle}_files`);
+
+        // Extract and download dependencies from the HTML body
+        const { extractCanvasFileReferences } = require('./layers/l2-daemon/HtmlFileExtractor');
+        const bodyHtml = response.data.body || '';
+        const fileRefs = extractCanvasFileReferences(bodyHtml);
+
+        // Map of Canvas file URLs to local paths for rewriting
+        const urlRewrites = new Map<string, string>();
+
+        if (fileRefs.length > 0) {
+          logger.info(`[pages:downloadContent] Found ${fileRefs.length} file dependencies`);
+
+          // Create files folder for dependencies
+          if (!fs.existsSync(filesFolder)) {
+            fs.mkdirSync(filesFolder, { recursive: true });
+          }
+
+          // Get auth token for downloads
+          const token = await credentialManager.retrieve();
+
+          if (token) {
+            for (const ref of fileRefs) {
+              try {
+                // Get file info from Canvas
+                const fileEndpoint = `/files/${ref.canvasFileId}`;
+                const fileResponse = await canvasClient.get<{
+                  id: number;
+                  display_name: string;
+                  url: string;
+                  'content-type': string;
+                }>(fileEndpoint);
+
+                if (fileResponse.data?.url && fileResponse.data?.display_name) {
+                  const safeFileName = fileResponse.data.display_name
+                    .replace(/[<>:"/\\|?*]/g, '_');
+                  const localFilePath = path.join(filesFolder, safeFileName);
+
+                  // Download the file
+                  await new Promise<void>((resolve, reject) => {
+                    const downloadId = `page-dep-${ref.canvasFileId}-${Date.now()}`;
+
+                    const onComplete = (result: { id: string; success: boolean; localPath?: string; error?: string }) => {
+                      if (result.id !== downloadId) return;
+                      fileDownloadManager.off('download-complete', onComplete);
+                      fileDownloadManager.off('download-error', onComplete);
+
+                      if (result.success && result.localPath) {
+                        // Map the original URL pattern to local path
+                        urlRewrites.set(ref.matchedUrl, `${safeTitle}_files/${safeFileName}`);
+                        logger.info(`[pages:downloadContent] Downloaded dependency: ${safeFileName}`);
+                        resolve();
+                      } else {
+                        logger.warn(`[pages:downloadContent] Failed to download ${ref.canvasFileId}: ${result.error}`);
+                        resolve(); // Continue even if one file fails
+                      }
+                    };
+
+                    fileDownloadManager.on('download-complete', onComplete);
+                    fileDownloadManager.on('download-error', onComplete);
+
+                    fileDownloadManager.queueDownload({
+                      id: downloadId,
+                      url: fileResponse.data.url,
+                      courseCode: sanitizedCourseCode,
+                      filename: safeFileName,
+                      authToken: token,
+                      parentHtml: path.join(sanitizedCourseCode, filename),
+                    });
+                  });
+                }
+              } catch (err) {
+                logger.warn(`[pages:downloadContent] Failed to fetch file info for ${ref.canvasFileId}`);
+              }
+            }
+          }
+        }
+
+        // Rewrite HTML body with local paths
+        let rewrittenBody = bodyHtml;
+        for (const [originalUrl, localUrl] of urlRewrites) {
+          // Replace various URL patterns that might reference this file
+          const patterns = [
+            originalUrl,
+            originalUrl.replace(/&amp;/g, '&'),
+            // Handle URL-encoded versions
+            encodeURI(originalUrl),
+          ];
+          for (const pattern of patterns) {
+            rewrittenBody = rewrittenBody.split(pattern).join(localUrl);
+          }
+        }
+
+        // Generate full HTML document with rewritten paths
+        const fullHtml = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${moduleItem.title} - ${course.code}</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 2rem;
+      line-height: 1.6;
+      color: #333;
+    }
+    h1 { border-bottom: 2px solid #2563eb; padding-bottom: 0.5rem; }
+    h1, h2, h3 { color: #1e40af; }
+    a { color: #2563eb; }
+    table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+    th, td { border: 1px solid #ddd; padding: 0.5rem; text-align: left; }
+    th { background: #f3f4f6; }
+    pre, code { background: #f3f4f6; padding: 0.25rem 0.5rem; border-radius: 4px; }
+    pre { padding: 1rem; overflow-x: auto; }
+    img { max-width: 100%; height: auto; }
+    .meta { color: #666; font-size: 0.9rem; margin-bottom: 1rem; }
+  </style>
+</head>
+<body>
+  <h1>${moduleItem.title}</h1>
+  <p class="meta">Course: ${course.code} | Downloaded: ${new Date().toLocaleDateString()}</p>
+  <hr>
+  ${rewrittenBody || '<p>No content available.</p>'}
+</body>
+</html>`;
+
+        fs.writeFileSync(localPath, fullHtml, 'utf-8');
+
+        logger.info(
+          `[pages:downloadContent] Saved page "${moduleItem.title}" to ${localPath} (${urlRewrites.size} dependencies downloaded)`
+        );
+
+        return { success: true, localPath };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        logger.error(`[pages:downloadContent] Failed: ${message}`);
+        return { success: false, error: message };
+      }
+    }
+  );
+
+  // Open a downloaded Page HTML file
+  ipcMain.handle(
+    'pages:openFile',
+    async (_event, moduleItemId: number): Promise<{ success: boolean; error?: string }> => {
+      try {
+        // Get module item info including page_url for Canvas URL construction
+        const moduleItem = database.executeReadOne<{
+          id: number;
+          module_id: number;
+          title: string;
+          item_type: string;
+          page_url: string | null;
+          url: string | null;
+        }>('SELECT id, module_id, title, item_type, page_url, url FROM module_items WHERE id = ?', [
+          moduleItemId,
+        ]);
+
+        if (!moduleItem) {
+          return { success: false, error: 'Module item not found' };
+        }
+
+        // Get course info through module -> course chain
+        const moduleInfo = database.executeReadOne<{
+          course_id: number;
+        }>('SELECT course_id FROM modules WHERE id = ?', [moduleItem.module_id]);
+
+        if (!moduleInfo) {
+          return { success: false, error: 'Module not found' };
+        }
+
+        const course = database.executeReadOne<{
+          code: string;
+          external_id: string;
+        }>('SELECT code, external_id FROM courses WHERE id = ?', [moduleInfo.course_id]);
+
+        if (!course) {
+          return { success: false, error: 'Course not found' };
+        }
+
+        // Check if offline HTML feature is enabled
+        const htmlSettings = getLocalHtmlPathsSettings();
+        const { shell } = require('electron');
+
+        if (!htmlSettings.enabled) {
+          // Offline HTML disabled - open in Canvas instead
+          logger.info(`[pages:openFile] Offline HTML disabled, opening in Canvas`);
+
+          if (canvasClient) {
+            const baseUrl = canvasClient.getBaseUrl();
+            // Use page_url (slug) if available, otherwise try to extract from url field
+            let pageSlug = moduleItem.page_url;
+            if (!pageSlug && moduleItem.url) {
+              // Try to extract slug from URL like /courses/123/pages/my-page
+              const match = moduleItem.url.match(/\/pages\/([^/?]+)/);
+              if (match) {
+                pageSlug = match[1];
+              }
+            }
+
+            if (pageSlug) {
+              // Use course.external_id (Canvas course ID), not internal DB ID
+              const canvasUrl = `${baseUrl}/courses/${course.external_id}/pages/${pageSlug}`;
+              logger.info(`[pages:openFile] Opening Canvas URL: ${canvasUrl}`);
+              shell.openExternal(canvasUrl);
+              return { success: true };
+            }
+          }
+
+          // Fallback: try to open the html_url stored in url field directly
+          if (moduleItem.url) {
+            logger.info(`[pages:openFile] Opening stored URL: ${moduleItem.url}`);
+            shell.openExternal(moduleItem.url);
+            return { success: true };
+          }
+
+          return { success: false, error: 'Could not construct Canvas URL' };
+        }
+
+        // Offline HTML enabled - open local file
+        // Build the expected file path
+        const safeTitle = moduleItem.title.replace(/[<>:"/\\|?*]/g, '_').substring(0, 50);
+        const filename = `${safeTitle}.html`;
+        const sanitizedCourseCode = course.code
+          .replace(/[^a-zA-Z0-9_\-. ]/g, '_')
+          .replace(/\s+/g, '_');
+        const localPath = path.join(FILES_DIR, sanitizedCourseCode, filename);
+
+        // Check if file exists
+        if (!fs.existsSync(localPath)) {
+          return { success: false, error: 'Page file not found. Please download it first.' };
+        }
+
+        // Open the file
+        const error = await shell.openPath(localPath);
+        if (error) {
+          logger.error(`[pages:openFile] Failed to open: ${error}`);
+          return { success: false, error };
+        }
+
+        logger.info(`[pages:openFile] Opened ${localPath}`);
+        return { success: true };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        logger.error(`[pages:openFile] Failed: ${message}`);
+        return { success: false, error: message };
+      }
+    }
+  );
 
   // Get Canvas URL for a resource (file or attachment)
   ipcMain.handle(
@@ -4105,85 +4593,57 @@ function registerIpcHandlers(): void {
         );
 
         if (useStoredHtml) {
-          logger.info(`[resource:open] Offline HTML disabled, using stored body_html`);
+          logger.info(`[resource:open] Offline HTML disabled, opening in Canvas`);
 
           // Parse external_id to get source type and ID
           const externalIdMatch = resource.external_id.match(
             /^html-(page|assignment|announcement|syllabus)-(.+)$/
           );
-          if (externalIdMatch) {
+          if (externalIdMatch && canvasClient) {
             const [, sourceType, sourceId] = externalIdMatch;
-            let bodyHtml: string | null = null;
+            const baseUrl = canvasClient.getBaseUrl();
 
-            if (sourceType === 'page') {
-              const page = database.executeReadOne<{ body_html: string | null }>(
-                `SELECT body_html FROM course_pages WHERE course_id = ? AND (external_id = ? OR url_slug = ?)`,
-                [resource.course_id, sourceId, sourceId]
-              );
-              bodyHtml = page?.body_html || null;
-            } else if (sourceType === 'assignment') {
-              const task = database.executeReadOne<{ description_html: string | null }>(
-                `SELECT description_html FROM tasks WHERE external_id = ?`,
-                [sourceId]
-              );
-              bodyHtml = task?.description_html || null;
-            } else if (sourceType === 'syllabus') {
-              const course = database.executeReadOne<{ syllabus_body: string | null }>(
-                `SELECT syllabus_body FROM courses WHERE id = ?`,
-                [resource.course_id]
-              );
-              bodyHtml = course?.syllabus_body || null;
-            }
+            // Get Canvas course ID (external_id), not internal DB ID
+            const courseForUrl = database.executeReadOne<{ external_id: string }>(
+              'SELECT external_id FROM courses WHERE id = ?',
+              [resource.course_id]
+            );
 
-            if (bodyHtml) {
-              logger.info(
-                `[resource:open] Opening stored HTML content (${bodyHtml.length} bytes)`
-              );
+            if (courseForUrl) {
+              const canvasCourseId = courseForUrl.external_id;
+              let canvasUrl: string | null = null;
 
-              // Write to temp file and open with system browser
-              const tempDir = path.join(app.getPath('temp'), 'CanvasAssistant');
-              if (!fs.existsSync(tempDir)) {
-                fs.mkdirSync(tempDir, { recursive: true });
+              if (sourceType === 'page') {
+                // Get page slug to construct URL
+                const page = database.executeReadOne<{ url_slug: string | null }>(
+                  `SELECT url_slug FROM course_pages WHERE course_id = ? AND (external_id = ? OR url_slug = ?)`,
+                  [resource.course_id, sourceId, sourceId]
+                );
+                if (page?.url_slug) {
+                  canvasUrl = `${baseUrl}/courses/${canvasCourseId}/pages/${page.url_slug}`;
+                }
+              } else if (sourceType === 'assignment') {
+                // For assignments, sourceId is the task external_id (which is the Canvas assignment ID)
+                canvasUrl = `${baseUrl}/courses/${canvasCourseId}/assignments/${sourceId}`;
+              } else if (sourceType === 'announcement') {
+                // For announcements, construct the discussion topic URL
+                canvasUrl = `${baseUrl}/courses/${canvasCourseId}/discussion_topics/${sourceId}`;
+              } else if (sourceType === 'syllabus') {
+                canvasUrl = `${baseUrl}/courses/${canvasCourseId}/assignments/syllabus`;
               }
 
-              const tempFileName = `${sourceType}-${sourceId}-${Date.now()}.html`;
-              const tempFilePath = path.join(tempDir, tempFileName);
-
-              // Wrap content with basic HTML structure
-              const htmlContent = `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <title>${resource.title || 'Content'}</title>
-  <base target="_blank">
-  <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 20px; max-width: 900px; margin: 0 auto; line-height: 1.6; }
-    img { max-width: 100%; height: auto; }
-    a { color: #0066cc; }
-  </style>
-</head>
-<body>
-${bodyHtml}
-</body>
-</html>`;
-
-              fs.writeFileSync(tempFilePath, htmlContent, 'utf-8');
-              logger.info(`[resource:open] Written temp file: ${tempFilePath}`);
-
-              const { shell } = require('electron');
-              shell.openPath(tempFilePath).then((error: string) => {
-                if (error) {
-                  logger.error(`[resource:open] Failed to open temp file: ${error}`);
-                }
-              });
-
-              return { success: true, openedStoredHtml: true };
+              if (canvasUrl) {
+                logger.info(`[resource:open] Opening Canvas URL: ${canvasUrl}`);
+                const { shell } = require('electron');
+                shell.openExternal(canvasUrl);
+                return { success: true, openedInCanvas: true };
+              }
             }
           }
 
-          // Fallback: no stored HTML found, open local file anyway
+          // Fallback: no Canvas URL could be constructed, open local file anyway
           logger.warn(
-            `[resource:open] No stored body_html found for ${resource.external_id}, falling back to local file`
+            `[resource:open] Could not construct Canvas URL for ${resource.external_id}, falling back to local file`
           );
         }
 

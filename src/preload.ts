@@ -83,6 +83,8 @@ const api = {
 
   getFiles: () => ipcRenderer.invoke('data:getFiles'),
 
+  getModuleItems: () => ipcRenderer.invoke('data:getModuleItems'),
+
   getResourceCanvasUrl: (resourceId: number, source: 'resource' | 'attachment') =>
     ipcRenderer.invoke('data:getResourceCanvasUrl', resourceId, source),
 
@@ -156,6 +158,15 @@ const api = {
     ipcRenderer.invoke('pages:getByCourse', courseId),
 
   getPage: (pageId: number) => ipcRenderer.invoke('pages:get', pageId),
+
+  getPageByTitle: (title: string, courseId: number) =>
+    ipcRenderer.invoke('pages:getByTitle', title, courseId),
+
+  downloadPageContent: (moduleItemId: number) =>
+    ipcRenderer.invoke('pages:downloadContent', moduleItemId),
+
+  openPageFile: (moduleItemId: number) =>
+    ipcRenderer.invoke('pages:openFile', moduleItemId),
 
   exportPageHtml: (options: {
     courseId: number;

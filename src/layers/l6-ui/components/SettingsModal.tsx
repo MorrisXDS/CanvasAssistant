@@ -1980,6 +1980,32 @@ export function SettingsModal({
                       </SettingRow>
                     )}
 
+                    {/* Skip External Link Warning */}
+                    {shouldShowSetting('fileExplorer.skipExternalLinkWarning') && (
+                      <SettingRow
+                        settingKey="fileExplorer.skipExternalLinkWarning"
+                        label="Skip external link warning"
+                        description="Open external links from modules without showing a confirmation dialog"
+                        isModified={
+                          fileExplorer.skipExternalLinkWarning !==
+                          DEFAULT_FILE_EXPLORER_SETTINGS.skipExternalLinkWarning
+                        }
+                        onReset={() =>
+                          updateFileExplorer({
+                            skipExternalLinkWarning:
+                              DEFAULT_FILE_EXPLORER_SETTINGS.skipExternalLinkWarning,
+                          })
+                        }
+                      >
+                        <ToggleSwitch
+                          checked={fileExplorer.skipExternalLinkWarning}
+                          onChange={(checked) =>
+                            updateFileExplorer({ skipExternalLinkWarning: checked })
+                          }
+                        />
+                      </SettingRow>
+                    )}
+
                     {!isSearching && <div style={styles.divider} />}
 
                     {/* Course Visibility List */}
