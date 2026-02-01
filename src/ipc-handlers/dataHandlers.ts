@@ -510,7 +510,7 @@ export function registerDataHandlers(ctx: IpcContext): void {
         grace_period_hours: number | null;
         source_type: string;
         is_active: number;
-      }>('SELECT * FROM policies WHERE course_id = ? ORDER BY policy_type', [courseId]);
+      }>('SELECT * FROM course_policies WHERE course_id = ? ORDER BY policy_type', [courseId]);
 
       return rows.map((row) => ({
         id: row.id,
@@ -549,14 +549,14 @@ export function registerDataHandlers(ctx: IpcContext): void {
         if (filteredCourseIds.length === 0) return [];
 
         const placeholders = filteredCourseIds.map(() => '?').join(', ');
-        sql = `SELECT * FROM policies WHERE course_id IN (${placeholders}) ORDER BY course_id, policy_type`;
+        sql = `SELECT * FROM course_policies WHERE course_id IN (${placeholders}) ORDER BY course_id, policy_type`;
         params = filteredCourseIds;
       } else {
         // Return policies for all visible courses
         if (visibleIds.length === 0) return [];
 
         const placeholders = visibleIds.map(() => '?').join(', ');
-        sql = `SELECT * FROM policies WHERE course_id IN (${placeholders}) ORDER BY course_id, policy_type`;
+        sql = `SELECT * FROM course_policies WHERE course_id IN (${placeholders}) ORDER BY course_id, policy_type`;
         params = visibleIds;
       }
 
