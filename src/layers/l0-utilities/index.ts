@@ -86,6 +86,15 @@ export {
   type SystemPowerState,
 } from './IdleStateManager';
 export { AppConfig, DEFAULT_APP_CONFIG } from './AppConfig';
+export {
+  PathBuilder,
+  createPathBuilder,
+  sanitizeCourseCode,
+  sanitizeModuleName,
+  sanitizeTitle,
+  sanitizeFolderPath,
+  type PathBuilderConfig,
+} from './PathBuilder';
 export type {
   AppConfigData,
   LogLevel,

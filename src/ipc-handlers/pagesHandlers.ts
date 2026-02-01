@@ -12,6 +12,12 @@ import {
   type CanvasPage,
 } from '../layers/l2-daemon';
 import { extractCanvasFileReferences } from '../layers/l2-daemon/HtmlFileExtractor';
+import {
+  createPathBuilder,
+  sanitizeCourseCode,
+  sanitizeModuleName,
+  sanitizeTitle,
+} from '../layers/l0-utilities';
 import type { IpcContext } from './IpcContext';
 
 /**
@@ -114,33 +120,21 @@ export function registerPagesHandlers(ctx: IpcContext): void {
         const localPage = mapPage(response.data, course.id, 'module_item');
         database.upsert('course_pages', localPage);
 
-        const FILES_DIR = getFilesDir();
+        // Use centralized path builder for consistent path construction
+        const pathBuilder = createPathBuilder(getFilesDir());
+        const safeTitle = sanitizeTitle(moduleItem.title);
+        const sanitizedCode = sanitizeCourseCode(course.code);
 
-        // Create HTML file and save to course folder
-        const safeTitle = moduleItem.title.replace(/[<>:"/\\|?*]/g, '_').substring(0, 50);
-        const filename = `${safeTitle}.html`;
+        // Get paths using PathBuilder
+        const localPath = pathBuilder.getPageHtmlPath(course.code, moduleInfo.name, moduleItem.title);
+        const filesFolder = pathBuilder.getPageDependenciesPath(course.code, moduleInfo.name, moduleItem.title);
+        const folderPath = pathBuilder.getRelativeFolderPath(moduleInfo.name);
 
-        // Sanitize course code for filesystem (same as FileDownloadManager)
-        const sanitizedCourseCode = course.code
-          .replace(/[^a-zA-Z0-9_\-. ]/g, '_')
-          .replace(/\s+/g, '_');
-
-        // Sanitize module name for folder (use module name as subfolder)
-        const sanitizedModuleName = moduleInfo.name
-          .replace(/[^a-zA-Z0-9_\-. ]/g, '_')
-          .replace(/\s+/g, '_');
-
-        // Create course/module folder structure
-        const courseFolder = path.join(FILES_DIR, sanitizedCourseCode);
-        const moduleFolder = path.join(courseFolder, sanitizedModuleName);
+        // Create module folder if needed
+        const moduleFolder = pathBuilder.getModulePath(course.code, moduleInfo.name);
         if (!fs.existsSync(moduleFolder)) {
           fs.mkdirSync(moduleFolder, { recursive: true });
         }
-
-        const localPath = path.join(moduleFolder, filename);
-        const filesFolder = path.join(moduleFolder, `${safeTitle}_files`);
-        // folder_path is relative to course folder (for database storage)
-        const folderPath = sanitizedModuleName;
 
         // Extract and download dependencies from the HTML body
         const bodyHtml = response.data.body || '';
@@ -203,10 +197,10 @@ export function registerPagesHandlers(ctx: IpcContext): void {
                     fileDownloadManager.queueDownload({
                       id: downloadId,
                       url: fileResponse.data.url,
-                      courseCode: sanitizedCourseCode,
+                      courseCode: sanitizedCode,
                       filename: safeFileName,
                       authToken: token,
-                      parentHtml: path.join(sanitizedCourseCode, filename),
+                      parentHtml: path.join(sanitizedCode, `${safeTitle}.html`),
                     });
                   });
                 }
@@ -386,19 +380,10 @@ export function registerPagesHandlers(ctx: IpcContext): void {
           return { success: false, error: 'Could not construct Canvas URL' };
         }
 
-        const FILES_DIR = getFilesDir();
-
         // Offline HTML enabled - open local file
-        // Build the expected file path (must match pages:downloadContent path)
-        const safeTitle = moduleItem.title.replace(/[<>:"/\\|?*]/g, '_').substring(0, 50);
-        const filename = `${safeTitle}.html`;
-        const sanitizedCourseCode = course.code
-          .replace(/[^a-zA-Z0-9_\-. ]/g, '_')
-          .replace(/\s+/g, '_');
-        const sanitizedModuleName = moduleInfo.name
-          .replace(/[^a-zA-Z0-9_\-. ]/g, '_')
-          .replace(/\s+/g, '_');
-        const localPath = path.join(FILES_DIR, sanitizedCourseCode, sanitizedModuleName, filename);
+        // Use centralized PathBuilder to ensure path matches pages:downloadContent
+        const pathBuilder = createPathBuilder(getFilesDir());
+        const localPath = pathBuilder.getPageHtmlPath(course.code, moduleInfo.name, moduleItem.title);
 
         // Check if file exists
         if (!fs.existsSync(localPath)) {
