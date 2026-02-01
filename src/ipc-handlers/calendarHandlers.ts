@@ -573,9 +573,16 @@ export function registerCalendarHandlers(ctx: IpcContext): void {
       }
     ) => {
       try {
-        // Check event type - allow editing custom and user events (not canvas-synced)
-        const event = database.executeReadOne<{ source_type: string; task_id: number | null }>(
-          'SELECT source_type, task_id FROM calendar_events WHERE id = ?',
+        // Check event type - allow editing user events and events linked to user tasks
+        const event = database.executeReadOne<{
+          source_type: string;
+          task_id: number | null;
+          task_source_type: string | null;
+        }>(
+          `SELECT ce.source_type, ce.task_id, t.source_type as task_source_type
+           FROM calendar_events ce
+           LEFT JOIN tasks t ON ce.task_id = t.id
+           WHERE ce.id = ?`,
           [id]
         );
 
@@ -583,8 +590,14 @@ export function registerCalendarHandlers(ctx: IpcContext): void {
           return { success: false, error: 'Event not found' };
         }
 
-        // Only allow editing custom events and user-created coursework events
-        if (event.source_type !== 'user') {
+        // Allow editing if:
+        // 1. Event source_type is 'user', OR
+        // 2. Event is linked to a user-created task
+        const canEdit =
+          event.source_type === 'user' ||
+          (event.task_id && event.task_source_type === 'user');
+
+        if (!canEdit) {
           return { success: false, error: 'Cannot edit Canvas-synced events' };
         }
 
@@ -662,9 +675,16 @@ export function registerCalendarHandlers(ctx: IpcContext): void {
   // Delete custom or user event
   ipcMain.handle('calendar:deleteEvent', async (_event, id: number) => {
     try {
-      // Check event type - allow deleting custom and user events (not canvas-synced)
-      const event = database.executeReadOne<{ source_type: string; task_id: number | null }>(
-        'SELECT source_type, task_id FROM calendar_events WHERE id = ?',
+      // Check event type - allow deleting user events and events linked to user tasks
+      const event = database.executeReadOne<{
+        source_type: string;
+        task_id: number | null;
+        task_source_type: string | null;
+      }>(
+        `SELECT ce.source_type, ce.task_id, t.source_type as task_source_type
+         FROM calendar_events ce
+         LEFT JOIN tasks t ON ce.task_id = t.id
+         WHERE ce.id = ?`,
         [id]
       );
 
@@ -672,7 +692,14 @@ export function registerCalendarHandlers(ctx: IpcContext): void {
         return { success: false, error: 'Event not found' };
       }
 
-      if (event.source_type !== 'user') {
+      // Allow deleting if:
+      // 1. Event source_type is 'user', OR
+      // 2. Event is linked to a user-created task
+      const canDelete =
+        event.source_type === 'user' ||
+        (event.task_id && event.task_source_type === 'user');
+
+      if (!canDelete) {
         return { success: false, error: 'Cannot delete Canvas-synced events directly' };
       }
 
