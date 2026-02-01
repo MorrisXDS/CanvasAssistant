@@ -11,3 +11,4 @@ export { registerFileHandlers } from './fileHandlers';
 export { registerSyncHandlers } from './syncHandlers';
 export { registerTaskTypesHandlers } from './taskTypesHandlers';
 export { registerSystemHandlers } from './systemHandlers';
+export { registerWindowHandlers } from './windowHandlers';

@@ -74,6 +74,7 @@ import {
   registerSyncHandlers,
   registerTaskTypesHandlers,
   registerSystemHandlers,
+  registerWindowHandlers,
 } from './ipc-handlers';
 import type { IpcContext } from './ipc-handlers';
 
@@ -818,33 +819,6 @@ function registerHealthProbes(): void {
  * Register IPC handlers for renderer communication
  */
 function registerIpcHandlers(): void {
-  // Window controls
-  ipcMain.on('window:minimize', () => {
-    mainWindow?.minimize();
-  });
-
-  ipcMain.on('window:maximize', () => {
-    if (mainWindow?.isMaximized()) {
-      mainWindow.unmaximize();
-    } else {
-      mainWindow?.maximize();
-    }
-  });
-
-  ipcMain.on('window:close', () => {
-    mainWindow?.close();
-  });
-
-  // Shell operations
-  ipcMain.on('shell:openExternal', async (_event, url: string) => {
-    const { shell } = require('electron');
-    try {
-      await shell.openExternal(url);
-    } catch (error) {
-      logger.error('Failed to open external URL:', error as Error);
-    }
-  });
-
   // Credential management
   ipcMain.handle('credentials:get', async () => {
     const exists = await credentialManager.exists();
@@ -6710,6 +6684,7 @@ app.whenReady().then(async () => {
   registerSyncHandlers(ipcContext);
   registerTaskTypesHandlers(ipcContext);
   registerSystemHandlers(ipcContext);
+  registerWindowHandlers(ipcContext);
 
   // Start background services
   healthCheck.start();
