@@ -75,6 +75,7 @@ import {
   registerTaskTypesHandlers,
   registerSystemHandlers,
   registerWindowHandlers,
+  registerCredentialHandlers,
 } from './ipc-handlers';
 import type { IpcContext } from './ipc-handlers';
 
@@ -819,132 +820,6 @@ function registerHealthProbes(): void {
  * Register IPC handlers for renderer communication
  */
 function registerIpcHandlers(): void {
-  // Credential management
-  ipcMain.handle('credentials:get', async () => {
-    const exists = await credentialManager.exists();
-    return { hasCredential: exists };
-  });
-
-  ipcMain.handle('credentials:store', async (_event, token: string) => {
-    const success = await credentialManager.store(token);
-    if (success) {
-      metricsCollector.increment('credentials.stored');
-    }
-    return { success };
-  });
-
-  ipcMain.handle('credentials:delete', async () => {
-    const success = await credentialManager.delete();
-    if (success) {
-      canvasClient = null;
-      syncEngine = null;
-      credentialManager.stopBackgroundValidation();
-      metricsCollector.increment('credentials.deleted');
-    }
-    return { success };
-  });
-
-  // Canvas client initialization
-  ipcMain.handle('canvas:connect', async (_event, baseUrl: string) => {
-    const token = await credentialManager.retrieve();
-    if (!token) {
-      return { success: false, error: 'No credentials stored' };
-    }
-
-    // Unlock database in case it was locked from a previous reset
-    if (database.isWriteLocked()) {
-      database.unlockWrites();
-      logger.info('Database unlocked for new connection');
-    }
-
-    const success = await initializeCanvasClient(token, baseUrl);
-    return { success, error: success ? undefined : 'Token validation failed' };
-  });
-
-  ipcMain.handle(
-    'canvas:validateToken',
-    async (_event, token: string, baseUrl: string) => {
-      try {
-        const client = new CanvasClient({ baseUrl, accessToken: token });
-        const result = await client.validateToken();
-        return result;
-      } catch (error) {
-        return { valid: false, error: String(error) };
-      }
-    }
-  );
-
-  // Get user profile from Canvas
-  ipcMain.handle('canvas:getUserProfile', async () => {
-    logger.debug(`getUserProfile called, canvasClient available: ${!!canvasClient}`);
-
-    if (!canvasClient) {
-      logger.warn('getUserProfile: Canvas client not initialized');
-      return null;
-    }
-
-    try {
-      logger.debug('Fetching user profile from Canvas API...');
-      const profile = await canvasClient.getUserProfile();
-      logger.debug(
-        `User profile received: name=${profile.name}, hasAvatar=${!!profile.avatar_url}`
-      );
-
-      let avatarDataUrl: string | null = null;
-
-      // Download avatar and convert to base64 data URL
-      if (profile.avatar_url) {
-        try {
-          const axios = require('axios');
-
-          logger.debug(`Downloading avatar from: ${profile.avatar_url}`);
-          const imageResponse = await axios.get(profile.avatar_url, {
-            responseType: 'arraybuffer',
-            timeout: 10000,
-          });
-
-          // Get content type and convert to base64
-          const contentType = imageResponse.headers['content-type'] || 'image/png';
-          const base64 = Buffer.from(imageResponse.data).toString('base64');
-          avatarDataUrl = `data:${contentType};base64,${base64}`;
-          logger.debug(`Avatar converted to data URL (${base64.length} chars)`);
-        } catch (avatarError) {
-          logger.warn(`Failed to download avatar: ${avatarError}`);
-        }
-      }
-
-      return {
-        name: profile.name,
-        email: profile.email || profile.login_id || null,
-        avatarUrl: avatarDataUrl,
-      };
-    } catch (error) {
-      logger.error(`Failed to get user profile: ${error}`);
-      return null;
-    }
-  });
-
-  // Debug: Direct Canvas API call (for testing) - only available in development
-  ipcMain.handle('canvas:debugFetch', async (_event, endpoint: string) => {
-    // Only allow debug API access in development mode
-    if (process.env.NODE_ENV !== 'development') {
-      logger.warn('[canvas:debugFetch] Debug API blocked in production mode');
-      return { success: false, error: 'Debug API only available in development mode' };
-    }
-
-    if (!canvasClient) {
-      return { success: false, error: 'Canvas client not initialized' };
-    }
-    try {
-      logger.debug(`[canvas:debugFetch] Fetching: ${endpoint}`);
-      const response = await canvasClient.get(endpoint);
-      return { success: true, data: response.data };
-    } catch (error) {
-      logger.error(`[canvas:debugFetch] Error: ${error}`);
-      return { success: false, error: String(error) };
-    }
-  });
-
   // Sync operations
   ipcMain.handle(
     'sync:full',
@@ -6667,6 +6542,11 @@ app.whenReady().then(async () => {
     getVisibleDataProvider: () => visibleDataProvider,
     getCanvasClient: () => canvasClient,
     getSyncEngine: () => syncEngine,
+    clearCanvasClient: () => {
+      canvasClient = null;
+      syncEngine = null;
+    },
+    initializeCanvasClient,
     getPriorityOrchestrator: () => priorityOrchestrator,
     getRecommendationOrchestrator: () => recommendationOrchestrator,
     getInsightOrchestrator: () => insightOrchestrator,
@@ -6685,6 +6565,7 @@ app.whenReady().then(async () => {
   registerTaskTypesHandlers(ipcContext);
   registerSystemHandlers(ipcContext);
   registerWindowHandlers(ipcContext);
+  registerCredentialHandlers(ipcContext);
 
   // Start background services
   healthCheck.start();

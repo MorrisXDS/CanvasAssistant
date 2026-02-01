@@ -45,6 +45,10 @@ export interface IpcContext {
   getCanvasClient: () => CanvasClient | null;
   getSyncEngine: () => SyncEngine | null;
 
+  // State modifiers (for credential/canvas handlers)
+  clearCanvasClient: () => void;
+  initializeCanvasClient: (token: string, baseUrl: string) => Promise<boolean>;
+
   // L3 - Intelligence
   getPriorityOrchestrator: () => PriorityOrchestrator | null;
   getRecommendationOrchestrator: () => RecommendationOrchestrator | null;
