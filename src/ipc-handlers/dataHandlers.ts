@@ -163,9 +163,9 @@ export function registerDataHandlers(ctx: IpcContext): void {
         id: number;
         title: string;
         external_id: string;
-        url: string | null;
+        url_slug: string | null;
       }>(
-        `SELECT id, title, external_id, url
+        `SELECT id, title, external_id, url_slug
          FROM course_pages
          WHERE course_id = ? AND page_type = 'syllabus'`,
         [courseId]
@@ -177,7 +177,7 @@ export function registerDataHandlers(ctx: IpcContext): void {
           pageId: syllabusPage.id,
           title: syllabusPage.title,
           externalId: syllabusPage.external_id,
-          url: syllabusPage.url,
+          urlSlug: syllabusPage.url_slug,
         };
       }
 
