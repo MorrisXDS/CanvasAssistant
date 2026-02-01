@@ -1061,6 +1061,23 @@ export function FilesPage() {
         }
       }
 
+      // If it's a File type with content_id, try to open the downloaded file
+      if (moduleItem.itemType === 'File' && moduleItem.contentId) {
+        try {
+          const openResult = await api.openResourceByExternalId(moduleItem.contentId);
+          if (openResult?.success) {
+            console.log('[FilesPage] Opened module file');
+            return;
+          }
+          // If file needs download, fall through to Canvas URL
+          if ((openResult as { needsDownload?: boolean })?.needsDownload) {
+            console.log('[FilesPage] Module file not downloaded, opening Canvas URL');
+          }
+        } catch (error) {
+          console.log('[FilesPage] Failed to open module file, falling back to Canvas URL');
+        }
+      }
+
       // Fall back to opening Canvas URL (for non-ExternalUrl items only)
       const url = moduleItem.externalUrl || moduleItem.url;
       if (url) {

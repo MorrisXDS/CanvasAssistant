@@ -235,6 +235,49 @@ export function registerResourceHandlers(ctx: IpcContext): void {
     });
   });
 
+  // Open a resource by external_id (for module File items)
+  ipcMain.handle('resource:openByExternalId', (_event, externalId: string) => {
+    logger.debug(`[resource:openByExternalId] START externalId=${externalId}`);
+
+    const resource = database.executeReadOne<{
+      id: number;
+      local_path: string | null;
+      title: string;
+    }>('SELECT id, local_path, title FROM resources WHERE external_id = ?', [externalId]);
+
+    if (!resource) {
+      logger.warn(`[resource:openByExternalId] Resource not found for external_id: ${externalId}`);
+      return { success: false, error: 'Resource not found' };
+    }
+
+    if (!resource.local_path) {
+      logger.debug('[resource:openByExternalId] No local_path - file not downloaded');
+      return { success: false, error: 'File not downloaded', needsDownload: true };
+    }
+
+    // Check if file actually exists on disk
+    if (!fs.existsSync(resource.local_path)) {
+      logger.warn(
+        `[resource:openByExternalId] File not found on disk, clearing local_path: ${resource.local_path}`
+      );
+      database.executeWrite(
+        'UPDATE resources SET local_path = NULL WHERE id = ?',
+        [resource.id],
+        'resources'
+      );
+      return { success: false, error: 'File was deleted from disk. Please re-download.', needsDownload: true };
+    }
+
+    logger.info(`[resource:openByExternalId] Opening local file: ${resource.local_path}`);
+    shell.openPath(resource.local_path).then((error: string) => {
+      if (error) {
+        logger.error(`[resource:openByExternalId] shell.openPath failed: ${error}`);
+      }
+    });
+
+    return { success: true };
+  });
+
   // Open a resource file (with HTML dependency checking)
   ipcMain.handle(
     'resource:open',

@@ -113,6 +113,9 @@ const api = {
   openResource: (resourceId: number, skipDependencyCheck?: boolean) =>
     ipcRenderer.invoke('resource:open', resourceId, skipDependencyCheck),
 
+  openResourceByExternalId: (externalId: string) =>
+    ipcRenderer.invoke('resource:openByExternalId', externalId),
+
   showResourceInFolder: (resourceId: number) =>
     ipcRenderer.invoke('resource:showInFolder', resourceId),
 
