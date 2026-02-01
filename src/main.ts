@@ -6727,6 +6727,7 @@ app.whenReady().then(async () => {
     getCredentialManager: () => credentialManager,
     getFileDownloadManager: () => fileDownloadManager,
     getVisibleDataProvider: () => visibleDataProvider,
+    getCanvasClient: () => canvasClient,
     getSyncEngine: () => syncEngine,
     getPriorityOrchestrator: () => priorityOrchestrator,
     getRecommendationOrchestrator: () => recommendationOrchestrator,
