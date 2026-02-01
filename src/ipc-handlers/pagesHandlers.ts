@@ -125,14 +125,22 @@ export function registerPagesHandlers(ctx: IpcContext): void {
           .replace(/[^a-zA-Z0-9_\-. ]/g, '_')
           .replace(/\s+/g, '_');
 
-        // Create course folder if it doesn't exist
+        // Sanitize module name for folder (use module name as subfolder)
+        const sanitizedModuleName = moduleInfo.name
+          .replace(/[^a-zA-Z0-9_\-. ]/g, '_')
+          .replace(/\s+/g, '_');
+
+        // Create course/module folder structure
         const courseFolder = path.join(FILES_DIR, sanitizedCourseCode);
-        if (!fs.existsSync(courseFolder)) {
-          fs.mkdirSync(courseFolder, { recursive: true });
+        const moduleFolder = path.join(courseFolder, sanitizedModuleName);
+        if (!fs.existsSync(moduleFolder)) {
+          fs.mkdirSync(moduleFolder, { recursive: true });
         }
 
-        const localPath = path.join(courseFolder, filename);
-        const filesFolder = path.join(courseFolder, `${safeTitle}_files`);
+        const localPath = path.join(moduleFolder, filename);
+        const filesFolder = path.join(moduleFolder, `${safeTitle}_files`);
+        // folder_path is relative to course folder (for database storage)
+        const folderPath = sanitizedModuleName;
 
         // Extract and download dependencies from the HTML body
         const bodyHtml = response.data.body || '';
@@ -262,8 +270,32 @@ export function registerPagesHandlers(ctx: IpcContext): void {
 
         fs.writeFileSync(localPath, fullHtml, 'utf-8');
 
+        // Register/update in resources table for Files page visibility
+        const externalId = `html-page-${pageSlug}`;
+        const fileStats = fs.statSync(localPath);
+        database.executeWrite(
+          `INSERT INTO resources (external_id, course_id, type, title, local_path, folder_path, size_bytes, mime_type, context_type, context_id, synced_at)
+           VALUES (?, ?, 'page', ?, ?, ?, ?, 'text/html', 'page', ?, CURRENT_TIMESTAMP)
+           ON CONFLICT(external_id) DO UPDATE SET
+             title = excluded.title,
+             local_path = excluded.local_path,
+             folder_path = excluded.folder_path,
+             size_bytes = excluded.size_bytes,
+             synced_at = CURRENT_TIMESTAMP`,
+          [
+            externalId,
+            course.id,
+            moduleItem.title,
+            localPath,
+            folderPath,
+            fileStats.size,
+            pageSlug,
+          ],
+          'resources'
+        );
+
         logger.info(
-          `[pages:downloadContent] Saved page "${moduleItem.title}" to ${localPath} (${urlRewrites.size} dependencies downloaded)`
+          `[pages:downloadContent] Saved page "${moduleItem.title}" to ${localPath} (folder: ${folderPath}, ${urlRewrites.size} dependencies downloaded)`
         );
 
         return { success: true, localPath };
