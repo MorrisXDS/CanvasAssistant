@@ -331,7 +331,8 @@ export function registerPagesHandlers(ctx: IpcContext): void {
         // Get course info through module -> course chain
         const moduleInfo = database.executeReadOne<{
           course_id: number;
-        }>('SELECT course_id FROM modules WHERE id = ?', [moduleItem.module_id]);
+          name: string;
+        }>('SELECT course_id, name FROM modules WHERE id = ?', [moduleItem.module_id]);
 
         if (!moduleInfo) {
           return { success: false, error: 'Module not found' };
@@ -388,13 +389,16 @@ export function registerPagesHandlers(ctx: IpcContext): void {
         const FILES_DIR = getFilesDir();
 
         // Offline HTML enabled - open local file
-        // Build the expected file path
+        // Build the expected file path (must match pages:downloadContent path)
         const safeTitle = moduleItem.title.replace(/[<>:"/\\|?*]/g, '_').substring(0, 50);
         const filename = `${safeTitle}.html`;
         const sanitizedCourseCode = course.code
           .replace(/[^a-zA-Z0-9_\-. ]/g, '_')
           .replace(/\s+/g, '_');
-        const localPath = path.join(FILES_DIR, sanitizedCourseCode, filename);
+        const sanitizedModuleName = moduleInfo.name
+          .replace(/[^a-zA-Z0-9_\-. ]/g, '_')
+          .replace(/\s+/g, '_');
+        const localPath = path.join(FILES_DIR, sanitizedCourseCode, sanitizedModuleName, filename);
 
         // Check if file exists
         if (!fs.existsSync(localPath)) {
