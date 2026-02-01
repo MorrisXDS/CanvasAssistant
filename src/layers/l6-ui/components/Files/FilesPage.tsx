@@ -1369,10 +1369,22 @@ export function FilesPage() {
   const handleCopyPath = async (file: FileItem) => {
     if (file.source === 'page') return;
 
-    const localPath =
-      file.source === 'attachment'
-        ? (file as FileAttachment).localPath
-        : (file as FileResource).localPath;
+    let localPath: string | null = null;
+
+    if (file.source === 'attachment') {
+      localPath = (file as FileAttachment).localPath;
+    } else if (file.source === 'resource') {
+      localPath = (file as FileResource).localPath;
+    } else if (file.source === 'module') {
+      // For module File items, find the matching resource by content_id
+      const moduleItem = file as FileModuleItem;
+      if (moduleItem.itemType === 'File' && moduleItem.contentId) {
+        const matchingResource = files.resources.find(
+          (r) => r.externalId === moduleItem.contentId
+        );
+        localPath = matchingResource?.localPath ?? null;
+      }
+    }
 
     if (localPath) {
       try {
@@ -1387,13 +1399,27 @@ export function FilesPage() {
     const api = window.api;
     if (!api?.deleteResourceLocal) return;
 
-    // Only resources can be deleted (not pages or attachments for now)
-    if (file.source !== 'resource') {
+    let resourceId: number | null = null;
+
+    if (file.source === 'resource') {
+      resourceId = file.id;
+    } else if (file.source === 'module') {
+      // For module File items, find the matching resource by content_id
+      const moduleItem = file as FileModuleItem;
+      if (moduleItem.itemType === 'File' && moduleItem.contentId) {
+        const matchingResource = files.resources.find(
+          (r) => r.externalId === moduleItem.contentId
+        );
+        resourceId = matchingResource?.id ?? null;
+      }
+    }
+
+    if (resourceId === null) {
       return;
     }
 
     try {
-      const result = await api.deleteResourceLocal(file.id);
+      const result = await api.deleteResourceLocal(resourceId);
       if (result.success) {
         // Refresh file list to reflect the deletion
         await fetchFiles();
