@@ -8,3 +8,4 @@ export { registerIntelligenceHandlers } from './intelligenceHandlers';
 export { registerCalendarHandlers } from './calendarHandlers';
 export { registerDataHandlers } from './dataHandlers';
 export { registerFileHandlers } from './fileHandlers';
+export { registerSyncHandlers } from './syncHandlers';
