@@ -476,27 +476,33 @@ export function registerCalendarHandlers(ctx: IpcContext): void {
         title: string;
         description?: string;
         startAt: string;
-        endAt: string;
+        endAt?: string;
         allDay?: boolean;
         location?: string;
+        courseId?: number;
         color?: string;
+        notes?: string;
+        reminderMinutes?: number;
         recurrenceRule?: string;
       }
     ) => {
       try {
         const result = database.executeWrite(
           `INSERT INTO calendar_events (
-          source_type, title, description, start_at, end_at,
-          all_day, location, color, recurrence_rule
-        ) VALUES ('user', ?, ?, ?, ?, ?, ?, ?, ?)`,
+          source_type, course_id, title, description, start_at, end_at,
+          all_day, location, color, notes, reminder_minutes, recurrence_rule
+        ) VALUES ('user', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
+            params.courseId || null,
             params.title,
             params.description || null,
             params.startAt,
-            params.endAt,
+            params.endAt || null,
             params.allDay ? 1 : 0,
             params.location || null,
             params.color || null,
+            params.notes || null,
+            params.reminderMinutes || null,
             params.recurrenceRule || null,
           ],
           'calendar_events'
@@ -524,6 +530,8 @@ export function registerCalendarHandlers(ctx: IpcContext): void {
         allDay?: boolean;
         location?: string;
         color?: string;
+        notes?: string;
+        reminderMinutes?: number;
         recurrenceRule?: string;
       }
     ) => {
@@ -573,6 +581,14 @@ export function registerCalendarHandlers(ctx: IpcContext): void {
         if (updates.color !== undefined) {
           setClauses.push('color = ?');
           params.push(updates.color || null);
+        }
+        if (updates.notes !== undefined) {
+          setClauses.push('notes = ?');
+          params.push(updates.notes || null);
+        }
+        if (updates.reminderMinutes !== undefined) {
+          setClauses.push('reminder_minutes = ?');
+          params.push(updates.reminderMinutes || null);
         }
         if (updates.recurrenceRule !== undefined) {
           setClauses.push('recurrence_rule = ?');

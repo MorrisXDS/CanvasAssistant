@@ -235,6 +235,9 @@ const api = {
     allDay: boolean;
     location?: string;
     courseId?: number;
+    color?: string;
+    notes?: string;
+    reminderMinutes?: number;
   }) => ipcRenderer.invoke('calendar:createEvent', data),
 
   updateCalendarEvent: (
@@ -246,6 +249,9 @@ const api = {
       endAt?: string;
       allDay?: boolean;
       location?: string;
+      color?: string;
+      notes?: string;
+      reminderMinutes?: number;
     }
   ) => ipcRenderer.invoke('calendar:updateEvent', id, data),
 
