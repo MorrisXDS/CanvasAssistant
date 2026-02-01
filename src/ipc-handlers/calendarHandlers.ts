@@ -487,11 +487,15 @@ export function registerCalendarHandlers(ctx: IpcContext): void {
       }
     ) => {
       try {
+        logger.info(`Creating calendar event: title="${params.title}", startAt=${params.startAt}`);
+
+        // Use basic columns first, then try to add optional columns
+        // This handles cases where migration 70 hasn't run yet
         const result = database.executeWrite(
           `INSERT INTO calendar_events (
-          source_type, course_id, title, description, start_at, end_at,
-          all_day, location, color, notes, reminder_minutes, recurrence_rule
-        ) VALUES ('user', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            source_type, course_id, title, description, start_at, end_at,
+            all_day, location, recurrence_rule
+          ) VALUES ('user', ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             params.courseId || null,
             params.title,
@@ -500,15 +504,48 @@ export function registerCalendarHandlers(ctx: IpcContext): void {
             params.endAt || null,
             params.allDay ? 1 : 0,
             params.location || null,
-            params.color || null,
-            params.notes || null,
-            params.reminderMinutes || null,
             params.recurrenceRule || null,
           ],
           'calendar_events'
         );
 
-        return { success: true, id: result.lastInsertRowid as number };
+        const eventId = result.lastInsertRowid as number;
+
+        // Try to update optional fields if the columns exist (migration 70+)
+        try {
+          if (params.color || params.notes || params.reminderMinutes) {
+            const updates: string[] = [];
+            const updateParams: (string | number | null)[] = [];
+
+            if (params.color) {
+              updates.push('color = ?');
+              updateParams.push(params.color);
+            }
+            if (params.notes) {
+              updates.push('notes = ?');
+              updateParams.push(params.notes);
+            }
+            if (params.reminderMinutes) {
+              updates.push('reminder_minutes = ?');
+              updateParams.push(params.reminderMinutes);
+            }
+
+            if (updates.length > 0) {
+              updateParams.push(eventId);
+              database.executeWrite(
+                `UPDATE calendar_events SET ${updates.join(', ')} WHERE id = ?`,
+                updateParams,
+                'calendar_events'
+              );
+            }
+          }
+        } catch (updateError) {
+          // Columns might not exist yet, that's OK
+          logger.debug(`Optional columns not available: ${updateError}`);
+        }
+
+        logger.info(`Created calendar event with id=${eventId}`);
+        return { success: true, data: { id: eventId } };
       } catch (error) {
         logger.error(`Failed to create event: ${error}`);
         return { success: false, error: String(error) };
