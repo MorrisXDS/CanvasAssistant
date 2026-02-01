@@ -44,6 +44,7 @@ import {
   getFileName,
   isFileDownloaded,
   getModuleItemFolderPath,
+  getCanonicalFileId,
 } from './FileListItem';
 import { FileGridItem } from './FileGridItem';
 import {
@@ -285,7 +286,8 @@ export function FilesPage() {
   } = useFilesCourseDragDrop(filesCourseIds);
 
   const [hasAppliedDefaultExpand, setHasAppliedDefaultExpand] = useState(false);
-  const [downloadingIds, setDownloadingIds] = useState<Set<number>>(new Set());
+  // Use canonical IDs so same file shows downloading state across all its representations
+  const [downloadingIds, setDownloadingIds] = useState<Set<string>>(new Set());
   const [showFilters, setShowFilters] = useState(false);
   const [pendingDownload, setPendingDownload] = useState<FileItem | null>(null);
 
@@ -783,8 +785,8 @@ export function FilesPage() {
     return selectedCourseIds === null || selectedCourseIds.has(courseId);
   };
 
-  // File selection
-  const getFileKey = (file: FileItem) => `${file.source}-${file.id}`;
+  // File selection - use canonical ID so same underlying file shares state
+  const getFileKey = (file: FileItem) => getCanonicalFileId(file);
 
   const toggleFileSelection = (file: FileItem) => {
     const key = getFileKey(file);
@@ -819,7 +821,7 @@ export function FilesPage() {
 
   // Download handlers
   const handleDownload = (file: FileItem) => {
-    if (downloadingIds.has(file.id)) return;
+    if (downloadingIds.has(getCanonicalFileId(file))) return;
     setPendingDownload(file);
   };
 
@@ -827,7 +829,8 @@ export function FilesPage() {
     const api = window.api;
     if (!api) return;
 
-    setDownloadingIds((prev) => new Set(prev).add(file.id));
+    const canonicalId = getCanonicalFileId(file);
+    setDownloadingIds((prev) => new Set(prev).add(canonicalId));
 
     try {
       let result;
@@ -871,7 +874,7 @@ export function FilesPage() {
     } finally {
       setDownloadingIds((prev) => {
         const next = new Set(prev);
-        next.delete(file.id);
+        next.delete(canonicalId);
         return next;
       });
     }
@@ -917,7 +920,8 @@ export function FilesPage() {
 
     try {
       for (const file of filesToDownload) {
-        setDownloadingIds((prev) => new Set(prev).add(file.id));
+        const canonicalId = getCanonicalFileId(file);
+        setDownloadingIds((prev) => new Set(prev).add(canonicalId));
         try {
           if (file.source === 'attachment') {
             await api.downloadAttachment(file.id);
@@ -933,6 +937,14 @@ export function FilesPage() {
                 bodyHtml: pageResult.data.bodyHtml,
               });
             }
+          } else if (file.source === 'module') {
+            // Handle module items
+            const moduleItem = file as FileModuleItem;
+            if (moduleItem.itemType === 'Page') {
+              await api.downloadPageContent(moduleItem.id);
+            } else if (moduleItem.itemType === 'File' && moduleItem.contentId) {
+              await api.downloadResourceByExternalId(moduleItem.contentId);
+            }
           } else {
             await api.downloadResource(file.id);
           }
@@ -943,7 +955,7 @@ export function FilesPage() {
         }
         setDownloadingIds((prev) => {
           const next = new Set(prev);
-          next.delete(file.id);
+          next.delete(canonicalId);
           return next;
         });
       }
@@ -1845,7 +1857,7 @@ export function FilesPage() {
                                     <FileListItem
                                       key={getFileKey(file)}
                                       file={file}
-                                      isDownloading={downloadingIds.has(file.id)}
+                                      isDownloading={downloadingIds.has(getCanonicalFileId(file))}
                                       isSelected={selectedFiles.has(getFileKey(file))}
                                       selectMode={selectMode}
                                       onToggleSelect={() => toggleFileSelection(file)}
@@ -1869,7 +1881,7 @@ export function FilesPage() {
                                     <FileGridItem
                                       key={getFileKey(file)}
                                       file={file}
-                                      isDownloading={downloadingIds.has(file.id)}
+                                      isDownloading={downloadingIds.has(getCanonicalFileId(file))}
                                       isSelected={selectedFiles.has(getFileKey(file))}
                                       selectMode={selectMode}
                                       onToggleSelect={() => toggleFileSelection(file)}

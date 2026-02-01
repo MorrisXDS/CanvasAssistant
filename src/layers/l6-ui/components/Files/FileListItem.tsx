@@ -228,6 +228,40 @@ export function getModuleItemFolderPath(file: FileModuleItem): string {
   return file.moduleName;
 }
 
+/**
+ * Get a canonical identifier for a file that's consistent across different representations.
+ * The same underlying Canvas file will have the same canonical ID whether it appears
+ * as a resource or as a module item.
+ *
+ * This enables unified state tracking (selection, download status) across duplicates.
+ */
+export function getCanonicalFileId(file: FileItem): string {
+  if (file.source === 'resource') {
+    // Resources use their Canvas external_id
+    return `file:${(file as FileResource).externalId}`;
+  }
+  if (file.source === 'module') {
+    const m = file as FileModuleItem;
+    if (m.itemType === 'File' && m.contentId) {
+      // File module items link to resources via content_id -> external_id
+      return `file:${m.contentId}`;
+    }
+    if (m.itemType === 'Page' && m.pageUrl) {
+      // Page module items link via page_url (slug)
+      return `page:${m.courseId}:${m.pageUrl}`;
+    }
+    // Other module item types (Quiz, Assignment, ExternalUrl, etc.) are unique
+    return `module:${m.id}`;
+  }
+  if (file.source === 'page') {
+    const p = file as FilePage;
+    // Pages use course + slug/external_id
+    return `page:${p.courseId}:${p.externalId || p.urlSlug}`;
+  }
+  // Attachments are unique to their notification (file.source === 'attachment')
+  return `attachment:${(file as FileAttachment).externalId}`;
+}
+
 // Check if file is downloaded/available
 export function isFileDownloaded(file: FileItem): boolean {
   if (file.source === 'attachment') {
