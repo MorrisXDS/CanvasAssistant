@@ -501,6 +501,9 @@ const api = {
 
   importDatabase: () => ipcRenderer.invoke('data:importDatabase'),
 
+  importEncryptedBackup: (params: { filePath: string; password: string }) =>
+    ipcRenderer.invoke('data:importEncryptedBackup', params),
+
   exportCourseData: (params?: { courseIds?: number[]; includeFiles?: boolean }) =>
     ipcRenderer.invoke('data:exportCourseData', params),
 

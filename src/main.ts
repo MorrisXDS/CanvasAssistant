@@ -7072,7 +7072,9 @@ function registerIpcHandlers(): void {
     const result = await dialog.showOpenDialog(mainWindow, {
       properties: ['openFile'],
       filters: [
+        { name: 'Database & Backup Files', extensions: ['db', 'cbk'] },
         { name: 'SQLite Database', extensions: ['db'] },
+        { name: 'Encrypted Backup', extensions: ['cbk'] },
         { name: 'All Files', extensions: ['*'] },
       ],
     });
@@ -7082,6 +7084,33 @@ function registerIpcHandlers(): void {
     }
 
     const importPath = result.filePaths[0];
+    const isEncryptedBackup = importPath.toLowerCase().endsWith('.cbk');
+
+    // Handle encrypted .cbk files
+    if (isEncryptedBackup) {
+      // Prompt for password
+      const passwordResult = await dialog.showMessageBox(mainWindow, {
+        type: 'question',
+        buttons: ['Enter Password', 'Cancel'],
+        defaultId: 0,
+        title: 'Encrypted Backup',
+        message: 'This backup file is encrypted.',
+        detail: 'Please enter the password to decrypt this backup.',
+      });
+
+      if (passwordResult.response === 1) {
+        return { success: false, error: 'Import cancelled' };
+      }
+
+      // Use a prompt dialog for password input
+      // Since Electron doesn't have a native password prompt, we'll send an IPC to renderer
+      mainWindow.webContents.send('request-password-input', { filePath: importPath });
+      return {
+        success: false,
+        error: 'PASSWORD_REQUIRED',
+        data: { filePath: importPath, isEncrypted: true }
+      };
+    }
 
     try {
       // Verify it's a valid SQLite database by checking the magic bytes
@@ -7139,6 +7168,54 @@ function registerIpcHandlers(): void {
       return { success: false, error: String(error) };
     }
   });
+
+  // Handler for importing encrypted backup files with password
+  ipcMain.handle(
+    'data:importEncryptedBackup',
+    async (_event, params: { filePath: string; password: string }) => {
+      const { filePath, password } = params;
+
+      if (!filePath || !password) {
+        return { success: false, error: 'File path and password are required' };
+      }
+
+      if (!visibleDataProvider) {
+        return { success: false, error: 'Data provider not initialized' };
+      }
+
+      try {
+        const exportManager = new ExportManager(database, visibleDataProvider, {
+          logger,
+          filesDir: FILES_DIR,
+          appVersion: app.getVersion(),
+          syncEngine: syncEngine ?? undefined,
+        });
+
+        const result = await exportManager.importEncrypted(filePath, password);
+
+        if (!result.success) {
+          return { success: false, error: result.error || 'Decryption failed' };
+        }
+
+        // The decrypted data contains export data (courses, tasks, etc.)
+        // For now, return success with the data for the UI to handle
+        logger.info(`Encrypted backup decrypted successfully: ${filePath}`);
+        metricsCollector.increment('data.import.encrypted');
+
+        return {
+          success: true,
+          data: {
+            filePath,
+            exportData: result.data,
+            message: 'Backup decrypted successfully. Data can be reviewed.',
+          },
+        };
+      } catch (error) {
+        logger.error('Failed to import encrypted backup:', error as Error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
 
   ipcMain.handle(
     'data:exportCourseData',

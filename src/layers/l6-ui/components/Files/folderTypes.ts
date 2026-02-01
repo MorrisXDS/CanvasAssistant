@@ -165,10 +165,13 @@ export function getFolderTypeFromPath(folderPath: string | null): FolderTypeConf
 
 /**
  * Calculate folder depth from path
+ * In the flat folder view used by FilesPage, all folders are rendered at the same level
+ * This function returns 0 for the flat view - depth-based indentation is only for
+ * hierarchical tree rendering which is not currently implemented
  */
-export function getFolderDepth(folderPath: string | null): number {
-  if (!folderPath) return 0;
-  return folderPath.split('/').filter(Boolean).length;
+export function getFolderDepth(_folderPath: string | null): number {
+  // All folders in the flat view are top-level, return 0 for no indentation
+  return 0;
 }
 
 /**

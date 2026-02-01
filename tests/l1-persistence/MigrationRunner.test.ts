@@ -25,7 +25,14 @@ describe('MigrationRunner', () => {
   });
 
   afterEach(() => {
-    db.close();
+    // Only close if db was successfully initialized
+    if (db) {
+      try {
+        db.close();
+      } catch {
+        // Ignore close errors during cleanup
+      }
+    }
 
     // Clean up test database directory
     if (fs.existsSync(TEST_DB_DIR)) {

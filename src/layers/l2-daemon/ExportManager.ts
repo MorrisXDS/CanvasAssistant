@@ -7,144 +7,39 @@
 
 import { EventEmitter } from 'events';
 import fs from 'fs';
-import path from 'path';
-import archiver from 'archiver';
 import { Database } from '../l1-persistence/Database';
 import { VisibleDataProvider } from '../l1-persistence/VisibleDataProvider';
 import { CryptoManager, EncryptedData } from '../l0-utilities/CryptoManager';
 import { ComponentLogger, Logger } from '../l0-utilities/Logger';
 import type { SyncEngine } from './SyncEngine';
+
+// Import types
 import type {
-  CourseRow,
-  TaskRow,
-  NotificationRow,
-  PolicyRow,
-  GraceTokenRow,
-} from '../l1-persistence/DatabaseRowTypes';
+  SelectiveExportOptions,
+  CsvExportOptions,
+  ExportResult,
+  ExportProgress,
+  ExportManagerConfig,
+} from './ExportManagerTypes';
 
-// =============================================================================
-// Types
-// =============================================================================
+// Re-export types for backwards compatibility
+export type {
+  SelectiveExportOptions,
+  CsvExportOptions,
+  ExportResult,
+  ExportProgress,
+  ExportManifest,
+  ExportManagerConfig,
+} from './ExportManagerTypes';
 
-export interface SelectiveExportOptions {
-  /** Specific course IDs (empty = all visible) */
-  courses?: number[];
-  /** Include archived courses in export */
-  includeArchived?: boolean;
-  /** Specific archived course IDs to include */
-  archivedCourses?: number[];
-  /** Include tasks in export (default: true) */
-  includeTasks?: boolean;
-  /** Include notifications in export */
-  includeNotifications?: boolean;
-  /** Include actual file contents in ZIP */
-  includeFiles?: boolean;
-  /** Include grades data */
-  includeGrades?: boolean;
-  /** Include calendar events */
-  includeCalendar?: boolean;
-  /** Filter tasks by status */
-  taskStatus?: 'all' | 'pending' | 'completed';
-  /** Filter by date range */
-  dateRange?: { start: Date; end: Date };
-  /** Output format */
-  format: 'json' | 'csv' | 'zip';
-  /** Encrypt the export */
-  encrypt?: boolean;
-  /** Password for encryption (required if encrypt=true) */
-  password?: string;
-}
-
-export interface CsvExportOptions {
-  courseIds?: number[];
-  /** Include all archived courses */
-  includeArchived?: boolean;
-  /** Specific archived course IDs to include */
-  archivedCourseIds?: number[];
-  status?: 'all' | 'pending' | 'completed';
-  dateRange?: { start: Date; end: Date };
-}
-
-export interface ExportResult {
-  success: boolean;
-  filePath?: string;
-  fileSize?: number;
-  coursesExported?: number;
-  tasksExported?: number;
-  filesExported?: number;
-  error?: string;
-}
-
-export interface ExportProgress {
-  stage:
-    | 'preparing'
-    | 'collecting'
-    | 'writing'
-    | 'encrypting'
-    | 'compressing'
-    | 'complete';
-  progress: number; // 0-100
-  message: string;
-  bytesWritten?: number;
-  totalBytes?: number;
-}
-
-export interface ExportManifest {
-  version: string;
-  exportedAt: string;
-  appVersion: string;
-  format: 'json' | 'csv' | 'zip';
-  encrypted: boolean;
-  contents: {
-    courses: number;
-    tasks: number;
-    notifications: number;
-    files: number;
-    pages: number;
-    policies: number;
-    modules: number;
-    resources: number;
-    syncPreferences: number;
-    pendingConflicts: number;
-  };
-  checksums?: Record<string, string>;
-}
-
-export interface ExportManagerConfig {
-  logger?: Logger;
-  filesDir?: string;
-  appVersion?: string;
-  /** Optional SyncEngine reference for sync status checks */
-  syncEngine?: SyncEngine;
-}
-
-// CSV header definitions
-const TASKS_CSV_HEADERS = [
-  'Course',
-  'Task Name',
-  'Type',
-  'Due Date',
-  'Status',
-  'Points Possible',
-  'Grade',
-  'Weight',
-  'Priority',
-  'Description',
-];
-
-const GRADES_CSV_HEADERS = [
-  'Course',
-  'Assignment',
-  'Points Earned',
-  'Points Possible',
-  'Weight',
-  'Percentage',
-  'Letter Grade',
-];
-
-// =============================================================================
-// ExportManager Class
-// =============================================================================
+// Import extracted functionality
+import { exportTasksCsv, exportGradesCsv } from './CsvExporter';
+import { createZipArchive } from './ZipExporter';
+import {
+  resolveCourseIds,
+  collectExportData,
+  CollectedExportData,
+} from './ExportDataCollector';
 
 /**
  * Export Manager for comprehensive data export functionality
@@ -190,7 +85,6 @@ export class ExportManager extends EventEmitter {
 
   /**
    * Check if sync is currently in progress
-   * Export should not run during sync to ensure data consistency
    */
   isSyncInProgress(): boolean {
     return this.syncEngine?.isBusy() ?? false;
@@ -203,85 +97,18 @@ export class ExportManager extends EventEmitter {
     outputPath: string,
     options: CsvExportOptions = {}
   ): Promise<ExportResult> {
-    try {
-      this.emitProgress('collecting', 10, 'Collecting tasks...');
-
-      const courseIds = this.resolveCourseIds(
-        options.courseIds,
-        options.includeArchived,
-        options.archivedCourseIds
-      );
-      if (courseIds.length === 0) {
-        return { success: false, error: 'No courses to export' };
-      }
-
-      // Build query with filters
-      let sql = `
-        SELECT t.*, c.code as course_code, c.name as course_name
-        FROM tasks t
-        JOIN courses c ON t.course_id = c.id
-        WHERE t.course_id IN (${courseIds.map(() => '?').join(', ')})
-      `;
-      const params: (string | number)[] = [...courseIds];
-
-      if (options.status === 'pending') {
-        sql += ' AND t.is_completed = 0';
-      } else if (options.status === 'completed') {
-        sql += ' AND t.is_completed = 1';
-      }
-
-      if (options.dateRange) {
-        sql += ' AND t.due_at >= ? AND t.due_at <= ?';
-        params.push(options.dateRange.start.toISOString());
-        params.push(options.dateRange.end.toISOString());
-      }
-
-      sql += ' ORDER BY c.code, t.due_at';
-
-      const tasks = this.db.executeRead<
-        TaskRow & { course_code: string; course_name: string }
-      >(sql, params);
-
-      this.emitProgress('writing', 50, 'Writing CSV...');
-
-      // Generate CSV
-      const rows: string[] = [TASKS_CSV_HEADERS.join(',')];
-
-      for (const task of tasks) {
-        const row = [
-          this.escapeCsv(task.course_code),
-          this.escapeCsv(task.title),
-          this.escapeCsv(task.task_type || 'unknown'),
-          task.due_at ? new Date(task.due_at).toLocaleDateString() : '',
-          task.is_completed ? 'completed' : 'pending',
-          task.points_possible?.toString() ?? '',
-          task.grade?.toString() ?? '',
-          task.weight ? `${task.weight}%` : '',
-          task.priority_score?.toString() ?? '',
-          this.escapeCsv(task.description || ''),
-        ];
-        rows.push(row.join(','));
-      }
-
-      const csvContent = rows.join('\n');
-      fs.writeFileSync(outputPath, csvContent, 'utf-8');
-
-      this.emitProgress('complete', 100, 'Export complete');
-      this.log.info(`Tasks CSV exported: ${tasks.length} tasks to ${outputPath}`);
-
-      return {
-        success: true,
-        filePath: outputPath,
-        fileSize: Buffer.byteLength(csvContent),
-        tasksExported: tasks.length,
-      };
-    } catch (error) {
-      this.log.error(
-        'Failed to export tasks CSV',
-        error instanceof Error ? error : undefined
-      );
-      return { success: false, error: String(error) };
-    }
+    return exportTasksCsv(
+      {
+        db: this.db,
+        resolveCourseIds: (ids, archived, archivedIds) =>
+          resolveCourseIds(this.visibleDataProvider, ids, archived, archivedIds),
+        emitProgress: (stage, progress, message) =>
+          this.emitProgress(stage as ExportProgress['stage'], progress, message),
+        log: this.log,
+      },
+      outputPath,
+      options
+    );
   }
 
   /**
@@ -291,73 +118,18 @@ export class ExportManager extends EventEmitter {
     outputPath: string,
     options: CsvExportOptions = {}
   ): Promise<ExportResult> {
-    try {
-      this.emitProgress('collecting', 10, 'Collecting grades...');
-
-      const courseIds = this.resolveCourseIds(
-        options.courseIds,
-        options.includeArchived,
-        options.archivedCourseIds
-      );
-      if (courseIds.length === 0) {
-        return { success: false, error: 'No courses to export' };
-      }
-
-      // Fetch graded tasks (tasks with a grade)
-      const sql = `
-        SELECT t.*, c.code as course_code, c.name as course_name
-        FROM tasks t
-        JOIN courses c ON t.course_id = c.id
-        WHERE t.course_id IN (${courseIds.map(() => '?').join(', ')})
-          AND t.grade IS NOT NULL
-        ORDER BY c.code, t.due_at
-      `;
-
-      const tasks = this.db.executeRead<
-        TaskRow & { course_code: string; course_name: string }
-      >(sql, courseIds);
-
-      this.emitProgress('writing', 50, 'Writing CSV...');
-
-      // Generate CSV
-      const rows: string[] = [GRADES_CSV_HEADERS.join(',')];
-
-      for (const task of tasks) {
-        const pointsPossible = task.points_possible ?? 100;
-        const percentage =
-          pointsPossible > 0 ? ((task.grade ?? 0) / pointsPossible) * 100 : 0;
-
-        const row = [
-          this.escapeCsv(task.course_code),
-          this.escapeCsv(task.title),
-          task.grade?.toString() ?? '0',
-          pointsPossible.toString(),
-          task.weight ? `${task.weight}%` : '',
-          `${percentage.toFixed(1)}%`,
-          this.getLetterGrade(percentage),
-        ];
-        rows.push(row.join(','));
-      }
-
-      const csvContent = rows.join('\n');
-      fs.writeFileSync(outputPath, csvContent, 'utf-8');
-
-      this.emitProgress('complete', 100, 'Export complete');
-      this.log.info(`Grades CSV exported: ${tasks.length} grades to ${outputPath}`);
-
-      return {
-        success: true,
-        filePath: outputPath,
-        fileSize: Buffer.byteLength(csvContent),
-        tasksExported: tasks.length,
-      };
-    } catch (error) {
-      this.log.error(
-        'Failed to export grades CSV',
-        error instanceof Error ? error : undefined
-      );
-      return { success: false, error: String(error) };
-    }
+    return exportGradesCsv(
+      {
+        db: this.db,
+        resolveCourseIds: (ids, archived, archivedIds) =>
+          resolveCourseIds(this.visibleDataProvider, ids, archived, archivedIds),
+        emitProgress: (stage, progress, message) =>
+          this.emitProgress(stage as ExportProgress['stage'], progress, message),
+        log: this.log,
+      },
+      outputPath,
+      options
+    );
   }
 
   /**
@@ -380,121 +152,33 @@ export class ExportManager extends EventEmitter {
 
       this.emitProgress('collecting', 5, 'Collecting data...');
 
-      const courseIds = this.resolveCourseIds(
-        options.courses,
-        options.includeArchived,
-        options.archivedCourses
+      // Collect all data
+      const collected = collectExportData(
+        {
+          db: this.db,
+          visibleDataProvider: this.visibleDataProvider,
+          appVersion: this.appVersion,
+          emitProgress: (stage, progress, message) =>
+            this.emitProgress(stage as ExportProgress['stage'], progress, message),
+        },
+        options
       );
-      if (courseIds.length === 0) {
-        return { success: false, error: 'No courses to export' };
+
+      if ('error' in collected) {
+        return { success: false, error: collected.error };
       }
 
-      // Collect courses
-      const courses = this.db.executeRead<CourseRow>(
-        `SELECT * FROM courses WHERE id IN (${courseIds.map(() => '?').join(', ')})`,
-        courseIds
-      );
-
-      this.emitProgress('collecting', 15, `Found ${courses.length} courses`);
-
-      // Collect tasks if requested
-      let tasks: TaskRow[] = [];
-      if (options.includeTasks !== false) {
-        let taskSql = `SELECT * FROM tasks WHERE course_id IN (${courseIds.map(() => '?').join(', ')})`;
-        const taskParams: (string | number)[] = [...courseIds];
-
-        if (options.taskStatus === 'pending') {
-          taskSql += ' AND is_completed = 0';
-        } else if (options.taskStatus === 'completed') {
-          taskSql += ' AND is_completed = 1';
-        }
-
-        if (options.dateRange) {
-          taskSql += ' AND due_at >= ? AND due_at <= ?';
-          taskParams.push(options.dateRange.start.toISOString());
-          taskParams.push(options.dateRange.end.toISOString());
-        }
-
-        tasks = this.db.executeRead<TaskRow>(taskSql, taskParams);
-        this.emitProgress('collecting', 25, `Found ${tasks.length} tasks`);
-      }
-
-      // Collect notifications if requested
-      let notifications: NotificationRow[] = [];
-      if (options.includeNotifications) {
-        notifications = this.db.executeRead<NotificationRow>(
-          `SELECT * FROM notifications WHERE course_id IN (${courseIds.map(() => '?').join(', ')})`,
-          courseIds
-        );
-        this.emitProgress(
-          'collecting',
-          35,
-          `Found ${notifications.length} notifications`
-        );
-      }
-
-      // Collect policies
-      const policies = this.db.executeRead<PolicyRow>(
-        `SELECT * FROM course_policies WHERE course_id IN (${courseIds.map(() => '?').join(', ')})`,
-        courseIds
-      );
-
-      // Collect grace tokens
-      const graceTokens = this.db.executeRead<GraceTokenRow>(
-        `SELECT * FROM grace_tokens WHERE course_id IN (${courseIds.map(() => '?').join(', ')})`,
-        courseIds
-      );
-
-      // Collect pages
-      const pages = this.db.executeRead<Record<string, unknown>>(
-        `SELECT * FROM course_pages WHERE course_id IN (${courseIds.map(() => '?').join(', ')})`,
-        courseIds
-      );
-
-      // Collect calendar events if requested
-      let calendarEvents: Record<string, unknown>[] = [];
-      if (options.includeCalendar) {
-        calendarEvents = this.db.executeRead<Record<string, unknown>>(
-          `SELECT * FROM calendar_events WHERE course_id IN (${courseIds.map(() => '?').join(', ')})`,
-          courseIds
-        );
-      }
-
-      // Collect modules and module items
-      const modules = this.db.executeRead<Record<string, unknown>>(
-        `SELECT * FROM modules WHERE course_id IN (${courseIds.map(() => '?').join(', ')})`,
-        courseIds
-      );
-
-      const moduleIds = modules.map((m) => m.id as number);
-      let moduleItems: Record<string, unknown>[] = [];
-      if (moduleIds.length > 0) {
-        moduleItems = this.db.executeRead<Record<string, unknown>>(
-          `SELECT * FROM module_items WHERE module_id IN (${moduleIds.map(() => '?').join(', ')})`,
-          moduleIds
-        );
-      }
-
-      // Collect resources (file references)
-      const resources = this.db.executeRead<Record<string, unknown>>(
-        `SELECT * FROM resources WHERE course_id IN (${courseIds.map(() => '?').join(', ')})`,
-        courseIds
-      );
-
-      // Collect sync metadata (etags for incremental sync)
-      const syncMetadata = this.collectSyncMetadata();
-
-      this.emitProgress('collecting', 45, 'Building export data...');
+      const data = collected as CollectedExportData;
 
       // Build export data object
       const exportData = {
         exportedAt: new Date().toISOString(),
-        version: '2.1', // Version bump for new sync metadata
+        version: '2.1',
         appVersion: this.appVersion,
         options: {
           format: options.format,
           encrypted: !!options.encrypt,
-          includedCourses: courseIds,
+          includedCourses: data.courseIds,
           taskStatus: options.taskStatus || 'all',
           dateRange: options.dateRange
             ? {
@@ -503,22 +187,21 @@ export class ExportManager extends EventEmitter {
               }
             : null,
         },
-        courses: courses.map((c) => this.sanitizeCourseForExport(c)),
-        tasks: tasks.map((t) => this.sanitizeTaskForExport(t)),
-        notifications,
-        policies,
-        graceTokens,
-        pages,
-        calendarEvents,
-        modules,
-        moduleItems,
-        resources,
-        syncMetadata,
+        courses: data.courses,
+        tasks: data.tasks,
+        notifications: data.notifications,
+        policies: data.policies,
+        graceTokens: data.graceTokens,
+        pages: data.pages,
+        calendarEvents: data.calendarEvents,
+        modules: data.modules,
+        moduleItems: data.moduleItems,
+        resources: data.resources,
+        syncMetadata: data.syncMetadata,
       };
 
       // Handle different formats
       if (options.format === 'csv') {
-        // For CSV, export tasks only
         return this.exportTasksCsv(outputPath, {
           courseIds: options.courses,
           status: options.taskStatus,
@@ -527,39 +210,23 @@ export class ExportManager extends EventEmitter {
       }
 
       if (options.format === 'zip') {
-        return this.createZipArchive(outputPath, exportData, options);
+        return createZipArchive(
+          {
+            cryptoManager: this.cryptoManager,
+            filesDir: this.filesDir,
+            appVersion: this.appVersion,
+            emitProgress: (stage, progress, message) =>
+              this.emitProgress(stage as ExportProgress['stage'], progress, message),
+            log: this.log,
+          },
+          outputPath,
+          exportData,
+          options
+        );
       }
 
       // JSON format
-      this.emitProgress('writing', 60, 'Writing JSON...');
-
-      let jsonContent = JSON.stringify(exportData, null, 2);
-
-      if (options.encrypt && options.password) {
-        this.emitProgress('encrypting', 75, 'Encrypting data...');
-        const encrypted = this.cryptoManager.encrypt(jsonContent, options.password);
-        if (!encrypted) {
-          return { success: false, error: 'Encryption failed' };
-        }
-        jsonContent = JSON.stringify(encrypted, null, 2);
-        // Change extension to indicate encrypted
-        if (!outputPath.endsWith('.cbk')) {
-          outputPath = outputPath.replace(/\.json$/, '.cbk');
-        }
-      }
-
-      fs.writeFileSync(outputPath, jsonContent, 'utf-8');
-
-      this.emitProgress('complete', 100, 'Export complete');
-      this.log.info(`Selective export complete: ${outputPath}`);
-
-      return {
-        success: true,
-        filePath: outputPath,
-        fileSize: Buffer.byteLength(jsonContent),
-        coursesExported: courses.length,
-        tasksExported: tasks.length,
-      };
+      return this.exportJson(outputPath, exportData, options);
     } catch (error) {
       this.log.error(
         'Failed to perform selective export',
@@ -570,128 +237,45 @@ export class ExportManager extends EventEmitter {
   }
 
   /**
-   * Create ZIP archive with files
+   * Export to JSON format (with optional encryption)
    */
-  private async createZipArchive(
+  private exportJson(
     outputPath: string,
     exportData: Record<string, unknown>,
     options: SelectiveExportOptions
-  ): Promise<ExportResult> {
-    return new Promise((resolve) => {
-      try {
-        this.emitProgress('compressing', 50, 'Creating ZIP archive...');
+  ): ExportResult {
+    this.emitProgress('writing', 60, 'Writing JSON...');
 
-        const output = fs.createWriteStream(outputPath);
-        const archive = archiver('zip', { zlib: { level: 9 } });
+    let jsonContent = JSON.stringify(exportData, null, 2);
+    let finalPath = outputPath;
 
-        let filesExported = 0;
-
-        output.on('close', () => {
-          this.emitProgress('complete', 100, 'Export complete');
-          this.log.info(
-            `ZIP archive created: ${outputPath} (${archive.pointer()} bytes)`
-          );
-
-          resolve({
-            success: true,
-            filePath: outputPath,
-            fileSize: archive.pointer(),
-            coursesExported: (exportData.courses as unknown[])?.length || 0,
-            tasksExported: (exportData.tasks as unknown[])?.length || 0,
-            filesExported,
-          });
-        });
-
-        archive.on('error', (err: Error) => {
-          this.log.error('Archive error', err);
-          resolve({ success: false, error: err.message });
-        });
-
-        archive.pipe(output);
-
-        // Create manifest
-        const syncMeta = exportData.syncMetadata as
-          | {
-              preferences?: unknown[];
-              pendingConflicts?: unknown[];
-            }
-          | undefined;
-        const manifest: ExportManifest = {
-          version: '2.1',
-          exportedAt: new Date().toISOString(),
-          appVersion: this.appVersion,
-          format: 'zip',
-          encrypted: !!options.encrypt,
-          contents: {
-            courses: (exportData.courses as unknown[])?.length || 0,
-            tasks: (exportData.tasks as unknown[])?.length || 0,
-            notifications: (exportData.notifications as unknown[])?.length || 0,
-            files: 0,
-            pages: (exportData.pages as unknown[])?.length || 0,
-            policies: (exportData.policies as unknown[])?.length || 0,
-            modules: (exportData.modules as unknown[])?.length || 0,
-            resources: (exportData.resources as unknown[])?.length || 0,
-            syncPreferences: syncMeta?.preferences?.length || 0,
-            pendingConflicts: syncMeta?.pendingConflicts?.length || 0,
-          },
-          checksums: {},
-        };
-
-        // Add data files
-        let dataContent = JSON.stringify(exportData, null, 2);
-
-        if (options.encrypt && options.password) {
-          const encrypted = this.cryptoManager.encrypt(dataContent, options.password);
-          if (encrypted) {
-            dataContent = JSON.stringify(encrypted);
-            archive.append(dataContent, { name: 'data/export.encrypted.json' });
-          }
-        } else {
-          archive.append(dataContent, { name: 'data/export.json' });
-        }
-
-        // Add manifest (always unencrypted)
-        manifest.checksums!['data'] = this.cryptoManager.computeHash(dataContent);
-
-        // Include actual files if requested
-        if (options.includeFiles && this.filesDir) {
-          this.emitProgress('compressing', 60, 'Adding files to archive...');
-
-          const courses = exportData.courses as CourseRow[];
-          for (const course of courses) {
-            const courseDir = path.join(this.filesDir, course.code);
-            if (fs.existsSync(courseDir)) {
-              archive.directory(courseDir, `files/${course.code}`);
-              // Count files
-              const countFiles = (dir: string): number => {
-                let count = 0;
-                const items = fs.readdirSync(dir);
-                for (const item of items) {
-                  const itemPath = path.join(dir, item);
-                  if (fs.statSync(itemPath).isDirectory()) {
-                    count += countFiles(itemPath);
-                  } else {
-                    count++;
-                  }
-                }
-                return count;
-              };
-              filesExported += countFiles(courseDir);
-            }
-          }
-          manifest.contents.files = filesExported;
-        }
-
-        archive.append(JSON.stringify(manifest, null, 2), { name: 'manifest.json' });
-        archive.finalize();
-      } catch (error) {
-        this.log.error(
-          'Failed to create ZIP archive',
-          error instanceof Error ? error : undefined
-        );
-        resolve({ success: false, error: String(error) });
+    if (options.encrypt && options.password) {
+      this.emitProgress('encrypting', 75, 'Encrypting data...');
+      const encrypted = this.cryptoManager.encrypt(jsonContent, options.password);
+      if (!encrypted) {
+        return { success: false, error: 'Encryption failed' };
       }
-    });
+      jsonContent = JSON.stringify(encrypted, null, 2);
+      if (!finalPath.endsWith('.cbk')) {
+        finalPath = finalPath.replace(/\.json$/, '.cbk');
+      }
+    }
+
+    fs.writeFileSync(finalPath, jsonContent, 'utf-8');
+
+    this.emitProgress('complete', 100, 'Export complete');
+    this.log.info(`Selective export complete: ${finalPath}`);
+
+    const courses = exportData.courses as unknown[];
+    const tasks = exportData.tasks as unknown[];
+
+    return {
+      success: true,
+      filePath: finalPath,
+      fileSize: Buffer.byteLength(jsonContent),
+      coursesExported: courses?.length || 0,
+      tasksExported: tasks?.length || 0,
+    };
   }
 
   /**
@@ -734,190 +318,6 @@ export class ExportManager extends EventEmitter {
       );
       return { success: false, error: String(error) };
     }
-  }
-
-  /**
-   * Resolve course IDs - use provided or fall back to visible courses
-   * @param courseIds - Specific course IDs to export
-   * @param includeArchived - Include all archived courses
-   * @param archivedCourseIds - Specific archived course IDs to include
-   */
-  private resolveCourseIds(
-    courseIds?: number[],
-    includeArchived?: boolean,
-    archivedCourseIds?: number[]
-  ): number[] {
-    let result: number[] = [];
-
-    // Handle visible courses
-    if (courseIds && courseIds.length > 0) {
-      // Validate that provided IDs are visible
-      const visibleIds = new Set(this.visibleDataProvider.getVisibleCourseIds());
-      result = courseIds.filter((id) => visibleIds.has(id));
-    } else {
-      result = this.visibleDataProvider.getVisibleCourseIds();
-    }
-
-    // Handle archived courses
-    if (includeArchived) {
-      // Include all archived courses
-      const allArchivedIds = this.visibleDataProvider.getArchivedCourseIds();
-      result = [...result, ...allArchivedIds];
-    } else if (archivedCourseIds && archivedCourseIds.length > 0) {
-      // Include specific archived courses
-      const validArchivedIds = new Set(this.visibleDataProvider.getArchivedCourseIds());
-      const filteredArchivedIds = archivedCourseIds.filter((id) =>
-        validArchivedIds.has(id)
-      );
-      result = [...result, ...filteredArchivedIds];
-    }
-
-    // Remove duplicates
-    return [...new Set(result)];
-  }
-
-  /**
-   * Sanitize course data for export (remove internal fields)
-   */
-  private sanitizeCourseForExport(course: CourseRow): Record<string, unknown> {
-    return {
-      id: course.id,
-      externalId: course.external_id,
-      code: course.code,
-      name: course.name,
-      nickname: course.nickname,
-      color: course.color,
-      enrollmentTermId: course.enrollment_term_id,
-      targetGrade: course.target_grade,
-      targetGradeSource: course.target_grade_source,
-      isHidden: course.is_hidden,
-      currentGrade: course.current_grade,
-      assessedGrade: course.assessed_grade,
-      totalWeight: course.total_weight,
-      syllabusBody: course.syllabus_body,
-      archivedAt: course.archived_at,
-      archiveSource: course.archive_source,
-    };
-  }
-
-  /**
-   * Sanitize task data for export (remove internal fields)
-   */
-  private sanitizeTaskForExport(task: TaskRow): Record<string, unknown> {
-    return {
-      id: task.id,
-      externalId: task.external_id,
-      courseId: task.course_id,
-      title: task.title,
-      description: task.description,
-      dueAt: task.due_at,
-      dueTimeKnown: task.due_time_known,
-      unlockAt: task.unlock_at,
-      lockAt: task.lock_at,
-      weight: task.weight,
-      grade: task.grade,
-      pointsPossible: task.points_possible,
-      priorityScore: task.priority_score,
-      isCompleted: task.is_completed,
-      isOptional: task.is_optional,
-      completedAt: task.completed_at,
-      submissionStatus: task.submission_status,
-      userSubmissionStatus: task.user_submission_status,
-      taskType: task.task_type,
-      taskGroupId: task.task_group_id,
-      fieldSources: task.field_sources,
-    };
-  }
-
-  /**
-   * Escape CSV field value
-   */
-  private escapeCsv(value: string): string {
-    if (!value) return '';
-    // If value contains comma, quote, or newline, wrap in quotes and escape internal quotes
-    if (value.includes(',') || value.includes('"') || value.includes('\n')) {
-      return `"${value.replace(/"/g, '""')}"`;
-    }
-    return value;
-  }
-
-  /**
-   * Get letter grade from percentage (UofT scale)
-   */
-  private getLetterGrade(percentage: number): string {
-    if (percentage >= 90) return 'A+';
-    if (percentage >= 85) return 'A';
-    if (percentage >= 80) return 'A-';
-    if (percentage >= 77) return 'B+';
-    if (percentage >= 73) return 'B';
-    if (percentage >= 70) return 'B-';
-    if (percentage >= 67) return 'C+';
-    if (percentage >= 63) return 'C';
-    if (percentage >= 60) return 'C-';
-    if (percentage >= 57) return 'D+';
-    if (percentage >= 53) return 'D';
-    if (percentage >= 50) return 'D-';
-    return 'F';
-  }
-
-  /**
-   * Collect sync metadata for export
-   * Includes etag cache, sync preferences, and pending conflicts
-   */
-  private collectSyncMetadata(): {
-    endpoints: Record<string, unknown>[];
-    preferences: Record<string, unknown>[];
-    pendingConflicts: Record<string, unknown>[];
-    lastSyncedAt: string | null;
-  } {
-    let endpoints: Record<string, unknown>[] = [];
-    let preferences: Record<string, unknown>[] = [];
-    let pendingConflicts: Record<string, unknown>[] = [];
-    let lastSyncedAt: string | null = null;
-
-    try {
-      // Collect sync_metadata (etag cache for incremental sync)
-      endpoints = this.db.executeRead<Record<string, unknown>>(
-        'SELECT * FROM sync_metadata'
-      );
-    } catch {
-      // Table may not exist
-    }
-
-    try {
-      // Collect sync_preferences (user conflict resolution choices)
-      preferences = this.db.executeRead<Record<string, unknown>>(
-        'SELECT * FROM sync_preferences'
-      );
-    } catch {
-      // Table may not exist
-    }
-
-    try {
-      // Collect pending_sync_conflicts (conflicts awaiting resolution)
-      pendingConflicts = this.db.executeRead<Record<string, unknown>>(
-        'SELECT * FROM pending_sync_conflicts'
-      );
-    } catch {
-      // Table may not exist
-    }
-
-    try {
-      // Get last sync timestamp
-      const lastSync = this.db.executeReadOne<{ last_synced_at: string }>(
-        'SELECT MAX(last_synced_at) as last_synced_at FROM sync_metadata'
-      );
-      lastSyncedAt = lastSync?.last_synced_at ?? null;
-    } catch {
-      // Table may not exist
-    }
-
-    return {
-      endpoints,
-      preferences,
-      pendingConflicts,
-      lastSyncedAt,
-    };
   }
 
   /**

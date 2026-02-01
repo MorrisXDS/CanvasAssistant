@@ -111,6 +111,9 @@ export function ImportantWorksFilter({
   const popoverRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState<PopoverPosition>({ top: 0, left: 0 });
 
+  // Local state for threshold input to allow clearing while typing
+  const [thresholdInput, setThresholdInput] = useState(String(filter.globalThreshold));
+
   const isActive = useMemo(() => isFilterActive(filter), [filter]);
 
   // All available task type values
@@ -175,14 +178,30 @@ export function ImportantWorksFilter({
     };
   }, [isOpen]);
 
-  const handleThresholdChange = useCallback(
-    (value: string) => {
-      const numValue = parseInt(value, 10);
-      if (isNaN(numValue) || numValue < 0 || numValue > 100) return;
+  // Sync local threshold input with filter prop when it changes externally
+  useEffect(() => {
+    setThresholdInput(String(filter.globalThreshold));
+  }, [filter.globalThreshold]);
+
+  const handleThresholdInputChange = useCallback((value: string) => {
+    // Allow any input while typing (including empty)
+    setThresholdInput(value);
+
+    // If valid, update the filter immediately
+    const numValue = parseInt(value, 10);
+    if (!isNaN(numValue) && numValue >= 0 && numValue <= 100) {
       onFilterChange({ ...filter, globalThreshold: numValue });
-    },
-    [filter, onFilterChange]
-  );
+    }
+  }, [filter, onFilterChange]);
+
+  const handleThresholdBlur = useCallback(() => {
+    // On blur, validate and reset to last valid value if invalid
+    const numValue = parseInt(thresholdInput, 10);
+    if (isNaN(numValue) || numValue < 0 || numValue > 100 || thresholdInput === '') {
+      // Reset to current filter value
+      setThresholdInput(String(filter.globalThreshold));
+    }
+  }, [thresholdInput, filter.globalThreshold]);
 
   const handleTypeToggle = useCallback(
     (type: string) => {
@@ -284,8 +303,9 @@ export function ImportantWorksFilter({
               type="number"
               min={0}
               max={100}
-              value={filter.globalThreshold}
-              onChange={(e) => handleThresholdChange(e.target.value)}
+              value={thresholdInput}
+              onChange={(e) => handleThresholdInputChange(e.target.value)}
+              onBlur={handleThresholdBlur}
               style={{
                 ...styles.thresholdInput,
                 opacity: filter.perTypeEnabled ? 0.5 : 1,

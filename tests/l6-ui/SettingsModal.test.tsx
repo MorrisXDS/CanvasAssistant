@@ -50,6 +50,7 @@ jest.mock('../../src/layers/l5-presentation/store', () => ({
   useStore: jest.fn(() => ({
     courses: mockCourses,
     fetchCourses: jest.fn(),
+    setAuthenticated: jest.fn(),
   })),
 }));
 
@@ -247,9 +248,15 @@ describe('SettingsModal', () => {
     it('renders import and export buttons', async () => {
       render(<SettingsModal isOpen={true} onClose={jest.fn()} />);
 
+      // Wait for export button (appears in footer)
       await waitFor(() => {
-        expect(screen.getByText('Export Settings')).toBeInTheDocument();
-        expect(screen.getByText('Import Settings')).toBeInTheDocument();
+        expect(screen.getByText(/Export Settings/)).toBeInTheDocument();
+      });
+
+      // Wait for import button (appears in footer and Data section, so use getAllByText)
+      await waitFor(() => {
+        const importButtons = screen.getAllByText(/Import Settings/);
+        expect(importButtons.length).toBeGreaterThan(0);
       });
     });
 

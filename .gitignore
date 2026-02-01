@@ -45,3 +45,17 @@ coverage/
 
 # Electron
 /release/
+
+# Temporary verification scripts
+scripts/verify-*.ts
+
+# Test artifacts
+logs-test/
+
+# Course data folders (user-specific)
+*H1_*/
+*H5_*/
+*Y1_*/
+
+# Miscellaneous artifacts
+\${match}

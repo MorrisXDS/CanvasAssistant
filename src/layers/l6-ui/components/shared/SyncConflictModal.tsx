@@ -181,6 +181,21 @@ export function SyncConflictModal({
   const [customExpirationDate, setCustomExpirationDate] = useState('');
   const [showCustomDatePicker, setShowCustomDatePicker] = useState(false);
 
+  // Reset currentIndex when modal opens or clamp when conflicts array shrinks
+  useEffect(() => {
+    if (isOpen) {
+      // Reset to 0 when modal opens
+      setCurrentIndex(0);
+    }
+  }, [isOpen]);
+
+  useEffect(() => {
+    // Clamp currentIndex if conflicts array shrinks
+    if (conflicts.length > 0 && currentIndex >= conflicts.length) {
+      setCurrentIndex(conflicts.length - 1);
+    }
+  }, [conflicts.length, currentIndex]);
+
   // Update default expiration when termEndDate becomes available
   useEffect(() => {
     if (termEndDate && expirationPreset === '3-months') {
@@ -199,6 +214,9 @@ export function SyncConflictModal({
   if (!isOpen || conflicts.length === 0) return null;
 
   const currentConflict = conflicts[currentIndex];
+
+  // Guard against out-of-bounds index (can happen during rapid state updates)
+  if (!currentConflict) return null;
   const isLast = currentIndex === conflicts.length - 1;
 
   const formatValue = (entity: string, field: string, value: unknown): string => {

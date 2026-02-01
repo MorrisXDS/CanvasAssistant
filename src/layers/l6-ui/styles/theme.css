@@ -38,6 +38,10 @@
   --color-info: #007FA3;
   --color-info-bg: #EFF6FF;
 
+  /* ============ Selection Colors ============ */
+  --color-selection-bg: rgba(0, 127, 163, 0.1);
+  --color-selection-border: #007FA3;
+
   /* ============ Urgency Colors (Overdue Tasks) ============ */
   --color-urgency-critical: #ef4444;     /* Red - severely overdue */
   --color-urgency-critical-bg: #fef2f2;
@@ -187,6 +191,10 @@
   --color-error-bg: rgba(248, 113, 113, 0.15);
   --color-info: #38bdf8;
   --color-info-bg: rgba(56, 189, 248, 0.15);
+
+  /* Selection colors for dark mode */
+  --color-selection-bg: rgba(56, 189, 248, 0.15);
+  --color-selection-border: #38bdf8;
 
   /* Scrollbar for dark mode */
   --scrollbar-track: #1e293b;

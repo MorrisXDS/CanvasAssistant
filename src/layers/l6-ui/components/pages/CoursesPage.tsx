@@ -10,16 +10,10 @@ import {
   BookOpen,
   Grid,
   List,
-  Pin,
-  PinOff,
-  ChevronRight,
-  Target,
   Search,
   Filter,
   X,
-  Eye,
   EyeOff,
-  GripVertical,
   Archive,
   ArchiveRestore,
   ChevronDown,
@@ -28,107 +22,29 @@ import {
 import { useStore, getCachedCourseGrades } from '../../../l5-presentation/store';
 import { Card } from '../shared';
 import { useShallow } from 'zustand/react/shallow';
-import { ColorPickerPopup } from '../primitives';
 import { useCourseDragDrop } from './useCourseDragDrop';
-import { formatTimeAgo, COURSE_COLORS, getCourseColor } from '../../constants';
+import { getCourseColor } from '../../constants';
 import type { Course } from '../../../l5-presentation/types';
 
-function getShortCode(code: string): string {
-  // Stop before a letter followed by a digit and then space/end (e.g., "H1 " or "Y1")
-  const match = code.match(/^(.+?)(?=[A-Z]\d(?:\s|$))/i);
-  return match ? match[1] : code.split(/\s/)[0];
-}
+// Extracted modules
+import { styles, injectDragHandleStyles } from './coursesPageStyles';
+import {
+  type ViewMode,
+  type GradeFilter,
+  getShortCode,
+  loadPinnedCourses,
+  savePinnedCourses,
+  loadCourseSettings,
+  loadViewMode,
+  saveViewMode,
+  getAvailableFilters,
+  filterAndSortCourses,
+} from './coursesPageUtils';
+import { CourseGridCard } from './CourseGridCard';
+import { CourseListItem } from './CourseListItem';
 
-type ViewMode = 'grid' | 'list';
-type GradeFilter = 'all' | 'on-track' | 'at-risk' | 'behind';
-
-function getGradeStatus(course: Course): 'on-track' | 'at-risk' | 'behind' | 'unknown' {
-  if (course.currentGrade === null) return 'unknown';
-  if (course.currentGrade >= course.targetGrade) return 'on-track';
-  if (course.currentGrade >= course.targetGrade - 10) return 'at-risk';
-  return 'behind';
-}
-
-// Extract course prefix (e.g., "CSC" from "CSC108H1")
-function getCoursePrefix(code: string): string {
-  const match = code.match(/^([A-Z]{2,4})/i);
-  return match ? match[1].toUpperCase() : code.slice(0, 3).toUpperCase();
-}
-
-// Extract course type (LEC, TUT, PRA) from name or code
-function getCourseType(course: Course): string | null {
-  const combined = `${course.code} ${course.name}`.toUpperCase();
-  if (combined.includes('LEC')) return 'LEC';
-  if (combined.includes('TUT')) return 'TUT';
-  if (combined.includes('PRA')) return 'PRA';
-  if (combined.includes('LAB')) return 'LAB';
-  if (combined.includes('SEM')) return 'SEM';
-  return null;
-}
-
-// Load pinned courses from localStorage
-function loadPinnedCourses(): Set<number> {
-  try {
-    const stored = localStorage.getItem('pinnedCourses');
-    if (stored) {
-      return new Set(JSON.parse(stored));
-    }
-  } catch (e) {
-    console.error('Failed to load pinned courses:', e);
-  }
-  return new Set();
-}
-
-// Save pinned courses to localStorage
-function savePinnedCourses(pinned: Set<number>): void {
-  try {
-    localStorage.setItem('pinnedCourses', JSON.stringify([...pinned]));
-  } catch (e) {
-    console.error('Failed to save pinned courses:', e);
-  }
-}
-
-// Load course settings from localStorage
-function loadCourseSettings(): {
-  defaultViewMode: ViewMode;
-  showHiddenByDefault: boolean;
-} {
-  try {
-    const stored = localStorage.getItem('courseSettings');
-    if (stored) {
-      const parsed = JSON.parse(stored);
-      return {
-        defaultViewMode: parsed.defaultViewMode || 'grid',
-        showHiddenByDefault: parsed.showHiddenByDefault || false,
-      };
-    }
-  } catch (e) {
-    console.error('Failed to load course settings:', e);
-  }
-  return { defaultViewMode: 'grid', showHiddenByDefault: false };
-}
-
-// Load remembered view mode (user's last selection takes priority over default)
-function loadViewMode(pageKey: string, defaultMode: ViewMode): ViewMode {
-  try {
-    const stored = localStorage.getItem(`viewMode:${pageKey}`);
-    if (stored === 'grid' || stored === 'list') {
-      return stored;
-    }
-  } catch (e) {
-    console.error('Failed to load view mode:', e);
-  }
-  return defaultMode;
-}
-
-// Save view mode when user changes it
-function saveViewMode(pageKey: string, mode: ViewMode): void {
-  try {
-    localStorage.setItem(`viewMode:${pageKey}`, mode);
-  } catch (e) {
-    console.error('Failed to save view mode:', e);
-  }
-}
+// Inject drag handle styles on module load
+injectDragHandleStyles();
 
 export function CoursesPage() {
   const navigate = useNavigate();
@@ -164,15 +80,13 @@ export function CoursesPage() {
     handleDragLeave,
     handleDragEnd,
     handleDrop,
-    resetOrder: _resetOrder,
-    hasCustomOrder: _hasCustomOrder,
   } = useCourseDragDrop(courseIds);
 
   // Color picker state
   const [colorPickerCourseId, setColorPickerCourseId] = useState<number | null>(null);
   const [customColor, setCustomColor] = useState<string>('');
 
-  // Filter state - use settings as defaults
+  // Filter state
   const [searchQuery, setSearchQuery] = useState('');
   const [gradeFilter, setGradeFilter] = useState<GradeFilter>('all');
   const [prefixFilter, setPrefixFilter] = useState<string>('all');
@@ -207,45 +121,23 @@ export function CoursesPage() {
     }
   }, [showArchiveDropdown]);
 
-  // Get unique prefixes and types from visible courses (respects showHidden toggle)
-  const { availablePrefixes, availableTypes } = useMemo(() => {
-    const prefixes = new Set<string>();
-    const types = new Set<string>();
-
-    // Only compute from courses that would be visible with current showHidden setting
-    const visibleCourses = showHidden ? courses : courses.filter((c) => !c.isHidden);
-
-    visibleCourses.forEach((course) => {
-      prefixes.add(getCoursePrefix(course.code));
-      const courseType = getCourseType(course);
-      if (courseType) types.add(courseType);
-    });
-
-    return {
-      availablePrefixes: Array.from(prefixes).sort(),
-      availableTypes: Array.from(types).sort(),
-    };
-  }, [courses, showHidden]);
+  // Get unique prefixes and types from visible courses
+  const { availablePrefixes, availableTypes } = useMemo(
+    () => getAvailableFilters(courses, showHidden),
+    [courses, showHidden]
+  );
 
   // Reset filters when selected option is no longer available
   useEffect(() => {
     if (prefixFilter !== 'all' && !availablePrefixes.includes(prefixFilter)) {
-      console.debug(
-        '[CoursesPage] Resetting prefix filter - option no longer available:',
-        prefixFilter
-      );
       setPrefixFilter('all');
     }
     if (typeFilter !== 'all' && !availableTypes.includes(typeFilter)) {
-      console.debug(
-        '[CoursesPage] Resetting type filter - option no longer available:',
-        typeFilter
-      );
       setTypeFilter('all');
     }
   }, [availablePrefixes, availableTypes, prefixFilter, typeFilter]);
 
-  // Navigate to course detail - memoized to prevent unnecessary re-renders
+  // Navigate to course detail
   const handleCourseClick = useCallback(
     (courseId: number) => {
       navigate(`/course/${courseId}`);
@@ -282,9 +174,7 @@ export function CoursesPage() {
     try {
       const result = await window.api.dispatch('UnarchiveCourse', { courseId });
       if (result.success) {
-        // Remove from archived list
         setArchivedCourses((prev) => prev.filter((c) => c.id !== courseId));
-        // Refresh all data (courses, tasks, notifications) so Dashboard updates correctly
         await refreshAll();
       }
     } catch (error) {
@@ -297,13 +187,11 @@ export function CoursesPage() {
     try {
       const result = await window.api.dispatch('ArchiveCourse', { courseId });
       if (result.success) {
-        // Refresh all data (courses, tasks, notifications) so Dashboard updates correctly
         await refreshAll();
-        // Also refresh archived courses list and expand section to show user where it went
         const archivedResult = await window.api?.getArchivedCourses?.();
         if (archivedResult) {
           setArchivedCourses(archivedResult);
-          setShowArchived(true); // Expand to show the archived course
+          setShowArchived(true);
         }
       }
     } catch (error) {
@@ -348,26 +236,11 @@ export function CoursesPage() {
 
   // Toggle course hidden status
   const handleToggleHide = async (courseId: number, currentlyHidden: boolean) => {
-    console.debug(
-      '[CoursesPage] Toggling hide for course:',
-      courseId,
-      'from',
-      currentlyHidden,
-      'to',
-      !currentlyHidden
-    );
-    const result = await window.api.dispatch('UpdateCoursePreferences', {
+    await window.api.dispatch('UpdateCoursePreferences', {
       courseId,
       preferences: { isHidden: !currentlyHidden },
     });
-    console.debug('[CoursesPage] Dispatch result:', result);
     await fetchCourses();
-    console.debug(
-      '[CoursesPage] Courses after fetchCourses:',
-      courses.length,
-      'hidden:',
-      courses.filter((c) => c.isHidden).length
-    );
   };
 
   // Close color picker
@@ -377,71 +250,28 @@ export function CoursesPage() {
   };
 
   // Filter and sort courses
-  const filteredCourses = useMemo(() => {
-    let result = [...courses];
-
-    // Filter by hidden status
-    if (!showHidden) {
-      result = result.filter((c) => !c.isHidden);
-    }
-
-    // Filter by search query
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase();
-      result = result.filter(
-        (c) =>
-          c.name.toLowerCase().includes(query) ||
-          c.code.toLowerCase().includes(query) ||
-          (c.nickname && c.nickname.toLowerCase().includes(query))
-      );
-    }
-
-    // Filter by grade status
-    if (gradeFilter !== 'all') {
-      result = result.filter((c) => getGradeStatus(c) === gradeFilter);
-    }
-
-    // Filter by prefix
-    if (prefixFilter !== 'all') {
-      result = result.filter((c) => getCoursePrefix(c.code) === prefixFilter);
-    }
-
-    // Filter by type
-    if (typeFilter !== 'all') {
-      result = result.filter((c) => getCourseType(c) === typeFilter);
-    }
-
-    // Sort: apply custom order first, then pinned first, then alphabetically
-    const orderedIds = sortByCustomOrder(result.map((c) => c.id));
-    const orderMap = new Map(orderedIds.map((id, index) => [id, index]));
-
-    result.sort((a, b) => {
-      // Pinned courses always first
-      const aPinned = pinnedCourses.has(a.id);
-      const bPinned = pinnedCourses.has(b.id);
-      if (aPinned && !bPinned) return -1;
-      if (!aPinned && bPinned) return 1;
-
-      // Then by custom order (if exists)
-      const orderA = orderMap.get(a.id) ?? Infinity;
-      const orderB = orderMap.get(b.id) ?? Infinity;
-      if (orderA !== orderB) return orderA - orderB;
-
-      // Finally alphabetically
-      return a.code.localeCompare(b.code);
-    });
-
-    return result;
-  }, [
-    courses,
-    pinnedCourses,
-    searchQuery,
-    gradeFilter,
-    prefixFilter,
-    typeFilter,
-    showHidden,
-    sortByCustomOrder,
-  ]);
+  const filteredCourses = useMemo(
+    () =>
+      filterAndSortCourses(courses, {
+        showHidden,
+        searchQuery,
+        gradeFilter,
+        prefixFilter,
+        typeFilter,
+        pinnedCourses,
+        sortByCustomOrder,
+      }),
+    [
+      courses,
+      pinnedCourses,
+      searchQuery,
+      gradeFilter,
+      prefixFilter,
+      typeFilter,
+      showHidden,
+      sortByCustomOrder,
+    ]
+  );
 
   const pinnedCount = filteredCourses.filter((c) => pinnedCourses.has(c.id)).length;
   const hiddenCount = courses.filter((c) => c.isHidden).length;
@@ -751,7 +581,7 @@ export function CoursesPage() {
           {filteredCourses.map((course) => {
             const grades = getCachedCourseGrades(course.id, tasks);
             return (
-              <MemoizedCourseGridCard
+              <CourseGridCard
                 key={course.id}
                 course={course}
                 isPinned={pinnedCourses.has(course.id)}
@@ -784,11 +614,11 @@ export function CoursesPage() {
         /* List View - Virtualized for performance */
         <div style={styles.list}>
           {filteredCourses.length <= 20 ? (
-            // For small lists, render directly (virtualization overhead not worth it)
+            // For small lists, render directly
             filteredCourses.map((course, index) => {
               const grades = getCachedCourseGrades(course.id, tasks);
               return (
-                <MemoizedCourseListItem
+                <CourseListItem
                   key={course.id}
                   course={course}
                   isPinned={pinnedCourses.has(course.id)}
@@ -813,7 +643,7 @@ export function CoursesPage() {
           ) : (
             // For large lists, use virtualization
             <VirtualList
-              height={Math.min(filteredCourses.length * 80, 600)} // 80px per item, max 600px
+              height={Math.min(filteredCourses.length * 80, 600)}
               itemCount={filteredCourses.length}
               itemSize={80}
               width="100%"
@@ -922,345 +752,6 @@ export function CoursesPage() {
   );
 }
 
-interface CourseCardProps {
-  course: Course;
-  isPinned: boolean;
-  earned: number;
-  trend: number;
-  assessed: number;
-  onTogglePin: (courseId: number, e: React.MouseEvent) => void;
-  onToggleHide: (courseId: number, currentlyHidden: boolean) => void;
-  onClick: () => void;
-  onColorClick?: (courseId: number, currentColor: string, e: React.MouseEvent) => void;
-  showColorPicker?: boolean;
-  colorPickerValue?: string;
-  onColorChange?: (courseId: number, color: string) => void;
-  onColorInputChange?: (value: string) => void;
-  onColorPickerClose?: () => void;
-  // Drag-and-drop props
-  isDragging?: boolean;
-  isDragOver?: boolean;
-  onDragStart?: (e: React.DragEvent) => void;
-  onDragEnd?: (e: React.DragEvent) => void;
-  onDragOver?: (e: React.DragEvent) => void;
-  onDragLeave?: () => void;
-  onDrop?: (e: React.DragEvent) => void;
-}
-
-function CourseGridCard({
-  course,
-  isPinned,
-  earned,
-  trend,
-  assessed,
-  onTogglePin,
-  onToggleHide,
-  onClick,
-  onColorClick,
-  showColorPicker,
-  colorPickerValue,
-  onColorChange,
-  onColorInputChange: _onColorInputChange,
-  onColorPickerClose,
-  isDragging,
-  isDragOver,
-  onDragStart,
-  onDragEnd,
-  onDragOver,
-  onDragLeave,
-  onDrop,
-}: CourseCardProps) {
-  const color = getCourseColor(course.id, course.color);
-
-  return (
-    <div
-      style={{
-        ...styles.gridCard,
-        opacity: isDragging ? 0.5 : 1,
-        boxShadow: isDragOver ? '0 0 0 2px var(--color-blue)' : 'var(--shadow-card)',
-        transition: 'box-shadow 150ms ease, opacity 150ms ease',
-      }}
-      onClick={onClick}
-      draggable
-      onDragStart={onDragStart}
-      onDragEnd={onDragEnd}
-      onDragOver={onDragOver}
-      onDragLeave={onDragLeave}
-      onDrop={onDrop}
-    >
-      {/* Color accent bar - click to change color */}
-      <div
-        style={{
-          ...styles.colorBar,
-          backgroundColor: color,
-          cursor: 'pointer',
-          position: 'relative',
-        }}
-        onClick={(e) => onColorClick?.(course.id, color, e)}
-        title="Click to change color"
-      >
-        <ColorPickerPopup
-          isOpen={showColorPicker || false}
-          onClose={() => onColorPickerClose?.()}
-          value={colorPickerValue || color}
-          onChange={(newColor) => onColorChange?.(course.id, newColor)}
-          presets={COURSE_COLORS}
-          allowCustom={true}
-          swatchSize={24}
-          position="bottom-left"
-        />
-      </div>
-
-      {/* Use display: contents to allow children to participate in parent grid */}
-      <div style={styles.gridCardContent}>
-        {/* Header row - Grid row 1 */}
-        <div style={styles.gridCardHeader}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-            <span style={{ ...styles.courseCodeBadge, backgroundColor: color }}>
-              {getShortCode(course.code)}
-            </span>
-          </div>
-          <div style={{ display: 'flex', gap: 'var(--space-1)' }}>
-            <button
-              style={{
-                ...styles.pinButton,
-                color: course.isHidden ? 'var(--color-medium)' : 'var(--text-muted)',
-              }}
-              onClick={(e) => {
-                e.stopPropagation();
-                onToggleHide(course.id, course.isHidden);
-              }}
-              title={course.isHidden ? 'Show course' : 'Hide course'}
-            >
-              {course.isHidden ? <EyeOff size={16} /> : <Eye size={16} />}
-            </button>
-            <button
-              style={{
-                ...styles.pinButton,
-                color: isPinned ? 'var(--color-navy)' : 'var(--text-muted)',
-              }}
-              onClick={(e) => onTogglePin(course.id, e)}
-              title={isPinned ? 'Unpin course' : 'Pin course'}
-            >
-              {isPinned ? <Pin size={16} /> : <PinOff size={16} />}
-            </button>
-          </div>
-        </div>
-
-        {/* Course name - Grid row 2 */}
-        <h3 style={styles.gridCourseName}>{course.nickname || course.name}</h3>
-
-        {/* Full code - Grid row 3 (flex spacer) */}
-        <span style={styles.fullCode}>{course.code}</span>
-
-        {/* Stats - Grid row 4 */}
-        <div style={styles.gridStats}>
-          <div style={styles.gridStatItem}>
-            <Target size={14} color="var(--text-muted)" />
-            <span style={styles.gridStatLabel}>Target</span>
-            <span style={styles.gridStatValue}>{course.targetGrade}%</span>
-          </div>
-          {assessed > 0 && (
-            <>
-              <div style={styles.gridStatItem}>
-                <span style={styles.gridStatLabel}>Earned</span>
-                <span
-                  style={{
-                    ...styles.gridStatValue,
-                    color:
-                      trend >= course.targetGrade
-                        ? 'var(--color-success)'
-                        : trend >= course.targetGrade - 10
-                          ? 'var(--color-medium)'
-                          : 'var(--color-high)',
-                  }}
-                >
-                  {earned.toFixed(1)}%
-                </span>
-              </div>
-              <div style={styles.gridStatItem}>
-                <span style={styles.gridStatLabel}>Trend</span>
-                <span
-                  style={{
-                    ...styles.gridStatValue,
-                    color:
-                      trend >= course.targetGrade
-                        ? 'var(--color-success)'
-                        : trend >= course.targetGrade - 10
-                          ? 'var(--color-medium)'
-                          : 'var(--color-high)',
-                  }}
-                >
-                  {trend.toFixed(1)}%
-                </span>
-              </div>
-            </>
-          )}
-        </div>
-
-        {/* Footer row - Grid row 5: Sync time + Drag handle */}
-        <div style={styles.cardFooter}>
-          <div style={styles.syncTime}>
-            {course.lastSyncedAt
-              ? `Synced ${formatTimeAgo(course.lastSyncedAt)}`
-              : '\u00A0'}
-          </div>
-          {/* Drag handle */}
-          <div style={styles.dragHandle} title="Drag to reorder" data-drag-handle>
-            <GripVertical size={14} />
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-interface CourseListItemProps extends CourseCardProps {
-  isFirst: boolean;
-}
-
-function CourseListItem({
-  course,
-  isPinned,
-  earned,
-  trend,
-  assessed,
-  onTogglePin,
-  onToggleHide,
-  isFirst,
-  onClick,
-  onColorClick,
-  showColorPicker,
-  colorPickerValue,
-  onColorChange,
-  onColorInputChange: _onColorInputChange,
-  onColorPickerClose,
-}: CourseListItemProps) {
-  const color = getCourseColor(course.id, course.color);
-
-  return (
-    <div
-      style={{
-        ...styles.listItem,
-        borderTop: isFirst ? 'none' : '1px solid var(--border-light)',
-      }}
-      onClick={onClick}
-    >
-      {/* Color indicator */}
-      {/* Color indicator - click to change color */}
-      <div style={{ position: 'relative' }}>
-        <button
-          style={{
-            ...styles.listColorDot,
-            backgroundColor: color,
-            cursor: 'pointer',
-            border: 'none',
-          }}
-          onClick={(e) => onColorClick?.(course.id, color, e)}
-          title="Click to change color"
-        />
-        <ColorPickerPopup
-          isOpen={showColorPicker || false}
-          onClose={() => onColorPickerClose?.()}
-          value={colorPickerValue || color}
-          onChange={(newColor) => onColorChange?.(course.id, newColor)}
-          presets={COURSE_COLORS}
-          allowCustom={true}
-          swatchSize={24}
-          position="bottom-left"
-        />
-      </div>
-
-      {/* Course info */}
-      <div style={styles.listInfo}>
-        <div style={styles.listHeader}>
-          <span style={{ ...styles.listCodeBadge, backgroundColor: color }}>
-            {getShortCode(course.code)}
-          </span>
-          <span style={styles.listFullCode}>{course.code}</span>
-        </div>
-        <h3 style={styles.listCourseName}>{course.nickname || course.name}</h3>
-      </div>
-
-      {/* Grades */}
-      <div style={styles.listGrades}>
-        <div style={styles.listGradeItem}>
-          <span style={styles.listGradeLabel}>Target</span>
-          <span style={styles.listGradeValue}>{course.targetGrade}%</span>
-        </div>
-        {assessed > 0 && (
-          <>
-            <div style={styles.listGradeItem}>
-              <span style={styles.listGradeLabel}>Earned</span>
-              <span
-                style={{
-                  ...styles.listGradeValue,
-                  color:
-                    trend >= course.targetGrade
-                      ? 'var(--color-success)'
-                      : trend >= course.targetGrade - 10
-                        ? 'var(--color-medium)'
-                        : 'var(--color-high)',
-                }}
-              >
-                {earned.toFixed(1)}%
-              </span>
-            </div>
-            <div style={styles.listGradeItem}>
-              <span style={styles.listGradeLabel}>Trend</span>
-              <span
-                style={{
-                  ...styles.listGradeValue,
-                  color:
-                    trend >= course.targetGrade
-                      ? 'var(--color-success)'
-                      : trend >= course.targetGrade - 10
-                        ? 'var(--color-medium)'
-                        : 'var(--color-high)',
-                }}
-              >
-                {trend.toFixed(1)}%
-              </span>
-            </div>
-          </>
-        )}
-      </div>
-
-      {/* Actions */}
-      <div style={styles.listActions}>
-        <button
-          style={{
-            ...styles.pinButton,
-            color: course.isHidden ? 'var(--color-medium)' : 'var(--text-muted)',
-          }}
-          onClick={(e) => {
-            e.stopPropagation();
-            onToggleHide(course.id, course.isHidden);
-          }}
-          title={course.isHidden ? 'Show course' : 'Hide course'}
-        >
-          {course.isHidden ? <EyeOff size={16} /> : <Eye size={16} />}
-        </button>
-        <button
-          style={{
-            ...styles.pinButton,
-            color: isPinned ? 'var(--color-navy)' : 'var(--text-muted)',
-          }}
-          onClick={(e) => onTogglePin(course.id, e)}
-          title={isPinned ? 'Unpin course' : 'Pin course'}
-        >
-          {isPinned ? <Pin size={16} /> : <PinOff size={16} />}
-        </button>
-        <ChevronRight size={18} color="var(--text-muted)" />
-      </div>
-    </div>
-  );
-}
-
-// Memoized components to prevent unnecessary re-renders
-const MemoizedCourseGridCard = React.memo(CourseGridCard);
-const MemoizedCourseListItem = React.memo(CourseListItem);
-
 // Virtualized list item renderer for react-window
 interface VirtualizedListItemData {
   courses: Course[];
@@ -1291,7 +782,7 @@ function VirtualizedListItem({
 
   return (
     <div style={style}>
-      <MemoizedCourseListItem
+      <CourseListItem
         course={course}
         isPinned={data.pinnedCourses.has(course.id)}
         earned={grades.earned}
@@ -1312,800 +803,6 @@ function VirtualizedListItem({
       />
     </div>
   );
-}
-
-const styles: Record<string, React.CSSProperties> = {
-  page: {
-    width: '100%',
-    flex: 1,
-    display: 'flex',
-    flexDirection: 'column',
-  },
-
-  header: {
-    display: 'flex',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    marginBottom: 'var(--space-6)',
-    flexWrap: 'wrap',
-    gap: 'var(--space-4)',
-  },
-
-  headerLeft: {
-    display: 'flex',
-    flexDirection: 'column',
-    flex: '1 1 auto',
-    minWidth: 0,
-  },
-
-  headerRight: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 'var(--space-2)',
-    flexWrap: 'wrap',
-  },
-
-  searchWrapper: {
-    position: 'relative',
-    display: 'flex',
-    alignItems: 'center',
-  },
-
-  searchIcon: {
-    position: 'absolute',
-    left: '12px',
-    pointerEvents: 'none',
-  },
-
-  searchInput: {
-    width: '220px',
-    height: '36px',
-    paddingLeft: '36px',
-    paddingRight: '32px',
-    fontSize: 'var(--text-sm)',
-    border: '1px solid var(--border-default)',
-    borderRadius: 'var(--radius-md)',
-    backgroundColor: 'var(--bg-card)',
-    outline: 'none',
-    transition: 'border-color var(--transition-fast)',
-  },
-
-  clearSearch: {
-    position: 'absolute',
-    right: '8px',
-    width: '20px',
-    height: '20px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    background: 'var(--bg-app)',
-    border: 'none',
-    borderRadius: '50%',
-    cursor: 'pointer',
-    color: 'var(--text-muted)',
-  },
-
-  filterButton: {
-    width: '36px',
-    height: '36px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    position: 'relative',
-    border: '1px solid',
-    borderRadius: 'var(--radius-md)',
-    cursor: 'pointer',
-    transition: 'all var(--transition-fast)',
-  },
-
-  filterBadge: {
-    position: 'absolute',
-    top: '6px',
-    right: '6px',
-    width: '8px',
-    height: '8px',
-    backgroundColor: 'var(--color-navy)',
-    borderRadius: '50%',
-  },
-
-  filterPanel: {
-    display: 'flex',
-    flexWrap: 'wrap',
-    alignItems: 'center',
-    gap: 'var(--space-4)',
-    padding: 'var(--space-4)',
-    backgroundColor: 'var(--bg-card)',
-    borderRadius: 'var(--radius-lg)',
-    marginBottom: 'var(--space-4)',
-    boxShadow: 'var(--shadow-card)',
-  },
-
-  filterGroup: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 'var(--space-2)',
-  },
-
-  filterLabel: {
-    fontSize: 'var(--text-xs)',
-    fontWeight: 'var(--font-medium)',
-    color: 'var(--text-muted)',
-    marginRight: 'var(--space-1)',
-  },
-
-  filterChips: {
-    display: 'flex',
-    gap: 'var(--space-1)',
-    flexWrap: 'wrap',
-  },
-
-  filterSelect: {
-    height: '28px',
-    padding: '0 var(--space-3)',
-    fontSize: 'var(--text-xs)',
-    fontWeight: 'var(--font-medium)',
-    border: '1px solid var(--border-default)',
-    borderRadius: 'var(--radius-md)',
-    backgroundColor: 'var(--bg-card)',
-    cursor: 'pointer',
-    outline: 'none',
-  },
-
-  filterChip: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 'var(--space-1)',
-    height: '28px',
-    padding: '0 var(--space-3)',
-    fontSize: 'var(--text-xs)',
-    fontWeight: 'var(--font-medium)',
-    border: '1px solid',
-    borderRadius: 'var(--radius-full)',
-    cursor: 'pointer',
-    transition: 'all var(--transition-fast)',
-    whiteSpace: 'nowrap',
-  },
-
-  clearFiltersBtn: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 'var(--space-1)',
-    height: '28px',
-    padding: '0 var(--space-3)',
-    fontSize: 'var(--text-xs)',
-    fontWeight: 'var(--font-medium)',
-    color: 'var(--color-error)',
-    backgroundColor: 'transparent',
-    border: '1px solid var(--color-error)',
-    borderRadius: 'var(--radius-full)',
-    cursor: 'pointer',
-    marginLeft: 'auto',
-  },
-
-  clearFiltersLarge: {
-    marginTop: 'var(--space-4)',
-    padding: 'var(--space-2) var(--space-4)',
-    fontSize: 'var(--text-sm)',
-    fontWeight: 'var(--font-medium)',
-    color: 'white',
-    backgroundColor: 'var(--color-navy)',
-    border: 'none',
-    borderRadius: 'var(--radius-md)',
-    cursor: 'pointer',
-  },
-
-  title: {
-    fontSize: 'var(--text-3xl)',
-    fontWeight: 'var(--font-bold)',
-    color: 'var(--text-primary)',
-    marginBottom: 'var(--space-1)',
-  },
-
-  subtitle: {
-    fontSize: 'var(--text-sm)',
-    color: 'var(--text-secondary)',
-  },
-
-  viewToggle: {
-    display: 'flex',
-    backgroundColor: 'var(--bg-card)',
-    borderRadius: 'var(--radius-md)',
-    border: '1px solid var(--border-default)',
-    overflow: 'hidden',
-  },
-
-  viewButton: {
-    width: '40px',
-    height: '36px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    border: 'none',
-    cursor: 'pointer',
-    transition: 'all var(--transition-fast)',
-  },
-
-  archiveButton: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 'var(--space-1)',
-    height: '36px',
-    padding: '0 var(--space-3)',
-    fontSize: 'var(--text-sm)',
-    fontWeight: 'var(--font-medium)',
-    color: 'var(--text-secondary)',
-    backgroundColor: 'var(--bg-card)',
-    border: '1px solid var(--border-default)',
-    borderRadius: 'var(--radius-md)',
-    cursor: 'pointer',
-    transition: 'all var(--transition-fast)',
-  },
-
-  archiveDropdown: {
-    position: 'absolute',
-    top: '100%',
-    right: 0,
-    marginTop: 'var(--space-1)',
-    width: '280px',
-    maxHeight: '320px',
-    backgroundColor: 'var(--bg-card)',
-    border: '1px solid var(--border-default)',
-    borderRadius: 'var(--radius-md)',
-    boxShadow: 'var(--shadow-lg)',
-    zIndex: 100,
-    overflow: 'hidden',
-  },
-
-  archiveDropdownHeader: {
-    padding: 'var(--space-2) var(--space-3)',
-    fontSize: 'var(--text-xs)',
-    fontWeight: 'var(--font-medium)',
-    color: 'var(--text-muted)',
-    borderBottom: '1px solid var(--border-light)',
-    textTransform: 'uppercase',
-    letterSpacing: '0.5px',
-  },
-
-  archiveDropdownEmpty: {
-    padding: 'var(--space-4)',
-    textAlign: 'center' as const,
-    color: 'var(--text-muted)',
-    fontSize: 'var(--text-sm)',
-  },
-
-  archiveDropdownList: {
-    maxHeight: '280px',
-    overflowY: 'auto' as const,
-  },
-
-  archiveDropdownItem: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 'var(--space-2)',
-    width: '100%',
-    padding: 'var(--space-2) var(--space-3)',
-    fontSize: 'var(--text-sm)',
-    color: 'var(--text-primary)',
-    backgroundColor: 'transparent',
-    border: 'none',
-    cursor: 'pointer',
-    textAlign: 'left' as const,
-    transition: 'background-color var(--transition-fast)',
-  },
-
-  archiveDropdownCode: {
-    fontWeight: 'var(--font-bold)',
-    color: 'var(--text-secondary)',
-    fontSize: 'var(--text-xs)',
-    flexShrink: 0,
-  },
-
-  archiveDropdownName: {
-    flex: 1,
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap' as const,
-  },
-
-  resetOrderButton: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 'var(--space-1)',
-    height: '36px',
-    padding: '0 var(--space-3)',
-    fontSize: 'var(--text-xs)',
-    fontWeight: 'var(--font-medium)',
-    color: 'var(--text-secondary)',
-    backgroundColor: 'var(--bg-card)',
-    border: '1px solid var(--border-default)',
-    borderRadius: 'var(--radius-md)',
-    cursor: 'pointer',
-    transition: 'all var(--transition-fast)',
-  },
-
-  dragHandle: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: '4px',
-    borderRadius: 'var(--radius-sm)',
-    color: 'var(--text-muted)',
-    cursor: 'grab',
-    opacity: 0,
-    transition: 'opacity var(--transition-fast)',
-  },
-
-  // Grid View Styles - uses CSS Grid for card alignment, scales proportionally with viewport
-  grid: {
-    display: 'grid',
-    // Cards grow from 280px min to fill available space, with max ~400px before wrapping
-    gridTemplateColumns: 'repeat(auto-fill, minmax(clamp(280px, 20vw, 400px), 1fr))',
-    gap: 'clamp(16px, 2vw, 24px)',
-    // Each card is a 5-row grid for internal alignment
-    alignItems: 'stretch',
-    flex: 1,
-  },
-
-  gridCard: {
-    backgroundColor: 'var(--bg-card)',
-    borderRadius: 'var(--radius-lg)',
-    boxShadow: 'var(--shadow-card)',
-    overflow: 'hidden',
-    transition: 'box-shadow var(--transition-fast), transform var(--transition-fast)',
-    cursor: 'pointer',
-    // Internal grid for consistent alignment
-    display: 'grid',
-    gridTemplateRows: 'auto auto 1fr auto auto', // header, name, spacer, stats, footer
-    height: '100%', // Stretch to fill row height
-    minHeight: 'clamp(200px, 18vw, 280px)', // Proportional minimum height
-  },
-
-  colorBar: {
-    height: '4px',
-  },
-
-  colorPickerPopup: {
-    position: 'absolute',
-    top: '100%',
-    left: 'var(--space-4)',
-    backgroundColor: 'var(--bg-card)',
-    borderRadius: 'var(--radius-lg)',
-    boxShadow: '0 4px 20px rgba(0, 0, 0, 0.15)',
-    padding: 'var(--space-3)',
-    zIndex: 100,
-    minWidth: '200px',
-  },
-
-  colorPresets: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(5, 1fr)',
-    gap: 'var(--space-2)',
-    marginBottom: 'var(--space-3)',
-  },
-
-  colorPresetBtn: {
-    width: '28px',
-    height: '28px',
-    borderRadius: 'var(--radius-md)',
-    cursor: 'pointer',
-    transition: 'transform var(--transition-fast)',
-  },
-
-  hexInputRow: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 'var(--space-2)',
-    borderTop: '1px solid var(--border-light)',
-    paddingTop: 'var(--space-3)',
-  },
-
-  hexLabel: {
-    fontSize: 'var(--text-xs)',
-    fontWeight: 'var(--font-medium)',
-    color: 'var(--text-muted)',
-  },
-
-  hexInput: {
-    flex: 1,
-    height: '28px',
-    padding: '0 var(--space-2)',
-    fontSize: 'var(--text-sm)',
-    fontFamily: 'var(--font-mono)',
-    border: '1px solid var(--border-default)',
-    borderRadius: 'var(--radius-md)',
-    backgroundColor: 'var(--bg-app)',
-    color: 'var(--text-primary)',
-  },
-
-  nativeColorPicker: {
-    width: '28px',
-    height: '28px',
-    padding: 0,
-    border: '1px solid var(--border-default)',
-    borderRadius: 'var(--radius-md)',
-    cursor: 'pointer',
-  },
-
-  colorPickerPopupList: {
-    position: 'absolute',
-    top: '50%',
-    left: 'calc(100% + var(--space-2))',
-    transform: 'translateY(-50%)',
-    backgroundColor: 'var(--bg-card)',
-    borderRadius: 'var(--radius-lg)',
-    boxShadow: '0 4px 20px rgba(0, 0, 0, 0.15)',
-    padding: 'var(--space-3)',
-    zIndex: 100,
-    minWidth: '200px',
-  },
-
-  gridCardContent: {
-    display: 'contents', // Let children participate in parent grid
-  },
-
-  gridCardHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding:
-      'clamp(12px, 1.5vw, 20px) clamp(12px, 1.5vw, 20px) clamp(6px, 0.8vw, 12px) clamp(12px, 1.5vw, 20px)',
-  },
-
-  courseCodeBadge: {
-    fontSize: 'clamp(10px, 0.85vw, 13px)',
-    fontWeight: 'var(--font-bold)',
-    color: 'white',
-    padding: 'clamp(2px, 0.3vw, 5px) clamp(6px, 0.6vw, 10px)',
-    borderRadius: 'clamp(3px, 0.3vw, 5px)',
-    textTransform: 'uppercase',
-    letterSpacing: '0.025em',
-  },
-
-  pinButton: {
-    width: '28px',
-    height: '28px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    background: 'none',
-    border: 'none',
-    borderRadius: 'var(--radius-sm)',
-    cursor: 'pointer',
-    transition: 'all var(--transition-fast)',
-  },
-
-  gridCourseName: {
-    fontSize: 'clamp(14px, 1.1vw, 18px)',
-    fontWeight: 'var(--font-semibold)',
-    color: 'var(--text-primary)',
-    lineHeight: 'var(--leading-snug)',
-    padding: '0 clamp(12px, 1.5vw, 20px)',
-  },
-
-  fullCode: {
-    fontSize: 'clamp(10px, 0.8vw, 13px)',
-    color: 'var(--text-muted)',
-    display: 'block',
-    padding: 'clamp(4px, 0.4vw, 8px) clamp(12px, 1.5vw, 20px) 0 clamp(12px, 1.5vw, 20px)',
-    alignSelf: 'start', // Align to top of flex area
-  },
-
-  gridStats: {
-    display: 'flex',
-    gap: 'clamp(12px, 1.2vw, 20px)',
-    padding: 'clamp(8px, 1vw, 16px) clamp(12px, 1.5vw, 20px)',
-    borderTop: '1px solid var(--border-light)',
-    marginTop: 'auto', // Push to bottom of flex area
-  },
-
-  gridStatItem: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 'clamp(4px, 0.4vw, 8px)',
-  },
-
-  gridStatLabel: {
-    fontSize: 'clamp(10px, 0.8vw, 13px)',
-    color: 'var(--text-muted)',
-  },
-
-  gridStatValue: {
-    fontSize: 'clamp(12px, 1vw, 16px)',
-    fontWeight: 'var(--font-semibold)',
-    color: 'var(--text-primary)',
-  },
-
-  cardFooter: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding:
-      '0 clamp(12px, 1.5vw, 20px) clamp(12px, 1.5vw, 20px) clamp(12px, 1.5vw, 20px)',
-  },
-
-  syncTime: {
-    fontSize: 'clamp(10px, 0.8vw, 13px)',
-    color: 'var(--text-muted)',
-  },
-
-  // List View Styles - fills available space
-  list: {
-    backgroundColor: 'var(--bg-card)',
-    borderRadius: 'var(--radius-lg)',
-    boxShadow: 'var(--shadow-card)',
-    overflow: 'hidden',
-    flex: 1,
-    display: 'flex',
-    flexDirection: 'column',
-  },
-
-  listItem: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 'var(--space-4)',
-    padding: 'var(--space-4)',
-    cursor: 'pointer',
-    transition: 'background-color var(--transition-fast)',
-  },
-
-  listColorDot: {
-    width: '16px',
-    height: '16px',
-    borderRadius: '50%',
-    flexShrink: 0,
-    padding: 0,
-    transition: 'transform var(--transition-fast)',
-  },
-
-  listInfo: {
-    flex: 1,
-    minWidth: 0,
-  },
-
-  listHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 'var(--space-2)',
-    marginBottom: 'var(--space-1)',
-  },
-
-  listCodeBadge: {
-    fontSize: '10px',
-    fontWeight: 'var(--font-bold)',
-    color: 'white',
-    padding: '2px 6px',
-    borderRadius: '3px',
-    textTransform: 'uppercase',
-  },
-
-  listFullCode: {
-    fontSize: 'var(--text-xs)',
-    color: 'var(--text-muted)',
-  },
-
-  listCourseName: {
-    fontSize: 'var(--text-sm)',
-    fontWeight: 'var(--font-medium)',
-    color: 'var(--text-primary)',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap',
-  },
-
-  listGrades: {
-    display: 'flex',
-    gap: 'var(--space-6)',
-    flexShrink: 0,
-  },
-
-  listGradeItem: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'flex-end',
-  },
-
-  listGradeLabel: {
-    fontSize: 'var(--text-xs)',
-    color: 'var(--text-muted)',
-  },
-
-  listGradeValue: {
-    fontSize: 'var(--text-sm)',
-    fontWeight: 'var(--font-semibold)',
-    color: 'var(--text-primary)',
-  },
-
-  listActions: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 'var(--space-2)',
-    flexShrink: 0,
-  },
-
-  // Empty State
-  emptyState: {
-    textAlign: 'center',
-    padding: 'var(--space-10)',
-  },
-
-  emptyTitle: {
-    fontSize: 'var(--text-xl)',
-    fontWeight: 'var(--font-semibold)',
-    color: 'var(--text-primary)',
-    marginBottom: 'var(--space-2)',
-  },
-
-  emptyText: {
-    color: 'var(--text-secondary)',
-  },
-
-  // Archived Section
-  archivedSection: {
-    marginTop: 'var(--space-6)',
-    backgroundColor: 'var(--bg-card)',
-    borderRadius: 'var(--radius-lg)',
-    border: '1px solid var(--border-default)',
-    overflow: 'hidden',
-  },
-
-  archivedHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    width: '100%',
-    padding: 'var(--space-4)',
-    backgroundColor: 'transparent',
-    border: 'none',
-    cursor: 'pointer',
-  },
-
-  archivedHeaderLeft: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 'var(--space-2)',
-  },
-
-  archivedTitle: {
-    fontSize: 'var(--text-sm)',
-    fontWeight: 'var(--font-medium)',
-    color: 'var(--text-secondary)',
-  },
-
-  archivedCount: {
-    fontSize: 'var(--text-xs)',
-    padding: '2px 6px',
-    backgroundColor: 'var(--bg-app)',
-    borderRadius: 'var(--radius-sm)',
-    color: 'var(--text-muted)',
-  },
-
-  archivedContent: {
-    borderTop: '1px solid var(--border-light)',
-  },
-
-  archivedLoading: {
-    padding: 'var(--space-6)',
-    textAlign: 'center' as const,
-    color: 'var(--text-muted)',
-    fontSize: 'var(--text-sm)',
-  },
-
-  archivedEmpty: {
-    display: 'flex',
-    flexDirection: 'column' as const,
-    alignItems: 'center',
-    gap: 'var(--space-2)',
-    padding: 'var(--space-6)',
-    color: 'var(--text-muted)',
-    fontSize: 'var(--text-sm)',
-  },
-
-  archivedList: {
-    display: 'flex',
-    flexDirection: 'column' as const,
-  },
-
-  archivedItem: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 'var(--space-3)',
-    padding: 'var(--space-3) var(--space-4)',
-    borderTop: '1px solid var(--border-light)',
-  },
-
-  archivedColorBar: {
-    width: '4px',
-    height: '40px',
-    borderRadius: 'var(--radius-sm)',
-    flexShrink: 0,
-  },
-
-  archivedInfo: {
-    flex: 1,
-    minWidth: 0,
-    display: 'flex',
-    flexDirection: 'column' as const,
-    gap: '2px',
-  },
-
-  archivedInfoClickable: {
-    flex: 1,
-    minWidth: 0,
-    display: 'flex',
-    flexDirection: 'column' as const,
-    gap: '2px',
-    cursor: 'pointer',
-    padding: 'var(--space-1)',
-    marginLeft: 'calc(-1 * var(--space-1))',
-    borderRadius: 'var(--radius-sm)',
-    transition: 'background-color var(--transition-fast)',
-  },
-
-  archivedCode: {
-    fontSize: 'var(--text-xs)',
-    fontWeight: 'var(--font-bold)',
-    color: 'var(--text-muted)',
-    textTransform: 'uppercase' as const,
-  },
-
-  archivedName: {
-    fontSize: 'var(--text-sm)',
-    color: 'var(--text-secondary)',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap' as const,
-  },
-
-  unarchiveButton: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 'var(--space-1)',
-    padding: 'var(--space-2) var(--space-3)',
-    fontSize: 'var(--text-xs)',
-    fontWeight: 'var(--font-medium)',
-    color: 'var(--color-blue)',
-    backgroundColor: 'var(--color-blue-50)',
-    border: '1px solid var(--color-blue)',
-    borderRadius: 'var(--radius-md)',
-    cursor: 'pointer',
-    flexShrink: 0,
-  },
-
-  unarchiveButtonDisabled: {
-    color: 'var(--text-tertiary)',
-    backgroundColor: 'var(--color-gray-100)',
-    border: '1px solid var(--color-gray-300)',
-    cursor: 'not-allowed',
-    opacity: 0.6,
-  },
-
-  autoArchivedBadge: {
-    fontSize: 'var(--text-xs)',
-    color: 'var(--text-tertiary)',
-    backgroundColor: 'var(--color-gray-100)',
-    padding: '2px 6px',
-    borderRadius: 'var(--radius-sm)',
-    marginLeft: 'var(--space-2)',
-  },
-};
-
-// Inject hover styles for drag handle visibility
-if (typeof document !== 'undefined') {
-  const styleId = 'course-card-drag-styles';
-  if (!document.getElementById(styleId)) {
-    const style = document.createElement('style');
-    style.id = styleId;
-    style.textContent = `
-      [data-drag-handle] {
-        opacity: 0 !important;
-      }
-      div:hover > div > div > [data-drag-handle],
-      div:hover > div > [data-drag-handle] {
-        opacity: 1 !important;
-      }
-    `;
-    document.head.appendChild(style);
-  }
 }
 
 export default CoursesPage;
