@@ -7,15 +7,14 @@
 import { ipcMain, shell } from 'electron';
 import fs from 'fs';
 import path from 'path';
+import { mapPage, type CanvasPage } from '../layers/l2-daemon';
 import {
-  mapPage,
-  type CanvasPage,
-} from '../layers/l2-daemon';
-import { extractCanvasFileReferences } from '../layers/l2-daemon/HtmlFileExtractor';
+  extractCanvasFileReferences,
+  extractHtmlReferences,
+} from '../layers/l2-daemon/HtmlFileExtractor';
 import {
   createPathBuilder,
   sanitizeCourseCode,
-  sanitizeModuleName,
   sanitizeTitle,
 } from '../layers/l0-utilities';
 import type { IpcContext } from './IpcContext';
@@ -36,7 +35,10 @@ export function registerPagesHandlers(ctx: IpcContext): void {
   // Fetches the page HTML from Canvas and saves it as an HTML file to the course folder
   ipcMain.handle(
     'pages:downloadContent',
-    async (_event, moduleItemId: number): Promise<{ success: boolean; localPath?: string; error?: string }> => {
+    async (
+      _event,
+      moduleItemId: number
+    ): Promise<{ success: boolean; localPath?: string; error?: string }> => {
       try {
         const canvasClient = getCanvasClient();
         if (!canvasClient) {
@@ -51,9 +53,10 @@ export function registerPagesHandlers(ctx: IpcContext): void {
           item_type: string;
           page_url: string | null;
           url: string | null;
-        }>('SELECT id, module_id, title, item_type, page_url, url FROM module_items WHERE id = ?', [
-          moduleItemId,
-        ]);
+        }>(
+          'SELECT id, module_id, title, item_type, page_url, url FROM module_items WHERE id = ?',
+          [moduleItemId]
+        );
 
         if (!moduleItem) {
           return { success: false, error: 'Module item not found' };
@@ -77,7 +80,9 @@ export function registerPagesHandlers(ctx: IpcContext): void {
           id: number;
           external_id: string;
           code: string;
-        }>('SELECT id, external_id, code FROM courses WHERE id = ?', [moduleInfo.course_id]);
+        }>('SELECT id, external_id, code FROM courses WHERE id = ?', [
+          moduleInfo.course_id,
+        ]);
 
         if (!course) {
           return { success: false, error: 'Course not found' };
@@ -126,9 +131,18 @@ export function registerPagesHandlers(ctx: IpcContext): void {
         const sanitizedCode = sanitizeCourseCode(course.code);
 
         // Get paths using PathBuilder
-        const localPath = pathBuilder.getPageHtmlPath(course.code, moduleInfo.name, moduleItem.title);
-        const filesFolder = pathBuilder.getPageDependenciesPath(course.code, moduleInfo.name, moduleItem.title);
-        const folderPath = pathBuilder.getRelativeFolderPath(moduleInfo.name);
+        const localPath = pathBuilder.getPageHtmlPath(
+          course.code,
+          moduleInfo.name,
+          moduleItem.title
+        );
+        const filesFolder = pathBuilder.getPageDependenciesPath(
+          course.code,
+          moduleInfo.name,
+          moduleItem.title
+        );
+        // Use original module name (not sanitized) for folder_path so it matches module item display
+        const folderPath = moduleInfo.name;
 
         // Create module folder if needed
         const moduleFolder = pathBuilder.getModulePath(course.code, moduleInfo.name);
@@ -142,9 +156,13 @@ export function registerPagesHandlers(ctx: IpcContext): void {
 
         // Map of Canvas file URLs to local paths for rewriting
         const urlRewrites = new Map<string, string>();
+        // Track downloaded file IDs for html_dependencies table
+        const downloadedFileIds: string[] = [];
 
         if (fileRefs.length > 0) {
-          logger.info(`[pages:downloadContent] Found ${fileRefs.length} file dependencies`);
+          logger.info(
+            `[pages:downloadContent] Found ${fileRefs.length} file dependencies`
+          );
 
           // Create files folder for dependencies
           if (!fs.existsSync(filesFolder)) {
@@ -167,26 +185,73 @@ export function registerPagesHandlers(ctx: IpcContext): void {
                 }>(fileEndpoint);
 
                 if (fileResponse.data?.url && fileResponse.data?.display_name) {
-                  const safeFileName = fileResponse.data.display_name
-                    .replace(/[<>:"/\\|?*]/g, '_');
-                  const _localFilePath = path.join(filesFolder, safeFileName);
+                  const safeFileName = fileResponse.data.display_name.replace(
+                    /[<>:"/\\|?*]/g,
+                    '_'
+                  );
+                  const localFilePath = path.join(filesFolder, safeFileName);
+                  const fileId = ref.canvasFileId;
+                  const mimeType = fileResponse.data['content-type'] || null;
 
                   // Download the file
                   await new Promise<void>((resolve, _reject) => {
-                    const downloadId = `page-dep-${ref.canvasFileId}-${Date.now()}`;
+                    const downloadId = `page-dep-${fileId}-${Date.now()}`;
 
-                    const onComplete = (result: { id: string; success: boolean; localPath?: string; error?: string }) => {
+                    const onComplete = (result: {
+                      id: string;
+                      success: boolean;
+                      localPath?: string;
+                      error?: string;
+                    }) => {
                       if (result.id !== downloadId) return;
                       fileDownloadManager.off('download-complete', onComplete);
                       fileDownloadManager.off('download-error', onComplete);
 
                       if (result.success && result.localPath) {
                         // Map the original URL pattern to local path
-                        urlRewrites.set(ref.matchedUrl, `${safeTitle}_files/${safeFileName}`);
-                        logger.info(`[pages:downloadContent] Downloaded dependency: ${safeFileName}`);
+                        urlRewrites.set(
+                          ref.matchedUrl,
+                          `${safeTitle}_files/${safeFileName}`
+                        );
+                        // Track for html_dependencies table
+                        downloadedFileIds.push(fileId);
+
+                        // Create/update resource entry for this file so dependency check can find it
+                        try {
+                          const fileStats = fs.statSync(localFilePath);
+                          database.executeWrite(
+                            `INSERT INTO resources (external_id, course_id, type, title, local_path, folder_path, size_bytes, mime_type, context_type, context_id, synced_at)
+                             VALUES (?, ?, 'file', ?, ?, ?, ?, ?, 'page_dependency', ?, CURRENT_TIMESTAMP)
+                             ON CONFLICT(external_id) DO UPDATE SET
+                               local_path = excluded.local_path,
+                               size_bytes = excluded.size_bytes,
+                               synced_at = CURRENT_TIMESTAMP`,
+                            [
+                              fileId,
+                              course.id,
+                              safeFileName,
+                              localFilePath,
+                              `${moduleInfo.name}/${safeTitle}_files`,
+                              fileStats.size,
+                              mimeType,
+                              pageSlug,
+                            ],
+                            'resources'
+                          );
+                        } catch (dbErr) {
+                          logger.warn(
+                            `[pages:downloadContent] Failed to create resource entry for ${fileId}: ${dbErr}`
+                          );
+                        }
+
+                        logger.info(
+                          `[pages:downloadContent] Downloaded dependency: ${safeFileName}`
+                        );
                         resolve();
                       } else {
-                        logger.warn(`[pages:downloadContent] Failed to download ${ref.canvasFileId}: ${result.error}`);
+                        logger.warn(
+                          `[pages:downloadContent] Failed to download ${fileId}: ${result.error}`
+                        );
                         resolve(); // Continue even if one file fails
                       }
                     };
@@ -205,8 +270,48 @@ export function registerPagesHandlers(ctx: IpcContext): void {
                   });
                 }
               } catch (_err) {
-                logger.warn(`[pages:downloadContent] Failed to fetch file info for ${ref.canvasFileId}`);
+                logger.warn(
+                  `[pages:downloadContent] Failed to fetch file info for ${ref.canvasFileId}`
+                );
               }
+            }
+          }
+
+          // Record dependencies in html_dependencies table for future dependency checking
+          if (downloadedFileIds.length > 0) {
+            logger.info(
+              `[pages:downloadContent] Recording ${downloadedFileIds.length} file dependencies in html_dependencies`
+            );
+            for (const fileId of downloadedFileIds) {
+              database.executeWrite(
+                `INSERT INTO html_dependencies (parent_source_type, parent_source_id, child_source_type, child_source_id)
+                 VALUES ('page', ?, 'file', ?)
+                 ON CONFLICT(parent_source_type, parent_source_id, child_source_type, child_source_id) DO NOTHING`,
+                [pageSlug, fileId],
+                'html_dependencies'
+              );
+            }
+          }
+        }
+
+        // Extract and record page link dependencies (links to other Canvas pages)
+        const htmlRefs = extractHtmlReferences(bodyHtml);
+        const pageLinks = htmlRefs.filter(
+          (ref) => ref.refType === 'canvas-page' && ref.pageSlug
+        );
+        if (pageLinks.length > 0) {
+          logger.info(
+            `[pages:downloadContent] Recording ${pageLinks.length} page link dependencies`
+          );
+          for (const link of pageLinks) {
+            if (link.pageSlug) {
+              database.executeWrite(
+                `INSERT INTO html_dependencies (parent_source_type, parent_source_id, child_source_type, child_source_id)
+                 VALUES ('page', ?, 'page', ?)
+                 ON CONFLICT(parent_source_type, parent_source_id, child_source_type, child_source_id) DO NOTHING`,
+                [pageSlug, link.pageSlug],
+                'html_dependencies'
+              );
             }
           }
         }
@@ -304,7 +409,23 @@ export function registerPagesHandlers(ctx: IpcContext): void {
   // Open a downloaded Page HTML file
   ipcMain.handle(
     'pages:openFile',
-    async (_event, moduleItemId: number): Promise<{ success: boolean; error?: string }> => {
+    async (
+      _event,
+      moduleItemId: number,
+      skipDependencyCheck: boolean = false
+    ): Promise<{
+      success: boolean;
+      needsDownload?: boolean;
+      hasMissingDependencies?: boolean;
+      missingDependencies?: Array<{
+        sourceId: string;
+        filename: string;
+        sizeBytes: number;
+        canvasUrl: string;
+      }>;
+      totalMissingSize?: number;
+      error?: string;
+    }> => {
       try {
         // Get module item info including page_url for Canvas URL construction
         const moduleItem = database.executeReadOne<{
@@ -314,9 +435,10 @@ export function registerPagesHandlers(ctx: IpcContext): void {
           item_type: string;
           page_url: string | null;
           url: string | null;
-        }>('SELECT id, module_id, title, item_type, page_url, url FROM module_items WHERE id = ?', [
-          moduleItemId,
-        ]);
+        }>(
+          'SELECT id, module_id, title, item_type, page_url, url FROM module_items WHERE id = ?',
+          [moduleItemId]
+        );
 
         if (!moduleItem) {
           return { success: false, error: 'Module item not found' };
@@ -383,11 +505,78 @@ export function registerPagesHandlers(ctx: IpcContext): void {
         // Offline HTML enabled - open local file
         // Use centralized PathBuilder to ensure path matches pages:downloadContent
         const pathBuilder = createPathBuilder(getFilesDir());
-        const localPath = pathBuilder.getPageHtmlPath(course.code, moduleInfo.name, moduleItem.title);
+        const localPath = pathBuilder.getPageHtmlPath(
+          course.code,
+          moduleInfo.name,
+          moduleItem.title
+        );
 
         // Check if file exists
         if (!fs.existsSync(localPath)) {
-          return { success: false, error: 'Page file not found. Please download it first.' };
+          // Return needsDownload flag so UI can auto-download or prompt user
+          return {
+            success: false,
+            needsDownload: true,
+            error: 'Page file not found. Please download it first.',
+          };
+        }
+
+        // Check for missing dependencies if promptForMissing is enabled and not skipping
+        if (htmlSettings.promptForMissing && !skipDependencyCheck) {
+          const missingDependencies: Array<{
+            sourceId: string;
+            filename: string;
+            sizeBytes: number;
+            canvasUrl: string;
+          }> = [];
+
+          try {
+            // Read the HTML file to find local file references
+            const htmlContent = fs.readFileSync(localPath, 'utf-8');
+            const safeTitle = sanitizeTitle(moduleItem.title);
+            const filesFolder = pathBuilder.getPageDependenciesPath(
+              course.code,
+              moduleInfo.name,
+              moduleItem.title
+            );
+
+            // Find all references to the _files folder (e.g., PageTitle_files/image.png)
+            const localRefPattern = new RegExp(
+              `${safeTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}_files/([^"'\\s>]+)`,
+              'g'
+            );
+            const matches = htmlContent.matchAll(localRefPattern);
+
+            for (const match of matches) {
+              const filename = match[1];
+              const localFilePath = path.join(filesFolder, filename);
+
+              if (!fs.existsSync(localFilePath)) {
+                logger.info(`[pages:openFile] Missing dependency: ${filename}`);
+                missingDependencies.push({
+                  sourceId: `page-dep-${filename}`,
+                  filename,
+                  sizeBytes: 0, // Unknown size for local refs
+                  canvasUrl: '', // No Canvas URL available
+                });
+              }
+            }
+
+            if (missingDependencies.length > 0) {
+              logger.info(
+                `[pages:openFile] Found ${missingDependencies.length} missing dependencies`
+              );
+              return {
+                success: false,
+                hasMissingDependencies: true,
+                missingDependencies,
+                totalMissingSize: 0,
+              };
+            }
+          } catch (parseError) {
+            logger.warn(`[pages:openFile] Failed to check dependencies: ${parseError}`);
+            // Continue to open file even if dependency check fails
+          }
         }
 
         // Open the file

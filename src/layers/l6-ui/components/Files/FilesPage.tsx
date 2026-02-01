@@ -61,6 +61,7 @@ import {
   MissingDependency,
 } from './MissingDependenciesDialog';
 import { ExternalLinkDialog } from './ExternalLinkDialog';
+import { PageDownloadDialog } from './PageDownloadDialog';
 import {
   getFolderTypeFromPath,
   getFolderDepth,
@@ -349,6 +350,17 @@ export function FilesPage() {
     title: '',
   });
 
+  // Page download dialog state (for Local HTML Files feature)
+  const [pageDownloadDialog, setPageDownloadDialog] = useState<{
+    isOpen: boolean;
+    moduleItem: FileModuleItem | null;
+    isDownloading: boolean;
+  }>({
+    isOpen: false,
+    moduleItem: null,
+    isDownloading: false,
+  });
+
   // Fetch files directory path
   useEffect(() => {
     const api = window.api;
@@ -525,11 +537,68 @@ export function FilesPage() {
 
   // Group and filter files
   const groupedFiles = useMemo(() => {
+    // Build a set of content that's already covered by HTML resources
+    // This deduplicates module items that have corresponding exported HTML files
+    const coveredPageSlugs = new Set<string>(); // courseId:pageSlug
+    const coveredAssignments = new Set<string>(); // courseId:assignmentId
+    const coveredByTitle = new Set<string>(); // courseId:normalizedTitle (fallback matching)
+
+    for (const resource of files.resources) {
+      const r = resource as FileResource;
+      if (r.externalId) {
+        // Match html-page-{slug} pattern
+        const pageMatch = r.externalId.match(/^html-page-(.+)$/);
+        if (pageMatch) {
+          coveredPageSlugs.add(`${r.courseId}:${pageMatch[1]}`);
+          // Also add normalized title for fallback matching
+          coveredByTitle.add(`${r.courseId}:${r.title.toLowerCase().trim()}`);
+        }
+        // Match html-assignment-{id} pattern
+        const assignmentMatch = r.externalId.match(/^html-assignment-(\d+)$/);
+        if (assignmentMatch) {
+          coveredAssignments.add(`${r.courseId}:${assignmentMatch[1]}`);
+          coveredByTitle.add(`${r.courseId}:${r.title.toLowerCase().trim()}`);
+        }
+        // Match html-quiz-{id} pattern (if used)
+        const quizMatch = r.externalId.match(/^html-quiz-(\d+)$/);
+        if (quizMatch) {
+          coveredByTitle.add(`${r.courseId}:${r.title.toLowerCase().trim()}`);
+        }
+      }
+    }
+
+    // Filter out module items that are already covered by HTML resources
+    const deduplicatedModuleItems = files.moduleItems.filter((item) => {
+      const m = item as FileModuleItem;
+
+      // For Page items, check if the page slug is covered
+      if (m.itemType === 'Page' && m.pageUrl) {
+        if (coveredPageSlugs.has(`${m.courseId}:${m.pageUrl}`)) {
+          return false; // Skip - already have HTML resource for this page
+        }
+      }
+
+      // For Assignment items, check by content ID or title
+      if (m.itemType === 'Assignment' && m.contentId) {
+        if (coveredAssignments.has(`${m.courseId}:${m.contentId}`)) {
+          return false; // Skip - already have HTML resource for this assignment
+        }
+      }
+
+      // Fallback: check by normalized title for any type
+      const normalizedTitle = m.title.toLowerCase().trim();
+      if (coveredByTitle.has(`${m.courseId}:${normalizedTitle}`)) {
+        return false; // Skip - already have HTML resource with same title
+      }
+
+      return true; // Keep this module item
+    });
+
     const allFiles: FileItem[] = [
       ...files.attachments,
       ...files.resources,
       ...files.pages,
-      ...files.moduleItems,
+      ...deduplicatedModuleItems,
     ];
 
     const filtered = allFiles.filter((f) => {
@@ -636,7 +705,10 @@ export function FilesPage() {
 
   // Counts
   const totalFiles =
-    files.attachments.length + files.resources.length + files.pages.length + files.moduleItems.length;
+    files.attachments.length +
+    files.resources.length +
+    files.pages.length +
+    files.moduleItems.length;
   const filteredCount = Array.from(groupedFiles.values()).reduce((sum, folderMap) => {
     return (
       sum + Array.from(folderMap.values()).reduce((fSum, list) => fSum + list.length, 0)
@@ -861,7 +933,10 @@ export function FilesPage() {
         } else {
           // Other module item types (Quiz, Assignment, etc.) - not downloadable as files
           console.warn(`Cannot download module item of type: ${moduleItem.itemType}`);
-          result = { success: false, error: `Cannot download ${moduleItem.itemType} items` };
+          result = {
+            success: false,
+            error: `Cannot download ${moduleItem.itemType} items`,
+          };
         }
       } else {
         result = await api.downloadResource(file.id);
@@ -1056,8 +1131,41 @@ export function FilesPage() {
             console.log('[FilesPage] Opened module page file');
             return;
           }
+          // If Local HTML is enabled but file needs download, show dialog to ask user
+          if ((openResult as { needsDownload?: boolean })?.needsDownload) {
+            console.log('[FilesPage] Page needs download, showing dialog');
+            setPageDownloadDialog({
+              isOpen: true,
+              moduleItem,
+              isDownloading: false,
+            });
+            return; // Don't fall through to Canvas URL
+          }
+          // If page has missing dependencies, show missing dependencies dialog
+          const typedResult = openResult as {
+            hasMissingDependencies?: boolean;
+            missingDependencies?: MissingDependency[];
+            totalMissingSize?: number;
+          };
+          if (typedResult?.hasMissingDependencies && typedResult.missingDependencies) {
+            console.log(
+              '[FilesPage] Page has missing dependencies:',
+              typedResult.missingDependencies
+            );
+            setMissingDepsDialog({
+              isOpen: true,
+              file: moduleItem,
+              dependencies: typedResult.missingDependencies,
+              totalSize: typedResult.totalMissingSize || 0,
+              isDownloading: false,
+              downloadProgress: 0,
+            });
+            return; // Don't fall through to Canvas URL
+          }
         } catch (error) {
-          console.log('[FilesPage] Failed to open module page file, falling back to Canvas URL');
+          console.log(
+            '[FilesPage] Failed to open module page file, falling back to Canvas URL'
+          );
         }
       }
 
@@ -1074,7 +1182,9 @@ export function FilesPage() {
             console.log('[FilesPage] Module file not downloaded, opening Canvas URL');
           }
         } catch (error) {
-          console.log('[FilesPage] Failed to open module file, falling back to Canvas URL');
+          console.log(
+            '[FilesPage] Failed to open module file, falling back to Canvas URL'
+          );
         }
       }
 
@@ -1124,6 +1234,10 @@ export function FilesPage() {
     const api = window.api;
     if (!api || !missingDepsDialog.file) return;
 
+    const file = missingDepsDialog.file;
+    const isModulePage =
+      file.source === 'module' && (file as FileModuleItem).itemType === 'Page';
+
     setMissingDepsDialog((prev) => ({
       ...prev,
       isDownloading: true,
@@ -1139,7 +1253,19 @@ export function FilesPage() {
         }));
       }, 500);
 
-      const result = await api.downloadHtmlDependencies(missingDepsDialog.file.id);
+      let result: { success: boolean; error?: string; contentChanged?: boolean };
+
+      if (isModulePage) {
+        // For module pages, re-download the entire page (includes dependencies)
+        const moduleItem = file as FileModuleItem;
+        result = (await api.downloadPageContent?.(moduleItem.id)) || {
+          success: false,
+          error: 'API not available',
+        };
+      } else {
+        // For resources, use the existing dependency download
+        result = await api.downloadHtmlDependencies(file.id);
+      }
 
       clearInterval(progressInterval);
 
@@ -1173,9 +1299,13 @@ export function FilesPage() {
             });
           }
 
-          // Open the file with skipDependencyCheck=true since we just downloaded
+          // Open the file - for pages use openPageFile, for resources use openResource
           if (fileForWarning) {
-            api.openResource(fileForWarning.id, true);
+            if (isModulePage) {
+              api.openPageFile?.((fileForWarning as FileModuleItem).id);
+            } else {
+              api.openResource(fileForWarning.id, true);
+            }
           }
         }, 500);
       } else {
@@ -1224,6 +1354,10 @@ export function FilesPage() {
     const api = window.api;
     if (!api || !missingDepsDialog.file) return;
 
+    const file = missingDepsDialog.file;
+    const isModulePage =
+      file.source === 'module' && (file as FileModuleItem).itemType === 'Page';
+
     // Close dialog
     setMissingDepsDialog({
       isOpen: false,
@@ -1235,7 +1369,11 @@ export function FilesPage() {
     });
 
     // Open file with skipDependencyCheck=true
-    api.openResource(missingDepsDialog.file.id, true);
+    if (isModulePage) {
+      api.openPageFile?.((file as FileModuleItem).id, true);
+    } else {
+      api.openResource(file.id, true);
+    }
   };
 
   const closeMissingDepsDialog = () => {
@@ -1278,6 +1416,60 @@ export function FilesPage() {
 
   const closeExternalLinkDialog = () => {
     setExternalLinkDialog({ isOpen: false, url: '', title: '' });
+  };
+
+  // Page download dialog handlers
+  const handleDownloadPage = async () => {
+    const api = window.api;
+    if (!api || !pageDownloadDialog.moduleItem) return;
+
+    const moduleItem = pageDownloadDialog.moduleItem;
+    const canonicalId = getCanonicalFileId(moduleItem);
+
+    setPageDownloadDialog((prev) => ({ ...prev, isDownloading: true }));
+    setDownloadingIds((prev) => new Set(prev).add(canonicalId));
+
+    try {
+      const downloadResult = await api.downloadPageContent?.(moduleItem.id);
+      if (downloadResult?.success && downloadResult.localPath) {
+        console.log('[FilesPage] Downloaded page, now opening');
+        // Try to open after download
+        const openResult = await api.openPageFile?.(moduleItem.id);
+        if (openResult?.success) {
+          console.log('[FilesPage] Opened downloaded page file');
+        }
+        // Refresh files list to update download status
+        fetchFiles();
+      } else {
+        console.error('[FilesPage] Failed to download page:', downloadResult?.error);
+      }
+    } catch (error) {
+      console.error('[FilesPage] Error downloading page:', error);
+    } finally {
+      setDownloadingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(canonicalId);
+        return next;
+      });
+      setPageDownloadDialog({ isOpen: false, moduleItem: null, isDownloading: false });
+    }
+  };
+
+  const handleOpenPageInCanvas = () => {
+    const api = window.api;
+    if (!api || !pageDownloadDialog.moduleItem) return;
+
+    const moduleItem = pageDownloadDialog.moduleItem;
+    const url = moduleItem.externalUrl || moduleItem.url;
+    if (url) {
+      api.openExternal(url);
+    }
+    setPageDownloadDialog({ isOpen: false, moduleItem: null, isDownloading: false });
+  };
+
+  const closePageDownloadDialog = () => {
+    if (pageDownloadDialog.isDownloading) return; // Prevent closing during download
+    setPageDownloadDialog({ isOpen: false, moduleItem: null, isDownloading: false });
   };
 
   // Check if a file can be shown in folder (has a local file path)
@@ -1900,13 +2092,19 @@ export function FilesPage() {
                                     <FileListItem
                                       key={getFileKey(file)}
                                       file={file}
-                                      isDownloading={downloadingIds.has(getCanonicalFileId(file))}
+                                      isDownloading={downloadingIds.has(
+                                        getCanonicalFileId(file)
+                                      )}
                                       isSelected={selectedFiles.has(getFileKey(file))}
                                       selectMode={selectMode}
                                       onToggleSelect={() => toggleFileSelection(file)}
                                       onDownload={() => handleDownload(file)}
                                       onOpen={() => handleOpen(file)}
-                                      onShowInFolder={canShowInFolder(file) ? () => handleShowInFolder(file) : undefined}
+                                      onShowInFolder={
+                                        canShowInFolder(file)
+                                          ? () => handleShowInFolder(file)
+                                          : undefined
+                                      }
                                       onContextMenu={(e) => handleContextMenu(file, e)}
                                     />
                                   ))}
@@ -1924,13 +2122,19 @@ export function FilesPage() {
                                     <FileGridItem
                                       key={getFileKey(file)}
                                       file={file}
-                                      isDownloading={downloadingIds.has(getCanonicalFileId(file))}
+                                      isDownloading={downloadingIds.has(
+                                        getCanonicalFileId(file)
+                                      )}
                                       isSelected={selectedFiles.has(getFileKey(file))}
                                       selectMode={selectMode}
                                       onToggleSelect={() => toggleFileSelection(file)}
                                       onDownload={() => handleDownload(file)}
                                       onOpen={() => handleOpen(file)}
-                                      onShowInFolder={canShowInFolder(file) ? () => handleShowInFolder(file) : undefined}
+                                      onShowInFolder={
+                                        canShowInFolder(file)
+                                          ? () => handleShowInFolder(file)
+                                          : undefined
+                                      }
                                       onContextMenu={(e) => handleContextMenu(file, e)}
                                     />
                                   ))}
@@ -2031,6 +2235,16 @@ export function FilesPage() {
         title={externalLinkDialog.title}
         onClose={closeExternalLinkDialog}
         onConfirm={handleExternalLinkConfirm}
+      />
+
+      {/* Page Download Dialog (Local HTML Files) */}
+      <PageDownloadDialog
+        isOpen={pageDownloadDialog.isOpen}
+        pageTitle={pageDownloadDialog.moduleItem?.title || ''}
+        isDownloading={pageDownloadDialog.isDownloading}
+        onClose={closePageDownloadDialog}
+        onDownload={handleDownloadPage}
+        onOpenInCanvas={handleOpenPageInCanvas}
       />
 
       {/* Content Changed Warning Toast */}

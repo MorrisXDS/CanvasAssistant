@@ -174,8 +174,8 @@ const api = {
   downloadPageContent: (moduleItemId: number) =>
     ipcRenderer.invoke('pages:downloadContent', moduleItemId),
 
-  openPageFile: (moduleItemId: number) =>
-    ipcRenderer.invoke('pages:openFile', moduleItemId),
+  openPageFile: (moduleItemId: number, skipDependencyCheck?: boolean) =>
+    ipcRenderer.invoke('pages:openFile', moduleItemId, skipDependencyCheck),
 
   exportPageHtml: (options: {
     courseId: number;
