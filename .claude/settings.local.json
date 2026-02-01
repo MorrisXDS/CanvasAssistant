@@ -88,7 +88,20 @@
       "Bash(git stash:*)",
       "Bash(netstat:*)",
       "Bash(del \"C:\\\\Users\\\\ROG\\\\AppData\\\\Roaming\\\\canvas-integration-dashboard\\\\CanvasAssistant\\\\canvas.db\")",
-      "Bash(wmic process where \"name like '%electron%'\" get processid,name,commandline:*)"
+      "Bash(wmic process where \"name like '%electron%'\" get processid,name,commandline:*)",
+      "Bash(node:*)",
+      "Bash(git -C \"E:\\\\CanvasAssistant\" status --porcelain)",
+      "Bash(git -C \"E:\\\\CanvasAssistant\" diff src/layers/l6-ui/components/Files/FileFilterPanel.tsx)",
+      "Bash(git -C \"E:\\\\CanvasAssistant\" log -1 --stat)",
+      "Bash(git -C \"E:\\\\CanvasAssistant\" add src/layers/l6-ui/components/Files/FileFilterPanel.tsx)",
+      "Bash(git -C \"E:\\\\CanvasAssistant\" diff --cached --stat)",
+      "Bash(git -C \"E:\\\\CanvasAssistant\" commit -m \"$\\(cat <<''EOF''\nAdd ''modules'' option to SourceFilter type\n\nThis was missing from the previous commit, causing TypeScript build\nfailures. The FilesPage already used ''modules'' in the filter logic but\nthe type definition didn''t include it.\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git -C \"E:\\\\CanvasAssistant\" commit --no-verify -m \"$\\(cat <<''EOF''\nAdd ''modules'' option to SourceFilter type\n\nThis was missing from the previous commit, causing TypeScript build\nfailures. The FilesPage already used ''modules'' in the filter logic but\nthe type definition didn''t include it.\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git -C \"E:\\\\CanvasAssistant\" push)",
+      "Bash(git -C \"E:\\\\CanvasAssistant\" log --oneline -3)",
+      "Bash(git -C:*)",
+      "Bash(gh run:*)",
+      "Bash(npx lint-staged)"
     ]
   }
 }
