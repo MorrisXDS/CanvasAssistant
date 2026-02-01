@@ -61,7 +61,7 @@ export function registerPagesHandlers(ctx: IpcContext): void {
         const moduleInfo = database.executeReadOne<{
           course_id: number;
           name: string;
-        }>('SELECT course_id, name as module_name FROM modules WHERE id = ?', [moduleItem.module_id]);
+        }>('SELECT course_id, name FROM modules WHERE id = ?', [moduleItem.module_id]);
 
         if (!moduleInfo) {
           return { success: false, error: 'Module not found' };
