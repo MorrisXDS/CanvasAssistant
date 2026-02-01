@@ -20,6 +20,9 @@ export function registerSyncHandlers(ctx: IpcContext): void {
   const systemMonitor = ctx.getSystemMonitor();
   const getSyncEngine = ctx.getSyncEngine;
   const getMainWindow = ctx.getMainWindow;
+  const getSyncPreferences = ctx.getSyncPreferences;
+  const startAutoSync = ctx.startAutoSync;
+  const stopAutoSync = ctx.stopAutoSync;
 
   // ============ Full Sync ============
 
@@ -393,4 +396,48 @@ export function registerSyncHandlers(ctx: IpcContext): void {
       return { autoSyncEnabled: true, autoSyncInterval: 15, autoAssignDueDate: false };
     }
   });
+
+  ipcMain.handle(
+    'sync:setAutoSyncPreferences',
+    (
+      _event,
+      prefs: {
+        autoSyncEnabled: boolean;
+        autoSyncInterval: number;
+        autoAssignDueDate?: boolean;
+        saveHtmlContent?: boolean;
+        htmlUrlRewriting?: 'local' | 'original';
+        downloadImages?: boolean;
+        downloadLinkedFiles?: boolean;
+        syncFiles?: boolean;
+        syncAnnouncements?: boolean;
+      }
+    ) => {
+      try {
+        const existingPrefs = getSyncPreferences();
+        const mergedPrefs = { ...existingPrefs, ...prefs };
+
+        database.executeWrite(
+          `INSERT INTO user_preferences (key, value) VALUES ('syncPreferences', ?)
+           ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+          [JSON.stringify(mergedPrefs)],
+          'user_preferences'
+        );
+
+        if (mergedPrefs.autoSyncEnabled) {
+          startAutoSync();
+        } else {
+          stopAutoSync();
+        }
+
+        logger.info(
+          `Sync preferences updated: enabled=${mergedPrefs.autoSyncEnabled}, interval=${mergedPrefs.autoSyncInterval}min, saveHtmlContent=${mergedPrefs.saveHtmlContent}`
+        );
+        return { success: true };
+      } catch (error) {
+        logger.error('Failed to save sync preferences:', error as Error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
 }

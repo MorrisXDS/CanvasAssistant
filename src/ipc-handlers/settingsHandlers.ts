@@ -1,0 +1,279 @@
+/**
+ * Settings IPC Handlers
+ * Handlers for application settings:
+ * - Academic settings (target grade)
+ * - Visibility settings (term selection)
+ * - Window behavior settings
+ * - Course settings
+ */
+
+import { ipcMain, app } from 'electron';
+import type { IpcContext } from './IpcContext';
+
+/**
+ * Register all settings-related IPC handlers
+ */
+export function registerSettingsHandlers(ctx: IpcContext): void {
+  const database = ctx.getDatabase();
+  const logger = ctx.getLogger();
+  const getVisibleDataProvider = ctx.getVisibleDataProvider;
+  const getMainWindow = ctx.getMainWindow;
+  const getWindowBehavior = ctx.getWindowBehavior;
+  const setWindowBehavior = ctx.setWindowBehavior;
+  const getLocalHtmlPathsSettings = ctx.getLocalHtmlPathsSettings;
+  const _getIsQuitting = ctx.getIsQuitting;
+  const setIsQuitting = ctx.setIsQuitting;
+
+  // ============ Local HTML Paths Settings ============
+
+  ipcMain.handle('settings:getLocalHtmlPathsSettings', () => {
+    return getLocalHtmlPathsSettings();
+  });
+
+  ipcMain.handle(
+    'settings:setLocalHtmlPathsSettings',
+    (
+      _event,
+      settings: {
+        enabled: boolean;
+        autoRegenerate: boolean;
+        promptForMissing: boolean;
+      }
+    ) => {
+      try {
+        database.executeWrite(
+          `INSERT INTO user_preferences (key, value) VALUES ('localHtmlPathsSettings', ?)
+           ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+          [JSON.stringify(settings)],
+          'user_preferences'
+        );
+
+        logger.info(
+          `Local HTML paths settings updated: enabled=${settings.enabled}, autoRegenerate=${settings.autoRegenerate}`
+        );
+        return { success: true };
+      } catch (error) {
+        logger.error('Failed to save local HTML paths settings:', error as Error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
+  // ============ Academic Settings Handlers ============
+
+  ipcMain.handle('settings:getDefaultTargetGrade', () => {
+    try {
+      const prefs = database.executeReadOne<{ value: string }>(
+        "SELECT value FROM user_preferences WHERE key = 'academicSettings'"
+      );
+      if (prefs?.value) {
+        const settings = JSON.parse(prefs.value);
+        return { defaultTargetGrade: settings.defaultTargetGrade ?? 85 };
+      }
+      return { defaultTargetGrade: 85 };
+    } catch (_e) {
+      return { defaultTargetGrade: 85 };
+    }
+  });
+
+  ipcMain.handle('settings:setDefaultTargetGrade', (_event, targetGrade: number) => {
+    try {
+      const existing = database.executeReadOne<{ value: string }>(
+        "SELECT value FROM user_preferences WHERE key = 'academicSettings'"
+      );
+      const settings = existing?.value ? JSON.parse(existing.value) : {};
+      settings.defaultTargetGrade = targetGrade;
+
+      database.executeWrite(
+        `INSERT INTO user_preferences (key, value) VALUES ('academicSettings', ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+        [JSON.stringify(settings)],
+        'user_preferences'
+      );
+
+      const { CourseRepository } = require('../layers/l1-persistence/repositories');
+      const courseRepo = new CourseRepository(database);
+      const updatedCount = courseRepo.updateDefaultTargetGrades(targetGrade);
+
+      logger.info(
+        `Default target grade updated to ${targetGrade}%, propagated to ${updatedCount} courses`
+      );
+      return { success: true, data: { updatedCourses: updatedCount } };
+    } catch (error) {
+      logger.error('Failed to save default target grade:', error as Error);
+      return { success: false, error: String(error) };
+    }
+  });
+
+  // ============ Visibility Settings Handlers ============
+
+  ipcMain.handle('settings:getTermSelection', () => {
+    try {
+      const visibleDataProvider = getVisibleDataProvider();
+      if (!visibleDataProvider) {
+        return { termSelection: 'auto' };
+      }
+      const termSelection = visibleDataProvider.getTermSelection();
+      return { termSelection };
+    } catch (error) {
+      logger.error('Failed to get term selection:', error as Error);
+      return { termSelection: 'auto' };
+    }
+  });
+
+  ipcMain.handle(
+    'settings:setTermSelection',
+    (_event, value: 'all' | 'auto' | number) => {
+      try {
+        const visibleDataProvider = getVisibleDataProvider();
+        if (!visibleDataProvider) {
+          return { success: false, error: 'VisibleDataProvider not initialized' };
+        }
+        visibleDataProvider.setTermSelection(value);
+        logger.info(`Term selection updated to: ${value}`);
+        return { success: true };
+      } catch (error) {
+        logger.error('Failed to set term selection:', error as Error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
+  ipcMain.handle('visibility:getVisibleCourseIds', () => {
+    try {
+      const visibleDataProvider = getVisibleDataProvider();
+      if (!visibleDataProvider) {
+        return { courseIds: [] };
+      }
+      const courseIds = visibleDataProvider.getVisibleCourseIds();
+      return { courseIds };
+    } catch (error) {
+      logger.error('Failed to get visible course IDs:', error as Error);
+      return { courseIds: [] };
+    }
+  });
+
+  // ============ Window Behavior Settings Handlers ============
+
+  ipcMain.handle('settings:getWindowBehavior', () => {
+    try {
+      return getWindowBehavior();
+    } catch (error) {
+      logger.error('Failed to get window behavior settings:', error as Error);
+      return { closeAction: null, showTrayIcon: true };
+    }
+  });
+
+  ipcMain.handle(
+    'settings:setWindowBehavior',
+    (
+      _event,
+      settings: { closeAction: 'quit' | 'minimize-to-tray' | null; showTrayIcon: boolean }
+    ) => {
+      try {
+        setWindowBehavior(settings);
+        logger.info(
+          `Window behavior updated: closeAction=${settings.closeAction}, showTrayIcon=${settings.showTrayIcon}`
+        );
+        return { success: true };
+      } catch (error) {
+        logger.error('Failed to set window behavior settings:', error as Error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
+  // One-way handler to hide window (for tray functionality)
+  ipcMain.on('window:hide', () => {
+    getMainWindow()?.hide();
+  });
+
+  // Handler for close behavior dialog response from renderer
+  ipcMain.handle(
+    'window:setCloseBehaviorAndApply',
+    (_event, choice: 'minimize-to-tray' | 'quit') => {
+      const settings = getWindowBehavior();
+      setWindowBehavior({ ...settings, closeAction: choice });
+      logger.info(`Close behavior set to: ${choice}`);
+
+      if (choice === 'minimize-to-tray') {
+        getMainWindow()?.hide();
+      } else {
+        setIsQuitting(true);
+        app.quit();
+      }
+      return { success: true };
+    }
+  );
+
+  // ============ Course Settings Handlers ============
+
+  ipcMain.handle('course:getSettings', (_event, courseId: number) => {
+    try {
+      const course = database.executeReadOne<{
+        auto_assign_due_date: number | null;
+        allow_guessed_override: number | null;
+      }>(
+        'SELECT auto_assign_due_date, allow_guessed_override FROM courses WHERE id = ?',
+        [courseId]
+      );
+
+      if (!course) {
+        return { success: false, error: 'Course not found' };
+      }
+
+      return {
+        success: true,
+        data: {
+          autoAssignDueDate: course.auto_assign_due_date,
+          allowGuessedOverride: course.allow_guessed_override ?? 1,
+        },
+      };
+    } catch (_e) {
+      return { success: false, error: String(_e) };
+    }
+  });
+
+  ipcMain.handle(
+    'course:updateSettings',
+    (
+      _event,
+      courseId: number,
+      settings: {
+        autoAssignDueDate?: number | null;
+        allowGuessedOverride?: number;
+      }
+    ) => {
+      try {
+        const updates: string[] = [];
+        const values: (number | null)[] = [];
+
+        if ('autoAssignDueDate' in settings) {
+          updates.push('auto_assign_due_date = ?');
+          values.push(settings.autoAssignDueDate ?? null);
+        }
+
+        if ('allowGuessedOverride' in settings) {
+          updates.push('allow_guessed_override = ?');
+          values.push(settings.allowGuessedOverride ?? 1);
+        }
+
+        if (updates.length === 0) {
+          return { success: true };
+        }
+
+        values.push(courseId);
+        database.executeWrite(
+          `UPDATE courses SET ${updates.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+          values,
+          'courses'
+        );
+
+        return { success: true };
+      } catch (error) {
+        logger.error('Failed to update course settings:', error as Error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+}

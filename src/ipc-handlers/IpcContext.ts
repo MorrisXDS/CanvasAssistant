@@ -11,7 +11,7 @@ import type { CredentialManager } from '../layers/l0-utilities/CredentialManager
 import type { FileDownloadManager } from '../layers/l0-utilities/FileDownloadManager';
 import type { HealthCheck } from '../layers/l0-utilities/HealthCheck';
 import type { SystemMonitor } from '../layers/l0-utilities/SystemMonitor';
-import type { SyncEngine, CanvasClient } from '../layers/l2-daemon';
+import type { SyncEngine, CanvasClient, OperationCoordinator } from '../layers/l2-daemon';
 import type { PriorityOrchestrator } from '../layers/l3-intelligence/orchestration/PriorityOrchestrator';
 import type { RecommendationOrchestrator } from '../layers/l3-intelligence/orchestration/RecommendationOrchestrator';
 import type { InsightOrchestrator } from '../layers/l3-intelligence/orchestration/InsightOrchestrator';
@@ -20,6 +20,7 @@ import type { BehaviorTrackingOrchestrator } from '../layers/l3-intelligence/orc
 import type { AdaptiveLearningOrchestrator } from '../layers/l3-intelligence/orchestration/AdaptiveLearningOrchestrator';
 import type { CommandDispatcher } from '../layers/l4-controller';
 import type { VisibleDataProvider } from '../layers/l1-persistence';
+import type { CrashProtectionManager } from '../CrashProtectionManager';
 
 /**
  * Context object providing access to all dependencies needed by IPC handlers.
@@ -44,10 +45,48 @@ export interface IpcContext {
   // L2 - Daemon
   getCanvasClient: () => CanvasClient | null;
   getSyncEngine: () => SyncEngine | null;
+  getOperationCoordinator: () => OperationCoordinator | null;
 
   // State modifiers (for credential/canvas handlers)
   clearCanvasClient: () => void;
   initializeCanvasClient: (token: string, baseUrl: string) => Promise<boolean>;
+
+  // Settings helpers
+  getWindowBehavior: () => {
+    closeAction: 'quit' | 'minimize-to-tray' | null;
+    showTrayIcon: boolean;
+  };
+  setWindowBehavior: (settings: {
+    closeAction: 'quit' | 'minimize-to-tray' | null;
+    showTrayIcon: boolean;
+  }) => void;
+  getLocalHtmlPathsSettings: () => {
+    enabled: boolean;
+    autoRegenerate: boolean;
+    promptForMissing: boolean;
+  };
+  getIsQuitting: () => boolean;
+  setIsQuitting: (value: boolean) => void;
+
+  // Path and app info getters
+  getFilesDir: () => string;
+  getDbPath: () => string;
+  getAppVersion: () => string;
+
+  // Sync preferences
+  getSyncPreferences: () => {
+    autoSyncEnabled: boolean;
+    autoSyncInterval: number;
+    syncFiles: boolean;
+    syncAnnouncements: boolean;
+    autoAssignDueDate: boolean;
+    saveHtmlContent: boolean;
+    htmlUrlRewriting: 'local' | 'original';
+    downloadImages: boolean;
+    downloadLinkedFiles: boolean;
+  };
+  startAutoSync: () => void;
+  stopAutoSync: () => void;
 
   // L3 - Intelligence
   getPriorityOrchestrator: () => PriorityOrchestrator | null;
@@ -59,6 +98,15 @@ export interface IpcContext {
 
   // L4 - Controller
   getCommandDispatcher: () => CommandDispatcher | null;
+
+  // Crash protection
+  getCrashProtectionManager: () => CrashProtectionManager;
+  getAppDataDir: () => string;
+  getDatabaseCorruptionDetected: () => { errors: string[]; canContinue: boolean } | null;
+  setDatabaseCorruptionDetected: (value: { errors: string[]; canContinue: boolean } | null) => void;
+
+  // App state management
+  resetAppState: (options: { deleteToken: boolean }) => Promise<void>;
 }
 
 /**

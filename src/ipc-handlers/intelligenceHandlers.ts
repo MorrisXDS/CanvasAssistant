@@ -590,4 +590,30 @@ export function registerIntelligenceHandlers(ctx: IpcContext): void {
       return { success: false, error: 'Failed to recalculate weights' };
     }
   });
+
+  // ============ Simulation Handlers ============
+
+  ipcMain.handle('simulation:getState', () => {
+    const commandDispatcher = ctx.getCommandDispatcher();
+    if (!commandDispatcher) {
+      return { isActive: false, grades: [] };
+    }
+
+    const context = commandDispatcher.getSimulationContext();
+    return {
+      isActive: context.isActive,
+      startedAt: context.startedAt,
+      grades: Array.from(context.grades.values()),
+    };
+  });
+
+  ipcMain.handle('simulation:clear', async () => {
+    const commandDispatcher = ctx.getCommandDispatcher();
+    if (!commandDispatcher) {
+      return { success: false, error: 'Command dispatcher not initialized' };
+    }
+
+    commandDispatcher.clearSimulation();
+    return { success: true };
+  });
 }

@@ -336,4 +336,193 @@ export function registerFileHandlers(ctx: IpcContext): void {
       return { success: false, error: String(error) };
     }
   });
+
+  // ============ Resource Handlers ============
+
+  ipcMain.handle('resource:showInFolder', (_event, resourceId: number) => {
+    const resource = database.executeReadOne<{ local_path: string | null }>(
+      'SELECT local_path FROM resources WHERE id = ?',
+      [resourceId]
+    );
+
+    if (!resource?.local_path) {
+      return { success: false, error: 'File not downloaded' };
+    }
+
+    // Check if file actually exists on disk
+    if (!fs.existsSync(resource.local_path)) {
+      logger.warn(
+        `[resource:showInFolder] File not found on disk, clearing local_path: ${resource.local_path}`
+      );
+      database.executeWrite(
+        'UPDATE resources SET local_path = NULL WHERE id = ?',
+        [resourceId],
+        'resources'
+      );
+      return { success: false, error: 'File was deleted from disk. Please re-download.' };
+    }
+
+    shell.showItemInFolder(resource.local_path);
+    return { success: true };
+  });
+
+  ipcMain.handle('resource:deleteLocal', (_event, resourceId: number) => {
+    logger.debug(`[resource:deleteLocal] START resourceId=${resourceId}`);
+    const mainWindow = getMainWindow();
+
+    const resource = database.executeReadOne<{
+      local_path: string | null;
+      external_id: string;
+    }>('SELECT local_path, external_id FROM resources WHERE id = ?', [resourceId]);
+
+    if (!resource?.local_path) {
+      return { success: false, error: 'File not downloaded' };
+    }
+
+    try {
+      if (fs.existsSync(resource.local_path)) {
+        fs.unlinkSync(resource.local_path);
+        logger.info(`[resource:deleteLocal] Deleted file: ${resource.local_path}`);
+      }
+
+      database.executeWrite(
+        'UPDATE resources SET local_path = NULL WHERE id = ?',
+        [resourceId],
+        'resources'
+      );
+
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('file-status-changed', {
+          type: 'deleted',
+          resourceId,
+          externalId: resource.external_id,
+          path: resource.local_path,
+        });
+      }
+
+      return { success: true };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error(`[resource:deleteLocal] Failed: ${message}`);
+      return { success: false, error: message };
+    }
+  });
+
+  // ============ Canvas File Protocol Handler ============
+
+  /**
+   * Open a Canvas file by its external ID
+   * - If already downloaded, opens the local file
+   * - If not downloaded, downloads first then opens
+   * Used for in-app link clicks when HTML local paths feature is enabled
+   */
+  ipcMain.handle('canvas-file:open', async (_event, canvasFileId: string) => {
+    logger.debug(`[canvas-file:open] START canvasFileId=${canvasFileId}`);
+
+    // Look up the resource by external_id
+    const resource = database.executeReadOne<{
+      id: number;
+      course_id: number;
+      external_id: string;
+      title: string;
+      url: string | null;
+      local_path: string | null;
+    }>(
+      'SELECT id, course_id, external_id, title, url, local_path FROM resources WHERE external_id = ?',
+      [canvasFileId]
+    );
+
+    if (!resource) {
+      logger.warn(`[canvas-file:open] Resource not found: ${canvasFileId}`);
+      return { success: false, error: 'File not found in database' };
+    }
+
+    // Check if file is already downloaded and exists on disk
+    if (resource.local_path && fs.existsSync(resource.local_path)) {
+      logger.debug(`[canvas-file:open] Opening existing file: ${resource.local_path}`);
+
+      // Open with OS default application (HTML files now use relative paths)
+      const error = await shell.openPath(resource.local_path);
+      if (error) {
+        logger.error(`[canvas-file:open] Failed to open: ${error}`);
+        return { success: false, error };
+      }
+      return { success: true, localPath: resource.local_path };
+    }
+
+    // File not downloaded - need to download first
+    if (!resource.url) {
+      return { success: false, error: 'Resource has no download URL' };
+    }
+
+    // Get auth token
+    const token = await credentialManager.retrieve();
+    if (!token) {
+      return { success: false, error: 'No credentials available' };
+    }
+
+    // Get course code for folder organization
+    const course = database.executeReadOne<{ code: string }>(
+      'SELECT code FROM courses WHERE id = ?',
+      [resource.course_id]
+    );
+    const courseCode = course?.code || 'unknown';
+
+    // Download the file
+    const downloadId = `canvas-file-${canvasFileId}-${Date.now()}`;
+    const downloadPromise = new Promise<{
+      success: boolean;
+      localPath?: string;
+      error?: string;
+    }>((resolve) => {
+      const onComplete = (result: { id: string; localPath: string }) => {
+        if (result.id === downloadId) {
+          fileDownloadManager.off('download-complete', onComplete);
+          fileDownloadManager.off('download-error', onError);
+
+          // Update database with local path
+          database.executeWrite(
+            'UPDATE resources SET local_path = ? WHERE id = ?',
+            [result.localPath, resource.id],
+            'resources'
+          );
+
+          resolve({ success: true, localPath: result.localPath });
+        }
+      };
+
+      const onError = (result: { id: string; error: string }) => {
+        if (result.id === downloadId) {
+          fileDownloadManager.off('download-complete', onComplete);
+          fileDownloadManager.off('download-error', onError);
+          resolve({ success: false, error: result.error });
+        }
+      };
+
+      fileDownloadManager.on('download-complete', onComplete);
+      fileDownloadManager.on('download-error', onError);
+
+      fileDownloadManager.queueDownload({
+        id: downloadId,
+        url: resource.url!,
+        courseCode,
+        filename: resource.title,
+        authToken: token,
+      });
+    });
+
+    const downloadResult = await downloadPromise;
+    if (!downloadResult.success) {
+      return downloadResult;
+    }
+
+    // Open the downloaded file with OS default application
+    const error = await shell.openPath(downloadResult.localPath!);
+    if (error) {
+      logger.error(`[canvas-file:open] Failed to open downloaded file: ${error}`);
+      return { success: false, error };
+    }
+
+    return { success: true, localPath: downloadResult.localPath };
+  });
 }
