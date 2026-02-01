@@ -17,8 +17,75 @@ import type { IpcContext } from './IpcContext';
 export function registerSyncHandlers(ctx: IpcContext): void {
   const database = ctx.getDatabase();
   const logger = ctx.getLogger();
+  const systemMonitor = ctx.getSystemMonitor();
   const getSyncEngine = ctx.getSyncEngine;
   const getMainWindow = ctx.getMainWindow;
+
+  // ============ Full Sync ============
+
+  ipcMain.handle(
+    'sync:full',
+    async (
+      _event,
+      options?: {
+        termSelection?: 'all' | 'auto' | string;
+        syncCanvasFiles?: boolean;
+        syncAnnouncements?: boolean;
+        courseIds?: number[];
+        deferFileProcessing?: boolean;
+      }
+    ) => {
+      const syncEngine = getSyncEngine();
+      const mainWindow = getMainWindow();
+
+      logger.debug(`[IPC sync:full] Received options: ${JSON.stringify(options)}`);
+
+      if (!syncEngine) {
+        logger.warn('Sync attempted but Canvas client not initialized');
+        return {
+          success: false,
+          error: 'Canvas client not initialized. Please reconnect to Canvas.',
+        };
+      }
+
+      if (!systemMonitor.getState().canSync) {
+        logger.warn('Sync blocked due to system state');
+        return {
+          success: false,
+          error: 'Sync disabled due to system state (battery/focus)',
+        };
+      }
+
+      const courseIdsStr = options?.courseIds
+        ? `courseIds=[${options.courseIds.length} courses]`
+        : 'courseIds=all';
+      logger.info(
+        `Sync requested with options: termSelection=${options?.termSelection ?? 'all'}, syncCanvasFiles=${options?.syncCanvasFiles ?? true}, syncAnnouncements=${options?.syncAnnouncements ?? true}, ${courseIdsStr}`
+      );
+
+      // Emit any pending conflicts from previous sessions before starting sync
+      const pendingConflicts = syncEngine.getConflictResolver().getPendingConflicts();
+      if (pendingConflicts.length > 0 && mainWindow && !mainWindow.isDestroyed()) {
+        logger.info(
+          `[Sync] Emitting ${pendingConflicts.length} pending conflicts from previous session`
+        );
+        mainWindow.webContents.send('sync:conflicts', pendingConflicts);
+      }
+
+      try {
+        const result = await syncEngine.syncAll(options);
+        logger.info(`Sync completed: ${JSON.stringify(result)}`);
+        // Trigger Files page refresh
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('file-status-changed', { type: 'sync-complete' });
+        }
+        return { success: true, result };
+      } catch (error) {
+        logger.error(`Sync failed: ${error}`);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
 
   // ============ Course Sync ============
 
