@@ -1826,7 +1826,7 @@ export function FilesPage() {
                                       onToggleSelect={() => toggleFileSelection(file)}
                                       onDownload={() => handleDownload(file)}
                                       onOpen={() => handleOpen(file)}
-                                      onShowInFolder={() => handleShowInFolder(file)}
+                                      onShowInFolder={file.source !== 'page' ? () => handleShowInFolder(file) : undefined}
                                       onContextMenu={(e) => handleContextMenu(file, e)}
                                     />
                                   ))}
@@ -1850,7 +1850,7 @@ export function FilesPage() {
                                       onToggleSelect={() => toggleFileSelection(file)}
                                       onDownload={() => handleDownload(file)}
                                       onOpen={() => handleOpen(file)}
-                                      onShowInFolder={() => handleShowInFolder(file)}
+                                      onShowInFolder={file.source !== 'page' ? () => handleShowInFolder(file) : undefined}
                                       onContextMenu={(e) => handleContextMenu(file, e)}
                                     />
                                   ))}
