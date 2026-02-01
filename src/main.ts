@@ -62,6 +62,13 @@ import { AdaptiveLearningOrchestrator } from './layers/l3-intelligence/orchestra
 // L4 - Controller
 import { CommandDispatcher } from './layers/l4-controller';
 
+// Crash Protection
+import { CrashProtectionManager } from './CrashProtectionManager';
+
+// IPC Handlers
+import { registerIntelligenceHandlers, registerCalendarHandlers } from './ipc-handlers';
+import type { IpcContext } from './ipc-handlers';
+
 // Application paths
 const APP_DATA_DIR = path.join(app.getPath('userData'), 'CanvasAssistant');
 // Database in project folder for easier development access
@@ -73,27 +80,11 @@ const LOG_DIR = path.join(process.cwd(), 'logs');
 // Default files directory is in project root's Downloads folder
 const FILES_DIR = path.join(process.cwd(), 'Downloads');
 const CREDENTIAL_FILE = path.join(APP_DATA_DIR, '.credentials');
-const CRASH_FLAG_FILE = path.join(APP_DATA_DIR, '.crash_flag');
-const CRASH_HISTORY_FILE = path.join(APP_DATA_DIR, '.crash_history');
-const _SESSION_STATE_FILE = path.join(APP_DATA_DIR, '.session_state');
 
-// Crash history and recovery state
-interface CrashHistoryEntry {
-  timestamp: string;
-  reason: string;
-}
-interface CrashHistory {
-  crashes: CrashHistoryEntry[];
-  lastCleanExit: string | null;
-  safeMode: boolean;
-}
-const CRASH_LOOP_THRESHOLD = 3; // Number of crashes to trigger safe mode
-const CRASH_LOOP_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
-const SAFE_MODE_CLEAR_DELAY_MS = 5 * 60 * 1000; // 5 minutes of stable runtime to clear safe mode
-
-let safeModeEnabled = false;
-let safeModeTimer: NodeJS.Timeout | null = null;
-let lastCrashInfo: CrashHistoryEntry | null = null;
+// Initialize crash protection manager (must be early, before other services)
+const crashProtectionManager = new CrashProtectionManager({
+  appDataDir: APP_DATA_DIR,
+});
 
 // Database corruption state
 interface DatabaseCorruptionInfo {
@@ -230,6 +221,16 @@ let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let isQuitting = false;
 
+// Set crash protection dependencies (now that all services are initialized)
+crashProtectionManager.setDependencies({
+  logger,
+  database,
+  getMainWindow: () => mainWindow,
+});
+
+// Register global error handlers for crash protection
+crashProtectionManager.registerErrorHandlers();
+
 // Window behavior settings type (must match renderer settings schema)
 interface WindowBehaviorSettings {
   closeAction: 'quit' | 'minimize-to-tray' | null;
@@ -342,7 +343,7 @@ function createWindow() {
 
   // Send recovery status once window is ready
   mainWindow.webContents.on('did-finish-load', () => {
-    const recoveryStatus = getRecoveryStatus();
+    const recoveryStatus = crashProtectionManager.getRecoveryStatus();
     if (recoveryStatus.safeMode || recoveryStatus.lastCrash) {
       mainWindow?.webContents.send('app:recovery-status', recoveryStatus);
     }
@@ -361,7 +362,7 @@ function createWindow() {
     metricsCollector.increment('renderer.crash');
 
     // Write crash info for recovery
-    writeCrashFlag(`renderer_crash: ${details.reason}`);
+    crashProtectionManager.writeCrashFlag(`renderer_crash: ${details.reason}`);
 
     // Attempt to reload the window after a short delay
     if (details.reason !== 'killed' && details.reason !== 'clean-exit') {
@@ -3548,890 +3549,7 @@ function registerIpcHandlers(): void {
     }
   );
 
-  // ============ Imported Calendar Handlers ============
-
-  // Get all imported calendars
-  ipcMain.handle('calendar:getImportedCalendars', () => {
-    const rows = database.executeRead<{
-      id: number;
-      name: string;
-      filename: string;
-      file_hash: string | null;
-      color: string;
-      event_count: number;
-      is_visible: number;
-      imported_at: string;
-      updated_at: string;
-    }>('SELECT * FROM imported_calendars ORDER BY name');
-
-    return rows.map((row) => ({
-      id: row.id,
-      name: row.name,
-      filename: row.filename,
-      fileHash: row.file_hash,
-      color: row.color,
-      eventCount: row.event_count,
-      isVisible: Boolean(row.is_visible),
-      importedAt: row.imported_at,
-      updatedAt: row.updated_at,
-    }));
-  });
-
-  // Parse ICS for preview (without importing)
-  ipcMain.handle(
-    'calendar:parseICSPreview',
-    (_event, content: string, filename: string) => {
-      const parser = new ICSParser();
-      return parser.createPreview(content, filename);
-    }
-  );
-
-  // Import ICS calendar
-  ipcMain.handle(
-    'calendar:importICS',
-    async (
-      _event,
-      params: {
-        content: string;
-        filename: string;
-        name?: string;
-        color?: string;
-      }
-    ) => {
-      try {
-        const parser = new ICSParser();
-        const result = parser.parse(params.content);
-
-        // Generate file hash for duplicate detection
-        const fileHash = crypto.createHash('md5').update(params.content).digest('hex');
-
-        // Check if already imported
-        const existing = database.executeReadOne<{ id: number }>(
-          'SELECT id FROM imported_calendars WHERE file_hash = ?',
-          [fileHash]
-        );
-
-        if (existing) {
-          return { success: false, error: 'This calendar has already been imported' };
-        }
-
-        const calendarName =
-          params.name || result.calendarName || params.filename.replace(/\.ics$/i, '');
-        const color = params.color || '#6366F1';
-
-        let calendarId: number = 0;
-        let eventCount = 0;
-
-        database.transaction(() => {
-          // Insert calendar record
-          const insertResult = database.executeWrite(
-            `INSERT INTO imported_calendars (name, filename, file_hash, color, event_count) VALUES (?, ?, ?, ?, 0)`,
-            [calendarName, params.filename, fileHash, color],
-            'imported_calendars'
-          );
-          calendarId = insertResult.lastInsertRowid as number;
-
-          // Insert events
-          for (const event of result.events) {
-            if (!event.dtstart) continue;
-
-            database.executeWrite(
-              `INSERT INTO calendar_events (
-              imported_calendar_id, source_type, title, description,
-              start_at, end_at, all_day, location, uid,
-              recurrence_rule, recurrence_exception_dates
-            ) VALUES (?, 'imported', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-              [
-                calendarId,
-                event.summary,
-                event.description,
-                event.dtstart.toISOString(),
-                event.dtend?.toISOString() || null,
-                event.allDay ? 1 : 0,
-                event.location,
-                event.uid,
-                event.rrule,
-                event.exdates ? JSON.stringify(event.exdates) : null,
-              ],
-              'calendar_events'
-            );
-            eventCount++;
-          }
-
-          // Update event count
-          database.executeWrite(
-            'UPDATE imported_calendars SET event_count = ? WHERE id = ?',
-            [eventCount, calendarId],
-            'imported_calendars'
-          );
-        });
-
-        logger.info(
-          `Imported calendar "${calendarName}" with ${eventCount} events (ID: ${calendarId})`
-        );
-
-        // Verify events were inserted
-        const verifyCount = database.executeReadOne<{ count: number }>(
-          'SELECT COUNT(*) as count FROM calendar_events WHERE imported_calendar_id = ?',
-          [calendarId]
-        );
-        logger.info(
-          `[Calendar Import] Verification: ${verifyCount?.count || 0} events in DB for calendar ${calendarId}`
-        );
-
-        // Also log total events in DB
-        const totalEvents = database.executeReadOne<{ count: number }>(
-          'SELECT COUNT(*) as count FROM calendar_events'
-        );
-        logger.info(
-          `[Calendar Import] Total calendar_events in DB: ${totalEvents?.count || 0}`
-        );
-
-        return { success: true, data: { calendarId, eventCount } };
-      } catch (error) {
-        logger.error(`Failed to import ICS: ${error}`);
-        return { success: false, error: String(error) };
-      }
-    }
-  );
-
-  // Delete imported calendar (CASCADE deletes events)
-  ipcMain.handle('calendar:deleteCalendar', async (_event, calendarId: number) => {
-    try {
-      // Get calendar name for logging
-      const calendar = database.executeReadOne<{ name: string }>(
-        'SELECT name FROM imported_calendars WHERE id = ?',
-        [calendarId]
-      );
-
-      if (!calendar) {
-        return { success: false, error: 'Calendar not found' };
-      }
-
-      database.transaction(() => {
-        // Delete events first (SQLite may not have CASCADE working via ALTER)
-        database.executeWrite(
-          'DELETE FROM calendar_events WHERE imported_calendar_id = ?',
-          [calendarId],
-          'calendar_events'
-        );
-        // Delete calendar
-        database.executeWrite(
-          'DELETE FROM imported_calendars WHERE id = ?',
-          [calendarId],
-          'imported_calendars'
-        );
-      });
-
-      logger.info(`Deleted imported calendar: ${calendar.name}`);
-      return { success: true };
-    } catch (error) {
-      logger.error(`Failed to delete calendar: ${error}`);
-      return { success: false, error: String(error) };
-    }
-  });
-
-  // Toggle calendar visibility
-  ipcMain.handle(
-    'calendar:toggleVisibility',
-    async (_event, calendarId: number, isVisible: boolean) => {
-      try {
-        database.executeWrite(
-          'UPDATE imported_calendars SET is_visible = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-          [isVisible ? 1 : 0, calendarId],
-          'imported_calendars'
-        );
-        return { success: true };
-      } catch (error) {
-        logger.error(`Failed to toggle calendar visibility: ${error}`);
-        return { success: false, error: String(error) };
-      }
-    }
-  );
-
-  // Update calendar metadata
-  ipcMain.handle(
-    'calendar:updateCalendar',
-    async (
-      _event,
-      calendarId: number,
-      updates: {
-        name?: string;
-        color?: string;
-      }
-    ) => {
-      try {
-        const setClauses: string[] = [];
-        const values: unknown[] = [];
-
-        if (updates.name !== undefined) {
-          setClauses.push('name = ?');
-          values.push(updates.name);
-        }
-        if (updates.color !== undefined) {
-          setClauses.push('color = ?');
-          values.push(updates.color);
-        }
-
-        if (setClauses.length === 0) {
-          return { success: true };
-        }
-
-        setClauses.push('updated_at = CURRENT_TIMESTAMP');
-        values.push(calendarId);
-
-        database.executeWrite(
-          `UPDATE imported_calendars SET ${setClauses.join(', ')} WHERE id = ?`,
-          values,
-          'imported_calendars'
-        );
-        return { success: true };
-      } catch (error) {
-        logger.error(`Failed to update calendar: ${error}`);
-        return { success: false, error: String(error) };
-      }
-    }
-  );
-
-  // Get calendar events for a date range (with RRULE expansion)
-  // Includes both imported/user events AND task-generated events (unified view)
-  ipcMain.handle(
-    'calendar:getEventsForRange',
-    async (
-      _event,
-      params: {
-        startDate: string;
-        endDate: string;
-        includeHidden?: boolean;
-      }
-    ) => {
-      try {
-        const rangeStart = new Date(params.startDate);
-        const rangeEnd = new Date(params.endDate);
-
-        logger.debug(
-          `[Calendar] Fetching events for range: ${params.startDate} to ${params.endDate}`
-        );
-
-        // Query includes both regular events AND task-generated events
-        // Task-generated events have task_id IS NOT NULL
-        // Filter out events from archived/deleted courses
-        let sql = `
-          SELECT
-            ce.id, ce.external_id, ce.source_type, ce.course_id, ce.imported_calendar_id,
-            ce.task_id, ce.title, ce.description, ce.start_at, ce.end_at, ce.all_day,
-            ce.location, ce.uid, ce.recurrence_rule, ce.recurrence_exception_dates,
-            ce.parent_event_id, ce.color as event_color, ce.notes, ce.reminder_minutes,
-            ic.name as calendar_name, ic.color as calendar_color, ic.is_visible,
-            t.title as task_title, t.weight as task_weight, t.task_type,
-            c.code as course_code, c.name as course_name, c.color as course_color
-          FROM calendar_events ce
-          LEFT JOIN imported_calendars ic ON ce.imported_calendar_id = ic.id
-          LEFT JOIN tasks t ON ce.task_id = t.id
-          LEFT JOIN courses c ON ce.course_id = c.id
-          WHERE ce.deleted_at IS NULL
-            AND (ce.source_type IN ('imported', 'user') OR ce.task_id IS NOT NULL)
-            AND (c.id IS NULL OR (c.archived_at IS NULL AND c.deleted_at IS NULL))
-        `;
-
-        if (!params.includeHidden) {
-          sql += `
-            AND (
-              ic.is_visible = 1
-              OR ic.is_visible IS NULL
-              OR ce.source_type = 'user'
-              OR ce.task_id IS NOT NULL
-            )
-          `;
-        }
-
-        const rows = database.executeRead<{
-          id: number;
-          external_id: string | null;
-          source_type: string;
-          course_id: number | null;
-          imported_calendar_id: number | null;
-          task_id: number | null;
-          title: string;
-          description: string | null;
-          start_at: string;
-          end_at: string | null;
-          all_day: number;
-          location: string | null;
-          uid: string | null;
-          recurrence_rule: string | null;
-          recurrence_exception_dates: string | null;
-          parent_event_id: number | null;
-          event_color: string | null;
-          notes: string | null;
-          reminder_minutes: number | null;
-          calendar_name: string | null;
-          calendar_color: string | null;
-          task_title: string | null;
-          task_weight: number | null;
-          task_type: string | null;
-          course_code: string | null;
-          course_name: string | null;
-          course_color: string | null;
-        }>(sql);
-
-        logger.info(
-          `[Calendar Query] Returned ${rows.length} rows for range ${params.startDate} to ${params.endDate}`
-        );
-
-        // Map to DisplayCalendarEvent format
-        const events = rows.map((row) => {
-          // Determine display color: event override > calendar color > course color > default
-          let color = '#6366F1'; // default indigo
-          if (row.event_color) {
-            color = row.event_color;
-          } else if (row.calendar_color) {
-            color = row.calendar_color;
-          } else if (row.course_color) {
-            color = row.course_color;
-          } else if (row.course_id) {
-            // Use course-based color from palette
-            const paletteColors = [
-              '#3B82F6',
-              '#EF4444',
-              '#10B981',
-              '#F59E0B',
-              '#8B5CF6',
-              '#EC4899',
-              '#06B6D4',
-              '#84CC16',
-              '#F97316',
-              '#6366F1',
-            ];
-            color = paletteColors[row.course_id % paletteColors.length];
-          }
-
-          return {
-            id: row.id,
-            externalId: row.external_id,
-            sourceType: row.source_type as 'canvas' | 'user' | 'imported',
-            courseId: row.course_id,
-            importedCalendarId: row.imported_calendar_id,
-            taskId: row.task_id,
-            title: row.title,
-            description: row.description,
-            startAt: row.start_at,
-            endAt: row.end_at,
-            allDay: Boolean(row.all_day),
-            location: row.location,
-            uid: row.uid,
-            recurrenceRule: row.recurrence_rule,
-            recurrenceExceptionDates: row.recurrence_exception_dates,
-            parentEventId: row.parent_event_id,
-            eventColor: row.event_color,
-            notes: row.notes,
-            reminderMinutes: row.reminder_minutes,
-            calendarName: row.calendar_name,
-            color,
-            // Task-specific fields
-            taskTitle: row.task_title ?? undefined,
-            taskWeight: row.task_weight ?? undefined,
-            taskType: row.task_type ?? undefined,
-            courseCode: row.course_code ?? undefined,
-            courseName: row.course_name ?? undefined,
-            // For DisplayCalendarEvent schema
-            isRecurrenceInstance: false,
-          };
-        });
-
-        // Expand recurring events
-        const expander = new RRuleExpander();
-        const expandedEvents = expander.expandAll(events, rangeStart, rangeEnd);
-
-        logger.debug(`[Calendar] After expansion: ${expandedEvents.length} events`);
-
-        // Ensure all expanded events have required fields
-        const result = expandedEvents.map((e) => ({
-          ...e,
-          color: (e as (typeof events)[0]).color || '#6366F1',
-          calendarName: (e as (typeof events)[0]).calendarName,
-          isRecurrenceInstance:
-            (e as { isRecurrenceInstance?: boolean }).isRecurrenceInstance ?? false,
-        }));
-
-        logger.debug(`[Calendar] Returning ${result.length} events to renderer`);
-        return result;
-      } catch (error) {
-        logger.error(`Failed to get calendar events: ${error}`);
-        return [];
-      }
-    }
-  );
-
-  // Create user calendar event
-  ipcMain.handle(
-    'calendar:createEvent',
-    async (
-      _event,
-      data: {
-        title: string;
-        description?: string;
-        startAt: string;
-        endAt?: string;
-        allDay: boolean;
-        location?: string;
-        courseId?: number;
-      }
-    ) => {
-      try {
-        // Generate a UID for ICS compatibility
-        const uid = `user-${Date.now()}-${Math.random().toString(36).substr(2, 9)}@cid`;
-
-        const result = database.executeWrite(
-          `INSERT INTO calendar_events (
-          source_type, course_id, title, description, start_at, end_at,
-          all_day, location, uid, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
-          [
-            'user',
-            data.courseId || null,
-            data.title,
-            data.description || null,
-            data.startAt,
-            data.endAt || null,
-            data.allDay ? 1 : 0,
-            data.location || null,
-            uid,
-          ],
-          'calendar_events'
-        );
-
-        const eventId = result.lastInsertRowid as number;
-        logger.info(`Created user calendar event: ${data.title} (id=${eventId})`);
-
-        return { success: true, data: { id: eventId } };
-      } catch (error) {
-        logger.error(`Failed to create calendar event: ${error}`);
-        return { success: false, error: String(error) };
-      }
-    }
-  );
-
-  // Update calendar event (user or imported only)
-  ipcMain.handle(
-    'calendar:updateEvent',
-    async (
-      _event,
-      id: number,
-      data: {
-        title?: string;
-        description?: string;
-        startAt?: string;
-        endAt?: string;
-        allDay?: boolean;
-        location?: string;
-        // Calendar-only fields (don't affect task)
-        color?: string;
-        notes?: string;
-        reminderMinutes?: number;
-      }
-    ) => {
-      try {
-        // Verify event exists and is editable (user, imported, or task-generated)
-        const existing = database.executeReadOne<{
-          source_type: string;
-          task_id: number | null;
-        }>(
-          'SELECT source_type, task_id FROM calendar_events WHERE id = ? AND deleted_at IS NULL',
-          [id]
-        );
-
-        if (!existing) {
-          return { success: false, error: 'Event not found' };
-        }
-
-        if (existing.source_type === 'canvas' && !existing.task_id) {
-          return { success: false, error: 'Cannot edit Canvas events' };
-        }
-
-        const setClauses: string[] = [];
-        const values: unknown[] = [];
-
-        if (data.title !== undefined) {
-          setClauses.push('title = ?');
-          values.push(data.title);
-        }
-        if (data.description !== undefined) {
-          setClauses.push('description = ?');
-          values.push(data.description);
-        }
-        if (data.startAt !== undefined) {
-          setClauses.push('start_at = ?');
-          values.push(data.startAt);
-        }
-        if (data.endAt !== undefined) {
-          setClauses.push('end_at = ?');
-          values.push(data.endAt);
-        }
-        if (data.allDay !== undefined) {
-          setClauses.push('all_day = ?');
-          values.push(data.allDay ? 1 : 0);
-        }
-        if (data.location !== undefined) {
-          setClauses.push('location = ?');
-          values.push(data.location);
-        }
-        // Calendar-only fields
-        if (data.color !== undefined) {
-          setClauses.push('color = ?');
-          values.push(data.color);
-        }
-        if (data.notes !== undefined) {
-          setClauses.push('notes = ?');
-          values.push(data.notes);
-        }
-        if (data.reminderMinutes !== undefined) {
-          setClauses.push('reminder_minutes = ?');
-          values.push(data.reminderMinutes);
-        }
-
-        if (setClauses.length === 0) {
-          return { success: true };
-        }
-
-        setClauses.push('updated_at = CURRENT_TIMESTAMP');
-        values.push(id);
-
-        database.executeWrite(
-          `UPDATE calendar_events SET ${setClauses.join(', ')} WHERE id = ?`,
-          values,
-          'calendar_events'
-        );
-
-        // If this is a task-generated event and endAt was updated, also update task.due_at
-        // The end time of the event represents the task's due time
-        if (existing.task_id && data.endAt !== undefined) {
-          database.executeWrite(
-            `UPDATE tasks SET
-               due_at = ?,
-               local_modified_at = CURRENT_TIMESTAMP,
-               updated_at = CURRENT_TIMESTAMP
-             WHERE id = ?`,
-            [data.endAt, existing.task_id],
-            'tasks'
-          );
-          logger.info(
-            `Updated task id=${existing.task_id} due_at from calendar event id=${id}`
-          );
-        }
-
-        logger.info(`Updated calendar event id=${id}`);
-        return { success: true };
-      } catch (error) {
-        logger.error(`Failed to update calendar event: ${error}`);
-        return { success: false, error: String(error) };
-      }
-    }
-  );
-
-  // Delete calendar event (soft delete)
-  // For task-generated events, this unlinks but doesn't delete the task
-  ipcMain.handle('calendar:deleteEvent', async (_event, id: number) => {
-    try {
-      // Verify event exists
-      const existing = database.executeReadOne<{
-        source_type: string;
-        imported_calendar_id: number | null;
-        title: string;
-        task_id: number | null;
-      }>(
-        'SELECT source_type, imported_calendar_id, title, task_id FROM calendar_events WHERE id = ? AND deleted_at IS NULL',
-        [id]
-      );
-
-      if (!existing) {
-        return { success: false, error: 'Event not found' };
-      }
-
-      if (existing.source_type === 'canvas' && !existing.task_id) {
-        return { success: false, error: 'Cannot delete Canvas events' };
-      }
-
-      // If this is a task-generated event, just clear the link (don't delete the event)
-      // The event will be recreated on next sync
-      if (existing.task_id) {
-        database.executeWrite(
-          'UPDATE tasks SET calendar_event_id = NULL WHERE id = ?',
-          [existing.task_id],
-          'tasks'
-        );
-        logger.info(`Unlinked task id=${existing.task_id} from calendar event id=${id}`);
-      }
-
-      // Soft delete the event
-      database.executeWrite(
-        'UPDATE calendar_events SET deleted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-        [id],
-        'calendar_events'
-      );
-
-      // Update event count on parent imported calendar if applicable
-      if (existing.imported_calendar_id) {
-        database.executeWrite(
-          'UPDATE imported_calendars SET event_count = event_count - 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-          [existing.imported_calendar_id],
-          'imported_calendars'
-        );
-      }
-
-      logger.info(`Deleted calendar event: ${existing.title} (id=${id})`);
-      return { success: true };
-    } catch (error) {
-      logger.error(`Failed to delete calendar event: ${error}`);
-      return { success: false, error: String(error) };
-    }
-  });
-
-  // Batch export calendars to ICS
-  ipcMain.handle(
-    'calendar:exportBatch',
-    async (
-      _event,
-      options: {
-        mode: 'all' | 'selected';
-        calendarIds?: number[];
-        courseIds?: number[];
-        includeUserEvents?: boolean;
-        consolidate?: boolean;
-        dateRange?: { start: string; end: string };
-      }
-    ) => {
-      try {
-        const vevents: string[] = [];
-        const calendarName = 'Canvas Integration Dashboard Export';
-
-        // Helper to format date for ICS
-        const formatICSDate = (dateStr: string, allDay: boolean): string => {
-          const date = new Date(dateStr);
-          if (allDay) {
-            // All-day events use DATE format (YYYYMMDD)
-            return date.toISOString().slice(0, 10).replace(/-/g, '');
-          }
-          // Regular events use DATETIME format (YYYYMMDDTHHMMSSZ)
-          return date
-            .toISOString()
-            .replace(/[-:]/g, '')
-            .replace(/\.\d{3}/, '');
-        };
-
-        // Helper to escape ICS text
-        const escapeICS = (text: string | null | undefined): string => {
-          if (!text) return '';
-          // Escape special ICS characters (backslash, semicolon, comma, newline)
-          /* eslint-disable cross-platform/no-hardcoded-path-separator -- ICS text escaping, not path */
-          return text
-            .replace(/\\/g, '\\\\')
-            .replace(/;/g, '\\;')
-            .replace(/,/g, '\\,')
-            .replace(/\n/g, '\\n');
-          /* eslint-enable cross-platform/no-hardcoded-path-separator */
-        };
-
-        // Build date range filter
-        let dateFilter = '';
-        const dateParams: string[] = [];
-        if (options.dateRange) {
-          dateFilter = ' AND start_at >= ? AND start_at <= ?';
-          dateParams.push(options.dateRange.start, options.dateRange.end);
-        }
-
-        // Collect events based on mode
-        if (options.mode === 'all' || options.includeUserEvents) {
-          // Get user-created events
-          const userEvents = database.executeRead<{
-            id: number;
-            title: string;
-            description: string | null;
-            start_at: string;
-            end_at: string | null;
-            all_day: number;
-            location: string | null;
-            uid: string | null;
-          }>(
-            `SELECT id, title, description, start_at, end_at, all_day, location, uid
-           FROM calendar_events
-           WHERE source_type = 'user' AND deleted_at IS NULL${dateFilter}`,
-            dateParams
-          );
-
-          for (const evt of userEvents) {
-            const uid = evt.uid || `user-${evt.id}@cid`;
-            const lines = [
-              'BEGIN:VEVENT',
-              `UID:${uid}`,
-              `DTSTAMP:${formatICSDate(new Date().toISOString(), false)}`,
-            ];
-
-            if (evt.all_day) {
-              lines.push(`DTSTART;VALUE=DATE:${formatICSDate(evt.start_at, true)}`);
-              if (evt.end_at) {
-                lines.push(`DTEND;VALUE=DATE:${formatICSDate(evt.end_at, true)}`);
-              }
-            } else {
-              lines.push(`DTSTART:${formatICSDate(evt.start_at, false)}`);
-              if (evt.end_at) {
-                lines.push(`DTEND:${formatICSDate(evt.end_at, false)}`);
-              }
-            }
-
-            lines.push(`SUMMARY:${escapeICS(evt.title)}`);
-            if (evt.description) lines.push(`DESCRIPTION:${escapeICS(evt.description)}`);
-            if (evt.location) lines.push(`LOCATION:${escapeICS(evt.location)}`);
-            lines.push('END:VEVENT');
-
-            vevents.push(lines.join('\r\n'));
-          }
-        }
-
-        // Get imported calendar events
-        if (
-          options.mode === 'all' ||
-          (options.calendarIds && options.calendarIds.length > 0)
-        ) {
-          let calendarFilter = '';
-          const params: (string | number)[] = [...dateParams];
-
-          if (options.mode === 'selected' && options.calendarIds) {
-            const placeholders = options.calendarIds.map(() => '?').join(',');
-            calendarFilter = ` AND imported_calendar_id IN (${placeholders})`;
-            params.push(...options.calendarIds);
-          }
-
-          const importedEvents = database.executeRead<{
-            id: number;
-            title: string;
-            description: string | null;
-            start_at: string;
-            end_at: string | null;
-            all_day: number;
-            location: string | null;
-            uid: string | null;
-            recurrence_rule: string | null;
-          }>(
-            `SELECT id, title, description, start_at, end_at, all_day, location, uid, recurrence_rule
-           FROM calendar_events
-           WHERE source_type = 'imported' AND deleted_at IS NULL${dateFilter}${calendarFilter}`,
-            params
-          );
-
-          for (const evt of importedEvents) {
-            const uid = evt.uid || `imported-${evt.id}@cid`;
-            const lines = [
-              'BEGIN:VEVENT',
-              `UID:${uid}`,
-              `DTSTAMP:${formatICSDate(new Date().toISOString(), false)}`,
-            ];
-
-            if (evt.all_day) {
-              lines.push(`DTSTART;VALUE=DATE:${formatICSDate(evt.start_at, true)}`);
-              if (evt.end_at) {
-                lines.push(`DTEND;VALUE=DATE:${formatICSDate(evt.end_at, true)}`);
-              }
-            } else {
-              lines.push(`DTSTART:${formatICSDate(evt.start_at, false)}`);
-              if (evt.end_at) {
-                lines.push(`DTEND:${formatICSDate(evt.end_at, false)}`);
-              }
-            }
-
-            lines.push(`SUMMARY:${escapeICS(evt.title)}`);
-            if (evt.description) lines.push(`DESCRIPTION:${escapeICS(evt.description)}`);
-            if (evt.location) lines.push(`LOCATION:${escapeICS(evt.location)}`);
-            if (evt.recurrence_rule) lines.push(`RRULE:${evt.recurrence_rule}`);
-            lines.push('END:VEVENT');
-
-            vevents.push(lines.join('\r\n'));
-          }
-        }
-
-        // Get course tasks as events
-        if (
-          options.mode === 'all' ||
-          (options.courseIds && options.courseIds.length > 0)
-        ) {
-          let courseFilter = '';
-          const params: (string | number)[] = [...dateParams];
-
-          if (options.mode === 'selected' && options.courseIds) {
-            const placeholders = options.courseIds.map(() => '?').join(',');
-            courseFilter = ` AND t.course_id IN (${placeholders})`;
-            params.push(...options.courseIds);
-          }
-
-          const tasks = database.executeRead<{
-            id: number;
-            title: string;
-            description: string | null;
-            due_at: string;
-            course_code: string;
-            task_type: string | null;
-            weight: number;
-          }>(
-            `SELECT t.id, t.title, t.description, t.due_at, c.code as course_code, t.task_type, t.weight
-           FROM tasks t
-           JOIN courses c ON t.course_id = c.id
-           WHERE t.due_at IS NOT NULL${dateFilter ? dateFilter.replace('start_at', 't.due_at') : ''}${courseFilter}`,
-            params
-          );
-
-          for (const task of tasks) {
-            const uid = `task-${task.id}@cid`;
-            const dueDate = new Date(task.due_at);
-            const endDate = new Date(dueDate.getTime() + 60 * 60 * 1000); // 1 hour duration
-
-            const description = [
-              `Course: ${task.course_code}`,
-              task.task_type ? `Type: ${task.task_type}` : null,
-              task.weight > 0 ? `Weight: ${task.weight}%` : null,
-              task.description,
-            ]
-              .filter(Boolean)
-              .join('\\n');
-
-            const lines = [
-              'BEGIN:VEVENT',
-              `UID:${uid}`,
-              `DTSTAMP:${formatICSDate(new Date().toISOString(), false)}`,
-              `DTSTART:${formatICSDate(task.due_at, false)}`,
-              `DTEND:${formatICSDate(endDate.toISOString(), false)}`,
-              `SUMMARY:${escapeICS(task.title)}`,
-              `DESCRIPTION:${escapeICS(description)}`,
-              `CATEGORIES:${escapeICS(task.course_code)}`,
-              'END:VEVENT',
-            ];
-
-            vevents.push(lines.join('\r\n'));
-          }
-        }
-
-        // Build final ICS content
-        const icsContent = [
-          'BEGIN:VCALENDAR',
-          'VERSION:2.0',
-          'PRODID:-//Canvas Integration Dashboard//EN',
-          `X-WR-CALNAME:${escapeICS(calendarName)}`,
-          'CALSCALE:GREGORIAN',
-          'METHOD:PUBLISH',
-          ...vevents,
-          'END:VCALENDAR',
-        ].join('\r\n');
-
-        logger.info(`Exported ${vevents.length} events to ICS`);
-        return {
-          success: true,
-          data: { content: icsContent, eventCount: vevents.length },
-        };
-      } catch (error) {
-        logger.error(`Failed to export calendars: ${error}`);
-        return { success: false, error: String(error) };
-      }
-    }
-  );
+  // Calendar handlers are now in ipc-handlers/calendarHandlers.ts
 
   // Resource (Canvas file) handlers
   ipcMain.handle('resource:download', async (_event, resourceId: number) => {
@@ -6028,546 +5146,6 @@ function registerIpcHandlers(): void {
     return { success: true };
   });
 
-  // ============ Priority Handlers ============
-
-  ipcMain.handle('priorities:calculate', () => {
-    if (!priorityOrchestrator) {
-      return { success: false, error: 'Priority system not initialized' };
-    }
-    try {
-      const result = priorityOrchestrator.calculateAll();
-      return { success: true, data: result };
-    } catch (error) {
-      logger.error('Priority calculation failed', error as Error);
-      return { success: false, error: 'Priority calculation failed' };
-    }
-  });
-
-  ipcMain.handle('priorities:refresh', () => {
-    if (!priorityOrchestrator) {
-      return { success: false, error: 'Priority system not initialized' };
-    }
-    try {
-      priorityOrchestrator.calculateAll();
-      return { success: true };
-    } catch (error) {
-      logger.error('Priority refresh failed', error as Error);
-      return { success: false, error: 'Priority refresh failed' };
-    }
-  });
-
-  ipcMain.handle('priorities:getExplanation', (_event, params: { taskId: number }) => {
-    if (!priorityOrchestrator) {
-      return { success: false, error: 'Priority system not initialized' };
-    }
-    try {
-      const explanation = priorityOrchestrator.getExplanation(params.taskId);
-      if (!explanation) {
-        return { success: false, error: 'Task not found' };
-      }
-      return { success: true, data: explanation };
-    } catch (error) {
-      logger.error('Failed to get priority explanation', error as Error);
-      return { success: false, error: 'Failed to get priority explanation' };
-    }
-  });
-
-  // Recalculate priorities when relevant tables change
-  database.on('commit', (tableName: string) => {
-    if (['tasks', 'courses', 'course_policies', 'grace_tokens'].includes(tableName)) {
-      // Debounce recalculation to avoid excessive computation
-      setTimeout(() => {
-        if (!priorityOrchestrator) return;
-        try {
-          priorityOrchestrator.calculateAll();
-        } catch (error) {
-          logger.error('Auto priority recalculation failed', error as Error);
-        }
-      }, 500);
-    }
-  });
-
-  // ============ Intelligence - Recommendations ============
-
-  ipcMain.handle('intelligence:getActiveRecommendations', () => {
-    if (!recommendationOrchestrator) {
-      return [];
-    }
-    try {
-      const recommendations = recommendationOrchestrator.getActiveRecommendations();
-      return recommendations.map((r) => ({
-        ...r,
-        validFrom: r.validFrom.toISOString(),
-        validUntil: r.validUntil.toISOString(),
-        dismissedAt: r.dismissedAt?.toISOString() ?? null,
-        actedOnAt: r.actedOnAt?.toISOString() ?? null,
-        createdAt: r.createdAt?.toISOString(),
-      }));
-    } catch (error) {
-      logger.error('Failed to get active recommendations', error as Error);
-      return [];
-    }
-  });
-
-  ipcMain.handle(
-    'intelligence:generateRecommendations',
-    (_event, params?: { availableMinutes?: number }) => {
-      if (!recommendationOrchestrator) {
-        return [];
-      }
-      try {
-        const recommendations = recommendationOrchestrator.generateRecommendations(
-          params?.availableMinutes
-        );
-        return recommendations.map((r) => ({
-          ...r,
-          validFrom: r.validFrom.toISOString(),
-          validUntil: r.validUntil.toISOString(),
-          dismissedAt: r.dismissedAt?.toISOString() ?? null,
-          actedOnAt: r.actedOnAt?.toISOString() ?? null,
-          createdAt: r.createdAt?.toISOString(),
-        }));
-      } catch (error) {
-        logger.error('Failed to generate recommendations', error as Error);
-        return [];
-      }
-    }
-  );
-
-  ipcMain.handle(
-    'intelligence:dismissRecommendation',
-    (_event, recommendationId: number) => {
-      if (!recommendationOrchestrator) {
-        return { success: false, error: 'Recommendation system not initialized' };
-      }
-      try {
-        const dismissed =
-          recommendationOrchestrator.dismissRecommendation(recommendationId);
-        return { success: dismissed };
-      } catch (error) {
-        logger.error('Failed to dismiss recommendation', error as Error);
-        return { success: false, error: String(error) };
-      }
-    }
-  );
-
-  ipcMain.handle(
-    'intelligence:actOnRecommendation',
-    (_event, recommendationId: number) => {
-      if (!recommendationOrchestrator) {
-        return { success: false, error: 'Recommendation system not initialized' };
-      }
-      try {
-        const acted =
-          recommendationOrchestrator.markRecommendationActed(recommendationId);
-        return { success: acted };
-      } catch (error) {
-        logger.error('Failed to mark recommendation as acted', error as Error);
-        return { success: false, error: String(error) };
-      }
-    }
-  );
-
-  ipcMain.handle('intelligence:getRecommendationStats', () => {
-    if (!recommendationOrchestrator) {
-      return { totalGenerated: 0, totalDismissed: 0, totalActedOn: 0, activeCount: 0 };
-    }
-    try {
-      return recommendationOrchestrator.getStatistics();
-    } catch (error) {
-      logger.error('Failed to get recommendation stats', error as Error);
-      return { totalGenerated: 0, totalDismissed: 0, totalActedOn: 0, activeCount: 0 };
-    }
-  });
-
-  // ============ Intelligence - Insights ============
-
-  ipcMain.handle('intelligence:getActiveInsights', () => {
-    if (!insightOrchestrator) {
-      return [];
-    }
-    try {
-      const insights = insightOrchestrator.getActiveInsights();
-      return insights.map((i) => ({
-        ...i,
-        acknowledgedAt: i.acknowledgedAt?.toISOString() ?? null,
-        expiresAt: i.expiresAt?.toISOString() ?? null,
-        createdAt: i.createdAt?.toISOString(),
-      }));
-    } catch (error) {
-      logger.error('Failed to get active insights', error as Error);
-      return [];
-    }
-  });
-
-  ipcMain.handle('intelligence:generateInsights', () => {
-    if (!insightOrchestrator) {
-      return [];
-    }
-    try {
-      const insights = insightOrchestrator.generateInsights();
-      return insights.map((i) => ({
-        ...i,
-        acknowledgedAt: i.acknowledgedAt?.toISOString() ?? null,
-        expiresAt: i.expiresAt?.toISOString() ?? null,
-        createdAt: i.createdAt?.toISOString(),
-      }));
-    } catch (error) {
-      logger.error('Failed to generate insights', error as Error);
-      return [];
-    }
-  });
-
-  ipcMain.handle('intelligence:acknowledgeInsight', (_event, insightId: number) => {
-    if (!insightOrchestrator) {
-      return { success: false, error: 'Insight system not initialized' };
-    }
-    try {
-      const acknowledged = insightOrchestrator.acknowledgeInsight(insightId);
-      return { success: acknowledged };
-    } catch (error) {
-      logger.error('Failed to acknowledge insight', error as Error);
-      return { success: false, error: String(error) };
-    }
-  });
-
-  ipcMain.handle('intelligence:acknowledgeAllInsights', () => {
-    if (!insightOrchestrator) {
-      return { success: false, error: 'Insight system not initialized' };
-    }
-    try {
-      const count = insightOrchestrator.acknowledgeAllInsights();
-      return { success: true, data: { count } };
-    } catch (error) {
-      logger.error('Failed to acknowledge all insights', error as Error);
-      return { success: false, error: String(error) };
-    }
-  });
-
-  ipcMain.handle('intelligence:getInsightStats', () => {
-    if (!insightOrchestrator) {
-      return {
-        totalGenerated: 0,
-        totalAcknowledged: 0,
-        activeCount: 0,
-        bySeverity: { info: 0, warning: 0, critical: 0 },
-        byType: {},
-      };
-    }
-    try {
-      return insightOrchestrator.getStatistics();
-    } catch (error) {
-      logger.error('Failed to get insight stats', error as Error);
-      return {
-        totalGenerated: 0,
-        totalAcknowledged: 0,
-        activeCount: 0,
-        bySeverity: { info: 0, warning: 0, critical: 0 },
-        byType: {},
-      };
-    }
-  });
-
-  // ============ Intelligence - Suppression (Never Show Again) ============
-
-  ipcMain.handle('intelligence:suppressRecommendation', (_event, id: number) => {
-    if (!recommendationOrchestrator) {
-      return { success: false, error: 'Recommendation system not initialized' };
-    }
-    try {
-      const suppressed = recommendationOrchestrator.suppressRecommendationForever(id);
-      return { success: suppressed };
-    } catch (error) {
-      logger.error('Failed to suppress recommendation', error as Error);
-      return { success: false, error: String(error) };
-    }
-  });
-
-  ipcMain.handle('intelligence:suppressInsight', (_event, id: number) => {
-    if (!insightOrchestrator) {
-      return { success: false, error: 'Insight system not initialized' };
-    }
-    try {
-      const suppressed = insightOrchestrator.suppressInsightForever(id);
-      return { success: suppressed };
-    } catch (error) {
-      logger.error('Failed to suppress insight', error as Error);
-      return { success: false, error: String(error) };
-    }
-  });
-
-  // ============ Intelligence - Workload ============
-
-  ipcMain.handle(
-    'intelligence:getWorkloadDistribution',
-    (_event, params?: { startDate?: string; endDate?: string }) => {
-      if (!workloadOrchestrator) {
-        return null;
-      }
-      try {
-        const startDate = params?.startDate ? new Date(params.startDate) : new Date();
-        const endDate = params?.endDate ? new Date(params.endDate) : undefined;
-        const distribution = workloadOrchestrator.analyzeWorkload(startDate, endDate);
-
-        return {
-          startDate: distribution.startDate.toISOString(),
-          endDate: distribution.endDate.toISOString(),
-          dailySnapshots: distribution.dailySnapshots.map((s) => ({
-            snapshotDate: s.snapshotDate.toISOString(),
-            totalTasksDue: s.totalTasksDue,
-            totalEstimatedMinutes: s.totalEstimatedMinutes,
-            tasksByCourse: s.tasksByCourse,
-            tasksByUrgency: s.tasksByUrgency,
-            deadlineClusteringScore: s.deadlineClusteringScore,
-          })),
-          peakDay: distribution.peakDay?.toISOString() ?? null,
-          peakMinutes: distribution.peakMinutes,
-          avgDailyMinutes: distribution.avgDailyMinutes,
-          clusteringScore: distribution.clusteringScore,
-          balanceScore: distribution.balanceScore,
-        };
-      } catch (error) {
-        logger.error('Failed to get workload distribution', error as Error);
-        return null;
-      }
-    }
-  );
-
-  ipcMain.handle('intelligence:getDailyPlan', (_event, params?: { date?: string }) => {
-    if (!workloadOrchestrator) {
-      return [];
-    }
-    try {
-      const date = params?.date ? new Date(params.date) : new Date();
-      const plan = workloadOrchestrator.generateDailyPlan(date);
-      return plan.map((entry) => ({
-        ...entry,
-        dueAt: entry.dueAt?.toISOString() ?? null,
-        recommendedStartTime: entry.recommendedStartTime?.toISOString() ?? null,
-      }));
-    } catch (error) {
-      logger.error('Failed to generate daily plan', error as Error);
-      return [];
-    }
-  });
-
-  ipcMain.handle('intelligence:getEffortEstimate', (_event, taskId: number) => {
-    if (!workloadOrchestrator) {
-      return null;
-    }
-    try {
-      return workloadOrchestrator.getEffortEstimate(taskId);
-    } catch (error) {
-      logger.error('Failed to get effort estimate', error as Error);
-      return null;
-    }
-  });
-
-  ipcMain.handle(
-    'intelligence:getClusteringScore',
-    (_event, params?: { windowDays?: number }) => {
-      if (!workloadOrchestrator) {
-        return 0;
-      }
-      try {
-        return workloadOrchestrator.getClusteringScore(params?.windowDays);
-      } catch (error) {
-        logger.error('Failed to get clustering score', error as Error);
-        return 0;
-      }
-    }
-  );
-
-  ipcMain.handle(
-    'intelligence:getNeglectedCourses',
-    (_event, params?: { windowDays?: number }) => {
-      if (!workloadOrchestrator) {
-        return [];
-      }
-      try {
-        return workloadOrchestrator.getNeglectedCourses(params?.windowDays ?? 14);
-      } catch (error) {
-        logger.error('Failed to get neglected courses', error as Error);
-        return [];
-      }
-    }
-  );
-
-  ipcMain.handle(
-    'intelligence:getDeadlineClusters',
-    (_event, params?: { windowHours?: number }) => {
-      if (!workloadOrchestrator) {
-        return [];
-      }
-      try {
-        return workloadOrchestrator.getDeadlineClusters(params?.windowHours ?? 48);
-      } catch (error) {
-        logger.error('Failed to get deadline clusters', error as Error);
-        return [];
-      }
-    }
-  );
-
-  ipcMain.handle('intelligence:getCourseBalanceScore', () => {
-    if (!workloadOrchestrator) {
-      return 0;
-    }
-    try {
-      return workloadOrchestrator.getCourseBalanceScore();
-    } catch (error) {
-      logger.error('Failed to get course balance score', error as Error);
-      return 0;
-    }
-  });
-
-  ipcMain.handle(
-    'intelligence:getWorkloadSnapshots',
-    (_event, params?: { days?: number }) => {
-      if (!workloadOrchestrator) {
-        return [];
-      }
-      try {
-        return workloadOrchestrator.getHistoricalSnapshots(params?.days ?? 30);
-      } catch (error) {
-        logger.error('Failed to get workload snapshots', error as Error);
-        return [];
-      }
-    }
-  );
-
-  // ============ Intelligence - Behavior Tracking ============
-
-  ipcMain.handle('intelligence:getWeeklyRhythm', () => {
-    if (!behaviorTrackingOrchestrator) {
-      return null;
-    }
-    try {
-      const rhythm = behaviorTrackingOrchestrator.getWeeklyRhythm();
-      return {
-        productiveDays: rhythm.productiveDays,
-        productiveHours: rhythm.productiveHours,
-        peakDay: rhythm.peakDay,
-        peakHour: rhythm.peakHour,
-        sampleSize: rhythm.sampleSize,
-        confidence: rhythm.confidence,
-      };
-    } catch (error) {
-      logger.error('Failed to get weekly rhythm', error as Error);
-      return null;
-    }
-  });
-
-  ipcMain.handle('intelligence:getCoursePerformance', () => {
-    if (!behaviorTrackingOrchestrator) {
-      return [];
-    }
-    try {
-      return behaviorTrackingOrchestrator.getCoursePerformance();
-    } catch (error) {
-      logger.error('Failed to get course performance', error as Error);
-      return [];
-    }
-  });
-
-  ipcMain.handle('intelligence:getStrugglePatterns', () => {
-    if (!behaviorTrackingOrchestrator) {
-      return [];
-    }
-    try {
-      return behaviorTrackingOrchestrator.getStrugglePatterns();
-    } catch (error) {
-      logger.error('Failed to get struggle patterns', error as Error);
-      return [];
-    }
-  });
-
-  ipcMain.handle('intelligence:getCompletionTiming', () => {
-    if (!behaviorTrackingOrchestrator) {
-      return null;
-    }
-    try {
-      return behaviorTrackingOrchestrator.getCompletionTiming();
-    } catch (error) {
-      logger.error('Failed to get completion timing', error as Error);
-      return null;
-    }
-  });
-
-  ipcMain.handle('intelligence:getBehaviorEventCount', () => {
-    if (!behaviorTrackingOrchestrator) {
-      return 0;
-    }
-    try {
-      return behaviorTrackingOrchestrator.getEventCount();
-    } catch (error) {
-      logger.error('Failed to get behavior event count', error as Error);
-      return 0;
-    }
-  });
-
-  // ============ Intelligence - Adaptive Learning ============
-
-  ipcMain.handle('intelligence:getAdaptiveWeights', () => {
-    if (!adaptiveLearningOrchestrator) {
-      return null;
-    }
-    try {
-      return adaptiveLearningOrchestrator.getCachedWeights();
-    } catch (error) {
-      logger.error('Failed to get adaptive weights', error as Error);
-      return null;
-    }
-  });
-
-  ipcMain.handle('intelligence:getWeightAdjustments', () => {
-    if (!adaptiveLearningOrchestrator) {
-      return [];
-    }
-    try {
-      return adaptiveLearningOrchestrator.getWeightAdjustments();
-    } catch (error) {
-      logger.error('Failed to get weight adjustments', error as Error);
-      return [];
-    }
-  });
-
-  ipcMain.handle('intelligence:getAdaptiveSummary', () => {
-    if (!adaptiveLearningOrchestrator) {
-      return [];
-    }
-    try {
-      return adaptiveLearningOrchestrator.getSummary();
-    } catch (error) {
-      logger.error('Failed to get adaptive summary', error as Error);
-      return [];
-    }
-  });
-
-  ipcMain.handle('intelligence:getAdaptiveStatistics', () => {
-    if (!adaptiveLearningOrchestrator) {
-      return null;
-    }
-    try {
-      return adaptiveLearningOrchestrator.getStatistics();
-    } catch (error) {
-      logger.error('Failed to get adaptive statistics', error as Error);
-      return null;
-    }
-  });
-
-  ipcMain.handle('intelligence:recalculateAdaptiveWeights', () => {
-    if (!adaptiveLearningOrchestrator) {
-      return { success: false, error: 'Adaptive learning not initialized' };
-    }
-    try {
-      const weights = adaptiveLearningOrchestrator.recalculateWeights();
-      return { success: true, data: weights };
-    } catch (error) {
-      logger.error('Failed to recalculate adaptive weights', error as Error);
-      return { success: false, error: 'Failed to recalculate weights' };
-    }
-  });
-
   // ============ Sync Conflict Handlers ============
 
   ipcMain.handle('sync:getPendingConflicts', () => {
@@ -8123,18 +6701,18 @@ function registerIpcHandlers(): void {
 
   // Check if previous session crashed (for recovery dialog)
   ipcMain.handle('app:getCrashInfo', () => {
-    const crashCheck = checkCrashFlag();
+    const crashCheck = crashProtectionManager.checkCrashFlag();
     return crashCheck.crashed ? crashCheck.data : null;
   });
 
   // Get current recovery status (safe mode, crash info)
   ipcMain.handle('app:getRecoveryStatus', () => {
-    return getRecoveryStatus();
+    return crashProtectionManager.getRecoveryStatus();
   });
 
   // Manually exit safe mode (user dismisses recovery banner)
   ipcMain.handle('app:exitSafeMode', () => {
-    clearSafeMode();
+    crashProtectionManager.clearSafeMode();
     // Try to start auto-sync now that safe mode is cleared
     startAutoSync();
     return { success: true };
@@ -8142,7 +6720,7 @@ function registerIpcHandlers(): void {
 
   // Clear last crash info (user acknowledges crash notification)
   ipcMain.handle('app:dismissCrashNotification', () => {
-    lastCrashInfo = null;
+    crashProtectionManager.setLastCrashInfo(null);
     return { success: true };
   });
 
@@ -8219,19 +6797,10 @@ function registerIpcHandlers(): void {
       metricsCollector.increment('renderer.error_reported');
 
       // Record in crash history as a soft error (doesn't trigger safe mode)
-      const history = loadCrashHistory();
-      history.crashes.push({
-        timestamp: errorInfo.timestamp,
-        reason: `renderer_error: ${errorInfo.message.substring(0, 100)}`,
-      });
-
-      // Keep only recent crashes
-      const cutoff = Date.now() - CRASH_LOOP_WINDOW_MS * 2;
-      history.crashes = history.crashes.filter(
-        (c) => new Date(c.timestamp).getTime() > cutoff
+      crashProtectionManager.recordSoftError(
+        `renderer_error: ${errorInfo.message.substring(0, 100)}`,
+        errorInfo.timestamp
       );
-
-      saveCrashHistory(history);
 
       return { success: true };
     }
@@ -8355,240 +6924,6 @@ function registerIpcHandlers(): void {
   });
 }
 
-// ============ Crash Protection ============
-
-/**
- * Load crash history from disk
- */
-function loadCrashHistory(): CrashHistory {
-  try {
-    if (fs.existsSync(CRASH_HISTORY_FILE)) {
-      return JSON.parse(fs.readFileSync(CRASH_HISTORY_FILE, 'utf-8'));
-    }
-  } catch (_e) {
-    // Ignore parse errors, return default
-  }
-  return { crashes: [], lastCleanExit: null, safeMode: false };
-}
-
-/**
- * Save crash history to disk
- */
-function saveCrashHistory(history: CrashHistory): void {
-  try {
-    if (!fs.existsSync(APP_DATA_DIR)) {
-      fs.mkdirSync(APP_DATA_DIR, { recursive: true });
-    }
-    fs.writeFileSync(CRASH_HISTORY_FILE, JSON.stringify(history, null, 2));
-  } catch (_e) {
-    // Cannot log, just ignore
-  }
-}
-
-/**
- * Check if crash loop detected (3+ crashes in 10 minutes)
- */
-function checkCrashLoop(): { inLoop: boolean; crashCount: number } {
-  const history = loadCrashHistory();
-  const now = Date.now();
-
-  // Count crashes within the window
-  const recentCrashes = history.crashes.filter((crash) => {
-    const crashTime = new Date(crash.timestamp).getTime();
-    return now - crashTime < CRASH_LOOP_WINDOW_MS;
-  });
-
-  const inLoop = recentCrashes.length >= CRASH_LOOP_THRESHOLD;
-
-  if (inLoop && !history.safeMode) {
-    // Enter safe mode
-    history.safeMode = true;
-    saveCrashHistory(history);
-  }
-
-  return { inLoop, crashCount: recentCrashes.length };
-}
-
-/**
- * Record a crash in history and write crash flag
- */
-function writeCrashFlag(reason: string): void {
-  try {
-    const timestamp = new Date().toISOString();
-    const crashData = {
-      timestamp,
-      reason,
-      pid: process.pid,
-      platform: process.platform,
-    };
-
-    if (!fs.existsSync(APP_DATA_DIR)) {
-      fs.mkdirSync(APP_DATA_DIR, { recursive: true });
-    }
-
-    // Write immediate crash flag
-    fs.writeFileSync(CRASH_FLAG_FILE, JSON.stringify(crashData, null, 2));
-
-    // Also record in crash history (skip session_start as it's not a real crash)
-    if (reason !== 'session_start') {
-      const history = loadCrashHistory();
-      history.crashes.push({ timestamp, reason });
-
-      // Keep only crashes within the window + a buffer
-      const cutoff = Date.now() - CRASH_LOOP_WINDOW_MS * 2;
-      history.crashes = history.crashes.filter(
-        (c) => new Date(c.timestamp).getTime() > cutoff
-      );
-
-      saveCrashHistory(history);
-    }
-  } catch (_e) {
-    // Cannot log, just ignore
-  }
-}
-
-/**
- * Clear crash flag and record clean exit
- */
-function clearCrashFlag(): void {
-  try {
-    if (fs.existsSync(CRASH_FLAG_FILE)) {
-      fs.unlinkSync(CRASH_FLAG_FILE);
-    }
-
-    // Record clean exit in history
-    const history = loadCrashHistory();
-    history.lastCleanExit = new Date().toISOString();
-    saveCrashHistory(history);
-  } catch (_e) {
-    // Ignore
-  }
-}
-
-/**
- * Clear safe mode after stable runtime
- */
-function clearSafeMode(): void {
-  const history = loadCrashHistory();
-  if (history.safeMode) {
-    history.safeMode = false;
-    history.crashes = []; // Clear crash history on successful recovery
-    saveCrashHistory(history);
-    safeModeEnabled = false;
-    logger.info('Safe mode cleared after stable runtime');
-
-    // Notify renderer
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('app:recovery-status', {
-        safeMode: false,
-        lastCrash: null,
-        message: 'App has been stable - safe mode disabled',
-      });
-    }
-  }
-}
-
-/**
- * Start safe mode clear timer - clears after 5 minutes of stable runtime
- */
-function startSafeModeClearTimer(): void {
-  if (safeModeTimer) {
-    clearTimeout(safeModeTimer);
-  }
-
-  safeModeTimer = setTimeout(() => {
-    clearSafeMode();
-    safeModeTimer = null;
-  }, SAFE_MODE_CLEAR_DELAY_MS);
-}
-
-/**
- * Check if previous session crashed
- */
-function checkCrashFlag(): {
-  crashed: boolean;
-  data?: { timestamp: string; reason: string };
-} {
-  try {
-    if (fs.existsSync(CRASH_FLAG_FILE)) {
-      const data = JSON.parse(fs.readFileSync(CRASH_FLAG_FILE, 'utf-8'));
-      return { crashed: true, data };
-    }
-  } catch (_e) {
-    // Ignore
-  }
-  return { crashed: false };
-}
-
-/**
- * Get current recovery status for renderer
- */
-function getRecoveryStatus(): {
-  safeMode: boolean;
-  lastCrash: CrashHistoryEntry | null;
-  crashCount: number;
-  message: string | null;
-} {
-  const history = loadCrashHistory();
-  const recentCrashes = history.crashes.filter((crash) => {
-    const crashTime = new Date(crash.timestamp).getTime();
-    return Date.now() - crashTime < CRASH_LOOP_WINDOW_MS;
-  });
-
-  let message: string | null = null;
-  if (safeModeEnabled) {
-    message = `Auto-sync disabled due to ${recentCrashes.length} recent crashes. Manual sync is still available.`;
-  } else if (lastCrashInfo) {
-    message = 'App recovered from previous crash.';
-  }
-
-  return {
-    safeMode: safeModeEnabled,
-    lastCrash: lastCrashInfo,
-    crashCount: recentCrashes.length,
-    message,
-  };
-}
-
-/**
- * Emergency cleanup on crash
- */
-function emergencyCleanup(): void {
-  try {
-    // Try to checkpoint database with timeout
-    const timeout = setTimeout(() => {
-      process.exit(1);
-    }, 2000); // 2 second timeout
-
-    try {
-      database.close();
-      clearTimeout(timeout);
-    } catch (_e) {
-      clearTimeout(timeout);
-    }
-  } catch (_e) {
-    // Ignore
-  }
-}
-
-// Handle uncaught exceptions
-process.on('uncaughtException', (error) => {
-  writeCrashFlag(`uncaughtException: ${error.message}`);
-  logger.error('Uncaught Exception:', error);
-  emergencyCleanup();
-  process.exit(1);
-});
-
-// Handle unhandled promise rejections
-process.on('unhandledRejection', (reason, _promise) => {
-  writeCrashFlag(`unhandledRejection: ${reason}`);
-  logger.error(
-    'Unhandled Rejection:',
-    reason instanceof Error ? reason : new Error(String(reason))
-  );
-  // Don't exit on unhandled rejection, just log
-});
-
 // ============ Download Queue Persistence ============
 
 // PendingDownloadRow imported from DatabaseRowTypes.ts
@@ -8687,7 +7022,7 @@ function startAutoSync(): void {
   stopAutoSync(); // Clear any existing interval
 
   // Check if safe mode is enabled (crash loop detected)
-  if (safeModeEnabled) {
+  if (crashProtectionManager.isSafeModeEnabled()) {
     logger.warn(
       'Safe mode enabled - auto-sync disabled. Manual sync is still available.'
     );
@@ -8720,7 +7055,7 @@ function startAutoSync(): void {
   logger.info(`Auto-sync enabled, interval: ${autoSyncIntervalMs / 60000} minutes`);
 
   // Start safe mode clear timer if we successfully started auto-sync
-  startSafeModeClearTimer();
+  crashProtectionManager.startSafeModeClearTimer();
 
   autoSyncInterval = setInterval(async () => {
     if (!syncEngine || !systemMonitor.getState().canSync) {
@@ -9065,7 +7400,7 @@ app.whenReady().then(async () => {
   logger.info(`Data directory: ${APP_DATA_DIR}`);
 
   // Check for previous crash and crash loop
-  const crashCheck = checkCrashFlag();
+  const crashCheck = crashProtectionManager.checkCrashFlag();
   if (crashCheck.crashed && crashCheck.data) {
     logger.warn(
       `Previous session crashed at ${crashCheck.data.timestamp}: ${crashCheck.data.reason}`
@@ -9073,35 +7408,35 @@ app.whenReady().then(async () => {
     metricsCollector.increment('app.crash_recovery');
 
     // Store last crash info for recovery UI
-    lastCrashInfo = {
+    crashProtectionManager.setLastCrashInfo({
       timestamp: crashCheck.data.timestamp,
       reason: crashCheck.data.reason,
-    };
+    });
 
     // Clear the crash flag since we've detected it
-    clearCrashFlag();
+    crashProtectionManager.clearCrashFlag();
   }
 
   // Check for crash loop (3+ crashes in 10 minutes)
-  const crashLoopCheck = checkCrashLoop();
+  const crashLoopCheck = crashProtectionManager.checkCrashLoop();
   if (crashLoopCheck.inLoop) {
-    safeModeEnabled = true;
+    crashProtectionManager.setSafeModeEnabled(true);
     logger.warn(
       `Crash loop detected: ${crashLoopCheck.crashCount} crashes in last 10 minutes. Entering safe mode (auto-sync disabled).`
     );
     metricsCollector.increment('app.safe_mode_entered');
   } else {
     // Start timer to clear safe mode after stable runtime
-    const history = loadCrashHistory();
+    const history = crashProtectionManager.loadCrashHistory();
     if (history.safeMode) {
-      safeModeEnabled = true;
+      crashProtectionManager.setSafeModeEnabled(true);
       logger.info('Resuming in safe mode from previous session');
-      startSafeModeClearTimer();
+      crashProtectionManager.startSafeModeClearTimer();
     }
   }
 
   // Write crash flag - will be cleared on clean exit
-  writeCrashFlag('session_start');
+  crashProtectionManager.writeCrashFlag('session_start');
 
   // If previous session crashed, perform WAL recovery before initializing
   if (crashCheck.crashed) {
@@ -9647,6 +7982,27 @@ app.whenReady().then(async () => {
   // Register IPC handlers
   registerIpcHandlers();
 
+  // Create IPC context for modular handlers
+  const ipcContext: IpcContext = {
+    getMainWindow: () => mainWindow,
+    getDatabase: () => database,
+    getLogger: () => logger,
+    getMetricsCollector: () => metricsCollector,
+    getVisibleDataProvider: () => visibleDataProvider,
+    getSyncEngine: () => syncEngine,
+    getPriorityOrchestrator: () => priorityOrchestrator,
+    getRecommendationOrchestrator: () => recommendationOrchestrator,
+    getInsightOrchestrator: () => insightOrchestrator,
+    getWorkloadOrchestrator: () => workloadOrchestrator,
+    getBehaviorTrackingOrchestrator: () => behaviorTrackingOrchestrator,
+    getAdaptiveLearningOrchestrator: () => adaptiveLearningOrchestrator,
+    getCommandDispatcher: () => commandDispatcher,
+  };
+
+  // Register modular IPC handlers
+  registerIntelligenceHandlers(ipcContext);
+  registerCalendarHandlers(ipcContext);
+
   // Start background services
   healthCheck.start();
   metricsCollector.start();
@@ -9843,13 +8199,10 @@ app.on('quit', () => {
   }
 
   // Clear safe mode timer if running
-  if (safeModeTimer) {
-    clearTimeout(safeModeTimer);
-    safeModeTimer = null;
-  }
+  crashProtectionManager.stopSafeModeClearTimer();
 
   // Clear crash flag on clean exit
-  clearCrashFlag();
+  crashProtectionManager.clearCrashFlag();
 
   // Clear simulation state (as per spec: clears on app close)
   if (commandDispatcher) {
