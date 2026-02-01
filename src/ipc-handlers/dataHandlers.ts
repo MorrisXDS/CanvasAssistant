@@ -115,21 +115,20 @@ export function registerDataHandlers(ctx: IpcContext): void {
   // Get syllabus designation for a course
   ipcMain.handle('data:getCourseSyllabus', (_event, courseId: number) => {
     try {
-      // Check course_syllabuses table for user-designated syllabus
+      // Check course_syllabuses table for user-designated syllabus file
       const syllabusDesignation = database.executeReadOne<{
-        resource_id: number | null;
-        page_id: number | null;
+        resource_id: number;
         source_type: string;
-        reviewed_at: string | null;
-        designated_at: string;
+        last_reviewed_at: string;
+        marked_at: string;
       }>(
-        `SELECT resource_id, page_id, source_type, reviewed_at, designated_at
+        `SELECT resource_id, source_type, last_reviewed_at, marked_at
          FROM course_syllabuses
          WHERE course_id = ?`,
         [courseId]
       );
 
-      if (syllabusDesignation?.resource_id && syllabusDesignation.source_type === 'resource') {
+      if (syllabusDesignation?.resource_id) {
         // Get resource details
         const resource = database.executeReadOne<{
           id: number;
@@ -153,34 +152,8 @@ export function registerDataHandlers(ctx: IpcContext): void {
             localPath: resource.local_path,
             downloadStatus: hasLocalFile ? 'completed' : 'pending',
             downloadedAt: resource.synced_at,
-            reviewedAt: syllabusDesignation.reviewed_at,
-            designatedAt: syllabusDesignation.designated_at,
-          };
-        }
-      }
-
-      if (syllabusDesignation?.page_id) {
-        // Get page details
-        const page = database.executeReadOne<{
-          id: number;
-          title: string;
-          external_id: string;
-          url: string | null;
-        }>(
-          `SELECT id, title, external_id, url
-           FROM course_pages WHERE id = ?`,
-          [syllabusDesignation.page_id]
-        );
-
-        if (page) {
-          return {
-            type: 'page' as const,
-            pageId: page.id,
-            title: page.title,
-            externalId: page.external_id,
-            url: page.url,
-            reviewedAt: syllabusDesignation.reviewed_at,
-            designatedAt: syllabusDesignation.designated_at,
+            reviewedAt: syllabusDesignation.last_reviewed_at,
+            designatedAt: syllabusDesignation.marked_at,
           };
         }
       }
