@@ -712,6 +712,10 @@ export const IpcContract = {
     params: z.number(),
     result: ApiResultSchema(z.object({ localPath: z.string() })),
   },
+  'resource:downloadByExternalId': {
+    params: z.string(),
+    result: ApiResultSchema(z.object({ localPath: z.string() })),
+  },
   'resource:open': {
     params: z.number(),
     result: ApiResultSchema(z.void()),

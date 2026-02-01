@@ -131,6 +131,110 @@ export function registerResourceHandlers(ctx: IpcContext): void {
     });
   });
 
+  // Download a resource by external_id (for module items that reference resources)
+  ipcMain.handle('resource:downloadByExternalId', async (_event, externalId: string) => {
+    // Look up resource by external_id
+    const resource = database.executeReadOne<{
+      id: number;
+      course_id: number;
+      external_id: string;
+      title: string;
+      url: string | null;
+    }>('SELECT id, course_id, external_id, title, url FROM resources WHERE external_id = ?', [externalId]);
+
+    if (!resource) {
+      logger.warn(`[resource:downloadByExternalId] Resource not found for external_id: ${externalId}`);
+      return { success: false, error: 'Resource not found' };
+    }
+
+    // Handle HTML content items (pages, assignments, announcements)
+    const syncEngine = getSyncEngine();
+    if (resource.external_id.startsWith('html-') && syncEngine?.['htmlContentSync']) {
+      const syncPrefs = getSyncPreferences();
+      if (!syncPrefs.saveHtmlContent) {
+        logger.info(
+          '[resource:downloadByExternalId] HTML offline viewing disabled, skipping HTML download'
+        );
+        return {
+          success: false,
+          error:
+            'HTML offline viewing is disabled. Enable "Save HTML content for offline viewing" in Settings > Sync to download HTML files.',
+        };
+      }
+
+      const htmlSync = syncEngine[
+        'htmlContentSync'
+      ] as import('../layers/l2-daemon/HtmlContentSync').HtmlContentSync;
+      const result = await htmlSync.downloadHtmlItem(resource.external_id, getFilesDir());
+      if (result.success) {
+        metricsCollector.increment('resource.download.html.success');
+      } else {
+        metricsCollector.increment('resource.download.html.failure');
+      }
+      return result;
+    }
+
+    if (!resource.url) {
+      return { success: false, error: 'Resource has no download URL' };
+    }
+
+    // Get course code for folder organization
+    const course = database.executeReadOne<{ code: string }>(
+      'SELECT code FROM courses WHERE id = ?',
+      [resource.course_id]
+    );
+
+    const courseCode = course?.code || 'unknown';
+
+    // Get auth token for Canvas download
+    const token = await credentialManager.retrieve();
+    if (!token) {
+      return { success: false, error: 'No credentials available' };
+    }
+
+    // Queue the download
+    return new Promise((resolve) => {
+      const downloadId = `resource-ext-${externalId}`;
+
+      const onComplete = (result: {
+        id: string;
+        success: boolean;
+        localPath?: string;
+        error?: string;
+      }) => {
+        if (result.id !== downloadId) return;
+
+        fileDownloadManager.off('download-complete', onComplete);
+        fileDownloadManager.off('download-error', onComplete);
+
+        if (result.success && result.localPath) {
+          // Update database with local path
+          database.executeWrite(
+            'UPDATE resources SET local_path = ?, synced_at = ? WHERE id = ?',
+            [result.localPath, new Date().toISOString(), resource.id],
+            'resources'
+          );
+          metricsCollector.increment('resource.download.success');
+          resolve({ success: true, localPath: result.localPath });
+        } else {
+          metricsCollector.increment('resource.download.failure');
+          resolve({ success: false, error: result.error || 'Download failed' });
+        }
+      };
+
+      fileDownloadManager.on('download-complete', onComplete);
+      fileDownloadManager.on('download-error', onComplete);
+
+      fileDownloadManager.queueDownload({
+        id: downloadId,
+        url: resource.url!,
+        courseCode,
+        filename: resource.title,
+        authToken: token,
+      });
+    });
+  });
+
   // Open a resource file (with HTML dependency checking)
   ipcMain.handle(
     'resource:open',

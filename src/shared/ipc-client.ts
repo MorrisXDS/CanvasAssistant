@@ -97,6 +97,7 @@ export interface TypedApi {
 
   // Resources
   downloadResource: (resourceId: number) => Promise<IpcResult<'resource:download'>>;
+  downloadResourceByExternalId: (externalId: string) => Promise<IpcResult<'resource:downloadByExternalId'>>;
   openResource: (resourceId: number) => Promise<IpcResult<'resource:open'>>;
   showResourceInFolder: (resourceId: number) => Promise<IpcResult<'resource:showInFolder'>>;
   showResourceInFolderByExternalId: (externalId: string) => Promise<IpcResult<'resource:showInFolderByExternalId'>>;

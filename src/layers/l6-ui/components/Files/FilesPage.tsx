@@ -846,14 +846,19 @@ export function FilesPage() {
           });
         }
       } else if (file.source === 'module') {
-        // For module items, check if it's a Page type
+        // For module items, check type and use appropriate download method
         const moduleItem = file as FileModuleItem;
         if (moduleItem.itemType === 'Page') {
           // Download page content from Canvas and save as HTML file
           result = await api.downloadPageContent(moduleItem.id);
+        } else if (moduleItem.itemType === 'File' && moduleItem.contentId) {
+          // For File type module items, download via external_id
+          // (module_items.content_id links to resources.external_id)
+          result = await api.downloadResourceByExternalId(moduleItem.contentId);
         } else {
-          // For File type module items, download the associated resource
-          result = await api.downloadResource(file.id);
+          // Other module item types (Quiz, Assignment, etc.) - not downloadable as files
+          console.warn(`Cannot download module item of type: ${moduleItem.itemType}`);
+          result = { success: false, error: `Cannot download ${moduleItem.itemType} items` };
         }
       } else {
         result = await api.downloadResource(file.id);

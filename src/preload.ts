@@ -107,6 +107,9 @@ const api = {
   downloadResource: (resourceId: number) =>
     ipcRenderer.invoke('resource:download', resourceId),
 
+  downloadResourceByExternalId: (externalId: string) =>
+    ipcRenderer.invoke('resource:downloadByExternalId', externalId),
+
   openResource: (resourceId: number, skipDependencyCheck?: boolean) =>
     ipcRenderer.invoke('resource:open', resourceId, skipDependencyCheck),
 
