@@ -113,6 +113,9 @@ const api = {
   showResourceInFolder: (resourceId: number) =>
     ipcRenderer.invoke('resource:showInFolder', resourceId),
 
+  showResourceInFolderByExternalId: (externalId: string) =>
+    ipcRenderer.invoke('resource:showInFolderByExternalId', externalId),
+
   deleteResourceLocal: (resourceId: number) =>
     ipcRenderer.invoke('resource:deleteLocal', resourceId),
 

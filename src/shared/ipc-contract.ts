@@ -720,6 +720,10 @@ export const IpcContract = {
     params: z.number(),
     result: ApiResultSchema(z.void()),
   },
+  'resource:showInFolderByExternalId': {
+    params: z.string(),
+    result: ApiResultSchema(z.void()),
+  },
   'resource:deleteLocal': {
     params: z.number(),
     result: ApiResultSchema(z.void()),

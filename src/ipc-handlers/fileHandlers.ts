@@ -366,6 +366,34 @@ export function registerFileHandlers(ctx: IpcContext): void {
     return { success: true };
   });
 
+  // Show resource in folder by external_id (for module items)
+  ipcMain.handle('resource:showInFolderByExternalId', (_event, externalId: string) => {
+    const resource = database.executeReadOne<{ id: number; local_path: string | null }>(
+      'SELECT id, local_path FROM resources WHERE external_id = ?',
+      [externalId]
+    );
+
+    if (!resource?.local_path) {
+      return { success: false, error: 'File not downloaded' };
+    }
+
+    // Check if file actually exists on disk
+    if (!fs.existsSync(resource.local_path)) {
+      logger.warn(
+        `[resource:showInFolderByExternalId] File not found on disk, clearing local_path: ${resource.local_path}`
+      );
+      database.executeWrite(
+        'UPDATE resources SET local_path = NULL WHERE id = ?',
+        [resource.id],
+        'resources'
+      );
+      return { success: false, error: 'File was deleted from disk. Please re-download.' };
+    }
+
+    shell.showItemInFolder(resource.local_path);
+    return { success: true };
+  });
+
   ipcMain.handle('resource:deleteLocal', (_event, resourceId: number) => {
     logger.debug(`[resource:deleteLocal] START resourceId=${resourceId}`);
     const mainWindow = getMainWindow();

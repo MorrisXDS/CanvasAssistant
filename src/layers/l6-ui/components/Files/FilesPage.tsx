@@ -1246,18 +1246,38 @@ export function FilesPage() {
     setExternalLinkDialog({ isOpen: false, url: '', title: '' });
   };
 
+  // Check if a file can be shown in folder (has a local file path)
+  const canShowInFolder = (file: FileItem): boolean => {
+    // Pages don't have local files
+    if (file.source === 'page') return false;
+    // Module items: only File types have local paths
+    if (file.source === 'module') {
+      return (file as FileModuleItem).itemType === 'File';
+    }
+    // Resources and attachments can be shown
+    return true;
+  };
+
   const handleShowInFolder = (file: FileItem) => {
     const api = window.api;
     if (!api) return;
 
-    // Pages don't have a local folder
-    if (file.source === 'page') return;
+    // Check if file can be shown in folder
+    if (!canShowInFolder(file)) return;
 
     // Fire-and-forget: don't block UI
     if (file.source === 'attachment') {
       api.showAttachmentInFolder(file.id).catch((error) => {
         console.error('Failed to show in folder:', error);
       });
+    } else if (file.source === 'module') {
+      // Module File items - need to find the resource by content_id
+      const moduleItem = file as FileModuleItem;
+      if (moduleItem.contentId) {
+        api.showResourceInFolderByExternalId(moduleItem.contentId).catch((error) => {
+          console.error('Failed to show module file in folder:', error);
+        });
+      }
     } else {
       api.showResourceInFolder(file.id).catch((error) => {
         console.error('Failed to show in folder:', error);
@@ -1826,7 +1846,7 @@ export function FilesPage() {
                                       onToggleSelect={() => toggleFileSelection(file)}
                                       onDownload={() => handleDownload(file)}
                                       onOpen={() => handleOpen(file)}
-                                      onShowInFolder={file.source !== 'page' ? () => handleShowInFolder(file) : undefined}
+                                      onShowInFolder={canShowInFolder(file) ? () => handleShowInFolder(file) : undefined}
                                       onContextMenu={(e) => handleContextMenu(file, e)}
                                     />
                                   ))}
@@ -1850,7 +1870,7 @@ export function FilesPage() {
                                       onToggleSelect={() => toggleFileSelection(file)}
                                       onDownload={() => handleDownload(file)}
                                       onOpen={() => handleOpen(file)}
-                                      onShowInFolder={file.source !== 'page' ? () => handleShowInFolder(file) : undefined}
+                                      onShowInFolder={canShowInFolder(file) ? () => handleShowInFolder(file) : undefined}
                                       onContextMenu={(e) => handleContextMenu(file, e)}
                                     />
                                   ))}
