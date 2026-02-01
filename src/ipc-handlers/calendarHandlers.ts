@@ -333,21 +333,23 @@ export function registerCalendarHandlers(ctx: IpcContext): void {
 
       // Filter by calendar visibility
       if (!params.includeHidden) {
-        sql += " AND (ic.is_visible = 1 OR ce.source_type = 'custom')";
+        sql += " AND (ic.is_visible = 1 OR ce.source_type = 'user')";
       }
 
       // Filter by specific calendars
       if (params.calendarIds && params.calendarIds.length > 0) {
         const placeholders = params.calendarIds.map(() => '?').join(',');
-        sql +=
-          ` AND (ce.imported_calendar_id IN (${placeholders}) OR ce.source_type = 'custom')`;
+        sql += ` AND (ce.imported_calendar_id IN (${placeholders}) OR ce.source_type = 'user')`;
         sqlParams.push(...params.calendarIds);
       }
 
       const rows = database.executeRead<{
         id: number;
+        external_id: string | null;
         imported_calendar_id: number | null;
         source_type: string;
+        course_id: number | null;
+        task_id: number | null;
         title: string;
         description: string | null;
         start_at: string;
@@ -357,7 +359,10 @@ export function registerCalendarHandlers(ctx: IpcContext): void {
         uid: string | null;
         recurrence_rule: string | null;
         recurrence_exception_dates: string | null;
+        parent_event_id: number | null;
         color: string | null;
+        notes: string | null;
+        reminder_minutes: number | null;
         calendar_name: string | null;
         calendar_color: string | null;
         is_visible: number | null;
@@ -365,8 +370,11 @@ export function registerCalendarHandlers(ctx: IpcContext): void {
 
       const events: Array<{
         id: number;
-        calendarId: number | null;
+        externalId: string | null;
         sourceType: string;
+        courseId: number | null;
+        importedCalendarId: number | null;
+        taskId: number | null;
         title: string;
         description: string | null;
         startAt: string;
@@ -374,10 +382,17 @@ export function registerCalendarHandlers(ctx: IpcContext): void {
         allDay: boolean;
         location: string | null;
         uid: string | null;
-        color: string | null;
-        calendarName: string | null;
-        isRecurring: boolean;
+        recurrenceRule: string | null;
+        recurrenceExceptionDates: string | null;
+        parentEventId: number | null;
+        eventColor: string | null;
+        notes: string | null;
+        reminderMinutes: number | null;
+        isRecurrenceInstance: boolean;
+        recurrenceDate?: string;
         originalEventId?: number;
+        color: string;
+        calendarName: string | null;
       }> = [];
 
       const expander = new RRuleExpander();
@@ -386,9 +401,9 @@ export function registerCalendarHandlers(ctx: IpcContext): void {
         // Convert row to CalendarEventRecord for RRuleExpander
         const eventRecord: CalendarEventRecord = {
           id: row.id,
-          externalId: null,
+          externalId: row.external_id,
           sourceType: row.source_type as 'canvas' | 'user' | 'imported',
-          courseId: null,
+          courseId: row.course_id,
           importedCalendarId: row.imported_calendar_id,
           title: row.title,
           description: row.description,
@@ -399,10 +414,16 @@ export function registerCalendarHandlers(ctx: IpcContext): void {
           uid: row.uid,
           recurrenceRule: row.recurrence_rule,
           recurrenceExceptionDates: row.recurrence_exception_dates,
-          parentEventId: null,
+          parentEventId: row.parent_event_id,
           calendarName: row.calendar_name,
           color: row.color || row.calendar_color || undefined,
         };
+
+        // Get task_id, notes, and reminder from the row for inclusion in the result
+        const taskId = row.task_id;
+        const eventColor = row.color;
+        const notes = row.notes;
+        const reminderMinutes = row.reminder_minutes;
 
         // Use RRuleExpander to handle both recurring and non-recurring events
         const expandedEvents = expander.expand(eventRecord, startDate, endDate);
@@ -410,8 +431,11 @@ export function registerCalendarHandlers(ctx: IpcContext): void {
         for (const expanded of expandedEvents) {
           events.push({
             id: expanded.id,
-            calendarId: expanded.importedCalendarId,
+            externalId: expanded.externalId,
             sourceType: expanded.sourceType,
+            courseId: expanded.courseId,
+            importedCalendarId: expanded.importedCalendarId,
+            taskId: taskId,
             title: expanded.title,
             description: expanded.description,
             startAt: expanded.startAt,
@@ -419,10 +443,17 @@ export function registerCalendarHandlers(ctx: IpcContext): void {
             allDay: expanded.allDay,
             location: expanded.location,
             uid: expanded.uid,
-            color: expanded.color || row.calendar_color,
-            calendarName: expanded.calendarName ?? null,
-            isRecurring: expanded.isRecurrenceInstance,
+            recurrenceRule: expanded.recurrenceRule,
+            recurrenceExceptionDates: expanded.recurrenceExceptionDates,
+            parentEventId: expanded.parentEventId,
+            eventColor: eventColor,
+            notes: notes,
+            reminderMinutes: reminderMinutes,
+            isRecurrenceInstance: expanded.isRecurrenceInstance,
+            recurrenceDate: expanded.recurrenceDate,
             originalEventId: expanded.originalEventId,
+            color: expanded.color || row.calendar_color || '#6366F1',
+            calendarName: expanded.calendarName ?? null,
           });
         }
       }
@@ -457,7 +488,7 @@ export function registerCalendarHandlers(ctx: IpcContext): void {
           `INSERT INTO calendar_events (
           source_type, title, description, start_at, end_at,
           all_day, location, color, recurrence_rule
-        ) VALUES ('custom', ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES ('user', ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             params.title,
             params.description || null,
@@ -497,9 +528,9 @@ export function registerCalendarHandlers(ctx: IpcContext): void {
       }
     ) => {
       try {
-        // First check if this is a custom event (only custom events can be edited)
-        const event = database.executeReadOne<{ source_type: string }>(
-          'SELECT source_type FROM calendar_events WHERE id = ?',
+        // Check event type - allow editing custom and user events (not canvas-synced)
+        const event = database.executeReadOne<{ source_type: string; task_id: number | null }>(
+          'SELECT source_type, task_id FROM calendar_events WHERE id = ?',
           [id]
         );
 
@@ -507,8 +538,9 @@ export function registerCalendarHandlers(ctx: IpcContext): void {
           return { success: false, error: 'Event not found' };
         }
 
-        if (event.source_type !== 'custom') {
-          return { success: false, error: 'Cannot edit imported events' };
+        // Only allow editing custom events and user-created coursework events
+        if (event.source_type !== 'user') {
+          return { success: false, error: 'Cannot edit Canvas-synced events' };
         }
 
         const setClauses: string[] = [];
@@ -556,6 +588,16 @@ export function registerCalendarHandlers(ctx: IpcContext): void {
           );
         }
 
+        // If this event is linked to a task and the due date changed, update the task too
+        if (event.task_id && updates.endAt !== undefined) {
+          database.executeWrite(
+            'UPDATE tasks SET due_at = ? WHERE id = ?',
+            [updates.endAt, event.task_id],
+            'tasks'
+          );
+          logger.info(`Updated task ${event.task_id} due_at to ${updates.endAt}`);
+        }
+
         return { success: true };
       } catch (error) {
         logger.error(`Failed to update event: ${error}`);
@@ -564,12 +606,12 @@ export function registerCalendarHandlers(ctx: IpcContext): void {
     }
   );
 
-  // Delete custom event
+  // Delete custom or user event
   ipcMain.handle('calendar:deleteEvent', async (_event, id: number) => {
     try {
-      // First check if this is a custom event
-      const event = database.executeReadOne<{ source_type: string }>(
-        'SELECT source_type FROM calendar_events WHERE id = ?',
+      // Check event type - allow deleting custom and user events (not canvas-synced)
+      const event = database.executeReadOne<{ source_type: string; task_id: number | null }>(
+        'SELECT source_type, task_id FROM calendar_events WHERE id = ?',
         [id]
       );
 
@@ -577,15 +619,26 @@ export function registerCalendarHandlers(ctx: IpcContext): void {
         return { success: false, error: 'Event not found' };
       }
 
-      if (event.source_type !== 'custom') {
-        return { success: false, error: 'Cannot delete imported events directly' };
+      if (event.source_type !== 'user') {
+        return { success: false, error: 'Cannot delete Canvas-synced events directly' };
       }
 
-      database.executeWrite(
-        'DELETE FROM calendar_events WHERE id = ?',
-        [id],
-        'calendar_events'
-      );
+      // If linked to a user-created task, delete the task too (cascade will delete event)
+      if (event.task_id && event.source_type === 'user') {
+        database.executeWrite(
+          'DELETE FROM tasks WHERE id = ? AND source_type = ?',
+          [event.task_id, 'user'],
+          'tasks'
+        );
+        logger.info(`Deleted user task ${event.task_id} and associated calendar event`);
+      } else {
+        // Delete just the calendar event
+        database.executeWrite(
+          'DELETE FROM calendar_events WHERE id = ?',
+          [id],
+          'calendar_events'
+        );
+      }
 
       return { success: true };
     } catch (error) {
@@ -664,7 +717,7 @@ export function registerCalendarHandlers(ctx: IpcContext): void {
         }
 
         if (params.includeCustom) {
-          sql += " OR ce.source_type = 'custom'";
+          sql += " OR ce.source_type = 'user'";
         }
 
         const events = database.executeRead<{
@@ -694,7 +747,10 @@ export function registerCalendarHandlers(ctx: IpcContext): void {
             `UID:${event.uid || `${Date.now()}-${Math.random().toString(36).substr(2, 9)}@canvasassistant`}`
           );
           lines.push(
-            `DTSTAMP:${new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')}`
+            `DTSTAMP:${new Date()
+              .toISOString()
+              .replace(/[-:]/g, '')
+              .replace(/\.\d{3}/, '')}`
           );
 
           if (event.all_day) {
@@ -706,10 +762,16 @@ export function registerCalendarHandlers(ctx: IpcContext): void {
             );
           } else {
             lines.push(
-              `DTSTART:${new Date(event.start_at).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')}`
+              `DTSTART:${new Date(event.start_at)
+                .toISOString()
+                .replace(/[-:]/g, '')
+                .replace(/\.\d{3}/, '')}`
             );
             lines.push(
-              `DTEND:${new Date(event.end_at).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')}`
+              `DTEND:${new Date(event.end_at)
+                .toISOString()
+                .replace(/[-:]/g, '')
+                .replace(/\.\d{3}/, '')}`
             );
           }
 

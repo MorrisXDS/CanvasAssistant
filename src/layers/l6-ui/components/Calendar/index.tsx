@@ -26,7 +26,11 @@ import { ImportConfirmationModal } from './ImportConfirmationModal';
 import { CalendarManagerPanel } from './CalendarManagerPanel';
 import { TaskDetailModal } from './TaskDetailModal';
 import { EventFormModal } from './EventFormModal';
-import { CalendarFilterPanel, DeadlineFilter, PriorityFilter } from './CalendarFilterPanel';
+import {
+  CalendarFilterPanel,
+  DeadlineFilter,
+  PriorityFilter,
+} from './CalendarFilterPanel';
 import { useCalendarDragDrop } from './useCalendarDragDrop';
 import {
   loadCalendarViewMode,
@@ -34,7 +38,11 @@ import {
   getVisibleRange,
   getHeaderTitle,
 } from './calendarUtils';
-import type { ICSImportPreview, Task, DisplayCalendarEvent } from '../../../l5-presentation/types';
+import type {
+  ICSImportPreview,
+  Task,
+  DisplayCalendarEvent,
+} from '../../../l5-presentation/types';
 import { getCourseColor } from '../../constants';
 import { generateICS } from './icsUtils';
 import { calendarPageStyles as styles } from './calendarPageStyles';
@@ -93,13 +101,8 @@ export function CalendarPage() {
     setShowImportModal(true);
   }, []);
 
-  const {
-    isDragging,
-    handleDragEnter,
-    handleDragOver,
-    handleDragLeave,
-    handleDrop,
-  } = useCalendarDragDrop({ onImportReady: handleImportReady });
+  const { isDragging, handleDragEnter, handleDragOver, handleDragLeave, handleDrop } =
+    useCalendarDragDrop({ onImportReady: handleImportReady });
 
   // Computed values
   const visibleRange = useMemo(
@@ -175,19 +178,33 @@ export function CalendarPage() {
         const dueDate = new Date(task.dueAt);
         if (deadlineFilter !== 'all') {
           switch (deadlineFilter) {
-            case 'overdue': if (dueDate >= todayStart) return false; break;
-            case 'today': if (dueDate < todayStart || dueDate >= todayEnd) return false; break;
-            case 'this-week': if (dueDate < todayStart || dueDate >= weekEnd) return false; break;
-            case 'this-month': if (dueDate < todayStart || dueDate >= monthEnd) return false; break;
+            case 'overdue':
+              if (dueDate >= todayStart) return false;
+              break;
+            case 'today':
+              if (dueDate < todayStart || dueDate >= todayEnd) return false;
+              break;
+            case 'this-week':
+              if (dueDate < todayStart || dueDate >= weekEnd) return false;
+              break;
+            case 'this-month':
+              if (dueDate < todayStart || dueDate >= monthEnd) return false;
+              break;
           }
         }
 
         if (priorityFilter !== 'all') {
           const score = task.priorityScore || 0;
           switch (priorityFilter) {
-            case 'high': if (score < 70) return false; break;
-            case 'medium': if (score < 40 || score >= 70) return false; break;
-            case 'low': if (score >= 40) return false; break;
+            case 'high':
+              if (score < 70) return false;
+              break;
+            case 'medium':
+              if (score < 40 || score >= 70) return false;
+              break;
+            case 'low':
+              if (score >= 40) return false;
+              break;
           }
         }
         return true;
@@ -201,7 +218,10 @@ export function CalendarPage() {
 
   // Build imported events
   const importedEvents: ImportedCalendarEvent[] = useMemo(
-    () => calendarEvents.filter((e) => !e.taskId).map((event) => ({ type: 'imported' as const, event })),
+    () =>
+      calendarEvents
+        .filter((e) => !e.taskId)
+        .map((event) => ({ type: 'imported' as const, event })),
     [calendarEvents]
   );
 
@@ -227,7 +247,9 @@ export function CalendarPage() {
   // Get visible courses
   const visibleCourses = useMemo(() => {
     const courseIds = new Set(
-      visibleEvents.filter((e): e is TaskCalendarEvent => e.type === 'task').map((e) => e.course.id)
+      visibleEvents
+        .filter((e): e is TaskCalendarEvent => e.type === 'task')
+        .map((e) => e.course.id)
     );
     for (const event of visibleEvents) {
       if (event.type === 'imported') {
@@ -239,7 +261,8 @@ export function CalendarPage() {
           if (
             eventTitle.includes(code) ||
             calendarName.includes(code) ||
-            (shortCode.length >= 3 && (eventTitle.includes(shortCode) || calendarName.includes(shortCode)))
+            (shortCode.length >= 3 &&
+              (eventTitle.includes(shortCode) || calendarName.includes(shortCode)))
           ) {
             courseIds.add(course.id);
             break;
@@ -303,7 +326,14 @@ export function CalendarPage() {
       await fetchImportedCalendars();
       fetchCalendarEventsForRange(visibleRange.start, visibleRange.end);
     },
-    [pendingICSContent, importPreview, importICSFile, fetchImportedCalendars, fetchCalendarEventsForRange, visibleRange]
+    [
+      pendingICSContent,
+      importPreview,
+      importICSFile,
+      fetchImportedCalendars,
+      fetchCalendarEventsForRange,
+      visibleRange,
+    ]
   );
 
   const handleImportICS = () => {
@@ -345,7 +375,10 @@ export function CalendarPage() {
     const api = window.api;
     if (!api?.dispatch) return;
     try {
-      await api.dispatch('MarkTaskComplete', { taskId: task.id, isComplete: !task.isCompleted });
+      await api.dispatch('MarkTaskComplete', {
+        taskId: task.id,
+        isComplete: !task.isCompleted,
+      });
       setSelectedEvent(null);
     } catch (error) {
       console.error('Failed to toggle task completion:', error);
@@ -380,11 +413,29 @@ export function CalendarPage() {
     notes?: string;
     reminderMinutes?: number;
   }) => {
-    if (eventToEdit) await updateCalendarEvent(eventToEdit.id, data);
-    else await createCalendarEvent(data);
-    setShowEventFormModal(false);
-    setEventToEdit(null);
-    fetchCalendarEventsForRange(visibleRange.start, visibleRange.end);
+    try {
+      if (eventToEdit) {
+        const success = await updateCalendarEvent(eventToEdit.id, data);
+        if (!success) {
+          console.error('Failed to update calendar event');
+          alert('Failed to update event. Please try again.');
+          return;
+        }
+      } else {
+        const result = await createCalendarEvent(data);
+        if (!result.success) {
+          console.error('Failed to create calendar event');
+          alert('Failed to create event. Please try again.');
+          return;
+        }
+      }
+      setShowEventFormModal(false);
+      setEventToEdit(null);
+      fetchCalendarEventsForRange(visibleRange.start, visibleRange.end);
+    } catch (error) {
+      console.error('Error saving event:', error);
+      alert('An error occurred while saving the event.');
+    }
   };
 
   const handleSaveCoursework = async (data: {
@@ -460,7 +511,11 @@ export function CalendarPage() {
         isOpen={showImportModal}
         preview={importPreview}
         onConfirm={handleImportConfirm}
-        onCancel={() => { setShowImportModal(false); setImportPreview(null); setPendingICSContent(''); }}
+        onCancel={() => {
+          setShowImportModal(false);
+          setImportPreview(null);
+          setPendingICSContent('');
+        }}
       />
       <TaskDetailModal
         isOpen={selectedEvent !== null}
@@ -477,7 +532,10 @@ export function CalendarPage() {
         onSaveEvent={handleSaveEvent}
         onSaveCoursework={handleSaveCoursework}
         onDelete={eventToEdit ? handleDeleteEvent : undefined}
-        onClose={() => { setShowEventFormModal(false); setEventToEdit(null); }}
+        onClose={() => {
+          setShowEventFormModal(false);
+          setEventToEdit(null);
+        }}
       />
 
       {/* Header */}
@@ -502,27 +560,45 @@ export function CalendarPage() {
           <button
             style={{
               ...styles.filterButton,
-              backgroundColor: showCalendarManager ? 'var(--color-navy)' : 'var(--bg-card)',
+              backgroundColor: showCalendarManager
+                ? 'var(--color-navy)'
+                : 'var(--bg-card)',
               color: showCalendarManager ? 'white' : 'var(--text-primary)',
             }}
             onClick={() => setShowCalendarManager(!showCalendarManager)}
           >
             <CalendarIcon size={16} />
             Calendars
-            {importedCalendars.length > 0 && <span style={styles.calendarBadge}>{importedCalendars.length}</span>}
+            {importedCalendars.length > 0 && (
+              <span style={styles.calendarBadge}>{importedCalendars.length}</span>
+            )}
           </button>
-          <button style={styles.addEventButton} onClick={handleOpenCreateEvent} title="Add Event">
+          <button
+            style={styles.addEventButton}
+            onClick={handleOpenCreateEvent}
+            title="Add Event"
+          >
             <Plus size={16} />
             Add Event
           </button>
           <div style={styles.icsButtons}>
-            <button style={styles.icsButton} onClick={handleImportICS} title="Import ICS"><Download size={16} /></button>
-            <button style={styles.icsButton} onClick={handleExportICS} title="Export ICS"><Upload size={16} /></button>
+            <button style={styles.icsButton} onClick={handleImportICS} title="Import ICS">
+              <Download size={16} />
+            </button>
+            <button style={styles.icsButton} onClick={handleExportICS} title="Export ICS">
+              <Upload size={16} />
+            </button>
           </div>
           <div style={styles.navigation}>
-            <button style={styles.todayButton} onClick={() => setCurrentDate(new Date())}>Today</button>
-            <button style={styles.navButton} onClick={goToPrevious}><ChevronLeft size={20} /></button>
-            <button style={styles.navButton} onClick={goToNext}><ChevronRight size={20} /></button>
+            <button style={styles.todayButton} onClick={() => setCurrentDate(new Date())}>
+              Today
+            </button>
+            <button style={styles.navButton} onClick={goToPrevious}>
+              <ChevronLeft size={20} />
+            </button>
+            <button style={styles.navButton} onClick={goToNext}>
+              <ChevronRight size={20} />
+            </button>
           </div>
         </div>
       </header>
