@@ -73,6 +73,7 @@ import {
   registerFileHandlers,
   registerSyncHandlers,
   registerTaskTypesHandlers,
+  registerSystemHandlers,
 } from './ipc-handlers';
 import type { IpcContext } from './ipc-handlers';
 
@@ -1036,45 +1037,6 @@ function registerIpcHandlers(): void {
   // Process file references in background (for deferred file processing)
 
 
-
-  // Health and metrics
-  ipcMain.handle('health:status', () => {
-    return healthCheck.getStatus();
-  });
-
-  ipcMain.handle('metrics:summary', () => {
-    return metricsCollector.getSummary();
-  });
-
-  ipcMain.handle('system:state', () => {
-    return systemMonitor.getState();
-  });
-
-  // Renderer logger - forwards logs from renderer to main process Logger
-  ipcMain.handle(
-    'log:renderer',
-    (_event, level: string, message: string, component?: string) => {
-      const prefix = component ? `[Renderer:${component}]` : '[Renderer]';
-      const fullMessage = `${prefix} ${message}`;
-
-      switch (level) {
-        case 'debug':
-          logger.debug(fullMessage);
-          break;
-        case 'info':
-          logger.info(fullMessage);
-          break;
-        case 'warn':
-          logger.warn(fullMessage);
-          break;
-        case 'error':
-          logger.error(fullMessage);
-          break;
-        default:
-          logger.info(fullMessage);
-      }
-    }
-  );
 
   // Data fetching handlers for L5 store
 
@@ -6726,6 +6688,8 @@ app.whenReady().then(async () => {
     getMetricsCollector: () => metricsCollector,
     getCredentialManager: () => credentialManager,
     getFileDownloadManager: () => fileDownloadManager,
+    getHealthCheck: () => healthCheck,
+    getSystemMonitor: () => systemMonitor,
     getVisibleDataProvider: () => visibleDataProvider,
     getCanvasClient: () => canvasClient,
     getSyncEngine: () => syncEngine,
@@ -6745,6 +6709,7 @@ app.whenReady().then(async () => {
   registerFileHandlers(ipcContext);
   registerSyncHandlers(ipcContext);
   registerTaskTypesHandlers(ipcContext);
+  registerSystemHandlers(ipcContext);
 
   // Start background services
   healthCheck.start();

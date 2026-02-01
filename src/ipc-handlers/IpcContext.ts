@@ -9,6 +9,8 @@ import type { Logger } from '../layers/l0-utilities/Logger';
 import type { MetricsCollector } from '../layers/l0-utilities/MetricsCollector';
 import type { CredentialManager } from '../layers/l0-utilities/CredentialManager';
 import type { FileDownloadManager } from '../layers/l0-utilities/FileDownloadManager';
+import type { HealthCheck } from '../layers/l0-utilities/HealthCheck';
+import type { SystemMonitor } from '../layers/l0-utilities/SystemMonitor';
 import type { SyncEngine, CanvasClient } from '../layers/l2-daemon';
 import type { PriorityOrchestrator } from '../layers/l3-intelligence/orchestration/PriorityOrchestrator';
 import type { RecommendationOrchestrator } from '../layers/l3-intelligence/orchestration/RecommendationOrchestrator';
@@ -33,6 +35,8 @@ export interface IpcContext {
   getMetricsCollector: () => MetricsCollector;
   getCredentialManager: () => CredentialManager;
   getFileDownloadManager: () => FileDownloadManager;
+  getHealthCheck: () => HealthCheck;
+  getSystemMonitor: () => SystemMonitor;
 
   // L1 - Persistence
   getVisibleDataProvider: () => VisibleDataProvider | null;

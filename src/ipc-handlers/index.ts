@@ -10,3 +10,4 @@ export { registerDataHandlers } from './dataHandlers';
 export { registerFileHandlers } from './fileHandlers';
 export { registerSyncHandlers } from './syncHandlers';
 export { registerTaskTypesHandlers } from './taskTypesHandlers';
+export { registerSystemHandlers } from './systemHandlers';
