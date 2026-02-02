@@ -22,6 +22,7 @@ export const TASK_TYPES: TaskTypeOption[] = [
   { value: 'participation', label: 'Participation' },
   { value: 'project', label: 'Project' },
   { value: 'presentation', label: 'Presentation' },
+  { value: 'performing', label: 'Performing' },
   { value: 'midterm', label: 'Midterm' },
   { value: 'termtest', label: 'Term Test' },
   { value: 'final_exam', label: 'Final Exam' },
