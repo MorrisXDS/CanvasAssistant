@@ -67,10 +67,7 @@ export type CalendarColor = (typeof CALENDAR_COLORS)[number];
  * @param existingColor - Optional custom color set by user
  * @returns A hex color string
  */
-export function getCourseColor(
-  courseId: number,
-  existingColor?: string | null
-): string {
+export function getCourseColor(courseId: number, existingColor?: string | null): string {
   if (existingColor) return existingColor;
   return COURSE_COLORS[courseId % COURSE_COLORS.length];
 }

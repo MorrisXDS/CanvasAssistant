@@ -31,7 +31,9 @@ export function registerDataHandlers(ctx: IpcContext): void {
         grace_period_hours: number | null;
         source_type: string;
         is_active: number;
-      }>('SELECT * FROM course_policies WHERE course_id = ? ORDER BY policy_type', [courseId]);
+      }>('SELECT * FROM course_policies WHERE course_id = ? ORDER BY policy_type', [
+        courseId,
+      ]);
 
       return rows.map((row) => ({
         id: row.id,
@@ -340,10 +342,7 @@ export function registerDataHandlers(ctx: IpcContext): void {
       body_text: string | null;
       is_front_page: number;
       published: number;
-    }>(
-      'SELECT * FROM course_pages WHERE title = ? AND course_id = ?',
-      [title, courseId]
-    );
+    }>('SELECT * FROM course_pages WHERE title = ? AND course_id = ?', [title, courseId]);
 
     if (!page) {
       return { success: false, error: 'Page not found' };

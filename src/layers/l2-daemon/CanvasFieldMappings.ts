@@ -85,7 +85,7 @@ export const TASK_CANVAS_FIELDS = [
   'lock_at',
   'points_possible',
   'submission_types',
-  'is_completed',
+  'is_completed', // Can trigger conflict - user chooses local or Canvas value
   'submission_status', // Derived from Canvas submission.workflow_state
   'completed_at', // From Canvas submission.submitted_at
   'grade', // From Canvas submission.score / points_possible * 100

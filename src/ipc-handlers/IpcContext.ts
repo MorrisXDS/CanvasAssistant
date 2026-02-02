@@ -103,7 +103,9 @@ export interface IpcContext {
   getCrashProtectionManager: () => CrashProtectionManager;
   getAppDataDir: () => string;
   getDatabaseCorruptionDetected: () => { errors: string[]; canContinue: boolean } | null;
-  setDatabaseCorruptionDetected: (value: { errors: string[]; canContinue: boolean } | null) => void;
+  setDatabaseCorruptionDetected: (
+    value: { errors: string[]; canContinue: boolean } | null
+  ) => void;
 
   // App state management
   resetAppState: (options: { deleteToken: boolean }) => Promise<void>;

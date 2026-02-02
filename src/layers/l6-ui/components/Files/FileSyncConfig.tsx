@@ -4,10 +4,7 @@
  */
 
 import React from 'react';
-import {
-  FolderOpen,
-  Trash2,
-} from 'lucide-react';
+import { FolderOpen, Trash2 } from 'lucide-react';
 import styles from './FilesPage.module.css';
 
 export interface SyncPreferences {
@@ -33,9 +30,7 @@ export function FileSyncConfig({
       {/* Header */}
       <div className={styles.syncConfigHeader}>
         <h3 className={styles.syncConfigTitle}>Sync Settings</h3>
-        <p className={styles.syncConfigSubtitle}>
-          Manage file sync location and data
-        </p>
+        <p className={styles.syncConfigSubtitle}>Manage file sync location and data</p>
       </div>
 
       {/* Download Location */}
@@ -63,13 +58,10 @@ export function FileSyncConfig({
       <div className={styles.clearSyncSection}>
         <div className={styles.filterLabel}>Clear Sync Data</div>
         <p className={styles.clearSyncInfo}>
-          Remove all synced file information from the database. Downloaded files will not be deleted.
-          Use this to fix incorrect folder structures or re-sync from scratch.
+          Remove all synced file information from the database. Downloaded files will not
+          be deleted. Use this to fix incorrect folder structures or re-sync from scratch.
         </p>
-        <button
-          className={styles.clearSyncButton}
-          onClick={onClearFilesSync}
-        >
+        <button className={styles.clearSyncButton} onClick={onClearFilesSync}>
           <Trash2 size={16} />
           Clear Synced Files Data
         </button>

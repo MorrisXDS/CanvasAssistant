@@ -27,9 +27,7 @@ export type IpcHandler<T extends IpcChannel> = (
 /**
  * Handler function type for one-way IPC handlers.
  */
-export type OneWayHandler<T extends OneWayChannel> = (
-  params: OneWayParams<T>
-) => void;
+export type OneWayHandler<T extends OneWayChannel> = (params: OneWayParams<T>) => void;
 
 /**
  * Creates a typed IPC handler registry for the main process.
@@ -42,25 +40,22 @@ export function createIpcRegistry(ipcMain: IpcMain) {
    * Register a typed IPC handler.
    * Provides compile-time type checking for params and result.
    */
-  function handle<T extends IpcChannel>(
-    channel: T,
-    handler: IpcHandler<T>
-  ): void {
+  function handle<T extends IpcChannel>(channel: T, handler: IpcHandler<T>): void {
     if (registeredHandlers.has(channel)) {
       console.warn(`[IPC] Handler for '${channel}' already registered, skipping`);
       return;
     }
     registeredHandlers.add(channel);
-    ipcMain.handle(channel, handler as (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown);
+    ipcMain.handle(
+      channel,
+      handler as (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown
+    );
   }
 
   /**
    * Register a one-way IPC handler (no response).
    */
-  function on<T extends OneWayChannel>(
-    channel: T,
-    handler: OneWayHandler<T>
-  ): void {
+  function on<T extends OneWayChannel>(channel: T, handler: OneWayHandler<T>): void {
     ipcMain.on(channel, (_event, params: OneWayParams<T>) => {
       handler(params);
     });

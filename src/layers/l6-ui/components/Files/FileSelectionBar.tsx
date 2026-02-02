@@ -81,7 +81,9 @@ export function FileSelectionBar({
               <div className={styles.checkmarkCircle}>
                 <Check size={20} className={styles.checkmarkIcon} />
               </div>
-              <span>{completedCount} file{completedCount !== 1 ? 's' : ''} downloaded</span>
+              <span>
+                {completedCount} file{completedCount !== 1 ? 's' : ''} downloaded
+              </span>
             </div>
           ) : isDownloading && downloadProgress ? (
             <div className={`${styles.downloadFabButton} ${styles.downloadProgress}`}>
@@ -103,7 +105,9 @@ export function FileSelectionBar({
               disabled={isDownloading}
             >
               <Download size={20} />
-              <span>Download {selectedCount} file{selectedCount !== 1 ? 's' : ''}</span>
+              <span>
+                Download {selectedCount} file{selectedCount !== 1 ? 's' : ''}
+              </span>
             </button>
           )}
         </div>

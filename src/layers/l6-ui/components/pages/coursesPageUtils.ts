@@ -20,7 +20,9 @@ export function getShortCode(code: string): string {
 /**
  * Get grade status for a course
  */
-export function getGradeStatus(course: Course): 'on-track' | 'at-risk' | 'behind' | 'unknown' {
+export function getGradeStatus(
+  course: Course
+): 'on-track' | 'at-risk' | 'behind' | 'unknown' {
   if (course.currentGrade === null) return 'unknown';
   if (course.currentGrade >= course.targetGrade) return 'on-track';
   if (course.currentGrade >= course.targetGrade - 10) return 'at-risk';

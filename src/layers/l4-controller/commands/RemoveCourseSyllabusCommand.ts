@@ -15,9 +15,10 @@ export interface RemoveCourseSyllabusResult {
   success: boolean;
 }
 
-export class RemoveCourseSyllabusCommand
-  implements Command<RemoveCourseSyllabusParams, RemoveCourseSyllabusResult>
-{
+export class RemoveCourseSyllabusCommand implements Command<
+  RemoveCourseSyllabusParams,
+  RemoveCourseSyllabusResult
+> {
   readonly name = 'RemoveCourseSyllabus';
 
   validate(params: RemoveCourseSyllabusParams): { valid: boolean; error?: string } {

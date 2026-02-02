@@ -22,7 +22,7 @@ import {
 import type { DisplayCalendarEvent, Course } from '../../../l5-presentation/types';
 import { ConfirmDialog } from '../shared/ConfirmDialog';
 import { RichTextEditor } from '../shared/RichTextEditor';
-import { getCleanCourseName } from '../../constants';
+import { getCleanCourseName, TASK_TYPES } from '../../constants';
 import {
   eventFormModalStyles as styles,
   COLOR_OPTIONS,
@@ -72,6 +72,8 @@ interface EventFormModalProps {
     color?: string;
     notes?: string;
     reminderMinutes?: number;
+    // Task-specific fields (only for task-linked events)
+    taskType?: string;
   }) => Promise<void>;
   onSaveCoursework: (data: {
     courseId: number;
@@ -80,6 +82,7 @@ interface EventFormModalProps {
     dueAt?: string;
     weight?: number;
     pointsPossible?: number;
+    taskType?: string;
   }) => Promise<{ success: boolean; taskId?: number }>;
   onDelete?: () => Promise<void>;
   onClose: () => void;
@@ -143,6 +146,7 @@ export function EventFormModal({
   const [dueAt, setDueAt] = useState('');
   const [weight, setWeight] = useState<number | undefined>(undefined);
   const [pointsPossible, setPointsPossible] = useState<number | undefined>(undefined);
+  const [taskType, setTaskType] = useState<string>('');
 
   // Calendar-specific fields (for customizing how events appear)
   const [eventColor, setEventColor] = useState<string>('');
@@ -162,32 +166,144 @@ export function EventFormModal({
       ? new Date(event.startAt).getTime() < 86400000 // Less than 1 day from epoch (Jan 1-2, 1970)
       : false;
 
+  // Try to match event title to a course using prioritized criteria (if-else chain)
+  // Priority: full code > section type match > code without section > short code > nickname > name keywords
+  const matchTitleToCourse = (title: string): number | undefined => {
+    if (!title || courses.length === 0) return undefined;
+    const titleUpper = title.toUpperCase();
+
+    // Extract section type from title (PRA, LEC, TUT)
+    const titleSectionMatch = titleUpper.match(/\b(PRA|LEC|TUT)\d*/);
+    const titleSectionType = titleSectionMatch ? titleSectionMatch[1] : null;
+
+    // Pass 1: Try full course code with section (e.g., "ECE568H1 S LEC0102")
+    for (const course of courses) {
+      if (course.code) {
+        const codeUpper = course.code.toUpperCase();
+        if (titleUpper.includes(codeUpper)) {
+          return course.id;
+        }
+      }
+    }
+
+    // Pass 2: If title has section type (PRA/LEC/TUT), prefer courses with same section type
+    if (titleSectionType) {
+      for (const course of courses) {
+        if (course.code) {
+          const codeUpper = course.code.toUpperCase();
+          // Check if course code contains the same section type
+          if (codeUpper.includes(titleSectionType)) {
+            // Also verify the base course code matches
+            const shortCodeMatch = codeUpper.match(/^([A-Z]{2,4}\d{2,4})/);
+            if (shortCodeMatch && titleUpper.includes(shortCodeMatch[1])) {
+              return course.id;
+            }
+          }
+        }
+      }
+    }
+
+    // Pass 3: Try code without section (e.g., "ECE568H1" from "ECE568H1 S")
+    for (const course of courses) {
+      if (course.code) {
+        const codeUpper = course.code.toUpperCase();
+        const codeWithoutSection = codeUpper.split(/\s+/)[0];
+        if (codeWithoutSection !== codeUpper && titleUpper.includes(codeWithoutSection)) {
+          return course.id;
+        }
+      }
+    }
+
+    // Pass 4: Try short code without term indicator (e.g., "ECE568" from "ECE568H1")
+    for (const course of courses) {
+      if (course.code) {
+        const codeUpper = course.code.toUpperCase();
+        const shortCodeMatch = codeUpper.match(/^([A-Z]{2,4}\d{2,4})/);
+        if (shortCodeMatch && titleUpper.includes(shortCodeMatch[1])) {
+          return course.id;
+        }
+      }
+    }
+
+    // Pass 5: Try nickname (user-set)
+    for (const course of courses) {
+      if (course.nickname) {
+        const nicknameUpper = course.nickname.toUpperCase();
+        if (nicknameUpper.length >= 3 && titleUpper.includes(nicknameUpper)) {
+          return course.id;
+        }
+      }
+    }
+
+    // Pass 6: Try significant words from course name (least specific)
+    const commonWords = new Set([
+      'AND', 'THE', 'FOR', 'WITH', 'INTO', 'FROM', 'COURSE',
+      'INTRODUCTION', 'INTRO', 'ADVANCED', 'TOPICS', 'SELECTED',
+    ]);
+    for (const course of courses) {
+      if (course.name) {
+        const nameWords = course.name
+          .toUpperCase()
+          .split(/\s+/)
+          .filter((w) => w.length >= 4 && !commonWords.has(w));
+
+        for (const word of nameWords) {
+          if (titleUpper.includes(word)) {
+            return course.id;
+          }
+        }
+      }
+    }
+
+    return undefined;
+  };
+
   // Initialize form when opening
   useEffect(() => {
     if (isOpen) {
       if (event) {
-        // Edit mode: populate from event (only for calendar events, not coursework)
-        setEventType('event');
+        // Edit mode: determine if this is a task-linked event (coursework) or regular event
+        const isCourseworkEvent = Boolean(event.taskId);
+        setEventType(isCourseworkEvent ? 'coursework' : 'event');
+
         setTitle(event.title);
         // Strip HTML from description for plain text editing
         setDescription(stripHtmlToText(event.description));
 
-        // For deadline task events, don't show epoch - leave start empty
-        // Use timestamp check (< 1 day from epoch) to handle timezone display issues
-        const isDeadline = event.taskId && new Date(event.startAt).getTime() < 86400000;
-        if (isDeadline) {
-          setStartAt(''); // Empty - user can optionally set to make it a duration event
+        // If event has a courseId, use it. Otherwise, try to match by title.
+        // This handles imported calendar events that match course codes but don't have courseId set.
+        const detectedCourseId = event.courseId ?? matchTitleToCourse(event.title);
+        setCourseId(detectedCourseId);
+
+        if (isCourseworkEvent) {
+          // Coursework edit mode: populate coursework fields
+          // Use endAt as the due date for task events
+          setDueAt(formatDateForInput(event.endAt, false));
+          setTaskType(event.taskType || '');
+          setWeight(event.taskWeight ?? undefined);
+          // Calendar-specific fields (still available for coursework)
+          setEventColor(event.eventColor || '');
+          setNotes(event.notes || '');
+          setReminderMinutes(event.reminderMinutes ?? 0);
         } else {
-          setStartAt(formatDateForInput(event.startAt, event.allDay));
+          // Regular event edit mode
+          // For deadline task events, don't show epoch - leave start empty
+          // Use timestamp check (< 1 day from epoch) to handle timezone display issues
+          const isDeadline = event.taskId && new Date(event.startAt).getTime() < 86400000;
+          if (isDeadline) {
+            setStartAt(''); // Empty - user can optionally set to make it a duration event
+          } else {
+            setStartAt(formatDateForInput(event.startAt, event.allDay));
+          }
+          setEndAt(formatDateForInput(event.endAt, event.allDay));
+          setAllDay(event.allDay);
+          setLocation(event.location || '');
+          // Calendar-specific fields
+          setEventColor(event.eventColor || '');
+          setNotes(event.notes || '');
+          setReminderMinutes(event.reminderMinutes ?? 0);
+          setTaskType(event.taskType || '');
         }
-        setEndAt(formatDateForInput(event.endAt, event.allDay));
-        setAllDay(event.allDay);
-        setLocation(event.location || '');
-        setCourseId(event.courseId ?? undefined);
-        // Calendar-specific fields
-        setEventColor(event.eventColor || '');
-        setNotes(event.notes || '');
-        setReminderMinutes(event.reminderMinutes ?? 0);
       } else {
         // Create mode: reset to defaults
         setEventType('event');
@@ -202,6 +318,7 @@ export function EventFormModal({
         setCourseId(undefined);
         setWeight(undefined);
         setPointsPossible(undefined);
+        setTaskType('');
         // Calendar-specific defaults
         setEventColor('');
         setNotes('');
@@ -232,17 +349,39 @@ export function EventFormModal({
           return;
         }
 
-        const result = await onSaveCoursework({
-          courseId,
-          title: title.trim(),
-          description: description.trim() || undefined,
-          dueAt: dueAt ? new Date(dueAt).toISOString() : undefined,
-          weight: weight !== undefined ? weight : undefined,
-          pointsPossible: pointsPossible !== undefined ? pointsPossible : undefined,
-        });
-
-        if (result.success) {
+        if (isEditMode) {
+          // Editing existing coursework - use onSaveEvent which syncs to the linked task
+          const dueDate = dueAt ? new Date(dueAt) : undefined;
+          await onSaveEvent({
+            title: title.trim(),
+            description: description.trim() || undefined,
+            startAt: new Date(0).toISOString(), // Epoch sentinel for deadline event
+            endAt: dueDate?.toISOString(),
+            allDay: false,
+            courseId,
+            // Calendar-specific fields
+            color: eventColor || undefined,
+            notes: notes.trim() || undefined,
+            reminderMinutes: reminderMinutes > 0 ? reminderMinutes : undefined,
+            // Task-specific fields (synced back to the task)
+            taskType: taskType || undefined,
+          });
           onClose();
+        } else {
+          // Creating new coursework
+          const result = await onSaveCoursework({
+            courseId,
+            title: title.trim(),
+            description: description.trim() || undefined,
+            dueAt: dueAt ? new Date(dueAt).toISOString() : undefined,
+            weight: weight !== undefined ? weight : undefined,
+            pointsPossible: pointsPossible !== undefined ? pointsPossible : undefined,
+            taskType: taskType || undefined,
+          });
+
+          if (result.success) {
+            onClose();
+          }
         }
       } else {
         // Event
@@ -271,6 +410,8 @@ export function EventFormModal({
           color: eventColor || undefined,
           notes: notes.trim() || undefined,
           reminderMinutes: reminderMinutes > 0 ? reminderMinutes : undefined,
+          // Task-specific fields (only synced for task-linked events)
+          taskType: isTaskEvent ? (taskType || undefined) : undefined,
         });
         onClose();
       }
@@ -475,55 +616,80 @@ export function EventFormModal({
                 </div>
               )}
 
-              {/* Color Selection */}
-              <div style={styles.field}>
-                <label style={styles.label}>
-                  <Palette size={14} />
-                  Color
-                </label>
-                <div style={styles.colorGrid}>
-                  {/* Color Picker - rainbow gradient */}
-                  <label
-                    style={{
-                      ...styles.colorOption,
-                      background:
-                        'linear-gradient(135deg, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00)',
-                      border:
-                        !COLOR_OPTIONS.some((o) => o.value === eventColor) && eventColor
-                          ? '2px solid var(--text-primary)'
-                          : '2px solid var(--border-default)',
-                      cursor: 'pointer',
-                      position: 'relative',
-                      overflow: 'hidden',
-                    }}
-                    title="Pick custom color"
-                  >
-                    <input
-                      type="color"
-                      value={eventColor || '#3B82F6'}
-                      onChange={(e) => setEventColor(e.target.value)}
-                      style={styles.colorPickerInput}
-                    />
+              {/* Task Type - only for task-linked events in edit mode */}
+              {isTaskEvent && (
+                <div style={styles.field}>
+                  <label style={styles.label}>
+                    <FileText size={14} />
+                    Type
                   </label>
-                  {/* Preset colors */}
-                  {COLOR_OPTIONS.map((option) => (
-                    <button
-                      key={option.value}
-                      type="button"
+                  <select
+                    value={taskType}
+                    onChange={(e) => setTaskType(e.target.value)}
+                    style={styles.select}
+                  >
+                    <option value="">Select type</option>
+                    {TASK_TYPES.map((type) => (
+                      <option key={type.value} value={type.value}>
+                        {type.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Color Selection - only for events NOT associated with a course */}
+              {/* Course-related events inherit their color from the course */}
+              {!courseId && (
+                <div style={styles.field}>
+                  <label style={styles.label}>
+                    <Palette size={14} />
+                    Color
+                  </label>
+                  <div style={styles.colorGrid}>
+                    {/* Color Picker - rainbow gradient */}
+                    <label
                       style={{
                         ...styles.colorOption,
-                        backgroundColor: option.value,
+                        background:
+                          'linear-gradient(135deg, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00)',
                         border:
-                          eventColor === option.value
+                          !COLOR_OPTIONS.some((o) => o.value === eventColor) && eventColor
                             ? '2px solid var(--text-primary)'
                             : '2px solid var(--border-default)',
+                        cursor: 'pointer',
+                        position: 'relative',
+                        overflow: 'hidden',
                       }}
-                      onClick={() => setEventColor(option.value)}
-                      title={option.label}
-                    />
-                  ))}
+                      title="Pick custom color"
+                    >
+                      <input
+                        type="color"
+                        value={eventColor || '#3B82F6'}
+                        onChange={(e) => setEventColor(e.target.value)}
+                        style={styles.colorPickerInput}
+                      />
+                    </label>
+                    {/* Preset colors */}
+                    {COLOR_OPTIONS.map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        style={{
+                          ...styles.colorOption,
+                          backgroundColor: option.value,
+                          border:
+                            eventColor === option.value
+                              ? '2px solid var(--text-primary)'
+                              : '2px solid var(--border-default)',
+                        }}
+                        onClick={() => setEventColor(option.value)}
+                        title={option.label}
+                      />
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Reminder */}
               <div style={styles.field}>
@@ -576,6 +742,26 @@ export function EventFormModal({
                   onChange={(e) => setDueAt(e.target.value)}
                   style={styles.input}
                 />
+              </div>
+
+              {/* Type */}
+              <div style={styles.field}>
+                <label style={styles.label}>
+                  <FileText size={14} />
+                  Type
+                </label>
+                <select
+                  value={taskType}
+                  onChange={(e) => setTaskType(e.target.value)}
+                  style={styles.select}
+                >
+                  <option value="">Select type</option>
+                  {TASK_TYPES.map((type) => (
+                    <option key={type.value} value={type.value}>
+                      {type.label}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               {/* Weight and Points */}

@@ -145,7 +145,11 @@ export function registerCourseExportHandlers(ctx: IpcContext): void {
           return { success: false, error: 'Save cancelled' };
         }
 
-        fs.writeFileSync(dialogResult.filePath, JSON.stringify(exportData, null, 2), 'utf-8');
+        fs.writeFileSync(
+          dialogResult.filePath,
+          JSON.stringify(exportData, null, 2),
+          'utf-8'
+        );
         logger.info(`Course data exported to: ${dialogResult.filePath}`);
         metricsCollector.increment('data.export.courses');
 
@@ -233,7 +237,8 @@ export function registerCourseExportHandlers(ctx: IpcContext): void {
               field_sources: course.fieldSources || course.field_sources,
               allow_guessed_override:
                 course.allowGuessedOverride ?? course.allow_guessed_override ?? 1,
-              auto_assign_due_date: course.autoAssignDueDate ?? course.auto_assign_due_date,
+              auto_assign_due_date:
+                course.autoAssignDueDate ?? course.auto_assign_due_date,
             },
             'external_id'
           );
@@ -469,12 +474,14 @@ export function registerCourseExportHandlers(ctx: IpcContext): void {
               course_id: newCourseId,
               resource_id: newResourceId,
               source_type: syllabus.source_type || syllabus.sourceType || 'resource',
-              resource_updated_at: syllabus.resource_updated_at || syllabus.resourceUpdatedAt,
+              resource_updated_at:
+                syllabus.resource_updated_at || syllabus.resourceUpdatedAt,
               last_reviewed_at:
                 syllabus.last_reviewed_at ||
                 syllabus.lastReviewedAt ||
                 new Date().toISOString(),
-              change_detected_at: syllabus.change_detected_at || syllabus.changeDetectedAt,
+              change_detected_at:
+                syllabus.change_detected_at || syllabus.changeDetectedAt,
               marked_at: syllabus.marked_at || syllabus.markedAt,
             },
             'course_id',
@@ -510,7 +517,8 @@ export function registerCourseExportHandlers(ctx: IpcContext): void {
               total_tokens: token.total_tokens || token.totalTokens,
               tokens_remaining: token.tokens_remaining || token.tokensRemaining,
               hours_per_token: token.hours_per_token ?? token.hoursPerToken ?? 24,
-              max_tokens_per_task: token.max_tokens_per_task ?? token.maxTokensPerTask ?? 2,
+              max_tokens_per_task:
+                token.max_tokens_per_task ?? token.maxTokensPerTask ?? 2,
             },
             ['course_id', 'policy_id']
           );

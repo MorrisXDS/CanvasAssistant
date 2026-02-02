@@ -140,9 +140,7 @@ export function DisplaySection({ sectionRef }: DisplaySectionProps) {
         <Accordion.Content>
           <div style={styles.section}>
             {!isSearching && (
-              <p style={styles.sectionDesc}>
-                {SETTINGS_CATEGORIES.display.description}
-              </p>
+              <p style={styles.sectionDesc}>{SETTINGS_CATEGORIES.display.description}</p>
             )}
 
             {/* Theme */}
@@ -152,15 +150,31 @@ export function DisplaySection({ sectionRef }: DisplaySectionProps) {
                 label="Theme"
                 description="Application color theme"
                 isModified={appearance.theme !== DEFAULT_APPEARANCE_SETTINGS.theme}
-                onReset={() => updateAppearance({ theme: DEFAULT_APPEARANCE_SETTINGS.theme })}
+                onReset={() =>
+                  updateAppearance({ theme: DEFAULT_APPEARANCE_SETTINGS.theme })
+                }
               >
                 <SettingButtonGroup
                   value={appearance.theme}
-                  onChange={(v) => updateAppearance({ theme: v as AppearanceSettings['theme'] })}
+                  onChange={(v) =>
+                    updateAppearance({ theme: v as AppearanceSettings['theme'] })
+                  }
                   options={[
-                    { value: 'light', label: SETTINGS_LABELS.options.theme.light, icon: <Sun size={14} /> },
-                    { value: 'dark', label: SETTINGS_LABELS.options.theme.dark, icon: <Moon size={14} /> },
-                    { value: 'system', label: SETTINGS_LABELS.options.theme.system, icon: <Monitor size={14} /> },
+                    {
+                      value: 'light',
+                      label: SETTINGS_LABELS.options.theme.light,
+                      icon: <Sun size={14} />,
+                    },
+                    {
+                      value: 'dark',
+                      label: SETTINGS_LABELS.options.theme.dark,
+                      icon: <Moon size={14} />,
+                    },
+                    {
+                      value: 'system',
+                      label: SETTINGS_LABELS.options.theme.system,
+                      icon: <Monitor size={14} />,
+                    },
                   ]}
                 />
               </SettingRow>
@@ -193,8 +207,15 @@ export function DisplaySection({ sectionRef }: DisplaySectionProps) {
                 settingKey="appearance.sidebarCollapsed"
                 label="Collapsed sidebar"
                 description="Start with sidebar collapsed on launch"
-                isModified={appearance.sidebarCollapsed !== DEFAULT_APPEARANCE_SETTINGS.sidebarCollapsed}
-                onReset={() => updateAppearance({ sidebarCollapsed: DEFAULT_APPEARANCE_SETTINGS.sidebarCollapsed })}
+                isModified={
+                  appearance.sidebarCollapsed !==
+                  DEFAULT_APPEARANCE_SETTINGS.sidebarCollapsed
+                }
+                onReset={() =>
+                  updateAppearance({
+                    sidebarCollapsed: DEFAULT_APPEARANCE_SETTINGS.sidebarCollapsed,
+                  })
+                }
               >
                 <ToggleSwitch
                   checked={appearance.sidebarCollapsed}
@@ -211,12 +232,22 @@ export function DisplaySection({ sectionRef }: DisplaySectionProps) {
                 settingKey="dashboard.prioritySortingEnabled"
                 label="Priority sorting"
                 description="Sort tasks by urgency and priority score instead of due date only"
-                isModified={dashboardSettings.prioritySortingEnabled !== DEFAULT_DASHBOARD_SETTINGS.prioritySortingEnabled}
-                onReset={() => updateDashboardSettings({ prioritySortingEnabled: DEFAULT_DASHBOARD_SETTINGS.prioritySortingEnabled })}
+                isModified={
+                  dashboardSettings.prioritySortingEnabled !==
+                  DEFAULT_DASHBOARD_SETTINGS.prioritySortingEnabled
+                }
+                onReset={() =>
+                  updateDashboardSettings({
+                    prioritySortingEnabled:
+                      DEFAULT_DASHBOARD_SETTINGS.prioritySortingEnabled,
+                  })
+                }
               >
                 <ToggleSwitch
                   checked={dashboardSettings.prioritySortingEnabled}
-                  onChange={(checked) => updateDashboardSettings({ prioritySortingEnabled: checked })}
+                  onChange={(checked) =>
+                    updateDashboardSettings({ prioritySortingEnabled: checked })
+                  }
                 />
               </SettingRow>
             )}
@@ -226,12 +257,22 @@ export function DisplaySection({ sectionRef }: DisplaySectionProps) {
                 settingKey="dashboard.importantWorksThreshold"
                 label="Important works threshold"
                 description="Show tasks with grade weight above this percentage"
-                isModified={dashboardSettings.importantWorksThreshold !== DEFAULT_DASHBOARD_SETTINGS.importantWorksThreshold}
-                onReset={() => updateDashboardSettings({ importantWorksThreshold: DEFAULT_DASHBOARD_SETTINGS.importantWorksThreshold })}
+                isModified={
+                  dashboardSettings.importantWorksThreshold !==
+                  DEFAULT_DASHBOARD_SETTINGS.importantWorksThreshold
+                }
+                onReset={() =>
+                  updateDashboardSettings({
+                    importantWorksThreshold:
+                      DEFAULT_DASHBOARD_SETTINGS.importantWorksThreshold,
+                  })
+                }
               >
                 <SettingSlider
                   value={dashboardSettings.importantWorksThreshold}
-                  onChange={(v) => updateDashboardSettings({ importantWorksThreshold: v })}
+                  onChange={(v) =>
+                    updateDashboardSettings({ importantWorksThreshold: v })
+                  }
                   min={0}
                   max={50}
                   step={5}
@@ -248,12 +289,21 @@ export function DisplaySection({ sectionRef }: DisplaySectionProps) {
                 settingKey="courses.defaultViewMode"
                 label="Courses view"
                 description="Default view mode for the courses page"
-                isModified={courseSettings.defaultViewMode !== DEFAULT_COURSE_SETTINGS.defaultViewMode}
-                onReset={() => updateCourseSettings({ defaultViewMode: DEFAULT_COURSE_SETTINGS.defaultViewMode })}
+                isModified={
+                  courseSettings.defaultViewMode !==
+                  DEFAULT_COURSE_SETTINGS.defaultViewMode
+                }
+                onReset={() =>
+                  updateCourseSettings({
+                    defaultViewMode: DEFAULT_COURSE_SETTINGS.defaultViewMode,
+                  })
+                }
               >
                 <SettingButtonGroup
                   value={courseSettings.defaultViewMode}
-                  onChange={(v) => updateCourseSettings({ defaultViewMode: v as 'grid' | 'list' })}
+                  onChange={(v) =>
+                    updateCourseSettings({ defaultViewMode: v as 'grid' | 'list' })
+                  }
                   options={[
                     { value: 'grid', label: SETTINGS_LABELS.options.viewMode.grid },
                     { value: 'list', label: SETTINGS_LABELS.options.viewMode.list },
@@ -267,12 +317,21 @@ export function DisplaySection({ sectionRef }: DisplaySectionProps) {
                 settingKey="calendar.defaultViewMode"
                 label="Calendar view"
                 description="Default view when opening the calendar"
-                isModified={calendarSettings.defaultViewMode !== DEFAULT_CALENDAR_SETTINGS.defaultViewMode}
-                onReset={() => updateCalendarSettings({ defaultViewMode: DEFAULT_CALENDAR_SETTINGS.defaultViewMode })}
+                isModified={
+                  calendarSettings.defaultViewMode !==
+                  DEFAULT_CALENDAR_SETTINGS.defaultViewMode
+                }
+                onReset={() =>
+                  updateCalendarSettings({
+                    defaultViewMode: DEFAULT_CALENDAR_SETTINGS.defaultViewMode,
+                  })
+                }
               >
                 <SettingButtonGroup
                   value={calendarSettings.defaultViewMode}
-                  onChange={(v) => updateCalendarSettings({ defaultViewMode: v as 'month' | 'week' })}
+                  onChange={(v) =>
+                    updateCalendarSettings({ defaultViewMode: v as 'month' | 'week' })
+                  }
                   options={[
                     { value: 'month', label: SETTINGS_LABELS.options.viewMode.month },
                     { value: 'week', label: SETTINGS_LABELS.options.viewMode.week },
@@ -286,12 +345,21 @@ export function DisplaySection({ sectionRef }: DisplaySectionProps) {
                 settingKey="fileExplorer.defaultViewMode"
                 label="Files view"
                 description="Default view mode for the files page"
-                isModified={fileExplorer.defaultViewMode !== DEFAULT_FILE_EXPLORER_SETTINGS.defaultViewMode}
-                onReset={() => updateFileExplorer({ defaultViewMode: DEFAULT_FILE_EXPLORER_SETTINGS.defaultViewMode })}
+                isModified={
+                  fileExplorer.defaultViewMode !==
+                  DEFAULT_FILE_EXPLORER_SETTINGS.defaultViewMode
+                }
+                onReset={() =>
+                  updateFileExplorer({
+                    defaultViewMode: DEFAULT_FILE_EXPLORER_SETTINGS.defaultViewMode,
+                  })
+                }
               >
                 <SettingButtonGroup
                   value={fileExplorer.defaultViewMode}
-                  onChange={(v) => updateFileExplorer({ defaultViewMode: v as 'list' | 'grid' })}
+                  onChange={(v) =>
+                    updateFileExplorer({ defaultViewMode: v as 'list' | 'grid' })
+                  }
                   options={[
                     { value: 'list', label: SETTINGS_LABELS.options.viewMode.list },
                     { value: 'grid', label: SETTINGS_LABELS.options.viewMode.grid },
@@ -305,16 +373,36 @@ export function DisplaySection({ sectionRef }: DisplaySectionProps) {
                 settingKey="fileExplorer.defaultState"
                 label="Folder default state"
                 description="How folders appear when opening the Files page"
-                isModified={fileExplorer.defaultState !== DEFAULT_FILE_EXPLORER_SETTINGS.defaultState}
-                onReset={() => updateFileExplorer({ defaultState: DEFAULT_FILE_EXPLORER_SETTINGS.defaultState })}
+                isModified={
+                  fileExplorer.defaultState !==
+                  DEFAULT_FILE_EXPLORER_SETTINGS.defaultState
+                }
+                onReset={() =>
+                  updateFileExplorer({
+                    defaultState: DEFAULT_FILE_EXPLORER_SETTINGS.defaultState,
+                  })
+                }
               >
                 <SettingSelect
                   value={fileExplorer.defaultState}
-                  onChange={(v) => updateFileExplorer({ defaultState: v as FileExplorerSettings['defaultState'] })}
+                  onChange={(v) =>
+                    updateFileExplorer({
+                      defaultState: v as FileExplorerSettings['defaultState'],
+                    })
+                  }
                   options={[
-                    { value: 'collapsed', label: SETTINGS_LABELS.options.folderState.collapsed },
-                    { value: 'expanded', label: SETTINGS_LABELS.options.folderState.expanded },
-                    { value: 'remember', label: SETTINGS_LABELS.options.folderState.remember },
+                    {
+                      value: 'collapsed',
+                      label: SETTINGS_LABELS.options.folderState.collapsed,
+                    },
+                    {
+                      value: 'expanded',
+                      label: SETTINGS_LABELS.options.folderState.expanded,
+                    },
+                    {
+                      value: 'remember',
+                      label: SETTINGS_LABELS.options.folderState.remember,
+                    },
                   ]}
                 />
               </SettingRow>
@@ -326,15 +414,32 @@ export function DisplaySection({ sectionRef }: DisplaySectionProps) {
                 label="Settings default state"
                 description="How settings sections appear when opening this page"
                 isModified={isSettingsPageSettingsModified}
-                onReset={() => updateSettingsPageSettings({ defaultState: DEFAULT_SETTINGS_PAGE_SETTINGS.defaultState })}
+                onReset={() =>
+                  updateSettingsPageSettings({
+                    defaultState: DEFAULT_SETTINGS_PAGE_SETTINGS.defaultState,
+                  })
+                }
               >
                 <SettingSelect
                   value={settingsPageSettings.defaultState}
-                  onChange={(v) => updateSettingsPageSettings({ defaultState: v as SettingsPageSettings['defaultState'] })}
+                  onChange={(v) =>
+                    updateSettingsPageSettings({
+                      defaultState: v as SettingsPageSettings['defaultState'],
+                    })
+                  }
                   options={[
-                    { value: 'collapsed', label: SETTINGS_LABELS.options.folderState.collapsed },
-                    { value: 'expanded', label: SETTINGS_LABELS.options.folderState.expanded },
-                    { value: 'remember', label: SETTINGS_LABELS.options.folderState.remember },
+                    {
+                      value: 'collapsed',
+                      label: SETTINGS_LABELS.options.folderState.collapsed,
+                    },
+                    {
+                      value: 'expanded',
+                      label: SETTINGS_LABELS.options.folderState.expanded,
+                    },
+                    {
+                      value: 'remember',
+                      label: SETTINGS_LABELS.options.folderState.remember,
+                    },
                   ]}
                 />
               </SettingRow>

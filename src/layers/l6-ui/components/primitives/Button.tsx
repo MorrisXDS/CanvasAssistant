@@ -173,7 +173,10 @@ const styles: Record<string, React.CSSProperties> = {
 // ICON BUTTON
 // =============================================================================
 
-interface IconButtonProps extends Omit<ButtonProps, 'children' | 'leftIcon' | 'rightIcon'> {
+interface IconButtonProps extends Omit<
+  ButtonProps,
+  'children' | 'leftIcon' | 'rightIcon'
+> {
   /** Icon to display */
   icon: React.ReactNode;
   /** Accessible label */

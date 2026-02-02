@@ -65,7 +65,11 @@ export function registerCsvExportHandlers(ctx: IpcContext): void {
           database.executeWrite(
             `INSERT INTO export_history (export_type, file_path, file_size, tasks_exported, status)
              VALUES ('csv', ?, ?, ?, 'completed')`,
-            [dialogResult.filePath, exportResult.fileSize || 0, exportResult.tasksExported || 0],
+            [
+              dialogResult.filePath,
+              exportResult.fileSize || 0,
+              exportResult.tasksExported || 0,
+            ],
             'export_history'
           );
           metricsCollector.increment('data.export.csv.tasks');
@@ -123,7 +127,11 @@ export function registerCsvExportHandlers(ctx: IpcContext): void {
           database.executeWrite(
             `INSERT INTO export_history (export_type, file_path, file_size, tasks_exported, status)
              VALUES ('csv', ?, ?, ?, 'completed')`,
-            [dialogResult.filePath, exportResult.fileSize || 0, exportResult.tasksExported || 0],
+            [
+              dialogResult.filePath,
+              exportResult.fileSize || 0,
+              exportResult.tasksExported || 0,
+            ],
             'export_history'
           );
           metricsCollector.increment('data.export.csv.grades');

@@ -5,10 +5,7 @@
 
 import type { Database } from '../l1-persistence/Database';
 import type { ComponentLogger } from '../l0-utilities/Logger';
-import type {
-  SyncOptions,
-  SyncCheckpoint,
-} from './SyncEngineTypes';
+import type { SyncOptions, SyncCheckpoint } from './SyncEngineTypes';
 import type {
   CanvasCourse,
   CanvasAssignment,
@@ -43,11 +40,7 @@ export class SyncCheckpointManager {
   /**
    * Create a new sync checkpoint
    */
-  createCheckpoint(
-    syncId: string,
-    options: SyncOptions,
-    totalCourses: number
-  ): void {
+  createCheckpoint(syncId: string, options: SyncOptions, totalCourses: number): void {
     try {
       this.db.executeWrite(
         `INSERT INTO sync_checkpoints (sync_id, phase, options_json, total_courses)

@@ -60,8 +60,8 @@ export class CreateTaskCommand implements Command<CreateTaskParams, { taskId: nu
       const result = context.db.executeWrite(
         `INSERT INTO tasks (
           external_id, source_type, course_id, title, description,
-          due_at, weight, points_possible, is_completed, priority_score
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          due_at, weight, points_possible, is_completed, priority_score, task_type
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           externalId,
           'user',
@@ -73,13 +73,45 @@ export class CreateTaskCommand implements Command<CreateTaskParams, { taskId: nu
           params.pointsPossible ?? null,
           0, // is_completed
           50, // default priority score
+          params.taskType || null,
         ],
         'tasks'
       );
 
+      const taskId = result.lastInsertRowid as number;
+
+      // Also create an associated calendar event so user can edit calendar settings
+      // (color, notes, reminder) via "Edit Calendar Settings"
+      if (params.dueAt) {
+        try {
+          // Use epoch time (1970-01-01T00:00:00Z) as sentinel for "no user-set start time"
+          // This indicates a deadline event - the user only set a due date, not a start time
+          // Calendar UI will detect this (start_at < 86400000 ms) and show it as a deadline
+          const epochSentinel = new Date(0).toISOString();
+          context.db.executeWrite(
+            `INSERT INTO calendar_events (
+              source_type, course_id, task_id, title, description,
+              start_at, end_at, all_day
+            ) VALUES ('user', ?, ?, ?, ?, ?, ?, 0)`,
+            [
+              params.courseId,
+              taskId,
+              params.title.trim(),
+              params.description?.trim() || null,
+              epochSentinel, // Sentinel for deadline event (no user-set start time)
+              params.dueAt, // end_at is the actual due date
+            ],
+            'calendar_events'
+          );
+        } catch (calendarError) {
+          // Log but don't fail - task was created successfully
+          console.warn('Failed to create calendar event for task:', calendarError);
+        }
+      }
+
       return {
         success: true,
-        data: { taskId: result.lastInsertRowid },
+        data: { taskId },
       };
     } catch (error) {
       return {

@@ -85,8 +85,11 @@ export function registerHtmlDependencyHandlers(ctx: IpcContext): void {
 
     // Use HtmlDependencyResolver to check dependencies
     const basePath =
-      resource.local_path || path.join(getFilesDir(), course.code, `${resource.title}.html`);
-    const resolver = new HtmlDependencyResolver(database, { filesBaseDir: getFilesDir() });
+      resource.local_path ||
+      path.join(getFilesDir(), course.code, `${resource.title}.html`);
+    const resolver = new HtmlDependencyResolver(database, {
+      filesBaseDir: getFilesDir(),
+    });
     const resolution = resolver.resolve(
       sourceType,
       sourceId,
@@ -259,7 +262,13 @@ export function registerHtmlDependencyHandlers(ctx: IpcContext): void {
           `INSERT OR REPLACE INTO html_dependencies
            (parent_source_type, parent_source_id, child_source_type, child_source_id, is_cycle, download_session_id, recorded_content_hash)
            VALUES (?, ?, 'file', ?, 0, ?, ?)`,
-          [htmlSourceType, htmlSourceId, fileId, opSessionId ?? null, contentHash ?? null],
+          [
+            htmlSourceType,
+            htmlSourceId,
+            fileId,
+            opSessionId ?? null,
+            contentHash ?? null,
+          ],
           'html_dependencies'
         );
       }
@@ -270,7 +279,13 @@ export function registerHtmlDependencyHandlers(ctx: IpcContext): void {
           `INSERT OR REPLACE INTO html_dependencies
            (parent_source_type, parent_source_id, child_source_type, child_source_id, is_cycle, download_session_id, recorded_content_hash)
            VALUES (?, ?, 'page', ?, 0, ?, ?)`,
-          [htmlSourceType, htmlSourceId, pageId, opSessionId ?? null, contentHash ?? null],
+          [
+            htmlSourceType,
+            htmlSourceId,
+            pageId,
+            opSessionId ?? null,
+            contentHash ?? null,
+          ],
           'html_dependencies'
         );
       }

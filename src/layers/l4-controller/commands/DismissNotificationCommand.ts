@@ -14,9 +14,10 @@ import {
 } from '../types';
 import { NotificationRepository } from '../../l1-persistence/repositories';
 
-export class DismissNotificationCommand
-  implements Command<DismissNotificationParams, { dismissedAt: Date }>
-{
+export class DismissNotificationCommand implements Command<
+  DismissNotificationParams,
+  { dismissedAt: Date }
+> {
   readonly name = 'DismissNotification';
 
   validate(params: DismissNotificationParams): { valid: boolean; error?: string } {

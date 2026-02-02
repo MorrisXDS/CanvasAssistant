@@ -10,12 +10,7 @@
  */
 
 import React from 'react';
-import {
-  GraduationCap,
-  Eye,
-  EyeOff,
-  FolderOpen,
-} from 'lucide-react';
+import { GraduationCap, Eye, EyeOff, FolderOpen } from 'lucide-react';
 import { useSettings } from './SettingsContext';
 import {
   Accordion,
@@ -121,9 +116,7 @@ export function AcademicSection({ sectionRef }: AcademicSectionProps) {
         <Accordion.Content>
           <div style={styles.section}>
             {!isSearching && (
-              <p style={styles.sectionDesc}>
-                {SETTINGS_CATEGORIES.academic.description}
-              </p>
+              <p style={styles.sectionDesc}>{SETTINGS_CATEGORIES.academic.description}</p>
             )}
 
             {/* Target Grade */}
@@ -133,7 +126,8 @@ export function AcademicSection({ sectionRef }: AcademicSectionProps) {
                 label="Default target grade"
                 description="Applied to new courses. Individual targets can be overridden."
                 isModified={
-                  academic.defaultTargetGrade !== DEFAULT_ACADEMIC_SETTINGS.defaultTargetGrade
+                  academic.defaultTargetGrade !==
+                  DEFAULT_ACADEMIC_SETTINGS.defaultTargetGrade
                 }
                 onReset={() =>
                   updateAcademic({
@@ -179,7 +173,9 @@ export function AcademicSection({ sectionRef }: AcademicSectionProps) {
                     {SETTINGS_LABELS.options.termSelection.showAll}
                   </option>
                   {enrollmentTerms.length > 0 && (
-                    <optgroup label={SETTINGS_LABELS.options.termSelection.availableLabel}>
+                    <optgroup
+                      label={SETTINGS_LABELS.options.termSelection.availableLabel}
+                    >
                       {enrollmentTerms.map((term) => (
                         <option key={term.externalId} value={term.externalId}>
                           {term.name}
@@ -200,7 +196,8 @@ export function AcademicSection({ sectionRef }: AcademicSectionProps) {
                 label="Show hidden courses"
                 description="Display hidden courses in the courses list by default"
                 isModified={
-                  courseSettings.showHiddenByDefault !== DEFAULT_COURSE_SETTINGS.showHiddenByDefault
+                  courseSettings.showHiddenByDefault !==
+                  DEFAULT_COURSE_SETTINGS.showHiddenByDefault
                 }
                 onReset={() =>
                   updateCourseSettings({
@@ -210,7 +207,9 @@ export function AcademicSection({ sectionRef }: AcademicSectionProps) {
               >
                 <ToggleSwitch
                   checked={courseSettings.showHiddenByDefault}
-                  onChange={(checked) => updateCourseSettings({ showHiddenByDefault: checked })}
+                  onChange={(checked) =>
+                    updateCourseSettings({ showHiddenByDefault: checked })
+                  }
                 />
               </SettingRow>
             )}
@@ -222,7 +221,8 @@ export function AcademicSection({ sectionRef }: AcademicSectionProps) {
                 label="Auto-fill due dates"
                 description="Set today 23:59 as due date for coursework without one"
                 isModified={
-                  syncPrefs.autoAssignDueDate !== DEFAULT_SYNC_PREFERENCES.autoAssignDueDate
+                  syncPrefs.autoAssignDueDate !==
+                  DEFAULT_SYNC_PREFERENCES.autoAssignDueDate
                 }
                 onReset={() =>
                   updateSyncPrefs({
@@ -304,7 +304,8 @@ export function AcademicSection({ sectionRef }: AcademicSectionProps) {
                 label="Offline HTML files"
                 description="Prompt to download missing images and linked files when opening HTML content"
                 isModified={
-                  localHtmlPathsSettings.enabled !== DEFAULT_LOCAL_HTML_PATHS_SETTINGS.enabled
+                  localHtmlPathsSettings.enabled !==
+                  DEFAULT_LOCAL_HTML_PATHS_SETTINGS.enabled
                 }
                 onReset={() =>
                   updateLocalHtmlPathsSettings({
@@ -314,7 +315,9 @@ export function AcademicSection({ sectionRef }: AcademicSectionProps) {
               >
                 <ToggleSwitch
                   checked={localHtmlPathsSettings.enabled}
-                  onChange={(checked) => updateLocalHtmlPathsSettings({ enabled: checked })}
+                  onChange={(checked) =>
+                    updateLocalHtmlPathsSettings({ enabled: checked })
+                  }
                 />
               </SettingRow>
             )}
@@ -331,13 +334,16 @@ export function AcademicSection({ sectionRef }: AcademicSectionProps) {
                 }
                 onReset={() =>
                   updateFileExplorer({
-                    skipExternalLinkWarning: DEFAULT_FILE_EXPLORER_SETTINGS.skipExternalLinkWarning,
+                    skipExternalLinkWarning:
+                      DEFAULT_FILE_EXPLORER_SETTINGS.skipExternalLinkWarning,
                   })
                 }
               >
                 <ToggleSwitch
                   checked={fileExplorer.skipExternalLinkWarning}
-                  onChange={(checked) => updateFileExplorer({ skipExternalLinkWarning: checked })}
+                  onChange={(checked) =>
+                    updateFileExplorer({ skipExternalLinkWarning: checked })
+                  }
                 />
               </SettingRow>
             )}
@@ -355,9 +361,7 @@ export function AcademicSection({ sectionRef }: AcademicSectionProps) {
                 </p>
                 <div style={styles.courseList}>
                   {courses.length === 0 ? (
-                    <p style={styles.emptyText}>
-                      {SETTINGS_LABELS.empty.noCourses}
-                    </p>
+                    <p style={styles.emptyText}>{SETTINGS_LABELS.empty.noCourses}</p>
                   ) : (
                     courses.map((course: Course) => (
                       <div key={course.id} style={styles.courseRow}>

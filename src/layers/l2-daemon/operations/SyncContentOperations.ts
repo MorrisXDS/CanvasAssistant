@@ -209,7 +209,9 @@ export class SyncContentOperations {
       return createSyncResult('announcements', count, errors, startTime);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      errors.push(`Failed to sync announcements for course ${canvasCourseId}: ${message}`);
+      errors.push(
+        `Failed to sync announcements for course ${canvasCourseId}: ${message}`
+      );
       this.ctx.emitter.emit('sync-entity-error', {
         entity: 'announcements',
         courseId: canvasCourseId,
@@ -230,15 +232,23 @@ export class SyncContentOperations {
     const endpoint = `/courses/${canvasCourseId}/modules`;
 
     try {
-      const result = await this.ctx.backoffManager.fetchWithBackoff(endpoint, canvasCourseId, () =>
-        this.ctx.rateLimiter.enqueue(
-          () => this.ctx.client.getAll<CanvasModule>(endpoint, { include: ['items'] }),
-          3
-        )
+      const result = await this.ctx.backoffManager.fetchWithBackoff(
+        endpoint,
+        canvasCourseId,
+        () =>
+          this.ctx.rateLimiter.enqueue(
+            () => this.ctx.client.getAll<CanvasModule>(endpoint, { include: ['items'] }),
+            3
+          )
       );
 
       if (result.skipped || !result.data) {
-        return createSyncResult('modules', 0, result.error ? [result.error] : [], startTime);
+        return createSyncResult(
+          'modules',
+          0,
+          result.error ? [result.error] : [],
+          startTime
+        );
       }
 
       const modules = result.data;
@@ -336,11 +346,14 @@ export class SyncContentOperations {
     const endpoint = `/courses/${canvasCourseId}/pages`;
 
     try {
-      const result = await this.ctx.backoffManager.fetchWithBackoff(endpoint, canvasCourseId, () =>
-        this.ctx.rateLimiter.enqueue(
-          () => this.ctx.client.getAll<CanvasPage>(endpoint, { 'include[]': 'body' }),
-          2
-        )
+      const result = await this.ctx.backoffManager.fetchWithBackoff(
+        endpoint,
+        canvasCourseId,
+        () =>
+          this.ctx.rateLimiter.enqueue(
+            () => this.ctx.client.getAll<CanvasPage>(endpoint, { 'include[]': 'body' }),
+            2
+          )
       );
 
       let pages: CanvasPage[] = [];
@@ -350,7 +363,8 @@ export class SyncContentOperations {
       } else if (!result.skipped) {
         try {
           const frontPageResponse = await this.ctx.rateLimiter.enqueue(
-            () => this.ctx.client.get<CanvasPage>(`/courses/${canvasCourseId}/front_page`),
+            () =>
+              this.ctx.client.get<CanvasPage>(`/courses/${canvasCourseId}/front_page`),
             2
           );
           if (frontPageResponse.data) {
@@ -362,7 +376,12 @@ export class SyncContentOperations {
       }
 
       if (pages.length === 0) {
-        return createSyncResult('pages', 0, result.error ? [result.error] : [], startTime);
+        return createSyncResult(
+          'pages',
+          0,
+          result.error ? [result.error] : [],
+          startTime
+        );
       }
 
       this.ctx.db.transaction(() => {

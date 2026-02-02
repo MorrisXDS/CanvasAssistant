@@ -153,8 +153,12 @@ export function registerFileDataHandlers(ctx: IpcContext): void {
       `);
 
       const downloadedResources = resources.filter((r) => r.local_path !== null).length;
-      const downloadedAttachments = attachments.filter((a) => a.download_status === 'completed').length;
-      logger.info(`Found ${resources.length} files (${downloadedResources} downloaded), ${attachments.length} attachments (${downloadedAttachments} downloaded)`);
+      const downloadedAttachments = attachments.filter(
+        (a) => a.download_status === 'completed'
+      ).length;
+      logger.info(
+        `Found ${resources.length} files (${downloadedResources} downloaded), ${attachments.length} attachments (${downloadedAttachments} downloaded)`
+      );
 
       return {
         resources: resources.map((r) => ({
@@ -296,10 +300,9 @@ export function registerFileDataHandlers(ctx: IpcContext): void {
         local_path: string | null;
         download_status: string;
         downloaded_at: string | null;
-      }>(
-        'SELECT * FROM notification_attachments WHERE notification_id = ?',
-        [notificationId]
-      );
+      }>('SELECT * FROM notification_attachments WHERE notification_id = ?', [
+        notificationId,
+      ]);
 
       return rows.map((row) => ({
         id: row.id,

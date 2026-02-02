@@ -78,7 +78,9 @@ export class AutoSyncManager {
       return;
     }
 
-    this.logger.info(`Auto-sync enabled, interval: ${autoSyncIntervalMs / 60000} minutes`);
+    this.logger.info(
+      `Auto-sync enabled, interval: ${autoSyncIntervalMs / 60000} minutes`
+    );
 
     // Start safe mode clear timer if we successfully started auto-sync
     this.crashProtectionManager.startSafeModeClearTimer();
@@ -107,7 +109,9 @@ export class AutoSyncManager {
         if (mainWindowAfter && !mainWindowAfter.isDestroyed()) {
           mainWindowAfter.webContents.send('sync:status', 'idle');
           // Trigger Files page refresh
-          mainWindowAfter.webContents.send('file-status-changed', { type: 'sync-complete' });
+          mainWindowAfter.webContents.send('file-status-changed', {
+            type: 'sync-complete',
+          });
         }
 
         this.metricsCollector.increment('sync.auto.success');
@@ -139,7 +143,9 @@ export class AutoSyncManager {
   async triggerFocusRestoreSync(): Promise<void> {
     const syncEngine = this.getSyncEngine();
     if (!syncEngine || !this.systemMonitor.getState().canSync) {
-      this.logger.debug('Focus restore sync skipped: sync engine not ready or system state prevents sync');
+      this.logger.debug(
+        'Focus restore sync skipped: sync engine not ready or system state prevents sync'
+      );
       return;
     }
 
@@ -157,7 +163,9 @@ export class AutoSyncManager {
       if (mainWindowAfter && !mainWindowAfter.isDestroyed()) {
         mainWindowAfter.webContents.send('sync:status', 'idle');
         // Trigger Files page refresh
-        mainWindowAfter.webContents.send('file-status-changed', { type: 'sync-complete' });
+        mainWindowAfter.webContents.send('file-status-changed', {
+          type: 'sync-complete',
+        });
       }
 
       this.metricsCollector.increment('sync.focus_restore.success');

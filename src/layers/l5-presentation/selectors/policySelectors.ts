@@ -6,7 +6,10 @@
  */
 
 import type { Policy, Task } from '../../../shared/ipc-contract';
-import type { PolicyBadgeData, PolicyType } from '../../l6-ui/components/shared/PolicyBadge';
+import type {
+  PolicyBadgeData,
+  PolicyType,
+} from '../../l6-ui/components/shared/PolicyBadge';
 
 /**
  * Policy configuration interfaces for type-safe access
@@ -231,10 +234,7 @@ function formatPolicyBadge(policy: Policy): PolicyBadgeData | null {
  * Get policy info for a specific task
  * Returns badges and metadata about applicable policies
  */
-export function getTaskPolicyInfo(
-  task: Task,
-  policies: Policy[]
-): TaskPolicyInfo {
+export function getTaskPolicyInfo(task: Task, policies: Policy[]): TaskPolicyInfo {
   // Filter policies for this task's course
   const coursePolicies = policies.filter(
     (p) => p.courseId === task.courseId && p.isActive

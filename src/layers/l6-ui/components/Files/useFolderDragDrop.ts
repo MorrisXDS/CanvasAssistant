@@ -40,11 +40,19 @@ function saveFolderOrder(order: FolderOrderMap): void {
 
 export function useFolderDragDrop() {
   // Custom order stored in localStorage (folder paths per course)
-  const [folderOrderMap, setFolderOrderMap] = useState<FolderOrderMap>(() => loadFolderOrder());
+  const [folderOrderMap, setFolderOrderMap] = useState<FolderOrderMap>(() =>
+    loadFolderOrder()
+  );
 
   // Active drag state
-  const [draggedFolder, setDraggedFolder] = useState<{ courseId: number; path: string } | null>(null);
-  const [dragOverFolder, setDragOverFolder] = useState<{ courseId: number; path: string } | null>(null);
+  const [draggedFolder, setDraggedFolder] = useState<{
+    courseId: number;
+    path: string;
+  } | null>(null);
+  const [dragOverFolder, setDragOverFolder] = useState<{
+    courseId: number;
+    path: string;
+  } | null>(null);
 
   /**
    * Get custom order for a specific course
@@ -131,7 +139,12 @@ export function useFolderDragDrop() {
    * Handle drop - swap positions within same course
    */
   const handleDrop = useCallback(
-    (e: React.DragEvent, targetCourseId: number, targetFolderPath: string, allFolderPaths: string[]) => {
+    (
+      e: React.DragEvent,
+      targetCourseId: number,
+      targetFolderPath: string,
+      allFolderPaths: string[]
+    ) => {
       e.preventDefault();
 
       if (!draggedFolder) {
@@ -193,12 +206,15 @@ export function useFolderDragDrop() {
   /**
    * Reset custom order for a specific course
    */
-  const resetCourseOrder = useCallback((courseId: number) => {
-    const newMap = { ...folderOrderMap };
-    delete newMap[courseId];
-    setFolderOrderMap(newMap);
-    saveFolderOrder(newMap);
-  }, [folderOrderMap]);
+  const resetCourseOrder = useCallback(
+    (courseId: number) => {
+      const newMap = { ...folderOrderMap };
+      delete newMap[courseId];
+      setFolderOrderMap(newMap);
+      saveFolderOrder(newMap);
+    },
+    [folderOrderMap]
+  );
 
   /**
    * Reset all custom orders

@@ -22,7 +22,10 @@ interface ConfirmDialogProps {
   hideCancel?: boolean;
 }
 
-const typeConfig: Record<DialogType, { icon: React.ReactNode; color: string; bgColor: string }> = {
+const typeConfig: Record<
+  DialogType,
+  { icon: React.ReactNode; color: string; bgColor: string }
+> = {
   danger: {
     icon: <XCircle size={24} />,
     color: 'var(--color-error)',
@@ -69,7 +72,13 @@ export function ConfirmDialog({
       {/* Dialog */}
       <div style={styles.dialog}>
         {/* Icon */}
-        <div style={{ ...styles.iconWrapper, backgroundColor: config.bgColor, color: config.color }}>
+        <div
+          style={{
+            ...styles.iconWrapper,
+            backgroundColor: config.bgColor,
+            color: config.color,
+          }}
+        >
           {config.icon}
         </div>
 
@@ -83,14 +92,16 @@ export function ConfirmDialog({
         {/* Actions */}
         <div style={styles.actions}>
           {!hideCancel && (
-            <button style={styles.cancelBtn} onClick={onCancel}>
+            <button type="button" style={styles.cancelBtn} onClick={onCancel}>
               {cancelText}
             </button>
           )}
           <button
+            type="button"
             style={{
               ...styles.confirmBtn,
-              backgroundColor: type === 'danger' ? 'var(--color-error)' : 'var(--color-navy)',
+              backgroundColor:
+                type === 'danger' ? 'var(--color-error)' : 'var(--color-navy)',
             }}
             onClick={onConfirm}
           >
@@ -120,7 +131,8 @@ const styles: Record<string, React.CSSProperties> = {
     transform: 'translate(-50%, -50%)',
     backgroundColor: 'var(--bg-card)',
     borderRadius: 'var(--radius-xl)',
-    boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+    boxShadow:
+      '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
     width: '100%',
     maxWidth: '400px',
     padding: '24px',

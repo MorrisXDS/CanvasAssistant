@@ -182,9 +182,15 @@ export class SyncEngine extends EventEmitter {
     this.backoffManager.ensureBackoffTable();
 
     // Forward backoff manager events
-    this.backoffManager.on('endpoint-backoff', (info) => this.emit('endpoint-backoff', info));
-    this.backoffManager.on('endpoint-backoff-reset', (info) => this.emit('endpoint-backoff-reset', info));
-    this.backoffManager.on('endpoint-skipped', (info) => this.emit('endpoint-skipped', info));
+    this.backoffManager.on('endpoint-backoff', (info) =>
+      this.emit('endpoint-backoff', info)
+    );
+    this.backoffManager.on('endpoint-backoff-reset', (info) =>
+      this.emit('endpoint-backoff-reset', info)
+    );
+    this.backoffManager.on('endpoint-skipped', (info) =>
+      this.emit('endpoint-skipped', info)
+    );
 
     // Initialize operation classes with context and helpers
     this.initializeOperationClasses();
@@ -228,9 +234,11 @@ export class SyncEngine extends EventEmitter {
       getDefaultTargetGrade: () => this.getDefaultTargetGrade(),
       getCourseSettings: (courseId) => this.getCourseSettings(courseId),
       getTodayEndTime: () => this.getTodayEndTime(),
-      persistConflictData: (conflictId, tableName, data) => this.persistConflictData(conflictId, tableName, data),
+      persistConflictData: (conflictId, tableName, data) =>
+        this.persistConflictData(conflictId, tableName, data),
       pendingConflictData: this.pendingConflictData,
-      hasActiveDownloadFor: (sourceType, sourceId) => this.hasActiveDownloadFor(sourceType, sourceId),
+      hasActiveDownloadFor: (sourceType, sourceId) =>
+        this.hasActiveDownloadFor(sourceType, sourceId),
       computeContentHash: (content) => this.computeContentHash(content),
       updateContentHashAndDependencies: (sourceType, sourceId, content, courseId) =>
         this.updateContentHashAndDependencies(sourceType, sourceId, content, courseId),
@@ -263,9 +271,11 @@ export class SyncEngine extends EventEmitter {
       getCourseSettings: (courseId: number) => this.getCourseSettings(courseId),
       getTodayEndTime: () => this.getTodayEndTime(),
       getSyncPreferences: () => this.getSyncPreferences(),
-      updateSyncMetadata: (endpoint: string, etag?: string) => this.updateSyncMetadata(endpoint, etag),
+      updateSyncMetadata: (endpoint: string, etag?: string) =>
+        this.updateSyncMetadata(endpoint, etag),
       logDiagnostic: (entry) => this.logDiagnostic(entry),
-      persistConflictData: (conflictId, tableName, data) => this.persistConflictData(conflictId, tableName, data),
+      persistConflictData: (conflictId, tableName, data) =>
+        this.persistConflictData(conflictId, tableName, data),
     };
   }
 
@@ -838,7 +848,12 @@ export class SyncEngine extends EventEmitter {
       this.emit('sync-error', { type: 'fetch', error: message });
       this.emit('sync-aborted', { reason: 'fetch_failed', error: message });
 
-      return this.createFailedResult('courses', `Fetch failed: ${message}`, startTime, errors);
+      return this.createFailedResult(
+        'courses',
+        `Fetch failed: ${message}`,
+        startTime,
+        errors
+      );
     }
 
     // ============ PHASE 2: COMMIT ALL DATA ============
@@ -875,7 +890,12 @@ export class SyncEngine extends EventEmitter {
       this.emit('sync-error', { type: 'commit', error: message });
       this.emit('sync-rollback', { reason: 'commit_failed', error: message });
 
-      return this.createFailedResult('courses', `Commit failed: ${message}`, startTime, errors);
+      return this.createFailedResult(
+        'courses',
+        `Commit failed: ${message}`,
+        startTime,
+        errors
+      );
     } finally {
       // Clean up abort controller
       this.abortController = null;
@@ -891,7 +911,13 @@ export class SyncEngine extends EventEmitter {
     // ============ PHASE 3 & 4: FILE PROCESSING ============
     // Can be deferred for faster perceived sync time (optimization #8)
     if (options?.deferFileProcessing) {
-      return this.handleDeferredFileProcessing(fetched.courses, counts, errors, syncId, startTime);
+      return this.handleDeferredFileProcessing(
+        fetched.courses,
+        counts,
+        errors,
+        syncId,
+        startTime
+      );
     }
 
     // Execute file processing phases
@@ -962,7 +988,13 @@ export class SyncEngine extends EventEmitter {
         duration: Date.now() - startTime,
       },
       tasks: { success: false, entity: 'tasks', count: 0, errors: [], duration: 0 },
-      announcements: { success: false, entity: 'announcements', count: 0, errors: [], duration: 0 },
+      announcements: {
+        success: false,
+        entity: 'announcements',
+        count: 0,
+        errors: [],
+        duration: 0,
+      },
       modules: { success: false, entity: 'modules', count: 0, errors: [], duration: 0 },
       pages: { success: false, entity: 'pages', count: 0, errors: [], duration: 0 },
       folders: { success: false, entity: 'folders', count: 0, errors: [], duration: 0 },
@@ -1005,13 +1037,55 @@ export class SyncEngine extends EventEmitter {
     startTime: number
   ): FullSyncResult {
     return {
-      courses: { success: true, entity: 'courses', count: counts.courses || 0, errors: [], duration: 0 },
-      tasks: { success: true, entity: 'tasks', count: counts.tasks || 0, errors: [], duration: 0 },
-      announcements: { success: true, entity: 'announcements', count: counts.announcements || 0, errors: [], duration: 0 },
-      modules: { success: true, entity: 'modules', count: counts.modules || 0, errors: [], duration: 0 },
-      pages: { success: true, entity: 'pages', count: counts.pages || 0, errors: [], duration: 0 },
-      folders: { success: true, entity: 'folders', count: counts.folders || 0, errors: [], duration: 0 },
-      files: { success: true, entity: 'files', count: counts.files || 0, errors: [], duration: 0 },
+      courses: {
+        success: true,
+        entity: 'courses',
+        count: counts.courses || 0,
+        errors: [],
+        duration: 0,
+      },
+      tasks: {
+        success: true,
+        entity: 'tasks',
+        count: counts.tasks || 0,
+        errors: [],
+        duration: 0,
+      },
+      announcements: {
+        success: true,
+        entity: 'announcements',
+        count: counts.announcements || 0,
+        errors: [],
+        duration: 0,
+      },
+      modules: {
+        success: true,
+        entity: 'modules',
+        count: counts.modules || 0,
+        errors: [],
+        duration: 0,
+      },
+      pages: {
+        success: true,
+        entity: 'pages',
+        count: counts.pages || 0,
+        errors: [],
+        duration: 0,
+      },
+      folders: {
+        success: true,
+        entity: 'folders',
+        count: counts.folders || 0,
+        errors: [],
+        duration: 0,
+      },
+      files: {
+        success: true,
+        entity: 'files',
+        count: counts.files || 0,
+        errors: [],
+        duration: 0,
+      },
       totalDuration: Date.now() - startTime,
       errors,
     };
@@ -1569,7 +1643,10 @@ export class SyncEngine extends EventEmitter {
     canvasCourseId?: number,
     _courseCode?: string
   ): Promise<{ count: number; errors: string[] }> {
-    return this.fileRefExtractor.fetchMissingFileReferences(localCourseId, canvasCourseId);
+    return this.fileRefExtractor.fetchMissingFileReferences(
+      localCourseId,
+      canvasCourseId
+    );
   }
 
   /**

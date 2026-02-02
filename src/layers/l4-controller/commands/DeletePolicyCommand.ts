@@ -5,11 +5,7 @@
  * Sets is_active = 0 rather than removing the row.
  */
 
-import {
-  Command,
-  CommandContext,
-  CommandResult,
-} from '../types';
+import { Command, CommandContext, CommandResult } from '../types';
 
 export interface DeletePolicyParams {
   policyId: number;
@@ -23,9 +19,10 @@ export interface DeletePolicyResult {
   deactivated: boolean;
 }
 
-export class DeletePolicyCommand
-  implements Command<DeletePolicyParams, DeletePolicyResult>
-{
+export class DeletePolicyCommand implements Command<
+  DeletePolicyParams,
+  DeletePolicyResult
+> {
   readonly name = 'DeletePolicy';
 
   validate(params: DeletePolicyParams): { valid: boolean; error?: string } {

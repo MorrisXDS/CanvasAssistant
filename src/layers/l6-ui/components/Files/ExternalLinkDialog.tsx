@@ -46,7 +46,8 @@ export function ExternalLinkDialog({
       <Modal.Content>
         <div style={styles.content}>
           <p style={styles.description}>
-            You are about to open an external link that will take you outside of this application.
+            You are about to open an external link that will take you outside of this
+            application.
           </p>
 
           <div style={styles.linkInfo}>

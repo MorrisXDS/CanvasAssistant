@@ -85,7 +85,10 @@ const styles: Record<string, React.CSSProperties> = {
 
 const hoverStyles: Record<ButtonVariant, React.CSSProperties> = {
   primary: { backgroundColor: 'var(--color-navy-light)' },
-  secondary: { backgroundColor: 'var(--bg-card-hover)', borderColor: 'var(--color-navy)' },
+  secondary: {
+    backgroundColor: 'var(--bg-card-hover)',
+    borderColor: 'var(--color-navy)',
+  },
   ghost: { backgroundColor: 'var(--bg-app)' },
   danger: { opacity: 0.9 },
   success: { opacity: 0.9 },
@@ -131,7 +134,10 @@ export function Button({
   };
 
   const iconElement = loading ? (
-    <Loader2 size={size === 'sm' ? 14 : size === 'lg' ? 18 : 16} style={{ animation: 'spin 1s linear infinite' }} />
+    <Loader2
+      size={size === 'sm' ? 14 : size === 'lg' ? 18 : 16}
+      style={{ animation: 'spin 1s linear infinite' }}
+    />
   ) : (
     icon
   );

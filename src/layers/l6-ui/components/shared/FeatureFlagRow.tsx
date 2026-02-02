@@ -49,29 +49,35 @@ export function FeatureFlagRow({
     }
   }, [flagKey, localValue, onToggle, isLoading]);
 
-  const handleNumberChange = useCallback(async (value: number) => {
-    if (!onChange || isLoading) return;
+  const handleNumberChange = useCallback(
+    async (value: number) => {
+      if (!onChange || isLoading) return;
 
-    setIsLoading(true);
-    try {
-      await onChange(flagKey, value);
-      setLocalValue(value);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [flagKey, onChange, isLoading]);
+      setIsLoading(true);
+      try {
+        await onChange(flagKey, value);
+        setLocalValue(value);
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [flagKey, onChange, isLoading]
+  );
 
-  const handleStringChange = useCallback(async (value: string) => {
-    if (!onChange || isLoading) return;
+  const handleStringChange = useCallback(
+    async (value: string) => {
+      if (!onChange || isLoading) return;
 
-    setIsLoading(true);
-    try {
-      await onChange(flagKey, value);
-      setLocalValue(value);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [flagKey, onChange, isLoading]);
+      setIsLoading(true);
+      try {
+        await onChange(flagKey, value);
+        setLocalValue(value);
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [flagKey, onChange, isLoading]
+  );
 
   const handleReset = useCallback(async () => {
     if (!onReset || isLoading) return;

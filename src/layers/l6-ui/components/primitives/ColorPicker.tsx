@@ -167,16 +167,20 @@ export function ColorPicker({
               style={{
                 ...styles.largePreview,
                 backgroundColor: value,
-                borderColor: isPreviewHovered ? 'var(--color-blue)' : 'var(--border-default)',
+                borderColor: isPreviewHovered
+                  ? 'var(--color-blue)'
+                  : 'var(--border-default)',
                 transform: isPreviewHovered ? 'scale(1.02)' : 'scale(1)',
               }}
               title="Click to open color palette"
               aria-label="Open color palette"
             >
-              <div style={{
-                ...styles.previewOverlay,
-                opacity: isPreviewHovered ? 1 : 0,
-              }}>
+              <div
+                style={{
+                  ...styles.previewOverlay,
+                  opacity: isPreviewHovered ? 1 : 0,
+                }}
+              >
                 <Palette size={20} color={getContrastTextColor(value)} />
               </div>
               {isCustomColor && (
@@ -197,7 +201,9 @@ export function ColorPicker({
                   disabled={disabled}
                   style={{
                     ...styles.hexInput,
-                    borderColor: hexError ? 'var(--color-error)' : 'var(--border-default)',
+                    borderColor: hexError
+                      ? 'var(--color-error)'
+                      : 'var(--border-default)',
                   }}
                   placeholder="#000000"
                   maxLength={7}
@@ -211,8 +217,12 @@ export function ColorPicker({
                   disabled={disabled}
                   style={{
                     ...styles.pickerButton,
-                    backgroundColor: isPickerHovered ? 'var(--bg-hover)' : 'var(--bg-input)',
-                    color: isPickerHovered ? 'var(--color-blue)' : 'var(--text-secondary)',
+                    backgroundColor: isPickerHovered
+                      ? 'var(--bg-hover)'
+                      : 'var(--bg-input)',
+                    color: isPickerHovered
+                      ? 'var(--color-blue)'
+                      : 'var(--text-secondary)',
                   }}
                   title="Open color palette"
                   aria-label="Open color palette"
@@ -222,7 +232,8 @@ export function ColorPicker({
               </div>
               {!compact && (
                 <div style={styles.hexHint}>
-                  Enter hex code or click <Palette size={12} style={{ verticalAlign: 'middle' }} /> to pick
+                  Enter hex code or click{' '}
+                  <Palette size={12} style={{ verticalAlign: 'middle' }} /> to pick
                 </div>
               )}
             </div>

@@ -54,11 +54,13 @@ export function FileGridItem({
   const isDownloaded = isFileDownloaded(file);
   const isModuleItem = file.source === 'module';
   // Check if this is an ExternalUrl module item (not downloadable)
-  const isExternalUrl = isModuleItem && (file as FileModuleItem).itemType === 'ExternalUrl';
+  const isExternalUrl =
+    isModuleItem && (file as FileModuleItem).itemType === 'ExternalUrl';
 
   // Get metadata
   const filename = getFileName(file);
-  const folderPath = file.source === 'resource' ? (file as FileResource).folderPath : null;
+  const folderPath =
+    file.source === 'resource' ? (file as FileResource).folderPath : null;
   const category = categorizeFile(filename, folderPath);
   const moduleContext = extractModuleContext(folderPath, filename);
   const categoryColor = getCategoryColor(category);
@@ -132,7 +134,11 @@ export function FileGridItem({
           <span className={styles.gridModuleContext}>{moduleContext}</span>
         )}
         {isDownloaded && (
-          <CheckCircle size={10} color="var(--color-success)" style={{ marginLeft: '4px' }} />
+          <CheckCircle
+            size={10}
+            color="var(--color-success)"
+            style={{ marginLeft: '4px' }}
+          />
         )}
       </div>
 
@@ -143,7 +149,10 @@ export function FileGridItem({
             // ExternalUrl items: just show open button
             <button
               className={styles.gridActionButton}
-              onClick={(e) => { e.stopPropagation(); onOpen(); }}
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpen();
+              }}
               title="Open external link"
               aria-label="Open external link"
             >
@@ -153,7 +162,10 @@ export function FileGridItem({
             <>
               <button
                 className={styles.gridActionButton}
-                onClick={(e) => { e.stopPropagation(); onOpen(); }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onOpen();
+                }}
                 title="Open file"
                 aria-label="Open file"
               >
@@ -162,7 +174,10 @@ export function FileGridItem({
               {onShowInFolder && (
                 <button
                   className={styles.gridActionButton}
-                  onClick={(e) => { e.stopPropagation(); onShowInFolder(); }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onShowInFolder();
+                  }}
                   title="Show in folder"
                   aria-label="Show in folder"
                 >
@@ -173,7 +188,10 @@ export function FileGridItem({
           ) : (
             <button
               className={styles.gridActionButton}
-              onClick={(e) => { e.stopPropagation(); onDownload(); }}
+              onClick={(e) => {
+                e.stopPropagation();
+                onDownload();
+              }}
               title="Download"
               aria-label="Download file"
               disabled={isDownloading}

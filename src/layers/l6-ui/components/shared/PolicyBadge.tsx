@@ -5,13 +5,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import type { LucideIcon } from 'lucide-react';
-import {
-  Ticket,
-  Clock,
-  TrendingDown,
-  ArrowRightLeft,
-  RefreshCw,
-} from 'lucide-react';
+import { Ticket, Clock, TrendingDown, ArrowRightLeft, RefreshCw } from 'lucide-react';
 
 export type PolicyType =
   | 'grace_tokens'

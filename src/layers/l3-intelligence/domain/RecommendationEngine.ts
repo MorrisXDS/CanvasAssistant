@@ -60,7 +60,8 @@ export function generateWorkNowRecommendation(
   const scoredTasks = availableTasks.map((task) => {
     const estimate = effortEstimates.get(task.id);
     const estimatedMinutes = estimate?.estimatedMinutes ?? 60;
-    const hoursUntilDue = (task.dueAt!.getTime() - currentTime.getTime()) / (1000 * 60 * 60);
+    const hoursUntilDue =
+      (task.dueAt!.getTime() - currentTime.getTime()) / (1000 * 60 * 60);
 
     let score = 0;
 
@@ -103,7 +104,8 @@ export function generateWorkNowRecommendation(
   const courseName = course?.code || 'Unknown Course';
 
   // Generate reasoning
-  const hoursUntilDue = (bestTask.task.dueAt!.getTime() - currentTime.getTime()) / (1000 * 60 * 60);
+  const hoursUntilDue =
+    (bestTask.task.dueAt!.getTime() - currentTime.getTime()) / (1000 * 60 * 60);
   let reasoning = '';
 
   if (hoursUntilDue <= 24) {
@@ -125,7 +127,9 @@ export function generateWorkNowRecommendation(
     reasoning: reasoning.trim(),
     priorityScore: bestTask.score,
     validFrom: currentTime,
-    validUntil: new Date(currentTime.getTime() + RECOMMENDATION_VALIDITY.work_now * 60 * 60 * 1000),
+    validUntil: new Date(
+      currentTime.getTime() + RECOMMENDATION_VALIDITY.work_now * 60 * 60 * 1000
+    ),
     dismissedAt: null,
     actedOnAt: null,
   };
@@ -156,7 +160,9 @@ export function generateStartEarlyRecommendation(
 
   // Build lookup maps
   const struggleMap = new Map(strugglePatterns.map((p) => [p.taskType, p.struggleScore]));
-  const difficultyMap = new Map(courseDifficulty.map((c) => [c.courseId, c.struggleScore]));
+  const difficultyMap = new Map(
+    courseDifficulty.map((c) => [c.courseId, c.struggleScore])
+  );
 
   // Score each task for early start suitability
   const scoredTasks = candidateTasks.map((task) => {
@@ -226,7 +232,9 @@ export function generateStartEarlyRecommendation(
     reasoning: best.reasons.join('. '),
     priorityScore: best.score,
     validFrom: currentTime,
-    validUntil: new Date(currentTime.getTime() + RECOMMENDATION_VALIDITY.start_early * 60 * 60 * 1000),
+    validUntil: new Date(
+      currentTime.getTime() + RECOMMENDATION_VALIDITY.start_early * 60 * 60 * 1000
+    ),
     dismissedAt: null,
     actedOnAt: null,
   };
@@ -241,9 +249,7 @@ export function generateBreakRecommendation(
 ): Recommendation | null {
   // Look at activity in last 4 hours
   const fourHoursAgo = new Date(currentTime.getTime() - 4 * 60 * 60 * 1000);
-  const recentCompletions = recentActivity.filter(
-    (e) => e.completedAt >= fourHoursAgo
-  );
+  const recentCompletions = recentActivity.filter((e) => e.completedAt >= fourHoursAgo);
 
   // Check for signs of overwork
   let workMinutes = 0;
@@ -254,7 +260,7 @@ export function generateBreakRecommendation(
   // Recommend break if worked 3+ hours in last 4 hours
   if (workMinutes < 180) return null;
 
-  const hoursWorked = Math.round(workMinutes / 60 * 10) / 10;
+  const hoursWorked = Math.round((workMinutes / 60) * 10) / 10;
 
   return {
     type: 'take_break',
@@ -265,7 +271,9 @@ export function generateBreakRecommendation(
     reasoning: `Research shows productivity decreases after 90-120 minutes of continuous work. Take 10-15 minutes to rest.`,
     priorityScore: 60,
     validFrom: currentTime,
-    validUntil: new Date(currentTime.getTime() + RECOMMENDATION_VALIDITY.take_break * 60 * 60 * 1000),
+    validUntil: new Date(
+      currentTime.getTime() + RECOMMENDATION_VALIDITY.take_break * 60 * 60 * 1000
+    ),
     dismissedAt: null,
     actedOnAt: null,
   };
@@ -335,9 +343,10 @@ export function generateCourseFocusRecommendation(
   if (!course) return null;
 
   const taskText = topCourse.pendingCount === 1 ? 'task' : 'tasks';
-  const deadlineText = topCourse.upcomingDeadlines > 0
-    ? `, ${topCourse.upcomingDeadlines} due this week`
-    : '';
+  const deadlineText =
+    topCourse.upcomingDeadlines > 0
+      ? `, ${topCourse.upcomingDeadlines} due this week`
+      : '';
 
   return {
     type: 'course_focus',
@@ -345,10 +354,13 @@ export function generateCourseFocusRecommendation(
     courseId: topCourse.courseId,
     title: `Focus on ${course.code}`,
     description: `You haven't worked on ${course.code} recently. ${topCourse.pendingCount} ${taskText} pending${deadlineText}.`,
-    reasoning: 'Balanced attention across courses helps maintain consistent progress and prevents last-minute cramming.',
+    reasoning:
+      'Balanced attention across courses helps maintain consistent progress and prevents last-minute cramming.',
     priorityScore: 50 + topCourse.upcomingDeadlines * 10,
     validFrom: currentTime,
-    validUntil: new Date(currentTime.getTime() + RECOMMENDATION_VALIDITY.course_focus * 60 * 60 * 1000),
+    validUntil: new Date(
+      currentTime.getTime() + RECOMMENDATION_VALIDITY.course_focus * 60 * 60 * 1000
+    ),
     dismissedAt: null,
     actedOnAt: null,
   };
@@ -435,12 +447,13 @@ export function generatePreemptiveStartRec(
     reasoning: `Next week has ${crunchWeek.taskCount} tasks (~${Math.round(crunchWeek.predictedHours)} hours). Getting ahead now prevents last-minute stress.`,
     priorityScore: priority,
     validFrom: currentTime,
-    validUntil: new Date(currentTime.getTime() + RECOMMENDATION_VALIDITY.preemptive_start * 60 * 60 * 1000),
+    validUntil: new Date(
+      currentTime.getTime() + RECOMMENDATION_VALIDITY.preemptive_start * 60 * 60 * 1000
+    ),
     dismissedAt: null,
     actedOnAt: null,
   };
 }
-
 
 /**
  * Generate focus recommendation for at-risk courses
@@ -463,12 +476,11 @@ export function generateFocusAtRiskRec(
   const highestWeight = Math.max(...pendingTasks.map((t) => t.weight ?? 0));
   const priority = forecast.riskLevel === 'at-risk' ? 85 : 70;
 
-  const nextTask = pendingTasks
-    .sort((a, b) => {
-      const aTime = a.dueAt?.getTime() ?? Infinity;
-      const bTime = b.dueAt?.getTime() ?? Infinity;
-      return aTime - bTime;
-    })[0];
+  const nextTask = pendingTasks.sort((a, b) => {
+    const aTime = a.dueAt?.getTime() ?? Infinity;
+    const bTime = b.dueAt?.getTime() ?? Infinity;
+    return aTime - bTime;
+  })[0];
 
   return {
     type: 'focus_at_risk',
@@ -479,12 +491,13 @@ export function generateFocusAtRiskRec(
     reasoning: `You need an average of ${Math.round(forecast.neededAverage)}% on remaining work (${pendingTasks.length} tasks, ${Math.round(highestWeight)}% max weight) to reach your ${forecast.targetGrade}% target.`,
     priorityScore: priority,
     validFrom: currentTime,
-    validUntil: new Date(currentTime.getTime() + RECOMMENDATION_VALIDITY.focus_at_risk * 60 * 60 * 1000),
+    validUntil: new Date(
+      currentTime.getTime() + RECOMMENDATION_VALIDITY.focus_at_risk * 60 * 60 * 1000
+    ),
     dismissedAt: null,
     actedOnAt: null,
   };
 }
-
 
 /**
  * Generate all relevant recommendations based on current context

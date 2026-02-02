@@ -320,8 +320,12 @@ export function getAdjustmentSummary(adjustments: WeightAdjustment[]): string[] 
   const typeAdj = adjustments.filter((a) => a.taskType !== null && a.courseId === null);
 
   if (globalAdj.length > 0) {
-    const increased = globalAdj.filter((a) => a.weightMultiplier > 1).map((a) => a.factorName);
-    const decreased = globalAdj.filter((a) => a.weightMultiplier < 1).map((a) => a.factorName);
+    const increased = globalAdj
+      .filter((a) => a.weightMultiplier > 1)
+      .map((a) => a.factorName);
+    const decreased = globalAdj
+      .filter((a) => a.weightMultiplier < 1)
+      .map((a) => a.factorName);
 
     if (increased.length > 0) {
       summaries.push(`Increased importance: ${increased.join(', ')}`);

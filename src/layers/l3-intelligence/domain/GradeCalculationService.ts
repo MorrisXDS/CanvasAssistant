@@ -73,7 +73,10 @@ export class GradeCalculationService {
 
     // Guard against null/undefined weights by treating them as 0
     const totalWeight = tasks.reduce((sum, t) => sum + (t.weight ?? 0), 0);
-    const completedWeight = completedWithGrades.reduce((sum, t) => sum + (t.weight ?? 0), 0);
+    const completedWeight = completedWithGrades.reduce(
+      (sum, t) => sum + (t.weight ?? 0),
+      0
+    );
 
     const weightedSum = completedWithGrades.reduce(
       (sum, t) => sum + (t.grade ?? 0) * (t.weight ?? 0),
@@ -211,9 +214,7 @@ export class GradeCalculationService {
   /**
    * Calculate weighted average across multiple courses.
    */
-  calculateCumulativeGpa(
-    courses: Array<{ grade: number; credits: number }>
-  ): number {
+  calculateCumulativeGpa(courses: Array<{ grade: number; credits: number }>): number {
     const totalCredits = courses.reduce((sum, c) => sum + c.credits, 0);
     if (totalCredits === 0) return 0;
 

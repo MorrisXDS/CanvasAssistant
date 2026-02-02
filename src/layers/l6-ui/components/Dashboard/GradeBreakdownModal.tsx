@@ -6,7 +6,14 @@
 
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { X, BarChart3, TrendingUp, TrendingDown, Minus, ExternalLink } from 'lucide-react';
+import {
+  X,
+  BarChart3,
+  TrendingUp,
+  TrendingDown,
+  Minus,
+  ExternalLink,
+} from 'lucide-react';
 import type { CourseSummary } from '../../../l5-presentation/types';
 
 export interface GradeBreakdownModalProps {
@@ -16,7 +23,12 @@ export interface GradeBreakdownModalProps {
   averageGrade: number | null;
 }
 
-export function GradeBreakdownModal({ isOpen, onClose, courseSummaries, averageGrade }: GradeBreakdownModalProps) {
+export function GradeBreakdownModal({
+  isOpen,
+  onClose,
+  courseSummaries,
+  averageGrade,
+}: GradeBreakdownModalProps) {
   const navigate = useNavigate();
 
   if (!isOpen) return null;
@@ -60,9 +72,7 @@ export function GradeBreakdownModal({ isOpen, onClose, courseSummaries, averageG
           <div style={styles.averageValue}>
             {averageGrade !== null ? `${averageGrade.toFixed(1)}%` : 'N/A'}
           </div>
-          <div style={styles.averageSubtext}>
-            Across {sortedCourses.length} courses
-          </div>
+          <div style={styles.averageSubtext}>Across {sortedCourses.length} courses</div>
         </div>
 
         {/* Content */}
@@ -77,9 +87,7 @@ export function GradeBreakdownModal({ isOpen, onClose, courseSummaries, averageG
                 const grade = summary.effectiveAssessedGrade;
                 const target = summary.course.targetGrade;
                 const diff = grade !== null ? grade - target : null;
-                const status = diff !== null
-                  ? diff >= 0 ? 'above' : 'below'
-                  : 'none';
+                const status = diff !== null ? (diff >= 0 ? 'above' : 'below') : 'none';
 
                 return (
                   <div
@@ -113,7 +121,9 @@ export function GradeBreakdownModal({ isOpen, onClose, courseSummaries, averageG
                         {summary.course.nickname || summary.course.name}
                       </div>
                       <div style={styles.courseMeta}>
-                        <span>{summary.completedCount}/{summary.taskCount} tasks completed</span>
+                        <span>
+                          {summary.completedCount}/{summary.taskCount} tasks completed
+                        </span>
                       </div>
                     </div>
 

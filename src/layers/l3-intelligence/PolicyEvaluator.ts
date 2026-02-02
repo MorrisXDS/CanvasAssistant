@@ -217,7 +217,9 @@ export class PolicyEvaluator {
     // Evaluate each active policy
     const activePolicies = policies.filter((p) => p.isActive);
     if (activePolicies.length > 0) {
-      this.log.debug(`Evaluating ${activePolicies.length} policies for task "${task.title}"`);
+      this.log.debug(
+        `Evaluating ${activePolicies.length} policies for task "${task.title}"`
+      );
     }
 
     for (const policy of activePolicies) {
@@ -255,19 +257,28 @@ export class PolicyEvaluator {
       } else if (policy.policyType === 'drop_lowest' && isDropLowestPolicy(config)) {
         this.evaluateDropLowest(task, config, result);
         if (result.isDroppable) {
-          this.log.debug(`Policy "${policy.policyName}" (drop_lowest): task is droppable`, {
-            taskId: task.id,
-            category: config.category,
-          });
+          this.log.debug(
+            `Policy "${policy.policyName}" (drop_lowest): task is droppable`,
+            {
+              taskId: task.id,
+              category: config.category,
+            }
+          );
         }
-      } else if (policy.policyType === 'weight_transfer' && isWeightTransferPolicy(config)) {
+      } else if (
+        policy.policyType === 'weight_transfer' &&
+        isWeightTransferPolicy(config)
+      ) {
         this.evaluateWeightTransfer(task, config, result);
         if (result.canTransferWeight) {
-          this.log.debug(`Policy "${policy.policyName}" (weight_transfer): weight can transfer`, {
-            taskId: task.id,
-            from: config.from_task,
-            to: config.to_task,
-          });
+          this.log.debug(
+            `Policy "${policy.policyName}" (weight_transfer): weight can transfer`,
+            {
+              taskId: task.id,
+              from: config.from_task,
+              to: config.to_task,
+            }
+          );
         }
       }
       // Skip policies that don't pass type guards (malformed config)
@@ -304,9 +315,15 @@ export class PolicyEvaluator {
 
     // Add submission windows for each token level
     const baseDeadline = task.dueAt!;
-    for (let tokens = 1; tokens <= Math.min(tokensRemaining, config.max_tokens_per_task); tokens++) {
+    for (
+      let tokens = 1;
+      tokens <= Math.min(tokensRemaining, config.max_tokens_per_task);
+      tokens++
+    ) {
       const extensionHours = tokens * config.hours_per_token;
-      const extendedDeadline = new Date(baseDeadline.getTime() + extensionHours * 60 * 60 * 1000);
+      const extendedDeadline = new Date(
+        baseDeadline.getTime() + extensionHours * 60 * 60 * 1000
+      );
       const hoursRemaining = (extendedDeadline.getTime() - Date.now()) / (1000 * 60 * 60);
 
       result.submissionWindows.push({
@@ -324,7 +341,7 @@ export class PolicyEvaluator {
       const tokensNeeded = Math.ceil(hoursPastDue / config.hours_per_token);
       if (tokensNeeded <= result.graceTokensAvailable) {
         // Task is salvageable - boost priority
-        const boostFactor = 1.5 - (tokensNeeded * 0.1); // Less boost if more tokens needed
+        const boostFactor = 1.5 - tokensNeeded * 0.1; // Less boost if more tokens needed
         result.adjustment += 20 * boostFactor;
         result.factors.push({
           id: 'grace_token_salvageable',
@@ -332,7 +349,7 @@ export class PolicyEvaluator {
           icon: '🎫',
           impact: Math.round(20 * boostFactor),
           description: `${result.graceTokensAvailable} token${result.graceTokensAvailable > 1 ? 's' : ''} available`,
-          recommendation: `Submit within ${Math.round((result.graceTokensAvailable * config.hours_per_token) - hoursPastDue)}h to use ${tokensNeeded} token${tokensNeeded > 1 ? 's' : ''}`,
+          recommendation: `Submit within ${Math.round(result.graceTokensAvailable * config.hours_per_token - hoursPastDue)}h to use ${tokensNeeded} token${tokensNeeded > 1 ? 's' : ''}`,
         });
       }
     } else if (hoursUntilDue < 24 && result.graceTokensAvailable > 0) {
@@ -395,7 +412,8 @@ export class PolicyEvaluator {
         const penaltyDeadline = new Date(
           baseDeadline.getTime() + day * 24 * 60 * 60 * 1000
         );
-        const dayHoursRemaining = (penaltyDeadline.getTime() - Date.now()) / (1000 * 60 * 60);
+        const dayHoursRemaining =
+          (penaltyDeadline.getTime() - Date.now()) / (1000 * 60 * 60);
         const penalty = Math.min(day * config.penalty_value, config.max_penalty);
 
         if (dayHoursRemaining > 0) {
@@ -481,11 +499,10 @@ export class PolicyEvaluator {
     result: PolicyEvaluationResult
   ): void {
     // Check if task matches the category using multi-strategy matching
-    const taskMatchesCategory = matchesCategory(
-      task,
-      config.category,
-      { taskGroupId: config.taskGroupId, taskGroupIds: config.taskGroupIds }
-    );
+    const taskMatchesCategory = matchesCategory(task, config.category, {
+      taskGroupId: config.taskGroupId,
+      taskGroupIds: config.taskGroupIds,
+    });
 
     if (taskMatchesCategory) {
       result.isDroppable = true;
@@ -510,13 +527,17 @@ export class PolicyEvaluator {
     result: PolicyEvaluationResult
   ): void {
     // Check source/target matching using multi-strategy matching
-    const isSourceTask = config.fromTaskId !== undefined
-      ? task.id === config.fromTaskId
-      : matchesCategory(task, config.from_task, { taskGroupId: config.fromTaskGroupId });
+    const isSourceTask =
+      config.fromTaskId !== undefined
+        ? task.id === config.fromTaskId
+        : matchesCategory(task, config.from_task, {
+            taskGroupId: config.fromTaskGroupId,
+          });
 
-    const isTargetTask = config.toTaskId !== undefined
-      ? task.id === config.toTaskId
-      : matchesCategory(task, config.to_task, { taskGroupId: config.toTaskGroupId });
+    const isTargetTask =
+      config.toTaskId !== undefined
+        ? task.id === config.toTaskId
+        : matchesCategory(task, config.to_task, { taskGroupId: config.toTaskGroupId });
 
     if (isSourceTask) {
       result.canTransferWeight = true;

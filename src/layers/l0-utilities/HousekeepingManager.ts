@@ -123,9 +123,14 @@ export class HousekeepingManager extends EventEmitter {
     this.diskSpaceWarningMb = config?.diskSpaceWarningMb ?? 500;
 
     // Log compression settings
-    this.compressStructuredLogs = (config && 'compressStructuredLogs' in config ? config.compressStructuredLogs : undefined) ?? true;
+    this.compressStructuredLogs =
+      (config && 'compressStructuredLogs' in config
+        ? config.compressStructuredLogs
+        : undefined) ?? true;
     // Check for logRetentionWeeks in retention config (extended interface)
-    const extendedRetention = config?.retention as { logRetentionWeeks?: number } | undefined;
+    const extendedRetention = config?.retention as
+      | { logRetentionWeeks?: number }
+      | undefined;
     this.logRetentionWeeks = extendedRetention?.logRetentionWeeks ?? 13;
 
     // Setup logger
@@ -151,7 +156,10 @@ export class HousekeepingManager extends EventEmitter {
       // Run cleanup asynchronously on startup
       setImmediate(() => {
         this.runCleanup().catch((err) => {
-          this.log.error('Startup cleanup failed', err instanceof Error ? err : undefined);
+          this.log.error(
+            'Startup cleanup failed',
+            err instanceof Error ? err : undefined
+          );
         });
       });
     }
@@ -198,7 +206,10 @@ export class HousekeepingManager extends EventEmitter {
       this.runCleanup()
         .then(() => this.scheduleNextRun())
         .catch((err) => {
-          this.log.error('Scheduled cleanup failed', err instanceof Error ? err : undefined);
+          this.log.error(
+            'Scheduled cleanup failed',
+            err instanceof Error ? err : undefined
+          );
           this.scheduleNextRun();
         });
     }, delay);
@@ -303,7 +314,10 @@ export class HousekeepingManager extends EventEmitter {
     } catch (error) {
       result.success = false;
       result.errors!.push(error instanceof Error ? error.message : String(error));
-      this.log.error('Failed to cleanup logs', error instanceof Error ? error : undefined);
+      this.log.error(
+        'Failed to cleanup logs',
+        error instanceof Error ? error : undefined
+      );
     }
 
     return result;
@@ -332,7 +346,10 @@ export class HousekeepingManager extends EventEmitter {
     } catch (error) {
       result.success = false;
       result.errors!.push(error instanceof Error ? error.message : String(error));
-      this.log.error('Failed to cleanup metrics', error instanceof Error ? error : undefined);
+      this.log.error(
+        'Failed to cleanup metrics',
+        error instanceof Error ? error : undefined
+      );
     }
 
     return result;
@@ -381,7 +398,10 @@ export class HousekeepingManager extends EventEmitter {
     } catch (error) {
       result.success = false;
       result.errors!.push(error instanceof Error ? error.message : String(error));
-      this.log.error('Failed to cleanup temp files', error instanceof Error ? error : undefined);
+      this.log.error(
+        'Failed to cleanup temp files',
+        error instanceof Error ? error : undefined
+      );
     }
 
     return result;
@@ -430,7 +450,10 @@ export class HousekeepingManager extends EventEmitter {
     } catch (error) {
       result.success = false;
       result.errors!.push(error instanceof Error ? error.message : String(error));
-      this.log.error('Failed to cleanup sync cache', error instanceof Error ? error : undefined);
+      this.log.error(
+        'Failed to cleanup sync cache',
+        error instanceof Error ? error : undefined
+      );
     }
 
     return result;
@@ -469,27 +492,30 @@ export class HousekeepingManager extends EventEmitter {
       const currentWeek = this.getISOWeekNumber(now);
 
       // Scan year directories
-      const yearDirs = fs.readdirSync(this.logDir, { withFileTypes: true })
-        .filter(d => d.isDirectory() && /^\d{4}$/.test(d.name))
-        .map(d => d.name);
+      const yearDirs = fs
+        .readdirSync(this.logDir, { withFileTypes: true })
+        .filter((d) => d.isDirectory() && /^\d{4}$/.test(d.name))
+        .map((d) => d.name);
 
       for (const yearDir of yearDirs) {
         const year = parseInt(yearDir, 10);
         const yearPath = path.join(this.logDir, yearDir);
 
         // Scan week directories
-        const weekDirs = fs.readdirSync(yearPath, { withFileTypes: true })
-          .filter(d => d.isDirectory() && /^week-\d{2}$/.test(d.name))
-          .map(d => d.name);
+        const weekDirs = fs
+          .readdirSync(yearPath, { withFileTypes: true })
+          .filter((d) => d.isDirectory() && /^week-\d{2}$/.test(d.name))
+          .map((d) => d.name);
 
         for (const weekDir of weekDirs) {
           const weekNum = parseInt(weekDir.replace('week-', ''), 10);
           const weekPath = path.join(yearPath, weekDir);
 
           // Calculate age in weeks
-          const weeksAgo = (year === currentYear)
-            ? currentWeek - weekNum
-            : ((currentYear - year) * 52) + (currentWeek - weekNum);
+          const weeksAgo =
+            year === currentYear
+              ? currentWeek - weekNum
+              : (currentYear - year) * 52 + (currentWeek - weekNum);
 
           // Skip current week (keep daily files)
           if (weeksAgo <= 0) {
@@ -509,7 +535,11 @@ export class HousekeepingManager extends EventEmitter {
           const archivePath = path.join(weekPath, `${weekDir}.json.gz`);
 
           if (!fs.existsSync(archivePath)) {
-            const compressResult = await this.compressWeekDirectory(weekPath, archivePath, weekDir);
+            const compressResult = await this.compressWeekDirectory(
+              weekPath,
+              archivePath,
+              weekDir
+            );
             if (compressResult.success) {
               result.bytesFreed += compressResult.bytesFreed;
               result.itemsProcessed++;
@@ -532,12 +562,17 @@ export class HousekeepingManager extends EventEmitter {
       }
 
       if (result.itemsProcessed > 0 || result.bytesFreed > 0) {
-        this.log.info(`Compressed ${result.itemsProcessed} week logs, freed ${result.bytesFreed} bytes`);
+        this.log.info(
+          `Compressed ${result.itemsProcessed} week logs, freed ${result.bytesFreed} bytes`
+        );
       }
     } catch (error) {
       result.success = false;
       result.errors!.push(error instanceof Error ? error.message : String(error));
-      this.log.error('Failed to compress old week logs', error instanceof Error ? error : undefined);
+      this.log.error(
+        'Failed to compress old week logs',
+        error instanceof Error ? error : undefined
+      );
     }
 
     return result;
@@ -551,13 +586,16 @@ export class HousekeepingManager extends EventEmitter {
     const dayNum = d.getUTCDay() || 7;
     d.setUTCDate(d.getUTCDate() + 4 - dayNum);
     const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-    return Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+    return Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
   }
 
   /**
    * Delete a week directory and all its contents
    */
-  private deleteWeekDirectory(weekPath: string): { filesDeleted: number; bytesFreed: number } {
+  private deleteWeekDirectory(weekPath: string): {
+    filesDeleted: number;
+    bytesFreed: number;
+  } {
     let filesDeleted = 0;
     let bytesFreed = 0;
 
@@ -592,8 +630,9 @@ export class HousekeepingManager extends EventEmitter {
   ): Promise<{ success: boolean; bytesFreed: number; error?: string }> {
     try {
       // Find all daily log files (JSON or log)
-      const logFiles = fs.readdirSync(weekPath)
-        .filter(f => f.endsWith('.json') || f.endsWith('.log'))
+      const logFiles = fs
+        .readdirSync(weekPath)
+        .filter((f) => f.endsWith('.json') || f.endsWith('.log'))
         .sort(); // Sort by date
 
       if (logFiles.length === 0) {
@@ -701,11 +740,16 @@ export class HousekeepingManager extends EventEmitter {
       };
 
       deleteRecursive(this.logDir);
-      this.log.info(`Cleared all logs: ${result.itemsProcessed} files, ${result.bytesFreed} bytes freed`);
+      this.log.info(
+        `Cleared all logs: ${result.itemsProcessed} files, ${result.bytesFreed} bytes freed`
+      );
     } catch (error) {
       result.success = false;
       result.errors!.push(error instanceof Error ? error.message : String(error));
-      this.log.error('Failed to clear all logs', error instanceof Error ? error : undefined);
+      this.log.error(
+        'Failed to clear all logs',
+        error instanceof Error ? error : undefined
+      );
     }
 
     return result;

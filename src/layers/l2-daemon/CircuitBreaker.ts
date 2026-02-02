@@ -174,10 +174,7 @@ export class CircuitBreaker extends EventEmitter {
   /**
    * Execute a function with circuit breaker protection
    */
-  async execute<T>(
-    fn: () => Promise<T>,
-    endpoint?: string
-  ): Promise<T> {
+  async execute<T>(fn: () => Promise<T>, endpoint?: string): Promise<T> {
     if (!this.enabled) {
       return fn();
     }
@@ -248,7 +245,11 @@ export class CircuitBreaker extends EventEmitter {
       const err = error as Record<string, unknown>;
 
       // Check HTTP status code
-      if ('response' in err && typeof err.response === 'object' && err.response !== null) {
+      if (
+        'response' in err &&
+        typeof err.response === 'object' &&
+        err.response !== null
+      ) {
         const response = err.response as Record<string, unknown>;
         if ('status' in response && typeof response.status === 'number') {
           const status = response.status;
@@ -323,12 +324,17 @@ export class CircuitBreaker extends EventEmitter {
     circuit.failureCount++;
     circuit.lastFailure = new Date();
 
-    this.log.debug(`Failure recorded for '${circuitName}', count: ${circuit.failureCount}`);
+    this.log.debug(
+      `Failure recorded for '${circuitName}', count: ${circuit.failureCount}`
+    );
 
     if (circuit.state === 'half-open') {
       // Failure in half-open state: back to open with longer timeout
       this.openCircuit(circuit, circuitName, true);
-    } else if (circuit.state === 'closed' && circuit.failureCount >= this.failureThreshold) {
+    } else if (
+      circuit.state === 'closed' &&
+      circuit.failureCount >= this.failureThreshold
+    ) {
       // Threshold exceeded: open the circuit
       this.openCircuit(circuit, circuitName, false);
     }
@@ -357,7 +363,7 @@ export class CircuitBreaker extends EventEmitter {
 
     this.log.info(
       `Circuit '${name}' opened (failures: ${circuit.failureCount}, ` +
-      `reset in ${circuit.currentResetTimeout}ms)`
+        `reset in ${circuit.currentResetTimeout}ms)`
     );
 
     this.emit('circuit-opened', {
@@ -469,9 +475,10 @@ export class CircuitBreaker extends EventEmitter {
       lastFailure: circuit.lastFailure,
       lastSuccess: circuit.lastSuccess,
       resetTimeout: circuit.currentResetTimeout,
-      nextRetryAt: circuit.state === 'open' && circuit.lastFailure
-        ? new Date(circuit.lastFailure.getTime() + circuit.currentResetTimeout)
-        : null,
+      nextRetryAt:
+        circuit.state === 'open' && circuit.lastFailure
+          ? new Date(circuit.lastFailure.getTime() + circuit.currentResetTimeout)
+          : null,
     };
   }
 

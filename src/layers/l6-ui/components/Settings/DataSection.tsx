@@ -72,15 +72,11 @@ export function DataSection({ sectionRef }: DataSectionProps) {
       }}
     >
       <Accordion.Item value="data">
-        <Accordion.Trigger icon={DATA_ICON}>
-          Data Management
-        </Accordion.Trigger>
+        <Accordion.Trigger icon={DATA_ICON}>Data Management</Accordion.Trigger>
         <Accordion.Content>
           <div style={styles.sectionContent}>
             {/* Export Section */}
-            <div style={styles.subsectionTitle}>
-              {SETTINGS_LABELS.sections.export}
-            </div>
+            <div style={styles.subsectionTitle}>{SETTINGS_LABELS.sections.export}</div>
             <div style={styles.exportButtonRow}>
               <button
                 style={styles.exportActionButton}
@@ -172,21 +168,13 @@ export function DataSection({ sectionRef }: DataSectionProps) {
             {!isSearching && <div style={styles.divider} />}
 
             {/* Import Section */}
-            <div style={styles.subsectionTitle}>
-              {SETTINGS_LABELS.sections.import}
-            </div>
+            <div style={styles.subsectionTitle}>{SETTINGS_LABELS.sections.import}</div>
             <div style={styles.exportButtonRow}>
-              <button
-                style={styles.exportActionButton}
-                onClick={handleImportDatabase}
-              >
+              <button style={styles.exportActionButton} onClick={handleImportDatabase}>
                 <Download size={16} />
                 {SETTINGS_LABELS.buttons.importBackup}
               </button>
-              <button
-                style={styles.exportActionButton}
-                onClick={handleImportSettings}
-              >
+              <button style={styles.exportActionButton} onClick={handleImportSettings}>
                 <Download size={16} />
                 {SETTINGS_LABELS.buttons.importSettings}
               </button>

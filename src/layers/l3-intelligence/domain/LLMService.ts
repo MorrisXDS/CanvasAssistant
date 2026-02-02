@@ -72,7 +72,9 @@ export interface LLMServiceConfig {
   // API keys are passed at runtime, not stored in config
 }
 
-const DEFAULT_CONFIG: Required<Omit<LLMServiceConfig, 'provider'>> & { provider: LLMProvider } = {
+const DEFAULT_CONFIG: Required<Omit<LLMServiceConfig, 'provider'>> & {
+  provider: LLMProvider;
+} = {
   provider: 'none',
   ollamaUrl: 'http://localhost:11434',
   ollamaModel: 'llama3.2',
@@ -153,7 +155,10 @@ export class LLMService extends EventEmitter {
   /**
    * Check if Ollama is running and accessible
    */
-  private async checkOllamaAvailability(): Promise<{ available: boolean; error?: string }> {
+  private async checkOllamaAvailability(): Promise<{
+    available: boolean;
+    error?: string;
+  }> {
     try {
       const response = await this.httpClient.get(`${this.config.ollamaUrl}/api/tags`, {
         timeout: 5000,
@@ -203,19 +208,16 @@ export class LLMService extends EventEmitter {
    * Generate using Ollama (local)
    */
   private async generateWithOllama(request: LLMRequest): Promise<LLMResponse> {
-    const response = await this.httpClient.post(
-      `${this.config.ollamaUrl}/api/generate`,
-      {
-        model: this.config.ollamaModel,
-        prompt: request.prompt,
-        system: request.systemPrompt,
-        stream: false,
-        options: {
-          temperature: request.temperature ?? 0.7,
-          num_predict: request.maxTokens ?? 1024,
-        },
-      }
-    );
+    const response = await this.httpClient.post(`${this.config.ollamaUrl}/api/generate`, {
+      model: this.config.ollamaModel,
+      prompt: request.prompt,
+      system: request.systemPrompt,
+      stream: false,
+      options: {
+        temperature: request.temperature ?? 0.7,
+        num_predict: request.maxTokens ?? 1024,
+      },
+    });
 
     return {
       text: response.data.response,
@@ -368,9 +370,7 @@ export class LLMService extends EventEmitter {
   /**
    * Extract key information from a syllabus
    */
-  async extractSyllabusInfo(
-    syllabusText: string
-  ): Promise<{
+  async extractSyllabusInfo(syllabusText: string): Promise<{
     courseName?: string;
     instructor?: string;
     officeHours?: string;
@@ -404,15 +404,13 @@ Return ONLY valid JSON, no markdown.`,
   /**
    * Generate study recommendations
    */
-  async generateStudyRecommendations(
-    context: {
-      courseName: string;
-      taskType: string;
-      dueDate: Date;
-      currentGrade?: number;
-      targetGrade?: number;
-    }
-  ): Promise<string[]> {
+  async generateStudyRecommendations(context: {
+    courseName: string;
+    taskType: string;
+    dueDate: Date;
+    currentGrade?: number;
+    targetGrade?: number;
+  }): Promise<string[]> {
     const daysUntil = Math.ceil(
       (context.dueDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24)
     );

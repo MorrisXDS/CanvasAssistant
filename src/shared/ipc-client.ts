@@ -83,9 +83,13 @@ export interface TypedApi {
   getTasks: (courseId?: number) => Promise<IpcResult<'data:getTasks'>>;
   getNotifications: () => Promise<IpcResult<'data:getNotifications'>>;
   getNotification: (notificationId: number) => Promise<IpcResult<'data:getNotification'>>;
-  getCourseNotifications: (courseId: number) => Promise<IpcResult<'data:getCourseNotifications'>>;
+  getCourseNotifications: (
+    courseId: number
+  ) => Promise<IpcResult<'data:getCourseNotifications'>>;
   getAttachments: (notificationId: number) => Promise<IpcResult<'data:getAttachments'>>;
-  getFileReferences: (notificationId: number) => Promise<IpcResult<'data:getFileReferences'>>;
+  getFileReferences: (
+    notificationId: number
+  ) => Promise<IpcResult<'data:getFileReferences'>>;
   getPolicies: (courseId: number) => Promise<IpcResult<'data:getPolicies'>>;
   getGradeHistory: (courseId: number) => Promise<IpcResult<'data:getGradeHistory'>>;
   getFiles: () => Promise<IpcResult<'data:getFiles'>>;
@@ -93,15 +97,25 @@ export interface TypedApi {
   // Attachments
   downloadAttachment: (attachmentId: number) => Promise<IpcResult<'attachment:download'>>;
   openAttachment: (attachmentId: number) => Promise<IpcResult<'attachment:open'>>;
-  showAttachmentInFolder: (attachmentId: number) => Promise<IpcResult<'attachment:showInFolder'>>;
+  showAttachmentInFolder: (
+    attachmentId: number
+  ) => Promise<IpcResult<'attachment:showInFolder'>>;
 
   // Resources
   downloadResource: (resourceId: number) => Promise<IpcResult<'resource:download'>>;
-  downloadResourceByExternalId: (externalId: string) => Promise<IpcResult<'resource:downloadByExternalId'>>;
+  downloadResourceByExternalId: (
+    externalId: string
+  ) => Promise<IpcResult<'resource:downloadByExternalId'>>;
   openResource: (resourceId: number) => Promise<IpcResult<'resource:open'>>;
-  openResourceByExternalId: (externalId: string) => Promise<IpcResult<'resource:openByExternalId'>>;
-  showResourceInFolder: (resourceId: number) => Promise<IpcResult<'resource:showInFolder'>>;
-  showResourceInFolderByExternalId: (externalId: string) => Promise<IpcResult<'resource:showInFolderByExternalId'>>;
+  openResourceByExternalId: (
+    externalId: string
+  ) => Promise<IpcResult<'resource:openByExternalId'>>;
+  showResourceInFolder: (
+    resourceId: number
+  ) => Promise<IpcResult<'resource:showInFolder'>>;
+  showResourceInFolderByExternalId: (
+    externalId: string
+  ) => Promise<IpcResult<'resource:showInFolderByExternalId'>>;
 
   // Files Directory
   getFilesDirectory: () => Promise<IpcResult<'files:getDirectory'>>;
@@ -111,16 +125,33 @@ export interface TypedApi {
   // Course Pages
   getPagesByCourse: (courseId: number) => Promise<IpcResult<'pages:getByCourse'>>;
   getPage: (pageId: number) => Promise<IpcResult<'pages:get'>>;
-  exportPageHtml: (options: IpcParams<'pages:exportHtml'>) => Promise<IpcResult<'pages:exportHtml'>>;
+  exportPageHtml: (
+    options: IpcParams<'pages:exportHtml'>
+  ) => Promise<IpcResult<'pages:exportHtml'>>;
 
   // Calendars
   getImportedCalendars: () => Promise<IpcResult<'calendar:getImportedCalendars'>>;
-  parseICSPreview: (content: string, filename: string) => Promise<IpcResult<'calendar:parseICSPreview'>>;
-  importICS: (params: IpcParams<'calendar:importICS'>) => Promise<IpcResult<'calendar:importICS'>>;
-  deleteImportedCalendar: (calendarId: number) => Promise<IpcResult<'calendar:deleteCalendar'>>;
-  toggleCalendarVisibility: (calendarId: number, isVisible: boolean) => Promise<IpcResult<'calendar:toggleVisibility'>>;
-  updateImportedCalendar: (calendarId: number, updates: { name?: string; color?: string }) => Promise<IpcResult<'calendar:updateCalendar'>>;
-  getCalendarEventsForRange: (params: IpcParams<'calendar:getEventsForRange'>) => Promise<IpcResult<'calendar:getEventsForRange'>>;
+  parseICSPreview: (
+    content: string,
+    filename: string
+  ) => Promise<IpcResult<'calendar:parseICSPreview'>>;
+  importICS: (
+    params: IpcParams<'calendar:importICS'>
+  ) => Promise<IpcResult<'calendar:importICS'>>;
+  deleteImportedCalendar: (
+    calendarId: number
+  ) => Promise<IpcResult<'calendar:deleteCalendar'>>;
+  toggleCalendarVisibility: (
+    calendarId: number,
+    isVisible: boolean
+  ) => Promise<IpcResult<'calendar:toggleVisibility'>>;
+  updateImportedCalendar: (
+    calendarId: number,
+    updates: { name?: string; color?: string }
+  ) => Promise<IpcResult<'calendar:updateCalendar'>>;
+  getCalendarEventsForRange: (
+    params: IpcParams<'calendar:getEventsForRange'>
+  ) => Promise<IpcResult<'calendar:getEventsForRange'>>;
 
   // Commands
   dispatch: (command: string, params: unknown) => Promise<IpcResult<'command:dispatch'>>;
@@ -140,7 +171,10 @@ export interface TypedApi {
 
   // Canvas
   connectCanvas: (baseUrl: string) => Promise<IpcResult<'canvas:connect'>>;
-  validateToken: (token: string, baseUrl: string) => Promise<IpcResult<'canvas:validateToken'>>;
+  validateToken: (
+    token: string,
+    baseUrl: string
+  ) => Promise<IpcResult<'canvas:validateToken'>>;
   getUserProfile: () => Promise<IpcResult<'canvas:getUserProfile'>>;
 
   // Sync
@@ -159,7 +193,11 @@ export interface TypedApi {
   openExternal: (url: string) => void;
 
   // Event Listeners
-  onSimulationChanged: (callback: (event: PushEventPayload<'simulation:changed'>) => void) => () => void;
+  onSimulationChanged: (
+    callback: (event: PushEventPayload<'simulation:changed'>) => void
+  ) => () => void;
   onDbCommit: (callback: (event: PushEventPayload<'db:commit'>) => void) => () => void;
-  onSyncStatus: (callback: (status: PushEventPayload<'sync:status'>) => void) => () => void;
+  onSyncStatus: (
+    callback: (status: PushEventPayload<'sync:status'>) => void
+  ) => () => void;
 }

@@ -24,7 +24,9 @@ export function CloseBehaviorDialog({ isOpen, onChoice }: CloseBehaviorDialogPro
         {/* Header */}
         <div style={styles.header}>
           <h3 style={styles.title}>Close Window</h3>
-          <p style={styles.subtitle}>What would you like to do when you close the window?</p>
+          <p style={styles.subtitle}>
+            What would you like to do when you close the window?
+          </p>
         </div>
 
         {/* Options */}
@@ -44,11 +46,14 @@ export function CloseBehaviorDialog({ isOpen, onChoice }: CloseBehaviorDialogPro
             </div>
           </button>
 
-          <button
-            style={styles.optionButton}
-            onClick={() => onChoice('quit')}
-          >
-            <div style={{ ...styles.optionIcon, backgroundColor: 'var(--color-error-bg)', color: 'var(--color-error)' }}>
+          <button style={styles.optionButton} onClick={() => onChoice('quit')}>
+            <div
+              style={{
+                ...styles.optionIcon,
+                backgroundColor: 'var(--color-error-bg)',
+                color: 'var(--color-error)',
+              }}
+            >
               <Power size={24} />
             </div>
             <div style={styles.optionContent}>
@@ -61,9 +66,7 @@ export function CloseBehaviorDialog({ isOpen, onChoice }: CloseBehaviorDialogPro
         </div>
 
         {/* Footer */}
-        <p style={styles.footer}>
-          You can change this later in Settings &gt; General
-        </p>
+        <p style={styles.footer}>You can change this later in Settings &gt; General</p>
       </div>
     </>
   );
@@ -87,7 +90,8 @@ const styles: Record<string, React.CSSProperties> = {
     transform: 'translate(-50%, -50%)',
     backgroundColor: 'var(--bg-card)',
     borderRadius: 'var(--radius-xl)',
-    boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+    boxShadow:
+      '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
     width: '100%',
     maxWidth: '420px',
     padding: '24px',

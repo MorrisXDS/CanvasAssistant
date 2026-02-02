@@ -139,7 +139,13 @@ export class SyncCourseOperations {
               }
             }
 
-            this.ctx.db.upsert('courses', finalData, 'external_id', true, preservedFields);
+            this.ctx.db.upsert(
+              'courses',
+              finalData,
+              'external_id',
+              true,
+              preservedFields
+            );
 
             if (this.ctx.diagnosticsEnabled) {
               this.helpers.logDiagnostic({
@@ -235,7 +241,9 @@ export class SyncCourseOperations {
       });
 
       if (archived > 0) {
-        this.ctx.log?.info(`Auto-archived ${archived} courses with expired term end dates`);
+        this.ctx.log?.info(
+          `Auto-archived ${archived} courses with expired term end dates`
+        );
       }
 
       return { archived, errors };

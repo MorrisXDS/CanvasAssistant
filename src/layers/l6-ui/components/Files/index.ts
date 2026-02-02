@@ -20,9 +20,7 @@ export type {
   FileListItemProps,
 } from './FileListItem';
 
-export type {
-  FileGridItemProps,
-} from './FileGridItem';
+export type { FileGridItemProps } from './FileGridItem';
 
 export type {
   FileFilterPanelProps,
@@ -32,14 +30,9 @@ export type {
   Course,
 } from './FileFilterPanel';
 
-export type {
-  FileSyncConfigProps,
-  SyncPreferences,
-} from './FileSyncConfig';
+export type { FileSyncConfigProps, SyncPreferences } from './FileSyncConfig';
 
-export type {
-  FileSelectionBarProps,
-} from './FileSelectionBar';
+export type { FileSelectionBarProps } from './FileSelectionBar';
 
 // Utilities
 export {

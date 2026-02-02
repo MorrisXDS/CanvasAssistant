@@ -59,13 +59,16 @@ export function Dropdown({
   const isControlled = controlledIsOpen !== undefined;
   const isOpen = isControlled ? controlledIsOpen : internalIsOpen;
 
-  const setIsOpen = useCallback((open: boolean) => {
-    if (isControlled && onOpenChange) {
-      onOpenChange(open);
-    } else {
-      setInternalIsOpen(open);
-    }
-  }, [isControlled, onOpenChange]);
+  const setIsOpen = useCallback(
+    (open: boolean) => {
+      if (isControlled && onOpenChange) {
+        onOpenChange(open);
+      } else {
+        setInternalIsOpen(open);
+      }
+    },
+    [isControlled, onOpenChange]
+  );
 
   const handleToggle = useCallback(() => {
     setIsOpen(!isOpen);
@@ -266,7 +269,13 @@ const itemStyles: Record<string, React.CSSProperties> = {
   },
 };
 
-export function DropdownItem({ label, icon, onClick, active, disabled }: DropdownItemProps) {
+export function DropdownItem({
+  label,
+  icon,
+  onClick,
+  active,
+  disabled,
+}: DropdownItemProps) {
   return (
     <button
       style={{

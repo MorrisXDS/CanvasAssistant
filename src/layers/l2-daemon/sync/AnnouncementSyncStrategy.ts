@@ -45,7 +45,10 @@ export class AnnouncementSyncStrategy extends BaseSyncStrategy {
     this.onPolicyDetected = options.onPolicyDetected;
   }
 
-  async syncForCourse(canvasCourseId: number, localCourseId: number): Promise<SyncResult> {
+  async syncForCourse(
+    canvasCourseId: number,
+    localCourseId: number
+  ): Promise<SyncResult> {
     const startTime = Date.now();
     const errors: string[] = [];
     let count = 0;
@@ -73,7 +76,12 @@ export class AnnouncementSyncStrategy extends BaseSyncStrategy {
             );
 
             // Insert notification
-            this.db.upsert('notifications', mapped.notification, ['source_type', 'source_id'], false);
+            this.db.upsert(
+              'notifications',
+              mapped.notification,
+              ['source_type', 'source_id'],
+              false
+            );
             count++;
 
             // Get the notification ID for attachments and policy tracking
@@ -85,10 +93,17 @@ export class AnnouncementSyncStrategy extends BaseSyncStrategy {
             if (notificationRow) {
               this.processAttachments(notificationRow.id, localCourseId, mapped);
               this.processFileReferences(notificationRow.id, mapped);
-              this.processPolicyDetection(notificationRow.id, localCourseId, announcement, mapped);
+              this.processPolicyDetection(
+                notificationRow.id,
+                localCourseId,
+                announcement,
+                mapped
+              );
             }
           } catch (error) {
-            errors.push(`Announcement ${announcement.id}: ${error instanceof Error ? error.message : String(error)}`);
+            errors.push(
+              `Announcement ${announcement.id}: ${error instanceof Error ? error.message : String(error)}`
+            );
           }
         }
       });
@@ -96,7 +111,9 @@ export class AnnouncementSyncStrategy extends BaseSyncStrategy {
       return this.successResult(count, Date.now() - startTime, errors);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      errors.push(`Failed to sync announcements for course ${canvasCourseId}: ${message}`);
+      errors.push(
+        `Failed to sync announcements for course ${canvasCourseId}: ${message}`
+      );
       return this.failedResult(errors.join('; '), Date.now() - startTime);
     }
   }
@@ -190,7 +207,9 @@ export class AnnouncementSyncStrategy extends BaseSyncStrategy {
   ): void {
     if (!mapped.notification.is_policy_related) return;
 
-    const detection = detectPolicyKeywords(announcement.title + ' ' + announcement.message);
+    const detection = detectPolicyKeywords(
+      announcement.title + ' ' + announcement.message
+    );
     const confidence = calculatePolicyConfidence(
       announcement.title + ' ' + announcement.message,
       detection.keywords

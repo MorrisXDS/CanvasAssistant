@@ -15,9 +15,10 @@ export interface MarkSyllabusReviewedResult {
   lastReviewedAt: string;
 }
 
-export class MarkSyllabusReviewedCommand
-  implements Command<MarkSyllabusReviewedParams, MarkSyllabusReviewedResult>
-{
+export class MarkSyllabusReviewedCommand implements Command<
+  MarkSyllabusReviewedParams,
+  MarkSyllabusReviewedResult
+> {
   readonly name = 'MarkSyllabusReviewed';
 
   validate(params: MarkSyllabusReviewedParams): { valid: boolean; error?: string } {

@@ -644,11 +644,7 @@ export function mapModuleItem(
     canvas.external_url,
     'moduleItem.external_url'
   );
-  const pageUrl = safeParse(
-    SafeNullableString,
-    canvas.page_url,
-    'moduleItem.page_url'
-  );
+  const pageUrl = safeParse(SafeNullableString, canvas.page_url, 'moduleItem.page_url');
   const published = safeParse(SafeBoolean, canvas.published, 'moduleItem.published');
 
   return {

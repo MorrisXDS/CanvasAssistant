@@ -62,12 +62,7 @@ const sizeStyles: Record<string, React.CSSProperties> = {
   },
 };
 
-export function Badge({
-  variant,
-  children,
-  size = 'sm',
-  className = '',
-}: BadgeProps) {
+export function Badge({ variant, children, size = 'sm', className = '' }: BadgeProps) {
   const baseStyle: React.CSSProperties = {
     display: 'inline-flex',
     alignItems: 'center',

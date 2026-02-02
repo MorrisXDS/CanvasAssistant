@@ -12,9 +12,7 @@ import path from 'path';
  * Removes/replaces characters that are invalid in file paths.
  */
 export function sanitizeCourseCode(code: string): string {
-  return code
-    .replace(/[^a-zA-Z0-9_\-. ]/g, '_')
-    .replace(/\s+/g, '_');
+  return code.replace(/[^a-zA-Z0-9_\-. ]/g, '_').replace(/\s+/g, '_');
 }
 
 /**
@@ -22,9 +20,7 @@ export function sanitizeCourseCode(code: string): string {
  * Removes/replaces characters that are invalid in file paths.
  */
 export function sanitizeModuleName(name: string): string {
-  return name
-    .replace(/[^a-zA-Z0-9_\-. ]/g, '_')
-    .replace(/\s+/g, '_');
+  return name.replace(/[^a-zA-Z0-9_\-. ]/g, '_').replace(/\s+/g, '_');
 }
 
 /**
@@ -33,9 +29,7 @@ export function sanitizeModuleName(name: string): string {
  * Truncates to 50 characters to avoid path length issues.
  */
 export function sanitizeTitle(title: string, maxLength: number = 50): string {
-  return title
-    .replace(/[<>:"/\\|?*]/g, '_')
-    .substring(0, maxLength);
+  return title.replace(/[<>:"/\\|?*]/g, '_').substring(0, maxLength);
 }
 
 /**
@@ -45,7 +39,7 @@ export function sanitizeTitle(title: string, maxLength: number = 50): string {
 export function sanitizeFolderPath(folderPath: string): string {
   return folderPath
     .split('/')
-    .map(segment => segment.replace(/[^a-zA-Z0-9_\-. ]/g, '_').replace(/\s+/g, '_'))
+    .map((segment) => segment.replace(/[^a-zA-Z0-9_\-. ]/g, '_').replace(/\s+/g, '_'))
     .join(path.sep);
 }
 
@@ -107,7 +101,11 @@ export class PathBuilder {
    * Get the directory for a page's dependencies (images, files, etc.).
    * Structure: FILES_DIR/courseCode/moduleName/pageTitle_files/
    */
-  getPageDependenciesPath(courseCode: string, moduleName: string, pageTitle: string): string {
+  getPageDependenciesPath(
+    courseCode: string,
+    moduleName: string,
+    pageTitle: string
+  ): string {
     const safeTitle = sanitizeTitle(pageTitle);
     return path.join(
       this.filesDir,
@@ -130,18 +128,18 @@ export class PathBuilder {
    * Structure: FILES_DIR/courseCode/filename
    */
   getResourcePath(courseCode: string, filename: string): string {
-    return path.join(
-      this.filesDir,
-      sanitizeCourseCode(courseCode),
-      filename
-    );
+    return path.join(this.filesDir, sanitizeCourseCode(courseCode), filename);
   }
 
   /**
    * Get path for a resource file within a specific folder.
    * Structure: FILES_DIR/courseCode/folderPath/filename
    */
-  getResourcePathWithFolder(courseCode: string, folderPath: string, filename: string): string {
+  getResourcePathWithFolder(
+    courseCode: string,
+    folderPath: string,
+    filename: string
+  ): string {
     return path.join(
       this.filesDir,
       sanitizeCourseCode(courseCode),

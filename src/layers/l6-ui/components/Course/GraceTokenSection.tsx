@@ -153,7 +153,9 @@ export function GraceTokenSection({
             <AlertTriangle size={16} color="var(--color-warning)" />
             <div>
               {tokenSummary.warnings.map((warning, i) => (
-                <div key={i} style={styles.warningText}>{warning}</div>
+                <div key={i} style={styles.warningText}>
+                  {warning}
+                </div>
               ))}
             </div>
           </div>
@@ -167,7 +169,9 @@ export function GraceTokenSection({
               <label style={styles.formLabel}>Task:</label>
               <select
                 value={selectedTaskId ?? ''}
-                onChange={(e) => setSelectedTaskId(e.target.value ? Number(e.target.value) : null)}
+                onChange={(e) =>
+                  setSelectedTaskId(e.target.value ? Number(e.target.value) : null)
+                }
                 style={styles.select}
               >
                 <option value="">Select a task...</option>
@@ -187,13 +191,19 @@ export function GraceTokenSection({
                 style={styles.selectSmall}
                 disabled={!selectedTaskId}
               >
-                {Array.from({ length: Math.min(tokenSummary.remainingTokens, tokenSummary.maxTokensPerTask) }, (_, i) => i + 1).map(
-                  (num) => (
-                    <option key={num} value={num}>
-                      {num} ({num * tokenSummary.hoursPerToken}h extension)
-                    </option>
-                  )
-                )}
+                {Array.from(
+                  {
+                    length: Math.min(
+                      tokenSummary.remainingTokens,
+                      tokenSummary.maxTokensPerTask
+                    ),
+                  },
+                  (_, i) => i + 1
+                ).map((num) => (
+                  <option key={num} value={num}>
+                    {num} ({num * tokenSummary.hoursPerToken}h extension)
+                  </option>
+                ))}
               </select>
             </div>
             <div style={styles.formRow}>
@@ -238,13 +248,11 @@ export function GraceTokenSection({
                     <div style={styles.historyMain}>
                       <div style={styles.historyTask}>{usage.taskTitle}</div>
                       <div style={styles.historyMeta}>
-                        {usage.tokensUsed} token{usage.tokensUsed !== 1 ? 's' : ''} •{' '}
-                        +{usage.hoursExtended} hours • {formatTimeAgo(usage.usedAt)}
+                        {usage.tokensUsed} token{usage.tokensUsed !== 1 ? 's' : ''} • +
+                        {usage.hoursExtended} hours • {formatTimeAgo(usage.usedAt)}
                       </div>
                     </div>
-                    {usage.notes && (
-                      <div style={styles.historyNotes}>{usage.notes}</div>
-                    )}
+                    {usage.notes && <div style={styles.historyNotes}>{usage.notes}</div>}
                   </div>
                 ))}
               </div>

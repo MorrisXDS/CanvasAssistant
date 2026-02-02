@@ -54,7 +54,9 @@ export function registerCanvasFileProtocol(config: CanvasFileProtocolConfig): vo
     const requestedPath = url.pathname;
 
     logger.info(`[canvas-file] Protocol request received: ${request.url}`);
-    logger.info(`[canvas-file] Raw hostname: ${canvasFileId}, pathname: ${requestedPath}`);
+    logger.info(
+      `[canvas-file] Raw hostname: ${canvasFileId}, pathname: ${requestedPath}`
+    );
 
     // JavaScript's URL parser converts numeric hostnames to IP addresses
     // e.g., canvas-file://41584900/file.pdf becomes hostname "2.122.137.4"
@@ -65,7 +67,9 @@ export function registerCanvasFileProtocol(config: CanvasFileProtocolConfig): vo
       // Use unsigned conversion for large numbers
       const unsignedId = numericId >>> 0;
       canvasFileId = String(unsignedId);
-      logger.info(`[canvas-file] Converted IP-style hostname to file ID: ${canvasFileId}`);
+      logger.info(
+        `[canvas-file] Converted IP-style hostname to file ID: ${canvasFileId}`
+      );
     }
 
     logger.info(`[canvas-file] Resolved fileId: ${canvasFileId}`);
@@ -83,7 +87,9 @@ export function registerCanvasFileProtocol(config: CanvasFileProtocolConfig): vo
       logger.info(`[canvas-file] Serving LOCAL file: ${resource.local_path}`);
       return net.fetch(`file://${resource.local_path}`);
     } else if (resource?.local_path) {
-      logger.warn(`[canvas-file] local_path set but file doesn't exist: ${resource.local_path}`);
+      logger.warn(
+        `[canvas-file] local_path set but file doesn't exist: ${resource.local_path}`
+      );
     }
 
     if (resource?.url) {
@@ -123,7 +129,9 @@ export function registerCanvasFileProtocol(config: CanvasFileProtocolConfig): vo
         const resourceInfo = database.executeReadOne<{
           course_id: number;
           folder_path: string | null;
-        }>('SELECT course_id, folder_path FROM resources WHERE external_id = ?', [canvasFileId]);
+        }>('SELECT course_id, folder_path FROM resources WHERE external_id = ?', [
+          canvasFileId,
+        ]);
 
         if (resourceInfo) {
           const courseInfo = database.executeReadOne<{ code: string }>(
@@ -180,7 +188,9 @@ export function registerCanvasFileProtocol(config: CanvasFileProtocolConfig): vo
       }
     } else {
       // Resource not found
-      logger.warn(`[canvas-file] Resource not found in DB for external_id: ${canvasFileId}`);
+      logger.warn(
+        `[canvas-file] Resource not found in DB for external_id: ${canvasFileId}`
+      );
       return new Response('File not found', { status: 404 });
     }
   });

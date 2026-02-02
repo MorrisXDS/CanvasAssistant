@@ -157,7 +157,13 @@ export class ContentAnalysisOrchestrator extends EventEmitter {
       return this.errorResult('Course page has no HTML content');
     }
 
-    return this.runAnalysis('course_page', pageId, page.course_id, page.body_html, page.title);
+    return this.runAnalysis(
+      'course_page',
+      pageId,
+      page.course_id,
+      page.body_html,
+      page.title
+    );
   }
 
   /**
@@ -177,7 +183,13 @@ export class ContentAnalysisOrchestrator extends EventEmitter {
       return this.errorResult('Course has no syllabus content');
     }
 
-    return this.runAnalysis('syllabus', courseId, courseId, course.syllabus_body, 'Syllabus');
+    return this.runAnalysis(
+      'syllabus',
+      courseId,
+      courseId,
+      course.syllabus_body,
+      'Syllabus'
+    );
   }
 
   /**
@@ -200,7 +212,9 @@ export class ContentAnalysisOrchestrator extends EventEmitter {
 
     // For HTML resources, try to get content from course_pages if linked
     // Otherwise we'd need to read the file directly
-    return this.errorResult('Resource analysis requires file reading - use analyzeCoursePage instead');
+    return this.errorResult(
+      'Resource analysis requires file reading - use analyzeCoursePage instead'
+    );
   }
 
   /**

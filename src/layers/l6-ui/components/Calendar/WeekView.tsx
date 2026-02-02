@@ -77,9 +77,7 @@ export function WeekView() {
                 <span
                   style={{
                     ...styles.weekDayNumber,
-                    backgroundColor: isToday(date)
-                      ? 'var(--color-navy)'
-                      : 'transparent',
+                    backgroundColor: isToday(date) ? 'var(--color-navy)' : 'transparent',
                     color: isToday(date) ? 'white' : 'var(--text-primary)',
                   }}
                 >
@@ -205,9 +203,7 @@ export function WeekView() {
                         isEventInProgress(pe.event, currentTime) &&
                         isSameDay(date, new Date());
                       const match =
-                        pe.event.type === 'imported'
-                          ? courseMatches.get(eventId)
-                          : null;
+                        pe.event.type === 'imported' ? courseMatches.get(eventId) : null;
                       const effectiveColor = getEffectiveEventColor(pe.event);
                       const timeRange = getEventTimeRange(pe.event);
                       const isCompleted = isCompletedTask(pe.event);
@@ -255,9 +251,7 @@ export function WeekView() {
                           onMouseEnter={(e) => handleEventHover(e, pe.event)}
                           onMouseLeave={handleEventLeave}
                         >
-                          {isInProgress && (
-                            <div style={styles.inProgressBadge}>NOW</div>
-                          )}
+                          {isInProgress && <div style={styles.inProgressBadge}>NOW</div>}
                           <div
                             style={{
                               ...styles.weekEventTitle,

@@ -18,9 +18,10 @@ export interface ClearSimulationResult {
   remainingCount: number;
 }
 
-export class ClearSimulationCommand
-  implements Command<ClearSimulationParams, ClearSimulationResult>
-{
+export class ClearSimulationCommand implements Command<
+  ClearSimulationParams,
+  ClearSimulationResult
+> {
   readonly name = 'ClearSimulation';
 
   validate(params: ClearSimulationParams): { valid: boolean; error?: string } {

@@ -53,7 +53,10 @@ export const DEFAULT_FREQUENCY_SETTINGS: MessageFrequencySettings = {
  * | preemptive_start | 24 hrs  | 168 hrs  | 168 hrs  | Similar to start_early             |
  * | focus_at_risk    | 24 hrs  | 168 hrs  | 168 hrs  | Course needs attention             |
  */
-export const RECOMMENDATION_FREQUENCY: Record<RecommendationType, MessageFrequencySettings> = {
+export const RECOMMENDATION_FREQUENCY: Record<
+  RecommendationType,
+  MessageFrequencySettings
+> = {
   work_now: {
     baseGroundingHours: 12,
     maxGroundingHours: 72, // 3 days
@@ -181,7 +184,9 @@ export const INSIGHT_FREQUENCY: Record<InsightType, MessageFrequencySettings> = 
 /**
  * Get frequency settings for a recommendation type
  */
-export function getRecommendationFrequency(type: RecommendationType): MessageFrequencySettings {
+export function getRecommendationFrequency(
+  type: RecommendationType
+): MessageFrequencySettings {
   return RECOMMENDATION_FREQUENCY[type] ?? DEFAULT_FREQUENCY_SETTINGS;
 }
 

@@ -139,7 +139,8 @@ export function forecastFinalGrade(
     // Assume they score their current average on remaining work
     const projectedRemaining = currentGrade;
     projectedFinal =
-      (currentGrade * completedWeight + projectedRemaining * remainingWeight) / totalWeight;
+      (currentGrade * completedWeight + projectedRemaining * remainingWeight) /
+      totalWeight;
   }
 
   // Calculate what's needed to hit target
@@ -170,7 +171,11 @@ export function forecastFinalGrade(
   }
 
   // Calculate confidence based on data quality
-  const confidence = calculateForecastConfidence(completedWeight, remainingWeight, completedTasks.length);
+  const confidence = calculateForecastConfidence(
+    completedWeight,
+    remainingWeight,
+    completedTasks.length
+  );
 
   return {
     courseId: course.id,
@@ -251,9 +256,13 @@ export function detectAtRiskCourses(
 
     // Identify risk factors
     if (forecast.neededAverage > 95) {
-      riskFactors.push(`Need ${Math.round(forecast.neededAverage)}% average on remaining work`);
+      riskFactors.push(
+        `Need ${Math.round(forecast.neededAverage)}% average on remaining work`
+      );
     } else if (forecast.neededAverage > 85) {
-      riskFactors.push(`Need ${Math.round(forecast.neededAverage)}% average on remaining work`);
+      riskFactors.push(
+        `Need ${Math.round(forecast.neededAverage)}% average on remaining work`
+      );
     }
 
     if (forecast.projectedFinal < forecast.targetGrade - 10) {
@@ -311,7 +320,10 @@ export function calculateGpaImpact(
   const creditsInProgress = courses.length * creditsPerCourse;
 
   // Calculate projected GPA (using 4.0 scale conversion)
-  const gradePoints = forecasts.reduce((sum, f) => sum + gradeToGpaPoints(f.projectedFinal), 0);
+  const gradePoints = forecasts.reduce(
+    (sum, f) => sum + gradeToGpaPoints(f.projectedFinal),
+    0
+  );
   const projectedGpa = gradePoints / courses.length;
 
   // Best case: assume 100% on remaining
@@ -399,9 +411,7 @@ export function calculateMinimumGradeNeeded(
   // target = (completed + projectedRemaining + (needed * taskWeight)) / totalWeight
   const totalWeight = completedWeight + remainingWeight + task.weight;
   const neededGrade =
-    (course.targetGrade * totalWeight -
-      completedGradeSum -
-      projectedOtherRemaining) /
+    (course.targetGrade * totalWeight - completedGradeSum - projectedOtherRemaining) /
     task.weight;
 
   return Math.max(0, Math.min(100, Math.round(neededGrade * 10) / 10));

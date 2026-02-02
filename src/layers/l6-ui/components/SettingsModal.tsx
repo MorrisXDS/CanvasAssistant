@@ -16,7 +16,11 @@ interface SettingsModalProps {
   isFullPage?: boolean;
 }
 
-export function SettingsModal({ isOpen, onClose, isFullPage = false }: SettingsModalProps) {
+export function SettingsModal({
+  isOpen,
+  onClose,
+  isFullPage = false,
+}: SettingsModalProps) {
   if (!isOpen) return null;
 
   const content = (

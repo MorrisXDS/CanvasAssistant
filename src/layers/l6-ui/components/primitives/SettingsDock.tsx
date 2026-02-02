@@ -219,44 +219,46 @@ export function SettingsDock({
             onMouseEnter={handleDockMouseEnter}
             onMouseLeave={handleDockMouseLeave}
           >
-          {sortedItems.map((item) => {
-            const scale = getItemScale(item.id);
-            const isOpen = openSections.includes(item.id);
-            const isItemHovered = hoveredItem === item.id;
+            {sortedItems.map((item) => {
+              const scale = getItemScale(item.id);
+              const isOpen = openSections.includes(item.id);
+              const isItemHovered = hoveredItem === item.id;
 
-            return (
-              <div
-                key={item.id}
-                data-dock-item={item.id}
-                style={{
-                  ...styles.dockItemWrapper,
-                  padding: `0 ${(MAX_SIZE - BASE_SIZE) / 2}px`,
-                }}
-                onMouseEnter={() => setHoveredItem(item.id)}
-                onMouseLeave={() => setHoveredItem(null)}
-              >
-                {isItemHovered && <div style={styles.dockLabel}>{item.label}</div>}
-
-                <button
+              return (
+                <div
+                  key={item.id}
+                  data-dock-item={item.id}
                   style={{
-                    ...styles.dockItem,
-                    width: BASE_SIZE,
-                    height: BASE_SIZE,
-                    backgroundColor: isOpen ? 'var(--color-blue)' : 'var(--bg-elevated)',
-                    color: isOpen ? 'white' : 'var(--text-secondary)',
-                    transform: `scale(${scale})`,
+                    ...styles.dockItemWrapper,
+                    padding: `0 ${(MAX_SIZE - BASE_SIZE) / 2}px`,
                   }}
-                  onClick={() => handleItemClick(item.id)}
-                  title={item.label}
+                  onMouseEnter={() => setHoveredItem(item.id)}
+                  onMouseLeave={() => setHoveredItem(null)}
                 >
-                  {item.icon}
-                </button>
+                  {isItemHovered && <div style={styles.dockLabel}>{item.label}</div>}
 
-                {isOpen && <div style={styles.activeDot} />}
-              </div>
-            );
-          })}
-        </div>
+                  <button
+                    style={{
+                      ...styles.dockItem,
+                      width: BASE_SIZE,
+                      height: BASE_SIZE,
+                      backgroundColor: isOpen
+                        ? 'var(--color-blue)'
+                        : 'var(--bg-elevated)',
+                      color: isOpen ? 'white' : 'var(--text-secondary)',
+                      transform: `scale(${scale})`,
+                    }}
+                    onClick={() => handleItemClick(item.id)}
+                    title={item.label}
+                  >
+                    {item.icon}
+                  </button>
+
+                  {isOpen && <div style={styles.activeDot} />}
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
     </div>

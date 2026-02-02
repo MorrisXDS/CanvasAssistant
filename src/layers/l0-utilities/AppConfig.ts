@@ -527,7 +527,11 @@ export const DEFAULT_APP_CONFIG: AppConfigData = {
     priority: {
       refreshTiers: [
         { minHoursUntilDue: 72, refreshIntervalMs: 24 * 60 * 60 * 1000, name: 'daily' },
-        { minHoursUntilDue: 24, refreshIntervalMs: 6 * 60 * 60 * 1000, name: 'sixHourly' },
+        {
+          minHoursUntilDue: 24,
+          refreshIntervalMs: 6 * 60 * 60 * 1000,
+          name: 'sixHourly',
+        },
         { minHoursUntilDue: 0, refreshIntervalMs: 30 * 60 * 1000, name: 'halfHourly' },
       ],
       factorWeights: {
@@ -597,42 +601,122 @@ const ENV_MAPPINGS: EnvMapping[] = [
   // Logger
   { envVar: 'CID_LOG_DIR', path: ['utilities', 'logger', 'logDir'], type: 'string' },
   { envVar: 'CID_LOG_LEVEL', path: ['utilities', 'logger', 'logLevel'], type: 'string' },
-  { envVar: 'CID_LOG_MAX_SIZE', path: ['utilities', 'logger', 'maxFileSize'], type: 'number' },
-  { envVar: 'CID_LOG_MAX_FILES', path: ['utilities', 'logger', 'maxFiles'], type: 'number' },
+  {
+    envVar: 'CID_LOG_MAX_SIZE',
+    path: ['utilities', 'logger', 'maxFileSize'],
+    type: 'number',
+  },
+  {
+    envVar: 'CID_LOG_MAX_FILES',
+    path: ['utilities', 'logger', 'maxFiles'],
+    type: 'number',
+  },
 
   // System Monitor
-  { envVar: 'CID_MONITOR_POLL_INTERVAL', path: ['utilities', 'systemMonitor', 'pollIntervalMs'], type: 'number' },
+  {
+    envVar: 'CID_MONITOR_POLL_INTERVAL',
+    path: ['utilities', 'systemMonitor', 'pollIntervalMs'],
+    type: 'number',
+  },
 
   // Health Check
-  { envVar: 'CID_HEALTH_INTERVAL', path: ['utilities', 'healthCheck', 'intervalMs'], type: 'number' },
-  { envVar: 'CID_HEALTH_DB_LATENCY', path: ['utilities', 'healthCheck', 'thresholds', 'dbLatencyMs'], type: 'number' },
-  { envVar: 'CID_HEALTH_MEMORY', path: ['utilities', 'healthCheck', 'thresholds', 'memoryMb'], type: 'number' },
+  {
+    envVar: 'CID_HEALTH_INTERVAL',
+    path: ['utilities', 'healthCheck', 'intervalMs'],
+    type: 'number',
+  },
+  {
+    envVar: 'CID_HEALTH_DB_LATENCY',
+    path: ['utilities', 'healthCheck', 'thresholds', 'dbLatencyMs'],
+    type: 'number',
+  },
+  {
+    envVar: 'CID_HEALTH_MEMORY',
+    path: ['utilities', 'healthCheck', 'thresholds', 'memoryMb'],
+    type: 'number',
+  },
 
   // Housekeeping
-  { envVar: 'CID_HOUSEKEEPING_LOGS_DAYS', path: ['utilities', 'housekeeping', 'retention', 'logsDays'], type: 'number' },
-  { envVar: 'CID_HOUSEKEEPING_METRICS_DAYS', path: ['utilities', 'housekeeping', 'retention', 'metricsDays'], type: 'number' },
+  {
+    envVar: 'CID_HOUSEKEEPING_LOGS_DAYS',
+    path: ['utilities', 'housekeeping', 'retention', 'logsDays'],
+    type: 'number',
+  },
+  {
+    envVar: 'CID_HOUSEKEEPING_METRICS_DAYS',
+    path: ['utilities', 'housekeeping', 'retention', 'metricsDays'],
+    type: 'number',
+  },
 
   // Database
-  { envVar: 'CID_DB_CACHE_SIZE', path: ['persistence', 'database', 'cacheSizeKb'], type: 'number' },
-  { envVar: 'CID_DB_MMAP_SIZE', path: ['persistence', 'database', 'mmapSizeBytes'], type: 'number' },
+  {
+    envVar: 'CID_DB_CACHE_SIZE',
+    path: ['persistence', 'database', 'cacheSizeKb'],
+    type: 'number',
+  },
+  {
+    envVar: 'CID_DB_MMAP_SIZE',
+    path: ['persistence', 'database', 'mmapSizeBytes'],
+    type: 'number',
+  },
 
   // Canvas API
-  { envVar: 'CID_CANVAS_TIMEOUT', path: ['daemon', 'canvasApi', 'timeoutMs'], type: 'number' },
-  { envVar: 'CID_CANVAS_PAGE_SIZE', path: ['daemon', 'canvasApi', 'pageSize'], type: 'number' },
+  {
+    envVar: 'CID_CANVAS_TIMEOUT',
+    path: ['daemon', 'canvasApi', 'timeoutMs'],
+    type: 'number',
+  },
+  {
+    envVar: 'CID_CANVAS_PAGE_SIZE',
+    path: ['daemon', 'canvasApi', 'pageSize'],
+    type: 'number',
+  },
 
   // Rate Limiter
-  { envVar: 'CID_RATE_MAX_CONCURRENT', path: ['daemon', 'rateLimiter', 'maxConcurrent'], type: 'number' },
-  { envVar: 'CID_RATE_MIN_DELAY', path: ['daemon', 'rateLimiter', 'minDelayMs'], type: 'number' },
-  { envVar: 'CID_RATE_MAX_RETRIES', path: ['daemon', 'rateLimiter', 'maxRetries'], type: 'number' },
+  {
+    envVar: 'CID_RATE_MAX_CONCURRENT',
+    path: ['daemon', 'rateLimiter', 'maxConcurrent'],
+    type: 'number',
+  },
+  {
+    envVar: 'CID_RATE_MIN_DELAY',
+    path: ['daemon', 'rateLimiter', 'minDelayMs'],
+    type: 'number',
+  },
+  {
+    envVar: 'CID_RATE_MAX_RETRIES',
+    path: ['daemon', 'rateLimiter', 'maxRetries'],
+    type: 'number',
+  },
 
   // Circuit Breaker
-  { envVar: 'CID_CIRCUIT_FAILURE_THRESHOLD', path: ['daemon', 'circuitBreaker', 'failureThreshold'], type: 'number' },
-  { envVar: 'CID_CIRCUIT_RESET_TIMEOUT', path: ['daemon', 'circuitBreaker', 'resetTimeoutMs'], type: 'number' },
+  {
+    envVar: 'CID_CIRCUIT_FAILURE_THRESHOLD',
+    path: ['daemon', 'circuitBreaker', 'failureThreshold'],
+    type: 'number',
+  },
+  {
+    envVar: 'CID_CIRCUIT_RESET_TIMEOUT',
+    path: ['daemon', 'circuitBreaker', 'resetTimeoutMs'],
+    type: 'number',
+  },
 
   // Priority
-  { envVar: 'CID_DEFAULT_TARGET_GRADE', path: ['persistence', 'defaultTargetGrade'], type: 'number' },
-  { envVar: 'CID_URGENCY_CRITICAL_HOURS', path: ['intelligence', 'priority', 'urgencyCurve', 'criticalHours'], type: 'number' },
-  { envVar: 'CID_URGENCY_HIGH_HOURS', path: ['intelligence', 'priority', 'urgencyCurve', 'highHours'], type: 'number' },
+  {
+    envVar: 'CID_DEFAULT_TARGET_GRADE',
+    path: ['persistence', 'defaultTargetGrade'],
+    type: 'number',
+  },
+  {
+    envVar: 'CID_URGENCY_CRITICAL_HOURS',
+    path: ['intelligence', 'priority', 'urgencyCurve', 'criticalHours'],
+    type: 'number',
+  },
+  {
+    envVar: 'CID_URGENCY_HIGH_HOURS',
+    path: ['intelligence', 'priority', 'urgencyCurve', 'highHours'],
+    type: 'number',
+  },
 ];
 
 // ============================================================================
@@ -739,7 +823,10 @@ export class AppConfig extends EventEmitter {
     updates: Partial<AppConfigData[K]>
   ): void {
     const oldValue = this.deepClone(this.config[section]);
-    this.config[section] = this.deepMerge<AppConfigData[K]>(this.config[section], updates);
+    this.config[section] = this.deepMerge<AppConfigData[K]>(
+      this.config[section],
+      updates
+    );
     this.emit('section-changed', { section, oldValue, newValue: this.config[section] });
   }
 
@@ -854,7 +941,10 @@ export class AppConfig extends EventEmitter {
   /**
    * Parse environment variable value
    */
-  private parseEnvValue(value: string, type: 'string' | 'number' | 'boolean'): string | number | boolean {
+  private parseEnvValue(
+    value: string,
+    type: 'string' | 'number' | 'boolean'
+  ): string | number | boolean {
     switch (type) {
       case 'number':
         return parseFloat(value);
@@ -869,7 +959,10 @@ export class AppConfig extends EventEmitter {
    * Set a value by path
    */
   private setByPath(path: string[], value: unknown): void {
-    let current: Record<string, unknown> = this.config as unknown as Record<string, unknown>;
+    let current: Record<string, unknown> = this.config as unknown as Record<
+      string,
+      unknown
+    >;
 
     for (let i = 0; i < path.length - 1; i++) {
       current = current[path[i]] as Record<string, unknown>;

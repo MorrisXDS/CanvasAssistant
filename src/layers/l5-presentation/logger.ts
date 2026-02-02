@@ -41,11 +41,9 @@ function sendLog(level: LogLevel, message: string, component?: string): void {
         console.info(fullMessage);
         break;
       case 'warn':
-         
         console.warn(fullMessage);
         break;
       case 'error':
-         
         console.error(fullMessage);
         break;
     }

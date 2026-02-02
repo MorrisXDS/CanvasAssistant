@@ -76,7 +76,9 @@ export function PolicyModal({
 }: PolicyModalProps) {
   // Step management
   const [step, setStep] = useState<ModalStep>(editData ? 'configure' : 'select-type');
-  const [selectedType, setSelectedType] = useState<PolicyType | null>(editData?.policyType || null);
+  const [selectedType, setSelectedType] = useState<PolicyType | null>(
+    editData?.policyType || null
+  );
 
   // Form state
   const [isFormValid, setIsFormValid] = useState(false);
@@ -112,10 +114,13 @@ export function PolicyModal({
   }, []);
 
   // Handle form validity change
-  const handleValidChange = useCallback((isValid: boolean, data: PolicyConfigFormData) => {
-    setIsFormValid(isValid);
-    setFormData(data);
-  }, []);
+  const handleValidChange = useCallback(
+    (isValid: boolean, data: PolicyConfigFormData) => {
+      setIsFormValid(isValid);
+      setFormData(data);
+    },
+    []
+  );
 
   // Handle save
   const handleSave = useCallback(() => {
@@ -136,7 +141,7 @@ export function PolicyModal({
     if (step === 'select-type') {
       return 'Select Policy Type';
     }
-    const typeInfo = POLICY_TYPES.find(t => t.value === selectedType);
+    const typeInfo = POLICY_TYPES.find((t) => t.value === selectedType);
     return `Add ${typeInfo?.label || 'Policy'}`;
   };
 
@@ -159,11 +164,7 @@ export function PolicyModal({
       closeOnBackdropClick={!isLoading}
       closeOnEscape={!isLoading}
     >
-      <Modal.Header
-        title={getTitle()}
-        subtitle={getSubtitle()}
-        onClose={onClose}
-      >
+      <Modal.Header title={getTitle()} subtitle={getSubtitle()} onClose={onClose}>
         {/* Back button for Step 2 in create mode */}
         {step === 'configure' && !editData && (
           <button
@@ -183,10 +184,14 @@ export function PolicyModal({
         ) : selectedType ? (
           <PolicyConfigForm
             policyType={selectedType}
-            initialData={editData ? {
-              policyName: editData.policyName,
-              config: editData.config,
-            } : undefined}
+            initialData={
+              editData
+                ? {
+                    policyName: editData.policyName,
+                    config: editData.config,
+                  }
+                : undefined
+            }
             tasks={tasks}
             taskGroups={taskGroups}
             existingPolicyNames={existingPolicyNames}
@@ -197,11 +202,7 @@ export function PolicyModal({
 
       {step === 'configure' && (
         <Modal.Footer>
-          <Button
-            variant="secondary"
-            onClick={onClose}
-            disabled={isLoading}
-          >
+          <Button variant="secondary" onClick={onClose} disabled={isLoading}>
             Cancel
           </Button>
           <Button

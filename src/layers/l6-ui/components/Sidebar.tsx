@@ -24,10 +24,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { useStore } from '../../l5-presentation/store';
-import {
-  useSidebarState,
-  useNavOrder,
-} from '../../l5-presentation/settings';
+import { useSidebarState, useNavOrder } from '../../l5-presentation/settings';
 import { formatTimeAgo } from '../constants';
 import { layoutStyles as styles } from './layoutStyles';
 

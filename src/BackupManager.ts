@@ -195,7 +195,10 @@ export class BackupManager {
         });
       }
     } catch (error) {
-      this.logger.error('Scheduled backup failed', error instanceof Error ? error : undefined);
+      this.logger.error(
+        'Scheduled backup failed',
+        error instanceof Error ? error : undefined
+      );
       this.metricsCollector.increment('backup.scheduled.failure');
 
       // Log failure to history

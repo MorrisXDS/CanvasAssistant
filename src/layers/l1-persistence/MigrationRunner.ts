@@ -184,4 +184,3 @@ export class MigrationRunner {
 
 // Re-export coreMigrations from dedicated file for backwards compatibility
 export { coreMigrations } from './coreMigrations';
-

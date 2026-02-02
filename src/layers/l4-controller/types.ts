@@ -127,6 +127,7 @@ export interface CreateTaskParams {
   dueAt?: string;
   weight?: number;
   pointsPossible?: number;
+  taskType?: string;
 }
 
 export interface DuplicateTaskParams {

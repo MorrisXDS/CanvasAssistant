@@ -238,7 +238,10 @@ export class HealthCheck extends EventEmitter {
         };
         probeResults.push(result);
         this.probeResults.set(name, result);
-        this.log.error(`Health probe '${name}' failed`, error instanceof Error ? error : undefined);
+        this.log.error(
+          `Health probe '${name}' failed`,
+          error instanceof Error ? error : undefined
+        );
       }
     }
 
@@ -259,7 +262,9 @@ export class HealthCheck extends EventEmitter {
 
     // Emit events if status changed
     if (overallStatus !== this.lastOverallStatus) {
-      this.log.info(`Health status changed: ${this.lastOverallStatus} -> ${overallStatus}`);
+      this.log.info(
+        `Health status changed: ${this.lastOverallStatus} -> ${overallStatus}`
+      );
       this.emit('health-changed', {
         previousStatus: this.lastOverallStatus,
         currentStatus: overallStatus,
@@ -294,9 +299,10 @@ export class HealthCheck extends EventEmitter {
     return {
       overallStatus,
       probes: probeResults,
-      lastChecked: probeResults.length > 0
-        ? new Date(Math.max(...probeResults.map((r) => r.lastChecked.getTime())))
-        : new Date(0),
+      lastChecked:
+        probeResults.length > 0
+          ? new Date(Math.max(...probeResults.map((r) => r.lastChecked.getTime())))
+          : new Date(0),
       recommendations,
     };
   }

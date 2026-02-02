@@ -53,17 +53,20 @@ export function DashboardSection({
 
       {/* Content */}
       <div style={styles.content}>
-        {React.Children.map(children, child =>
+        {React.Children.map(children, (child) =>
           React.isValidElement(child)
-            ? React.cloneElement(child as React.ReactElement<{ style?: React.CSSProperties }>, {
-                style: {
-                  ...(child.props as { style?: React.CSSProperties }).style,
-                  flex: 1,
-                  display: 'flex',
-                  flexDirection: 'column' as const,
-                  height: '100%',
+            ? React.cloneElement(
+                child as React.ReactElement<{ style?: React.CSSProperties }>,
+                {
+                  style: {
+                    ...(child.props as { style?: React.CSSProperties }).style,
+                    flex: 1,
+                    display: 'flex',
+                    flexDirection: 'column' as const,
+                    height: '100%',
+                  },
                 }
-              })
+              )
             : child
         )}
       </div>

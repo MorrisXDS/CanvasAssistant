@@ -260,10 +260,12 @@ export function getDataCompletenessSummary(
   const totalCourses = courses.length || 1;
   const totalTasks = incompleteTasks.length || 1;
 
-  const courseScore = ((coursesWithTargetGrade / totalCourses) * 0.7 +
-    (coursesWithCurrentGrade / totalCourses) * 0.3) * 100;
-  const taskScore = ((tasksWithWeight / totalTasks) * 0.4 +
-    (tasksWithDueDate / totalTasks) * 0.6) * 100;
+  const courseScore =
+    ((coursesWithTargetGrade / totalCourses) * 0.7 +
+      (coursesWithCurrentGrade / totalCourses) * 0.3) *
+    100;
+  const taskScore =
+    ((tasksWithWeight / totalTasks) * 0.4 + (tasksWithDueDate / totalTasks) * 0.6) * 100;
 
   const overallScore = Math.round(courseScore * 0.5 + taskScore * 0.5);
 

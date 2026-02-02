@@ -95,6 +95,108 @@ export function registerCalendarHandlers(ctx: IpcContext): void {
         let calendarId: number = 0;
         let eventCount = 0;
 
+        // Get all courses for auto-matching imported events
+        const courses = database.executeRead<{
+          id: number;
+          code: string;
+          name: string;
+          nickname: string | null;
+        }>(
+          'SELECT id, code, name, nickname FROM courses WHERE code IS NOT NULL AND archived_at IS NULL'
+        );
+
+        // Helper to match event title to a course using prioritized criteria (if-else chain)
+        // Priority: full code > section type match > code without section > short code > nickname > name keywords
+        const matchTitleToCourse = (title: string): number | null => {
+          if (!title || courses.length === 0) return null;
+          const titleUpper = title.toUpperCase();
+
+          // Extract section type from title (PRA, LEC, TUT)
+          const titleSectionMatch = titleUpper.match(/\b(PRA|LEC|TUT)\d*/);
+          const titleSectionType = titleSectionMatch ? titleSectionMatch[1] : null;
+
+          // Pass 1: Try full course code with section (e.g., "ECE568H1 S LEC0102")
+          for (const course of courses) {
+            if (course.code) {
+              const codeUpper = course.code.toUpperCase();
+              if (titleUpper.includes(codeUpper)) {
+                return course.id;
+              }
+            }
+          }
+
+          // Pass 2: If title has section type (PRA/LEC/TUT), prefer courses with same section type
+          if (titleSectionType) {
+            for (const course of courses) {
+              if (course.code) {
+                const codeUpper = course.code.toUpperCase();
+                // Check if course code contains the same section type
+                if (codeUpper.includes(titleSectionType)) {
+                  // Also verify the base course code matches
+                  const shortCodeMatch = codeUpper.match(/^([A-Z]{2,4}\d{2,4})/);
+                  if (shortCodeMatch && titleUpper.includes(shortCodeMatch[1])) {
+                    return course.id;
+                  }
+                }
+              }
+            }
+          }
+
+          // Pass 3: Try code without section (e.g., "ECE568H1" from "ECE568H1 S")
+          for (const course of courses) {
+            if (course.code) {
+              const codeUpper = course.code.toUpperCase();
+              const codeWithoutSection = codeUpper.split(/\s+/)[0];
+              if (codeWithoutSection !== codeUpper && titleUpper.includes(codeWithoutSection)) {
+                return course.id;
+              }
+            }
+          }
+
+          // Pass 4: Try short code without term indicator (e.g., "ECE568" from "ECE568H1")
+          for (const course of courses) {
+            if (course.code) {
+              const codeUpper = course.code.toUpperCase();
+              const shortCodeMatch = codeUpper.match(/^([A-Z]{2,4}\d{2,4})/);
+              if (shortCodeMatch && titleUpper.includes(shortCodeMatch[1])) {
+                return course.id;
+              }
+            }
+          }
+
+          // Pass 5: Try nickname (user-set)
+          for (const course of courses) {
+            if (course.nickname) {
+              const nicknameUpper = course.nickname.toUpperCase();
+              if (nicknameUpper.length >= 3 && titleUpper.includes(nicknameUpper)) {
+                return course.id;
+              }
+            }
+          }
+
+          // Pass 6: Try significant words from course name (least specific)
+          const commonWords = new Set([
+            'AND', 'THE', 'FOR', 'WITH', 'INTO', 'FROM', 'COURSE',
+            'INTRODUCTION', 'INTRO', 'ADVANCED', 'TOPICS', 'SELECTED',
+          ]);
+          for (const course of courses) {
+            if (course.name) {
+              const nameWords = course.name
+                .toUpperCase()
+                .split(/\s+/)
+                .filter((w) => w.length >= 4 && !commonWords.has(w));
+
+              for (const word of nameWords) {
+                if (titleUpper.includes(word)) {
+                  return course.id;
+                }
+              }
+            }
+          }
+
+          return null;
+        };
+
         database.transaction(() => {
           // Insert calendar record
           const insertResult = database.executeWrite(
@@ -108,14 +210,18 @@ export function registerCalendarHandlers(ctx: IpcContext): void {
           for (const event of result.events) {
             if (!event.dtstart) continue;
 
+            // Auto-detect course from event title (e.g., "ECE568 LEC0102" → ECE568 course)
+            const matchedCourseId = matchTitleToCourse(event.summary);
+
             database.executeWrite(
               `INSERT INTO calendar_events (
-              imported_calendar_id, source_type, title, description,
+              imported_calendar_id, source_type, course_id, title, description,
               start_at, end_at, all_day, location, uid,
               recurrence_rule, recurrence_exception_dates
-            ) VALUES (?, 'imported', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            ) VALUES (?, 'imported', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
               [
                 calendarId,
+                matchedCourseId,
                 event.summary,
                 event.description || null,
                 event.dtstart.toISOString(),
@@ -323,10 +429,16 @@ export function registerCalendarHandlers(ctx: IpcContext): void {
       const endDate = new Date(params.endDate);
 
       // Build query based on filters
+      // Join with tasks and courses to get task details for task-linked events
       let sql = `
-      SELECT ce.*, ic.name as calendar_name, ic.color as calendar_color, ic.is_visible
+      SELECT ce.*,
+             ic.name as calendar_name, ic.color as calendar_color, ic.is_visible,
+             t.title as task_title, t.weight as task_weight, t.task_type,
+             c.code as course_code, c.name as course_name
       FROM calendar_events ce
       LEFT JOIN imported_calendars ic ON ce.imported_calendar_id = ic.id
+      LEFT JOIN tasks t ON ce.task_id = t.id
+      LEFT JOIN courses c ON ce.course_id = c.id
       WHERE 1=1
     `;
       const sqlParams: (string | number)[] = [];
@@ -366,6 +478,12 @@ export function registerCalendarHandlers(ctx: IpcContext): void {
         calendar_name: string | null;
         calendar_color: string | null;
         is_visible: number | null;
+        // Task-related fields (from JOIN)
+        task_title: string | null;
+        task_weight: number | null;
+        task_type: string | null;
+        course_code: string | null;
+        course_name: string | null;
       }>(sql, sqlParams);
 
       const events: Array<{
@@ -393,6 +511,12 @@ export function registerCalendarHandlers(ctx: IpcContext): void {
         originalEventId?: number;
         color: string;
         calendarName: string | null;
+        // Task-related fields
+        taskTitle?: string;
+        taskWeight?: number;
+        taskType?: string;
+        courseCode?: string;
+        courseName?: string;
       }> = [];
 
       const expander = new RRuleExpander();
@@ -419,11 +543,17 @@ export function registerCalendarHandlers(ctx: IpcContext): void {
           color: row.color || row.calendar_color || undefined,
         };
 
-        // Get task_id, notes, and reminder from the row for inclusion in the result
+        // Get task_id, notes, reminder, and task details from the row for inclusion in the result
         const taskId = row.task_id;
         const eventColor = row.color;
         const notes = row.notes;
         const reminderMinutes = row.reminder_minutes;
+        const taskTitle = row.task_title;
+        const taskWeight = row.task_weight;
+        const taskType = row.task_type;
+        const courseCode = row.course_code;
+        const courseName = row.course_name;
+
 
         // Use RRuleExpander to handle both recurring and non-recurring events
         const expandedEvents = expander.expand(eventRecord, startDate, endDate);
@@ -454,6 +584,12 @@ export function registerCalendarHandlers(ctx: IpcContext): void {
             originalEventId: expanded.originalEventId,
             color: expanded.color || row.calendar_color || '#6366F1',
             calendarName: expanded.calendarName ?? null,
+            // Task-related fields (populated when event is linked to a task)
+            taskTitle: taskTitle ?? undefined,
+            taskWeight: taskWeight ?? undefined,
+            taskType: taskType ?? undefined,
+            courseCode: courseCode ?? undefined,
+            courseName: courseName ?? undefined,
           });
         }
       }
@@ -564,8 +700,10 @@ export function registerCalendarHandlers(ctx: IpcContext): void {
         description?: string;
         startAt?: string;
         endAt?: string;
+        taskType?: string;
         allDay?: boolean;
         location?: string;
+        courseId?: number | null;
         color?: string;
         notes?: string;
         reminderMinutes?: number;
@@ -573,6 +711,8 @@ export function registerCalendarHandlers(ctx: IpcContext): void {
       }
     ) => {
       try {
+        logger.debug(`calendar:updateEvent called for id=${id}, updates=${JSON.stringify(updates)}`);
+
         // Check event type - allow editing user events and events linked to user tasks
         const event = database.executeReadOne<{
           source_type: string;
@@ -587,17 +727,25 @@ export function registerCalendarHandlers(ctx: IpcContext): void {
         );
 
         if (!event) {
+          logger.warn(`calendar:updateEvent - Event not found for id=${id}`);
           return { success: false, error: 'Event not found' };
         }
 
+        logger.debug(
+          `calendar:updateEvent - Found event: source_type=${event.source_type}, task_id=${event.task_id}, task_source_type=${event.task_source_type}`
+        );
+
         // Allow editing if:
         // 1. Event source_type is 'user', OR
-        // 2. Event is linked to a user-created task
+        // 2. Event source_type is 'imported' (imported calendar events), OR
+        // 3. Event is linked to a user-created task
         const canEdit =
           event.source_type === 'user' ||
+          event.source_type === 'imported' ||
           (event.task_id && event.task_source_type === 'user');
 
         if (!canEdit) {
+          logger.warn(`calendar:updateEvent - Cannot edit Canvas-synced event id=${id}`);
           return { success: false, error: 'Cannot edit Canvas-synced events' };
         }
 
@@ -628,6 +776,10 @@ export function registerCalendarHandlers(ctx: IpcContext): void {
           setClauses.push('location = ?');
           params.push(updates.location || null);
         }
+        if (updates.courseId !== undefined) {
+          setClauses.push('course_id = ?');
+          params.push(updates.courseId);
+        }
         if (updates.color !== undefined) {
           setClauses.push('color = ?');
           params.push(updates.color || null);
@@ -654,19 +806,54 @@ export function registerCalendarHandlers(ctx: IpcContext): void {
           );
         }
 
-        // If this event is linked to a task and the due date changed, update the task too
-        if (event.task_id && updates.endAt !== undefined) {
-          database.executeWrite(
-            'UPDATE tasks SET due_at = ? WHERE id = ?',
-            [updates.endAt, event.task_id],
-            'tasks'
-          );
-          logger.info(`Updated task ${event.task_id} due_at to ${updates.endAt}`);
+        // If this event is linked to a task, sync relevant fields to the task
+        if (event.task_id) {
+          if (updates.title !== undefined) {
+            database.executeWrite(
+              'UPDATE tasks SET title = ? WHERE id = ?',
+              [updates.title, event.task_id],
+              'tasks'
+            );
+            logger.info(`Updated task ${event.task_id} title`);
+          }
+          if (updates.description !== undefined) {
+            database.executeWrite(
+              'UPDATE tasks SET description = ? WHERE id = ?',
+              [updates.description || null, event.task_id],
+              'tasks'
+            );
+            logger.info(`Updated task ${event.task_id} description`);
+          }
+          if (updates.endAt !== undefined) {
+            database.executeWrite(
+              'UPDATE tasks SET due_at = ? WHERE id = ?',
+              [updates.endAt, event.task_id],
+              'tasks'
+            );
+            logger.info(`Updated task ${event.task_id} due_at to ${updates.endAt}`);
+          }
+          if (updates.courseId !== undefined) {
+            database.executeWrite(
+              'UPDATE tasks SET course_id = ? WHERE id = ?',
+              [updates.courseId, event.task_id],
+              'tasks'
+            );
+            logger.info(`Updated task ${event.task_id} course_id to ${updates.courseId}`);
+          }
+          if (updates.taskType !== undefined) {
+            database.executeWrite(
+              'UPDATE tasks SET task_type = ? WHERE id = ?',
+              [updates.taskType || null, event.task_id],
+              'tasks'
+            );
+            logger.info(`Updated task ${event.task_id} task_type to ${updates.taskType}`);
+          }
         }
 
+        logger.info(`Successfully updated calendar event id=${id}`);
         return { success: true };
       } catch (error) {
-        logger.error(`Failed to update event: ${error}`);
+        logger.error(`Failed to update event id=${id}: ${error}`);
         return { success: false, error: String(error) };
       }
     }

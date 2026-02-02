@@ -11,11 +11,7 @@
 import React from 'react';
 import { Bell } from 'lucide-react';
 import { useSettings } from './SettingsContext';
-import {
-  Accordion,
-  SettingRow,
-  ToggleSwitch,
-} from '../primitives';
+import { Accordion, SettingRow, ToggleSwitch } from '../primitives';
 import { styles } from '../SettingsModalStyles';
 import { SETTINGS_LABELS } from '../../constants';
 import {
@@ -90,7 +86,9 @@ export function NotificationsSection({ sectionRef }: NotificationsSectionProps) 
                 settingKey="notifications.enabled"
                 label="Enable notifications"
                 description="Show desktop notifications"
-                isModified={notifications.enabled !== DEFAULT_NOTIFICATION_SETTINGS.enabled}
+                isModified={
+                  notifications.enabled !== DEFAULT_NOTIFICATION_SETTINGS.enabled
+                }
                 onReset={() =>
                   updateNotifications({
                     enabled: DEFAULT_NOTIFICATION_SETTINGS.enabled,
@@ -130,7 +128,9 @@ export function NotificationsSection({ sectionRef }: NotificationsSectionProps) 
                   >
                     <ToggleSwitch
                       checked={notifications.priorityAlerts}
-                      onChange={(checked) => updateNotifications({ priorityAlerts: checked })}
+                      onChange={(checked) =>
+                        updateNotifications({ priorityAlerts: checked })
+                      }
                     />
                   </SettingRow>
                 )}
@@ -141,7 +141,8 @@ export function NotificationsSection({ sectionRef }: NotificationsSectionProps) 
                     label="Sync status"
                     description="Notify on sync success or failure"
                     isModified={
-                      notifications.syncStatus !== DEFAULT_NOTIFICATION_SETTINGS.syncStatus
+                      notifications.syncStatus !==
+                      DEFAULT_NOTIFICATION_SETTINGS.syncStatus
                     }
                     onReset={() =>
                       updateNotifications({
@@ -173,7 +174,9 @@ export function NotificationsSection({ sectionRef }: NotificationsSectionProps) 
                   >
                     <ToggleSwitch
                       checked={notifications.dueDateReminders}
-                      onChange={(checked) => updateNotifications({ dueDateReminders: checked })}
+                      onChange={(checked) =>
+                        updateNotifications({ dueDateReminders: checked })
+                      }
                     />
                   </SettingRow>
                 )}
@@ -184,7 +187,8 @@ export function NotificationsSection({ sectionRef }: NotificationsSectionProps) 
                     label="Grade alerts"
                     description="Notify when new grades are posted"
                     isModified={
-                      notifications.gradeAlerts !== DEFAULT_NOTIFICATION_SETTINGS.gradeAlerts
+                      notifications.gradeAlerts !==
+                      DEFAULT_NOTIFICATION_SETTINGS.gradeAlerts
                     }
                     onReset={() =>
                       updateNotifications({
@@ -194,7 +198,9 @@ export function NotificationsSection({ sectionRef }: NotificationsSectionProps) 
                   >
                     <ToggleSwitch
                       checked={notifications.gradeAlerts}
-                      onChange={(checked) => updateNotifications({ gradeAlerts: checked })}
+                      onChange={(checked) =>
+                        updateNotifications({ gradeAlerts: checked })
+                      }
                     />
                   </SettingRow>
                 )}
@@ -217,7 +223,8 @@ export function NotificationsSection({ sectionRef }: NotificationsSectionProps) 
                     }
                     onReset={() =>
                       updateNotifications({
-                        workloadPredictions: DEFAULT_NOTIFICATION_SETTINGS.workloadPredictions,
+                        workloadPredictions:
+                          DEFAULT_NOTIFICATION_SETTINGS.workloadPredictions,
                       })
                     }
                   >
@@ -236,7 +243,8 @@ export function NotificationsSection({ sectionRef }: NotificationsSectionProps) 
                     label="Risk warnings"
                     description="Alert when predicted time exceeds remaining time"
                     isModified={
-                      notifications.riskWarnings !== DEFAULT_NOTIFICATION_SETTINGS.riskWarnings
+                      notifications.riskWarnings !==
+                      DEFAULT_NOTIFICATION_SETTINGS.riskWarnings
                     }
                     onReset={() =>
                       updateNotifications({
@@ -246,7 +254,9 @@ export function NotificationsSection({ sectionRef }: NotificationsSectionProps) 
                   >
                     <ToggleSwitch
                       checked={notifications.riskWarnings}
-                      onChange={(checked) => updateNotifications({ riskWarnings: checked })}
+                      onChange={(checked) =>
+                        updateNotifications({ riskWarnings: checked })
+                      }
                     />
                   </SettingRow>
                 )}
@@ -274,7 +284,8 @@ export function NotificationsSection({ sectionRef }: NotificationsSectionProps) 
                     }
                     onReset={() =>
                       updateNotifications({
-                        quietWhenFullscreen: DEFAULT_NOTIFICATION_SETTINGS.quietWhenFullscreen,
+                        quietWhenFullscreen:
+                          DEFAULT_NOTIFICATION_SETTINGS.quietWhenFullscreen,
                       })
                     }
                   >
@@ -298,7 +309,8 @@ export function NotificationsSection({ sectionRef }: NotificationsSectionProps) 
                     }
                     onReset={() =>
                       updateNotifications({
-                        quietWhenUnplugged: DEFAULT_NOTIFICATION_SETTINGS.quietWhenUnplugged,
+                        quietWhenUnplugged:
+                          DEFAULT_NOTIFICATION_SETTINGS.quietWhenUnplugged,
                       })
                     }
                   >
@@ -328,7 +340,9 @@ export function NotificationsSection({ sectionRef }: NotificationsSectionProps) 
                   >
                     <ToggleSwitch
                       checked={notifications.quietWhenBusy}
-                      onChange={(checked) => updateNotifications({ quietWhenBusy: checked })}
+                      onChange={(checked) =>
+                        updateNotifications({ quietWhenBusy: checked })
+                      }
                     />
                   </SettingRow>
                 )}

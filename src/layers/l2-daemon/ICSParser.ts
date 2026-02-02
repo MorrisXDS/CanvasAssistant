@@ -124,7 +124,8 @@ export class ICSParser {
 
     // Extract property name and parameters
     const semiIdx = propertyPart.indexOf(';');
-    const propertyName = semiIdx === -1 ? propertyPart : propertyPart.substring(0, semiIdx);
+    const propertyName =
+      semiIdx === -1 ? propertyPart : propertyPart.substring(0, semiIdx);
     const params = semiIdx === -1 ? '' : propertyPart.substring(semiIdx + 1);
 
     switch (propertyName.toUpperCase()) {
@@ -184,7 +185,10 @@ export class ICSParser {
    * - DATETIME UTC: 20240115T120000Z
    * - DATETIME with TZID: TZID=America/Toronto:20240115T120000
    */
-  private parseDateTime(value: string, params: string): { date: Date | null; allDay: boolean } {
+  private parseDateTime(
+    value: string,
+    params: string
+  ): { date: Date | null; allDay: boolean } {
     const isAllDay = params.includes('VALUE=DATE') || value.length === 8;
 
     // Extract TZID if present
@@ -212,7 +216,10 @@ export class ICSParser {
       const second = parseInt(dateStr.substring(13, 15), 10) || 0;
 
       if (isUTC) {
-        return { date: new Date(Date.UTC(year, month, day, hour, minute, second)), allDay: false };
+        return {
+          date: new Date(Date.UTC(year, month, day, hour, minute, second)),
+          allDay: false,
+        };
       }
 
       // Local time (or with TZID - we treat as local for simplicity)
@@ -245,8 +252,8 @@ export class ICSParser {
     // Calculate date range
     let dateRange: { start: Date; end: Date } | null = null;
     const validDates = result.events
-      .filter(e => e.dtstart)
-      .map(e => e.dtstart!.getTime());
+      .filter((e) => e.dtstart)
+      .map((e) => e.dtstart!.getTime());
 
     if (validDates.length > 0) {
       dateRange = {
@@ -259,7 +266,7 @@ export class ICSParser {
       calendarName: result.calendarName || filename.replace(/\.ics$/i, ''),
       filename,
       events: result.events,
-      hasRecurringEvents: result.events.some(e => e.rrule !== null),
+      hasRecurringEvents: result.events.some((e) => e.rrule !== null),
       dateRange,
       warnings: result.warnings,
     };

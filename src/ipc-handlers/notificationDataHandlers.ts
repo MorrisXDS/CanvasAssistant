@@ -140,10 +140,9 @@ export function registerNotificationDataHandlers(ctx: IpcContext): void {
         published_at: string;
         dismissed_at: string | null;
         url: string | null;
-      }>(
-        'SELECT * FROM notifications WHERE course_id = ? ORDER BY published_at DESC',
-        [courseId]
-      );
+      }>('SELECT * FROM notifications WHERE course_id = ? ORDER BY published_at DESC', [
+        courseId,
+      ]);
 
       return rows.map((row) => ({
         id: row.id,

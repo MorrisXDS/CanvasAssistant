@@ -184,9 +184,7 @@ function logUserAction(action: string, data?: Record<string, unknown>): void {
   const api = getApi();
   if (!api?.log) return;
 
-  const message = data
-    ? `[UI] ${action}: ${JSON.stringify(data)}`
-    : `[UI] ${action}`;
+  const message = data ? `[UI] ${action}: ${JSON.stringify(data)}` : `[UI] ${action}`;
 
   api.log.info(message, 'store');
 }
@@ -749,9 +747,11 @@ export const useStore = create<Store>()(
           endAt?: string;
           allDay?: boolean;
           location?: string;
+          courseId?: number | null;
           color?: string;
           notes?: string;
           reminderMinutes?: number;
+          taskType?: string;
         }
       ) => {
         const api = getApi();
@@ -774,6 +774,7 @@ export const useStore = create<Store>()(
                       ...(data.endAt !== undefined && { endAt: data.endAt }),
                       ...(data.allDay !== undefined && { allDay: data.allDay }),
                       ...(data.location !== undefined && { location: data.location }),
+                      ...(data.courseId !== undefined && { courseId: data.courseId }),
                       ...(data.color !== undefined && {
                         eventColor: data.color,
                         color: data.color,

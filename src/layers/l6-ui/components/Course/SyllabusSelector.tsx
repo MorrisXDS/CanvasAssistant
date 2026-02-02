@@ -6,13 +6,7 @@
  */
 
 import React, { useState, useMemo } from 'react';
-import {
-  Search,
-  X,
-  CheckCircle,
-  Download,
-  Paperclip,
-} from 'lucide-react';
+import { Search, X, CheckCircle, Download, Paperclip } from 'lucide-react';
 import { Modal } from '../primitives/Modal';
 import { Button } from '../primitives/Button';
 import {
@@ -178,11 +172,7 @@ export function SyllabusSelector({
           <Button variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button
-            variant="primary"
-            onClick={handleSelect}
-            disabled={selectedId === null}
-          >
+          <Button variant="primary" onClick={handleSelect} disabled={selectedId === null}>
             Select
           </Button>
         </div>
@@ -255,9 +245,7 @@ function SyllabusFileItem({
       </div>
 
       {/* File icon */}
-      <div style={modalStyles.fileIconWrapper}>
-        {fileIcon}
-      </div>
+      <div style={modalStyles.fileIconWrapper}>{fileIcon}</div>
 
       {/* File info */}
       <div style={modalStyles.fileInfo}>

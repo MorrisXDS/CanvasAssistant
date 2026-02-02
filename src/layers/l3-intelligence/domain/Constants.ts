@@ -327,12 +327,7 @@ export const HIGH_VALUE_TASK_TYPES = [
 /**
  * High-priority task types for recommendations
  */
-export const HIGH_PRIORITY_TASK_TYPES = [
-  'final',
-  'midterm',
-  'exam',
-  'project',
-] as const;
+export const HIGH_PRIORITY_TASK_TYPES = ['final', 'midterm', 'exam', 'project'] as const;
 
 // =============================================================================
 // ORCHESTRATOR DEFAULTS

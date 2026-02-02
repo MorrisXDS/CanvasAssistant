@@ -34,9 +34,12 @@ export class SyncTaskOperations {
     try {
       const assignments = await this.ctx.rateLimiter.enqueue(
         () =>
-          this.ctx.client.getAll<CanvasAssignment>(`/courses/${canvasCourseId}/assignments`, {
-            order_by: 'due_at',
-          }),
+          this.ctx.client.getAll<CanvasAssignment>(
+            `/courses/${canvasCourseId}/assignments`,
+            {
+              order_by: 'due_at',
+            }
+          ),
         5
       );
 
@@ -146,7 +149,9 @@ export class SyncTaskOperations {
 
               if (courseSettings.autoAssignDueDate && !finalData.due_at) {
                 const existingModified = existing?.local_modified_fields as string | null;
-                const modifiedFields = existingModified ? JSON.parse(existingModified) : [];
+                const modifiedFields = existingModified
+                  ? JSON.parse(existingModified)
+                  : [];
                 const fieldSources = existing?.field_sources
                   ? JSON.parse(existing.field_sources as string)
                   : {};
@@ -161,7 +166,13 @@ export class SyncTaskOperations {
                 }
               }
 
-              this.ctx.db.upsert('tasks', finalData, 'external_id', true, preservedFields);
+              this.ctx.db.upsert(
+                'tasks',
+                finalData,
+                'external_id',
+                true,
+                preservedFields
+              );
 
               if (autoAssignedDueDate) {
                 const row = this.ctx.db.executeReadOne<{ id: number }>(
@@ -169,7 +180,12 @@ export class SyncTaskOperations {
                   [localTask.external_id]
                 );
                 if (row) {
-                  this.ctx.conflictResolver.setFieldSource('tasks', row.id, 'due_at', 'guessed');
+                  this.ctx.conflictResolver.setFieldSource(
+                    'tasks',
+                    row.id,
+                    'due_at',
+                    'guessed'
+                  );
                 }
               }
 
@@ -371,7 +387,14 @@ export class SyncTaskOperations {
                    all_day = ?,
                    updated_at = CURRENT_TIMESTAMP
                  WHERE id = ?`,
-                [task.title, task.description, startAt, endAt, isAllDay ? 1 : 0, task.calendar_event_id],
+                [
+                  task.title,
+                  task.description,
+                  startAt,
+                  endAt,
+                  isAllDay ? 1 : 0,
+                  task.calendar_event_id,
+                ],
                 'calendar_events'
               );
               updated++;
@@ -391,7 +414,14 @@ export class SyncTaskOperations {
                      all_day = ?,
                      updated_at = CURRENT_TIMESTAMP
                    WHERE id = ?`,
-                  [task.title, task.description, startAt, endAt, isAllDay ? 1 : 0, existing.id],
+                  [
+                    task.title,
+                    task.description,
+                    startAt,
+                    endAt,
+                    isAllDay ? 1 : 0,
+                    existing.id,
+                  ],
                   'calendar_events'
                 );
                 this.ctx.db.executeWrite(
@@ -406,7 +436,17 @@ export class SyncTaskOperations {
                      source_type, course_id, task_id, title, description,
                      start_at, end_at, all_day, uid, created_at, updated_at
                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
-                  ['user', task.course_id, task.id, task.title, task.description, startAt, endAt, isAllDay ? 1 : 0, uid],
+                  [
+                    'user',
+                    task.course_id,
+                    task.id,
+                    task.title,
+                    task.description,
+                    startAt,
+                    endAt,
+                    isAllDay ? 1 : 0,
+                    uid,
+                  ],
                   'calendar_events'
                 );
 

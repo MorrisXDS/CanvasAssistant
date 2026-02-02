@@ -61,7 +61,9 @@ export function resolveCourseIds(
     result = [...result, ...allArchivedIds];
   } else if (archivedCourseIds && archivedCourseIds.length > 0) {
     const validArchivedIds = new Set(visibleDataProvider.getArchivedCourseIds());
-    const filteredArchivedIds = archivedCourseIds.filter((id) => validArchivedIds.has(id));
+    const filteredArchivedIds = archivedCourseIds.filter((id) =>
+      validArchivedIds.has(id)
+    );
     result = [...result, ...filteredArchivedIds];
   }
 
@@ -137,7 +139,9 @@ export function collectSyncMetadata(db: Database): SyncMetadataExport {
   }
 
   try {
-    preferences = db.executeRead<Record<string, unknown>>('SELECT * FROM sync_preferences');
+    preferences = db.executeRead<Record<string, unknown>>(
+      'SELECT * FROM sync_preferences'
+    );
   } catch {
     // Table may not exist
   }
@@ -184,7 +188,10 @@ export function collectExportData(
 
   // Collect courses
   const courses = deps.db
-    .executeRead<CourseRow>(`SELECT * FROM courses WHERE id IN (${placeholders})`, courseIds)
+    .executeRead<CourseRow>(
+      `SELECT * FROM courses WHERE id IN (${placeholders})`,
+      courseIds
+    )
     .map(sanitizeCourseForExport);
 
   deps.emitProgress('collecting', 15, `Found ${courses.length} courses`);

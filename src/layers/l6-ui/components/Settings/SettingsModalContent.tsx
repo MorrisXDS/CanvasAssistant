@@ -32,11 +32,7 @@ import { NotificationsSection } from './NotificationsSection';
 import { DataSection } from './DataSection';
 import { ConfirmDialog } from '../shared/ConfirmDialog';
 import { ExportDialog } from '../shared/ExportDialog';
-import {
-  Accordion,
-  SearchInput,
-  SettingsDock,
-} from '../primitives';
+import { Accordion, SearchInput, SettingsDock } from '../primitives';
 import { SETTINGS_LABELS, MENU_LABELS } from '../../constants';
 import { styles } from '../SettingsModalStyles';
 
@@ -106,7 +102,9 @@ export function SettingsModalContent() {
     filteredSettings,
   } = useSettings();
 
-  const shouldShowSection = (category: 'account' | 'display' | 'academic' | 'notifications'): boolean => {
+  const shouldShowSection = (
+    category: 'account' | 'display' | 'academic' | 'notifications'
+  ): boolean => {
     if (!hasSearchResults) return true;
     return matchingCategories.has(category);
   };
@@ -168,7 +166,9 @@ export function SettingsModalContent() {
         <SettingsDock
           openSections={openSections}
           onSectionChange={setOpenSections}
-          sectionRefs={sectionRefs as unknown as Record<string, React.RefObject<HTMLDivElement>>}
+          sectionRefs={
+            sectionRefs as unknown as Record<string, React.RefObject<HTMLDivElement>>
+          }
           onClearSearch={() => setSearchQuery('')}
           autoHide={dockAutoHide}
           sectionOrder={sectionOrder}
@@ -324,20 +324,14 @@ export function SettingsModalContent() {
 
       {/* Password Modal for Encrypted Imports */}
       {showPasswordModal && (
-        <div
-          style={styles.tokenModalOverlay}
-          onClick={handleCancelPasswordModal}
-        >
+        <div style={styles.tokenModalOverlay} onClick={handleCancelPasswordModal}>
           <div style={styles.tokenModal} onClick={(e) => e.stopPropagation()}>
             <div style={styles.tokenModalHeader}>
               <h4 style={styles.tokenModalTitle}>
                 <Lock size={18} style={{ marginRight: '8px' }} />
                 Encrypted Backup
               </h4>
-              <button
-                style={styles.tokenModalClose}
-                onClick={handleCancelPasswordModal}
-              >
+              <button style={styles.tokenModalClose} onClick={handleCancelPasswordModal}>
                 <X size={18} />
               </button>
             </div>
@@ -371,10 +365,7 @@ export function SettingsModalContent() {
               >
                 {isDecrypting ? (
                   <>
-                    <Loader2
-                      size={14}
-                      style={{ animation: 'spin 1s linear infinite' }}
-                    />{' '}
+                    <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />{' '}
                     Decrypting...
                   </>
                 ) : (
@@ -383,10 +374,7 @@ export function SettingsModalContent() {
                   </>
                 )}
               </button>
-              <button
-                style={styles.cancelButton}
-                onClick={handleCancelPasswordModal}
-              >
+              <button style={styles.cancelButton} onClick={handleCancelPasswordModal}>
                 {MENU_LABELS.common.cancel}
               </button>
             </div>

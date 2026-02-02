@@ -24,12 +24,23 @@ export class SyncFileOperations {
     const endpoint = `/courses/${canvasCourseId}/folders`;
 
     try {
-      const result = await this.ctx.backoffManager.fetchWithBackoff(endpoint, canvasCourseId, () =>
-        this.ctx.rateLimiter.enqueue(() => this.ctx.client.getAll<CanvasFolder>(endpoint), 2)
+      const result = await this.ctx.backoffManager.fetchWithBackoff(
+        endpoint,
+        canvasCourseId,
+        () =>
+          this.ctx.rateLimiter.enqueue(
+            () => this.ctx.client.getAll<CanvasFolder>(endpoint),
+            2
+          )
       );
 
       if (result.skipped || !result.data) {
-        return createSyncResult('folders', 0, result.error ? [result.error] : [], startTime);
+        return createSyncResult(
+          'folders',
+          0,
+          result.error ? [result.error] : [],
+          startTime
+        );
       }
 
       const folders = result.data;
@@ -82,12 +93,21 @@ export class SyncFileOperations {
     const endpoint = `/courses/${canvasCourseId}/files`;
 
     try {
-      const result = await this.ctx.backoffManager.fetchWithBackoff(endpoint, canvasCourseId, () =>
-        this.ctx.rateLimiter.enqueue(() => this.ctx.client.getAll<CanvasFile>(endpoint), 2)
+      const result = await this.ctx.backoffManager.fetchWithBackoff(
+        endpoint,
+        canvasCourseId,
+        () =>
+          this.ctx.rateLimiter.enqueue(
+            () => this.ctx.client.getAll<CanvasFile>(endpoint),
+            2
+          )
       );
 
       if (result.skipped || !result.data) {
-        const fallbackResult = await this.syncFilesFromModules(canvasCourseId, localCourseId);
+        const fallbackResult = await this.syncFilesFromModules(
+          canvasCourseId,
+          localCourseId
+        );
         return {
           success: fallbackResult.success,
           entity: 'files',

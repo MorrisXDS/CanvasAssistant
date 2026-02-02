@@ -412,6 +412,7 @@ export function CalendarPage() {
     color?: string;
     notes?: string;
     reminderMinutes?: number;
+    taskType?: string;
   }) => {
     try {
       if (eventToEdit) {
@@ -445,6 +446,7 @@ export function CalendarPage() {
     dueAt?: string;
     weight?: number;
     pointsPossible?: number;
+    taskType?: string;
   }): Promise<{ success: boolean; taskId?: number }> => {
     try {
       const api = window.api;
@@ -453,6 +455,9 @@ export function CalendarPage() {
       if (result.success) {
         setShowEventFormModal(false);
         setEventToEdit(null);
+        // Refetch calendar events to include the newly created calendar event
+        // (CreateTask also creates a linked calendar_events row for user tasks)
+        fetchCalendarEventsForRange(visibleRange.start, visibleRange.end);
         return { success: true, taskId: result.data?.taskId };
       }
       return { success: false };

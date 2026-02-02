@@ -57,13 +57,21 @@ export function analyzeWeeklyRhythm(events: TaskCompletionEvent[]): WeeklyRhythm
   for (const event of events) {
     const dayData = dayStats.get(event.dayOfWeek)!;
     dayData.count++;
-    if (event.scoreAchieved !== null && event.pointsPossible && event.pointsPossible > 0) {
+    if (
+      event.scoreAchieved !== null &&
+      event.pointsPossible &&
+      event.pointsPossible > 0
+    ) {
       dayData.totalScore += (event.scoreAchieved / event.pointsPossible) * 100;
     }
 
     const hourData = hourStats.get(event.hourOfDay)!;
     hourData.count++;
-    if (event.scoreAchieved !== null && event.pointsPossible && event.pointsPossible > 0) {
+    if (
+      event.scoreAchieved !== null &&
+      event.pointsPossible &&
+      event.pointsPossible > 0
+    ) {
       hourData.totalScore += (event.scoreAchieved / event.pointsPossible) * 100;
     }
   }
@@ -139,7 +147,11 @@ export function calculateCourseDifficulty(
     let lateCount = 0;
 
     for (const event of courseEventList) {
-      if (event.scoreAchieved !== null && event.pointsPossible && event.pointsPossible > 0) {
+      if (
+        event.scoreAchieved !== null &&
+        event.pointsPossible &&
+        event.pointsPossible > 0
+      ) {
         totalScore += (event.scoreAchieved / event.pointsPossible) * 100;
         scoredCount++;
       }
@@ -157,10 +169,14 @@ export function calculateCourseDifficulty(
 
     // Struggle score: higher = more difficulty
     // Based on: lower scores, higher late rate
-    const struggleScore = Math.min(100, Math.max(0,
-      (100 - avgScore) * 0.6 + // Low scores contribute
-      lateRate * 100 * 0.4 // Late submissions contribute
-    ));
+    const struggleScore = Math.min(
+      100,
+      Math.max(
+        0,
+        (100 - avgScore) * 0.6 + // Low scores contribute
+          lateRate * 100 * 0.4 // Late submissions contribute
+      )
+    );
 
     results.push({
       courseId,
@@ -183,7 +199,9 @@ export function calculateCourseDifficulty(
  * Identify struggle patterns by task type
  * Shows which task types the user has most difficulty with
  */
-export function identifyStrugglePatterns(events: TaskCompletionEvent[]): StrugglePattern[] {
+export function identifyStrugglePatterns(
+  events: TaskCompletionEvent[]
+): StrugglePattern[] {
   // Group by task type
   const typeEvents: Map<string, TaskCompletionEvent[]> = new Map();
   for (const event of events) {
@@ -203,7 +221,11 @@ export function identifyStrugglePatterns(events: TaskCompletionEvent[]): Struggl
     let daysEarlyCount = 0;
 
     for (const event of typeEventList) {
-      if (event.scoreAchieved !== null && event.pointsPossible && event.pointsPossible > 0) {
+      if (
+        event.scoreAchieved !== null &&
+        event.pointsPossible &&
+        event.pointsPossible > 0
+      ) {
         totalScore += (event.scoreAchieved / event.pointsPossible) * 100;
         scoredCount++;
       }
@@ -221,11 +243,15 @@ export function identifyStrugglePatterns(events: TaskCompletionEvent[]): Struggl
     const avgDaysEarly = daysEarlyCount > 0 ? totalDaysEarly / daysEarlyCount : 0;
 
     // Struggle score calculation
-    const struggleScore = Math.min(100, Math.max(0,
-      (100 - avgScore) * 0.5 +
-      (1 - onTimeRate) * 100 * 0.3 +
-      Math.max(0, -avgDaysEarly) * 10 * 0.2 // Negative days = submitted after due
-    ));
+    const struggleScore = Math.min(
+      100,
+      Math.max(
+        0,
+        (100 - avgScore) * 0.5 +
+          (1 - onTimeRate) * 100 * 0.3 +
+          Math.max(0, -avgDaysEarly) * 10 * 0.2 // Negative days = submitted after due
+      )
+    );
 
     results.push({
       taskType,
@@ -324,7 +350,8 @@ export function getProductivityScore(
   const maxHourCount = Math.max(...rhythm.productiveHours.map((h) => h.completionCount));
 
   const dayScore = maxDayCount > 0 ? (dayData.completionCount / maxDayCount) * 100 : 50;
-  const hourScore = maxHourCount > 0 ? (hourData.completionCount / maxHourCount) * 100 : 50;
+  const hourScore =
+    maxHourCount > 0 ? (hourData.completionCount / maxHourCount) * 100 : 50;
 
   // Weighted average: hour is more specific so weight it higher
   return dayScore * 0.3 + hourScore * 0.7;
@@ -506,9 +533,7 @@ export function analyzeSubmissionPatterns(
       (e) => e.pointsPossible && e.pointsPossible > 0
     );
     if (weightedEvents.length >= 3) {
-      const highPointEvents = weightedEvents.filter(
-        (e) => (e.pointsPossible ?? 0) >= 50
-      );
+      const highPointEvents = weightedEvents.filter((e) => (e.pointsPossible ?? 0) >= 50);
       if (highPointEvents.length > 0) {
         const highPointLastMinute = highPointEvents.filter(
           (e) => (e.daysBeforeDue ?? 0) < 1
@@ -588,7 +613,8 @@ export function assessDeadlineRisk(
 
   // Check time until due
   if (task.dueAt) {
-    const daysUntilDue = (task.dueAt.getTime() - currentTime.getTime()) / (1000 * 60 * 60 * 24);
+    const daysUntilDue =
+      (task.dueAt.getTime() - currentTime.getTime()) / (1000 * 60 * 60 * 24);
 
     if (daysUntilDue <= 2 && daysUntilDue > 0) {
       riskScore += 30;
@@ -650,9 +676,7 @@ export function assessDeadlineRisk(
  * Identify common submission timing patterns across all events
  * Based on observable data: when tasks were submitted relative to deadlines
  */
-export function identifySubmissionPatterns(
-  events: TaskCompletionEvent[]
-): string[] {
+export function identifySubmissionPatterns(events: TaskCompletionEvent[]): string[] {
   const patterns: string[] = [];
 
   if (events.length < 10) return patterns;
@@ -680,7 +704,15 @@ export function identifySubmissionPatterns(
     if (event.wasLate) data.late++;
   }
 
-  const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const dayNames = [
+    'Sunday',
+    'Monday',
+    'Tuesday',
+    'Wednesday',
+    'Thursday',
+    'Friday',
+    'Saturday',
+  ];
   for (let i = 0; i < 7; i++) {
     const data = dayLateRates.get(i)!;
     if (data.total >= 5 && data.late / data.total >= 0.4) {

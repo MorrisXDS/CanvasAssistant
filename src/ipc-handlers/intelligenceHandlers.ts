@@ -139,7 +139,8 @@ export function registerIntelligenceHandlers(ctx: IpcContext): void {
         return { success: false, error: 'Recommendation system not initialized' };
       }
       try {
-        const dismissed = recommendationOrchestrator.dismissRecommendation(recommendationId);
+        const dismissed =
+          recommendationOrchestrator.dismissRecommendation(recommendationId);
         return { success: dismissed };
       } catch (error) {
         logger.error('Failed to dismiss recommendation', error as Error);
@@ -156,7 +157,8 @@ export function registerIntelligenceHandlers(ctx: IpcContext): void {
         return { success: false, error: 'Recommendation system not initialized' };
       }
       try {
-        const acted = recommendationOrchestrator.markRecommendationActed(recommendationId);
+        const acted =
+          recommendationOrchestrator.markRecommendationActed(recommendationId);
         return { success: acted };
       } catch (error) {
         logger.error('Failed to mark recommendation as acted', error as Error);

@@ -57,7 +57,11 @@ export interface SyncOperationHelpers {
   /** Log diagnostic entry */
   logDiagnostic: (entry: Omit<SyncDiagnosticEntry, 'timestamp'>) => void;
   /** Persist conflict data for crash safety */
-  persistConflictData: (conflictId: string, tableName: string, data: Record<string, unknown>) => void;
+  persistConflictData: (
+    conflictId: string,
+    tableName: string,
+    data: Record<string, unknown>
+  ) => void;
 }
 
 /**

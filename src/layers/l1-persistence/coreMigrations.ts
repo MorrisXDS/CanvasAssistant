@@ -1,6 +1,5 @@
 import type { Migration } from './MigrationRunner';
 
-
 /**
  * Core schema migrations for CID
  * Based on CID_Implementation_Plan_v4.0.md Part II
@@ -2146,7 +2145,8 @@ export const coreMigrations: Migration[] = [
   },
   {
     version: 77,
-    description: 'Remove item_type CHECK constraint from module_items to allow any Canvas type',
+    description:
+      'Remove item_type CHECK constraint from module_items to allow any Canvas type',
     up: `
       -- Recreate module_items without CHECK constraint on item_type
       -- Canvas can return various item types beyond the original 8, so we accept any string

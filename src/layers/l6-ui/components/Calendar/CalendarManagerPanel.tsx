@@ -90,7 +90,10 @@ export function CalendarManagerPanel({
                   compact={true}
                 />
                 <div style={styles.editActions}>
-                  <button style={styles.saveButton} onClick={() => saveEditing(calendar.id)}>
+                  <button
+                    style={styles.saveButton}
+                    onClick={() => saveEditing(calendar.id)}
+                  >
                     <Check size={14} />
                   </button>
                   <button style={styles.cancelButton} onClick={cancelEditing}>
@@ -140,10 +143,12 @@ export function CalendarManagerPanel({
                   }}
                 />
 
-                <div style={{
-                  ...styles.calendarInfo,
-                  opacity: calendar.isVisible ? 1 : 0.6,
-                }}>
+                <div
+                  style={{
+                    ...styles.calendarInfo,
+                    opacity: calendar.isVisible ? 1 : 0.6,
+                  }}
+                >
                   <div style={styles.calendarName}>{calendar.name}</div>
                   <div style={styles.calendarMeta}>
                     {calendar.eventCount} event{calendar.eventCount !== 1 ? 's' : ''}

@@ -102,7 +102,9 @@ export class PolicyRepository extends BaseRepository<Policy, PolicyRow> {
   /**
    * Find grace token policy for a course.
    */
-  findGraceTokenPolicy(courseId: number): (Policy & { policyConfig: GraceTokenConfig }) | null {
+  findGraceTokenPolicy(
+    courseId: number
+  ): (Policy & { policyConfig: GraceTokenConfig }) | null {
     const policy = this.findByType(courseId, 'grace_tokens');
     if (!policy) return null;
 
@@ -142,10 +144,13 @@ export class PolicyRepository extends BaseRepository<Policy, PolicyRow> {
     const mappedUpdates: Record<string, unknown> = {};
 
     if (updates.policyName !== undefined) mappedUpdates.policy_name = updates.policyName;
-    if (updates.policyConfig !== undefined) mappedUpdates.policy_config = JSON.stringify(updates.policyConfig);
+    if (updates.policyConfig !== undefined)
+      mappedUpdates.policy_config = JSON.stringify(updates.policyConfig);
     if (updates.rawText !== undefined) mappedUpdates.raw_text = updates.rawText;
-    if (updates.isUserVerified !== undefined) mappedUpdates.is_user_verified = updates.isUserVerified ? 1 : 0;
-    if (updates.isActive !== undefined) mappedUpdates.is_active = updates.isActive ? 1 : 0;
+    if (updates.isUserVerified !== undefined)
+      mappedUpdates.is_user_verified = updates.isUserVerified ? 1 : 0;
+    if (updates.isActive !== undefined)
+      mappedUpdates.is_active = updates.isActive ? 1 : 0;
 
     const keys = Object.keys(mappedUpdates);
     if (keys.length === 0) {
@@ -242,9 +247,7 @@ export class PolicyRepository extends BaseRepository<Policy, PolicyRow> {
       ? 'SELECT * FROM course_policies WHERE course_id = ? AND LOWER(policy_name) = LOWER(?) AND is_active = 1 AND id != ?'
       : 'SELECT * FROM course_policies WHERE course_id = ? AND LOWER(policy_name) = LOWER(?) AND is_active = 1';
 
-    const params = excludeId
-      ? [courseId, policyName, excludeId]
-      : [courseId, policyName];
+    const params = excludeId ? [courseId, policyName, excludeId] : [courseId, policyName];
 
     return this.queryOne<PolicyRow>(sql, params);
   }

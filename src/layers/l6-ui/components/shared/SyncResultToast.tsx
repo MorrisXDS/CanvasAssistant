@@ -4,7 +4,16 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import { CheckCircle, X, RefreshCw, AlertCircle, BookOpen, ClipboardList, Bell, FolderOpen } from 'lucide-react';
+import {
+  CheckCircle,
+  X,
+  RefreshCw,
+  AlertCircle,
+  BookOpen,
+  ClipboardList,
+  Bell,
+  FolderOpen,
+} from 'lucide-react';
 
 export interface SyncResultData {
   courses?: { synced: number; new: number };
@@ -21,7 +30,11 @@ interface SyncResultToastProps {
   autoHideDuration?: number;
 }
 
-export function SyncResultToast({ result, onClose, autoHideDuration = 5000 }: SyncResultToastProps) {
+export function SyncResultToast({
+  result,
+  onClose,
+  autoHideDuration = 5000,
+}: SyncResultToastProps) {
   const [isVisible, setIsVisible] = useState(false);
 
   useEffect(() => {
@@ -38,10 +51,17 @@ export function SyncResultToast({ result, onClose, autoHideDuration = 5000 }: Sy
   if (!result) return null;
 
   const hasErrors = result.errors && result.errors.length > 0;
-  const hasNewItems = (result.courses?.new || 0) + (result.tasks?.new || 0) +
-                      (result.announcements?.new || 0) + (result.files?.new || 0) > 0;
+  const hasNewItems =
+    (result.courses?.new || 0) +
+      (result.tasks?.new || 0) +
+      (result.announcements?.new || 0) +
+      (result.files?.new || 0) >
+    0;
 
-  const formatCount = (data: { synced: number; new: number } | undefined, label: string) => {
+  const formatCount = (
+    data: { synced: number; new: number } | undefined,
+    label: string
+  ) => {
     if (!data || data.synced === 0) return null;
     if (data.new > 0) {
       return `${data.synced} ${label} (${data.new} new)`;

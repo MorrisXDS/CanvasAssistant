@@ -25,7 +25,10 @@ export function registerTaskDataHandlers(ctx: IpcContext): void {
 
         if (typeof options === 'number') {
           // Legacy: single courseId - verify it's visible first
-          if (getVisibleDataProvider() && !getVisibleDataProvider()!.isCourseVisible(options)) {
+          if (
+            getVisibleDataProvider() &&
+            !getVisibleDataProvider()!.isCourseVisible(options)
+          ) {
             return []; // Course not visible, return empty
           }
           sql = `SELECT t.* FROM tasks t
@@ -139,10 +142,9 @@ export function registerTaskDataHandlers(ctx: IpcContext): void {
         submission_status: string | null;
         task_type: string | null;
         is_optional: number;
-      }>(
-        `SELECT * FROM tasks WHERE course_id = ? ORDER BY priority_score DESC`,
-        [courseId]
-      );
+      }>(`SELECT * FROM tasks WHERE course_id = ? ORDER BY priority_score DESC`, [
+        courseId,
+      ]);
 
       return rows.map((row) => ({
         id: row.id,

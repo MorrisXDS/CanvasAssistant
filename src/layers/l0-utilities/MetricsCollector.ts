@@ -77,9 +77,15 @@ export class MetricsCollector extends EventEmitter {
   // Cached recent values for quick access
   private recentCounters: Map<string, number> = new Map();
   private recentGauges: Map<string, number> = new Map();
-  private recentTimings: Map<string, { count: number; sum: number; min: number; max: number }> = new Map();
+  private recentTimings: Map<
+    string,
+    { count: number; sum: number; min: number; max: number }
+  > = new Map();
 
-  constructor(config?: MetricsCollectorConfig | MetricsCollectorOptions, logger?: Logger) {
+  constructor(
+    config?: MetricsCollectorConfig | MetricsCollectorOptions,
+    logger?: Logger
+  ) {
     super();
 
     // Apply defaults
@@ -141,7 +147,10 @@ export class MetricsCollector extends EventEmitter {
 
       this.log.info(`Metrics database initialized at ${this.dbPath}`);
     } catch (error) {
-      this.log.error('Failed to initialize metrics database', error instanceof Error ? error : undefined);
+      this.log.error(
+        'Failed to initialize metrics database',
+        error instanceof Error ? error : undefined
+      );
       this.emit('error', { type: 'db-init-failed', error });
     }
   }
@@ -223,7 +232,12 @@ export class MetricsCollector extends EventEmitter {
     this.timingBuffer.get(name)!.push(durationMs);
 
     // Update recent timing stats
-    const recent = this.recentTimings.get(name) || { count: 0, sum: 0, min: Infinity, max: -Infinity };
+    const recent = this.recentTimings.get(name) || {
+      count: 0,
+      sum: 0,
+      min: Infinity,
+      max: -Infinity,
+    };
     recent.count++;
     recent.sum += durationMs;
     recent.min = Math.min(recent.min, durationMs);
@@ -252,12 +266,32 @@ export class MetricsCollector extends EventEmitter {
 
       // Flush counters
       for (const [name, value] of this.counterBuffer) {
-        insertStmt.run(name, 'counter', period, 1, value, value, value, value, timestamp.toISOString());
+        insertStmt.run(
+          name,
+          'counter',
+          period,
+          1,
+          value,
+          value,
+          value,
+          value,
+          timestamp.toISOString()
+        );
       }
 
       // Flush gauges
       for (const [name, value] of this.gaugeBuffer) {
-        insertStmt.run(name, 'gauge', period, 1, value, value, value, value, timestamp.toISOString());
+        insertStmt.run(
+          name,
+          'gauge',
+          period,
+          1,
+          value,
+          value,
+          value,
+          value,
+          timestamp.toISOString()
+        );
       }
 
       // Flush timings
@@ -270,7 +304,17 @@ export class MetricsCollector extends EventEmitter {
         const max = Math.max(...values);
         const avg = sum / count;
 
-        insertStmt.run(name, 'timing', period, count, sum, min, max, avg, timestamp.toISOString());
+        insertStmt.run(
+          name,
+          'timing',
+          period,
+          count,
+          sum,
+          min,
+          max,
+          avg,
+          timestamp.toISOString()
+        );
       }
 
       // Clear buffers
@@ -282,7 +326,10 @@ export class MetricsCollector extends EventEmitter {
         this.emit('flush', { timestamp });
       }
     } catch (error) {
-      this.log.error('Failed to flush metrics', error instanceof Error ? error : undefined);
+      this.log.error(
+        'Failed to flush metrics',
+        error instanceof Error ? error : undefined
+      );
       this.emit('error', { type: 'flush-failed', error });
     }
   }
@@ -304,7 +351,9 @@ export class MetricsCollector extends EventEmitter {
   /**
    * Get timing stats
    */
-  getTiming(name: string): { count: number; avg: number; min: number; max: number } | undefined {
+  getTiming(
+    name: string
+  ): { count: number; avg: number; min: number; max: number } | undefined {
     const recent = this.recentTimings.get(name);
     if (!recent) return undefined;
 
@@ -322,7 +371,10 @@ export class MetricsCollector extends EventEmitter {
   getSummary(): MetricsSummary {
     const counters: Record<string, number> = {};
     const gauges: Record<string, number> = {};
-    const timings: Record<string, { count: number; avg: number; min: number; max: number }> = {};
+    const timings: Record<
+      string,
+      { count: number; avg: number; min: number; max: number }
+    > = {};
 
     for (const [name, value] of this.recentCounters) {
       counters[name] = value;
@@ -401,7 +453,10 @@ export class MetricsCollector extends EventEmitter {
         timestamp: new Date(row.timestamp),
       }));
     } catch (error) {
-      this.log.error('Failed to query metrics', error instanceof Error ? error : undefined);
+      this.log.error(
+        'Failed to query metrics',
+        error instanceof Error ? error : undefined
+      );
       return [];
     }
   }
@@ -428,14 +483,17 @@ export class MetricsCollector extends EventEmitter {
     cutoff.setDate(cutoff.getDate() - days);
 
     try {
-      const result = this.db.prepare(
-        'DELETE FROM metrics WHERE timestamp < ?'
-      ).run(cutoff.toISOString());
+      const result = this.db
+        .prepare('DELETE FROM metrics WHERE timestamp < ?')
+        .run(cutoff.toISOString());
 
       this.log.info(`Purged ${result.changes} old metrics`);
       return result.changes;
     } catch (error) {
-      this.log.error('Failed to purge old metrics', error instanceof Error ? error : undefined);
+      this.log.error(
+        'Failed to purge old metrics',
+        error instanceof Error ? error : undefined
+      );
       return 0;
     }
   }

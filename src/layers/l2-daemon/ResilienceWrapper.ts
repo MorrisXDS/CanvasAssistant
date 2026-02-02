@@ -8,7 +8,11 @@
 
 import { EventEmitter } from 'events';
 import { RateLimiter, RateLimiterConfig } from './RateLimiter';
-import { CircuitBreaker, CircuitBreakerOptions, CircuitOpenError } from './CircuitBreaker';
+import {
+  CircuitBreaker,
+  CircuitBreakerOptions,
+  CircuitOpenError,
+} from './CircuitBreaker';
 import { ComponentLogger, Logger } from '../l0-utilities/Logger';
 
 export interface ResilienceWrapperConfig {

@@ -82,7 +82,10 @@ export class CredentialManager extends EventEmitter {
   // Background validation state
   private backgroundValidationTimer: NodeJS.Timeout | null = null;
 
-  constructor(config?: CredentialManagerConfig | CredentialManagerOptions, logger?: Logger) {
+  constructor(
+    config?: CredentialManagerConfig | CredentialManagerOptions,
+    logger?: Logger
+  ) {
     super();
 
     // Apply defaults
@@ -91,7 +94,9 @@ export class CredentialManager extends EventEmitter {
     this.enableFileFallback = config?.enableFileFallback ?? true;
     this.fallbackFilePath = config?.fallbackFilePath ?? 'data/.credentials';
     this.validateOnRetrieve = config?.validateOnRetrieve ?? true;
-    this.baseUrl = (config && 'baseUrl' in config ? config.baseUrl : undefined) ?? 'https://utoronto.instructure.com';
+    this.baseUrl =
+      (config && 'baseUrl' in config ? config.baseUrl : undefined) ??
+      'https://utoronto.instructure.com';
 
     // Check for options-specific properties
     if (config && 'tokenValidator' in config) {
@@ -115,7 +120,10 @@ export class CredentialManager extends EventEmitter {
         this.emit('initialized', { backend: this.storageBackend });
       })
       .catch((error) => {
-        this.log.error('Storage initialization failed', error instanceof Error ? error : undefined);
+        this.log.error(
+          'Storage initialization failed',
+          error instanceof Error ? error : undefined
+        );
         this.isInitialized = true; // Mark as done even on failure
         this.emit('error', {
           type: 'init-failed',
@@ -150,7 +158,9 @@ export class CredentialManager extends EventEmitter {
       this.log.info('Keychain storage initialized successfully');
     } catch (error) {
       this.keytarAvailable = false;
-      this.log.warn(`Keychain unavailable: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      this.log.warn(
+        `Keychain unavailable: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
 
       if (this.enableFileFallback) {
         try {
@@ -159,7 +169,10 @@ export class CredentialManager extends EventEmitter {
           this.log.info('Falling back to encrypted file storage');
         } catch (fileError) {
           this.storageBackend = 'none';
-          this.log.error('Failed to initialize file fallback', fileError instanceof Error ? fileError : undefined);
+          this.log.error(
+            'Failed to initialize file fallback',
+            fileError instanceof Error ? fileError : undefined
+          );
           this.emit('error', {
             type: 'storage-init-failed',
             message: 'No secure storage available',
@@ -293,7 +306,10 @@ export class CredentialManager extends EventEmitter {
       this.log.debug('Token retrieved successfully');
       return token;
     } catch (error) {
-      this.log.error('Failed to retrieve token', error instanceof Error ? error : undefined);
+      this.log.error(
+        'Failed to retrieve token',
+        error instanceof Error ? error : undefined
+      );
       this.emit('error', {
         type: 'retrieve-failed',
         message: 'Failed to retrieve token',
@@ -312,7 +328,10 @@ export class CredentialManager extends EventEmitter {
 
     try {
       if (this.storageBackend === 'keychain' && this.keytar) {
-        const deleted = await this.keytar.deletePassword(this.serviceName, this.accountName);
+        const deleted = await this.keytar.deletePassword(
+          this.serviceName,
+          this.accountName
+        );
         if (deleted) {
           this.log.info('Token deleted from OS keychain');
           this.emit('credential-deleted', { backend: 'keychain' });
@@ -332,7 +351,10 @@ export class CredentialManager extends EventEmitter {
 
       return false;
     } catch (error) {
-      this.log.error('Failed to delete token', error instanceof Error ? error : undefined);
+      this.log.error(
+        'Failed to delete token',
+        error instanceof Error ? error : undefined
+      );
       this.emit('error', {
         type: 'delete-failed',
         message: 'Failed to delete token',
@@ -361,7 +383,10 @@ export class CredentialManager extends EventEmitter {
 
       return false;
     } catch (error) {
-      this.log.error('Failed to check token existence', error instanceof Error ? error : undefined);
+      this.log.error(
+        'Failed to check token existence',
+        error instanceof Error ? error : undefined
+      );
       return false;
     }
   }
@@ -418,7 +443,11 @@ export class CredentialManager extends EventEmitter {
 
       let lastError: Error | null = null;
 
-      for (let attempt = 0; attempt <= CredentialManager.VALIDATION_MAX_RETRIES; attempt++) {
+      for (
+        let attempt = 0;
+        attempt <= CredentialManager.VALIDATION_MAX_RETRIES;
+        attempt++
+      ) {
         try {
           const response = await axios.get(validateUrl, {
             headers: {
@@ -458,7 +487,10 @@ export class CredentialManager extends EventEmitter {
       this.lastValidationResult = false;
       return false;
     } catch (error) {
-      this.log.error('Token validation error', error instanceof Error ? error : undefined);
+      this.log.error(
+        'Token validation error',
+        error instanceof Error ? error : undefined
+      );
       this.lastValidated = new Date();
       this.lastValidationResult = false;
       return false;
@@ -508,12 +540,7 @@ export class CredentialManager extends EventEmitter {
     const authTag = cipher.getAuthTag();
 
     // Combine all parts: salt + iv + authTag + encrypted
-    const data = Buffer.concat([
-      salt,
-      iv,
-      authTag,
-      Buffer.from(encrypted, 'hex'),
-    ]);
+    const data = Buffer.concat([salt, iv, authTag, Buffer.from(encrypted, 'hex')]);
 
     // Write to file with secure permissions (owner read/write only)
     fs.writeFileSync(this.fallbackFilePath, data, { mode: 0o600 });
@@ -546,7 +573,9 @@ export class CredentialManager extends EventEmitter {
         const stats = fs.statSync(this.fallbackFilePath);
         const mode = stats.mode & 0o777;
         if (mode !== 0o600) {
-          this.log.warn(`Credential file has insecure permissions (${mode.toString(8)}), fixing...`);
+          this.log.warn(
+            `Credential file has insecure permissions (${mode.toString(8)}), fixing...`
+          );
           fs.chmodSync(this.fallbackFilePath, 0o600);
         }
       }
@@ -563,7 +592,10 @@ export class CredentialManager extends EventEmitter {
       // Extract parts
       const _salt = data.subarray(0, SALT_LENGTH);
       const iv = data.subarray(SALT_LENGTH, SALT_LENGTH + IV_LENGTH);
-      const authTag = data.subarray(SALT_LENGTH + IV_LENGTH, SALT_LENGTH + IV_LENGTH + AUTH_TAG_LENGTH);
+      const authTag = data.subarray(
+        SALT_LENGTH + IV_LENGTH,
+        SALT_LENGTH + IV_LENGTH + AUTH_TAG_LENGTH
+      );
       const encrypted = data.subarray(SALT_LENGTH + IV_LENGTH + AUTH_TAG_LENGTH);
 
       // Create decipher
@@ -580,7 +612,10 @@ export class CredentialManager extends EventEmitter {
       if (error instanceof Error && error.message.includes('Unsupported state')) {
         this.log.error('Credential file integrity check failed - possible tampering');
       } else {
-        this.log.error('Failed to decrypt credential file', error instanceof Error ? error : undefined);
+        this.log.error(
+          'Failed to decrypt credential file',
+          error instanceof Error ? error : undefined
+        );
       }
       return null;
     }
@@ -660,7 +695,10 @@ export class CredentialManager extends EventEmitter {
         this.log.debug('Background validation: token is valid');
       }
     } catch (error) {
-      this.log.error('Background validation error', error instanceof Error ? error : undefined);
+      this.log.error(
+        'Background validation error',
+        error instanceof Error ? error : undefined
+      );
     }
   }
 }

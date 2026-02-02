@@ -55,10 +55,7 @@ export class SimulationManager extends EventEmitter {
       course_id: number;
       grade: number | null;
       priority_score: number;
-    }>(
-      'SELECT id, course_id, grade, priority_score FROM tasks WHERE id = ?',
-      [taskId]
-    );
+    }>('SELECT id, course_id, grade, priority_score FROM tasks WHERE id = ?', [taskId]);
 
     if (!task) {
       return null;
@@ -190,10 +187,7 @@ export class SimulationManager extends EventEmitter {
       id: number;
       assessed_grade: number | null;
       target_grade: number;
-    }>(
-      'SELECT id, assessed_grade, target_grade FROM courses WHERE id = ?',
-      [courseId]
-    );
+    }>('SELECT id, assessed_grade, target_grade FROM courses WHERE id = ?', [courseId]);
 
     // Fetch all tasks for the course
     const tasks = this.db.executeRead<{

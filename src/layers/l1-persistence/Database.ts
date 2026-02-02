@@ -303,12 +303,15 @@ export class Database extends EventEmitter {
       this.recordWrite();
 
       const timing = timer.end();
-      this.log.debug(`Write: ${operation} on ${tableName || 'unknown'} - ${timing.durationFormatted}`, {
-        table: tableName,
-        operation,
-        changes: normalizedResult.changes,
-        durationMs: timing.durationMs,
-      });
+      this.log.debug(
+        `Write: ${operation} on ${tableName || 'unknown'} - ${timing.durationFormatted}`,
+        {
+          table: tableName,
+          operation,
+          changes: normalizedResult.changes,
+          durationMs: timing.durationMs,
+        }
+      );
 
       // Emit commit event if table name provided
       if (tableName) {
@@ -321,10 +324,14 @@ export class Database extends EventEmitter {
 
       return normalizedResult;
     } catch (error) {
-      this.log.error(`Write failed on ${tableName || 'unknown'}`, error instanceof Error ? error : undefined, {
-        table: tableName,
-        operation,
-      });
+      this.log.error(
+        `Write failed on ${tableName || 'unknown'}`,
+        error instanceof Error ? error : undefined,
+        {
+          table: tableName,
+          operation,
+        }
+      );
       throw error;
     }
   }
@@ -551,7 +558,10 @@ export class Database extends EventEmitter {
         idleDurationMs: Date.now() - this.lastWriteTime,
       });
     } catch (error) {
-      this.log.error('WAL checkpoint (idle) failed', error instanceof Error ? error : undefined);
+      this.log.error(
+        'WAL checkpoint (idle) failed',
+        error instanceof Error ? error : undefined
+      );
       this.emit('checkpoint-error', {
         type: 'idle',
         error: error instanceof Error ? error.message : String(error),

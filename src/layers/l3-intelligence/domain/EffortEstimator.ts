@@ -90,7 +90,10 @@ export function calculateHistoricalAverage(
     };
   }
 
-  const total = relevantEvents.reduce((sum, e) => sum + (e.timeToCompleteMinutes || 0), 0);
+  const total = relevantEvents.reduce(
+    (sum, e) => sum + (e.timeToCompleteMinutes || 0),
+    0
+  );
   return {
     average: total / relevantEvents.length,
     sampleSize: relevantEvents.length,
@@ -170,8 +173,7 @@ export function estimateEffort(
     method = 'hybrid';
     const historicalWeight = historicalData.sampleSize / 5;
     estimatedMinutes =
-      historicalData.average * historicalWeight +
-      pointsEstimate * (1 - historicalWeight);
+      historicalData.average * historicalWeight + pointsEstimate * (1 - historicalWeight);
     estimatedMinutes *= courseMultiplier;
     confidence = 0.3 + historicalData.sampleSize * 0.1;
   } else if (task.pointsPossible && task.pointsPossible > 0) {
@@ -257,9 +259,7 @@ export function calibrateEstimates(
 /**
  * Calculate estimation accuracy metrics
  */
-export function calculateAccuracyMetrics(
-  calibrationData: EffortCalibrationInput[]
-): {
+export function calculateAccuracyMetrics(calibrationData: EffortCalibrationInput[]): {
   meanAbsoluteError: number;
   meanPercentageError: number;
   underestimateRate: number;
@@ -330,7 +330,9 @@ export function formatEffortEstimate(minutes: number): string {
 /**
  * Get effort level category
  */
-export function getEffortLevel(minutes: number): 'quick' | 'short' | 'medium' | 'long' | 'extended' {
+export function getEffortLevel(
+  minutes: number
+): 'quick' | 'short' | 'medium' | 'long' | 'extended' {
   if (minutes <= 15) return 'quick';
   if (minutes <= 45) return 'short';
   if (minutes <= 120) return 'medium';

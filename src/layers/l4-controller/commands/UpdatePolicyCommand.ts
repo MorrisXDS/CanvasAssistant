@@ -6,11 +6,7 @@
  * Validates for duplicate policy names on rename.
  */
 
-import {
-  Command,
-  CommandContext,
-  CommandResult,
-} from '../types';
+import { Command, CommandContext, CommandResult } from '../types';
 
 export interface UpdatePolicyParams {
   policyId: number;
@@ -27,9 +23,10 @@ export interface UpdatePolicyResult {
   wasVerified: boolean;
 }
 
-export class UpdatePolicyCommand
-  implements Command<UpdatePolicyParams, UpdatePolicyResult>
-{
+export class UpdatePolicyCommand implements Command<
+  UpdatePolicyParams,
+  UpdatePolicyResult
+> {
   readonly name = 'UpdatePolicy';
 
   validate(params: UpdatePolicyParams): { valid: boolean; error?: string } {

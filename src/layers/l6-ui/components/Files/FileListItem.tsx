@@ -468,7 +468,8 @@ export function FileListItem({
   const iconClass = getFileIconClass(iconType);
 
   // Check if this is an ExternalUrl module item (not downloadable)
-  const isExternalUrl = isModuleItem && (file as FileModuleItem).itemType === 'ExternalUrl';
+  const isExternalUrl =
+    isModuleItem && (file as FileModuleItem).itemType === 'ExternalUrl';
 
   // Handle double-click
   const handleDoubleClick = () => {
@@ -483,7 +484,8 @@ export function FileListItem({
 
   // Determine tooltip based on item type
   const getTooltip = () => {
-    if (isExternalUrl) return 'Double-click to open external link, right-click for options';
+    if (isExternalUrl)
+      return 'Double-click to open external link, right-click for options';
     if (isDownloaded) return 'Double-click to open, right-click for options';
     return 'Double-click to download, right-click for options';
   };

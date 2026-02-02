@@ -78,7 +78,8 @@ export class CrashProtectionManager {
     this.crashHistoryFile = path.join(config.appDataDir, '.crash_history');
     this.crashLoopThreshold = config.crashLoopThreshold ?? DEFAULT_CRASH_LOOP_THRESHOLD;
     this.crashLoopWindowMs = config.crashLoopWindowMs ?? DEFAULT_CRASH_LOOP_WINDOW_MS;
-    this.safeModeClearDelayMs = config.safeModeClearDelayMs ?? DEFAULT_SAFE_MODE_CLEAR_DELAY_MS;
+    this.safeModeClearDelayMs =
+      config.safeModeClearDelayMs ?? DEFAULT_SAFE_MODE_CLEAR_DELAY_MS;
   }
 
   /**

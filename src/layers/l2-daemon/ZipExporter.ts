@@ -8,7 +8,11 @@ import path from 'path';
 import archiver from 'archiver';
 import type { CryptoManager } from '../l0-utilities/CryptoManager';
 import type { CourseRow } from '../l1-persistence/DatabaseRowTypes';
-import type { ExportResult, ExportManifest, SelectiveExportOptions } from './ExportManagerTypes';
+import type {
+  ExportResult,
+  ExportManifest,
+  SelectiveExportOptions,
+} from './ExportManagerTypes';
 
 export interface ZipExporterDeps {
   cryptoManager: CryptoManager;
@@ -117,7 +121,10 @@ export async function createZipArchive(
       archive.append(JSON.stringify(manifest, null, 2), { name: 'manifest.json' });
       archive.finalize();
     } catch (error) {
-      deps.log.error('Failed to create ZIP archive', error instanceof Error ? error : undefined);
+      deps.log.error(
+        'Failed to create ZIP archive',
+        error instanceof Error ? error : undefined
+      );
       resolve({ success: false, error: String(error) });
     }
   });

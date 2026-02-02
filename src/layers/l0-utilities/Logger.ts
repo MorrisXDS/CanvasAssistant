@@ -22,7 +22,11 @@ export interface ILogger {
   debug(message: string, data?: Record<string, unknown>): void;
   timed(message: string, durationMs: number, data?: Record<string, unknown>): void;
   startTimer(): { end: () => { durationMs: number; durationFormatted: string } };
-  endTimer(timer: { end: () => { durationMs: number; durationFormatted: string } }, message: string, data?: Record<string, unknown>): { durationMs: number; durationFormatted: string };
+  endTimer(
+    timer: { end: () => { durationMs: number; durationFormatted: string } },
+    message: string,
+    data?: Record<string, unknown>
+  ): { durationMs: number; durationFormatted: string };
   getComponent(): string;
 }
 
@@ -54,14 +58,18 @@ function getISOWeekNumber(date: Date): number {
   const dayNum = d.getUTCDay() || 7;
   d.setUTCDate(d.getUTCDate() + 4 - dayNum);
   const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-  return Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+  return Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
 }
 
 /**
  * Get the log file path with year/week/day structure
  * logs/2026/week-05/2026-01-29.json
  */
-export function getLogFilePath(logDir: string, date: Date = new Date(), format: LogFormat = 'json'): string {
+export function getLogFilePath(
+  logDir: string,
+  date: Date = new Date(),
+  format: LogFormat = 'json'
+): string {
   const year = date.getFullYear();
   const week = getISOWeekNumber(date);
   const weekStr = week.toString().padStart(2, '0');
@@ -101,7 +109,7 @@ export function createTimer(): { end: () => TimingResult } {
       }
 
       return { durationMs, durationFormatted };
-    }
+    },
   };
 }
 
@@ -171,7 +179,9 @@ export interface LoggerOptions {
 }
 
 // Default values (used when no config provided)
-const DEFAULT_LOGGER_OPTIONS: Required<Omit<LoggerOptions, 'componentLevels' | 'rotation' | 'directoryStructure'>> & {
+const DEFAULT_LOGGER_OPTIONS: Required<
+  Omit<LoggerOptions, 'componentLevels' | 'rotation' | 'directoryStructure'>
+> & {
   componentLevels: ComponentLogLevels;
   rotation: RotationConfig;
   directoryStructure: DirectoryStructureConfig;
@@ -231,7 +241,8 @@ export class Logger {
     this.apiKeyMinLength = options.apiKeyMinLength;
     this.componentLevels = options.componentLevels || {};
     this.logFormat = options.format || 'json';
-    this.directoryStructure = options.directoryStructure || DEFAULT_LOGGER_OPTIONS.directoryStructure;
+    this.directoryStructure =
+      options.directoryStructure || DEFAULT_LOGGER_OPTIONS.directoryStructure;
 
     // Ensure log directory exists
     if (!fs.existsSync(this.logDir)) {
@@ -349,7 +360,9 @@ export class Logger {
 
       // Handle rotation events
       dailyRotateTransport.on('rotate', (oldFilename, newFilename) => {
-        this.info(`Log rotated: ${path.basename(oldFilename)} -> ${path.basename(newFilename)}`);
+        this.info(
+          `Log rotated: ${path.basename(oldFilename)} -> ${path.basename(newFilename)}`
+        );
       });
 
       dailyRotateTransport.on('archive', (zipFilename) => {
@@ -393,7 +406,11 @@ export class Logger {
       childLogger.level = componentLevel;
       this.childLoggers.set(component, childLogger);
     }
-    return new ComponentLogger(this.childLoggers.get(component)!, component, this.apiKeyMinLength);
+    return new ComponentLogger(
+      this.childLoggers.get(component)!,
+      component,
+      this.apiKeyMinLength
+    );
   }
 
   /**
@@ -402,7 +419,10 @@ export class Logger {
    * @param data - Optional structured data to include in log entry
    */
   info(message: string, data?: Record<string, unknown>): void {
-    this.logger.info(this.redactPII(message), data ? { data: this.redactDataPII(data) } : undefined);
+    this.logger.info(
+      this.redactPII(message),
+      data ? { data: this.redactDataPII(data) } : undefined
+    );
   }
 
   /**
@@ -411,7 +431,10 @@ export class Logger {
    * @param data - Optional structured data to include in log entry
    */
   warn(message: string, data?: Record<string, unknown>): void {
-    this.logger.warn(this.redactPII(message), data ? { data: this.redactDataPII(data) } : undefined);
+    this.logger.warn(
+      this.redactPII(message),
+      data ? { data: this.redactDataPII(data) } : undefined
+    );
   }
 
   /**
@@ -431,7 +454,10 @@ export class Logger {
       logData.data = this.redactDataPII(data);
     }
 
-    this.logger.error(redactedMessage, Object.keys(logData).length > 0 ? logData : undefined);
+    this.logger.error(
+      redactedMessage,
+      Object.keys(logData).length > 0 ? logData : undefined
+    );
   }
 
   /**
@@ -440,7 +466,10 @@ export class Logger {
    * @param data - Optional structured data to include in log entry
    */
   debug(message: string, data?: Record<string, unknown>): void {
-    this.logger.debug(this.redactPII(message), data ? { data: this.redactDataPII(data) } : undefined);
+    this.logger.debug(
+      this.redactPII(message),
+      data ? { data: this.redactDataPII(data) } : undefined
+    );
   }
 
   /**
@@ -463,10 +492,7 @@ export class Logger {
     let redacted = message;
 
     // Redact Bearer tokens
-    redacted = redacted.replace(
-      /Bearer\s+[A-Za-z0-9_\-.~+/]+=*/g,
-      'Bearer [REDACTED]'
-    );
+    redacted = redacted.replace(/Bearer\s+[A-Za-z0-9_\-.~+/]+=*/g, 'Bearer [REDACTED]');
 
     // Redact email addresses
     redacted = redacted.replace(
@@ -496,9 +522,14 @@ export class Logger {
     for (const [key, value] of Object.entries(data)) {
       // Check for sensitive key names
       const lowerKey = key.toLowerCase();
-      if (lowerKey.includes('token') || lowerKey.includes('key') ||
-          lowerKey.includes('password') || lowerKey.includes('secret') ||
-          lowerKey.includes('credential') || lowerKey.includes('auth')) {
+      if (
+        lowerKey.includes('token') ||
+        lowerKey.includes('key') ||
+        lowerKey.includes('password') ||
+        lowerKey.includes('secret') ||
+        lowerKey.includes('credential') ||
+        lowerKey.includes('auth')
+      ) {
         redacted[key] = '[REDACTED]';
       } else if (typeof value === 'string') {
         redacted[key] = this.redactPII(value);
@@ -517,12 +548,11 @@ export class Logger {
    */
   flush(): Promise<void> {
     return new Promise((resolve) => {
-      const transport = this.logger.transports.find(
-        (t) => t instanceof DailyRotateFile
-      );
+      const transport = this.logger.transports.find((t) => t instanceof DailyRotateFile);
 
       if (transport) {
-        const stream = (transport as unknown as { logStream?: NodeJS.WritableStream }).logStream;
+        const stream = (transport as unknown as { logStream?: NodeJS.WritableStream })
+          .logStream;
         if (stream && typeof stream.once === 'function') {
           stream.once('finish', resolve);
           stream.end();
@@ -624,14 +654,20 @@ export class ComponentLogger {
    * Log info message with optional structured data
    */
   info(message: string, data?: Record<string, unknown>): void {
-    this.logger.info(this.redactPII(message), data ? { data: this.redactDataPII(data) } : undefined);
+    this.logger.info(
+      this.redactPII(message),
+      data ? { data: this.redactDataPII(data) } : undefined
+    );
   }
 
   /**
    * Log warning message with optional structured data
    */
   warn(message: string, data?: Record<string, unknown>): void {
-    this.logger.warn(this.redactPII(message), data ? { data: this.redactDataPII(data) } : undefined);
+    this.logger.warn(
+      this.redactPII(message),
+      data ? { data: this.redactDataPII(data) } : undefined
+    );
   }
 
   /**
@@ -648,14 +684,20 @@ export class ComponentLogger {
       logData.data = this.redactDataPII(data);
     }
 
-    this.logger.error(redactedMessage, Object.keys(logData).length > 0 ? logData : undefined);
+    this.logger.error(
+      redactedMessage,
+      Object.keys(logData).length > 0 ? logData : undefined
+    );
   }
 
   /**
    * Log debug message with optional structured data
    */
   debug(message: string, data?: Record<string, unknown>): void {
-    this.logger.debug(this.redactPII(message), data ? { data: this.redactDataPII(data) } : undefined);
+    this.logger.debug(
+      this.redactPII(message),
+      data ? { data: this.redactDataPII(data) } : undefined
+    );
   }
 
   /**
@@ -682,7 +724,11 @@ export class ComponentLogger {
   /**
    * End a timer and log the result
    */
-  endTimer(timer: { end: () => TimingResult }, message: string, data?: Record<string, unknown>): TimingResult {
+  endTimer(
+    timer: { end: () => TimingResult },
+    message: string,
+    data?: Record<string, unknown>
+  ): TimingResult {
     const result = timer.end();
     this.timed(`${message} - ${result.durationFormatted}`, result.durationMs, data);
     return result;
@@ -698,10 +744,7 @@ export class ComponentLogger {
   private redactPII(message: string): string {
     let redacted = message;
 
-    redacted = redacted.replace(
-      /Bearer\s+[A-Za-z0-9_\-.~+/]+=*/g,
-      'Bearer [REDACTED]'
-    );
+    redacted = redacted.replace(/Bearer\s+[A-Za-z0-9_\-.~+/]+=*/g, 'Bearer [REDACTED]');
 
     redacted = redacted.replace(
       /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g,
@@ -727,9 +770,14 @@ export class ComponentLogger {
 
     for (const [key, value] of Object.entries(data)) {
       const lowerKey = key.toLowerCase();
-      if (lowerKey.includes('token') || lowerKey.includes('key') ||
-          lowerKey.includes('password') || lowerKey.includes('secret') ||
-          lowerKey.includes('credential') || lowerKey.includes('auth')) {
+      if (
+        lowerKey.includes('token') ||
+        lowerKey.includes('key') ||
+        lowerKey.includes('password') ||
+        lowerKey.includes('secret') ||
+        lowerKey.includes('credential') ||
+        lowerKey.includes('auth')
+      ) {
         redacted[key] = '[REDACTED]';
       } else if (typeof value === 'string') {
         redacted[key] = this.redactPII(value);

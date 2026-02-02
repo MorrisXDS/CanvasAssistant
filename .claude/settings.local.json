@@ -101,7 +101,9 @@
       "Bash(git -C \"E:\\\\CanvasAssistant\" log --oneline -3)",
       "Bash(git -C:*)",
       "Bash(gh run:*)",
-      "Bash(npx lint-staged)"
+      "Bash(npx lint-staged)",
+      "Bash(npm run:*)",
+      "Bash(cat:*)"
     ]
   }
 }

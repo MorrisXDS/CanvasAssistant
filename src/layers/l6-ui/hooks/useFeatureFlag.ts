@@ -26,9 +26,13 @@ export function useFeatureFlag(key: FlagKey): boolean {
     // Get initial value from main process
     const checkFlag = async () => {
       try {
-        const api = (window as unknown as { api?: {
-          getFeatureFlag?: (key: string) => Promise<unknown>;
-        } }).api;
+        const api = (
+          window as unknown as {
+            api?: {
+              getFeatureFlag?: (key: string) => Promise<unknown>;
+            };
+          }
+        ).api;
 
         if (api?.getFeatureFlag) {
           const value = await api.getFeatureFlag(key);
@@ -42,9 +46,15 @@ export function useFeatureFlag(key: FlagKey): boolean {
     checkFlag();
 
     // Subscribe to flag changes (if available)
-    const api = (window as unknown as { api?: {
-      onFeatureFlagChanged?: (callback: (data: { key: string; value: unknown }) => void) => () => void;
-    } }).api;
+    const api = (
+      window as unknown as {
+        api?: {
+          onFeatureFlagChanged?: (
+            callback: (data: { key: string; value: unknown }) => void
+          ) => () => void;
+        };
+      }
+    ).api;
 
     if (api?.onFeatureFlagChanged) {
       const unsubscribe = api.onFeatureFlagChanged((data) => {
@@ -73,9 +83,13 @@ export function useFeatureFlagValue<K extends FlagKey>(key: K): FlagValue<K> | n
   useEffect(() => {
     const checkFlag = async () => {
       try {
-        const api = (window as unknown as { api?: {
-          getFeatureFlag?: (key: string) => Promise<unknown>;
-        } }).api;
+        const api = (
+          window as unknown as {
+            api?: {
+              getFeatureFlag?: (key: string) => Promise<unknown>;
+            };
+          }
+        ).api;
 
         if (api?.getFeatureFlag) {
           const result = await api.getFeatureFlag(key);
@@ -89,9 +103,15 @@ export function useFeatureFlagValue<K extends FlagKey>(key: K): FlagValue<K> | n
     checkFlag();
 
     // Subscribe to flag changes
-    const api = (window as unknown as { api?: {
-      onFeatureFlagChanged?: (callback: (data: { key: string; value: unknown }) => void) => () => void;
-    } }).api;
+    const api = (
+      window as unknown as {
+        api?: {
+          onFeatureFlagChanged?: (
+            callback: (data: { key: string; value: unknown }) => void
+          ) => () => void;
+        };
+      }
+    ).api;
 
     if (api?.onFeatureFlagChanged) {
       const unsubscribe = api.onFeatureFlagChanged((data) => {
@@ -120,24 +140,32 @@ export function useFeatureFlagsByCategory(category: string): Array<{
   currentValue: unknown;
   type: string;
 }> {
-  const [flags, setFlags] = useState<Array<{
-    key: string;
-    description: string;
-    currentValue: unknown;
-    type: string;
-  }>>([]);
+  const [flags, setFlags] = useState<
+    Array<{
+      key: string;
+      description: string;
+      currentValue: unknown;
+      type: string;
+    }>
+  >([]);
 
   useEffect(() => {
     const fetchFlags = async () => {
       try {
-        const api = (window as unknown as { api?: {
-          getFeatureFlagsByCategory?: (category: string) => Promise<Array<{
-            key: string;
-            description: string;
-            currentValue: unknown;
-            type: string;
-          }>>;
-        } }).api;
+        const api = (
+          window as unknown as {
+            api?: {
+              getFeatureFlagsByCategory?: (category: string) => Promise<
+                Array<{
+                  key: string;
+                  description: string;
+                  currentValue: unknown;
+                  type: string;
+                }>
+              >;
+            };
+          }
+        ).api;
 
         if (api?.getFeatureFlagsByCategory) {
           const result = await api.getFeatureFlagsByCategory(category);
@@ -166,9 +194,16 @@ export function useFeatureFlagsByCategory(category: string): Array<{
 export function useSetFeatureFlag(): (key: FlagKey, value: unknown) => Promise<boolean> {
   const setFlag = useCallback(async (key: FlagKey, value: unknown): Promise<boolean> => {
     try {
-      const api = (window as unknown as { api?: {
-        setFeatureFlag?: (key: string, value: unknown) => Promise<{ success: boolean }>;
-      } }).api;
+      const api = (
+        window as unknown as {
+          api?: {
+            setFeatureFlag?: (
+              key: string,
+              value: unknown
+            ) => Promise<{ success: boolean }>;
+          };
+        }
+      ).api;
 
       if (api?.setFeatureFlag) {
         const result = await api.setFeatureFlag(key, value);
@@ -190,9 +225,13 @@ export function useSetFeatureFlag(): (key: FlagKey, value: unknown) => Promise<b
 export function useResetFeatureFlag(): (key: FlagKey) => Promise<boolean> {
   const resetFlag = useCallback(async (key: FlagKey): Promise<boolean> => {
     try {
-      const api = (window as unknown as { api?: {
-        resetFeatureFlag?: (key: string) => Promise<{ success: boolean }>;
-      } }).api;
+      const api = (
+        window as unknown as {
+          api?: {
+            resetFeatureFlag?: (key: string) => Promise<{ success: boolean }>;
+          };
+        }
+      ).api;
 
       if (api?.resetFeatureFlag) {
         const result = await api.resetFeatureFlag(key);

@@ -8,21 +8,9 @@
  */
 
 import React from 'react';
-import {
-  Link,
-  Check,
-  AlertCircle,
-  Loader2,
-  ShieldCheck,
-  Key,
-} from 'lucide-react';
+import { Link, Check, AlertCircle, Loader2, ShieldCheck, Key } from 'lucide-react';
 import { useSettings } from './SettingsContext';
-import {
-  Accordion,
-  SettingRow,
-  ToggleSwitch,
-  SettingSelect,
-} from '../primitives';
+import { Accordion, SettingRow, ToggleSwitch, SettingSelect } from '../primitives';
 import { styles } from '../SettingsModalStyles';
 import { SETTINGS_LABELS } from '../../constants';
 import {
@@ -108,9 +96,7 @@ export function AccountSection({ sectionRef }: AccountSectionProps) {
         <Accordion.Content>
           <div style={styles.section}>
             {!isSearching && (
-              <p style={styles.sectionDesc}>
-                {SETTINGS_CATEGORIES.account.description}
-              </p>
+              <p style={styles.sectionDesc}>{SETTINGS_CATEGORIES.account.description}</p>
             )}
 
             {/* Canvas Connection Card */}
@@ -211,10 +197,7 @@ export function AccountSection({ sectionRef }: AccountSectionProps) {
                           </>
                         )}
                       </button>
-                      <button
-                        style={styles.tokenButton}
-                        onClick={handleOpenTokenReplace}
-                      >
+                      <button style={styles.tokenButton} onClick={handleOpenTokenReplace}>
                         <Key size={14} />
                         {SETTINGS_LABELS.buttons.updateToken}
                       </button>
@@ -283,8 +266,14 @@ export function AccountSection({ sectionRef }: AccountSectionProps) {
                   }}
                   options={[
                     { value: '0', label: SETTINGS_LABELS.options.syncInterval.never },
-                    { value: '15', label: SETTINGS_LABELS.options.syncInterval.minutes15 },
-                    { value: '30', label: SETTINGS_LABELS.options.syncInterval.minutes30 },
+                    {
+                      value: '15',
+                      label: SETTINGS_LABELS.options.syncInterval.minutes15,
+                    },
+                    {
+                      value: '30',
+                      label: SETTINGS_LABELS.options.syncInterval.minutes30,
+                    },
                     { value: '60', label: SETTINGS_LABELS.options.syncInterval.hour1 },
                     { value: '120', label: SETTINGS_LABELS.options.syncInterval.hours2 },
                   ]}
@@ -315,7 +304,8 @@ export function AccountSection({ sectionRef }: AccountSectionProps) {
                 label="Sync announcements"
                 description="Include course announcements in sync"
                 isModified={
-                  syncPrefs.syncAnnouncements !== DEFAULT_SYNC_PREFERENCES.syncAnnouncements
+                  syncPrefs.syncAnnouncements !==
+                  DEFAULT_SYNC_PREFERENCES.syncAnnouncements
                 }
                 onReset={() =>
                   updateSyncPrefs({
@@ -350,7 +340,10 @@ export function AccountSection({ sectionRef }: AccountSectionProps) {
                   }
                   options={[
                     { value: '', label: SETTINGS_LABELS.options.closeAction.ask },
-                    { value: 'minimize-to-tray', label: SETTINGS_LABELS.options.closeAction.minimize },
+                    {
+                      value: 'minimize-to-tray',
+                      label: SETTINGS_LABELS.options.closeAction.minimize,
+                    },
                     { value: 'quit', label: SETTINGS_LABELS.options.closeAction.quit },
                   ]}
                 />

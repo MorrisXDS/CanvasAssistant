@@ -340,9 +340,9 @@ export class InsightOrchestrator extends EventEmitter {
     this.log.endTimer(timer, 'Insight generation completed', {
       insightsGenerated: insights.length,
       bySeverity: {
-        critical: insights.filter(i => i.severity === 'critical').length,
-        warning: insights.filter(i => i.severity === 'warning').length,
-        info: insights.filter(i => i.severity === 'info').length,
+        critical: insights.filter((i) => i.severity === 'critical').length,
+        warning: insights.filter((i) => i.severity === 'warning').length,
+        info: insights.filter((i) => i.severity === 'info').length,
       },
     });
 

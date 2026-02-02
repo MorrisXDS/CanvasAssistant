@@ -63,9 +63,10 @@ export function TargetBar({
             ...styles.segment,
             width: earnedWidthStr,
             backgroundColor: courseColor,
-            borderRadius: assessedDisplay <= earnedDisplay
-              ? `${height / 2}px`
-              : `${height / 2}px 0 0 ${height / 2}px`,
+            borderRadius:
+              assessedDisplay <= earnedDisplay
+                ? `${height / 2}px`
+                : `${height / 2}px 0 0 ${height / 2}px`,
           }}
         />
         {/* Assessed segment (grey) */}
@@ -81,19 +82,13 @@ export function TargetBar({
         )}
 
         {/* Hover tooltip */}
-        {isHovered && !showLabel && (
-          <div style={styles.tooltip}>
-            {tooltipText}
-          </div>
-        )}
+        {isHovered && !showLabel && <div style={styles.tooltip}>{tooltipText}</div>}
       </div>
 
       {/* Celebration emoji and/or label */}
       <div style={styles.labelRow}>
         {showLabel && (
-          <span style={styles.label}>
-            {earnedDisplay.toFixed(0)}% earned
-          </span>
+          <span style={styles.label}>{earnedDisplay.toFixed(0)}% earned</span>
         )}
         {hasMetTarget && (
           <span style={styles.celebration} title="Target reached!">

@@ -131,7 +131,10 @@ export async function exportTasksCsv(
       tasksExported: tasks.length,
     };
   } catch (error) {
-    deps.log.error('Failed to export tasks CSV', error instanceof Error ? error : undefined);
+    deps.log.error(
+      'Failed to export tasks CSV',
+      error instanceof Error ? error : undefined
+    );
     return { success: false, error: String(error) };
   }
 }
@@ -205,7 +208,10 @@ export async function exportGradesCsv(
       tasksExported: tasks.length,
     };
   } catch (error) {
-    deps.log.error('Failed to export grades CSV', error instanceof Error ? error : undefined);
+    deps.log.error(
+      'Failed to export grades CSV',
+      error instanceof Error ? error : undefined
+    );
     return { success: false, error: String(error) };
   }
 }

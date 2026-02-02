@@ -182,7 +182,11 @@ const recommendationOrchestratorLogger = logger.child('recommendationOrchestrato
 const workloadOrchestratorLogger = logger.child('workloadOrchestrator');
 
 // Initialize Layer 1 persistence
-const database = new Database({ dbPath: DB_PATH, verbose: false, logger: databaseLogger });
+const database = new Database({
+  dbPath: DB_PATH,
+  verbose: false,
+  logger: databaseLogger,
+});
 const migrationRunner = new MigrationRunner(database);
 let visibleDataProvider: VisibleDataProvider | null = null;
 
@@ -468,11 +472,7 @@ async function resetAppState(options: { deleteToken: boolean }): Promise<void> {
     database.executeWrite('DELETE FROM modules', [], 'modules');
 
     // Notification-related tables
-    database.executeWrite(
-      'DELETE FROM policy_announcements',
-      [],
-      'policy_announcements'
-    );
+    database.executeWrite('DELETE FROM policy_announcements', [], 'policy_announcements');
     database.executeWrite(
       'DELETE FROM announcement_file_references',
       [],
@@ -675,7 +675,6 @@ function restorePendingDownloads(): void {
     logger.error('Failed to restore pending downloads:', error as Error);
   }
 }
-
 
 // Start system monitoring
 systemMonitor.start();
@@ -1238,7 +1237,9 @@ app.whenReady().then(async () => {
     getCrashProtectionManager: () => crashProtectionManager,
     getAppDataDir: () => APP_DATA_DIR,
     getDatabaseCorruptionDetected: () => databaseCorruptionDetected,
-    setDatabaseCorruptionDetected: (value: { errors: string[]; canContinue: boolean } | null) => {
+    setDatabaseCorruptionDetected: (
+      value: { errors: string[]; canContinue: boolean } | null
+    ) => {
       databaseCorruptionDetected = value;
     },
     resetAppState,

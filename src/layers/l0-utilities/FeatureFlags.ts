@@ -176,7 +176,7 @@ export type FlagKey = keyof typeof FLAG_DEFINITIONS;
 /**
  * Get the value type for a specific flag.
  */
-export type FlagValue<K extends FlagKey> = typeof FLAG_DEFINITIONS[K]['defaultValue'];
+export type FlagValue<K extends FlagKey> = (typeof FLAG_DEFINITIONS)[K]['defaultValue'];
 
 /**
  * Options for FeatureFlags service.
@@ -291,7 +291,11 @@ export class FeatureFlags extends EventEmitter {
     }
 
     // In dev mode, enable all experimental flags
-    if (this.devMode && def.category === FlagCategory.EXPERIMENTAL && def.type === FlagType.BOOLEAN) {
+    if (
+      this.devMode &&
+      def.category === FlagCategory.EXPERIMENTAL &&
+      def.type === FlagType.BOOLEAN
+    ) {
       return true as FlagValue<K>;
     }
 
@@ -384,7 +388,9 @@ export class FeatureFlags extends EventEmitter {
   /**
    * Get flags by category.
    */
-  getByCategory(category: FlagCategory): Array<FlagDefinition & { currentValue: unknown }> {
+  getByCategory(
+    category: FlagCategory
+  ): Array<FlagDefinition & { currentValue: unknown }> {
     return (Object.values(FLAG_DEFINITIONS) as FlagDefinition[])
       .filter((def) => def.category === category && !def.internal)
       .map((def) => ({
@@ -422,7 +428,10 @@ export class FeatureFlags extends EventEmitter {
         this.overrides.set(row.key, value);
       }
     } catch (error) {
-      this.log?.error('Failed to load overrides', error instanceof Error ? error : new Error(String(error)));
+      this.log?.error(
+        'Failed to load overrides',
+        error instanceof Error ? error : new Error(String(error))
+      );
     }
   }
 
@@ -480,7 +489,7 @@ export class FeatureFlags extends EventEmitter {
     let hash = 0;
     for (let i = 0; i < userId.length; i++) {
       const char = userId.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
+      hash = (hash << 5) - hash + char;
       hash = hash & hash; // Convert to 32-bit integer
     }
     return Math.abs(hash);

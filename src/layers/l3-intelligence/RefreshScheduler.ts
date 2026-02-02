@@ -265,7 +265,8 @@ export class RefreshScheduler extends EventEmitter {
     const jobId = `task-${taskId}`;
 
     // Backpressure: Check queue size (exclude existing job for this task)
-    const currentQueueSize = this.scheduledJobs.size - (this.scheduledJobs.has(jobId) ? 1 : 0);
+    const currentQueueSize =
+      this.scheduledJobs.size - (this.scheduledJobs.has(jobId) ? 1 : 0);
     if (currentQueueSize >= this.backpressure.maxJobQueueSize) {
       this.emit('queue-full', {
         queueSize: this.scheduledJobs.size,
@@ -334,7 +335,9 @@ export class RefreshScheduler extends EventEmitter {
   /**
    * Update a task in the cached result
    */
-  private updateTaskInResult(explanation: NonNullable<ReturnType<PriorityEngine['getTaskExplanation']>>): void {
+  private updateTaskInResult(
+    explanation: NonNullable<ReturnType<PriorityEngine['getTaskExplanation']>>
+  ): void {
     if (!this.lastResult) return;
 
     for (const queue of Object.values(this.lastResult.queues)) {
@@ -360,7 +363,9 @@ export class RefreshScheduler extends EventEmitter {
     const hours = delayMs / (1000 * 60 * 60);
     const tiers = this.config.getRefreshTiers();
 
-    for (const tier of [...tiers].sort((a, b) => b.minHoursUntilDue - a.minHoursUntilDue)) {
+    for (const tier of [...tiers].sort(
+      (a, b) => b.minHoursUntilDue - a.minHoursUntilDue
+    )) {
       if (hours >= tier.minHoursUntilDue) {
         return tier.name;
       }

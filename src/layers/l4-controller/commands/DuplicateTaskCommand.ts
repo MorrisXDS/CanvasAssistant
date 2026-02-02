@@ -5,12 +5,7 @@
  * Useful for creating similar tasks quickly.
  */
 
-import {
-  Command,
-  CommandContext,
-  CommandResult,
-  DuplicateTaskParams,
-} from '../types';
+import { Command, CommandContext, CommandResult, DuplicateTaskParams } from '../types';
 
 interface TaskRecord {
   id: number;
@@ -22,9 +17,10 @@ interface TaskRecord {
   points_possible: number | null;
 }
 
-export class DuplicateTaskCommand
-  implements Command<DuplicateTaskParams, { taskId: number }>
-{
+export class DuplicateTaskCommand implements Command<
+  DuplicateTaskParams,
+  { taskId: number }
+> {
   readonly name = 'DuplicateTask';
 
   validate(params: DuplicateTaskParams): { valid: boolean; error?: string } {
@@ -32,11 +28,17 @@ export class DuplicateTaskCommand
       return { valid: false, error: 'Invalid task ID' };
     }
 
-    if (params.overrides?.title !== undefined && params.overrides.title.trim().length === 0) {
+    if (
+      params.overrides?.title !== undefined &&
+      params.overrides.title.trim().length === 0
+    ) {
       return { valid: false, error: 'Task title cannot be empty' };
     }
 
-    if (params.overrides?.weight !== undefined && (params.overrides.weight < 0 || params.overrides.weight > 100)) {
+    if (
+      params.overrides?.weight !== undefined &&
+      (params.overrides.weight < 0 || params.overrides.weight > 100)
+    ) {
       return { valid: false, error: 'Weight must be between 0 and 100' };
     }
 
@@ -70,14 +72,17 @@ export class DuplicateTaskCommand
       // Apply overrides
       const newTitle = params.overrides?.title?.trim() || `${originalTask.title} (Copy)`;
       const newCourseId = params.overrides?.courseId ?? originalTask.course_id;
-      const newDescription = params.overrides?.description !== undefined
-        ? params.overrides.description?.trim() || null
-        : originalTask.description;
-      const newDueAt = params.overrides?.dueAt !== undefined
-        ? params.overrides.dueAt || null
-        : originalTask.due_at;
+      const newDescription =
+        params.overrides?.description !== undefined
+          ? params.overrides.description?.trim() || null
+          : originalTask.description;
+      const newDueAt =
+        params.overrides?.dueAt !== undefined
+          ? params.overrides.dueAt || null
+          : originalTask.due_at;
       const newWeight = params.overrides?.weight ?? originalTask.weight;
-      const newPointsPossible = params.overrides?.pointsPossible ?? originalTask.points_possible;
+      const newPointsPossible =
+        params.overrides?.pointsPossible ?? originalTask.points_possible;
 
       // Insert the duplicated task
       const result = context.db.executeWrite(

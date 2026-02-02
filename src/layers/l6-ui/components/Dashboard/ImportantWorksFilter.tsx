@@ -183,16 +183,19 @@ export function ImportantWorksFilter({
     setThresholdInput(String(filter.globalThreshold));
   }, [filter.globalThreshold]);
 
-  const handleThresholdInputChange = useCallback((value: string) => {
-    // Allow any input while typing (including empty)
-    setThresholdInput(value);
+  const handleThresholdInputChange = useCallback(
+    (value: string) => {
+      // Allow any input while typing (including empty)
+      setThresholdInput(value);
 
-    // If valid, update the filter immediately
-    const numValue = parseInt(value, 10);
-    if (!isNaN(numValue) && numValue >= 0 && numValue <= 100) {
-      onFilterChange({ ...filter, globalThreshold: numValue });
-    }
-  }, [filter, onFilterChange]);
+      // If valid, update the filter immediately
+      const numValue = parseInt(value, 10);
+      if (!isNaN(numValue) && numValue >= 0 && numValue <= 100) {
+        onFilterChange({ ...filter, globalThreshold: numValue });
+      }
+    },
+    [filter, onFilterChange]
+  );
 
   const handleThresholdBlur = useCallback(() => {
     // On blur, validate and reset to last valid value if invalid

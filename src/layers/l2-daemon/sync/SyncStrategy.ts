@@ -74,12 +74,19 @@ export abstract class BaseSyncStrategy implements ISyncStrategy {
     this.emitter = context.emitter;
   }
 
-  abstract syncForCourse(canvasCourseId: number, localCourseId: number): Promise<SyncResult>;
+  abstract syncForCourse(
+    canvasCourseId: number,
+    localCourseId: number
+  ): Promise<SyncResult>;
 
   /**
    * Helper to create a successful result
    */
-  protected successResult(count: number, duration: number, errors: string[] = []): SyncResult {
+  protected successResult(
+    count: number,
+    duration: number,
+    errors: string[] = []
+  ): SyncResult {
     return {
       success: errors.length === 0,
       entity: this.entityType,

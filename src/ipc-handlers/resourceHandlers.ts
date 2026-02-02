@@ -140,10 +140,15 @@ export function registerResourceHandlers(ctx: IpcContext): void {
       external_id: string;
       title: string;
       url: string | null;
-    }>('SELECT id, course_id, external_id, title, url FROM resources WHERE external_id = ?', [externalId]);
+    }>(
+      'SELECT id, course_id, external_id, title, url FROM resources WHERE external_id = ?',
+      [externalId]
+    );
 
     if (!resource) {
-      logger.warn(`[resource:downloadByExternalId] Resource not found for external_id: ${externalId}`);
+      logger.warn(
+        `[resource:downloadByExternalId] Resource not found for external_id: ${externalId}`
+      );
       return { success: false, error: 'Resource not found' };
     }
 
@@ -246,7 +251,9 @@ export function registerResourceHandlers(ctx: IpcContext): void {
     }>('SELECT id, local_path, title FROM resources WHERE external_id = ?', [externalId]);
 
     if (!resource) {
-      logger.warn(`[resource:openByExternalId] Resource not found for external_id: ${externalId}`);
+      logger.warn(
+        `[resource:openByExternalId] Resource not found for external_id: ${externalId}`
+      );
       return { success: false, error: 'Resource not found' };
     }
 
@@ -265,7 +272,11 @@ export function registerResourceHandlers(ctx: IpcContext): void {
         [resource.id],
         'resources'
       );
-      return { success: false, error: 'File was deleted from disk. Please re-download.', needsDownload: true };
+      return {
+        success: false,
+        error: 'File was deleted from disk. Please re-download.',
+        needsDownload: true,
+      };
     }
 
     logger.info(`[resource:openByExternalId] Opening local file: ${resource.local_path}`);

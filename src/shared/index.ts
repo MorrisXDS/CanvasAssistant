@@ -128,26 +128,11 @@ export type {
 } from './ipc-contract';
 
 // Client utilities (for preload.ts)
-export {
-  createIpcClient,
-} from './ipc-client';
+export { createIpcClient } from './ipc-client';
 
-export type {
-  IpcClient,
-  TypedApi,
-} from './ipc-client';
+export type { IpcClient, TypedApi } from './ipc-client';
 
 // Handler utilities (for main.ts)
-export {
-  createIpcRegistry,
-  createEventPusher,
-  success,
-  failure,
-} from './ipc-handlers';
+export { createIpcRegistry, createEventPusher, success, failure } from './ipc-handlers';
 
-export type {
-  IpcHandler,
-  OneWayHandler,
-  IpcRegistry,
-  EventPusher,
-} from './ipc-handlers';
+export type { IpcHandler, OneWayHandler, IpcRegistry, EventPusher } from './ipc-handlers';

@@ -128,7 +128,12 @@ export class SyncFileRefExtractor {
         const refs = this.htmlFileExtractor.extract(task.description);
         for (const ref of refs) {
           try {
-            this.storeContentFileReference(localCourseId, 'assignment', task.external_id, ref);
+            this.storeContentFileReference(
+              localCourseId,
+              'assignment',
+              task.external_id,
+              ref
+            );
             count++;
           } catch (error) {
             errors.push(
@@ -172,10 +177,17 @@ export class SyncFileRefExtractor {
       const refs = this.htmlFileExtractor.extract(course.syllabus_body);
       for (const ref of refs) {
         try {
-          this.storeContentFileReference(localCourseId, 'syllabus', course.external_id, ref);
+          this.storeContentFileReference(
+            localCourseId,
+            'syllabus',
+            course.external_id,
+            ref
+          );
           count++;
         } catch (error) {
-          errors.push(`Syllabus: ${error instanceof Error ? error.message : String(error)}`);
+          errors.push(
+            `Syllabus: ${error instanceof Error ? error.message : String(error)}`
+          );
         }
       }
 

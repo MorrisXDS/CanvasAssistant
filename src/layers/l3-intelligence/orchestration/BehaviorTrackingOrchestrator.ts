@@ -291,7 +291,12 @@ export class BehaviorTrackingOrchestrator extends EventEmitter {
     this.cachedStrugglePatterns = identifyStrugglePatterns(events);
 
     // Store patterns in database
-    this.storePattern('weekly_rhythm', 'global', JSON.stringify(this.cachedRhythm), events.length);
+    this.storePattern(
+      'weekly_rhythm',
+      'global',
+      JSON.stringify(this.cachedRhythm),
+      events.length
+    );
 
     for (const course of this.cachedCoursePerformance) {
       this.storePattern(
@@ -334,7 +339,16 @@ export class BehaviorTrackingOrchestrator extends EventEmitter {
        VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
        ON CONFLICT(pattern_type, pattern_key)
        DO UPDATE SET pattern_value = ?, sample_size = ?, confidence = ?, last_updated_at = CURRENT_TIMESTAMP`,
-      [patternType, patternKey, patternValue, sampleSize, confidence, patternValue, sampleSize, confidence],
+      [
+        patternType,
+        patternKey,
+        patternValue,
+        sampleSize,
+        confidence,
+        patternValue,
+        sampleSize,
+        confidence,
+      ],
       'user_behavior_patterns'
     );
   }

@@ -59,11 +59,13 @@ export function calculateClusteringScore(
 
   // Calculate variance
   const variance =
-    counts.reduce((sum, count) => sum + Math.pow(count - avgPerDay, 2), 0) / counts.length;
+    counts.reduce((sum, count) => sum + Math.pow(count - avgPerDay, 2), 0) /
+    counts.length;
 
   // Normalize variance to 0-1 scale
   // Max clustering: all tasks on one day
-  const maxVariance = Math.pow(tasksInWindow.length - avgPerDay, 2) * (1 / totalDays) +
+  const maxVariance =
+    Math.pow(tasksInWindow.length - avgPerDay, 2) * (1 / totalDays) +
     Math.pow(avgPerDay, 2) * ((totalDays - 1) / totalDays);
 
   if (maxVariance === 0) return 0;
@@ -271,13 +273,13 @@ export function detectNeglectedCourses(
       .sort((a, b) => b.completedAt.getTime() - a.completedAt.getTime())[0];
 
     const daysSinceActivity = lastEvent
-      ? Math.floor((now.getTime() - lastEvent.completedAt.getTime()) / (1000 * 60 * 60 * 24))
+      ? Math.floor(
+          (now.getTime() - lastEvent.completedAt.getTime()) / (1000 * 60 * 60 * 24)
+        )
       : windowDays; // Assume max if no activity found
 
     // Count pending tasks
-    const pendingTasks = tasks.filter(
-      (t) => t.courseId === course.id && !t.isCompleted
-    );
+    const pendingTasks = tasks.filter((t) => t.courseId === course.id && !t.isCompleted);
 
     // Count upcoming deadlines (within next 7 days)
     const nextWeek = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
@@ -287,14 +289,18 @@ export function detectNeglectedCourses(
 
     // Calculate neglect score
     // Higher score = more neglected
-    const neglectScore = Math.min(100, Math.max(0,
-      // Days since activity contributes
-      (daysSinceActivity / windowDays) * 50 +
-      // Pending task count contributes
-      Math.min(pendingTasks.length, 10) * 3 +
-      // Upcoming deadlines contribute more heavily
-      upcomingDeadlines * 10
-    ));
+    const neglectScore = Math.min(
+      100,
+      Math.max(
+        0,
+        // Days since activity contributes
+        (daysSinceActivity / windowDays) * 50 +
+          // Pending task count contributes
+          Math.min(pendingTasks.length, 10) * 3 +
+          // Upcoming deadlines contribute more heavily
+          upcomingDeadlines * 10
+      )
+    );
 
     // Only include if actually showing signs of neglect
     if (neglectScore >= 30 && (daysSinceActivity >= 3 || upcomingDeadlines >= 1)) {
@@ -345,7 +351,8 @@ export function calculateCourseBalanceScore(
 
   // Calculate variance
   const variance =
-    counts.reduce((sum, count) => sum + Math.pow(count - avgPerCourse, 2), 0) / counts.length;
+    counts.reduce((sum, count) => sum + Math.pow(count - avgPerCourse, 2), 0) /
+    counts.length;
 
   // Calculate coefficient of variation
   const stdDev = Math.sqrt(variance);

@@ -48,11 +48,16 @@ export function FileContextMenu({
   const isModuleItem = file.source === 'module';
   const isResource = file.source === 'resource';
   // Check if this is a Page type module item (can be downloaded on demand)
-  const isModulePageItem = isModuleItem && (file as { itemType?: string }).itemType === 'Page';
-  const modulePageHasContent = isModulePageItem && (file as { hasLocalContent?: boolean }).hasLocalContent;
+  const isModulePageItem =
+    isModuleItem && (file as { itemType?: string }).itemType === 'Page';
+  const modulePageHasContent =
+    isModulePageItem && (file as { hasLocalContent?: boolean }).hasLocalContent;
   // Check if this is an ExternalUrl module item (not downloadable, opens external link)
-  const isExternalUrlItem = isModuleItem && (file as { itemType?: string }).itemType === 'ExternalUrl';
-  const externalUrl = isExternalUrlItem ? (file as { externalUrl?: string | null }).externalUrl : null;
+  const isExternalUrlItem =
+    isModuleItem && (file as { itemType?: string }).itemType === 'ExternalUrl';
+  const externalUrl = isExternalUrlItem
+    ? (file as { externalUrl?: string | null }).externalUrl
+    : null;
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -155,28 +160,32 @@ export function FileContextMenu({
       )}
 
       {/* Download - for files/resources that aren't downloaded, or module Page items without content (not ExternalUrl) */}
-      {!isExternalUrlItem && ((!isDownloaded && !isPage && !isModulePageItem) || (isModulePageItem && !modulePageHasContent)) && (
-        <button
-          className={styles.contextMenuItem}
-          onClick={() => handleAction(onDownload)}
-          role="menuitem"
-        >
-          <Download size={14} />
-          <span>{isModulePageItem ? 'Download Page Content' : 'Download'}</span>
-        </button>
-      )}
+      {!isExternalUrlItem &&
+        ((!isDownloaded && !isPage && !isModulePageItem) ||
+          (isModulePageItem && !modulePageHasContent)) && (
+          <button
+            className={styles.contextMenuItem}
+            onClick={() => handleAction(onDownload)}
+            role="menuitem"
+          >
+            <Download size={14} />
+            <span>{isModulePageItem ? 'Download Page Content' : 'Download'}</span>
+          </button>
+        )}
 
       {/* Re-download - for downloaded files/resources, or module Page items with content (not ExternalUrl) */}
-      {!isExternalUrlItem && ((isDownloaded && !isPage && !isModulePageItem) || (isModulePageItem && modulePageHasContent)) && (
-        <button
-          className={styles.contextMenuItem}
-          onClick={() => handleAction(onDownload)}
-          role="menuitem"
-        >
-          <RefreshCw size={14} />
-          <span>{isModulePageItem ? 'Re-download Page Content' : 'Re-download'}</span>
-        </button>
-      )}
+      {!isExternalUrlItem &&
+        ((isDownloaded && !isPage && !isModulePageItem) ||
+          (isModulePageItem && modulePageHasContent)) && (
+          <button
+            className={styles.contextMenuItem}
+            onClick={() => handleAction(onDownload)}
+            role="menuitem"
+          >
+            <RefreshCw size={14} />
+            <span>{isModulePageItem ? 'Re-download Page Content' : 'Re-download'}</span>
+          </button>
+        )}
 
       {/* Show in Folder */}
       {isDownloaded && !isPage && (
@@ -254,7 +263,10 @@ export interface FilePropertiesDialogProps {
   onClose: () => void;
 }
 
-export function FilePropertiesContent({ file, courseName }: Omit<FilePropertiesDialogProps, 'onClose'>) {
+export function FilePropertiesContent({
+  file,
+  courseName,
+}: Omit<FilePropertiesDialogProps, 'onClose'>) {
   const filename = getFileName(file);
   const isDownloaded = isFileDownloaded(file);
   const fileSize = file.sizeBytes ? formatFileSize(file.sizeBytes) : 'Unknown';

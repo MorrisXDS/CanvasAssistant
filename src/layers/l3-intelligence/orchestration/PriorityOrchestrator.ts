@@ -493,7 +493,10 @@ export class PriorityOrchestrator extends EventEmitter {
 
       return result;
     } catch (error) {
-      this.log.error('Priority calculation failed', error instanceof Error ? error : undefined);
+      this.log.error(
+        'Priority calculation failed',
+        error instanceof Error ? error : undefined
+      );
       this.emit('calculation-error', error);
       throw error;
     }

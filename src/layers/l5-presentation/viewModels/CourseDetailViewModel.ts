@@ -119,9 +119,8 @@ function createTaskViewModels(
     const effectiveGrade = simulation?.simulatedGrade ?? task.grade;
 
     // Calculate grade impact (how much this task affects course grade)
-    const gradeImpact = totalWeight > 0 && task.weight > 0
-      ? (task.weight / totalWeight) * 100
-      : null;
+    const gradeImpact =
+      totalWeight > 0 && task.weight > 0 ? (task.weight / totalWeight) * 100 : null;
 
     return {
       task,
@@ -174,13 +173,11 @@ function calculateGradeBreakdown(
     }
   }
 
-  const completedGrade = completedTotalWeight > 0
-    ? completedWeightedSum / completedTotalWeight
-    : null;
+  const completedGrade =
+    completedTotalWeight > 0 ? completedWeightedSum / completedTotalWeight : null;
 
-  const simulatedGrade = simulatedTotalWeight > 0
-    ? simulatedWeightedSum / simulatedTotalWeight
-    : null;
+  const simulatedGrade =
+    simulatedTotalWeight > 0 ? simulatedWeightedSum / simulatedTotalWeight : null;
 
   // Calculate required average on remaining work to hit target
   let requiredAverage: number | null = null;
@@ -244,13 +241,22 @@ export function computeCourseDetailViewModel(
   const courseSimulations = simulation.grades.filter((g) => g.courseId === courseId);
   const totalWeight = courseTasks.reduce((sum, t) => sum + t.weight, 0);
 
-  const taskViewModels = createTaskViewModels(courseTasks, courseSimulations, totalWeight);
-  const gradeBreakdown = calculateGradeBreakdown(courseTasks, courseSimulations, course.targetGrade);
+  const taskViewModels = createTaskViewModels(
+    courseTasks,
+    courseSimulations,
+    totalWeight
+  );
+  const gradeBreakdown = calculateGradeBreakdown(
+    courseTasks,
+    courseSimulations,
+    course.targetGrade
+  );
 
   const effectiveAssessedGrade = gradeBreakdown.simulated.grade;
-  const targetDelta = effectiveAssessedGrade !== null
-    ? Math.max(0, course.targetGrade - effectiveAssessedGrade)
-    : course.targetGrade;
+  const targetDelta =
+    effectiveAssessedGrade !== null
+      ? Math.max(0, course.targetGrade - effectiveAssessedGrade)
+      : course.targetGrade;
 
   const now = new Date();
   const completedCount = courseTasks.filter((t) => t.isCompleted).length;
@@ -263,9 +269,8 @@ export function computeCourseDetailViewModel(
     return new Date(t.dueAt) < now;
   }).length;
 
-  const completionRate = courseTasks.length > 0
-    ? (completedCount / courseTasks.length) * 100
-    : 0;
+  const completionRate =
+    courseTasks.length > 0 ? (completedCount / courseTasks.length) * 100 : 0;
 
   const simulatedTasks = taskViewModels.filter((t) => t.isSimulated);
 
@@ -286,6 +291,9 @@ export function computeCourseDetailViewModel(
 /**
  * React hook for course detail view model
  */
-export function useCourseDetailViewModel(state: StoreState, courseId: number): CourseDetailViewModel {
+export function useCourseDetailViewModel(
+  state: StoreState,
+  courseId: number
+): CourseDetailViewModel {
   return computeCourseDetailViewModel(state, courseId);
 }

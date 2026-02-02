@@ -247,9 +247,13 @@ export class CommandDispatcher extends EventEmitter {
       const timing = timer.end();
       const errorMessage = error instanceof Error ? error.message : String(error);
 
-      this.log.error(`Command execution error: ${commandName}`, error instanceof Error ? error : undefined, {
-        durationMs: timing.durationMs,
-      });
+      this.log.error(
+        `Command execution error: ${commandName}`,
+        error instanceof Error ? error : undefined,
+        {
+          durationMs: timing.durationMs,
+        }
+      );
 
       this.emit('command-failed', { command: commandName, params, error: errorMessage });
 

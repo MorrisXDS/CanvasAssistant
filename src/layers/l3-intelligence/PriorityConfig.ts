@@ -96,9 +96,9 @@ export interface PriorityConfigData {
  */
 export const DEFAULT_CONFIG: PriorityConfigData = {
   refreshTiers: [
-    { minHoursUntilDue: 72, refreshIntervalMs: 24 * 60 * 60 * 1000, name: 'daily' },      // > 3 days
-    { minHoursUntilDue: 24, refreshIntervalMs: 6 * 60 * 60 * 1000, name: 'sixHourly' },   // 1-3 days
-    { minHoursUntilDue: 0, refreshIntervalMs: 30 * 60 * 1000, name: 'halfHourly' },       // < 24 hours
+    { minHoursUntilDue: 72, refreshIntervalMs: 24 * 60 * 60 * 1000, name: 'daily' }, // > 3 days
+    { minHoursUntilDue: 24, refreshIntervalMs: 6 * 60 * 60 * 1000, name: 'sixHourly' }, // 1-3 days
+    { minHoursUntilDue: 0, refreshIntervalMs: 30 * 60 * 1000, name: 'halfHourly' }, // < 24 hours
   ],
   factorWeights: {
     urgency: 1.0,
@@ -172,7 +172,8 @@ export class PriorityConfig extends EventEmitter {
     }
 
     // Default to most frequent refresh
-    return this.config.refreshTiers[this.config.refreshTiers.length - 1].refreshIntervalMs;
+    return this.config.refreshTiers[this.config.refreshTiers.length - 1]
+      .refreshIntervalMs;
   }
 
   /**

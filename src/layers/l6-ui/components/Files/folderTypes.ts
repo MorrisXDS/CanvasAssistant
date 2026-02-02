@@ -47,11 +47,7 @@ export const FOLDER_TYPES: FolderTypeConfig[] = [
     type: 'labs',
     color: '#43A047', // Green
     label: 'Labs',
-    patterns: [
-      /\blabs?\b/i,
-      /laboratory/i,
-      /\bpractical\b/i,
-    ],
+    patterns: [/\blabs?\b/i, /laboratory/i, /\bpractical\b/i],
   },
   {
     type: 'assignments',
@@ -70,12 +66,7 @@ export const FOLDER_TYPES: FolderTypeConfig[] = [
     type: 'tutorials',
     color: '#00897B', // Teal
     label: 'Tutorials',
-    patterns: [
-      /tutorials?/i,
-      /\btut\d*\b/i,
-      /\brecitation\b/i,
-      /discussion/i,
-    ],
+    patterns: [/tutorials?/i, /\btut\d*\b/i, /\brecitation\b/i, /discussion/i],
   },
   {
     type: 'exams',
@@ -107,9 +98,7 @@ export const FOLDER_TYPES: FolderTypeConfig[] = [
     type: 'pages',
     color: '#6A1B9A', // Deep purple
     label: 'Pages', // Will be dynamically set to "Page" or "Pages" based on match
-    patterns: [
-      /\bpages?\b/i,
-    ],
+    patterns: [/\bpages?\b/i],
   },
 ];
 

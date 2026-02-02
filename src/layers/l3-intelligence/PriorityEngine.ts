@@ -244,7 +244,7 @@ export class PriorityEngine extends EventEmitter {
     this.log.debug(`Task "${task.title}" scored ${finalScore}`, {
       taskId: task.id,
       queue,
-      factors: factors.map(f => ({
+      factors: factors.map((f) => ({
         id: f.id,
         name: f.name,
         impact: f.impact,

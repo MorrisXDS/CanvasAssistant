@@ -140,8 +140,11 @@ export function forecastWeeklyWorkload(
     });
 
     // Calculate totals
-    const predictedMinutes = workloadTasks.reduce((sum, t) => sum + t.estimatedMinutes, 0);
-    const predictedHours = Math.round(predictedMinutes / 60 * 10) / 10;
+    const predictedMinutes = workloadTasks.reduce(
+      (sum, t) => sum + t.estimatedMinutes,
+      0
+    );
+    const predictedHours = Math.round((predictedMinutes / 60) * 10) / 10;
     const totalWeight = workloadTasks.reduce((sum, t) => sum + (t.weight ?? 0), 0);
 
     // Determine severity
@@ -211,7 +214,9 @@ function generateWeekSuggestions(
   const suggestions: string[] = [];
 
   if (severity === 'crunch') {
-    suggestions.push('This is a very heavy week - start working on tasks now if possible');
+    suggestions.push(
+      'This is a very heavy week - start working on tasks now if possible'
+    );
     if (weekOffset > 0) {
       suggestions.push(`Consider starting high-effort tasks ${weekOffset} week(s) early`);
     }
@@ -231,7 +236,9 @@ function generateWeekSuggestions(
 
   for (const [day, count] of dailyCounts) {
     if (count >= 3) {
-      suggestions.push(`${count} tasks due on ${new Date(day).toLocaleDateString('en-US', { weekday: 'long' })} - consider spreading your work`);
+      suggestions.push(
+        `${count} tasks due on ${new Date(day).toLocaleDateString('en-US', { weekday: 'long' })} - consider spreading your work`
+      );
       break;
     }
   }
@@ -239,7 +246,10 @@ function generateWeekSuggestions(
   // High-weight tasks
   const highWeightTasks = tasks.filter((t) => (t.weight ?? 0) >= 15);
   if (highWeightTasks.length > 0) {
-    const taskNames = highWeightTasks.map((t) => t.title).slice(0, 2).join(', ');
+    const taskNames = highWeightTasks
+      .map((t) => t.title)
+      .slice(0, 2)
+      .join(', ');
     suggestions.push(`Prioritize high-weight assessments: ${taskNames}`);
   }
 
@@ -322,7 +332,9 @@ export function detectCrunchPeriods(
       // End of crunch period
       if (crunchTasks.length >= 3 && crunchHours >= 10) {
         const endDate = sortedDays[i - 1].date;
-        crunchPeriods.push(buildCrunchPeriod(crunchStart, endDate, crunchTasks, crunchHours));
+        crunchPeriods.push(
+          buildCrunchPeriod(crunchStart, endDate, crunchTasks, crunchHours)
+        );
       }
       crunchStart = null;
       crunchTasks = [];
@@ -348,7 +360,8 @@ function buildCrunchPeriod(
   tasks: WorkloadTask[],
   totalHours: number
 ): CrunchPeriod {
-  const durationDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+  const durationDays =
+    Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
 
   let severity: CrunchPeriod['severity'] = 'moderate';
   if (totalHours >= 30 || tasks.length >= 8) {
@@ -374,7 +387,10 @@ function buildCrunchPeriod(
   const highWeight = tasks.filter((t) => (t.weight ?? 0) >= 15);
   if (highWeight.length > 0) {
     recommendations.push(
-      `Focus on high-stakes items first: ${highWeight.map((t) => t.title).slice(0, 2).join(', ')}`
+      `Focus on high-stakes items first: ${highWeight
+        .map((t) => t.title)
+        .slice(0, 2)
+        .join(', ')}`
     );
   }
 
@@ -443,8 +459,9 @@ export function suggestPreemptiveActions(
     for (const [dayKey, dayTasks] of dailyClusters) {
       if (dayTasks.length >= 3) {
         // Suggest spreading work
-        const lowestPriority = dayTasks
-          .sort((a, b) => (a.weight ?? 0) - (b.weight ?? 0))[0];
+        const lowestPriority = dayTasks.sort(
+          (a, b) => (a.weight ?? 0) - (b.weight ?? 0)
+        )[0];
 
         actions.push({
           type: 'spread_work',

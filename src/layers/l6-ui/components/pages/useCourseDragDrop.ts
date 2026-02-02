@@ -67,14 +67,11 @@ export function useCourseDragDrop(courseIds: number[]) {
   );
 
   // Handle drag start
-  const handleDragStart = useCallback(
-    (e: React.DragEvent, courseId: number) => {
-      e.dataTransfer.effectAllowed = 'move';
-      e.dataTransfer.setData('text/plain', courseId.toString());
-      setDraggedCourseId(courseId);
-    },
-    []
-  );
+  const handleDragStart = useCallback((e: React.DragEvent, courseId: number) => {
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', courseId.toString());
+    setDraggedCourseId(courseId);
+  }, []);
 
   // Handle drag over
   const handleDragOver = useCallback(

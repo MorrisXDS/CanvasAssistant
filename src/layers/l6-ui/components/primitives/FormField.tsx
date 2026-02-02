@@ -86,9 +86,7 @@ export function FormField({
       </label>
 
       {/* Input wrapper */}
-      <div style={styles.inputWrapper}>
-        {children}
-      </div>
+      <div style={styles.inputWrapper}>{children}</div>
 
       {/* Help text or error */}
       {(helpText || error) && (
@@ -170,7 +168,10 @@ const styles: Record<string, React.CSSProperties> = {
 // SUB-COMPONENTS: TextInput, Select, etc.
 // =============================================================================
 
-interface TextInputProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'size'> {
+interface TextInputProps extends Omit<
+  React.InputHTMLAttributes<HTMLInputElement>,
+  'size'
+> {
   /** Input size variant */
   size?: 'sm' | 'md' | 'lg';
   /** Show error state */
@@ -241,7 +242,10 @@ export function TextArea({
   );
 }
 
-interface SelectProps extends Omit<React.SelectHTMLAttributes<HTMLSelectElement>, 'size'> {
+interface SelectProps extends Omit<
+  React.SelectHTMLAttributes<HTMLSelectElement>,
+  'size'
+> {
   /** Select size variant */
   inputSize?: 'sm' | 'md' | 'lg';
   /** Show error state */

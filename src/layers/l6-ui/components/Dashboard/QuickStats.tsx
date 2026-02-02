@@ -5,7 +5,13 @@
 
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { BookOpen, FileText, AlertTriangle, BarChart3, type LucideIcon } from 'lucide-react';
+import {
+  BookOpen,
+  FileText,
+  AlertTriangle,
+  BarChart3,
+  type LucideIcon,
+} from 'lucide-react';
 import { Card } from '../shared';
 
 export interface StatItem {
@@ -62,32 +68,32 @@ export function QuickStats({ stats, onAction }: QuickStatsProps) {
               <div style={styles.iconWrapper}>
                 <Icon size={24} color="var(--color-blue)" />
               </div>
-            <div style={styles.textContent}>
-              <div style={styles.value}>{stat.value}</div>
-              <div style={styles.label}>{stat.label}</div>
-            </div>
-            {stat.trend && (
-              <div
-                style={{
-                  ...styles.trend,
-                  color:
-                    stat.trend.direction === 'up'
-                      ? 'var(--color-success)'
-                      : stat.trend.direction === 'down'
-                      ? 'var(--color-error)'
-                      : stat.trend.direction === 'warning'
-                      ? 'var(--color-error)'
-                      : 'var(--text-muted)',
-                }}
-              >
-                {stat.trend.direction === 'up' && '↑'}
-                {stat.trend.direction === 'down' && '↓'}
-                {stat.trend.direction === 'warning' && '⚠'}
-                {stat.trend.value}
+              <div style={styles.textContent}>
+                <div style={styles.value}>{stat.value}</div>
+                <div style={styles.label}>{stat.label}</div>
               </div>
-            )}
-          </div>
-        </Card>
+              {stat.trend && (
+                <div
+                  style={{
+                    ...styles.trend,
+                    color:
+                      stat.trend.direction === 'up'
+                        ? 'var(--color-success)'
+                        : stat.trend.direction === 'down'
+                          ? 'var(--color-error)'
+                          : stat.trend.direction === 'warning'
+                            ? 'var(--color-error)'
+                            : 'var(--text-muted)',
+                  }}
+                >
+                  {stat.trend.direction === 'up' && '↑'}
+                  {stat.trend.direction === 'down' && '↓'}
+                  {stat.trend.direction === 'warning' && '⚠'}
+                  {stat.trend.value}
+                </div>
+              )}
+            </div>
+          </Card>
         );
       })}
     </div>

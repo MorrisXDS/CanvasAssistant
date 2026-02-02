@@ -142,7 +142,12 @@ export class CanvasClientManager {
       });
 
       // Forward sync events to metrics and renderer
-      this.setupSyncEventHandlers(logger, metricsCollector, getMainWindow, getVisibleDataProvider);
+      this.setupSyncEventHandlers(
+        logger,
+        metricsCollector,
+        getMainWindow,
+        getVisibleDataProvider
+      );
 
       // Start background token validation to detect expired/revoked tokens
       credentialManager.startBackgroundValidation();
@@ -205,19 +210,22 @@ export class CanvasClientManager {
       }
     });
 
-    this.syncEngine.on('sync-entity-error', ({ entity, externalId, error, courseName }) => {
-      metricsCollector.increment(`sync.entity.${entity}.errors`);
-      logger.warn(`Sync entity error: ${entity} (${externalId}): ${error}`);
-      const mainWindow = getMainWindow();
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('sync:entityError', {
-          entity,
-          externalId,
-          error,
-          courseName,
-        });
+    this.syncEngine.on(
+      'sync-entity-error',
+      ({ entity, externalId, error, courseName }) => {
+        metricsCollector.increment(`sync.entity.${entity}.errors`);
+        logger.warn(`Sync entity error: ${entity} (${externalId}): ${error}`);
+        const mainWindow = getMainWindow();
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('sync:entityError', {
+            entity,
+            externalId,
+            error,
+            courseName,
+          });
+        }
       }
-    });
+    );
 
     this.syncEngine.on('sync-progress', (progress) => {
       const mainWindow = getMainWindow();

@@ -12,7 +12,10 @@ export interface NotificationUpdates {
   dismissedAt?: string | null;
 }
 
-export class NotificationRepository extends BaseRepository<Notification, NotificationRow> {
+export class NotificationRepository extends BaseRepository<
+  Notification,
+  NotificationRow
+> {
   constructor(db: Database) {
     super(db);
   }
@@ -58,10 +61,9 @@ export class NotificationRepository extends BaseRepository<Notification, Notific
    * Find a notification by its ID.
    */
   findById(id: number): Notification | null {
-    return this.queryOne<NotificationRow>(
-      'SELECT * FROM notifications WHERE id = ?',
-      [id]
-    );
+    return this.queryOne<NotificationRow>('SELECT * FROM notifications WHERE id = ?', [
+      id,
+    ]);
   }
 
   /**

@@ -50,9 +50,7 @@ export function PolicyBadgeGroup({
           size={size}
         />
       ))}
-      {hiddenCount > 0 && (
-        <span style={styles.moreIndicator}>+{hiddenCount}</span>
-      )}
+      {hiddenCount > 0 && <span style={styles.moreIndicator}>+{hiddenCount}</span>}
     </div>
   );
 }

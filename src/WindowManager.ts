@@ -3,14 +3,7 @@
  * Handles BrowserWindow and system tray management
  */
 
-import {
-  app,
-  BrowserWindow,
-  Menu,
-  nativeImage,
-  nativeTheme,
-  Tray,
-} from 'electron';
+import { app, BrowserWindow, Menu, nativeImage, nativeTheme, Tray } from 'electron';
 import fs from 'fs';
 import path from 'path';
 import type { Logger } from './layers/l0-utilities/Logger';
@@ -48,7 +41,10 @@ export class WindowManager {
   private preloadPath: string;
   private getAutoSyncManager: () => AutoSyncManager | null;
   private getWindowBehavior: () => WindowBehaviorSettings;
-  private getDatabaseCorruptionDetected: () => { errors: string[]; canContinue: boolean } | null;
+  private getDatabaseCorruptionDetected: () => {
+    errors: string[];
+    canContinue: boolean;
+  } | null;
   private isQuitting: () => boolean;
   private setIsQuitting: (value: boolean) => void;
 
@@ -145,7 +141,9 @@ export class WindowManager {
       this.mainWindow.webContents.openDevTools();
     } else {
       this.logger.info('Loading production build');
-      this.mainWindow.loadFile(path.join(path.dirname(this.preloadPath), 'renderer/index.html'));
+      this.mainWindow.loadFile(
+        path.join(path.dirname(this.preloadPath), 'renderer/index.html')
+      );
     }
 
     // Send recovery status once window is ready
@@ -249,12 +247,21 @@ export class WindowManager {
     // - Windows: system tray works best with 32x32 icons
     // - Linux: use 22x22 or 24x24, falling back to 32x32
     if (process.platform === 'darwin') {
-      iconPath = path.join(path.dirname(this.preloadPath), '../assets/app.iconset/icon_16x16.png');
+      iconPath = path.join(
+        path.dirname(this.preloadPath),
+        '../assets/app.iconset/icon_16x16.png'
+      );
       // eslint-disable-next-line cross-platform/require-platform-check -- Windows requires 32x32 icons for system tray display
     } else if (process.platform === 'win32') {
-      iconPath = path.join(path.dirname(this.preloadPath), '../assets/app.iconset/icon_32x32.png');
+      iconPath = path.join(
+        path.dirname(this.preloadPath),
+        '../assets/app.iconset/icon_32x32.png'
+      );
     } else {
-      iconPath = path.join(path.dirname(this.preloadPath), '../assets/app.iconset/icon_32x32.png');
+      iconPath = path.join(
+        path.dirname(this.preloadPath),
+        '../assets/app.iconset/icon_32x32.png'
+      );
     }
 
     // Fallback to a simpler path structure for packaged app

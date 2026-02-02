@@ -249,9 +249,11 @@ const api = {
       endAt?: string;
       allDay?: boolean;
       location?: string;
+      courseId?: number | null;
       color?: string;
       notes?: string;
       reminderMinutes?: number;
+      taskType?: string;
     }
   ) => ipcRenderer.invoke('calendar:updateEvent', id, data),
 

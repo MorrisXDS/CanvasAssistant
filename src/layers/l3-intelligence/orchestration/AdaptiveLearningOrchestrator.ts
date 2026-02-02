@@ -285,11 +285,14 @@ export class AdaptiveLearningOrchestrator extends EventEmitter {
    * Get weight adjustments for a specific factor
    */
   getAdjustmentsForFactor(factorName: string): WeightAdjustment[] {
-    const rows = this.db.executeRead<WeightAdjustmentRow>(`
+    const rows = this.db.executeRead<WeightAdjustmentRow>(
+      `
       SELECT * FROM adaptive_weight_adjustments
       WHERE factor_name = ?
       ORDER BY course_id, task_type
-    `, [factorName]);
+    `,
+      [factorName]
+    );
 
     return rows.map((row) => ({
       factorName: row.factor_name,
@@ -306,11 +309,14 @@ export class AdaptiveLearningOrchestrator extends EventEmitter {
    * Get weight adjustments for a specific course
    */
   getAdjustmentsForCourse(courseId: number): WeightAdjustment[] {
-    const rows = this.db.executeRead<WeightAdjustmentRow>(`
+    const rows = this.db.executeRead<WeightAdjustmentRow>(
+      `
       SELECT * FROM adaptive_weight_adjustments
       WHERE course_id = ? OR course_id IS NULL
       ORDER BY factor_name, task_type
-    `, [courseId]);
+    `,
+      [courseId]
+    );
 
     return rows.map((row) => ({
       factorName: row.factor_name,
@@ -379,18 +385,22 @@ export class AdaptiveLearningOrchestrator extends EventEmitter {
     }
 
     const avgPriorityByOutcome: Record<LearningOutcome, number> = {
-      completed_early: outcomeDistribution.completed_early > 0
-        ? prioritySums.completed_early / outcomeDistribution.completed_early
-        : 0,
-      completed_ontime: outcomeDistribution.completed_ontime > 0
-        ? prioritySums.completed_ontime / outcomeDistribution.completed_ontime
-        : 0,
-      completed_late: outcomeDistribution.completed_late > 0
-        ? prioritySums.completed_late / outcomeDistribution.completed_late
-        : 0,
-      missed: outcomeDistribution.missed > 0
-        ? prioritySums.missed / outcomeDistribution.missed
-        : 0,
+      completed_early:
+        outcomeDistribution.completed_early > 0
+          ? prioritySums.completed_early / outcomeDistribution.completed_early
+          : 0,
+      completed_ontime:
+        outcomeDistribution.completed_ontime > 0
+          ? prioritySums.completed_ontime / outcomeDistribution.completed_ontime
+          : 0,
+      completed_late:
+        outcomeDistribution.completed_late > 0
+          ? prioritySums.completed_late / outcomeDistribution.completed_late
+          : 0,
+      missed:
+        outcomeDistribution.missed > 0
+          ? prioritySums.missed / outcomeDistribution.missed
+          : 0,
     };
 
     const adjustments = this.getWeightAdjustments();

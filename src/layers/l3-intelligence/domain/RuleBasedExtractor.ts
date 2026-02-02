@@ -48,7 +48,13 @@ export interface ExtractedPercentage {
  */
 export interface ExtractedPolicy {
   /** Type of policy detected */
-  policyType: 'late_penalty' | 'grace_period' | 'grace_token' | 'extension' | 'attendance' | 'other';
+  policyType:
+    | 'late_penalty'
+    | 'grace_period'
+    | 'grace_token'
+    | 'extension'
+    | 'attendance'
+    | 'other';
   /** Policy name/description */
   name: string;
   /** The matched text */
@@ -196,18 +202,29 @@ const ACADEMIC_TERMS = [
 // ============================================================================
 
 const MONTH_MAP: Record<string, number> = {
-  january: 0, jan: 0,
-  february: 1, feb: 1,
-  march: 2, mar: 2,
-  april: 3, apr: 3,
+  january: 0,
+  jan: 0,
+  february: 1,
+  feb: 1,
+  march: 2,
+  mar: 2,
+  april: 3,
+  apr: 3,
   may: 4,
-  june: 5, jun: 5,
-  july: 6, jul: 6,
-  august: 7, aug: 7,
-  september: 8, sep: 8,
-  october: 9, oct: 9,
-  november: 10, nov: 10,
-  december: 11, dec: 11,
+  june: 5,
+  jun: 5,
+  july: 6,
+  jul: 6,
+  august: 7,
+  aug: 7,
+  september: 8,
+  sep: 8,
+  october: 9,
+  oct: 9,
+  november: 10,
+  nov: 10,
+  december: 11,
+  dec: 11,
 };
 
 /**
@@ -284,7 +301,9 @@ function parseDate(dateStr: string): Date | null {
   if (monthDayYear) {
     const month = MONTH_MAP[monthDayYear[1].toLowerCase()];
     const day = parseInt(monthDayYear[2], 10);
-    const year = monthDayYear[3] ? parseInt(monthDayYear[3], 10) : new Date().getFullYear();
+    const year = monthDayYear[3]
+      ? parseInt(monthDayYear[3], 10)
+      : new Date().getFullYear();
 
     if (month !== undefined && day >= 1 && day <= 31) {
       return new Date(year, month, day);
@@ -354,7 +373,9 @@ export function extractPolicies(text: string): ExtractedPolicy[] {
         // Extract specific values from patterns
         if (policyType === 'late_penalty') {
           // Try to extract penalty percentage and time unit
-          const penaltyMatch = text.match(/(\d+(?:\.\d+)?)\s*%\s*(?:penalty|deduction|off)?\s*(?:per|each|every)\s*(day|hour)/i);
+          const penaltyMatch = text.match(
+            /(\d+(?:\.\d+)?)\s*%\s*(?:penalty|deduction|off)?\s*(?:per|each|every)\s*(day|hour)/i
+          );
           if (penaltyMatch) {
             rules.penaltyPercent = parseFloat(penaltyMatch[1]);
             rules.perUnit = penaltyMatch[2].toLowerCase();
@@ -363,8 +384,9 @@ export function extractPolicies(text: string): ExtractedPolicy[] {
 
         if (policyType === 'grace_period') {
           // Extract grace period duration
-          const gracePeriodMatch = text.match(/(\d+)\s*(hour|day|minute)s?\s*grace/i)
-            || text.match(/grace\s+(?:period\s+)?(?:of\s+)?(\d+)\s*(hour|day|minute)/i);
+          const gracePeriodMatch =
+            text.match(/(\d+)\s*(hour|day|minute)s?\s*grace/i) ||
+            text.match(/grace\s+(?:period\s+)?(?:of\s+)?(\d+)\s*(hour|day|minute)/i);
           if (gracePeriodMatch) {
             rules.duration = parseInt(gracePeriodMatch[1], 10);
             rules.unit = gracePeriodMatch[2].toLowerCase();
@@ -373,7 +395,9 @@ export function extractPolicies(text: string): ExtractedPolicy[] {
 
         if (policyType === 'grace_token') {
           // Extract token count
-          const tokenMatch = text.match(/(\d+)\s+(?:grace\s+)?(?:late\s+)?(?:day|token)s?/i);
+          const tokenMatch = text.match(
+            /(\d+)\s+(?:grace\s+)?(?:late\s+)?(?:day|token)s?/i
+          );
           if (tokenMatch) {
             rules.totalTokens = parseInt(tokenMatch[1], 10);
           }
@@ -449,7 +473,16 @@ export function runRuleBasedExtraction(text: string): RuleBasedExtractionResult 
     policies,
     keywords,
     academicTerms: keywords.filter((k) =>
-      ['assignment', 'exam', 'quiz', 'midterm', 'final', 'project', 'lab', 'essay'].includes(k)
+      [
+        'assignment',
+        'exam',
+        'quiz',
+        'midterm',
+        'final',
+        'project',
+        'lab',
+        'essay',
+      ].includes(k)
     ),
     stats: {
       totalMatches: dates.length + percentages.length + policies.length,
@@ -477,7 +510,9 @@ export function extractAssignmentWeights(text: string): Map<string, number> {
 
     while ((match = pattern.exec(text)) !== null) {
       // Determine which group has the name vs the percentage
-      const name = isNaN(parseInt(match[1], 10)) ? match[1].toLowerCase() : match[2].toLowerCase();
+      const name = isNaN(parseInt(match[1], 10))
+        ? match[1].toLowerCase()
+        : match[2].toLowerCase();
       const percentStr = isNaN(parseInt(match[1], 10)) ? match[2] : match[1];
       const percent = parseFloat(percentStr);
 

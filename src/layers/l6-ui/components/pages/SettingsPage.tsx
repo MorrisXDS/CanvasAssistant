@@ -12,11 +12,7 @@ export function SettingsPage() {
 
   return (
     <div style={styles.container}>
-      <SettingsModal
-        isOpen={true}
-        onClose={() => navigate(-1)}
-        isFullPage={true}
-      />
+      <SettingsModal isOpen={true} onClose={() => navigate(-1)} isFullPage={true} />
     </div>
   );
 }

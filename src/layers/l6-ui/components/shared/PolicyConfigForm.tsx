@@ -86,9 +86,7 @@ export function PolicyConfigForm({
   const [hardCutoffDays, setHardCutoffDays] = useState(
     String(initialData?.config?.hard_cutoff_days ?? '')
   );
-  const [minGrade, setMinGrade] = useState(
-    String(initialData?.config?.min_grade ?? '0')
-  );
+  const [minGrade, setMinGrade] = useState(String(initialData?.config?.min_grade ?? '0'));
 
   // Grace Token Config
   const [graceTokenTaskType, setGraceTokenTaskType] = useState(
@@ -101,7 +99,8 @@ export function PolicyConfigForm({
     String(initialData?.config?.hours_per_token ?? '24')
   );
   const [maxTokensPerTask, setMaxTokensPerTask] = useState(
-    initialData?.config?.max_tokens_per_task === null || initialData?.config?.max_tokens_per_task === undefined
+    initialData?.config?.max_tokens_per_task === null ||
+      initialData?.config?.max_tokens_per_task === undefined
       ? ''
       : String(initialData?.config?.max_tokens_per_task)
   );
@@ -122,13 +121,17 @@ export function PolicyConfigForm({
     initialData?.config?.source_group_id ? 'group' : 'task'
   );
   const [sourceId, setSourceId] = useState(
-    String(initialData?.config?.source_task_id || initialData?.config?.source_group_id || '')
+    String(
+      initialData?.config?.source_task_id || initialData?.config?.source_group_id || ''
+    )
   );
   const [targetType, setTargetType] = useState<'task' | 'group'>(
     initialData?.config?.target_group_id ? 'group' : 'task'
   );
   const [targetId, setTargetId] = useState(
-    String(initialData?.config?.target_task_id || initialData?.config?.target_group_id || '')
+    String(
+      initialData?.config?.target_task_id || initialData?.config?.target_group_id || ''
+    )
   );
   const [transferType, setTransferType] = useState<'full' | 'partial' | 'conditional'>(
     (initialData?.config?.transfer_type as 'full' | 'partial' | 'conditional') || 'full'
@@ -141,8 +144,11 @@ export function PolicyConfigForm({
   );
 
   // Grade Replacement Config
-  const [replacementType, setReplacementType] = useState<'if_higher' | 'always' | 'best_of'>(
-    (initialData?.config?.replacement_type as 'if_higher' | 'always' | 'best_of') || 'if_higher'
+  const [replacementType, setReplacementType] = useState<
+    'if_higher' | 'always' | 'best_of'
+  >(
+    (initialData?.config?.replacement_type as 'if_higher' | 'always' | 'best_of') ||
+      'if_higher'
   );
   const [replacementRatio, setReplacementRatio] = useState(
     String(initialData?.config?.replacement_ratio ?? '1.0')
@@ -151,7 +157,9 @@ export function PolicyConfigForm({
   // Auto-generate policy name for grace tokens when task type changes
   useEffect(() => {
     if (policyType === 'grace_tokens' && graceTokenTaskType && !initialData?.policyName) {
-      const typeLabel = GRACE_TOKEN_TASK_TYPES.find(t => t.value === graceTokenTaskType)?.label || graceTokenTaskType;
+      const typeLabel =
+        GRACE_TOKEN_TASK_TYPES.find((t) => t.value === graceTokenTaskType)?.label ||
+        graceTokenTaskType;
       setPolicyName(`Grace Tokens - ${typeLabel}`);
     }
   }, [graceTokenTaskType, policyType, initialData?.policyName]);
@@ -165,7 +173,8 @@ export function PolicyConfigForm({
 
     // Check for duplicates (case-insensitive)
     const isDuplicate = existingPolicyNames.some(
-      name => name.toLowerCase() === policyName.trim().toLowerCase() &&
+      (name) =>
+        name.toLowerCase() === policyName.trim().toLowerCase() &&
         name.toLowerCase() !== initialData?.policyName?.toLowerCase()
     );
 
@@ -197,7 +206,8 @@ export function PolicyConfigForm({
           total_tokens: parseInt(totalTokens) || 3,
           tokens_used: (initialData?.config?.tokens_used as number) || 0,
           hours_per_token: parseInt(hoursPerToken) || 24,
-          max_tokens_per_task: maxTokensPerTask === '' ? null : (parseInt(maxTokensPerTask) || null),
+          max_tokens_per_task:
+            maxTokensPerTask === '' ? null : parseInt(maxTokensPerTask) || null,
         };
         break;
 
@@ -242,11 +252,30 @@ export function PolicyConfigForm({
       config,
     };
   }, [
-    policyType, policyName, penaltyType, penaltyValue, gracePeriodHours, hardCutoffDays, minGrade,
-    graceTokenTaskType, totalTokens, hoursPerToken, maxTokensPerTask, initialData?.config?.tokens_used,
-    dropCount, dropCategory, minSubmissions,
-    sourceType, sourceId, targetType, targetId, transferType, transferPercent, conditionType,
-    replacementType, replacementRatio,
+    policyType,
+    policyName,
+    penaltyType,
+    penaltyValue,
+    gracePeriodHours,
+    hardCutoffDays,
+    minGrade,
+    graceTokenTaskType,
+    totalTokens,
+    hoursPerToken,
+    maxTokensPerTask,
+    initialData?.config?.tokens_used,
+    dropCount,
+    dropCategory,
+    minSubmissions,
+    sourceType,
+    sourceId,
+    targetType,
+    targetId,
+    transferType,
+    transferPercent,
+    conditionType,
+    replacementType,
+    replacementRatio,
   ]);
 
   // Check form validity
@@ -255,7 +284,9 @@ export function PolicyConfigForm({
 
     switch (policyType) {
       case 'grace_tokens':
-        return !!graceTokenTaskType && parseInt(totalTokens) > 0 && parseInt(hoursPerToken) > 0;
+        return (
+          !!graceTokenTaskType && parseInt(totalTokens) > 0 && parseInt(hoursPerToken) > 0
+        );
       case 'drop_lowest':
         return !!dropCategory && parseInt(dropCount) > 0;
       case 'weight_transfer':
@@ -264,7 +295,18 @@ export function PolicyConfigForm({
       default:
         return true;
     }
-  }, [policyName, nameError, policyType, graceTokenTaskType, totalTokens, hoursPerToken, dropCategory, dropCount, sourceId, targetId]);
+  }, [
+    policyName,
+    nameError,
+    policyType,
+    graceTokenTaskType,
+    totalTokens,
+    hoursPerToken,
+    dropCategory,
+    dropCount,
+    sourceId,
+    targetId,
+  ]);
 
   // Notify parent of validity and data changes
   useEffect(() => {
@@ -411,7 +453,11 @@ export function PolicyConfigForm({
           <div style={styles.infoBox}>
             <Info size={14} />
             <span>
-              {totalTokens || 0} tokens × {hoursPerToken || 0} hours = <strong>{(parseInt(totalTokens) || 0) * (parseInt(hoursPerToken) || 0)} total extension hours</strong>
+              {totalTokens || 0} tokens × {hoursPerToken || 0} hours ={' '}
+              <strong>
+                {(parseInt(totalTokens) || 0) * (parseInt(hoursPerToken) || 0)} total
+                extension hours
+              </strong>
             </span>
           </div>
 
@@ -427,10 +473,14 @@ export function PolicyConfigForm({
                 min="1"
               />
               <span style={styles.maxPerTaskHint}>
-                {maxTokensPerTask === '' ? 'No limit' : `${maxTokensPerTask} tokens max per task`}
+                {maxTokensPerTask === ''
+                  ? 'No limit'
+                  : `${maxTokensPerTask} tokens max per task`}
               </span>
             </div>
-            <p style={styles.hint}>Maximum tokens on a single task (leave empty for no limit)</p>
+            <p style={styles.hint}>
+              Maximum tokens on a single task (leave empty for no limit)
+            </p>
           </div>
         </div>
       )}
@@ -450,7 +500,7 @@ export function PolicyConfigForm({
                 {taskGroups.length > 0 && (
                   <>
                     <optgroup label="Course Groups">
-                      {taskGroups.map(group => (
+                      {taskGroups.map((group) => (
                         <option key={group.id} value={group.name}>
                           {group.displayName}
                         </option>
@@ -459,7 +509,7 @@ export function PolicyConfigForm({
                   </>
                 )}
                 <optgroup label="Task Types">
-                  {CATEGORY_TYPES.map(type => (
+                  {CATEGORY_TYPES.map((type) => (
                     <option key={type.value} value={type.value}>
                       {type.label}
                     </option>
@@ -517,11 +567,15 @@ export function PolicyConfigForm({
               >
                 <option value="">Select {sourceType}...</option>
                 {sourceType === 'task'
-                  ? tasks.map(t => (
-                      <option key={t.id} value={t.id}>{t.title}</option>
+                  ? tasks.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.title}
+                      </option>
                     ))
-                  : taskGroups.map(g => (
-                      <option key={g.id} value={g.id}>{g.displayName}</option>
+                  : taskGroups.map((g) => (
+                      <option key={g.id} value={g.id}>
+                        {g.displayName}
+                      </option>
                     ))}
               </select>
             </div>
@@ -552,11 +606,15 @@ export function PolicyConfigForm({
               >
                 <option value="">Select {targetType}...</option>
                 {targetType === 'task'
-                  ? tasks.map(t => (
-                      <option key={t.id} value={t.id}>{t.title}</option>
+                  ? tasks.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.title}
+                      </option>
                     ))
-                  : taskGroups.map(g => (
-                      <option key={g.id} value={g.id}>{g.displayName}</option>
+                  : taskGroups.map((g) => (
+                      <option key={g.id} value={g.id}>
+                        {g.displayName}
+                      </option>
                     ))}
               </select>
             </div>
@@ -569,7 +627,9 @@ export function PolicyConfigForm({
               <label style={styles.label}>Transfer Type</label>
               <select
                 value={transferType}
-                onChange={(e) => setTransferType(e.target.value as 'full' | 'partial' | 'conditional')}
+                onChange={(e) =>
+                  setTransferType(e.target.value as 'full' | 'partial' | 'conditional')
+                }
                 style={styles.select}
               >
                 <option value="full">Full (100%)</option>
@@ -596,7 +656,9 @@ export function PolicyConfigForm({
                   <label style={styles.label}>Condition</label>
                   <select
                     value={conditionType}
-                    onChange={(e) => setConditionType(e.target.value as 'missed' | 'lower' | 'always')}
+                    onChange={(e) =>
+                      setConditionType(e.target.value as 'missed' | 'lower' | 'always')
+                    }
                     style={styles.select}
                   >
                     <option value="missed">If source is missed</option>
@@ -634,11 +696,15 @@ export function PolicyConfigForm({
               >
                 <option value="">Select {sourceType}...</option>
                 {sourceType === 'task'
-                  ? tasks.map(t => (
-                      <option key={t.id} value={t.id}>{t.title}</option>
+                  ? tasks.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.title}
+                      </option>
                     ))
-                  : taskGroups.map(g => (
-                      <option key={g.id} value={g.id}>{g.displayName}</option>
+                  : taskGroups.map((g) => (
+                      <option key={g.id} value={g.id}>
+                        {g.displayName}
+                      </option>
                     ))}
               </select>
             </div>
@@ -669,11 +735,15 @@ export function PolicyConfigForm({
               >
                 <option value="">Select {targetType}...</option>
                 {targetType === 'task'
-                  ? tasks.map(t => (
-                      <option key={t.id} value={t.id}>{t.title}</option>
+                  ? tasks.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.title}
+                      </option>
                     ))
-                  : taskGroups.map(g => (
-                      <option key={g.id} value={g.id}>{g.displayName}</option>
+                  : taskGroups.map((g) => (
+                      <option key={g.id} value={g.id}>
+                        {g.displayName}
+                      </option>
                     ))}
               </select>
             </div>
@@ -686,7 +756,9 @@ export function PolicyConfigForm({
               <label style={styles.label}>Replacement Type</label>
               <select
                 value={replacementType}
-                onChange={(e) => setReplacementType(e.target.value as 'if_higher' | 'always' | 'best_of')}
+                onChange={(e) =>
+                  setReplacementType(e.target.value as 'if_higher' | 'always' | 'best_of')
+                }
                 style={styles.select}
               >
                 <option value="if_higher">If target is higher</option>

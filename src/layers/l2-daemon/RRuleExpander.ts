@@ -45,18 +45,16 @@ export class RRuleExpander {
   /**
    * Expand a single recurring event into instances within a date range
    */
-  expand(
-    event: CalendarEventRecord,
-    rangeStart: Date,
-    rangeEnd: Date
-  ): ExpandedEvent[] {
+  expand(event: CalendarEventRecord, rangeStart: Date, rangeEnd: Date): ExpandedEvent[] {
     // Non-recurring events are filtered by date range
     if (!event.recurrenceRule) {
       if (this.isInRange(event, rangeStart, rangeEnd)) {
-        return [{
-          ...event,
-          isRecurrenceInstance: false,
-        }];
+        return [
+          {
+            ...event,
+            isRecurrenceInstance: false,
+          },
+        ];
       }
       return [];
     }
@@ -70,7 +68,9 @@ export class RRuleExpander {
       const rruleSet = new RRuleSet();
 
       // Parse and add the RRULE
-      const rrule = RRule.fromString(`DTSTART:${this.formatRRuleDate(eventStart)}\n${event.recurrenceRule}`);
+      const rrule = RRule.fromString(
+        `DTSTART:${this.formatRRuleDate(eventStart)}\n${event.recurrenceRule}`
+      );
       rruleSet.rrule(rrule);
 
       // Add exception dates
@@ -110,10 +110,12 @@ export class RRuleExpander {
     } catch {
       // If RRULE parsing fails, return the original event as non-recurring
       // This is expected for malformed RRULE strings from external sources
-      return [{
-        ...event,
-        isRecurrenceInstance: false,
-      }];
+      return [
+        {
+          ...event,
+          isRecurrenceInstance: false,
+        },
+      ];
     }
   }
 
@@ -183,7 +185,9 @@ export class RRuleExpander {
 
     try {
       const eventStart = new Date(event.startAt);
-      const rrule = RRule.fromString(`DTSTART:${this.formatRRuleDate(eventStart)}\n${event.recurrenceRule}`);
+      const rrule = RRule.fromString(
+        `DTSTART:${this.formatRRuleDate(eventStart)}\n${event.recurrenceRule}`
+      );
 
       // Get next N occurrences from now
       const now = new Date();

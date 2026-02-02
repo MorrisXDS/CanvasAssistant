@@ -18,22 +18,17 @@
  */
 
 // Base types and interfaces
-export {
-  SyncResult,
-  SyncContext,
-  ISyncStrategy,
-  BaseSyncStrategy,
-} from './SyncStrategy';
+export { SyncResult, SyncContext, ISyncStrategy, BaseSyncStrategy } from './SyncStrategy';
 
 // Strategy implementations
 export { TaskSyncStrategy, TaskSyncOptions } from './TaskSyncStrategy';
-export { AnnouncementSyncStrategy, AnnouncementSyncOptions } from './AnnouncementSyncStrategy';
+export {
+  AnnouncementSyncStrategy,
+  AnnouncementSyncOptions,
+} from './AnnouncementSyncStrategy';
 
 // Re-export commonly used types
-export type {
-  TaskDiagnosticEntry,
-  TaskMergedEvent,
-} from './TaskSyncStrategy';
+export type { TaskDiagnosticEntry, TaskMergedEvent } from './TaskSyncStrategy';
 
 export type {
   AttachmentsPendingEvent,

@@ -172,7 +172,10 @@ interface SettingsContextType {
   // Course settings
   courseSettings: CourseSettings;
   updateCourseSettings: (updates: Partial<CourseSettings>) => void;
-  handleToggleCourseVisibility: (courseId: number, currentlyHidden: boolean) => Promise<void>;
+  handleToggleCourseVisibility: (
+    courseId: number,
+    currentlyHidden: boolean
+  ) => Promise<void>;
 
   // Calendar settings
   calendarSettings: CalendarSettings;
@@ -184,7 +187,9 @@ interface SettingsContextType {
 
   // Local HTML paths
   localHtmlPathsSettings: LocalHtmlPathsSettings;
-  updateLocalHtmlPathsSettings: (updates: Partial<LocalHtmlPathsSettings>) => Promise<void>;
+  updateLocalHtmlPathsSettings: (
+    updates: Partial<LocalHtmlPathsSettings>
+  ) => Promise<void>;
 
   // Dashboard settings
   dashboardSettings: DashboardSettings;
@@ -294,7 +299,10 @@ export function SettingsProvider({
   const [settingsPageSettings, setSettingsPageSettings] = useState<SettingsPageSettings>(
     () => {
       const stored = localStorage.getItem(STORAGE_KEYS.SETTINGS_DEFAULT_STATE);
-      if (stored && (stored === 'collapsed' || stored === 'expanded' || stored === 'remember')) {
+      if (
+        stored &&
+        (stored === 'collapsed' || stored === 'expanded' || stored === 'remember')
+      ) {
         return { defaultState: stored };
       }
       return DEFAULT_SETTINGS_PAGE_SETTINGS;
@@ -304,7 +312,8 @@ export function SettingsProvider({
   // Accordion state
   const [openSections, setOpenSections] = useState<string[]>(() => {
     const storedDefaultState = localStorage.getItem(STORAGE_KEYS.SETTINGS_DEFAULT_STATE);
-    const defaultState = storedDefaultState ?? DEFAULT_SETTINGS_PAGE_SETTINGS.defaultState;
+    const defaultState =
+      storedDefaultState ?? DEFAULT_SETTINGS_PAGE_SETTINGS.defaultState;
 
     if (defaultState === 'collapsed') {
       return [];
@@ -331,10 +340,11 @@ export function SettingsProvider({
 
   // Token validation
   const [isValidatingToken, setIsValidatingToken] = useState(false);
-  const [tokenValidationResult, setTokenValidationResult] = useState<TokenValidationResult>({
-    status: null,
-    message: null,
-  });
+  const [tokenValidationResult, setTokenValidationResult] =
+    useState<TokenValidationResult>({
+      status: null,
+      message: null,
+    });
 
   // Token replacement
   const [showTokenReplaceModal, setShowTokenReplaceModal] = useState(false);
@@ -362,7 +372,8 @@ export function SettingsProvider({
   );
   const [enrollmentTerms, setEnrollmentTerms] = useState<EnrollmentTerm[]>([]);
   const [fileExplorer, setFileExplorer] = useState<FileExplorerSettings>(
-    () => settingsManager.get(STORAGE_KEYS.FILE_EXPLORER) ?? DEFAULT_FILE_EXPLORER_SETTINGS
+    () =>
+      settingsManager.get(STORAGE_KEYS.FILE_EXPLORER) ?? DEFAULT_FILE_EXPLORER_SETTINGS
   );
   const [currentDownloadPath, setCurrentDownloadPath] = useState<string>('');
   const [courseSettings, setCourseSettings] = useState<CourseSettings>(
@@ -374,9 +385,12 @@ export function SettingsProvider({
   const [contentSettings, setContentSettings] = useState<ContentSettings>(
     () => settingsManager.get(STORAGE_KEYS.CONTENT) ?? DEFAULT_CONTENT_SETTINGS
   );
-  const [localHtmlPathsSettings, setLocalHtmlPathsSettings] = useState<LocalHtmlPathsSettings>(
-    () => settingsManager.get(STORAGE_KEYS.LOCAL_HTML_PATHS) ?? DEFAULT_LOCAL_HTML_PATHS_SETTINGS
-  );
+  const [localHtmlPathsSettings, setLocalHtmlPathsSettings] =
+    useState<LocalHtmlPathsSettings>(
+      () =>
+        settingsManager.get(STORAGE_KEYS.LOCAL_HTML_PATHS) ??
+        DEFAULT_LOCAL_HTML_PATHS_SETTINGS
+    );
   const [dashboardSettings, setDashboardSettings] = useState<DashboardSettings>(
     () => settingsManager.get(STORAGE_KEYS.DASHBOARD) ?? DEFAULT_DASHBOARD_SETTINGS
   );
@@ -480,7 +494,8 @@ export function SettingsProvider({
   );
 
   // Modified counts
-  const isSyncModified = JSON.stringify(syncPrefs) !== JSON.stringify(DEFAULT_SYNC_PREFERENCES);
+  const isSyncModified =
+    JSON.stringify(syncPrefs) !== JSON.stringify(DEFAULT_SYNC_PREFERENCES);
   const isAppearanceModified =
     JSON.stringify(appearance) !== JSON.stringify(DEFAULT_APPEARANCE_SETTINGS);
   const isNotificationsModified =
@@ -553,7 +568,10 @@ export function SettingsProvider({
   // Save open sections when changed
   useEffect(() => {
     if (settingsPageSettings.defaultState === 'remember') {
-      localStorage.setItem(STORAGE_KEYS.SETTINGS_OPEN_SECTIONS, JSON.stringify(openSections));
+      localStorage.setItem(
+        STORAGE_KEYS.SETTINGS_OPEN_SECTIONS,
+        JSON.stringify(openSections)
+      );
     }
   }, [openSections, settingsPageSettings.defaultState]);
 
@@ -633,7 +651,10 @@ export function SettingsProvider({
       const normalizedUrl = normalizeUrl(canvasUrl);
       const result = await window.api.connectCanvas(normalizedUrl);
       if (result.success) {
-        setTokenValidationResult({ status: 'success', message: 'Token is valid and working' });
+        setTokenValidationResult({
+          status: 'success',
+          message: 'Token is valid and working',
+        });
       } else {
         setTokenValidationResult({
           status: 'error',
@@ -664,9 +685,17 @@ export function SettingsProvider({
       const normalizedUrl = normalizeUrl(canvasUrl);
       const result = await window.api.validateToken(newToken, normalizedUrl);
       if (result.valid) {
-        setNewTokenValidation({ valid: true, userName: result.user?.name || null, error: null });
+        setNewTokenValidation({
+          valid: true,
+          userName: result.user?.name || null,
+          error: null,
+        });
       } else {
-        setNewTokenValidation({ valid: false, userName: null, error: result.error || 'Invalid token' });
+        setNewTokenValidation({
+          valid: false,
+          userName: null,
+          error: result.error || 'Invalid token',
+        });
       }
     } catch (e) {
       setNewTokenValidation({
@@ -691,7 +720,10 @@ export function SettingsProvider({
           setShowTokenReplaceModal(false);
           setNewToken('');
           setNewTokenValidation({ valid: null, userName: null, error: null });
-          setTokenValidationResult({ status: 'success', message: 'Token replaced successfully' });
+          setTokenValidationResult({
+            status: 'success',
+            message: 'Token replaced successfully',
+          });
         } else {
           setNewTokenValidation({
             valid: false,
@@ -700,7 +732,11 @@ export function SettingsProvider({
           });
         }
       } else {
-        setNewTokenValidation({ valid: false, userName: null, error: 'Failed to store new token' });
+        setNewTokenValidation({
+          valid: false,
+          userName: null,
+          error: 'Failed to store new token',
+        });
       }
     } catch (e) {
       setNewTokenValidation({
@@ -846,7 +882,9 @@ export function SettingsProvider({
     settingsManager.set(STORAGE_KEYS.CONTENT, newSettings);
   };
 
-  const updateLocalHtmlPathsSettings = async (updates: Partial<LocalHtmlPathsSettings>) => {
+  const updateLocalHtmlPathsSettings = async (
+    updates: Partial<LocalHtmlPathsSettings>
+  ) => {
     const newSettings = { ...localHtmlPathsSettings, ...updates };
     setLocalHtmlPathsSettings(newSettings);
     settingsManager.set(STORAGE_KEYS.LOCAL_HTML_PATHS, newSettings);
@@ -901,7 +939,10 @@ export function SettingsProvider({
     }
   };
 
-  const handleToggleCourseVisibility = async (courseId: number, currentlyHidden: boolean) => {
+  const handleToggleCourseVisibility = async (
+    courseId: number,
+    currentlyHidden: boolean
+  ) => {
     await window.api.dispatch('UpdateCoursePreferences', {
       courseId,
       preferences: { isHidden: !currentlyHidden },
@@ -1023,7 +1064,9 @@ export function SettingsProvider({
         }
       }
 
-      const blob = new Blob([JSON.stringify(settings, null, 2)], { type: 'application/json' });
+      const blob = new Blob([JSON.stringify(settings, null, 2)], {
+        type: 'application/json',
+      });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -1124,7 +1167,10 @@ export function SettingsProvider({
         newOrder.splice(sourceIndex, 1);
         newOrder.splice(targetIndex, 0, sourceSectionId);
         setSectionOrder(newOrder);
-        localStorage.setItem(STORAGE_KEYS.SETTINGS_SECTION_ORDER, JSON.stringify(newOrder));
+        localStorage.setItem(
+          STORAGE_KEYS.SETTINGS_SECTION_ORDER,
+          JSON.stringify(newOrder)
+        );
       }
     }
 
