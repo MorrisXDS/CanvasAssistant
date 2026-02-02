@@ -32,7 +32,12 @@ import { SyncConflictResolver } from './SyncConflictResolver';
 import { SyncCheckpointManager } from './SyncCheckpointManager';
 import { SyncBackoffManager } from './SyncBackoffManager';
 import type { ComponentLogger } from '../l0-utilities/Logger';
-import type { SyncOptions, SyncResult, FullSyncResult, SyncCheckpoint } from './SyncEngineTypes';
+import type {
+  SyncOptions,
+  SyncResult,
+  FullSyncResult,
+  SyncCheckpoint,
+} from './SyncEngineTypes';
 
 export interface SyncOrchestratorConfig {
   client: CanvasClient;
@@ -45,9 +50,16 @@ export interface SyncOrchestratorConfig {
   emitter: EventEmitter;
   log: ComponentLogger | null;
   getDefaultTargetGrade: () => number;
-  getCourseSettings: (courseId: number) => { autoAssignDueDate: boolean; allowGuessedOverride: boolean };
+  getCourseSettings: (courseId: number) => {
+    autoAssignDueDate: boolean;
+    allowGuessedOverride: boolean;
+  };
   getTodayEndTime: () => string;
-  persistConflictData: (conflictId: string, tableName: string, data: Record<string, unknown>) => void;
+  persistConflictData: (
+    conflictId: string,
+    tableName: string,
+    data: Record<string, unknown>
+  ) => void;
   pendingConflictData: Map<string, { tableName: string; data: Record<string, unknown> }>;
   hasActiveDownloadFor: (sourceType: string, sourceId: string) => boolean;
   computeContentHash: (content: string | null | undefined) => string | null;
@@ -80,10 +92,20 @@ export class SyncOrchestrator {
   private emitter: EventEmitter;
   private log: ComponentLogger | null;
   private getDefaultTargetGrade: () => number;
-  private getCourseSettings: (courseId: number) => { autoAssignDueDate: boolean; allowGuessedOverride: boolean };
+  private getCourseSettings: (courseId: number) => {
+    autoAssignDueDate: boolean;
+    allowGuessedOverride: boolean;
+  };
   private getTodayEndTime: () => string;
-  private persistConflictData: (conflictId: string, tableName: string, data: Record<string, unknown>) => void;
-  private pendingConflictData: Map<string, { tableName: string; data: Record<string, unknown> }>;
+  private persistConflictData: (
+    conflictId: string,
+    tableName: string,
+    data: Record<string, unknown>
+  ) => void;
+  private pendingConflictData: Map<
+    string,
+    { tableName: string; data: Record<string, unknown> }
+  >;
   private hasActiveDownloadFor: (sourceType: string, sourceId: string) => boolean;
   private computeContentHash: (content: string | null | undefined) => string | null;
   private updateContentHashAndDependencies: (
@@ -160,16 +182,25 @@ export class SyncOrchestrator {
         fetched.tasks.set(courseId, tasks as CanvasAssignment[]);
         alreadyFetchedCourseIds.add(courseId);
       }
-      for (const [courseIdStr, announcements] of Object.entries(checkpoint.fetchedData.announcements)) {
-        fetched.announcements.set(parseInt(courseIdStr, 10), announcements as CanvasAnnouncement[]);
+      for (const [courseIdStr, announcements] of Object.entries(
+        checkpoint.fetchedData.announcements
+      )) {
+        fetched.announcements.set(
+          parseInt(courseIdStr, 10),
+          announcements as CanvasAnnouncement[]
+        );
       }
-      for (const [courseIdStr, modules] of Object.entries(checkpoint.fetchedData.modules)) {
+      for (const [courseIdStr, modules] of Object.entries(
+        checkpoint.fetchedData.modules
+      )) {
         fetched.modules.set(parseInt(courseIdStr, 10), modules as CanvasModule[]);
       }
       for (const [courseIdStr, pages] of Object.entries(checkpoint.fetchedData.pages)) {
         fetched.pages.set(parseInt(courseIdStr, 10), pages as CanvasPage[]);
       }
-      for (const [courseIdStr, folders] of Object.entries(checkpoint.fetchedData.folders)) {
+      for (const [courseIdStr, folders] of Object.entries(
+        checkpoint.fetchedData.folders
+      )) {
         fetched.folders.set(parseInt(courseIdStr, 10), folders as CanvasFolder[]);
       }
       for (const [courseIdStr, files] of Object.entries(checkpoint.fetchedData.files)) {
@@ -185,7 +216,12 @@ export class SyncOrchestrator {
         () =>
           this.client.getAll<CanvasCourse>('/courses', {
             enrollment_state: 'active',
-            include: ['total_scores', 'current_grading_period_scores', 'syllabus_body', 'term'],
+            include: [
+              'total_scores',
+              'current_grading_period_scores',
+              'syllabus_body',
+              'term',
+            ],
           }),
         10
       );
@@ -199,12 +235,18 @@ export class SyncOrchestrator {
 
     // Create checkpoint if needed
     if (!checkpoint) {
-      this.checkpointManager.createCheckpoint(syncId, options || {}, visibleCoursesToSync.length);
+      this.checkpointManager.createCheckpoint(
+        syncId,
+        options || {},
+        visibleCoursesToSync.length
+      );
       this.checkpointManager.updateCheckpointCourses(syncId, fetched.courses);
     }
 
     // Fetch course data
-    const coursesToFetch = visibleCoursesToSync.filter((c) => !alreadyFetchedCourseIds.has(c.id));
+    const coursesToFetch = visibleCoursesToSync.filter(
+      (c) => !alreadyFetchedCourseIds.has(c.id)
+    );
     const COURSE_BATCH_SIZE = 10;
     let completedCount = alreadyFetchedCourseIds.size;
 
@@ -213,7 +255,13 @@ export class SyncOrchestrator {
 
       const batchResults = await Promise.all(
         batch.map((course) =>
-          this.fetchCourseData(course, fetched, syncId, syncCanvasFiles, syncAnnouncements)
+          this.fetchCourseData(
+            course,
+            fetched,
+            syncId,
+            syncCanvasFiles,
+            syncAnnouncements
+          )
         )
       );
 
@@ -285,7 +333,10 @@ export class SyncOrchestrator {
             this.emitter.emit('sync-conflicts', { entity: 'course', conflicts });
             for (const conflict of conflicts) {
               const conflictData = { ...localCourse, id: existing?.id };
-              this.pendingConflictData.set(conflict.id, { tableName: 'courses', data: conflictData });
+              this.pendingConflictData.set(conflict.id, {
+                tableName: 'courses',
+                data: conflictData,
+              });
               this.persistConflictData(conflict.id, 'courses', conflictData);
             }
           }
@@ -310,7 +361,9 @@ export class SyncOrchestrator {
           this.db.upsert('courses', finalData, 'external_id', true, preservedFields);
           counts.courses++;
         } catch (error) {
-          errors.push(`Course ${course.id}: ${error instanceof Error ? error.message : String(error)}`);
+          errors.push(
+            `Course ${course.id}: ${error instanceof Error ? error.message : String(error)}`
+          );
         }
       }
 
@@ -326,18 +379,73 @@ export class SyncOrchestrator {
         }
       }
 
-      // Commit tasks
+      // Commit tasks (with conflict detection like courses)
       for (const [canvasCourseId, tasks] of fetched.tasks) {
         const localCourseId = courseLookup.get(canvasCourseId);
         if (!localCourseId) continue;
 
+        // Get course name for conflict context
+        const courseRow = this.db.executeReadOne<{ name: string }>(
+          'SELECT name FROM courses WHERE id = ?',
+          [localCourseId]
+        );
+        const courseName = courseRow?.name;
+
         for (const assignment of tasks) {
           try {
             const localTask = mapAssignment(assignment, localCourseId);
-            this.db.upsert('tasks', localTask, 'external_id', true);
+            const existing = this.db.executeReadOne<Record<string, unknown>>(
+              'SELECT * FROM tasks WHERE external_id = ?',
+              [localTask.external_id]
+            );
+
+            const { autoResolved, conflicts, preservedFields } =
+              this.conflictResolver.detectConflicts(
+                'task',
+                'tasks',
+                (existing?.id as number) || 0,
+                localTask.external_id,
+                localTask.title,
+                existing,
+                localTask,
+                { courseName, courseId: localCourseId }
+              );
+
+            if (conflicts.length > 0) {
+              this.emitter.emit('sync-conflicts', { entity: 'task', conflicts });
+              for (const conflict of conflicts) {
+                const conflictData = { ...localTask, id: existing?.id };
+                this.pendingConflictData.set(conflict.id, {
+                  tableName: 'tasks',
+                  data: conflictData,
+                });
+                this.persistConflictData(conflict.id, 'tasks', conflictData);
+              }
+            }
+
+            const finalData: Record<string, unknown> = { ...localTask };
+            for (const [field, value] of Object.entries(autoResolved)) {
+              finalData[field] = value;
+            }
+            if (existing) {
+              for (const field of preservedFields) {
+                if (existing[field] !== undefined) {
+                  finalData[field] = existing[field];
+                }
+              }
+              for (const conflict of conflicts) {
+                if (existing[conflict.field] !== undefined) {
+                  finalData[conflict.field] = existing[conflict.field];
+                }
+              }
+            }
+
+            this.db.upsert('tasks', finalData, 'external_id', true, preservedFields);
             counts.tasks++;
           } catch (error) {
-            errors.push(`Task ${assignment.id}: ${error instanceof Error ? error.message : String(error)}`);
+            errors.push(
+              `Task ${assignment.id}: ${error instanceof Error ? error.message : String(error)}`
+            );
           }
         }
       }
@@ -349,11 +457,23 @@ export class SyncOrchestrator {
 
         for (const announcement of announcements) {
           try {
-            const mapped = mapAnnouncement(announcement, localCourseId, baseUrl, String(canvasCourseId));
-            this.db.upsert('notifications', mapped.notification, ['source_type', 'source_id'], false);
+            const mapped = mapAnnouncement(
+              announcement,
+              localCourseId,
+              baseUrl,
+              String(canvasCourseId)
+            );
+            this.db.upsert(
+              'notifications',
+              mapped.notification,
+              ['source_type', 'source_id'],
+              false
+            );
             counts.announcements++;
           } catch (error) {
-            errors.push(`Announcement ${announcement.id}: ${error instanceof Error ? error.message : String(error)}`);
+            errors.push(
+              `Announcement ${announcement.id}: ${error instanceof Error ? error.message : String(error)}`
+            );
           }
         }
       }
@@ -381,7 +501,9 @@ export class SyncOrchestrator {
               }
             }
           } catch (error) {
-            errors.push(`Module ${module.id}: ${error instanceof Error ? error.message : String(error)}`);
+            errors.push(
+              `Module ${module.id}: ${error instanceof Error ? error.message : String(error)}`
+            );
           }
         }
       }
@@ -398,7 +520,9 @@ export class SyncOrchestrator {
             this.db.upsert('course_pages', localPage);
             counts.pages++;
           } catch (error) {
-            errors.push(`Page ${page.url}: ${error instanceof Error ? error.message : String(error)}`);
+            errors.push(
+              `Page ${page.url}: ${error instanceof Error ? error.message : String(error)}`
+            );
           }
         }
       }
@@ -414,7 +538,9 @@ export class SyncOrchestrator {
             this.db.upsert('resources', localFolder as Record<string, unknown>);
             counts.folders++;
           } catch (error) {
-            errors.push(`Folder ${folder.name}: ${error instanceof Error ? error.message : String(error)}`);
+            errors.push(
+              `Folder ${folder.name}: ${error instanceof Error ? error.message : String(error)}`
+            );
           }
         }
       }
@@ -426,7 +552,10 @@ export class SyncOrchestrator {
 
         // Build folder path map
         const folderPathMap = new Map<number, string>();
-        const dbFolders = this.db.executeRead<{ external_id: string; folder_path: string | null }>(
+        const dbFolders = this.db.executeRead<{
+          external_id: string;
+          folder_path: string | null;
+        }>(
           'SELECT external_id, folder_path FROM resources WHERE course_id = ? AND type = ?',
           [localCourseId, 'folder']
         );
@@ -438,10 +567,17 @@ export class SyncOrchestrator {
           try {
             const folderPath = folderPathMap.get(file.folder_id) ?? null;
             const localFile = mapFile(file, localCourseId, null, folderPath);
-            this.db.upsert('resources', localFile as Record<string, unknown>, 'external_id', true);
+            this.db.upsert(
+              'resources',
+              localFile as Record<string, unknown>,
+              'external_id',
+              true
+            );
             counts.files++;
           } catch (error) {
-            errors.push(`File ${file.display_name}: ${error instanceof Error ? error.message : String(error)}`);
+            errors.push(
+              `File ${file.display_name}: ${error instanceof Error ? error.message : String(error)}`
+            );
           }
         }
       }
@@ -457,7 +593,10 @@ export class SyncOrchestrator {
     const defaultTargetGrade = this.getDefaultTargetGrade();
 
     // Extract and write enrollment terms
-    const termsMap = new Map<number, { id: number; name: string; start_at: string | null; end_at: string | null }>();
+    const termsMap = new Map<
+      number,
+      { id: number; name: string; start_at: string | null; end_at: string | null }
+    >();
     for (const course of courses) {
       if (course.term && !termsMap.has(course.term.id)) {
         termsMap.set(course.term.id, {
@@ -486,7 +625,14 @@ export class SyncOrchestrator {
     }
 
     // Write course metadata
-    const preservedFields = ['target_grade', 'target_grade_source', 'is_hidden', 'archived_at', 'color', 'nickname'];
+    const preservedFields = [
+      'target_grade',
+      'target_grade_source',
+      'is_hidden',
+      'archived_at',
+      'color',
+      'nickname',
+    ];
     for (const course of courses) {
       const localCourse = mapCourse(course, baseUrl, defaultTargetGrade);
       const existing = this.db.executeReadOne<Record<string, unknown>>(
@@ -526,9 +672,16 @@ export class SyncOrchestrator {
         const currentTermIds = new Set<number>();
 
         for (const course of courses) {
-          if (course.term && course.term.end_at && course.term.name !== 'Default Term' && course.term.id !== 1) {
+          if (
+            course.term &&
+            course.term.end_at &&
+            course.term.name !== 'Default Term' &&
+            course.term.id !== 1
+          ) {
             const endDate = new Date(course.term.end_at);
-            const adjustedEndDate = new Date(endDate.getTime() - DAYS_BUFFER * 24 * 60 * 60 * 1000);
+            const adjustedEndDate = new Date(
+              endDate.getTime() - DAYS_BUFFER * 24 * 60 * 60 * 1000
+            );
             if (adjustedEndDate > now) {
               currentTermIds.add(course.term.id);
             }
@@ -586,10 +739,13 @@ export class SyncOrchestrator {
       this.rateLimiter
         .enqueue(
           () =>
-            this.client.getAll<CanvasAssignment>(`/courses/${canvasCourseId}/assignments`, {
-              order_by: 'due_at',
-              'include[]': 'submission',
-            }),
+            this.client.getAll<CanvasAssignment>(
+              `/courses/${canvasCourseId}/assignments`,
+              {
+                order_by: 'due_at',
+                'include[]': 'submission',
+              }
+            ),
           5
         )
         .then((data) => {
@@ -601,11 +757,14 @@ export class SyncOrchestrator {
     fetchPromises.push(
       (async () => {
         const endpoint = `/courses/${canvasCourseId}/modules`;
-        const result = await this.backoffManager.fetchWithBackoff(endpoint, canvasCourseId, () =>
-          this.rateLimiter.enqueue(
-            () => this.client.getAll<CanvasModule>(endpoint, { include: ['items'] }),
-            3
-          )
+        const result = await this.backoffManager.fetchWithBackoff(
+          endpoint,
+          canvasCourseId,
+          () =>
+            this.rateLimiter.enqueue(
+              () => this.client.getAll<CanvasModule>(endpoint, { include: ['items'] }),
+              3
+            )
         );
         fetched.modules.set(canvasCourseId, result.data || []);
       })()
@@ -615,11 +774,14 @@ export class SyncOrchestrator {
     fetchPromises.push(
       (async () => {
         const endpoint = `/courses/${canvasCourseId}/pages`;
-        const result = await this.backoffManager.fetchWithBackoff(endpoint, canvasCourseId, () =>
-          this.rateLimiter.enqueue(
-            () => this.client.getAll<CanvasPage>(endpoint, { 'include[]': 'body' }),
-            2
-          )
+        const result = await this.backoffManager.fetchWithBackoff(
+          endpoint,
+          canvasCourseId,
+          () =>
+            this.rateLimiter.enqueue(
+              () => this.client.getAll<CanvasPage>(endpoint, { 'include[]': 'body' }),
+              2
+            )
         );
         if (result.data && result.data.length > 0) {
           fetched.pages.set(canvasCourseId, result.data);
@@ -629,7 +791,10 @@ export class SyncOrchestrator {
               () => this.client.get<CanvasPage>(`/courses/${canvasCourseId}/front_page`),
               2
             );
-            fetched.pages.set(canvasCourseId, frontPageResponse.data ? [frontPageResponse.data] : []);
+            fetched.pages.set(
+              canvasCourseId,
+              frontPageResponse.data ? [frontPageResponse.data] : []
+            );
           } catch {
             fetched.pages.set(canvasCourseId, []);
           }
@@ -643,9 +808,12 @@ export class SyncOrchestrator {
         this.rateLimiter
           .enqueue(
             () =>
-              this.client.getAll<CanvasAnnouncement>(`/courses/${canvasCourseId}/discussion_topics`, {
-                only_announcements: true,
-              }),
+              this.client.getAll<CanvasAnnouncement>(
+                `/courses/${canvasCourseId}/discussion_topics`,
+                {
+                  only_announcements: true,
+                }
+              ),
             3
           )
           .then((data) => {
@@ -659,8 +827,14 @@ export class SyncOrchestrator {
       fetchPromises.push(
         (async () => {
           const endpoint = `/courses/${canvasCourseId}/folders`;
-          const result = await this.backoffManager.fetchWithBackoff(endpoint, canvasCourseId, () =>
-            this.rateLimiter.enqueue(() => this.client.getAll<CanvasFolder>(endpoint), 2)
+          const result = await this.backoffManager.fetchWithBackoff(
+            endpoint,
+            canvasCourseId,
+            () =>
+              this.rateLimiter.enqueue(
+                () => this.client.getAll<CanvasFolder>(endpoint),
+                2
+              )
           );
           fetched.folders.set(canvasCourseId, result.data || []);
         })()
@@ -669,8 +843,11 @@ export class SyncOrchestrator {
       fetchPromises.push(
         (async () => {
           const endpoint = `/courses/${canvasCourseId}/files`;
-          const result = await this.backoffManager.fetchWithBackoff(endpoint, canvasCourseId, () =>
-            this.rateLimiter.enqueue(() => this.client.getAll<CanvasFile>(endpoint), 2)
+          const result = await this.backoffManager.fetchWithBackoff(
+            endpoint,
+            canvasCourseId,
+            () =>
+              this.rateLimiter.enqueue(() => this.client.getAll<CanvasFile>(endpoint), 2)
           );
           fetched.files.set(canvasCourseId, result.data || []);
         })()
@@ -681,7 +858,8 @@ export class SyncOrchestrator {
 
     for (const result of results) {
       if (result.status === 'rejected') {
-        const reason = result.reason instanceof Error ? result.reason.message : String(result.reason);
+        const reason =
+          result.reason instanceof Error ? result.reason.message : String(result.reason);
         errors.push(`Course ${canvasCourseId} fetch: ${reason}`);
       }
     }

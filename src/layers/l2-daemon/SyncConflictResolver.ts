@@ -398,11 +398,26 @@ export class SyncConflictResolver extends EventEmitter {
         continue;
       }
 
+      // Debug logging for is_completed field
+      if (field === 'is_completed') {
+        console.log('[SyncConflict] is_completed check:', {
+          entityName,
+          localValue,
+          canvasValue,
+          fieldSource,
+          inLocalModified: localModifiedFields.has(field),
+          localModifiedFields: Array.from(localModifiedFields),
+        });
+      }
+
       // Check field source first (new system)
       // BUT: respect local_modified_fields - if user explicitly modified this field,
       // don't auto-accept Canvas value even if field_sources says 'canvas'
       if (fieldSource === 'canvas' && !localModifiedFields.has(field)) {
         // Field came from Canvas AND user hasn't modified it - accept Canvas updates
+        if (field === 'is_completed') {
+          console.log('[SyncConflict] is_completed: auto-accepting Canvas (fieldSource=canvas, not locally modified)');
+        }
         autoResolved[field] = canvasValue;
         continue;
       }
@@ -422,6 +437,9 @@ export class SyncConflictResolver extends EventEmitter {
 
       if (!isModified) {
         // User hasn't modified this field - use Canvas value
+        if (field === 'is_completed') {
+          console.log('[SyncConflict] is_completed: auto-accepting Canvas (not modified)');
+        }
         autoResolved[field] = canvasValue;
         continue;
       }
@@ -429,8 +447,15 @@ export class SyncConflictResolver extends EventEmitter {
       // User has modified this field - check for actual difference
       if (this.valuesEqual(localValue, canvasValue)) {
         // Values are the same - no conflict
+        if (field === 'is_completed') {
+          console.log('[SyncConflict] is_completed: values equal, no conflict');
+        }
         autoResolved[field] = canvasValue;
         continue;
+      }
+
+      if (field === 'is_completed') {
+        console.log('[SyncConflict] is_completed: values differ, checking for conflict');
       }
 
       // Values differ - check for saved preference
