@@ -72,7 +72,9 @@ export interface PositionedEvent {
 // =============================================================================
 
 // Helper to check if an imported event is a deadline task event
-export function isDeadlineTaskEvent(event: CalendarEvent): event is ImportedCalendarEvent {
+export function isDeadlineTaskEvent(
+  event: CalendarEvent
+): event is ImportedCalendarEvent {
   if (event.type !== 'imported') return false;
   if (!event.event.taskId) return false;
   return new Date(event.event.startAt).getTime() < 86400000;
@@ -171,24 +173,27 @@ export function getEventEndDate(event: CalendarEvent): Date | null {
 }
 
 // Get event duration in hours
+// - Task events: default 1 hour (no duration field on tasks)
+// - Deadline task events: 1 hour if no user-set start, otherwise calculate from start to due
+// - Regular imported events: calculate from start to end
 export function getEventDurationHours(event: CalendarEvent): number {
-  const start = getEventDate(event);
-  const end = getEventEndDate(event);
-  if (!start || !end) return 1;
-
   if (event.type === 'task') {
-    return 1; // Tasks show as 1-hour blocks
+    return 1; // Tasks show as 1-hour blocks (no duration field)
   }
 
-  if (isDeadlineTaskEvent(event)) {
-    const dueTime = new Date(event.event.endAt!);
-    const dueMinutes = dueTime.getMinutes();
-    if (dueMinutes === 0) {
-      return 1;
-    }
-    return dueMinutes / 60;
+  // Now event is ImportedCalendarEvent
+  const importedEvent = event;
+  const end = importedEvent.event.endAt ? new Date(importedEvent.event.endAt) : null;
+  if (!end) return 1;
+
+  // Check if it's a deadline task event (has task_id, start is epoch sentinel = no user-set start)
+  if (importedEvent.event.taskId && new Date(importedEvent.event.startAt).getTime() < 86400000) {
+    // No user-set start time → default 1 hour
+    return 1;
   }
 
+  // Regular imported event or event with user-set start time
+  const start = new Date(importedEvent.event.startAt);
   const durationMs = end.getTime() - start.getTime();
   const hours = durationMs / (1000 * 60 * 60);
   return Math.max(0.5, Math.min(hours, 24));
@@ -357,12 +362,21 @@ function extractSectionType(text: string): string | null {
 }
 
 // Match event to course
+// Uses OR logic: matches if event has courseId set OR if name/title contains course code.
 // IMPORTANT: Prioritize matching event TITLE first, then fall back to calendar name.
 // Also considers section types (LEC, PRA, TUT) to distinguish between different sections of same course.
 export function matchEventToCourse(
   event: ImportedCalendarEvent,
   courses: Course[]
 ): CourseMatch | null {
+  // PASS 0: Direct courseId match (highest priority - user explicitly assigned course)
+  if (event.event.courseId) {
+    const matchedCourse = courses.find((c) => c.id === event.event.courseId);
+    if (matchedCourse) {
+      return { course: matchedCourse, confidence: 'high' };
+    }
+  }
+
   const title = event.event.title.toLowerCase().trim();
   const calendarName = event.event.calendarName?.toLowerCase().trim() || '';
   const description = event.event.description?.toLowerCase().trim() || '';
@@ -460,19 +474,46 @@ export function matchEventToCourse(
 }
 
 // Get earliest event hour
-export function getEarliestEventHour(events: CalendarEvent[]): number {
-  let earliest = 8;
+// Returns the hour where the earliest event visually starts so it appears at the top
+// - Imported events: use their actual start time
+// - Task/deadline events: use dueAt - duration (visual start of the block)
+// Returns null if no timed events found
+export function getEarliestEventHour(events: CalendarEvent[]): number | null {
+  let earliest: number | null = null;
+
   for (const event of events) {
+    // Skip all-day events (no specific hour)
     if (event.type === 'imported' && event.event.allDay) continue;
-    const eventDate = getEventDate(event);
-    if (eventDate) {
-      const hour = eventDate.getHours();
-      if (hour < earliest) {
-        earliest = hour;
+
+    let effectiveStartHour: number | null = null;
+
+    if (event.type === 'task') {
+      // Task events: visual start is (due time - duration)
+      if (event.task.dueAt) {
+        const dueDate = new Date(event.task.dueAt);
+        const duration = getEventDurationHours(event);
+        effectiveStartHour = Math.max(0, dueDate.getHours() - duration);
+      }
+    } else {
+      // Check if it's a deadline task event (linked to a task, starts at epoch)
+      if (isDeadlineTaskEvent(event) && event.event.endAt) {
+        // Deadline task event: visual start is (end/due time - duration)
+        const dueDate = new Date(event.event.endAt);
+        const duration = getEventDurationHours(event);
+        effectiveStartHour = Math.max(0, dueDate.getHours() - duration);
+      } else {
+        // Regular imported events: use actual start time
+        const startDate = new Date(event.event.startAt);
+        effectiveStartHour = startDate.getHours();
       }
     }
+
+    if (effectiveStartHour !== null && (earliest === null || effectiveStartHour < earliest)) {
+      earliest = effectiveStartHour;
+    }
   }
-  return Math.max(0, earliest - 1);
+
+  return earliest;
 }
 
 // Constants
@@ -983,8 +1024,6 @@ export function CalendarGridProvider({
   };
 
   return (
-    <CalendarGridContext.Provider value={value}>
-      {children}
-    </CalendarGridContext.Provider>
+    <CalendarGridContext.Provider value={value}>{children}</CalendarGridContext.Provider>
   );
 }
