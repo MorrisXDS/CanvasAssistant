@@ -230,16 +230,25 @@ export function Sidebar({ onToggle }: SidebarProps) {
       };
     }
     // Check if we have any synced data
-    const hasData = courses.some((c) => c.lastSyncedAt);
-    if (!hasData) {
+    const syncedCourses = courses.filter((c) => c.lastSyncedAt);
+    if (syncedCourses.length === 0) {
       return {
         icon: <AlertCircle size={14} color="var(--color-warning)" />,
         text: 'Not Synced',
       };
     }
+    // Use store's lastSyncedAt, or fall back to most recent course sync time
+    const effectiveLastSync =
+      lastSyncedAt ||
+      syncedCourses.reduce((latest, c) => {
+        if (!c.lastSyncedAt) return latest;
+        if (!latest) return c.lastSyncedAt;
+        return c.lastSyncedAt > latest ? c.lastSyncedAt : latest;
+      }, null as string | null);
+
     return {
       icon: <CheckCircle size={14} color="var(--color-success)" />,
-      text: formatTimeAgo(lastSyncedAt),
+      text: formatTimeAgo(effectiveLastSync),
     };
   };
 

@@ -23,7 +23,7 @@ import { useStore, getCachedCourseGrades } from '../../../l5-presentation/store'
 import { Card } from '../shared';
 import { useShallow } from 'zustand/react/shallow';
 import { useCourseDragDrop } from './useCourseDragDrop';
-import { getCourseColor } from '../../constants';
+import { getCourseColor, formatGrade } from '../../constants';
 import type { Course } from '../../../l5-presentation/types';
 
 // Extracted modules
@@ -282,6 +282,26 @@ export function CoursesPage() {
     typeFilter !== 'all' ||
     showHidden;
 
+  // Calculate weighted average across all visible courses
+  const weightedAverage = useMemo(() => {
+    let totalWeightedGrade = 0;
+    let totalCredits = 0;
+
+    for (const course of courses) {
+      if (course.isHidden) continue;
+      const grades = getCachedCourseGrades(course.id, tasks);
+      // Only include courses that have assessed work
+      if (grades.assessed > 0) {
+        const credits = course.credits ?? 1.0;
+        totalWeightedGrade += grades.trend * credits;
+        totalCredits += credits;
+      }
+    }
+
+    if (totalCredits === 0) return null;
+    return totalWeightedGrade / totalCredits;
+  }, [courses, tasks]);
+
   // Clear all filters
   const clearFilters = () => {
     setSearchQuery('');
@@ -302,6 +322,7 @@ export function CoursesPage() {
             {courses.length !== 1 ? 's' : ''}
             {pinnedCount > 0 && ` • ${pinnedCount} pinned`}
             {hiddenCount > 0 && !showHidden && ` • ${hiddenCount} hidden`}
+            {weightedAverage !== null && ` • Overall: ${formatGrade(weightedAverage)}`}
           </p>
         </div>
 

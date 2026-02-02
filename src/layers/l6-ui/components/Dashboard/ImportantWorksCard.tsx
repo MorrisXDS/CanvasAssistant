@@ -181,8 +181,24 @@ export function ImportantWorksCard({ maxItems = 4 }: ImportantWorksCardProps) {
             // - No due date: show nothing
             let timeDisplay: string | null = null;
 
-            if (calendarEvent && !isDeadlineEvent(calendarEvent)) {
-              // Duration event - show time range
+            // Check if task has real unlockAt (not epoch = has duration)
+            const taskHasRealStart =
+              task.unlockAt && new Date(task.unlockAt).getTime() >= 86400000;
+
+            if (taskHasRealStart && task.dueAt) {
+              // Task has duration - format time range from task's unlockAt and dueAt
+              const start = new Date(task.unlockAt!);
+              const end = new Date(task.dueAt);
+              const formatTime = (d: Date) => {
+                const h = d.getHours();
+                const m = d.getMinutes();
+                const ampm = h >= 12 ? 'PM' : 'AM';
+                const hour = h % 12 || 12;
+                return m === 0 ? `${hour}:00 ${ampm}` : `${hour}:${m.toString().padStart(2, '0')} ${ampm}`;
+              };
+              timeDisplay = `${formatTime(start)} - ${formatTime(end)}`;
+            } else if (calendarEvent && !isDeadlineEvent(calendarEvent)) {
+              // Duration event from calendar - show time range
               timeDisplay = formatDurationDisplay(calendarEvent);
             } else if (task.dueAt) {
               // Deadline event - show relative deadline with time

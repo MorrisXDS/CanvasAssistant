@@ -1,5 +1,5 @@
 /**
- * ScheduleCard - Displays today's timed calendar events with time range and location
+ * ScheduleCard - Displays today's timed calendar events and tasks with duration
  */
 
 import React, { useMemo, useEffect } from 'react';
@@ -7,10 +7,24 @@ import { useNavigate } from 'react-router-dom';
 import { CalendarCheck, MapPin } from 'lucide-react';
 import { Card } from '../shared';
 import { useStore } from '../../../l5-presentation/store';
-import type { DisplayCalendarEvent } from '../../../l5-presentation/types';
+import type { DisplayCalendarEvent, Task } from '../../../l5-presentation/types';
+import { getCourseColor } from '../../constants';
 
 interface ScheduleCardProps {
+  /** Maximum items to show. If not specified, shows all items. */
   maxItems?: number;
+}
+
+// Unified schedule item type
+interface ScheduleItem {
+  id: string;
+  title: string;
+  startAt: string;
+  endAt: string;
+  color: string;
+  location?: string | null;
+  type: 'event' | 'task';
+  taskId?: number; // For deduplication
 }
 
 /**
@@ -70,6 +84,21 @@ function isToday(isoDate: string): boolean {
 }
 
 /**
+ * Check if an event overlaps with today (starts today, ends today, or spans today)
+ */
+function overlapsToday(startAt: string, endAt: string | null): boolean {
+  const today = new Date();
+  const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 0, 0, 0);
+  const todayEnd = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59);
+
+  const start = new Date(startAt);
+  const end = endAt ? new Date(endAt) : start;
+
+  // Event overlaps today if: event starts before today ends AND event ends after today starts
+  return start <= todayEnd && end >= todayStart;
+}
+
+/**
  * Check if event has a duration (has both start and end time, and is not all-day)
  */
 function hasDuration(event: DisplayCalendarEvent): boolean {
@@ -84,6 +113,23 @@ function hasDuration(event: DisplayCalendarEvent): boolean {
     }
   }
 
+  return true;
+}
+
+/**
+ * Check if a timestamp is epoch (sentinel for "not set")
+ */
+function isEpoch(isoDate: string | null): boolean {
+  if (!isoDate) return true;
+  return new Date(isoDate).getTime() < 86400000; // < 1 day from epoch
+}
+
+/**
+ * Check if task has a real duration (real unlockAt, not epoch)
+ */
+function taskHasDuration(task: Task): boolean {
+  if (!task.unlockAt || !task.dueAt) return false;
+  if (isEpoch(task.unlockAt)) return false;
   return true;
 }
 
@@ -105,12 +151,24 @@ function getEventColor(event: DisplayCalendarEvent): string {
   }
 }
 
-export function ScheduleCard({ maxItems = 4 }: ScheduleCardProps) {
+export function ScheduleCard({ maxItems }: ScheduleCardProps) {
   const navigate = useNavigate();
   const calendarEvents = useStore((state) => state.calendarEvents);
+  const tasks = useStore((state) => state.tasks);
+  const courses = useStore((state) => state.courses);
   const fetchCalendarEventsForRange = useStore(
     (state) => state.fetchCalendarEventsForRange
   );
+
+  // Build course color map
+  const courseColorMap = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const course of courses) {
+      map.set(course.id, getCourseColor(course.id, course.color));
+    }
+    return map;
+  }, [courses]);
+
   // Fetch today's events on mount
   useEffect(() => {
     const today = new Date();
@@ -133,40 +191,80 @@ export function ScheduleCard({ maxItems = 4 }: ScheduleCardProps) {
     fetchCalendarEventsForRange(startOfDay, endOfDay);
   }, [fetchCalendarEventsForRange]);
 
-  // Filter to today's timed events (including task deadline events, checked by end_at)
-  const todaysEvents = useMemo(() => {
-    const filtered = calendarEvents.filter((event) => {
-      // For deadline task events (start_at is epoch), check if end_at is today
-      // Use timestamp check (< 1 day from epoch) to handle timezone display issues
-      const isDeadline = event.taskId && new Date(event.startAt).getTime() < 86400000;
+  // Build unified schedule items from calendar events and tasks with duration
+  const todaysSchedule = useMemo(() => {
+    const items: ScheduleItem[] = [];
+    const taskIdsFromEvents = new Set<number>();
 
-      if (isDeadline) {
-        // Deadline events: check end_at (due time) is today
-        if (!event.endAt) return false;
-        return isToday(event.endAt);
-      } else {
-        // Regular events: check start_at is today and has duration
-        if (!event.startAt) return false;
-        if (!isToday(event.startAt)) return false;
-        return hasDuration(event);
+    // 1. Add calendar events with duration (not deadline events)
+    for (const event of calendarEvents) {
+      // Skip deadline task events (start_at is epoch) - they go in Important Works
+      const isDeadline = event.taskId && isEpoch(event.startAt);
+      if (isDeadline) continue;
+
+      // Must have duration (both start and end, not all-day)
+      if (!hasDuration(event)) continue;
+
+      // Check if event overlaps with today (starts today, ends today, or spans today)
+      if (!event.startAt || !overlapsToday(event.startAt, event.endAt)) continue;
+
+      // Track task IDs to avoid duplicates
+      if (event.taskId) {
+        taskIdsFromEvents.add(event.taskId);
       }
+
+      items.push({
+        id: `event-${event.id}`,
+        title: event.title,
+        startAt: event.startAt,
+        endAt: event.endAt!,
+        color: getEventColor(event),
+        location: event.location,
+        type: 'event',
+        taskId: event.taskId ?? undefined,
+      });
+    }
+
+    // 2. Add tasks with duration (real unlockAt) that don't have linked calendar events
+    for (const task of tasks) {
+      // Skip if already added via calendar event
+      if (taskIdsFromEvents.has(task.id)) continue;
+
+      // Check if task has duration (real unlockAt, not epoch)
+      if (!taskHasDuration(task)) continue;
+
+      // Check if task overlaps with today
+      if (!task.unlockAt || !overlapsToday(task.unlockAt, task.dueAt)) continue;
+
+      const color = courseColorMap.get(task.courseId) || 'var(--color-gray-500)';
+
+      items.push({
+        id: `task-${task.id}`,
+        title: task.title,
+        startAt: task.unlockAt,
+        endAt: task.dueAt!,
+        color,
+        location: null,
+        type: 'task',
+        taskId: task.id,
+      });
+    }
+
+    // Sort by: start time first, then event name
+    const sorted = items.sort((a, b) => {
+      const aTime = new Date(a.startAt).getTime();
+      const bTime = new Date(b.startAt).getTime();
+
+      // Primary sort: by start time
+      if (aTime !== bTime) return aTime - bTime;
+
+      // Secondary sort: by title
+      return a.title.localeCompare(b.title);
     });
 
-    // Sort by: deadline events by end_at, duration events by start_at
-    return filtered
-      .sort((a, b) => {
-        const aIsDeadline = a.taskId && new Date(a.startAt).getTime() < 86400000;
-        const bIsDeadline = b.taskId && new Date(b.startAt).getTime() < 86400000;
-        const aTime = aIsDeadline
-          ? new Date(a.endAt!).getTime()
-          : new Date(a.startAt).getTime();
-        const bTime = bIsDeadline
-          ? new Date(b.endAt!).getTime()
-          : new Date(b.startAt).getTime();
-        return aTime - bTime;
-      })
-      .slice(0, maxItems);
-  }, [calendarEvents, maxItems]);
+    // Only limit if maxItems is specified
+    return maxItems ? sorted.slice(0, maxItems) : sorted;
+  }, [calendarEvents, tasks, courseColorMap, maxItems]);
 
   const handleEventClick = () => {
     // Navigate to weekly calendar view
@@ -179,7 +277,7 @@ export function ScheduleCard({ maxItems = 4 }: ScheduleCardProps) {
       padding="md"
       style={{ display: 'flex', flexDirection: 'column', height: '100%' }}
     >
-      {todaysEvents.length === 0 ? (
+      {todaysSchedule.length === 0 ? (
         <div style={styles.emptyState}>
           <CalendarCheck
             size={28}
@@ -190,23 +288,12 @@ export function ScheduleCard({ maxItems = 4 }: ScheduleCardProps) {
         </div>
       ) : (
         <div style={styles.list}>
-          {todaysEvents.map((event, index) => {
-            const timeRange = event.endAt
-              ? formatTimeRange(event.startAt, event.endAt)
-              : formatTime(event.startAt);
-            const eventColor = getEventColor(event);
-
-            // Check if this is a deadline task event (start_at is epoch)
-            const isDeadlineEvent =
-              event.taskId && new Date(event.startAt).getTime() < 86400000;
-            const displayTime =
-              isDeadlineEvent && event.endAt
-                ? `Due ${formatTime(event.endAt)}`
-                : timeRange;
+          {todaysSchedule.map((item, index) => {
+            const timeRange = formatTimeRange(item.startAt, item.endAt);
 
             return (
               <div
-                key={event.id}
+                key={item.id}
                 style={{
                   ...styles.item,
                   borderTop: index === 0 ? 'none' : '1px solid var(--border-light)',
@@ -225,29 +312,29 @@ export function ScheduleCard({ maxItems = 4 }: ScheduleCardProps) {
                 <div
                   style={{
                     ...styles.colorIndicator,
-                    backgroundColor: eventColor,
+                    backgroundColor: item.color,
                   }}
                 />
 
                 {/* Title first, then time + location aligned */}
                 <div style={styles.content}>
                   {/* Row 1: Event title */}
-                  <span style={styles.eventTitle}>{event.title}</span>
+                  <span style={styles.eventTitle}>{item.title}</span>
                   {/* Row 2: Time + Location (locations align left-most) */}
                   <div style={styles.metaRow}>
                     <span
                       style={{
                         ...styles.timeRange,
-                        // Only set min-width if this event has a location
-                        ...(event.location ? { minWidth: '110px' } : {}),
+                        // Only set min-width if this item has a location
+                        ...(item.location ? { minWidth: '110px' } : {}),
                       }}
                     >
-                      {displayTime}
+                      {timeRange}
                     </span>
-                    {event.location && (
+                    {item.location && (
                       <span style={styles.location}>
                         <MapPin size={11} style={{ flexShrink: 0 }} />
-                        {event.location}
+                        {item.location}
                       </span>
                     )}
                   </div>

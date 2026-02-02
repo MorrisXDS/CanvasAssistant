@@ -220,15 +220,19 @@ function calculateStats(
   const upcomingTasks = visibleTasks.filter(isUpcomingTask).length;
   const overdueTasks = visibleTasks.filter(isOverdueTask).length;
 
-  // Calculate average grade across courses
-  const gradesWithValues = courseSummaries
-    .map((s) => s.effectiveAssessedGrade)
-    .filter((g): g is number => g !== null);
+  // Calculate weighted average grade across courses (weighted by credits)
+  let totalWeightedGrade = 0;
+  let totalCredits = 0;
 
-  const averageGrade =
-    gradesWithValues.length > 0
-      ? gradesWithValues.reduce((a, b) => a + b, 0) / gradesWithValues.length
-      : null;
+  for (const summary of courseSummaries) {
+    if (summary.effectiveAssessedGrade !== null) {
+      const credits = summary.course.credits ?? 1.0;
+      totalWeightedGrade += summary.effectiveAssessedGrade * credits;
+      totalCredits += credits;
+    }
+  }
+
+  const averageGrade = totalCredits > 0 ? totalWeightedGrade / totalCredits : null;
 
   return {
     totalCourses: courseSummaries.length,

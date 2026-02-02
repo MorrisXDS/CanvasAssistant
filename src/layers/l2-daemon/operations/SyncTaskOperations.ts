@@ -314,23 +314,6 @@ export class SyncTaskOperations {
       );
 
       this.ctx.db.transaction(() => {
-        // Migration: Update existing task events to use epoch as start_at
-        const epochStart = new Date(0).toISOString();
-        const migratedCount = this.ctx.db.executeWrite(
-          `UPDATE calendar_events
-           SET start_at = ?
-           WHERE task_id IS NOT NULL
-             AND all_day = 0
-             AND start_at != ?`,
-          [epochStart, epochStart],
-          'calendar_events'
-        );
-        if (migratedCount.changes > 0) {
-          this.ctx.log?.info(
-            `Migrated ${migratedCount.changes} task calendar events to use epoch start time`
-          );
-        }
-
         // Cleanup orphaned calendar events
         const orphanedCleanup = this.ctx.db.executeWrite(
           `DELETE FROM calendar_events
@@ -376,8 +359,20 @@ export class SyncTaskOperations {
             }
 
             const uid = `task-${task.id}@cid`;
+            const epochStart = new Date(0).toISOString();
 
             if (task.calendar_event_id) {
+              // Check if user has set a custom start time (non-epoch)
+              // If so, preserve it; otherwise use epoch for deadline events
+              const existingEvent = this.ctx.db.executeReadOne<{ start_at: string }>(
+                'SELECT start_at FROM calendar_events WHERE id = ?',
+                [task.calendar_event_id]
+              );
+              const preserveStart =
+                existingEvent &&
+                existingEvent.start_at &&
+                new Date(existingEvent.start_at).getTime() >= 86400000; // > 1 day from epoch = user-set
+
               this.ctx.db.executeWrite(
                 `UPDATE calendar_events SET
                    title = ?,
@@ -390,7 +385,7 @@ export class SyncTaskOperations {
                 [
                   task.title,
                   task.description,
-                  startAt,
+                  preserveStart ? existingEvent!.start_at : epochStart,
                   endAt,
                   isAllDay ? 1 : 0,
                   task.calendar_event_id,
@@ -399,12 +394,17 @@ export class SyncTaskOperations {
               );
               updated++;
             } else {
-              const existing = this.ctx.db.executeReadOne<{ id: number }>(
-                'SELECT id FROM calendar_events WHERE task_id = ?',
+              const existing = this.ctx.db.executeReadOne<{ id: number; start_at: string }>(
+                'SELECT id, start_at FROM calendar_events WHERE task_id = ?',
                 [task.id]
               );
 
               if (existing) {
+                // Preserve user-set start time (non-epoch)
+                const preserveStart =
+                  existing.start_at &&
+                  new Date(existing.start_at).getTime() >= 86400000;
+
                 this.ctx.db.executeWrite(
                   `UPDATE calendar_events SET
                      title = ?,
@@ -417,7 +417,7 @@ export class SyncTaskOperations {
                   [
                     task.title,
                     task.description,
-                    startAt,
+                    preserveStart ? existing.start_at : epochStart,
                     endAt,
                     isAllDay ? 1 : 0,
                     existing.id,
@@ -431,6 +431,7 @@ export class SyncTaskOperations {
                 );
                 updated++;
               } else {
+                // New calendar event for task - use epoch as default (deadline event)
                 const result = this.ctx.db.executeWrite(
                   `INSERT INTO calendar_events (
                      source_type, course_id, task_id, title, description,
@@ -442,7 +443,7 @@ export class SyncTaskOperations {
                     task.id,
                     task.title,
                     task.description,
-                    startAt,
+                    epochStart, // Use epoch for deadline events by default
                     endAt,
                     isAllDay ? 1 : 0,
                     uid,

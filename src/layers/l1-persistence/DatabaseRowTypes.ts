@@ -34,6 +34,8 @@ export interface CourseRow {
   syllabus_body: string | null;
   last_synced_at: string | null;
   enrollment_term_id: number | null;
+  /** Course credits/units for weighted GPA calculation */
+  credits: number;
   /** ISO timestamp when course was archived, null if active */
   archived_at: string | null;
   /** How the course was archived: 'manual' (user) or 'auto' (term expired) */
@@ -70,6 +72,8 @@ export interface CourseRowSyllabusOnly {
 export interface TaskRow {
   id: number;
   external_id: string;
+  /** Source type: 'canvas' (synced from Canvas) or 'user' (created locally). May be undefined in older DBs. */
+  source_type?: 'canvas' | 'user';
   course_id: number;
   title: string;
   description: string | null;
@@ -91,6 +95,8 @@ export interface TaskRow {
   task_group_id: number | null;
   /** FK to calendar_events.id for task-calendar linking. ON DELETE SET NULL */
   calendar_event_id: number | null;
+  /** Location for the task (e.g., room, building) */
+  location: string | null;
   local_modified_at: string | null;
   field_sources: string | null; // JSON: {"due_at": "guessed", "grade": "canvas"}
   created_at: string;

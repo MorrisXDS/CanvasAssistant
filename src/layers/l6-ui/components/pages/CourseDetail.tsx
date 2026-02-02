@@ -31,6 +31,8 @@ import {
   FileCode,
   GripVertical,
   Archive,
+  RefreshCw,
+  MapPin,
 } from 'lucide-react';
 import {
   Card,
@@ -47,7 +49,7 @@ import {
   type LinkBehavior,
 } from '../../../l5-presentation/settings';
 import type { Task, Notification, Policy } from '../../../l5-presentation/types';
-import { COURSE_COLORS, getCourseColor } from '../../constants';
+import { COURSE_COLORS, getCourseColor, TASK_TYPES, formatGrade } from '../../constants';
 import { ColorPicker } from '../primitives';
 import {
   SyllabusSelector,
@@ -58,29 +60,6 @@ import {
 } from '../Course';
 import type { FileResource } from '../Files/FileListItem';
 import { useCourseDetailDragDrop } from './useCourseDetailDragDrop';
-
-// Task types for coursework
-const TASK_TYPES = [
-  { value: 'assignment', label: 'Assignment' },
-  { value: 'problem_set', label: 'Problem Set' },
-  { value: 'quiz', label: 'Quiz' },
-  { value: 'homework', label: 'Homework' },
-  { value: 'lab', label: 'Lab' },
-  { value: 'essay', label: 'Essay' },
-  { value: 'attendance', label: 'Attendance' },
-  { value: 'participation', label: 'Participation' },
-  { value: 'project', label: 'Project' },
-  { value: 'midterm', label: 'Midterm' },
-  { value: 'termtest', label: 'Term Test' },
-  { value: 'final_exam', label: 'Final Exam' },
-  { value: 'tutorial', label: 'Tutorial' },
-  { value: 'lab_report', label: 'Lab Report' },
-  { value: 'reading_response', label: 'Reading Response' },
-  { value: 'discussion', label: 'Discussion' },
-  { value: 'reading', label: 'Reading' },
-  { value: 'external', label: 'External Tool' },
-  { value: 'info', label: 'Info (Not Graded)' },
-];
 
 function getShortCode(code: string): string {
   // Stop before a letter followed by a digit and then space/end (e.g., "H1 " or "Y1")
@@ -129,6 +108,7 @@ interface CourseDetailData {
   isHidden: boolean;
   syllabusBody: string | null;
   lastSyncedAt: string | null;
+  credits: number;
   archivedAt: string | null;
   archiveSource: 'manual' | 'auto' | null;
 }
@@ -234,11 +214,13 @@ export function CourseDetail() {
   const [showSettings, setShowSettings] = useState(false);
   const [nicknameInput, setNicknameInput] = useState('');
   const [selectedColor, setSelectedColor] = useState<string | null>(null);
+  const [creditsInput, setCreditsInput] = useState('');
 
   // Add Task state
   const [showAddTask, setShowAddTask] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskDescription, setNewTaskDescription] = useState('');
+  const [newTaskStartDate, setNewTaskStartDate] = useState('');
   const [newTaskDueDate, setNewTaskDueDate] = useState('');
   const [newTaskWeight, setNewTaskWeight] = useState('');
   const [newTaskType, setNewTaskType] = useState('');
@@ -249,10 +231,12 @@ export function CourseDetail() {
   const [editTaskTitle, setEditTaskTitle] = useState('');
   const [editTaskDescription, setEditTaskDescription] = useState('');
   const [editTaskOriginalDescription, setEditTaskOriginalDescription] = useState(''); // Track original stripped description
+  const [editTaskStartDate, setEditTaskStartDate] = useState('');
   const [editTaskDueDate, setEditTaskDueDate] = useState('');
   const [editTaskWeight, setEditTaskWeight] = useState('');
   const [editTaskGrade, setEditTaskGrade] = useState('');
   const [editTaskType, setEditTaskType] = useState('');
+  const [editTaskLocation, setEditTaskLocation] = useState('');
 
   // Policy modal state
   const [policyModalState, setPolicyModalState] = useState<{
@@ -272,6 +256,7 @@ export function CourseDetail() {
   const [_settingsLoading, _setSettingsLoading] = useState(false);
   const [showSyllabusSelector, setShowSyllabusSelector] = useState(false);
   const [syllabusWarningDismissed, setSyllabusWarningDismissed] = useState(false);
+  const [syllabusContextMenu, setSyllabusContextMenu] = useState<{ x: number; y: number } | null>(null);
   const syllabusClickTimeout = useRef<NodeJS.Timeout | null>(null);
 
   // Confirm dialog state
@@ -386,12 +371,17 @@ export function CourseDetail() {
     if (!api?.dispatch) return;
 
     try {
-      // Save course preferences (nickname, color)
+      // Parse credits
+      const newCredits = parseFloat(creditsInput);
+      const validCredits = !isNaN(newCredits) && newCredits >= 0 && newCredits <= 10;
+
+      // Save course preferences (nickname, color, credits)
       await api.dispatch('UpdateCoursePreferences', {
         courseId,
         preferences: {
           nickname: nicknameInput || undefined,
           color: selectedColor || undefined,
+          credits: validCredits ? newCredits : undefined,
         },
       });
 
@@ -412,12 +402,20 @@ export function CourseDetail() {
                 color: selectedColor,
                 targetGrade: newTarget,
                 targetGradeSource: 'manual',
+                credits: validCredits ? newCredits : prev.credits,
               }
             : null
         );
       } else {
         setCourse((prev) =>
-          prev ? { ...prev, nickname: nicknameInput || null, color: selectedColor } : null
+          prev
+            ? {
+                ...prev,
+                nickname: nicknameInput || null,
+                color: selectedColor,
+                credits: validCredits ? newCredits : prev.credits,
+              }
+            : null
         );
       }
 
@@ -513,7 +511,7 @@ export function CourseDetail() {
     }
   };
 
-  const _handleRemoveSyllabus = async () => {
+  const handleRemoveSyllabus = async () => {
     const api = window.api;
     if (!api?.dispatch) return;
 
@@ -547,17 +545,27 @@ export function CourseDetail() {
     if (!api?.dispatch || !newTaskTitle.trim()) return;
 
     try {
+      // Convert datetime-local values to ISO strings if set
+      const unlockAt = newTaskStartDate
+        ? new Date(newTaskStartDate).toISOString()
+        : undefined;
+      const dueAt = newTaskDueDate
+        ? new Date(newTaskDueDate).toISOString()
+        : undefined;
+
       await api.dispatch('CreateTask', {
         courseId,
         title: newTaskTitle.trim(),
         description: newTaskDescription.trim() || undefined,
-        dueAt: newTaskDueDate || undefined,
+        unlockAt,
+        dueAt,
         weight: newTaskWeight ? parseFloat(newTaskWeight) : undefined,
         taskType: newTaskType || undefined,
       });
       // Reset form
       setNewTaskTitle('');
       setNewTaskDescription('');
+      setNewTaskStartDate('');
       setNewTaskDueDate('');
       setNewTaskWeight('');
       setNewTaskType('');
@@ -607,21 +615,27 @@ export function CourseDetail() {
     const originalDescription = task.description || '';
     setEditTaskDescription(originalDescription);
     setEditTaskOriginalDescription(originalDescription);
-    // Convert UTC ISO string to local datetime-local format (YYYY-MM-DDTHH:MM)
-    if (task.dueAt) {
-      const localDate = new Date(task.dueAt);
-      const year = localDate.getFullYear();
-      const month = String(localDate.getMonth() + 1).padStart(2, '0');
-      const day = String(localDate.getDate()).padStart(2, '0');
-      const hours = String(localDate.getHours()).padStart(2, '0');
-      const minutes = String(localDate.getMinutes()).padStart(2, '0');
-      setEditTaskDueDate(`${year}-${month}-${day}T${hours}:${minutes}`);
-    } else {
-      setEditTaskDueDate('');
-    }
+
+    // Helper to convert ISO string to datetime-local format
+    const formatDateForInput = (isoString: string | null): string => {
+      if (!isoString) return '';
+      const date = new Date(isoString);
+      // Check if it's epoch time (1970-01-01) - treat as "not set"
+      if (date.getTime() === 0) return '';
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      const hours = String(date.getHours()).padStart(2, '0');
+      const minutes = String(date.getMinutes()).padStart(2, '0');
+      return `${year}-${month}-${day}T${hours}:${minutes}`;
+    };
+
+    setEditTaskStartDate(formatDateForInput(task.unlockAt));
+    setEditTaskDueDate(formatDateForInput(task.dueAt));
     setEditTaskWeight(task.weight?.toString() || '');
     setEditTaskGrade(task.grade?.toString() || '');
     setEditTaskType(task.taskType || '');
+    setEditTaskLocation(task.location || '');
     // Set editing and expanded state together at the end
     setEditingTaskId(task.id);
     setExpandedTaskId(task.id);
@@ -636,15 +650,22 @@ export function CourseDetail() {
       // Only include description if it was actually changed
       const descriptionChanged = editTaskDescription !== editTaskOriginalDescription;
 
+      // Convert empty start date to epoch time (1970-01-01T00:00:00.000Z)
+      const unlockAt = editTaskStartDate
+        ? new Date(editTaskStartDate).toISOString()
+        : '1970-01-01T00:00:00.000Z';
+
       await api.dispatch('UpdateTask', {
         taskId: editingTaskId,
         title: editTaskTitle.trim() || undefined,
         // Only send description if user actually modified it (preserves HTML/links if unchanged)
         ...(descriptionChanged && { description: editTaskDescription || null }),
+        unlockAt,
         dueAt: editTaskDueDate || null,
         weight: editTaskWeight ? parseFloat(editTaskWeight) : undefined,
         grade: editTaskGrade ? parseFloat(editTaskGrade) : null,
         taskType: editTaskType || null,
+        location: editTaskLocation || null,
       });
       setEditingTaskId(null);
       await refreshArchivedCourseTasks();
@@ -889,7 +910,21 @@ export function CourseDetail() {
         setGradeHistory(historyData || []);
         setAnnouncements(announcementsData || []);
         setCoursePages(pagesData || []);
-        setSyllabus(syllabusData || null);
+        // Map syllabus API response to CourseSyllabus interface
+        if (syllabusData && syllabusData.type === 'resource') {
+          setSyllabus({
+            id: syllabusData.resourceId,
+            courseId,
+            resourceId: syllabusData.resourceId,
+            resourceTitle: syllabusData.title || 'Unknown file',
+            resourceUpdatedAt: syllabusData.downloadedAt || null,
+            lastReviewedAt: syllabusData.reviewedAt || syllabusData.designatedAt,
+            changeDetectedAt: null,
+            markedAt: syllabusData.designatedAt,
+          });
+        } else {
+          setSyllabus(null);
+        }
         setCourseFiles(filesData || []);
 
         // For archived courses, fetch tasks directly (bypasses visibility filtering)
@@ -1183,7 +1218,7 @@ export function CourseDetail() {
                           : 'var(--text-muted)',
                     }}
                   >
-                    {completedWeight > 0 ? `${earnedContribution.toFixed(2)}%` : '—'}
+                    {completedWeight > 0 ? formatGrade(earnedContribution) : '—'}
                   </div>
                   <div style={styles.gradeSubtext}>
                     {completedWeight > 0
@@ -1210,7 +1245,7 @@ export function CourseDetail() {
                           : 'var(--text-muted)',
                     }}
                   >
-                    {completedWeight > 0 ? `${effectiveGrade.toFixed(1)}%` : '—'}
+                    {completedWeight > 0 ? formatGrade(effectiveGrade) : '—'}
                   </div>
                   <div style={styles.gradeSubtext}>
                     {completedWeight > 0 ? 'avg on graded work' : '\u00A0'}
@@ -1219,7 +1254,15 @@ export function CourseDetail() {
                 {/* Syllabus */}
                 <div style={styles.gradeDivider} />
                 <div
-                  style={{ ...styles.gradeItem, cursor: 'pointer', userSelect: 'none' }}
+                  style={{
+                    ...styles.gradeItem,
+                    cursor: 'pointer',
+                    userSelect: 'none',
+                  }}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    setSyllabusContextMenu({ x: e.clientX, y: e.clientY });
+                  }}
                   onClick={() => {
                     // Delay single-click to allow double-click to cancel it
                     if (syllabusClickTimeout.current) {
@@ -1227,7 +1270,7 @@ export function CourseDetail() {
                     }
                     syllabusClickTimeout.current = setTimeout(() => {
                       setShowSyllabusSelector(true);
-                    }, 1000);
+                    }, 250);
                   }}
                   onDoubleClick={() => {
                     // Cancel single-click action
@@ -1294,7 +1337,7 @@ export function CourseDetail() {
                   }}
                   title={
                     syllabus
-                      ? 'Click to change, double-click to open'
+                      ? 'Click to change, double-click to open, right-click for options'
                       : 'Click to select syllabus'
                   }
                 >
@@ -1304,7 +1347,7 @@ export function CourseDetail() {
                   </div>
                   <div
                     style={{
-                      ...styles.gradeValue,
+                      ...styles.syllabusValue,
                       color: syllabus ? 'var(--text-primary)' : 'var(--text-muted)',
                     }}
                   >
@@ -1328,6 +1371,7 @@ export function CourseDetail() {
                     setNicknameInput(course.nickname || '');
                     setSelectedColor(course.color);
                     setTargetGradeInput(course.targetGrade.toString());
+                    setCreditsInput(course.credits?.toString() || '1.0');
                     setShowSettings(!showSettings);
                   }}
                 >
@@ -1360,6 +1404,19 @@ export function CourseDetail() {
                       min="0"
                       max="100"
                       step="0.1"
+                    />
+                  </div>
+                  <div style={styles.settingsField}>
+                    <label style={styles.settingsLabel}>Credit</label>
+                    <input
+                      type="number"
+                      value={creditsInput}
+                      onChange={(e) => setCreditsInput(e.target.value)}
+                      style={styles.settingsInput}
+                      min="0"
+                      max="10"
+                      step="0.5"
+                      placeholder="1.0"
                     />
                   </div>
                 </div>
@@ -1473,7 +1530,7 @@ export function CourseDetail() {
                                 : 'var(--color-high)',
                         }}
                       />
-                      Earned: {earnedContribution.toFixed(2)}%
+                      Earned: {formatGrade(earnedContribution)}
                     </span>
                     <span style={styles.legendItem}>
                       <span
@@ -1482,7 +1539,7 @@ export function CourseDetail() {
                           backgroundColor: 'var(--color-navy)',
                         }}
                       />
-                      Target: {targetPercent.toFixed(2)}%
+                      Target: {formatGrade(targetPercent)}
                     </span>
                   </span>
                   <span>100%</span>
@@ -1694,26 +1751,44 @@ export function CourseDetail() {
                           style={styles.addTaskTextarea}
                           rows={2}
                         />
+                        {/* Row 1: Type + Start Date + Due Date */}
                         <div style={styles.addTaskRow}>
-                          <select
-                            value={newTaskType}
-                            onChange={(e) => setNewTaskType(e.target.value)}
-                            style={styles.addTaskSelect}
-                          >
-                            <option value="">Select type...</option>
-                            {TASK_TYPES.map((type) => (
-                              <option key={type.value} value={type.value}>
-                                {type.label}
-                              </option>
-                            ))}
-                          </select>
-                          <input
-                            type="datetime-local"
-                            value={newTaskDueDate}
-                            onChange={(e) => setNewTaskDueDate(e.target.value)}
-                            style={styles.addTaskInputSmall}
-                            placeholder="Due date"
-                          />
+                          <div style={styles.addTaskDateGroup}>
+                            <label style={styles.addTaskDateLabel}>Type</label>
+                            <select
+                              value={newTaskType}
+                              onChange={(e) => setNewTaskType(e.target.value)}
+                              style={styles.addTaskSelectWithLabel}
+                            >
+                              <option value="">Select type...</option>
+                              {TASK_TYPES.map((type) => (
+                                <option key={type.value} value={type.value}>
+                                  {type.label}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div style={styles.addTaskDateGroup}>
+                            <label style={styles.addTaskDateLabel}>Start</label>
+                            <input
+                              type="datetime-local"
+                              value={newTaskStartDate}
+                              onChange={(e) => setNewTaskStartDate(e.target.value)}
+                              style={styles.addTaskDateInput}
+                            />
+                          </div>
+                          <div style={styles.addTaskDateGroup}>
+                            <label style={styles.addTaskDateLabel}>Due *</label>
+                            <input
+                              type="datetime-local"
+                              value={newTaskDueDate}
+                              onChange={(e) => setNewTaskDueDate(e.target.value)}
+                              style={styles.addTaskDateInput}
+                            />
+                          </div>
+                        </div>
+                        {/* Row 2: Weight */}
+                        <div style={styles.addTaskRow}>
                           <input
                             type="number"
                             placeholder="Weight %"
@@ -1761,6 +1836,7 @@ export function CourseDetail() {
                             isHighlighted={highlightedTaskId === task.id}
                             editTitle={editTaskTitle}
                             editDescription={editTaskDescription}
+                            editStartDate={editTaskStartDate}
                             editDueDate={editTaskDueDate}
                             editWeight={editTaskWeight}
                             editGrade={editTaskGrade}
@@ -1780,11 +1856,14 @@ export function CourseDetail() {
                             onDelete={() => handleDeleteTask(task.id, task.title)}
                             onEditTitleChange={setEditTaskTitle}
                             onEditDescriptionChange={setEditTaskDescription}
+                            onEditStartDateChange={setEditTaskStartDate}
                             onEditDueDateChange={setEditTaskDueDate}
                             onEditWeightChange={setEditTaskWeight}
                             onEditGradeChange={setEditTaskGrade}
                             editTaskType={editTaskType}
                             onEditTaskTypeChange={setEditTaskType}
+                            editLocation={editTaskLocation}
+                            onEditLocationChange={setEditTaskLocation}
                             onContextMenu={(e) => handleTaskContextMenu(e, task)}
                             taskRef={(el) => {
                               if (el) taskRefs.current.set(task.id, el);
@@ -2060,7 +2139,7 @@ export function CourseDetail() {
                 <div style={styles.historyList}>
                   {gradeHistory.slice(0, 10).map((entry) => (
                     <div key={entry.id} style={styles.historyItem}>
-                      <span style={styles.historyGrade}>{entry.grade.toFixed(1)}%</span>
+                      <span style={styles.historyGrade}>{formatGrade(entry.grade)}</span>
                       <span style={styles.historyDate}>
                         {formatShortDate(entry.recordedAt)}
                       </span>
@@ -2108,10 +2187,12 @@ export function CourseDetail() {
           highlightedTaskId={highlightedTaskId}
           editTitle={editTaskTitle}
           editDescription={editTaskDescription}
+          editStartDate={editTaskStartDate}
           editDueDate={editTaskDueDate}
           editWeight={editTaskWeight}
           editGrade={editTaskGrade}
           editTaskType={editTaskType}
+          editLocation={editTaskLocation}
           onToggleExpand={(taskId) =>
             setExpandedTaskId(expandedTaskId === taskId ? null : taskId)
           }
@@ -2126,10 +2207,12 @@ export function CourseDetail() {
           onDelete={(taskId, taskTitle) => handleDeleteTask(taskId, taskTitle)}
           onEditTitleChange={setEditTaskTitle}
           onEditDescriptionChange={setEditTaskDescription}
+          onEditStartDateChange={setEditTaskStartDate}
           onEditDueDateChange={setEditTaskDueDate}
           onEditWeightChange={setEditTaskWeight}
           onEditGradeChange={setEditTaskGrade}
           onEditTaskTypeChange={setEditTaskType}
+          onEditLocationChange={setEditTaskLocation}
           onTaskContextMenu={handleTaskContextMenu}
         />
       )}
@@ -2144,6 +2227,7 @@ export function CourseDetail() {
             isOptional: taskContextMenu.task.isOptional,
             calendarEventId: taskContextMenu.task.calendarEventId,
             dueAt: taskContextMenu.task.dueAt,
+            sourceType: taskContextMenu.task.sourceType,
           }}
           position={taskContextMenu.position}
           onClose={() => setTaskContextMenu(null)}
@@ -2186,6 +2270,46 @@ export function CourseDetail() {
           setShowSyllabusSelector(false);
         }}
       />
+
+      {/* Syllabus Context Menu */}
+      {syllabusContextMenu && (
+        <div
+          style={styles.contextMenuOverlay}
+          onClick={() => setSyllabusContextMenu(null)}
+        >
+          <div
+            style={{
+              ...styles.contextMenu,
+              left: syllabusContextMenu.x,
+              top: syllabusContextMenu.y,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              style={styles.contextMenuItem}
+              onClick={() => {
+                setShowSyllabusSelector(true);
+                setSyllabusContextMenu(null);
+              }}
+            >
+              <RefreshCw size={14} />
+              {syllabus ? 'Replace Syllabus' : 'Select Syllabus'}
+            </button>
+            {syllabus && (
+              <button
+                style={{ ...styles.contextMenuItem, color: 'var(--color-error)' }}
+                onClick={() => {
+                  handleRemoveSyllabus();
+                  setSyllabusContextMenu(null);
+                }}
+              >
+                <X size={14} />
+                Remove Syllabus
+              </button>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -2201,10 +2325,12 @@ interface TaskItemProps {
   isHighlighted?: boolean;
   editTitle: string;
   editDescription: string;
+  editStartDate: string;
   editDueDate: string;
   editWeight: string;
   editGrade: string;
   editTaskType: string;
+  editLocation: string;
   onToggleExpand: () => void;
   onToggleComplete: () => void;
   onDuplicate: () => void;
@@ -2214,10 +2340,12 @@ interface TaskItemProps {
   onDelete: () => void;
   onEditTitleChange: (value: string) => void;
   onEditDescriptionChange: (value: string) => void;
+  onEditStartDateChange: (value: string) => void;
   onEditDueDateChange: (value: string) => void;
   onEditWeightChange: (value: string) => void;
   onEditGradeChange: (value: string) => void;
   onEditTaskTypeChange: (value: string) => void;
+  onEditLocationChange: (value: string) => void;
   onContextMenu?: (e: React.MouseEvent) => void;
   taskRef?: (el: HTMLDivElement | null) => void;
   onFileDownloadRequest?: (file: { id: number; title: string }, href: string) => void;
@@ -2233,10 +2361,12 @@ function TaskItem({
   isHighlighted,
   editTitle,
   editDescription,
+  editStartDate,
   editDueDate,
   editWeight,
   editGrade,
   editTaskType,
+  editLocation,
   onToggleExpand,
   onToggleComplete: _onToggleComplete,
   onDuplicate: _onDuplicate,
@@ -2246,10 +2376,12 @@ function TaskItem({
   onDelete,
   onEditTitleChange,
   onEditDescriptionChange,
+  onEditStartDateChange,
   onEditDueDateChange,
   onEditWeightChange,
   onEditGradeChange,
   onEditTaskTypeChange,
+  onEditLocationChange,
   onContextMenu,
   taskRef,
   onFileDownloadRequest,
@@ -2385,6 +2517,12 @@ function TaskItem({
                   )}
               </span>
             )}
+            {task.location && (
+              <span style={styles.taskLocation} title="Location">
+                <MapPin size={12} />
+                {task.location}
+              </span>
+            )}
             {task.weight > 0 ? (
               <span style={styles.taskWeight} title="Weight towards final grade">
                 Weight: {task.weight}%
@@ -2399,7 +2537,7 @@ function TaskItem({
             ) : null}
             {task.grade !== null && (
               <span style={styles.taskScore} title="Score on this coursework">
-                Score: {task.grade.toFixed(1)}%
+                Score: {formatGrade(task.grade)}
               </span>
             )}
             <PolicyBadgeGroup task={task} policies={policies} maxBadges={2} size="sm" />
@@ -2583,7 +2721,33 @@ function TaskItem({
                 ))}
               </select>
             </div>
+            <div style={styles.taskEditRow}>
+              <label style={styles.taskEditLabel}>Location</label>
+              <input
+                type="text"
+                value={editLocation}
+                onChange={(e) => onEditLocationChange(e.target.value)}
+                style={styles.taskEditInput}
+                placeholder="Room, building, or online link"
+              />
+            </div>
+            {/* Row 1: Start Date | Due Date */}
             <div style={styles.taskEditRowGroup}>
+              <div style={styles.taskEditRowHalf}>
+                <label
+                  style={styles.taskEditLabel}
+                  title="When this coursework becomes available"
+                >
+                  Start Date
+                </label>
+                <input
+                  type="datetime-local"
+                  value={editStartDate}
+                  onChange={(e) => onEditStartDateChange(e.target.value)}
+                  style={styles.taskEditInput}
+                  placeholder="Not set"
+                />
+              </div>
               <div style={styles.taskEditRowHalf}>
                 <label style={styles.taskEditLabel}>Due Date</label>
                 <input
@@ -2593,6 +2757,9 @@ function TaskItem({
                   style={styles.taskEditInput}
                 />
               </div>
+            </div>
+            {/* Row 2: Weight | Score */}
+            <div style={styles.taskEditRowGroup}>
               <div style={styles.taskEditRowHalf}>
                 <label
                   style={styles.taskEditLabel}
@@ -2662,10 +2829,12 @@ interface TaskListModalProps {
   highlightedTaskId: number | null;
   editTitle: string;
   editDescription: string;
+  editStartDate: string;
   editDueDate: string;
   editWeight: string;
   editGrade: string;
   editTaskType: string;
+  editLocation: string;
   onToggleExpand: (taskId: number) => void;
   onToggleComplete: (task: Task) => void;
   onDuplicate: (taskId: number) => void;
@@ -2675,10 +2844,12 @@ interface TaskListModalProps {
   onDelete: (taskId: number, taskTitle: string) => void;
   onEditTitleChange: (value: string) => void;
   onEditDescriptionChange: (value: string) => void;
+  onEditStartDateChange: (value: string) => void;
   onEditDueDateChange: (value: string) => void;
   onEditWeightChange: (value: string) => void;
   onEditGradeChange: (value: string) => void;
   onEditTaskTypeChange: (value: string) => void;
+  onEditLocationChange: (value: string) => void;
   onTaskContextMenu?: (e: React.MouseEvent, task: Task) => void;
 }
 
@@ -2693,10 +2864,12 @@ function TaskListModal({
   highlightedTaskId,
   editTitle,
   editDescription,
+  editStartDate,
   editDueDate,
   editWeight,
   editGrade,
   editTaskType,
+  editLocation,
   onToggleExpand,
   onToggleComplete,
   onDuplicate,
@@ -2706,10 +2879,12 @@ function TaskListModal({
   onDelete,
   onEditTitleChange,
   onEditDescriptionChange,
+  onEditStartDateChange,
   onEditDueDateChange,
   onEditWeightChange,
   onEditGradeChange,
   onEditTaskTypeChange,
+  onEditLocationChange,
   onTaskContextMenu,
 }: TaskListModalProps) {
   if (!isOpen) return null;
@@ -2742,6 +2917,7 @@ function TaskListModal({
                   isHighlighted={highlightedTaskId === task.id}
                   editTitle={editTitle}
                   editDescription={editDescription}
+                  editStartDate={editStartDate}
                   editDueDate={editDueDate}
                   editWeight={editWeight}
                   editGrade={editGrade}
@@ -2754,11 +2930,14 @@ function TaskListModal({
                   onDelete={() => onDelete(task.id, task.title)}
                   onEditTitleChange={onEditTitleChange}
                   onEditDescriptionChange={onEditDescriptionChange}
+                  onEditStartDateChange={onEditStartDateChange}
                   onEditDueDateChange={onEditDueDateChange}
                   onEditWeightChange={onEditWeightChange}
                   onEditGradeChange={onEditGradeChange}
                   editTaskType={editTaskType}
                   onEditTaskTypeChange={onEditTaskTypeChange}
+                  editLocation={editLocation}
+                  onEditLocationChange={onEditLocationChange}
                   onContextMenu={
                     onTaskContextMenu ? (e) => onTaskContextMenu(e, task) : undefined
                   }
@@ -2986,7 +3165,7 @@ const styles: Record<string, React.CSSProperties> = {
   gradeSummary: {
     display: 'flex',
     flexWrap: 'wrap',
-    alignItems: 'center',
+    alignItems: 'stretch',
     gap: 'var(--space-4)',
     padding: 'var(--space-4)',
     backgroundColor: 'var(--bg-app)',
@@ -2995,7 +3174,12 @@ const styles: Record<string, React.CSSProperties> = {
   },
 
   gradeItem: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     textAlign: 'center',
+    minHeight: '72px',
   },
 
   gradeLabel: {
@@ -3020,6 +3204,53 @@ const styles: Record<string, React.CSSProperties> = {
     marginTop: '2px',
   },
 
+  syllabusValue: {
+    fontSize: 'var(--text-base)',
+    fontWeight: 'var(--font-semibold)',
+    color: 'var(--text-primary)',
+    maxWidth: '140px',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+    lineHeight: 1.3,
+  },
+
+  contextMenuOverlay: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 1000,
+  },
+
+  contextMenu: {
+    position: 'fixed',
+    backgroundColor: 'var(--bg-card)',
+    border: '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-md)',
+    boxShadow: 'var(--shadow-lg)',
+    padding: 'var(--space-1)',
+    minWidth: '160px',
+    zIndex: 1001,
+  },
+
+  contextMenuItem: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-2)',
+    width: '100%',
+    padding: 'var(--space-2) var(--space-3)',
+    background: 'none',
+    border: 'none',
+    borderRadius: 'var(--radius-sm)',
+    cursor: 'pointer',
+    fontSize: 'var(--text-sm)',
+    color: 'var(--text-primary)',
+    textAlign: 'left',
+    transition: 'background-color var(--transition-fast)',
+  },
+
   gradeDivider: {
     width: '1px',
     height: '40px',
@@ -3029,6 +3260,7 @@ const styles: Record<string, React.CSSProperties> = {
   editableValue: {
     display: 'flex',
     alignItems: 'center',
+    justifyContent: 'center',
     cursor: 'pointer',
     transition: 'opacity var(--transition-fast)',
   },
@@ -3036,6 +3268,7 @@ const styles: Record<string, React.CSSProperties> = {
   editTargetRow: {
     display: 'flex',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 'var(--space-1)',
   },
 
@@ -3417,6 +3650,37 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
   },
 
+  addTaskDateGroup: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '2px',
+    flex: 1,
+  },
+
+  addTaskDateLabel: {
+    fontSize: 'var(--text-xs)',
+    color: 'var(--text-secondary)',
+    fontWeight: 'var(--font-medium)',
+  },
+
+  addTaskDateInput: {
+    padding: 'var(--space-2) var(--space-3)',
+    fontSize: 'var(--text-sm)',
+    border: '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-md)',
+    backgroundColor: 'var(--bg-card)',
+  },
+
+  addTaskSelectWithLabel: {
+    padding: 'var(--space-2) var(--space-3)',
+    fontSize: 'var(--text-sm)',
+    border: '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-md)',
+    backgroundColor: 'var(--bg-card)',
+    cursor: 'pointer',
+    width: '100%',
+  },
+
   addTaskActions: {
     display: 'flex',
     justifyContent: 'flex-end',
@@ -3465,6 +3729,13 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '1px 6px',
     backgroundColor: 'var(--bg-app)',
     borderRadius: 'var(--radius-sm)',
+  },
+
+  taskLocation: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '4px',
+    color: 'var(--text-secondary)',
   },
 
   taskScore: {

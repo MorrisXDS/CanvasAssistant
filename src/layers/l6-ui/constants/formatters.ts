@@ -220,19 +220,30 @@ export function getLetterGrade(percentage: number): string {
 }
 
 /**
- * Format a grade percentage for display
+ * Format a grade percentage for display with smart decimals
+ *
+ * Shows up to 2 decimal places, but drops trailing zeros in the hundredths place.
+ * Always shows at least 1 decimal place for consistency.
  *
  * @param percentage - Grade percentage
- * @param decimals - Number of decimal places (default 1)
  * @returns Formatted percentage string
  *
  * @example
- * formatGrade(85.5) // "85.5%"
- * formatGrade(85.5, 0) // "86%"
+ * formatGrade(85.55) // "85.55%"
+ * formatGrade(85.50) // "85.5%"
+ * formatGrade(85.00) // "85.0%"
+ * formatGrade(100)   // "100.0%"
  */
-export function formatGrade(percentage: number | null, decimals = 1): string {
+export function formatGrade(percentage: number | null): string {
   if (percentage === null) return '-';
-  return `${percentage.toFixed(decimals)}%`;
+
+  // Round to 2 decimal places first
+  const rounded = Math.round(percentage * 100) / 100;
+
+  // Check if hundredths place is non-zero
+  const hasHundredths = Math.round(rounded * 100) % 10 !== 0;
+
+  return hasHundredths ? `${rounded.toFixed(2)}%` : `${rounded.toFixed(1)}%`;
 }
 
 /**
@@ -242,11 +253,12 @@ export function formatGrade(percentage: number | null, decimals = 1): string {
  * @returns Formatted grade with letter
  *
  * @example
- * formatGradeWithLetter(85) // "85% (A)"
+ * formatGradeWithLetter(85) // "85.0% (A)"
+ * formatGradeWithLetter(85.55) // "85.55% (A)"
  */
 export function formatGradeWithLetter(percentage: number | null): string {
   if (percentage === null) return '-';
-  return `${percentage.toFixed(1)}% (${getLetterGrade(percentage)})`;
+  return `${formatGrade(percentage)} (${getLetterGrade(percentage)})`;
 }
 
 // =============================================================================

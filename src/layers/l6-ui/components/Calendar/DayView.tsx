@@ -163,11 +163,19 @@ export function DayView() {
                 const startHour = startDate.getHours();
                 const startOffset = startDate.getMinutes() / 60;
 
+                // Calculate duration in hours for imported events
+                let durationHours = 1; // Default 1 hour
+                if (pe.event.type === 'imported' && pe.event.event.endAt) {
+                  const endDate = new Date(pe.event.event.endAt);
+                  const durationMs = endDate.getTime() - startDate.getTime();
+                  durationHours = Math.max(durationMs / (1000 * 60 * 60), 0.5); // Min 30 min
+                }
+
                 // Tasks snap to floor hour
                 const top = isTask
                   ? startHour * HOUR_HEIGHT
                   : startHour * HOUR_HEIGHT + startOffset * HOUR_HEIGHT;
-                const height = Math.max(HOUR_HEIGHT - 4, 20);
+                const height = Math.max(durationHours * HOUR_HEIGHT - 4, 20);
                 const left = `${(pe.column / pe.totalColumns) * 100}%`;
                 const width = `${(1 / pe.totalColumns) * 100 - 1}%`;
 

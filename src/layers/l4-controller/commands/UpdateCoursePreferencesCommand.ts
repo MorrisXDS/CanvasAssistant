@@ -30,7 +30,7 @@ export class UpdateCoursePreferencesCommand implements Command<
       return { valid: false, error: 'No preferences provided' };
     }
 
-    const { targetGrade, color, nickname } = params.preferences;
+    const { targetGrade, color, nickname, credits } = params.preferences;
 
     if (targetGrade !== undefined) {
       if (typeof targetGrade !== 'number' || isNaN(targetGrade)) {
@@ -53,6 +53,15 @@ export class UpdateCoursePreferencesCommand implements Command<
       return { valid: false, error: 'Nickname must be 100 characters or less' };
     }
 
+    if (credits !== undefined) {
+      if (typeof credits !== 'number' || isNaN(credits)) {
+        return { valid: false, error: 'Credits must be a number' };
+      }
+      if (credits < 0 || credits > 10) {
+        return { valid: false, error: 'Credits must be between 0 and 10' };
+      }
+    }
+
     return { valid: true };
   }
 
@@ -72,7 +81,8 @@ export class UpdateCoursePreferencesCommand implements Command<
         color: string | null;
         nickname: string | null;
         is_hidden: boolean;
-      }>('SELECT target_grade, color, nickname, is_hidden FROM courses WHERE id = ?', [
+        credits: number;
+      }>('SELECT target_grade, color, nickname, is_hidden, credits FROM courses WHERE id = ?', [
         params.courseId,
       ]);
 
@@ -85,6 +95,7 @@ export class UpdateCoursePreferencesCommand implements Command<
         color: course.color ?? undefined,
         nickname: course.nickname ?? undefined,
         isHidden: Boolean(course.is_hidden),
+        credits: course.credits,
       };
 
       // Build update query dynamically
@@ -109,6 +120,11 @@ export class UpdateCoursePreferencesCommand implements Command<
       if (params.preferences.isHidden !== undefined) {
         updates.push('is_hidden = ?');
         values.push(params.preferences.isHidden ? 1 : 0);
+      }
+
+      if (params.preferences.credits !== undefined) {
+        updates.push('credits = ?');
+        values.push(params.preferences.credits);
       }
 
       if (updates.length > 0) {

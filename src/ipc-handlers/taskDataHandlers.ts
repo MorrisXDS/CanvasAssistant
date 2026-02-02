@@ -5,6 +5,46 @@
 
 import { ipcMain } from 'electron';
 import type { IpcContext } from './IpcContext';
+import type { TaskRow } from '../layers/l1-persistence/DatabaseRowTypes';
+
+/**
+ * Map TaskRow to API response format (camelCase with computed fields)
+ */
+function mapTaskRowToResponse(row: TaskRow) {
+  // Determine source type: explicitly from row, or infer from external_id pattern
+  const sourceType =
+    row.source_type === 'canvas' || row.source_type === 'user'
+      ? row.source_type
+      : row.external_id.startsWith('user_')
+        ? 'user'
+        : 'canvas';
+
+  return {
+    id: row.id,
+    externalId: row.external_id,
+    sourceType,
+    courseId: row.course_id,
+    title: row.title,
+    description: row.description,
+    unlockAt: row.unlock_at ?? null,
+    dueAt: row.due_at,
+    dueTimeKnown: Boolean(row.due_time_known ?? 1), // Default to true for backward compat
+    weight: row.weight,
+    grade: row.grade,
+    pointsPossible: row.points_possible,
+    priorityScore: row.priority_score,
+    isCompleted: Boolean(row.is_completed),
+    completedAt: row.completed_at,
+    submissionStatus: row.submission_status,
+    userSubmissionStatus: row.user_submission_status,
+    effectiveSubmissionStatus: row.submission_status || row.user_submission_status || null,
+    taskType: row.task_type,
+    taskGroupId: row.task_group_id,
+    calendarEventId: row.calendar_event_id,
+    location: row.location ?? null,
+    isOptional: Boolean(row.is_optional),
+  };
+}
 
 /**
  * Register task data handlers
@@ -64,43 +104,8 @@ export function registerTaskDataHandlers(ctx: IpcContext): void {
           params = visibleIds;
         }
 
-        const rows = database.executeRead<{
-          id: number;
-          external_id: string;
-          course_id: number;
-          title: string;
-          description: string | null;
-          due_at: string | null;
-          due_time_known: number;
-          weight: number;
-          grade: number | null;
-          points_possible: number | null;
-          priority_score: number;
-          is_completed: number;
-          completed_at: string | null;
-          submission_status: string | null;
-          task_type: string | null;
-          is_optional: number;
-        }>(sql, params);
-
-        return rows.map((row) => ({
-          id: row.id,
-          externalId: row.external_id,
-          courseId: row.course_id,
-          title: row.title,
-          description: row.description,
-          dueAt: row.due_at,
-          dueTimeKnown: Boolean(row.due_time_known ?? 1), // Default to true for backward compat
-          weight: row.weight,
-          grade: row.grade,
-          pointsPossible: row.points_possible,
-          priorityScore: row.priority_score,
-          isCompleted: Boolean(row.is_completed),
-          completedAt: row.completed_at,
-          submissionStatus: row.submission_status,
-          taskType: row.task_type,
-          isOptional: Boolean(row.is_optional),
-        }));
+        const rows = database.executeRead<TaskRow>(sql, params);
+        return rows.map(mapTaskRowToResponse);
       } catch (error) {
         logger.error(`Failed to get tasks: ${error}`);
         throw error;
@@ -125,45 +130,12 @@ export function registerTaskDataHandlers(ctx: IpcContext): void {
         return [];
       }
 
-      const rows = database.executeRead<{
-        id: number;
-        external_id: string;
-        course_id: number;
-        title: string;
-        description: string | null;
-        due_at: string | null;
-        due_time_known: number;
-        weight: number;
-        grade: number | null;
-        points_possible: number | null;
-        priority_score: number;
-        is_completed: number;
-        completed_at: string | null;
-        submission_status: string | null;
-        task_type: string | null;
-        is_optional: number;
-      }>(`SELECT * FROM tasks WHERE course_id = ? ORDER BY priority_score DESC`, [
-        courseId,
-      ]);
+      const rows = database.executeRead<TaskRow>(
+        `SELECT * FROM tasks WHERE course_id = ? ORDER BY priority_score DESC`,
+        [courseId]
+      );
 
-      return rows.map((row) => ({
-        id: row.id,
-        externalId: row.external_id,
-        courseId: row.course_id,
-        title: row.title,
-        description: row.description,
-        dueAt: row.due_at,
-        dueTimeKnown: Boolean(row.due_time_known ?? 1),
-        weight: row.weight,
-        grade: row.grade,
-        pointsPossible: row.points_possible,
-        priorityScore: row.priority_score,
-        isCompleted: Boolean(row.is_completed),
-        completedAt: row.completed_at,
-        submissionStatus: row.submission_status,
-        taskType: row.task_type,
-        isOptional: Boolean(row.is_optional),
-      }));
+      return rows.map(mapTaskRowToResponse);
     } catch (error) {
       logger.error(`Failed to get tasks for archived course: ${error}`);
       throw error;

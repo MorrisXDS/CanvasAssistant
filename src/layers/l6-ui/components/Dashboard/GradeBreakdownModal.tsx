@@ -15,6 +15,7 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import type { CourseSummary } from '../../../l5-presentation/types';
+import { formatGrade } from '../../constants';
 
 export interface GradeBreakdownModalProps {
   isOpen: boolean;
@@ -70,7 +71,7 @@ export function GradeBreakdownModal({
         <div style={styles.averageSummary}>
           <div style={styles.averageLabel}>Overall Average</div>
           <div style={styles.averageValue}>
-            {averageGrade !== null ? `${averageGrade.toFixed(1)}%` : 'N/A'}
+            {averageGrade !== null ? formatGrade(averageGrade) : 'N/A'}
           </div>
           <div style={styles.averageSubtext}>Across {sortedCourses.length} courses</div>
         </div>
@@ -130,7 +131,7 @@ export function GradeBreakdownModal({
                     {/* Grade */}
                     <div style={styles.gradeSection}>
                       <div style={styles.gradeValue}>
-                        {grade !== null ? `${grade.toFixed(1)}%` : '—'}
+                        {grade !== null ? formatGrade(grade) : '—'}
                       </div>
                       {diff !== null && (
                         <div
@@ -149,7 +150,7 @@ export function GradeBreakdownModal({
                           {status === 'none' && <Minus size={12} />}
                           <span>
                             {status === 'above' && '+'}
-                            {diff.toFixed(1)}%
+                            {formatGrade(diff)}
                           </span>
                         </div>
                       )}

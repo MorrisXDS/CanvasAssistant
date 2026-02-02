@@ -40,6 +40,7 @@ export function mapCourseRowToEntity(row: {
   is_hidden: number | boolean;
   last_synced_at: string | null;
   enrollment_term_id: number | null;
+  credits?: number | null;
   archived_at?: string | null;
   archive_source?: 'manual' | 'auto' | null;
 }): Course {
@@ -57,6 +58,7 @@ export function mapCourseRowToEntity(row: {
     isHidden: Boolean(row.is_hidden),
     lastSyncedAt: row.last_synced_at,
     enrollmentTermId: row.enrollment_term_id,
+    credits: row.credits ?? 1.0,
     archivedAt: row.archived_at ?? null,
     archiveSource: row.archive_source ?? null,
   };
@@ -81,6 +83,7 @@ export function mapCourseRowToDetail(row: {
   syllabus_body: string | null;
   last_synced_at: string | null;
   enrollment_term_id: number | null;
+  credits?: number | null;
 }): CourseDetail {
   return {
     ...mapCourseRowToEntity(row),
@@ -108,9 +111,11 @@ function getEffectiveSubmissionStatus(
 export function mapTaskRowToEntity(row: {
   id: number;
   external_id: string;
+  source_type?: string;
   course_id: number;
   title: string;
   description: string | null;
+  unlock_at?: string | null;
   due_at: string | null;
   due_time_known?: number | boolean;
   weight: number;
@@ -125,6 +130,7 @@ export function mapTaskRowToEntity(row: {
   task_type?: string | null;
   task_group_id?: number | null;
   calendar_event_id?: number | null;
+  location?: string | null;
   field_sources?: string | null;
 }): Task {
   const fieldSources = row.field_sources ? JSON.parse(row.field_sources) : undefined;
@@ -134,12 +140,22 @@ export function mapTaskRowToEntity(row: {
     userSubmissionStatus
   );
 
+  // Determine source type: explicitly from row, or infer from external_id pattern
+  const sourceType =
+    row.source_type === 'canvas' || row.source_type === 'user'
+      ? row.source_type
+      : row.external_id.startsWith('user_')
+        ? 'user'
+        : 'canvas';
+
   return {
     id: row.id,
     externalId: row.external_id,
+    sourceType,
     courseId: row.course_id,
     title: row.title,
     description: row.description,
+    unlockAt: row.unlock_at ?? null,
     dueAt: row.due_at,
     dueTimeKnown: Boolean(row.due_time_known ?? 1), // Default true for backward compat
     weight: row.weight,
@@ -155,6 +171,7 @@ export function mapTaskRowToEntity(row: {
     taskType: row.task_type ?? null,
     taskGroupId: row.task_group_id ?? null,
     calendarEventId: row.calendar_event_id ?? null,
+    location: row.location ?? null,
     fieldSources,
   };
 }

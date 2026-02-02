@@ -15,6 +15,7 @@ import {
   Clock,
   Edit2,
   Trash2,
+  MapPin,
 } from 'lucide-react';
 import type { Task } from '../../../l5-presentation/types';
 import type { CalendarEvent } from './CalendarGrid';
@@ -87,6 +88,8 @@ export function TaskDetailModal({
 }: TaskDetailModalProps) {
   const navigate = useNavigate();
   const policies = useStore((state) => state.policies);
+  const tasks = useStore((state) => state.tasks);
+  const courses = useStore((state) => state.courses);
   const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false);
 
   // Reset delete confirm state when modal closes
@@ -98,10 +101,18 @@ export function TaskDetailModal({
 
   if (!isOpen || !event) return null;
 
-  const isTask = event.type === 'task';
-  const task = isTask ? event.task : null;
-  const course = isTask ? event.course : null;
+  // Check if this is a direct task event OR an imported event linked to a task
   const importedEvent = event.type === 'imported' ? event.event : null;
+  const linkedTaskId = importedEvent?.taskId;
+
+  // If imported event has a taskId, look up the actual task to show task view
+  const linkedTask = linkedTaskId ? tasks.find((t) => t.id === linkedTaskId) : null;
+  const linkedCourse = linkedTask ? courses.find((c) => c.id === linkedTask.courseId) : null;
+
+  // Use linked task if available, otherwise use direct task event
+  const isTask = event.type === 'task' || Boolean(linkedTask);
+  const task = event.type === 'task' ? event.task : linkedTask;
+  const course = event.type === 'task' ? event.course : linkedCourse;
 
   const handleGoToCourse = () => {
     if (course) {
@@ -148,13 +159,29 @@ export function TaskDetailModal({
           {/* Task-specific content */}
           {isTask && task && (
             <>
-              {/* Due Date & Status */}
+              {/* Start Date (if set) & Due Date */}
               <div style={styles.section}>
+                {/* Show Start Date if set (not epoch) */}
+                {task.unlockAt && new Date(task.unlockAt).getTime() >= 86400000 && (
+                  <div style={styles.row}>
+                    <Clock size={16} color="var(--text-muted)" />
+                    <span style={styles.label}>Start:</span>
+                    <span style={styles.value}>{formatDate(task.unlockAt)}</span>
+                  </div>
+                )}
                 <div style={styles.row}>
                   <Calendar size={16} color="var(--text-muted)" />
                   <span style={styles.label}>Due:</span>
                   <span style={styles.value}>{formatDate(task.dueAt)}</span>
                 </div>
+                {/* Location */}
+                {task.location && (
+                  <div style={styles.row}>
+                    <MapPin size={16} color="var(--text-muted)" />
+                    <span style={styles.label}>Location:</span>
+                    <span style={styles.value}>{task.location}</span>
+                  </div>
+                )}
                 {timeUntil && timeUntil.text && (
                   <div
                     style={{
@@ -264,29 +291,67 @@ export function TaskDetailModal({
           {!isTask && importedEvent && (
             <>
               <div style={styles.section}>
-                {/* Check if this is a deadline task event (start_at is epoch) */}
+                {/* Check if this is a deadline event (start_at is epoch) or duration event */}
                 {(() => {
                   // Use timestamp check (< 1 day from epoch) to handle timezone display issues
                   const isDeadlineEvent =
-                    importedEvent.taskId &&
                     new Date(importedEvent.startAt).getTime() < 86400000;
-                  return (
-                    <div style={styles.row}>
-                      <Calendar size={16} color="var(--text-muted)" />
-                      <span style={styles.label}>
-                        {isDeadlineEvent ? 'Due:' : 'Date:'}
-                      </span>
-                      <span style={styles.value}>
-                        {isDeadlineEvent
-                          ? importedEvent.endAt
+                  const hasDuration =
+                    !isDeadlineEvent &&
+                    importedEvent.endAt &&
+                    importedEvent.startAt !== importedEvent.endAt;
+
+                  if (isDeadlineEvent) {
+                    // Deadline event - only show due date
+                    return (
+                      <div style={styles.row}>
+                        <Calendar size={16} color="var(--text-muted)" />
+                        <span style={styles.label}>Due:</span>
+                        <span style={styles.value}>
+                          {importedEvent.endAt
                             ? formatDate(importedEvent.endAt)
-                            : 'No due date'
-                          : importedEvent.allDay
+                            : 'No due date'}
+                        </span>
+                      </div>
+                    );
+                  } else if (hasDuration) {
+                    // Duration event - show both start and end
+                    return (
+                      <>
+                        <div style={styles.row}>
+                          <Clock size={16} color="var(--text-muted)" />
+                          <span style={styles.label}>Start:</span>
+                          <span style={styles.value}>
+                            {importedEvent.allDay
+                              ? new Date(importedEvent.startAt).toLocaleDateString()
+                              : formatDate(importedEvent.startAt)}
+                          </span>
+                        </div>
+                        <div style={styles.row}>
+                          <Calendar size={16} color="var(--text-muted)" />
+                          <span style={styles.label}>End:</span>
+                          <span style={styles.value}>
+                            {importedEvent.allDay
+                              ? new Date(importedEvent.endAt!).toLocaleDateString()
+                              : formatDate(importedEvent.endAt)}
+                          </span>
+                        </div>
+                      </>
+                    );
+                  } else {
+                    // Single point in time event
+                    return (
+                      <div style={styles.row}>
+                        <Calendar size={16} color="var(--text-muted)" />
+                        <span style={styles.label}>Date:</span>
+                        <span style={styles.value}>
+                          {importedEvent.allDay
                             ? new Date(importedEvent.startAt).toLocaleDateString()
                             : formatDate(importedEvent.startAt)}
-                      </span>
-                    </div>
-                  );
+                        </span>
+                      </div>
+                    );
+                  }
                 })()}
                 {importedEvent.location && (
                   <div style={styles.row}>

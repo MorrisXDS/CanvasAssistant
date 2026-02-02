@@ -632,6 +632,7 @@ export class SyncOrchestrator {
       'archived_at',
       'color',
       'nickname',
+      'credits',
     ];
     for (const course of courses) {
       const localCourse = mapCourse(course, baseUrl, defaultTargetGrade);

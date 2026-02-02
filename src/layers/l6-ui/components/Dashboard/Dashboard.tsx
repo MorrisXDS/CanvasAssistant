@@ -19,6 +19,7 @@ import { GradeBreakdownModal } from './GradeBreakdownModal';
 import { UnifiedDashboardGrid } from './UnifiedDashboardGrid';
 import { TaskContextMenu } from '../Course/TaskContextMenu';
 import type { Task } from '../../../l5-presentation/types';
+import { formatGrade } from '../../constants';
 
 // Debug flag - set to true only when debugging layout issues
 const DEBUG_LAYOUT = false;
@@ -207,8 +208,8 @@ export function Dashboard() {
     },
     {
       label: 'Avg. Grade',
-      value: viewModel.stats.averageGrade
-        ? `${viewModel.stats.averageGrade.toFixed(1)}%`
+      value: viewModel.stats.averageGrade !== null
+        ? formatGrade(viewModel.stats.averageGrade)
         : 'N/A',
       icon: 'grade',
       action: 'grade',
@@ -421,6 +422,7 @@ export function Dashboard() {
             title: contextMenu.task.title,
             isCompleted: contextMenu.task.isCompleted,
             isOptional: contextMenu.task.isOptional,
+            sourceType: contextMenu.task.sourceType,
           }}
           position={contextMenu.position}
           onClose={() => setContextMenu(null)}

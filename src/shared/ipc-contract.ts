@@ -32,6 +32,8 @@ export const CourseSchema = z.object({
   isHidden: z.boolean(),
   lastSyncedAt: z.string().nullable(),
   enrollmentTermId: z.number().nullable(),
+  /** Course credits/units for weighted GPA calculation (default: 1.0) */
+  credits: z.number(),
   /** ISO timestamp when course was archived, null if active */
   archivedAt: z.string().nullable(),
   /** How the course was archived: 'manual' (user) or 'auto' (term expired). Auto-archived cannot be restored. */
@@ -54,12 +56,19 @@ export const EnrollmentTermSchema = z.object({
 });
 export type EnrollmentTerm = z.infer<typeof EnrollmentTermSchema>;
 
+export const TaskSourceTypeSchema = z.enum(['canvas', 'user']);
+export type TaskSourceType = z.infer<typeof TaskSourceTypeSchema>;
+
 export const TaskSchema = z.object({
   id: z.number(),
   externalId: z.string(),
+  /** Source of the task: 'canvas' (synced from Canvas) or 'user' (created locally) */
+  sourceType: TaskSourceTypeSchema,
   courseId: z.number(),
   title: z.string(),
   description: z.string().nullable(),
+  /** Start date/unlock date for the task (ISO timestamp) */
+  unlockAt: z.string().nullable(),
   dueAt: z.string().nullable(),
   dueTimeKnown: z.boolean(), // true = time known, false = only date known (assume midnight)
   weight: z.number(),
@@ -78,6 +87,8 @@ export const TaskSchema = z.object({
   taskGroupId: z.number().nullable(),
   /** FK to calendar event for task-calendar linking */
   calendarEventId: z.number().nullable(),
+  /** Location for the task (e.g., room, building) */
+  location: z.string().nullable(),
   fieldSources: z.record(z.string(), z.enum(['canvas', 'user', 'guessed'])).optional(),
 });
 export type Task = z.infer<typeof TaskSchema>;
@@ -225,6 +236,7 @@ export const DisplayCalendarEventSchema = ExternalCalendarEventSchema.extend({
   taskTitle: z.string().optional(),
   taskWeight: z.number().optional(),
   taskType: z.string().optional(),
+  taskLocation: z.string().optional(),
   courseCode: z.string().optional(),
   courseName: z.string().optional(),
 });

@@ -56,24 +56,29 @@ export class CreateTaskCommand implements Command<CreateTaskParams, { taskId: nu
       // Generate a unique external_id for user-created tasks
       const externalId = `user_${Date.now()}_${Math.random().toString(36).substring(7)}`;
 
+      // Use epoch time as default for unlock_at if not provided
+      const unlockAt = params.unlockAt || '1970-01-01T00:00:00.000Z';
+
       // Insert the new task
       const result = context.db.executeWrite(
         `INSERT INTO tasks (
           external_id, source_type, course_id, title, description,
-          due_at, weight, points_possible, is_completed, priority_score, task_type
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          unlock_at, due_at, weight, points_possible, is_completed, priority_score, task_type, location
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           externalId,
           'user',
           params.courseId,
           params.title.trim(),
           params.description?.trim() || null,
+          unlockAt,
           params.dueAt || null,
           params.weight ?? 0,
           params.pointsPossible ?? null,
           0, // is_completed
           50, // default priority score
           params.taskType || null,
+          params.location?.trim() || null,
         ],
         'tasks'
       );
@@ -84,11 +89,10 @@ export class CreateTaskCommand implements Command<CreateTaskParams, { taskId: nu
       // (color, notes, reminder) via "Edit Calendar Settings"
       if (params.dueAt) {
         try {
-          // Use epoch time (1970-01-01T00:00:00Z) as sentinel for "no user-set start time"
-          // This indicates a deadline event - the user only set a due date, not a start time
+          // Use unlockAt as start_at for calendar event
+          // If unlockAt is epoch (not set), this indicates a deadline event
           // Calendar UI will detect this (start_at < 86400000 ms) and show it as a deadline
-          const epochSentinel = new Date(0).toISOString();
-          context.db.executeWrite(
+          const eventResult = context.db.executeWrite(
             `INSERT INTO calendar_events (
               source_type, course_id, task_id, title, description,
               start_at, end_at, all_day
@@ -98,10 +102,18 @@ export class CreateTaskCommand implements Command<CreateTaskParams, { taskId: nu
               taskId,
               params.title.trim(),
               params.description?.trim() || null,
-              epochSentinel, // Sentinel for deadline event (no user-set start time)
+              unlockAt, // Use unlockAt (epoch if not set = deadline event)
               params.dueAt, // end_at is the actual due date
             ],
             'calendar_events'
+          );
+
+          // Link the calendar event back to the task for bidirectional sync
+          const calendarEventId = eventResult.lastInsertRowid as number;
+          context.db.executeWrite(
+            'UPDATE tasks SET calendar_event_id = ? WHERE id = ?',
+            [calendarEventId, taskId],
+            'tasks'
           );
         } catch (calendarError) {
           // Log but don't fail - task was created successfully

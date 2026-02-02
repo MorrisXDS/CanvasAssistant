@@ -79,6 +79,8 @@ export interface CoursePreferences {
   color?: string;
   nickname?: string;
   isHidden?: boolean;
+  /** Course credits/units for weighted GPA calculation */
+  credits?: number;
 }
 
 /**
@@ -124,10 +126,14 @@ export interface CreateTaskParams {
   courseId: number;
   title: string;
   description?: string;
+  /** Start/unlock date for the task (ISO timestamp) */
+  unlockAt?: string;
   dueAt?: string;
   weight?: number;
   pointsPossible?: number;
   taskType?: string;
+  /** Location for the task (e.g., room, building) */
+  location?: string;
 }
 
 export interface DuplicateTaskParams {
@@ -140,6 +146,8 @@ export interface UpdateTaskParams {
   taskId: number;
   title?: string;
   description?: string | null;
+  /** Start/unlock date for the task (ISO timestamp) */
+  unlockAt?: string | null;
   dueAt?: string | null;
   weight?: number;
   grade?: number | null;
@@ -148,6 +156,8 @@ export interface UpdateTaskParams {
   taskType?: string | null;
   /** User-set submission status, independent of Canvas */
   userSubmissionStatus?: string | null;
+  /** Location for the task (e.g., room, building) */
+  location?: string | null;
 }
 
 export interface DeleteTaskParams {

@@ -2201,4 +2201,37 @@ export const coreMigrations: Migration[] = [
       CREATE INDEX idx_module_items_module ON module_items(module_id);
     `,
   },
+  {
+    version: 79,
+    description: 'Add credits column to courses for weighted GPA calculation',
+    up: `
+      -- Credits/units for the course (e.g., 0.5, 1.0, 3.0)
+      -- Used for calculating weighted average across courses
+      ALTER TABLE courses ADD COLUMN credits REAL DEFAULT 1.0;
+
+      -- Set default credits based on UofT course code convention:
+      -- H (half-year) and S (summer) courses = 0.5 credit
+      -- Y (full-year) courses = 1.0 credit
+      UPDATE courses SET credits = 0.5
+      WHERE code GLOB '*[HhSs][0-9]*';
+
+      UPDATE courses SET credits = 1.0
+      WHERE code GLOB '*[Yy][0-9]*';
+    `,
+    down: `
+      -- SQLite doesn't support DROP COLUMN easily
+      SELECT 1;
+    `,
+  },
+  {
+    version: 80,
+    description: 'Add location column to tasks for coursework location',
+    up: `
+      ALTER TABLE tasks ADD COLUMN location TEXT;
+    `,
+    down: `
+      -- SQLite doesn't support DROP COLUMN easily
+      SELECT 1;
+    `,
+  },
 ];

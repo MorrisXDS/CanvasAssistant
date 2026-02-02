@@ -38,6 +38,7 @@ export class CourseRepository extends BaseRepository<Course, CourseRow> {
       isHidden: Boolean(row.is_hidden),
       lastSyncedAt: row.last_synced_at,
       enrollmentTermId: row.enrollment_term_id,
+      credits: row.credits ?? 1.0,
       archivedAt: row.archived_at ?? null,
       archiveSource: row.archive_source ?? null,
     };

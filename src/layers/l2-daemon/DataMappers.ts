@@ -50,7 +50,6 @@ import type {
   CanvasFolder,
   LocalCourse,
   LocalTask,
-  LocalNotification,
   LocalNotificationAttachment,
   LocalModule,
   LocalModuleItem,
@@ -127,6 +126,29 @@ const POLICY_KEYWORDS = {
 };
 
 /**
+ * Determine default credits from course code (UofT convention)
+ * - H courses (half-year) = 0.5 credit
+ * - S courses (summer) = 0.5 credit
+ * - Y courses (full-year) = 1.0 credit
+ * Pattern: looks for H, S, or Y followed by a digit (e.g., CSC108H1, MAT137Y1)
+ */
+export function getDefaultCreditsFromCode(courseCode: string): number {
+  // Match pattern like H1, S1, Y1 in course codes
+  const match = courseCode.match(/([HSY])(\d)/i);
+  if (match) {
+    const termIndicator = match[1].toUpperCase();
+    if (termIndicator === 'H' || termIndicator === 'S') {
+      return 0.5;
+    }
+    if (termIndicator === 'Y') {
+      return 1.0;
+    }
+  }
+  // Default to 1.0 if pattern not found
+  return 1.0;
+}
+
+/**
  * Map Canvas course to local course record
  * Uses Zod schemas for defensive validation of incoming data
  * @param canvas - Canvas course data from API
@@ -177,6 +199,7 @@ export function mapCourse(
     syllabus_body: syllabusBody,
     last_synced_at: new Date().toISOString(),
     enrollment_term_id: enrollmentTermId,
+    credits: getDefaultCreditsFromCode(courseCode),
   };
 }
 

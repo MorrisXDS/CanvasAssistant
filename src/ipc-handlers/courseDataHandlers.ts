@@ -57,6 +57,7 @@ export function registerCourseDataHandlers(ctx: IpcContext): void {
         is_hidden: number;
         last_synced_at: string | null;
         enrollment_term_id: number | null;
+        credits: number | null;
       }>(
         'SELECT * FROM courses WHERE archived_at IS NULL AND deleted_at IS NULL ORDER BY name'
       );
@@ -75,6 +76,7 @@ export function registerCourseDataHandlers(ctx: IpcContext): void {
         isHidden: Boolean(row.is_hidden),
         lastSyncedAt: row.last_synced_at,
         enrollmentTermId: row.enrollment_term_id,
+        credits: row.credits ?? 1.0,
         archivedAt: null, // Always null since we filter out archived courses
         archiveSource: null, // Always null since we filter out archived courses
       }));
@@ -101,6 +103,7 @@ export function registerCourseDataHandlers(ctx: IpcContext): void {
         is_hidden: number;
         last_synced_at: string | null;
         enrollment_term_id: number | null;
+        credits: number | null;
         archived_at: string | null;
         archive_source: string | null;
       }>('SELECT * FROM courses WHERE id = ?', [courseId]);
@@ -123,6 +126,7 @@ export function registerCourseDataHandlers(ctx: IpcContext): void {
         isHidden: Boolean(row.is_hidden),
         lastSyncedAt: row.last_synced_at,
         enrollmentTermId: row.enrollment_term_id,
+        credits: row.credits ?? 1.0,
         archivedAt: row.archived_at,
         archiveSource: row.archive_source,
       };
@@ -149,6 +153,7 @@ export function registerCourseDataHandlers(ctx: IpcContext): void {
         is_hidden: number;
         last_synced_at: string | null;
         enrollment_term_id: number | null;
+        credits: number | null;
         archived_at: string;
         archive_source: string | null;
         term_end_at: string | null;
@@ -174,6 +179,7 @@ export function registerCourseDataHandlers(ctx: IpcContext): void {
         isHidden: Boolean(row.is_hidden),
         lastSyncedAt: row.last_synced_at,
         enrollmentTermId: row.enrollment_term_id,
+        credits: row.credits ?? 1.0,
         archivedAt: row.archived_at,
         archiveSource: row.archive_source,
       }));

@@ -480,8 +480,9 @@ export const styles: Record<string, React.CSSProperties> = {
 
   gridStats: {
     display: 'flex',
-    gap: 'clamp(12px, 1.2vw, 20px)',
-    padding: 'clamp(8px, 1vw, 16px) clamp(12px, 1.5vw, 20px)',
+    flexWrap: 'wrap',
+    gap: 'clamp(6px, 0.8vw, 12px)',
+    padding: 'clamp(8px, 1vw, 12px) clamp(10px, 1.2vw, 16px)',
     borderTop: '1px solid var(--border-light)',
     marginTop: 'auto',
   },
@@ -489,7 +490,7 @@ export const styles: Record<string, React.CSSProperties> = {
   gridStatItem: {
     display: 'flex',
     alignItems: 'center',
-    gap: 'clamp(4px, 0.4vw, 8px)',
+    gap: 'clamp(2px, 0.3vw, 4px)',
   },
 
   gridStatLabel: {

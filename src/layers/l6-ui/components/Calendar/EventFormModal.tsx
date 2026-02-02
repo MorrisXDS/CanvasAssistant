@@ -13,7 +13,6 @@ import {
   Clock,
   FileText,
   Percent,
-  Hash,
   Palette,
   Bell,
   StickyNote,
@@ -79,10 +78,11 @@ interface EventFormModalProps {
     courseId: number;
     title: string;
     description?: string;
+    unlockAt?: string;
     dueAt?: string;
     weight?: number;
-    pointsPossible?: number;
     taskType?: string;
+    location?: string;
   }) => Promise<{ success: boolean; taskId?: number }>;
   onDelete?: () => Promise<void>;
   onClose: () => void;
@@ -143,9 +143,9 @@ export function EventFormModal({
   const [location, setLocation] = useState('');
 
   // Coursework-specific fields
+  const [courseworkStartAt, setCourseworkStartAt] = useState('');
   const [dueAt, setDueAt] = useState('');
   const [weight, setWeight] = useState<number | undefined>(undefined);
-  const [pointsPossible, setPointsPossible] = useState<number | undefined>(undefined);
   const [taskType, setTaskType] = useState<string>('');
 
   // Calendar-specific fields (for customizing how events appear)
@@ -277,10 +277,15 @@ export function EventFormModal({
 
         if (isCourseworkEvent) {
           // Coursework edit mode: populate coursework fields
+          // startAt is the unlock/start date (epoch = not set)
+          // Check if startAt is epoch (not set) using timestamp check
+          const startIsEpoch = event.startAt && new Date(event.startAt).getTime() < 86400000;
+          setCourseworkStartAt(startIsEpoch ? '' : formatDateForInput(event.startAt, false));
           // Use endAt as the due date for task events
           setDueAt(formatDateForInput(event.endAt, false));
           setTaskType(event.taskType || '');
           setWeight(event.taskWeight ?? undefined);
+          setLocation(event.taskLocation || '');
           // Calendar-specific fields (still available for coursework)
           setEventColor(event.eventColor || '');
           setNotes(event.notes || '');
@@ -312,12 +317,12 @@ export function EventFormModal({
         const defaultStart = getDefaultStartDate();
         setStartAt(defaultStart);
         setEndAt(getDefaultEndDate(defaultStart));
+        setCourseworkStartAt(''); // Empty = epoch (not set)
         setDueAt(defaultStart);
         setAllDay(false);
         setLocation('');
         setCourseId(undefined);
         setWeight(undefined);
-        setPointsPossible(undefined);
         setTaskType('');
         // Calendar-specific defaults
         setEventColor('');
@@ -351,13 +356,15 @@ export function EventFormModal({
 
         if (isEditMode) {
           // Editing existing coursework - use onSaveEvent which syncs to the linked task
+          const startDate = courseworkStartAt ? new Date(courseworkStartAt) : new Date(0);
           const dueDate = dueAt ? new Date(dueAt) : undefined;
           await onSaveEvent({
             title: title.trim(),
             description: description.trim() || undefined,
-            startAt: new Date(0).toISOString(), // Epoch sentinel for deadline event
+            startAt: startDate.toISOString(), // Epoch if not set
             endAt: dueDate?.toISOString(),
             allDay: false,
+            location: location.trim() || undefined,
             courseId,
             // Calendar-specific fields
             color: eventColor || undefined,
@@ -369,14 +376,19 @@ export function EventFormModal({
           onClose();
         } else {
           // Creating new coursework
+          // Empty start date = epoch time (not set)
+          const unlockAt = courseworkStartAt
+            ? new Date(courseworkStartAt).toISOString()
+            : '1970-01-01T00:00:00.000Z';
           const result = await onSaveCoursework({
             courseId,
             title: title.trim(),
             description: description.trim() || undefined,
+            unlockAt,
             dueAt: dueAt ? new Date(dueAt).toISOString() : undefined,
             weight: weight !== undefined ? weight : undefined,
-            pointsPossible: pointsPossible !== undefined ? pointsPossible : undefined,
             taskType: taskType || undefined,
+            location: location.trim() || undefined,
           });
 
           if (result.success) {
@@ -730,42 +742,55 @@ export function EventFormModal({
           {/* Coursework-specific fields */}
           {eventType === 'coursework' && (
             <>
-              {/* Due Date */}
-              <div style={styles.field}>
-                <label style={styles.label}>
-                  <Clock size={14} />
-                  Due Date
-                </label>
-                <input
-                  type="datetime-local"
-                  value={dueAt}
-                  onChange={(e) => setDueAt(e.target.value)}
-                  style={styles.input}
-                />
-              </div>
-
-              {/* Type */}
-              <div style={styles.field}>
-                <label style={styles.label}>
-                  <FileText size={14} />
-                  Type
-                </label>
-                <select
-                  value={taskType}
-                  onChange={(e) => setTaskType(e.target.value)}
-                  style={styles.select}
-                >
-                  <option value="">Select type</option>
-                  {TASK_TYPES.map((type) => (
-                    <option key={type.value} value={type.value}>
-                      {type.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Weight and Points */}
+              {/* Start Date and Due Date */}
               <div style={styles.dateRow}>
+                <div style={styles.dateField}>
+                  <label style={styles.label} title="When this coursework becomes available">
+                    <Clock size={14} />
+                    Start Date
+                  </label>
+                  <input
+                    type="datetime-local"
+                    value={courseworkStartAt}
+                    onChange={(e) => setCourseworkStartAt(e.target.value)}
+                    style={styles.input}
+                    placeholder="Not set"
+                  />
+                </div>
+                <div style={styles.dateField}>
+                  <label style={styles.label}>
+                    <Clock size={14} />
+                    Due Date
+                  </label>
+                  <input
+                    type="datetime-local"
+                    value={dueAt}
+                    onChange={(e) => setDueAt(e.target.value)}
+                    style={styles.input}
+                  />
+                </div>
+              </div>
+
+              {/* Type and Weight - side by side */}
+              <div style={styles.dateRow}>
+                <div style={styles.dateField}>
+                  <label style={styles.label}>
+                    <FileText size={14} />
+                    Type
+                  </label>
+                  <select
+                    value={taskType}
+                    onChange={(e) => setTaskType(e.target.value)}
+                    style={styles.select}
+                  >
+                    <option value="">Select type</option>
+                    {TASK_TYPES.map((type) => (
+                      <option key={type.value} value={type.value}>
+                        {type.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
                 <div style={styles.dateField}>
                   <label style={styles.label}>
                     <Percent size={14} />
@@ -781,25 +806,6 @@ export function EventFormModal({
                     min={0}
                     max={100}
                     step={0.1}
-                    style={styles.input}
-                  />
-                </div>
-                <div style={styles.dateField}>
-                  <label style={styles.label}>
-                    <Hash size={14} />
-                    Points
-                  </label>
-                  <input
-                    type="number"
-                    value={pointsPossible ?? ''}
-                    onChange={(e) =>
-                      setPointsPossible(
-                        e.target.value ? Number(e.target.value) : undefined
-                      )
-                    }
-                    placeholder="e.g., 100"
-                    min={0}
-                    step={1}
                     style={styles.input}
                   />
                 </div>
@@ -820,6 +826,23 @@ export function EventFormModal({
               minHeight={80}
             />
           </div>
+
+          {/* Location - only for coursework */}
+          {eventType === 'coursework' && (
+            <div style={styles.field}>
+              <label style={styles.label}>
+                <MapPin size={14} />
+                Location
+              </label>
+              <input
+                type="text"
+                value={location}
+                onChange={(e) => setLocation(e.target.value)}
+                placeholder="Room, building, or online link"
+                style={styles.input}
+              />
+            </div>
+          )}
 
           {/* Delete Confirmation Dialog */}
           <ConfirmDialog

@@ -466,6 +466,7 @@ export function TasksPage() {
             isOptional: contextMenu.task.isOptional,
             calendarEventId: contextMenu.task.calendarEventId,
             dueAt: contextMenu.task.dueAt,
+            sourceType: contextMenu.task.sourceType,
           }}
           position={contextMenu.position}
           onClose={() => setContextMenu(null)}

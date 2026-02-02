@@ -137,11 +137,13 @@ export function CalendarPage() {
             setSelectedEvent({ type: 'task', task, course });
           }
         }
+        // Clear the navigation state to prevent modal from reopening on refresh/view changes
+        navigate(location.pathname, { replace: true, state: null });
         return;
       }
     }
     setCurrentDate(new Date());
-  }, [location.key, location.state, tasks, courses]);
+  }, [location.key, location.state, tasks, courses, navigate, location.pathname]);
 
   // Fetch events when range changes
   useEffect(() => {
@@ -159,7 +161,26 @@ export function CalendarPage() {
     [coursesWithColors]
   );
 
+  // Helper to check if a calendar event has a real start time (not epoch sentinel)
+  // Epoch sentinel (< 1 day from 1970-01-01) means "deadline only, no start time"
+  const hasRealStartTime = (startAt: string): boolean => {
+    return new Date(startAt).getTime() >= 86400000; // >= 1 day from epoch
+  };
+
+  // Build set of task IDs that have calendar events with real start times
+  // These tasks should NOT be rendered as task events (they'll be rendered as calendar events)
+  const tasksWithRealStartEvents = useMemo(() => {
+    const taskIds = new Set<number>();
+    for (const event of calendarEvents) {
+      if (event.taskId && hasRealStartTime(event.startAt)) {
+        taskIds.add(event.taskId);
+      }
+    }
+    return taskIds;
+  }, [calendarEvents]);
+
   // Build task events with filtering
+  // Excludes tasks that have linked calendar events with real start times
   const taskEvents: TaskCalendarEvent[] = useMemo(() => {
     const now = new Date();
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -174,6 +195,10 @@ export function CalendarPage() {
       .filter((task) => {
         if (!task.dueAt) return false;
         if (selectedCourses !== null && !selectedCourses.has(task.courseId)) return false;
+
+        // Skip tasks that have calendar events with real start times
+        // (they will be rendered as imported events with proper time blocks)
+        if (tasksWithRealStartEvents.has(task.id)) return false;
 
         const dueDate = new Date(task.dueAt);
         if (deadlineFilter !== 'all') {
@@ -214,13 +239,15 @@ export function CalendarPage() {
         if (course) acc.push({ type: 'task', task, course });
         return acc;
       }, []);
-  }, [tasks, courseMap, selectedCourses, deadlineFilter, priorityFilter]);
+  }, [tasks, courseMap, selectedCourses, deadlineFilter, priorityFilter, tasksWithRealStartEvents]);
 
   // Build imported events
+  // Include: non-task events AND task-linked events with real start times
+  // Exclude: task-linked events with epoch start (deadline only - rendered as task events)
   const importedEvents: ImportedCalendarEvent[] = useMemo(
     () =>
       calendarEvents
-        .filter((e) => !e.taskId)
+        .filter((e) => !e.taskId || hasRealStartTime(e.startAt))
         .map((event) => ({ type: 'imported' as const, event })),
     [calendarEvents]
   );
@@ -443,10 +470,12 @@ export function CalendarPage() {
     courseId: number;
     title: string;
     description?: string;
+    unlockAt?: string;
     dueAt?: string;
     weight?: number;
     pointsPossible?: number;
     taskType?: string;
+    location?: string;
   }): Promise<{ success: boolean; taskId?: number }> => {
     try {
       const api = window.api;

@@ -433,7 +433,7 @@ export function registerCalendarHandlers(ctx: IpcContext): void {
       let sql = `
       SELECT ce.*,
              ic.name as calendar_name, ic.color as calendar_color, ic.is_visible,
-             t.title as task_title, t.weight as task_weight, t.task_type,
+             t.title as task_title, t.weight as task_weight, t.task_type, t.location as task_location,
              c.code as course_code, c.name as course_name
       FROM calendar_events ce
       LEFT JOIN imported_calendars ic ON ce.imported_calendar_id = ic.id
@@ -482,6 +482,7 @@ export function registerCalendarHandlers(ctx: IpcContext): void {
         task_title: string | null;
         task_weight: number | null;
         task_type: string | null;
+        task_location: string | null;
         course_code: string | null;
         course_name: string | null;
       }>(sql, sqlParams);
@@ -515,6 +516,7 @@ export function registerCalendarHandlers(ctx: IpcContext): void {
         taskTitle?: string;
         taskWeight?: number;
         taskType?: string;
+        taskLocation?: string;
         courseCode?: string;
         courseName?: string;
       }> = [];
@@ -551,6 +553,7 @@ export function registerCalendarHandlers(ctx: IpcContext): void {
         const taskTitle = row.task_title;
         const taskWeight = row.task_weight;
         const taskType = row.task_type;
+        const taskLocation = row.task_location;
         const courseCode = row.course_code;
         const courseName = row.course_name;
 
@@ -588,6 +591,7 @@ export function registerCalendarHandlers(ctx: IpcContext): void {
             taskTitle: taskTitle ?? undefined,
             taskWeight: taskWeight ?? undefined,
             taskType: taskType ?? undefined,
+            taskLocation: taskLocation ?? undefined,
             courseCode: courseCode ?? undefined,
             courseName: courseName ?? undefined,
           });
@@ -824,6 +828,15 @@ export function registerCalendarHandlers(ctx: IpcContext): void {
             );
             logger.info(`Updated task ${event.task_id} description`);
           }
+          // Sync startAt to task's unlock_at (start date)
+          if (updates.startAt !== undefined) {
+            database.executeWrite(
+              'UPDATE tasks SET unlock_at = ? WHERE id = ?',
+              [updates.startAt, event.task_id],
+              'tasks'
+            );
+            logger.info(`Updated task ${event.task_id} unlock_at to ${updates.startAt}`);
+          }
           if (updates.endAt !== undefined) {
             database.executeWrite(
               'UPDATE tasks SET due_at = ? WHERE id = ?',
@@ -847,6 +860,15 @@ export function registerCalendarHandlers(ctx: IpcContext): void {
               'tasks'
             );
             logger.info(`Updated task ${event.task_id} task_type to ${updates.taskType}`);
+          }
+          // Sync location to task
+          if (updates.location !== undefined) {
+            database.executeWrite(
+              'UPDATE tasks SET location = ? WHERE id = ?',
+              [updates.location || null, event.task_id],
+              'tasks'
+            );
+            logger.info(`Updated task ${event.task_id} location to ${updates.location}`);
           }
         }
 

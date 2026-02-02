@@ -15,6 +15,7 @@ import path from 'path';
 import https from 'https';
 import http from 'http';
 import { Logger } from './Logger';
+import { sanitizeCourseCode, sanitizeFolderPath } from './PathBuilder';
 
 export interface FileDownloadManagerConfig {
   /** Base directory for file storage */
@@ -133,16 +134,9 @@ export class FileDownloadManager extends EventEmitter {
    * Get the local path for a course's files
    */
   getCourseFilesPath(courseCode: string): string {
-    // Sanitize course code for filesystem
-    const sanitized = this.sanitizePathComponent(courseCode);
+    // Use centralized sanitization from PathBuilder
+    const sanitized = sanitizeCourseCode(courseCode);
     return path.join(this.baseDir, sanitized);
-  }
-
-  /**
-   * Sanitize a path component for filesystem safety
-   */
-  private sanitizePathComponent(component: string): string {
-    return component.replace(/[^a-zA-Z0-9_\-. ]/g, '_').replace(/\s+/g, '_');
   }
 
   /**
@@ -168,24 +162,16 @@ export class FileDownloadManager extends EventEmitter {
     const courseDir = this.getCourseFilesPath(request.courseCode);
 
     // Determine subfolder: contextFolder takes priority, then folderPath
-    let subfolder: string | undefined;
-
+    // Use centralized sanitization from PathBuilder
     if (request.contextFolder) {
-      // Context folder can contain path separators (e.g., "Modules/Week_1")
-      // Canvas API always uses forward slashes regardless of platform
-      subfolder = request.contextFolder
-        .split(/[/\\]/)
-        .map((c) => this.sanitizePathComponent(c))
-        .join(path.sep);
+      // Normalize backslashes to forward slashes before sanitizing
+      const normalized = request.contextFolder.replace(/\\/g, '/');
+      const subfolder = sanitizeFolderPath(normalized);
+      return path.join(courseDir, subfolder);
     } else if (request.folderPath) {
-      // Canvas folder path - Canvas API always uses forward slashes regardless of platform
-      subfolder = request.folderPath
-        .split(/[/\\]/)
-        .map((c) => this.sanitizePathComponent(c))
-        .join(path.sep);
-    }
-
-    if (subfolder) {
+      // Normalize backslashes to forward slashes before sanitizing
+      const normalized = request.folderPath.replace(/\\/g, '/');
+      const subfolder = sanitizeFolderPath(normalized);
       return path.join(courseDir, subfolder);
     }
 

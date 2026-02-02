@@ -86,7 +86,7 @@ export function UnifiedDashboardGrid({
           />
         );
       case 'schedule':
-        return <ScheduleCard maxItems={4} />;
+        return <ScheduleCard />;
       case 'importantWorks':
         return <ImportantWorksCard maxItems={4} />;
       default:

@@ -28,6 +28,8 @@ export interface TaskContextMenuProps {
     isOptional?: boolean;
     calendarEventId?: number | null;
     dueAt?: string | null;
+    /** Source type: 'canvas' tasks have Canvas URLs, 'user' tasks don't */
+    sourceType?: 'canvas' | 'user';
   };
   position: { x: number; y: number };
   onClose: () => void;
@@ -235,20 +237,24 @@ export function TaskContextMenu({
         </button>
       )}
 
-      {/* Divider */}
-      <div style={styles.contextMenuDivider} />
+      {/* Divider - only show if there are items below */}
+      {(task.sourceType === 'canvas' || onViewInCalendar) && (
+        <div style={styles.contextMenuDivider} />
+      )}
 
-      {/* Open in Canvas */}
-      <button
-        style={getItemStyle('canvas')}
-        onClick={() => handleAction(onOpenInCanvas)}
-        onMouseEnter={() => setHoveredItem('canvas')}
-        onMouseLeave={() => setHoveredItem(null)}
-        role="menuitem"
-      >
-        <Globe size={14} />
-        <span>{MENU_LABELS.task.openInCanvas}</span>
-      </button>
+      {/* Open in Canvas - only for Canvas-synced tasks */}
+      {task.sourceType === 'canvas' && (
+        <button
+          style={getItemStyle('canvas')}
+          onClick={() => handleAction(onOpenInCanvas)}
+          onMouseEnter={() => setHoveredItem('canvas')}
+          onMouseLeave={() => setHoveredItem(null)}
+          role="menuitem"
+        >
+          <Globe size={14} />
+          <span>{MENU_LABELS.task.openInCanvas}</span>
+        </button>
+      )}
 
       {/* View in Calendar */}
       {onViewInCalendar && (

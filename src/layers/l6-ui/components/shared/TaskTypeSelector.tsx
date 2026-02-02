@@ -4,6 +4,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { Plus, X } from 'lucide-react';
+import { TASK_TYPES } from '../../constants';
 
 interface TaskType {
   id: number;
@@ -21,18 +22,13 @@ interface TaskTypeSelectorProps {
   courseId?: number;
 }
 
-const DEFAULT_TASK_TYPES: TaskType[] = [
-  { id: 1, name: 'assignment', displayName: 'Assignment', isSystem: true },
-  { id: 2, name: 'quiz', displayName: 'Quiz', isSystem: true },
-  { id: 3, name: 'exam', displayName: 'Exam', isSystem: true },
-  { id: 4, name: 'midterm', displayName: 'Midterm', isSystem: true },
-  { id: 5, name: 'final', displayName: 'Final', isSystem: true },
-  { id: 6, name: 'project', displayName: 'Project', isSystem: true },
-  { id: 7, name: 'lab', displayName: 'Lab', isSystem: true },
-  { id: 8, name: 'discussion', displayName: 'Discussion', isSystem: true },
-  { id: 9, name: 'attendance', displayName: 'Attendance', isSystem: true },
-  { id: 10, name: 'other', displayName: 'Other', isSystem: true },
-];
+// Convert centralized TASK_TYPES to TaskType format
+const DEFAULT_TASK_TYPES: TaskType[] = TASK_TYPES.map((t, idx) => ({
+  id: idx + 1,
+  name: t.value,
+  displayName: t.label,
+  isSystem: true,
+}));
 
 export function TaskTypeSelector({
   value,

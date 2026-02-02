@@ -7,30 +7,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Info, ArrowDown } from 'lucide-react';
 import type { PolicyType } from './PolicyTypeSelector';
-
-// Task types for grace token filtering
-const GRACE_TOKEN_TASK_TYPES = [
-  { value: 'assignment', label: 'Assignment' },
-  { value: 'quiz', label: 'Quiz' },
-  { value: 'homework', label: 'Homework' },
-  { value: 'lab', label: 'Lab' },
-  { value: 'project', label: 'Project' },
-  { value: 'essay', label: 'Essay' },
-  { value: 'problem_set', label: 'Problem Set' },
-  { value: 'discussion', label: 'Discussion' },
-  { value: 'exam', label: 'Exam' },
-  { value: 'midterm', label: 'Midterm' },
-  { value: 'final', label: 'Final' },
-];
-
-// Task group/category types for drop lowest
-const CATEGORY_TYPES = [
-  { value: 'quiz', label: 'Quiz' },
-  { value: 'assignment', label: 'Assignment' },
-  { value: 'homework', label: 'Homework' },
-  { value: 'lab', label: 'Lab' },
-  { value: 'problem_set', label: 'Problem Set' },
-];
+import { TASK_TYPES } from '../../constants';
 
 interface Task {
   id: number;
@@ -158,7 +135,7 @@ export function PolicyConfigForm({
   useEffect(() => {
     if (policyType === 'grace_tokens' && graceTokenTaskType && !initialData?.policyName) {
       const typeLabel =
-        GRACE_TOKEN_TASK_TYPES.find((t) => t.value === graceTokenTaskType)?.label ||
+        TASK_TYPES.find((t) => t.value === graceTokenTaskType)?.label ||
         graceTokenTaskType;
       setPolicyName(`Grace Tokens - ${typeLabel}`);
     }
@@ -418,7 +395,7 @@ export function PolicyConfigForm({
               style={styles.select}
             >
               <option value="">Select task type...</option>
-              {GRACE_TOKEN_TASK_TYPES.map((type) => (
+              {TASK_TYPES.map((type) => (
                 <option key={type.value} value={type.value}>
                   {type.label}
                 </option>
@@ -509,7 +486,7 @@ export function PolicyConfigForm({
                   </>
                 )}
                 <optgroup label="Task Types">
-                  {CATEGORY_TYPES.map((type) => (
+                  {TASK_TYPES.map((type) => (
                     <option key={type.value} value={type.value}>
                       {type.label}
                     </option>

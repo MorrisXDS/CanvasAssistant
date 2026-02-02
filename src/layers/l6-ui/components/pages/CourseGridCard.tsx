@@ -6,7 +6,7 @@
 import React from 'react';
 import { Pin, PinOff, Target, Eye, EyeOff, GripVertical } from 'lucide-react';
 import { ColorPickerPopup } from '../primitives';
-import { formatTimeAgo, COURSE_COLORS, getCourseColor } from '../../constants';
+import { formatTimeAgo, formatGrade, COURSE_COLORS, getCourseColor } from '../../constants';
 import { getShortCode } from './coursesPageUtils';
 import { styles } from './coursesPageStyles';
 import type { Course } from '../../../l5-presentation/types';
@@ -149,6 +149,10 @@ function CourseGridCardComponent({
             <span style={styles.gridStatLabel}>Target</span>
             <span style={styles.gridStatValue}>{course.targetGrade}%</span>
           </div>
+          <div style={styles.gridStatItem}>
+            <span style={styles.gridStatLabel}>Credit</span>
+            <span style={styles.gridStatValue}>{course.credits ?? 1.0}</span>
+          </div>
           {assessed > 0 && (
             <>
               <div style={styles.gridStatItem}>
@@ -164,7 +168,7 @@ function CourseGridCardComponent({
                           : 'var(--color-high)',
                   }}
                 >
-                  {earned.toFixed(1)}%
+                  {formatGrade(earned)}
                 </span>
               </div>
               <div style={styles.gridStatItem}>
@@ -180,7 +184,7 @@ function CourseGridCardComponent({
                           : 'var(--color-high)',
                   }}
                 >
-                  {trend.toFixed(1)}%
+                  {formatGrade(trend)}
                 </span>
               </div>
             </>

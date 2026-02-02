@@ -366,12 +366,22 @@ export class PolicyOrchestrator extends EventEmitter {
       effectiveStatus = row.submission_status ?? userSubmissionStatus ?? 'pending';
     }
 
+    // Determine source type: explicitly from row, or infer from external_id pattern
+    const sourceType =
+      row.source_type === 'canvas' || row.source_type === 'user'
+        ? row.source_type
+        : row.external_id.startsWith('user_')
+          ? 'user'
+          : 'canvas';
+
     return {
       id: row.id,
       externalId: row.external_id,
+      sourceType,
       courseId: row.course_id,
       title: row.title,
       description: row.description,
+      unlockAt: row.unlock_at ?? null,
       dueAt: row.due_at,
       dueTimeKnown: Boolean(row.due_time_known ?? 1),
       weight: row.weight,
@@ -387,6 +397,7 @@ export class PolicyOrchestrator extends EventEmitter {
       userSubmissionStatus,
       effectiveSubmissionStatus: effectiveStatus,
       calendarEventId: row.calendar_event_id ?? null,
+      location: row.location ?? null,
     };
   }
 

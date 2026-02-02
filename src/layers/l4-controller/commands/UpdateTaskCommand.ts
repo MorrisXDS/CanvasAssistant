@@ -71,6 +71,11 @@ export class UpdateTaskCommand implements Command<UpdateTaskParams, { taskId: nu
         values.push(params.description?.trim() || null);
       }
 
+      if (params.unlockAt !== undefined) {
+        updates.push('unlock_at = ?');
+        values.push(params.unlockAt || null);
+      }
+
       if (params.dueAt !== undefined) {
         updates.push('due_at = ?');
         values.push(params.dueAt || null);
@@ -108,6 +113,11 @@ export class UpdateTaskCommand implements Command<UpdateTaskParams, { taskId: nu
         values.push(params.userSubmissionStatus);
       }
 
+      if (params.location !== undefined) {
+        updates.push('location = ?');
+        values.push(params.location?.trim() || null);
+      }
+
       if (updates.length === 0) {
         return { success: true, data: { taskId: params.taskId } };
       }
@@ -130,21 +140,112 @@ export class UpdateTaskCommand implements Command<UpdateTaskParams, { taskId: nu
         this.updateCourseAssessedGrade(context, task.course_id);
       }
 
-      // Bidirectional sync: if due_at changed and task has linked calendar event, update event
-      if (params.dueAt !== undefined) {
+      // Bidirectional sync: if title, description, unlock_at, due_at, or location changed, sync to calendar event
+      if (params.title !== undefined || params.description !== undefined || params.unlockAt !== undefined || params.dueAt !== undefined || params.location !== undefined) {
         const taskWithLink = context.db.executeReadOne<{
           calendar_event_id: number | null;
-        }>('SELECT calendar_event_id FROM tasks WHERE id = ?', [params.taskId]);
+          title: string;
+          description: string | null;
+          unlock_at: string | null;
+          due_at: string | null;
+          location: string | null;
+          course_id: number;
+        }>(
+          'SELECT calendar_event_id, title, description, unlock_at, due_at, location, course_id FROM tasks WHERE id = ?',
+          [params.taskId]
+        );
 
         if (taskWithLink?.calendar_event_id) {
-          const newDueAt = params.dueAt || null;
-          if (newDueAt) {
+          // Update existing calendar event
+          // Sync title to calendar event
+          if (params.title !== undefined) {
             context.db.executeWrite(
               `UPDATE calendar_events
-               SET start_at = ?, end_at = datetime(?, '+1 hour'), updated_at = CURRENT_TIMESTAMP
+               SET title = ?, updated_at = CURRENT_TIMESTAMP
                WHERE id = ?`,
-              [newDueAt, newDueAt, taskWithLink.calendar_event_id],
+              [params.title.trim(), taskWithLink.calendar_event_id],
               'calendar_events'
+            );
+          }
+
+          // Sync description to calendar event
+          if (params.description !== undefined) {
+            context.db.executeWrite(
+              `UPDATE calendar_events
+               SET description = ?, updated_at = CURRENT_TIMESTAMP
+               WHERE id = ?`,
+              [params.description?.trim() || null, taskWithLink.calendar_event_id],
+              'calendar_events'
+            );
+          }
+
+          // Sync unlock_at to calendar event's start_at
+          if (params.unlockAt !== undefined) {
+            context.db.executeWrite(
+              `UPDATE calendar_events
+               SET start_at = ?, updated_at = CURRENT_TIMESTAMP
+               WHERE id = ?`,
+              [params.unlockAt, taskWithLink.calendar_event_id],
+              'calendar_events'
+            );
+          }
+
+          // Sync due_at to calendar event's end_at
+          if (params.dueAt !== undefined && params.dueAt) {
+            context.db.executeWrite(
+              `UPDATE calendar_events
+               SET end_at = ?, updated_at = CURRENT_TIMESTAMP
+               WHERE id = ?`,
+              [params.dueAt, taskWithLink.calendar_event_id],
+              'calendar_events'
+            );
+          }
+
+          // Sync location to calendar event
+          if (params.location !== undefined) {
+            context.db.executeWrite(
+              `UPDATE calendar_events
+               SET location = ?, updated_at = CURRENT_TIMESTAMP
+               WHERE id = ?`,
+              [params.location?.trim() || null, taskWithLink.calendar_event_id],
+              'calendar_events'
+            );
+          }
+        } else if (taskWithLink) {
+          // No calendar event exists - create one if task has dates
+          // Use the new unlockAt/dueAt if provided, otherwise fall back to existing values
+          const effectiveUnlockAt = params.unlockAt !== undefined ? params.unlockAt : taskWithLink.unlock_at;
+          const effectiveDueAt = params.dueAt !== undefined ? params.dueAt : taskWithLink.due_at;
+
+          // Only create calendar event if we have at least a due date
+          if (effectiveDueAt) {
+            const startAt = effectiveUnlockAt || '1970-01-01T00:00:00.000Z';
+            const effectiveLocation = params.location !== undefined ? params.location?.trim() || null : taskWithLink.location;
+            const eventResult = context.db.executeWrite(
+              `INSERT INTO calendar_events (
+                source_type, course_id, task_id, title, description,
+                start_at, end_at, all_day, location
+              ) VALUES ('user', ?, ?, ?, ?, ?, ?, 0, ?)`,
+              [
+                taskWithLink.course_id,
+                params.taskId,
+                params.title !== undefined ? params.title.trim() : taskWithLink.title,
+                params.description !== undefined
+                  ? params.description?.trim() || null
+                  : taskWithLink.description,
+                startAt,
+                effectiveDueAt,
+                effectiveLocation,
+              ],
+              'calendar_events'
+            );
+
+            // Link the calendar event back to the task
+            const calendarEventId = eventResult.lastInsertRowid as number;
+            context.db.executeWrite(
+              'UPDATE tasks SET calendar_event_id = ? WHERE id = ?',
+              [calendarEventId, params.taskId],
+              'tasks'
             );
           }
         }

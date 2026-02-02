@@ -174,6 +174,7 @@ export interface LocalCourse {
   syllabus_body: string | null;
   last_synced_at: string;
   enrollment_term_id: number | null;
+  credits: number;
 }
 
 export interface LocalTask {
