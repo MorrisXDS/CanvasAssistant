@@ -399,8 +399,10 @@ export class SyncConflictResolver extends EventEmitter {
       }
 
       // Check field source first (new system)
-      if (fieldSource === 'canvas') {
-        // Field came from Canvas - always accept Canvas updates
+      // BUT: respect local_modified_fields - if user explicitly modified this field,
+      // don't auto-accept Canvas value even if field_sources says 'canvas'
+      if (fieldSource === 'canvas' && !localModifiedFields.has(field)) {
+        // Field came from Canvas AND user hasn't modified it - accept Canvas updates
         autoResolved[field] = canvasValue;
         continue;
       }

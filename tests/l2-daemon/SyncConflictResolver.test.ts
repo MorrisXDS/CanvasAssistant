@@ -156,6 +156,78 @@ describe('SyncConflictResolver', () => {
     });
   });
 
+  describe('local_modified_fields priority over field_sources', () => {
+    it('should trigger conflict when local_modified_fields has field even if field_sources says canvas', () => {
+      mockDb.executeRead.mockReturnValue([]);
+      // @ts-expect-error - mock database
+      resolver = new SyncConflictResolver(mockDb);
+
+      // Scenario: User marked task complete locally (is_completed in local_modified_fields)
+      // but field_sources still says 'canvas' from initial sync
+      const localRecord = {
+        id: 1,
+        is_completed: 1, // User marked complete
+        local_modified_fields: '["is_completed"]', // Marked as locally modified
+        field_sources: '{"is_completed": "canvas"}', // Still says canvas from initial sync
+      };
+
+      const canvasData = {
+        is_completed: 0, // Canvas says incomplete
+      };
+
+      const { conflicts, autoResolved } = resolver.detectConflicts(
+        'task',
+        'tasks',
+        1,
+        '123',
+        'Test Assignment',
+        localRecord,
+        canvasData
+      );
+
+      // Should trigger conflict because local_modified_fields contains 'is_completed'
+      // even though field_sources says 'canvas'
+      expect(conflicts).toHaveLength(1);
+      expect(conflicts[0].field).toBe('is_completed');
+      expect(conflicts[0].localValue).toBe(1);
+      expect(conflicts[0].canvasValue).toBe(0);
+      // Should NOT auto-resolve to Canvas value
+      expect(autoResolved.is_completed).toBeUndefined();
+    });
+
+    it('should auto-resolve to Canvas when field_sources is canvas and NOT in local_modified_fields', () => {
+      mockDb.executeRead.mockReturnValue([]);
+      // @ts-expect-error - mock database
+      resolver = new SyncConflictResolver(mockDb);
+
+      // Scenario: Field came from Canvas and user has NOT modified it
+      const localRecord = {
+        id: 1,
+        is_completed: 0,
+        local_modified_fields: '[]', // No local modifications
+        field_sources: '{"is_completed": "canvas"}',
+      };
+
+      const canvasData = {
+        is_completed: 1, // Canvas now says complete (user submitted)
+      };
+
+      const { conflicts, autoResolved } = resolver.detectConflicts(
+        'task',
+        'tasks',
+        1,
+        '123',
+        'Test Assignment',
+        localRecord,
+        canvasData
+      );
+
+      // Should NOT trigger conflict - just accept Canvas value
+      expect(conflicts).toHaveLength(0);
+      expect(autoResolved.is_completed).toBe(1);
+    });
+  });
+
   describe('course information in conflicts', () => {
     it('should include course info when detecting task conflicts', () => {
       mockDb.executeRead.mockReturnValue([]);
