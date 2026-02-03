@@ -13,11 +13,8 @@ import {
   Search,
   Filter,
   X,
-  EyeOff,
   Archive,
-  ArchiveRestore,
   ChevronDown,
-  ChevronUp,
 } from 'lucide-react';
 import { useStore, getCachedCourseGrades } from '../../../l5-presentation/store';
 import { Card } from '../shared';
@@ -42,6 +39,8 @@ import {
 } from './coursesPageUtils';
 import { CourseGridCard } from './CourseGridCard';
 import { CourseListItem } from './CourseListItem';
+import { CoursesFilterPanel } from './CoursesFilterPanel';
+import { ArchivedCoursesSection } from './ArchivedCoursesSection';
 
 // Inject drag handle styles on module load
 injectDragHandleStyles();
@@ -276,7 +275,7 @@ export function CoursesPage() {
   const pinnedCount = filteredCourses.filter((c) => pinnedCourses.has(c.id)).length;
   const hiddenCount = courses.filter((c) => c.isHidden).length;
   const hasActiveFilters =
-    searchQuery ||
+    !!searchQuery ||
     gradeFilter !== 'all' ||
     prefixFilter !== 'all' ||
     typeFilter !== 'all' ||
@@ -445,124 +444,21 @@ export function CoursesPage() {
 
       {/* Filter Panel */}
       {showFilters && (
-        <div style={styles.filterPanel}>
-          {/* Prefix Filter */}
-          {availablePrefixes.length > 1 && (
-            <div style={styles.filterGroup}>
-              <label style={styles.filterLabel}>Prefix</label>
-              <select
-                style={styles.filterSelect}
-                value={prefixFilter}
-                onChange={(e) => setPrefixFilter(e.target.value)}
-              >
-                <option value="all">All</option>
-                {availablePrefixes.map((prefix) => (
-                  <option key={prefix} value={prefix}>
-                    {prefix}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          {/* Type Filter */}
-          {availableTypes.length > 0 && (
-            <div style={styles.filterGroup}>
-              <label style={styles.filterLabel}>Type</label>
-              <div style={styles.filterChips}>
-                <button
-                  style={{
-                    ...styles.filterChip,
-                    backgroundColor:
-                      typeFilter === 'all' ? 'var(--color-navy)' : 'var(--bg-app)',
-                    color: typeFilter === 'all' ? 'white' : 'var(--text-secondary)',
-                    borderColor:
-                      typeFilter === 'all'
-                        ? 'var(--color-navy)'
-                        : 'var(--border-default)',
-                  }}
-                  onClick={() => setTypeFilter('all')}
-                >
-                  All
-                </button>
-                {availableTypes.map((type) => (
-                  <button
-                    key={type}
-                    style={{
-                      ...styles.filterChip,
-                      backgroundColor:
-                        typeFilter === type ? 'var(--color-navy)' : 'var(--bg-app)',
-                      color: typeFilter === type ? 'white' : 'var(--text-secondary)',
-                      borderColor:
-                        typeFilter === type
-                          ? 'var(--color-navy)'
-                          : 'var(--border-default)',
-                    }}
-                    onClick={() => setTypeFilter(type)}
-                  >
-                    {type}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Grade Status Filter */}
-          <div style={styles.filterGroup}>
-            <label style={styles.filterLabel}>Grade</label>
-            <div style={styles.filterChips}>
-              {(['all', 'on-track', 'at-risk', 'behind'] as GradeFilter[]).map(
-                (filter) => (
-                  <button
-                    key={filter}
-                    style={{
-                      ...styles.filterChip,
-                      backgroundColor:
-                        gradeFilter === filter ? 'var(--color-navy)' : 'var(--bg-app)',
-                      color: gradeFilter === filter ? 'white' : 'var(--text-secondary)',
-                      borderColor:
-                        gradeFilter === filter
-                          ? 'var(--color-navy)'
-                          : 'var(--border-default)',
-                    }}
-                    onClick={() => setGradeFilter(filter)}
-                  >
-                    {filter === 'all'
-                      ? 'All'
-                      : filter === 'on-track'
-                        ? 'On Track'
-                        : filter === 'at-risk'
-                          ? 'At Risk'
-                          : 'Behind'}
-                  </button>
-                )
-              )}
-            </div>
-          </div>
-
-          {/* Show Hidden */}
-          <div style={styles.filterGroup}>
-            <button
-              style={{
-                ...styles.filterChip,
-                backgroundColor: showHidden ? 'var(--color-navy)' : 'var(--bg-app)',
-                color: showHidden ? 'white' : 'var(--text-secondary)',
-                borderColor: showHidden ? 'var(--color-navy)' : 'var(--border-default)',
-              }}
-              onClick={() => setShowHidden(!showHidden)}
-            >
-              <EyeOff size={14} />
-              Show Hidden ({hiddenCount})
-            </button>
-          </div>
-
-          {hasActiveFilters && (
-            <button style={styles.clearFiltersBtn} onClick={clearFilters}>
-              <X size={14} />
-              Clear All
-            </button>
-          )}
-        </div>
+        <CoursesFilterPanel
+          availablePrefixes={availablePrefixes}
+          availableTypes={availableTypes}
+          prefixFilter={prefixFilter}
+          typeFilter={typeFilter}
+          gradeFilter={gradeFilter}
+          showHidden={showHidden}
+          hiddenCount={hiddenCount}
+          hasActiveFilters={hasActiveFilters}
+          onPrefixFilterChange={setPrefixFilter}
+          onTypeFilterChange={setTypeFilter}
+          onGradeFilterChange={setGradeFilter}
+          onShowHiddenChange={setShowHidden}
+          onClearFilters={clearFilters}
+        />
       )}
 
       {/* Empty State - No courses at all */}
@@ -690,85 +586,13 @@ export function CoursesPage() {
       )}
 
       {/* Archived Courses Section */}
-      <div style={styles.archivedSection}>
-        <button
-          style={styles.archivedHeader}
-          onClick={() => setShowArchived(!showArchived)}
-        >
-          <div style={styles.archivedHeaderLeft}>
-            <Archive size={18} color="var(--text-muted)" />
-            <span style={styles.archivedTitle}>Archived Courses</span>
-            {archivedCourses.length > 0 && (
-              <span style={styles.archivedCount}>{archivedCourses.length}</span>
-            )}
-          </div>
-          {showArchived ? (
-            <ChevronUp size={18} color="var(--text-muted)" />
-          ) : (
-            <ChevronDown size={18} color="var(--text-muted)" />
-          )}
-        </button>
-
-        {showArchived && (
-          <div style={styles.archivedContent}>
-            {loadingArchived ? (
-              <div style={styles.archivedLoading}>Loading archived courses...</div>
-            ) : archivedCourses.length === 0 ? (
-              <div style={styles.archivedEmpty}>
-                <Archive size={32} color="var(--text-muted)" />
-                <p>No archived courses</p>
-              </div>
-            ) : (
-              <div style={styles.archivedList}>
-                {archivedCourses.map((course) => {
-                  const isAutoArchived = course.archiveSource === 'auto';
-                  return (
-                    <div key={course.id} style={styles.archivedItem}>
-                      <div
-                        style={{
-                          ...styles.archivedColorBar,
-                          backgroundColor: getCourseColor(course.id, course.color),
-                        }}
-                      />
-                      <div
-                        style={styles.archivedInfoClickable}
-                        onClick={() => navigate(`/course/${course.id}`)}
-                        title="View course details"
-                      >
-                        <span style={styles.archivedCode}>
-                          {getShortCode(course.code)}
-                        </span>
-                        <span style={styles.archivedName}>{course.name}</span>
-                        {isAutoArchived && (
-                          <span style={styles.autoArchivedBadge}>Term ended</span>
-                        )}
-                      </div>
-                      <button
-                        style={{
-                          ...styles.unarchiveButton,
-                          ...(isAutoArchived ? styles.unarchiveButtonDisabled : {}),
-                        }}
-                        onClick={() =>
-                          !isAutoArchived && handleUnarchiveCourse(course.id)
-                        }
-                        title={
-                          isAutoArchived
-                            ? 'Cannot restore - term has ended'
-                            : 'Restore this course'
-                        }
-                        disabled={isAutoArchived}
-                      >
-                        <ArchiveRestore size={16} />
-                        Restore
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
+      <ArchivedCoursesSection
+        archivedCourses={archivedCourses}
+        showArchived={showArchived}
+        loadingArchived={loadingArchived}
+        onToggleShow={() => setShowArchived(!showArchived)}
+        onUnarchive={handleUnarchiveCourse}
+      />
     </div>
   );
 }

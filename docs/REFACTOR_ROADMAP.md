@@ -7,7 +7,7 @@
 | Phase | Total Files | Completed | In Progress |
 |-------|-------------|-----------|-------------|
 | Phase 1 | 5 | 5 ✅ | 0 |
-| Phase 2 | 8 | 7 | 1 |
+| Phase 2 | 8 | 8 | 0 |
 | Phase 3 | 7 | 2 | 5 |
 
 ---
@@ -31,13 +31,13 @@
 | # | File | Original | Current | Reduction | Status |
 |---|------|----------|---------|-----------|--------|
 | 6 | `Layout.tsx` | 1,016 | 253 | 75% | ✅ Done |
-| 7 | `Calendar/index.tsx` | 1,587 | 790 | 50% | 🔶 Partial |
+| 7 | `Calendar/index.tsx` | 1,587 | 790 | 50% | ✅ Done (10+ modules extracted, remaining is orchestration) |
 | 8 | `CalendarPage.tsx` | 1,491 | 505 | 66% | ✅ Done (4 modules extracted) |
 | 9 | `SettingsModal.tsx` | 3,610 | 45 | 99% | ✅ Done |
 | 10 | `EventFormModal.tsx` | 1,019 | 905 | 11% | ✅ Skip (form component, minimal gain) |
 | 11 | `SyncEngine.ts` | 5,587 | 1,947 | 65% | ✅ Done (8 modules extracted) |
 | 12 | `ExportManager.ts` | 942 | 342 | 64% | ✅ Done |
-| 13 | `CoursesPage.tsx` | 2,111 | 829 | 61% | 🔶 Partial |
+| 13 | `CoursesPage.tsx` | 2,111 | 653 | 69% | ✅ Done (7+ modules extracted) |
 
 ---
 
@@ -57,9 +57,11 @@
 
 ## Next Target
 
-**`Calendar/index.tsx`** (790 lines, 50% partial)
-- Main calendar integration component
-- Strategy: Review for further extraction opportunities or mark complete
+**Phase 2 Complete!** Moving to Phase 3 (Hub Files).
+
+**`store.ts`** (1,578 lines, 0% reduction)
+- Zustand store with state management
+- Strategy: Extract action creators, selectors, or slice by domain
 
 ---
 
