@@ -14,8 +14,6 @@ import {
   ChevronRight,
   X,
   Plus,
-  Trash2,
-  ChevronDown,
   GripVertical,
   Archive,
   RefreshCw,
@@ -46,6 +44,7 @@ import {
 } from '../Course';
 import type { FileResource } from '../Files/FileListItem';
 import { useCourseDetailDragDrop } from './useCourseDetailDragDrop';
+import { useCourseDetailTaskState } from './useCourseDetailTaskState';
 import { courseDetailStyles as styles } from './CourseDetail.styles';
 import {
   TaskItem,
@@ -134,51 +133,26 @@ export function CourseDetail() {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const { tasks: storeTasks } = useStore();
-
-  // Local state for archived course tasks (fetched directly, bypasses visibility filtering)
-  const [archivedCourseTasks, setArchivedCourseTasks] = useState<Task[]>([]);
+  const courseId = Number(id);
 
   // Task highlight/edit from URL params
   const highlightTaskId = searchParams.get('highlightTask');
   const editTaskId = searchParams.get('editTask');
-  const [highlightedTaskId, setHighlightedTaskId] = useState<number | null>(null);
-  const taskRefs = useRef<Map<number, HTMLDivElement>>(new Map());
 
+  // Course and related data state
   const [course, setCourse] = useState<CourseDetailData | null>(null);
   const [policies, setPolicies] = useState<Policy[]>([]);
   const [gradeHistory, setGradeHistory] = useState<GradeHistoryEntry[]>([]);
   const [announcements, setAnnouncements] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Editing state
+  // Course settings editing state
   const [editingTarget, setEditingTarget] = useState(false);
   const [targetGradeInput, setTargetGradeInput] = useState('');
   const [showSettings, setShowSettings] = useState(false);
   const [nicknameInput, setNicknameInput] = useState('');
   const [selectedColor, setSelectedColor] = useState<string | null>(null);
   const [creditsInput, setCreditsInput] = useState('');
-
-  // Add Task state
-  const [showAddTask, setShowAddTask] = useState(false);
-  const [newTaskTitle, setNewTaskTitle] = useState('');
-  const [newTaskDescription, setNewTaskDescription] = useState('');
-  const [newTaskStartDate, setNewTaskStartDate] = useState('');
-  const [newTaskDueDate, setNewTaskDueDate] = useState('');
-  const [newTaskWeight, setNewTaskWeight] = useState('');
-  const [newTaskType, setNewTaskType] = useState('');
-
-  // Task detail/edit state
-  const [expandedTaskId, setExpandedTaskId] = useState<number | null>(null);
-  const [editingTaskId, setEditingTaskId] = useState<number | null>(null);
-  const [editTaskTitle, setEditTaskTitle] = useState('');
-  const [editTaskDescription, setEditTaskDescription] = useState('');
-  const [editTaskOriginalDescription, setEditTaskOriginalDescription] = useState(''); // Track original stripped description
-  const [editTaskStartDate, setEditTaskStartDate] = useState('');
-  const [editTaskDueDate, setEditTaskDueDate] = useState('');
-  const [editTaskWeight, setEditTaskWeight] = useState('');
-  const [editTaskGrade, setEditTaskGrade] = useState('');
-  const [editTaskType, setEditTaskType] = useState('');
-  const [editTaskLocation, setEditTaskLocation] = useState('');
 
   // Policy modal state
   const [policyModalState, setPolicyModalState] = useState<{
@@ -218,22 +192,75 @@ export function CourseDetail() {
     onConfirm: () => {},
   });
 
-  // Task list modal state
-  const [taskListModal, setTaskListModal] = useState<{
-    isOpen: boolean;
-    title: string;
-    tasks: Task[];
-  }>({
-    isOpen: false,
-    title: '',
-    tasks: [],
+  // Task state and handlers from custom hook
+  const {
+    // New task form state
+    showAddTask,
+    setShowAddTask,
+    newTaskTitle,
+    setNewTaskTitle,
+    newTaskDescription,
+    setNewTaskDescription,
+    newTaskStartDate,
+    setNewTaskStartDate,
+    newTaskDueDate,
+    setNewTaskDueDate,
+    newTaskWeight,
+    setNewTaskWeight,
+    newTaskType,
+    setNewTaskType,
+    // Task expansion/editing state
+    expandedTaskId,
+    setExpandedTaskId,
+    editingTaskId,
+    setEditingTaskId,
+    highlightedTaskId,
+    setHighlightedTaskId,
+    // Edit task form state
+    editTaskTitle,
+    setEditTaskTitle,
+    editTaskDescription,
+    setEditTaskDescription,
+    editTaskStartDate,
+    setEditTaskStartDate,
+    editTaskDueDate,
+    setEditTaskDueDate,
+    editTaskWeight,
+    setEditTaskWeight,
+    editTaskGrade,
+    setEditTaskGrade,
+    editTaskType,
+    setEditTaskType,
+    editTaskLocation,
+    setEditTaskLocation,
+    // Task list modal
+    taskListModal,
+    setTaskListModal,
+    // Task context menu
+    taskContextMenu,
+    setTaskContextMenu,
+    // Archived course tasks
+    archivedCourseTasks,
+    setArchivedCourseTasks,
+    // Task refs
+    taskRefs,
+    // Handlers
+    handleCreateTask,
+    handleDuplicateTask,
+    handleToggleComplete,
+    startEditingTask,
+    handleSaveTask,
+    handleDeleteTask,
+    handleTaskContextMenu,
+    handleOpenTaskInCanvas,
+    handleToggleOptional,
+    refreshArchivedCourseTasks,
+  } = useCourseDetailTaskState({
+    courseId,
+    courseArchivedAt: course?.archivedAt ?? null,
+    setConfirmDialog,
+    navigate,
   });
-
-  // Task context menu state
-  const [taskContextMenu, setTaskContextMenu] = useState<{
-    task: Task;
-    position: { x: number; y: number };
-  } | null>(null);
 
   // Pending file download state (for link click handling)
   const [pendingFileDownload, setPendingFileDownload] = useState<{
@@ -284,8 +311,6 @@ export function CourseDetail() {
     sidebarDragState,
     sidebarDragHandlers,
   } = useCourseDetailDragDrop();
-
-  const courseId = Number(id);
 
   // Save target grade
   const handleSaveTargetGrade = async () => {
@@ -466,232 +491,6 @@ export function CourseDetail() {
     } finally {
       _setSettingsLoading(false);
     }
-  };
-
-  // Refresh archived course tasks (for archived courses only)
-  const refreshArchivedCourseTasks = async () => {
-    if (!course?.archivedAt) return;
-    const api = window.api;
-    if (!api?.getTasksForArchivedCourse) return;
-    try {
-      const tasks = await api.getTasksForArchivedCourse(courseId);
-      setArchivedCourseTasks(tasks || []);
-    } catch (error) {
-      console.error('Failed to refresh archived course tasks:', error);
-    }
-  };
-
-  // Create new task
-  const handleCreateTask = async () => {
-    const api = window.api;
-    if (!api?.dispatch || !newTaskTitle.trim()) return;
-
-    try {
-      // Convert datetime-local values to ISO strings if set
-      const unlockAt = newTaskStartDate
-        ? new Date(newTaskStartDate).toISOString()
-        : undefined;
-      const dueAt = newTaskDueDate
-        ? new Date(newTaskDueDate).toISOString()
-        : undefined;
-
-      await api.dispatch('CreateTask', {
-        courseId,
-        title: newTaskTitle.trim(),
-        description: newTaskDescription.trim() || undefined,
-        unlockAt,
-        dueAt,
-        weight: newTaskWeight ? parseFloat(newTaskWeight) : undefined,
-        taskType: newTaskType || undefined,
-      });
-      // Reset form
-      setNewTaskTitle('');
-      setNewTaskDescription('');
-      setNewTaskStartDate('');
-      setNewTaskDueDate('');
-      setNewTaskWeight('');
-      setNewTaskType('');
-      setShowAddTask(false);
-      // Refresh archived course tasks if applicable
-      await refreshArchivedCourseTasks();
-    } catch (error) {
-      console.error('Failed to create task:', error);
-    }
-  };
-
-  // Duplicate task
-  const handleDuplicateTask = async (taskId: number) => {
-    const api = window.api;
-    if (!api?.dispatch) return;
-
-    try {
-      await api.dispatch('DuplicateTask', { taskId });
-      await refreshArchivedCourseTasks();
-    } catch (error) {
-      console.error('Failed to duplicate task:', error);
-    }
-  };
-
-  // Toggle task completion
-  const handleToggleComplete = async (task: Task) => {
-    const api = window.api;
-    if (!api?.dispatch) return;
-
-    try {
-      await api.dispatch('MarkTaskComplete', {
-        taskId: task.id,
-        isComplete: !task.isCompleted,
-      });
-      await refreshArchivedCourseTasks();
-    } catch (error) {
-      console.error('Failed to toggle task completion:', error);
-    }
-  };
-
-  // Start editing a task (also expands it)
-  const startEditingTask = (task: Task) => {
-    // Set all edit fields first
-    setEditTaskTitle(task.title);
-    // Keep original HTML to preserve links and formatting
-    // User can edit around HTML tags to keep links intact
-    const originalDescription = task.description || '';
-    setEditTaskDescription(originalDescription);
-    setEditTaskOriginalDescription(originalDescription);
-
-    // Helper to convert ISO string to datetime-local format
-    const formatDateForInput = (isoString: string | null): string => {
-      if (!isoString) return '';
-      const date = new Date(isoString);
-      // Check if it's epoch time (1970-01-01) - treat as "not set"
-      if (date.getTime() === 0) return '';
-      const year = date.getFullYear();
-      const month = String(date.getMonth() + 1).padStart(2, '0');
-      const day = String(date.getDate()).padStart(2, '0');
-      const hours = String(date.getHours()).padStart(2, '0');
-      const minutes = String(date.getMinutes()).padStart(2, '0');
-      return `${year}-${month}-${day}T${hours}:${minutes}`;
-    };
-
-    setEditTaskStartDate(formatDateForInput(task.unlockAt));
-    setEditTaskDueDate(formatDateForInput(task.dueAt));
-    setEditTaskWeight(task.weight?.toString() || '');
-    setEditTaskGrade(task.grade?.toString() || '');
-    setEditTaskType(task.taskType || '');
-    setEditTaskLocation(task.location || '');
-    // Set editing and expanded state together at the end
-    setEditingTaskId(task.id);
-    setExpandedTaskId(task.id);
-  };
-
-  // Save task edits
-  const handleSaveTask = async () => {
-    const api = window.api;
-    if (!api?.dispatch || !editingTaskId) return;
-
-    try {
-      // Only include description if it was actually changed
-      const descriptionChanged = editTaskDescription !== editTaskOriginalDescription;
-
-      // Convert empty start date to epoch time (1970-01-01T00:00:00.000Z)
-      const unlockAt = editTaskStartDate
-        ? new Date(editTaskStartDate).toISOString()
-        : '1970-01-01T00:00:00.000Z';
-
-      await api.dispatch('UpdateTask', {
-        taskId: editingTaskId,
-        title: editTaskTitle.trim() || undefined,
-        // Only send description if user actually modified it (preserves HTML/links if unchanged)
-        ...(descriptionChanged && { description: editTaskDescription || null }),
-        unlockAt,
-        dueAt: editTaskDueDate || null,
-        weight: editTaskWeight ? parseFloat(editTaskWeight) : undefined,
-        grade: editTaskGrade ? parseFloat(editTaskGrade) : null,
-        taskType: editTaskType || null,
-        location: editTaskLocation || null,
-      });
-      setEditingTaskId(null);
-      await refreshArchivedCourseTasks();
-    } catch (error) {
-      console.error('Failed to update task:', error);
-    }
-  };
-
-  // Delete task
-  const handleDeleteTask = (taskId: number, taskTitle: string) => {
-    setConfirmDialog({
-      isOpen: true,
-      title: 'Delete Task',
-      message: `Are you sure you want to delete "${taskTitle}"? This action cannot be undone.`,
-      type: 'danger',
-      confirmText: 'Delete',
-      onConfirm: async () => {
-        const api = window.api;
-        if (!api?.dispatch) return;
-
-        try {
-          const result = await api.dispatch('DeleteTask', { taskId, force: true });
-          if (result.success) {
-            setExpandedTaskId(null);
-            setEditingTaskId(null);
-            await refreshArchivedCourseTasks();
-          }
-        } catch (error) {
-          console.error('Failed to delete task:', error);
-        }
-        setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
-      },
-    });
-  };
-
-  // Task context menu handlers
-  const handleTaskContextMenu = (e: React.MouseEvent, task: Task) => {
-    e.preventDefault();
-    setTaskContextMenu({ task, position: { x: e.clientX, y: e.clientY } });
-  };
-
-  const handleOpenTaskInCanvas = async (task: Task) => {
-    const api = window.api;
-    if (!api?.getTaskCanvasUrl || !api?.openExternal) return;
-
-    try {
-      const result = await api.getTaskCanvasUrl(task.id);
-      if (result.success && result.data?.canvasUrl) {
-        api.openExternal(result.data.canvasUrl);
-      }
-    } catch (error) {
-      console.error('Failed to open task in Canvas:', error);
-    }
-  };
-
-  // Toggle optional status with confirmation
-  const handleToggleOptional = (task: Task) => {
-    const isCurrentlyOptional = task.isOptional;
-    const action = isCurrentlyOptional ? 'restore' : 'mark as optional';
-    const description = isCurrentlyOptional
-      ? `This will move "${task.title}" back to its original section based on submission status.`
-      : `This will move "${task.title}" to the "Not for Grade" section. Canvas sync will no longer update its status.`;
-
-    setConfirmDialog({
-      isOpen: true,
-      title: isCurrentlyOptional ? 'Restore Task' : 'Mark as Optional',
-      message: description,
-      type: 'info',
-      confirmText: isCurrentlyOptional ? 'Restore' : 'Mark Optional',
-      onConfirm: async () => {
-        const api = window.api;
-        if (!api?.dispatch) return;
-
-        try {
-          await api.dispatch('UpdateTask', {
-            taskId: task.id,
-            isOptional: !isCurrentlyOptional,
-          });
-        } catch (error) {
-          console.error(`Failed to ${action} task:`, error);
-        }
-        setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
-      },
-    });
   };
 
   // Policy handlers
