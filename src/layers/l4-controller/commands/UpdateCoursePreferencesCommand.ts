@@ -41,15 +41,17 @@ export class UpdateCoursePreferencesCommand implements Command<
       }
     }
 
-    if (color !== undefined && typeof color !== 'string') {
-      return { valid: false, error: 'Color must be a string' };
+    // Allow null to clear color, string to set it
+    if (color !== undefined && color !== null && typeof color !== 'string') {
+      return { valid: false, error: 'Color must be a string or null' };
     }
 
-    if (nickname !== undefined && typeof nickname !== 'string') {
-      return { valid: false, error: 'Nickname must be a string' };
+    // Allow null to clear nickname, string to set it
+    if (nickname !== undefined && nickname !== null && typeof nickname !== 'string') {
+      return { valid: false, error: 'Nickname must be a string or null' };
     }
 
-    if (nickname !== undefined && nickname.length > 100) {
+    if (nickname !== undefined && nickname !== null && nickname.length > 100) {
       return { valid: false, error: 'Nickname must be 100 characters or less' };
     }
 

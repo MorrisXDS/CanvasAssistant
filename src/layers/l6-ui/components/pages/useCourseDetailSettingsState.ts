@@ -95,11 +95,12 @@ export function useCourseDetailSettingsState<T extends CourseSettingsData>({
       const validCredits = !isNaN(newCredits) && newCredits >= 0 && newCredits <= 10;
 
       // Save course preferences (nickname, color, credits)
+      // Use null to explicitly clear nickname/color, undefined to skip update
       await api.dispatch('UpdateCoursePreferences', {
         courseId,
         preferences: {
-          nickname: nicknameInput || undefined,
-          color: selectedColor || undefined,
+          nickname: nicknameInput === '' ? null : nicknameInput || undefined,
+          color: selectedColor === '' ? null : selectedColor || undefined,
           credits: validCredits ? newCredits : undefined,
         },
       });

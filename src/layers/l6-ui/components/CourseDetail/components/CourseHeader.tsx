@@ -127,7 +127,7 @@ export function CourseHeader({
             <span style={{ ...styles.courseCodeBadge, backgroundColor: courseColor }}>
               {getShortCode(course.code)}
             </span>
-            <h1 style={styles.courseName}>{course.nickname || course.name}</h1>
+            <h1 style={styles.courseName}>{course.nickname || `${course.code} - ${course.name}`}</h1>
             <span style={styles.fullCode}>{course.code}</span>
             {course.archivedAt && (
               <span style={styles.archivedBadge}>

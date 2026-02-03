@@ -73,11 +73,12 @@ export function createSimulationContext(): SimulationContext {
 
 /**
  * Course preference fields that users can edit
+ * Use null to explicitly clear color/nickname, undefined to skip update
  */
 export interface CoursePreferences {
   targetGrade?: number;
-  color?: string;
-  nickname?: string;
+  color?: string | null;
+  nickname?: string | null;
   isHidden?: boolean;
   /** Course credits/units for weighted GPA calculation */
   credits?: number;
