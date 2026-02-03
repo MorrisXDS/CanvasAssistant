@@ -18,127 +18,25 @@ import {
 import { useStore } from '../../../l5-presentation/store';
 import { Card } from '../shared';
 import type { Task, Course } from '../../../l5-presentation/types';
-import { getCourseColor } from '../../constants';
 import { generateICS, parseICS, type ParsedEvent } from './CalendarPage.ics';
 import { styles } from './CalendarPage.styles';
-
-// View modes
-type ViewMode = 'month' | 'week';
-type DeadlineFilter = 'all' | 'overdue' | 'today' | 'this-week' | 'upcoming';
-type PriorityFilter = 'all' | 'high' | 'medium' | 'low';
-
-// Days of week
-const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const MONTHS = [
-  'January',
-  'February',
-  'March',
-  'April',
-  'May',
-  'June',
-  'July',
-  'August',
-  'September',
-  'October',
-  'November',
-  'December',
-];
-
-// Get priority from task
-function getTaskPriority(task: Task): 'high' | 'medium' | 'low' {
-  if (task.priorityScore >= 70) return 'high';
-  if (task.priorityScore >= 40) return 'medium';
-  return 'low';
-}
-
-// Get task type
-function getTaskType(task: Task): string {
-  if (task.taskType) return task.taskType;
-  const title = task.title.toLowerCase();
-  if (title.includes('exam') || title.includes('midterm') || title.includes('final'))
-    return 'exam';
-  if (title.includes('quiz')) return 'quiz';
-  if (title.includes('lab')) return 'lab';
-  if (title.includes('assignment') || title.includes('homework')) return 'assignment';
-  if (title.includes('project')) return 'project';
-  return 'other';
-}
-
-// Check if dates are same day
-function isSameDay(d1: Date, d2: Date): boolean {
-  return (
-    d1.getFullYear() === d2.getFullYear() &&
-    d1.getMonth() === d2.getMonth() &&
-    d1.getDate() === d2.getDate()
-  );
-}
-
-// Get calendar days for a month
-function getCalendarDays(year: number, month: number): Date[] {
-  const firstDay = new Date(year, month, 1);
-  const lastDay = new Date(year, month + 1, 0);
-  const days: Date[] = [];
-
-  // Add days from previous month to fill first week
-  const startPadding = firstDay.getDay();
-  for (let i = startPadding - 1; i >= 0; i--) {
-    days.push(new Date(year, month, -i));
-  }
-
-  // Add all days of current month
-  for (let i = 1; i <= lastDay.getDate(); i++) {
-    days.push(new Date(year, month, i));
-  }
-
-  // Add days from next month to complete last week
-  const endPadding = 6 - lastDay.getDay();
-  for (let i = 1; i <= endPadding; i++) {
-    days.push(new Date(year, month + 1, i));
-  }
-
-  return days;
-}
-
-// Load calendar settings from SettingsModal
-function loadCalendarSettings(): { defaultViewMode: ViewMode } {
-  try {
-    const stored = localStorage.getItem('calendarSettings');
-    if (stored) {
-      const parsed = JSON.parse(stored);
-      if (parsed.defaultViewMode === 'month' || parsed.defaultViewMode === 'week') {
-        return { defaultViewMode: parsed.defaultViewMode };
-      }
-    }
-  } catch (e) {
-    console.error('[CalendarPage] Failed to load calendar settings:', e);
-  }
-  return { defaultViewMode: 'month' };
-}
-
-// Load/save calendar view mode (user's last selection takes priority)
-function loadCalendarViewMode(): ViewMode {
-  try {
-    // First check if user has a saved preference
-    const stored = localStorage.getItem('viewMode:calendar');
-    if (stored === 'month' || stored === 'week') {
-      return stored;
-    }
-    // Otherwise use default from settings
-    const settings = loadCalendarSettings();
-    return settings.defaultViewMode;
-  } catch (e) {
-    console.error('[CalendarPage] Failed to load calendar view mode:', e);
-  }
-  return 'month';
-}
-
-function saveCalendarViewMode(mode: ViewMode): void {
-  try {
-    localStorage.setItem('viewMode:calendar', mode);
-  } catch (e) {
-    console.error('[CalendarPage] Failed to save calendar view mode:', e);
-  }
-}
+import {
+  type ViewMode,
+  type DeadlineFilter,
+  type PriorityFilter,
+  MONTHS,
+  getTaskPriority,
+  getTaskType,
+  isSameDay,
+  getCalendarDays,
+  getWeekStart,
+  formatWeekTitle,
+  loadCalendarViewMode,
+  saveCalendarViewMode,
+} from './CalendarPageUtils';
+import { CalendarFilterPanel } from './CalendarFilterPanel';
+import { CalendarMonthView } from './CalendarMonthView';
+import { CalendarWeekView } from './CalendarWeekView';
 
 export function CalendarPage() {
   const { tasks, courses } = useStore();
@@ -300,6 +198,18 @@ export function CalendarPage() {
     return getCalendarDays(currentDate.getFullYear(), currentDate.getMonth());
   }, [currentDate]);
 
+  // Get week days
+  const weekDays = useMemo(() => {
+    const start = getWeekStart(currentDate);
+    const days: Date[] = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(start);
+      d.setDate(d.getDate() + i);
+      days.push(d);
+    }
+    return days;
+  }, [currentDate]);
+
   // Navigation
   const goToPrevMonth = () => {
     setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1));
@@ -324,40 +234,6 @@ export function CalendarPage() {
   const goToToday = () => {
     setCurrentDate(new Date());
   };
-
-  // Format week title (e.g., "Jan 5 - 11, 2025")
-  const formatWeekTitle = (date: Date): string => {
-    const weekStart = getWeekStart(date);
-    const weekEnd = new Date(weekStart);
-    weekEnd.setDate(weekEnd.getDate() + 6);
-
-    const startMonth = MONTHS[weekStart.getMonth()].substring(0, 3);
-    const endMonth = MONTHS[weekEnd.getMonth()].substring(0, 3);
-
-    if (weekStart.getMonth() === weekEnd.getMonth()) {
-      return `${startMonth} ${weekStart.getDate()} - ${weekEnd.getDate()}, ${weekStart.getFullYear()}`;
-    }
-    return `${startMonth} ${weekStart.getDate()} - ${endMonth} ${weekEnd.getDate()}, ${weekEnd.getFullYear()}`;
-  };
-
-  // Get start of week (Sunday)
-  const getWeekStart = (date: Date): Date => {
-    const d = new Date(date);
-    d.setDate(d.getDate() - d.getDay());
-    return d;
-  };
-
-  // Get week days
-  const weekDays = useMemo(() => {
-    const start = getWeekStart(currentDate);
-    const days: Date[] = [];
-    for (let i = 0; i < 7; i++) {
-      const d = new Date(start);
-      d.setDate(d.getDate() + i);
-      days.push(d);
-    }
-    return days;
-  }, [currentDate]);
 
   // Toggle course selection
   const toggleCourse = (courseId: number) => {
@@ -434,7 +310,7 @@ export function CalendarPage() {
   };
 
   const hasActiveFilters =
-    searchQuery ||
+    !!searchQuery ||
     selectedCourses.size > 0 ||
     typeFilter !== 'all' ||
     deadlineFilter !== 'all' ||
@@ -514,139 +390,20 @@ export function CalendarPage() {
 
       {/* Filter Panel */}
       {showFilters && (
-        <div style={styles.filterPanel}>
-          {/* Course Filter */}
-          <div style={styles.filterGroup}>
-            <label style={styles.filterLabel}>Courses</label>
-            <div style={styles.filterChips}>
-              {courses.map((course) => (
-                <button
-                  key={course.id}
-                  style={{
-                    ...styles.filterChip,
-                    backgroundColor: selectedCourses.has(course.id)
-                      ? getCourseColor(course.id, course.color)
-                      : 'var(--bg-app)',
-                    color: selectedCourses.has(course.id)
-                      ? 'white'
-                      : 'var(--text-secondary)',
-                    borderColor: selectedCourses.has(course.id)
-                      ? getCourseColor(course.id, course.color)
-                      : 'var(--border-default)',
-                  }}
-                  onClick={() => toggleCourse(course.id)}
-                >
-                  {course.code.split(/[A-Z]\d(?:\s|$)/i)[0] || course.code.split(' ')[0]}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Type Filter */}
-          {availableTypes.length > 0 && (
-            <div style={styles.filterGroup}>
-              <label style={styles.filterLabel}>Type</label>
-              <div style={styles.filterChips}>
-                <button
-                  style={{
-                    ...styles.filterChip,
-                    backgroundColor:
-                      typeFilter === 'all' ? 'var(--color-navy)' : 'var(--bg-app)',
-                    color: typeFilter === 'all' ? 'white' : 'var(--text-secondary)',
-                    borderColor:
-                      typeFilter === 'all'
-                        ? 'var(--color-navy)'
-                        : 'var(--border-default)',
-                  }}
-                  onClick={() => setTypeFilter('all')}
-                >
-                  All
-                </button>
-                {availableTypes.map((type) => (
-                  <button
-                    key={type}
-                    style={{
-                      ...styles.filterChip,
-                      backgroundColor:
-                        typeFilter === type ? 'var(--color-navy)' : 'var(--bg-app)',
-                      color: typeFilter === type ? 'white' : 'var(--text-secondary)',
-                      borderColor:
-                        typeFilter === type
-                          ? 'var(--color-navy)'
-                          : 'var(--border-default)',
-                    }}
-                    onClick={() => setTypeFilter(type)}
-                  >
-                    {type.charAt(0).toUpperCase() + type.slice(1)}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Deadline Filter */}
-          <div style={styles.filterGroup}>
-            <label style={styles.filterLabel}>Deadline</label>
-            <div style={styles.filterChips}>
-              {(
-                ['all', 'overdue', 'today', 'this-week', 'upcoming'] as DeadlineFilter[]
-              ).map((filter) => (
-                <button
-                  key={filter}
-                  style={{
-                    ...styles.filterChip,
-                    backgroundColor:
-                      deadlineFilter === filter ? 'var(--color-navy)' : 'var(--bg-app)',
-                    color: deadlineFilter === filter ? 'white' : 'var(--text-secondary)',
-                    borderColor:
-                      deadlineFilter === filter
-                        ? 'var(--color-navy)'
-                        : 'var(--border-default)',
-                  }}
-                  onClick={() => setDeadlineFilter(filter)}
-                >
-                  {filter === 'all'
-                    ? 'All'
-                    : filter === 'this-week'
-                      ? 'This Week'
-                      : filter.charAt(0).toUpperCase() + filter.slice(1)}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Priority Filter */}
-          <div style={styles.filterGroup}>
-            <label style={styles.filterLabel}>Priority</label>
-            <div style={styles.filterChips}>
-              {(['all', 'high', 'medium', 'low'] as PriorityFilter[]).map((filter) => (
-                <button
-                  key={filter}
-                  style={{
-                    ...styles.filterChip,
-                    backgroundColor:
-                      priorityFilter === filter ? 'var(--color-navy)' : 'var(--bg-app)',
-                    color: priorityFilter === filter ? 'white' : 'var(--text-secondary)',
-                    borderColor:
-                      priorityFilter === filter
-                        ? 'var(--color-navy)'
-                        : 'var(--border-default)',
-                  }}
-                  onClick={() => setPriorityFilter(filter)}
-                >
-                  {filter.charAt(0).toUpperCase() + filter.slice(1)}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {hasActiveFilters && (
-            <button style={styles.clearFiltersBtn} onClick={clearFilters}>
-              <X size={14} />
-              Clear All
-            </button>
-          )}
-        </div>
+        <CalendarFilterPanel
+          courses={courses}
+          availableTypes={availableTypes}
+          selectedCourses={selectedCourses}
+          typeFilter={typeFilter}
+          deadlineFilter={deadlineFilter}
+          priorityFilter={priorityFilter}
+          hasActiveFilters={hasActiveFilters}
+          onToggleCourse={toggleCourse}
+          onTypeFilterChange={setTypeFilter}
+          onDeadlineFilterChange={setDeadlineFilter}
+          onPriorityFilterChange={setPriorityFilter}
+          onClearFilters={clearFilters}
+        />
       )}
 
       {/* Calendar Navigation */}
@@ -701,160 +458,20 @@ export function CalendarPage() {
 
         {/* Calendar Grid */}
         {viewMode === 'month' ? (
-          <div style={styles.calendarGrid}>
-            {/* Day headers */}
-            {DAYS.map((day) => (
-              <div key={day} style={styles.dayHeader}>
-                {day}
-              </div>
-            ))}
-
-            {/* Calendar days */}
-            {calendarDays.map((date, index) => {
-              const isCurrentMonth = date.getMonth() === currentDate.getMonth();
-              const isToday = isSameDay(date, today);
-              const dateKey = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
-              const dayTasks = tasksByDate.get(dateKey) || [];
-
-              return (
-                <div
-                  key={index}
-                  style={{
-                    ...styles.calendarDay,
-                    backgroundColor: isToday ? 'var(--color-navy-light)' : 'transparent',
-                    opacity: isCurrentMonth ? 1 : 0.4,
-                  }}
-                >
-                  <div
-                    style={{
-                      ...styles.dayNumber,
-                      color: isToday ? 'var(--color-navy)' : 'var(--text-primary)',
-                      fontWeight: isToday ? 'var(--font-bold)' : 'var(--font-medium)',
-                    }}
-                  >
-                    {date.getDate()}
-                  </div>
-                  <div style={styles.dayTasks}>
-                    {dayTasks.slice(0, 3).map((task) => {
-                      const course = courseMap.get(task.courseId);
-                      const color = course
-                        ? getCourseColor(course.id, course.color)
-                        : 'var(--text-muted)';
-                      const time = task.dueAt
-                        ? new Date(task.dueAt).toLocaleTimeString('en-US', {
-                            hour: 'numeric',
-                            minute: '2-digit',
-                          })
-                        : '';
-                      // Truncate title for display (short for calendar cells)
-                      const maxLen = 12;
-                      const displayTitle =
-                        task.title.length > maxLen
-                          ? task.title.substring(0, maxLen).trim() + '…'
-                          : task.title;
-                      return (
-                        <div
-                          key={task.id}
-                          style={{
-                            ...styles.taskPill,
-                            backgroundColor: color,
-                          }}
-                          title={`${task.title}${time ? ` - ${time}` : ''}`}
-                        >
-                          {time && <span style={styles.taskTime}>{time}</span>}
-                          <span style={styles.taskPillText}>{displayTitle}</span>
-                        </div>
-                      );
-                    })}
-                    {dayTasks.length > 3 && (
-                      <div style={styles.moreTasksIndicator}>
-                        +{dayTasks.length - 3} more
-                      </div>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+          <CalendarMonthView
+            calendarDays={calendarDays}
+            currentDate={currentDate}
+            today={today}
+            tasksByDate={tasksByDate}
+            courseMap={courseMap}
+          />
         ) : (
-          /* Week View */
-          <div style={styles.weekGrid}>
-            {/* Day headers with dates */}
-            {weekDays.map((date, index) => {
-              const isToday = isSameDay(date, today);
-              return (
-                <div
-                  key={index}
-                  style={{
-                    ...styles.weekDayHeader,
-                    backgroundColor: isToday ? 'var(--color-navy-light)' : 'transparent',
-                  }}
-                >
-                  <span style={styles.weekDayName}>{DAYS[date.getDay()]}</span>
-                  <span
-                    style={{
-                      ...styles.weekDayNumber,
-                      color: isToday ? 'var(--color-navy)' : 'var(--text-primary)',
-                      fontWeight: isToday ? 'var(--font-bold)' : 'var(--font-medium)',
-                    }}
-                  >
-                    {date.getDate()}
-                  </span>
-                </div>
-              );
-            })}
-
-            {/* Week day columns */}
-            {weekDays.map((date, index) => {
-              const isToday = isSameDay(date, today);
-              const dateKey = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
-              const dayTasks = tasksByDate.get(dateKey) || [];
-
-              return (
-                <div
-                  key={index}
-                  style={{
-                    ...styles.weekDayColumn,
-                    backgroundColor: isToday ? 'var(--color-navy-light)' : 'transparent',
-                  }}
-                >
-                  {dayTasks.map((task) => {
-                    const course = courseMap.get(task.courseId);
-                    const color = course
-                      ? getCourseColor(course.id, course.color)
-                      : 'var(--text-muted)';
-                    const time = task.dueAt
-                      ? new Date(task.dueAt).toLocaleTimeString('en-US', {
-                          hour: 'numeric',
-                          minute: '2-digit',
-                        })
-                      : '';
-                    return (
-                      <div
-                        key={task.id}
-                        style={{
-                          ...styles.weekTaskCard,
-                          borderLeftColor: color,
-                        }}
-                        title={task.title}
-                      >
-                        {time && <span style={styles.weekTaskTime}>{time}</span>}
-                        <span style={styles.weekTaskTitle}>{task.title}</span>
-                        {course && (
-                          <span style={styles.weekTaskCourse}>
-                            {course.code.split(' ')[0]}
-                          </span>
-                        )}
-                      </div>
-                    );
-                  })}
-                  {dayTasks.length === 0 && (
-                    <div style={styles.weekNoTasks}>No tasks</div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+          <CalendarWeekView
+            weekDays={weekDays}
+            today={today}
+            tasksByDate={tasksByDate}
+            courseMap={courseMap}
+          />
         )}
       </Card>
 

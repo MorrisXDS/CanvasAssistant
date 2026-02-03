@@ -7,7 +7,7 @@
 | Phase | Total Files | Completed | In Progress |
 |-------|-------------|-----------|-------------|
 | Phase 1 | 5 | 5 ✅ | 0 |
-| Phase 2 | 8 | 6 | 2 |
+| Phase 2 | 8 | 7 | 1 |
 | Phase 3 | 7 | 2 | 5 |
 
 ---
@@ -32,7 +32,7 @@
 |---|------|----------|---------|-----------|--------|
 | 6 | `Layout.tsx` | 1,016 | 253 | 75% | ✅ Done |
 | 7 | `Calendar/index.tsx` | 1,587 | 790 | 50% | 🔶 Partial |
-| 8 | `CalendarPage.tsx` | 1,491 | 888 | 40% | ⏳ **NEXT** |
+| 8 | `CalendarPage.tsx` | 1,491 | 505 | 66% | ✅ Done (4 modules extracted) |
 | 9 | `SettingsModal.tsx` | 3,610 | 45 | 99% | ✅ Done |
 | 10 | `EventFormModal.tsx` | 1,019 | 905 | 11% | ✅ Skip (form component, minimal gain) |
 | 11 | `SyncEngine.ts` | 5,587 | 1,947 | 65% | ✅ Done (8 modules extracted) |
@@ -57,9 +57,9 @@
 
 ## Next Target
 
-**`CalendarPage.tsx`** (888 lines, 40% reduction)
-- Calendar page with event handling and view switching
-- Strategy: Extract view components, event handlers, state hooks
+**`Calendar/index.tsx`** (790 lines, 50% partial)
+- Main calendar integration component
+- Strategy: Review for further extraction opportunities or mark complete
 
 ---
 
