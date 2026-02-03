@@ -56,6 +56,7 @@ function createCourse(overrides: Partial<Course> = {}): Course {
     enrollmentTermId: null,
     archivedAt: null,
     archiveSource: null,
+    credits: 1.0,
     ...overrides,
   };
 }
@@ -65,9 +66,11 @@ function createTask(overrides: Partial<Task> = {}): Task {
   return {
     id: 1,
     externalId: 'task-1',
+    sourceType: 'canvas',
     courseId: 1,
     title: 'Assignment 1',
     description: 'First assignment',
+    unlockAt: null,
     dueAt: null,
     dueTimeKnown: true,
     weight: 10,
@@ -83,6 +86,7 @@ function createTask(overrides: Partial<Task> = {}): Task {
     taskType: null,
     taskGroupId: null,
     calendarEventId: null,
+    location: null,
     ...overrides,
   };
 }
