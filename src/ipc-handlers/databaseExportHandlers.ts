@@ -6,8 +6,52 @@
 import { ipcMain, dialog, app } from 'electron';
 import fs from 'fs';
 import path from 'path';
+import BetterSqlite3 from 'better-sqlite3';
 import { ExportManager } from '../layers/l2-daemon';
 import type { IpcContext } from './IpcContext';
+
+/**
+ * Clear local_path for files that don't exist on disk.
+ * After importing a backup, some referenced files may not exist on this machine.
+ *
+ * @param dbPath - Path to the SQLite database
+ * @param logger - Logger instance for diagnostics
+ * @returns Number of paths cleared
+ */
+function clearMissingFilePaths(
+  dbPath: string,
+  logger: { info: (msg: string) => void; error: (msg: string, err?: Error) => void }
+): number {
+  let db: BetterSqlite3.Database | null = null;
+  try {
+    db = new BetterSqlite3(dbPath);
+    db.pragma('journal_mode = WAL');
+
+    // Get resources with local_path set
+    const rows = db
+      .prepare('SELECT id, local_path FROM resources WHERE local_path IS NOT NULL')
+      .all() as Array<{ id: number; local_path: string }>;
+
+    // Find which files don't exist
+    const missingIds = rows.filter((r) => !fs.existsSync(r.local_path)).map((r) => r.id);
+
+    if (missingIds.length === 0) return 0;
+
+    // Clear local_path for missing files
+    const placeholders = missingIds.map(() => '?').join(',');
+    db.prepare(
+      `UPDATE resources SET local_path = NULL WHERE id IN (${placeholders})`
+    ).run(...missingIds);
+
+    logger.info(`Cleared ${missingIds.length} references to missing files`);
+    return missingIds.length;
+  } catch (error) {
+    logger.error('Failed to clear missing file paths:', error as Error);
+    return 0;
+  } finally {
+    db?.close();
+  }
+}
 
 /**
  * Register database export/import IPC handlers
@@ -31,7 +75,10 @@ export function registerDatabaseExportHandlers(ctx: IpcContext): void {
 
     const downloadsPath = app.getPath('downloads');
     const result = await dialog.showSaveDialog(mainWindow, {
-      defaultPath: path.join(downloadsPath, `canvas-backup-${new Date().toISOString().split('T')[0]}.db`),
+      defaultPath: path.join(
+        downloadsPath,
+        `canvas-backup-${new Date().toISOString().split('T')[0]}.db`
+      ),
       filters: [
         { name: 'SQLite Database', extensions: ['db'] },
         { name: 'All Files', extensions: ['*'] },
@@ -133,8 +180,16 @@ export function registerDatabaseExportHandlers(ctx: IpcContext): void {
 
       fs.copyFileSync(importPath, DB_PATH);
 
+      // Clear references to files that don't exist on this machine
+      const clearedPaths = clearMissingFilePaths(DB_PATH, logger);
+
       logger.info(`Database imported from: ${importPath}`);
       logger.info(`Previous database backed up to: ${backupPath}`);
+      if (clearedPaths > 0) {
+        logger.info(
+          `Cleared ${clearedPaths} references to non-existent downloaded files`
+        );
+      }
       metricsCollector.increment('data.import.database');
 
       return {
@@ -142,6 +197,7 @@ export function registerDatabaseExportHandlers(ctx: IpcContext): void {
         data: {
           filePath: importPath,
           backupPath,
+          clearedFilePaths: clearedPaths,
           requiresRestart: true,
         },
       };

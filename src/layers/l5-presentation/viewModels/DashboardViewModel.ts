@@ -4,8 +4,10 @@
  * Transforms store state into view-ready data for the dashboard.
  */
 
+import { DateTime } from 'luxon';
 import { StoreState, Course, Task, PriorityItem, CourseSummary } from '../types';
 import { isPriorityTask, isOverdueTask, isUpcomingTask } from '../selectors';
+import { getEffectiveTimezone } from '../settings';
 
 /**
  * Dashboard statistics
@@ -38,13 +40,17 @@ export interface DashboardViewModel {
 
 /**
  * Determine urgency level based on due date and priority score
+ * Uses timezone-aware calculations via luxon with user's timezone preference
  */
 function getUrgencyLevel(task: Task): 'critical' | 'high' | 'medium' | 'low' {
   if (!task.dueAt) return 'low';
 
-  const now = new Date();
-  const due = new Date(task.dueAt);
-  const hoursUntilDue = (due.getTime() - now.getTime()) / (1000 * 60 * 60);
+  const tz = getEffectiveTimezone();
+  const now = DateTime.now().setZone(tz);
+  const due = DateTime.fromISO(task.dueAt).setZone(tz);
+  if (!due.isValid) return 'low';
+
+  const hoursUntilDue = due.diff(now, 'hours').hours;
 
   if (hoursUntilDue < 0) return 'critical'; // Overdue
   if (hoursUntilDue < 24) return 'critical'; // Due within 24 hours
@@ -55,20 +61,19 @@ function getUrgencyLevel(task: Task): 'critical' | 'high' | 'medium' | 'low' {
 }
 
 /**
- * Calculate days until due using calendar days (not 24-hour periods)
+ * Calculate days until due using calendar days (timezone-aware via luxon)
  * Returns 0 for "due today", 1 for "due tomorrow", -1 for "1 day overdue", etc.
  */
 function getDaysUntilDue(dueAt: string | null): number | null {
   if (!dueAt) return null;
-  const now = new Date();
-  const due = new Date(dueAt);
 
-  // Compare dates at midnight to get calendar days
-  const nowDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const dueDate = new Date(due.getFullYear(), due.getMonth(), due.getDate());
+  const tz = getEffectiveTimezone();
+  const now = DateTime.now().setZone(tz).startOf('day');
+  const due = DateTime.fromISO(dueAt).setZone(tz).startOf('day');
 
-  const diffMs = dueDate.getTime() - nowDate.getTime();
-  return Math.round(diffMs / (1000 * 60 * 60 * 24));
+  if (!due.isValid) return null;
+
+  return Math.round(due.diff(now, 'days').days);
 }
 
 /**

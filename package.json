@@ -52,6 +52,7 @@
     "html-to-text": "^9.0.5",
     "keytar": "^7.9.0",
     "lucide-react": "^0.562.0",
+    "luxon": "^3.7.2",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-hotkeys-hook": "^4.6.1",
@@ -69,6 +70,7 @@
     "@testing-library/react": "^16.1.0",
     "@types/better-sqlite3": "^7.6.12",
     "@types/jest": "^30.0.0",
+    "@types/luxon": "^3.7.1",
     "@types/node": "^22.10.5",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
@@ -136,8 +138,15 @@
       "allowToChangeInstallationDirectory": true,
       "installerIcon": "assets/icon.ico",
       "uninstallerIcon": "assets/icon.ico",
-      "installerHeaderIcon": "assets/icon.ico"
+      "installerHeaderIcon": "assets/icon.ico",
+      "deleteAppDataOnUninstall": false
     },
+    "extraResources": [
+      {
+        "from": "build/uninstall/cleanup.ps1",
+        "to": "cleanup.ps1"
+      }
+    ],
     "mac": {
       "target": [
         "dmg",

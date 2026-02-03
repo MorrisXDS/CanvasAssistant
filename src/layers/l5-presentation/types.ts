@@ -210,6 +210,9 @@ export interface StoreActions {
   setAuthError: (error: { type: 'expired' | 'invalid'; reason?: string } | null) => void;
   clearAuthError: () => void;
 
+  // Timezone
+  syncCanvasTimezone: () => Promise<void>;
+
   // Internal
   handleSimulationChange: (
     event: import('../../shared/ipc-contract').SimulationChangeEvent

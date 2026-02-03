@@ -7,7 +7,8 @@
  * - Renderer error reporting
  */
 
-import { ipcMain, app } from 'electron';
+import { ipcMain, app, shell } from 'electron';
+import { spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import type { IpcContext } from './IpcContext';
@@ -148,4 +149,187 @@ export function registerAppHandlers(ctx: IpcContext): void {
       return { success: true };
     }
   );
+
+  // ============ Uninstall Preparation Handlers ============
+
+  /**
+   * Prepare for uninstall by cleaning up user data
+   * Unlike resetAppState(), this does NOT send app:reset event to renderer
+   * so the uninstall modal can show platform-specific instructions first
+   */
+  ipcMain.handle(
+    'app:prepareUninstall',
+    async (
+      _event,
+      options: {
+        deleteCredentials: boolean;
+        deleteAppData: boolean;
+        deleteDownloads: boolean;
+      }
+    ) => {
+      logger.info('Preparing for uninstall', options);
+
+      try {
+        const credentialManager = ctx.getCredentialManager();
+        const appDataDir = ctx.getAppDataDir();
+        const filesDir = ctx.getFilesDir();
+
+        // Delete credentials if requested
+        if (options.deleteCredentials) {
+          try {
+            await credentialManager.delete();
+            logger.info('Credentials deleted for uninstall');
+          } catch (err) {
+            logger.warn(`Failed to delete credentials: ${err}`);
+          }
+        }
+
+        // Delete app data directory if requested
+        if (options.deleteAppData) {
+          if (fs.existsSync(appDataDir)) {
+            try {
+              // Close database first to release file handles
+              const database = ctx.getDatabase();
+              database.close();
+
+              fs.rmSync(appDataDir, { recursive: true, force: true });
+              logger.info('App data deleted for uninstall');
+            } catch (err) {
+              logger.warn(`Failed to delete app data: ${err}`);
+            }
+          }
+        }
+
+        // Delete downloaded files if requested
+        if (options.deleteDownloads) {
+          if (fs.existsSync(filesDir)) {
+            try {
+              fs.rmSync(filesDir, { recursive: true, force: true });
+              logger.info('Downloaded files deleted for uninstall');
+            } catch (err) {
+              logger.warn(`Failed to delete downloads: ${err}`);
+            }
+          }
+        }
+
+        logger.info('Uninstall preparation complete');
+        return { success: true };
+      } catch (error) {
+        logger.error('Failed to prepare for uninstall:', error as Error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
+  /**
+   * Get the application installation path
+   */
+  ipcMain.handle('app:getAppPath', () => {
+    return {
+      appPath: app.getAppPath(),
+      exePath: app.getPath('exe'),
+      resourcesPath: process.resourcesPath,
+    };
+  });
+
+  /**
+   * Get the current platform
+   */
+  ipcMain.handle('app:getPlatform', () => {
+    return process.platform;
+  });
+
+  /**
+   * Launch the Windows uninstaller (Windows only)
+   */
+  ipcMain.handle('app:launchUninstaller', async () => {
+    if (process.platform !== 'win32') {
+      return { success: false, error: 'Only available on Windows' };
+    }
+
+    try {
+      // Find uninstaller in the app's installation directory
+      const exePath = app.getPath('exe');
+      const installDir = path.dirname(exePath);
+      const uninstallerPath = path.join(installDir, 'unins000.exe');
+
+      if (!fs.existsSync(uninstallerPath)) {
+        // Try alternative location for portable builds
+        logger.warn(`Uninstaller not found at: ${uninstallerPath}`);
+        return {
+          success: false,
+          error: 'Uninstaller not found. This may be a portable installation.',
+        };
+      }
+
+      // Launch the uninstaller and quit the app
+      logger.info(`Launching uninstaller: ${uninstallerPath}`);
+
+      // Use spawn to launch the uninstaller detached
+      const child = spawn(uninstallerPath, [], {
+        detached: true,
+        stdio: 'ignore',
+        shell: false,
+      });
+      child.unref();
+
+      // Give the uninstaller a moment to start, then quit
+      setTimeout(() => {
+        app.quit();
+      }, 500);
+
+      return { success: true };
+    } catch (error) {
+      logger.error('Failed to launch uninstaller:', error as Error);
+      return { success: false, error: String(error) };
+    }
+  });
+
+  /**
+   * Open the app's location in the file manager (cross-platform)
+   */
+  ipcMain.handle('app:openAppLocation', async () => {
+    try {
+      const exePath = app.getPath('exe');
+
+      // Platform-specific: macOS app bundles have executables inside Contents/MacOS/,
+      // but users expect to see the .app bundle in Finder, not the internal executable
+      if (process.platform === 'darwin') {
+        const appBundlePath = exePath.replace(/\/Contents\/MacOS\/.*$/, '');
+        shell.showItemInFolder(appBundlePath);
+      } else {
+        // On Windows/Linux, show the executable
+        shell.showItemInFolder(exePath);
+      }
+
+      return { success: true };
+    } catch (error) {
+      logger.error('Failed to open app location:', error as Error);
+      return { success: false, error: String(error) };
+    }
+  });
+
+  /**
+   * Get the uninstall command for Linux
+   */
+  ipcMain.handle('app:getLinuxUninstallCommand', () => {
+    const exePath = app.getPath('exe');
+
+    // Check if it's an AppImage
+    if (exePath.endsWith('.AppImage') || process.env.APPIMAGE) {
+      const appImagePath = process.env.APPIMAGE || exePath;
+      return {
+        type: 'appimage',
+        command: `rm "${appImagePath}"`,
+        path: appImagePath,
+      };
+    }
+
+    // Check for deb installation
+    return {
+      type: 'deb',
+      command: 'sudo apt remove canvas-assistant',
+      path: exePath,
+    };
+  });
 }

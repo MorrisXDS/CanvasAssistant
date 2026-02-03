@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import { DateTime } from 'luxon';
 import {
   X,
   Calendar,
@@ -22,6 +23,7 @@ import type { DisplayCalendarEvent, Course } from '../../../l5-presentation/type
 import { ConfirmDialog } from '../shared/ConfirmDialog';
 import { RichTextEditor } from '../shared/RichTextEditor';
 import { getCleanCourseName, TASK_TYPES } from '../../constants';
+import { getEffectiveTimezone } from '../../../l5-presentation/settings';
 import {
   eventFormModalStyles as styles,
   COLOR_OPTIONS,
@@ -88,33 +90,68 @@ interface EventFormModalProps {
   onClose: () => void;
 }
 
+/**
+ * Format an ISO date string for datetime-local input, using effective timezone
+ */
 function formatDateForInput(dateStr: string | null | undefined, allDay: boolean): string {
   if (!dateStr) return '';
-  const date = new Date(dateStr);
+  const tz = getEffectiveTimezone();
+  const dt = DateTime.fromISO(dateStr).setZone(tz);
+  if (!dt.isValid) return '';
+
   if (allDay) {
-    return date.toISOString().slice(0, 10);
+    return dt.toFormat('yyyy-MM-dd');
   }
   // Format for datetime-local input (YYYY-MM-DDTHH:mm)
-  const offset = date.getTimezoneOffset();
-  const localDate = new Date(date.getTime() - offset * 60 * 1000);
-  return localDate.toISOString().slice(0, 16);
+  return dt.toFormat("yyyy-MM-dd'T'HH:mm");
 }
 
+/**
+ * Get default start date (next 15-min interval) in effective timezone
+ */
 function getDefaultStartDate(): string {
-  const now = new Date();
-  now.setMinutes(Math.ceil(now.getMinutes() / 15) * 15, 0, 0);
-  const offset = now.getTimezoneOffset();
-  const localDate = new Date(now.getTime() - offset * 60 * 1000);
-  return localDate.toISOString().slice(0, 16);
+  const tz = getEffectiveTimezone();
+  let dt = DateTime.now().setZone(tz);
+  // Round up to next 15-minute interval
+  const minutes = Math.ceil(dt.minute / 15) * 15;
+  dt = dt.set({ minute: minutes % 60, second: 0, millisecond: 0 });
+  if (minutes >= 60) {
+    dt = dt.plus({ hours: 1 });
+  }
+  return dt.toFormat("yyyy-MM-dd'T'HH:mm");
 }
 
+/**
+ * Get default end date (1 hour after start) in effective timezone
+ */
 function getDefaultEndDate(startDate: string): string {
   if (!startDate) return '';
-  const start = new Date(startDate);
-  const end = new Date(start.getTime() + 60 * 60 * 1000); // 1 hour later
-  const offset = end.getTimezoneOffset();
-  const localDate = new Date(end.getTime() - offset * 60 * 1000);
-  return localDate.toISOString().slice(0, 16);
+  const tz = getEffectiveTimezone();
+  // Parse the datetime-local format in effective timezone
+  const dt = DateTime.fromFormat(startDate, "yyyy-MM-dd'T'HH:mm", { zone: tz });
+  if (!dt.isValid) return '';
+  return dt.plus({ hours: 1 }).toFormat("yyyy-MM-dd'T'HH:mm");
+}
+
+/**
+ * Convert datetime-local input value to UTC ISO string for storage
+ * This interprets the input in the user's effective timezone
+ */
+function inputToUTC(inputValue: string, allDay: boolean = false): string {
+  if (!inputValue) return '';
+  const tz = getEffectiveTimezone();
+
+  let dt: DateTime;
+  if (allDay) {
+    // Date-only input: treat as start of day in effective timezone
+    dt = DateTime.fromFormat(inputValue, 'yyyy-MM-dd', { zone: tz }).startOf('day');
+  } else {
+    // Datetime input: parse in effective timezone
+    dt = DateTime.fromFormat(inputValue, "yyyy-MM-dd'T'HH:mm", { zone: tz });
+  }
+
+  if (!dt.isValid) return '';
+  return dt.toUTC().toISO() || '';
 }
 
 export function EventFormModal({
@@ -237,8 +274,18 @@ export function EventFormModal({
 
     // Pass 6: Try significant words from course name (least specific)
     const commonWords = new Set([
-      'AND', 'THE', 'FOR', 'WITH', 'INTO', 'FROM', 'COURSE',
-      'INTRODUCTION', 'INTRO', 'ADVANCED', 'TOPICS', 'SELECTED',
+      'AND',
+      'THE',
+      'FOR',
+      'WITH',
+      'INTO',
+      'FROM',
+      'COURSE',
+      'INTRODUCTION',
+      'INTRO',
+      'ADVANCED',
+      'TOPICS',
+      'SELECTED',
     ]);
     for (const course of courses) {
       if (course.name) {
@@ -279,8 +326,11 @@ export function EventFormModal({
           // Coursework edit mode: populate coursework fields
           // startAt is the unlock/start date (epoch = not set)
           // Check if startAt is epoch (not set) using timestamp check
-          const startIsEpoch = event.startAt && new Date(event.startAt).getTime() < 86400000;
-          setCourseworkStartAt(startIsEpoch ? '' : formatDateForInput(event.startAt, false));
+          const startIsEpoch =
+            event.startAt && new Date(event.startAt).getTime() < 86400000;
+          setCourseworkStartAt(
+            startIsEpoch ? '' : formatDateForInput(event.startAt, false)
+          );
           // Use endAt as the due date for task events
           setDueAt(formatDateForInput(event.endAt, false));
           setTaskType(event.taskType || '');
@@ -356,13 +406,16 @@ export function EventFormModal({
 
         if (isEditMode) {
           // Editing existing coursework - use onSaveEvent which syncs to the linked task
-          const startDate = courseworkStartAt ? new Date(courseworkStartAt) : new Date(0);
-          const dueDate = dueAt ? new Date(dueAt) : undefined;
+          // Convert from effective timezone to UTC for storage
+          const startAtUTC = courseworkStartAt
+            ? inputToUTC(courseworkStartAt)
+            : '1970-01-01T00:00:00.000Z'; // Epoch if not set
+          const endAtUTC = dueAt ? inputToUTC(dueAt) : undefined;
           await onSaveEvent({
             title: title.trim(),
             description: description.trim() || undefined,
-            startAt: startDate.toISOString(), // Epoch if not set
-            endAt: dueDate?.toISOString(),
+            startAt: startAtUTC,
+            endAt: endAtUTC,
             allDay: false,
             location: location.trim() || undefined,
             courseId,
@@ -376,16 +429,17 @@ export function EventFormModal({
           onClose();
         } else {
           // Creating new coursework
+          // Convert from effective timezone to UTC for storage
           // Empty start date = epoch time (not set)
           const unlockAt = courseworkStartAt
-            ? new Date(courseworkStartAt).toISOString()
+            ? inputToUTC(courseworkStartAt)
             : '1970-01-01T00:00:00.000Z';
           const result = await onSaveCoursework({
             courseId,
             title: title.trim(),
             description: description.trim() || undefined,
             unlockAt,
-            dueAt: dueAt ? new Date(dueAt).toISOString() : undefined,
+            dueAt: dueAt ? inputToUTC(dueAt) : undefined,
             weight: weight !== undefined ? weight : undefined,
             taskType: taskType || undefined,
             location: location.trim() || undefined,
@@ -406,15 +460,18 @@ export function EventFormModal({
           return;
         }
 
+        // Convert from effective timezone to UTC for storage
         // If no start time (deadline event), use epoch as sentinel
-        const startDate = startAt ? new Date(startAt) : new Date(0);
-        const endDate = endAt ? new Date(endAt) : undefined;
+        const startAtUTC = startAt
+          ? inputToUTC(startAt, allDay)
+          : '1970-01-01T00:00:00.000Z';
+        const endAtUTC = endAt ? inputToUTC(endAt, allDay) : undefined;
 
         await onSaveEvent({
           title: title.trim(),
           description: description.trim() || undefined,
-          startAt: startDate.toISOString(),
-          endAt: endDate?.toISOString(),
+          startAt: startAtUTC,
+          endAt: endAtUTC,
           allDay,
           location: location.trim() || undefined,
           courseId,
@@ -423,7 +480,7 @@ export function EventFormModal({
           notes: notes.trim() || undefined,
           reminderMinutes: reminderMinutes > 0 ? reminderMinutes : undefined,
           // Task-specific fields (only synced for task-linked events)
-          taskType: isTaskEvent ? (taskType || undefined) : undefined,
+          taskType: isTaskEvent ? taskType || undefined : undefined,
         });
         onClose();
       }
@@ -745,7 +802,10 @@ export function EventFormModal({
               {/* Start Date and Due Date */}
               <div style={styles.dateRow}>
                 <div style={styles.dateField}>
-                  <label style={styles.label} title="When this coursework becomes available">
+                  <label
+                    style={styles.label}
+                    title="When this coursework becomes available"
+                  >
                     <Clock size={14} />
                     Start Date
                   </label>

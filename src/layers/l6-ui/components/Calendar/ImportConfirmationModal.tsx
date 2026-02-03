@@ -19,6 +19,7 @@ import { CALENDAR_COLORS, getNextCalendarColor } from '../../constants';
 import { ColorPicker } from '../primitives';
 import { styles } from './ImportConfirmationModal.styles';
 import { useStore } from '../../../l5-presentation/store';
+import { formatTimeInEffectiveTimezone } from '../../../l5-presentation/settings';
 
 interface ImportConfirmationModalProps {
   isOpen: boolean;
@@ -256,10 +257,8 @@ function EventPreviewItem({
       year: 'numeric',
     });
     if (!includeTime) return dateStr;
-    const timeStr = d.toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
-    });
+    // Use effective timezone for time display
+    const timeStr = formatTimeInEffectiveTimezone(d.toISOString());
     return `${dateStr} at ${timeStr}`;
   };
 
@@ -325,10 +324,7 @@ function EventPreviewItem({
                 day: 'numeric',
               })}
               {!event.allDay &&
-                ` at ${new Date(event.dtstart).toLocaleTimeString('en-US', {
-                  hour: 'numeric',
-                  minute: '2-digit',
-                })}`}
+                ` at ${formatTimeInEffectiveTimezone(new Date(event.dtstart).toISOString())}`}
             </span>
           )}
           {event.rrule && (

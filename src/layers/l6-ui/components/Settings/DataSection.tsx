@@ -4,10 +4,10 @@
  * Contains:
  * - Export options (database backup, CSV export)
  * - Import options (restore backup, import settings)
- * - Danger zone (reset all data)
+ * - Danger zone (reset all data, uninstall app)
  */
 
-import React from 'react';
+import React, { useState } from 'react';
 import {
   HardDrive,
   Database,
@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { useSettings } from './SettingsContext';
 import { Accordion } from '../primitives';
+import { UninstallModal } from './UninstallModal';
 import { styles } from '../SettingsModalStyles';
 import { SETTINGS_LABELS, MENU_LABELS } from '../../constants';
 
@@ -30,6 +31,9 @@ interface DataSectionProps {
 }
 
 export function DataSection({ sectionRef }: DataSectionProps) {
+  // Uninstall modal state (self-contained, not in context)
+  const [showUninstallModal, setShowUninstallModal] = useState(false);
+
   const {
     // Search
     isSearching,
@@ -203,9 +207,34 @@ export function DataSection({ sectionRef }: DataSectionProps) {
                 </button>
               </div>
             </div>
+
+            {/* Uninstall App */}
+            <div style={{ ...styles.dangerZoneBox, marginTop: 'var(--space-3)' }}>
+              <div style={styles.dangerZoneContent}>
+                <div>
+                  <strong>Uninstall Canvas Assistant</strong>
+                  <p style={styles.dangerZoneDesc}>
+                    Remove app data and uninstall the application
+                  </p>
+                </div>
+                <button
+                  style={styles.dangerZoneButton}
+                  onClick={() => setShowUninstallModal(true)}
+                >
+                  <Trash2 size={14} />
+                  Uninstall
+                </button>
+              </div>
+            </div>
           </div>
         </Accordion.Content>
       </Accordion.Item>
+
+      {/* Uninstall Modal */}
+      <UninstallModal
+        isOpen={showUninstallModal}
+        onClose={() => setShowUninstallModal(false)}
+      />
     </div>
   );
 }

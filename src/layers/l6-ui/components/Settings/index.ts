@@ -16,3 +16,6 @@ export { DisplaySection } from './DisplaySection';
 export { AcademicSection } from './AcademicSection';
 export { NotificationsSection } from './NotificationsSection';
 export { DataSection } from './DataSection';
+
+// Modal components
+export { UninstallModal } from './UninstallModal';

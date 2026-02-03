@@ -29,6 +29,7 @@ export {
   SettingsPageSettingsSchema,
   LocalHtmlPathsSettingsSchema,
   ImportantWorksFilterSchema,
+  TimezoneSettingsSchema,
   // TypeScript types
   type StorageKey,
   type SyncPreferences,
@@ -44,6 +45,7 @@ export {
   type DashboardSettings,
   type SettingsPageSettings,
   type LocalHtmlPathsSettings,
+  type TimezoneSettings,
   type SettingsValue,
   type SettingsTypeMap,
   type ImportantWorksFilter,
@@ -61,6 +63,7 @@ export {
   DEFAULT_DASHBOARD_SETTINGS,
   DEFAULT_SETTINGS_PAGE_SETTINGS,
   DEFAULT_LOCAL_HTML_PATHS_SETTINGS,
+  DEFAULT_TIMEZONE_SETTINGS,
   DEFAULT_SETTINGS_SECTION_ORDER,
   DEFAULT_DASHBOARD_ORDER,
   DEFAULT_NAV_ORDER,
@@ -95,6 +98,13 @@ export {
   useDashboardOrder,
   useLandingPage,
   useSettingsManager,
+  useTimezone,
+  getEffectiveTimezone,
+  // Timezone utilities for date handling
+  getTimeInEffectiveTimezone,
+  getHourInEffectiveTimezone,
+  getMinuteOffsetInEffectiveTimezone,
+  formatTimeInEffectiveTimezone,
   type Theme,
   type EffectiveTheme,
 } from './useSettings';

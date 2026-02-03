@@ -18,6 +18,10 @@ import {
   HOURS,
   HOUR_HEIGHT,
 } from './CalendarGridContext';
+import {
+  getHourInEffectiveTimezone,
+  getMinuteOffsetInEffectiveTimezone,
+} from '../../../l5-presentation/settings';
 
 function formatHourLabel(hour: number): string {
   if (hour === 0) return '12 AM';
@@ -152,22 +156,22 @@ export function DayView() {
                 const isCompleted = isCompletedTask(pe.event);
                 const isTask = pe.event.type === 'task';
 
-                // Calculate position and size
-                const startDate = new Date(
+                // Calculate position and size using effective timezone
+                const startDateStr =
                   pe.event.type === 'task' && pe.event.task.dueAt
                     ? pe.event.task.dueAt
                     : pe.event.type === 'imported'
                       ? pe.event.event.startAt
-                      : 0
-                );
-                const startHour = startDate.getHours();
-                const startOffset = startDate.getMinutes() / 60;
+                      : new Date(0).toISOString();
+                const startHour = getHourInEffectiveTimezone(startDateStr);
+                const startOffset = getMinuteOffsetInEffectiveTimezone(startDateStr);
 
                 // Calculate duration in hours for imported events
                 let durationHours = 1; // Default 1 hour
                 if (pe.event.type === 'imported' && pe.event.event.endAt) {
-                  const endDate = new Date(pe.event.event.endAt);
-                  const durationMs = endDate.getTime() - startDate.getTime();
+                  const startMs = new Date(pe.event.event.startAt).getTime();
+                  const endMs = new Date(pe.event.event.endAt).getTime();
+                  const durationMs = endMs - startMs;
                   durationHours = Math.max(durationMs / (1000 * 60 * 60), 0.5); // Min 30 min
                 }
 

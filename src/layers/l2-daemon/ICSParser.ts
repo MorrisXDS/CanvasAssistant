@@ -11,6 +11,7 @@
  */
 
 import crypto from 'crypto';
+import { DateTime } from 'luxon';
 
 export interface ParsedICSEvent {
   uid: string;
@@ -47,12 +48,14 @@ export interface ICSImportPreview {
  */
 export class ICSParser {
   private warnings: string[] = [];
+  private calendarTimezone: string | null = null;
 
   /**
    * Parse ICS content string
    */
   parse(content: string): ICSParserResult {
     this.warnings = [];
+    this.calendarTimezone = null;
 
     // Unfold lines (RFC 5545: lines can be folded with CRLF + whitespace)
     const unfolded = content.replace(/\r?\n[ \t]/g, '');
@@ -75,8 +78,10 @@ export class ICSParser {
         calendarName = this.unescapeText(line.substring(13));
       } else if (line.startsWith('X-WR-TIMEZONE:')) {
         timezone = line.substring(14);
+        this.calendarTimezone = timezone; // Store for use in parseDateTime
       } else if (line.startsWith('TZID:') && !timezone) {
         timezone = line.substring(5);
+        this.calendarTimezone = timezone; // Store for use in parseDateTime
       } else if (line.startsWith('VERSION:')) {
         version = line.substring(8);
       }
@@ -185,7 +190,7 @@ export class ICSParser {
   }
 
   /**
-   * Parse ICS datetime value
+   * Parse ICS datetime value using luxon for proper timezone handling
    * Handles:
    * - DATE (all-day): 20240115
    * - DATETIME local: 20240115T120000
@@ -198,17 +203,18 @@ export class ICSParser {
   ): { date: Date | null; allDay: boolean } {
     const isAllDay = params.includes('VALUE=DATE') || value.length === 8;
 
-    // Extract TZID if present (stored for potential future timezone handling)
+    // Extract TZID if present
     const tzidMatch = params.match(/TZID=([^;:]+)/);
-    const _tzid = tzidMatch ? tzidMatch[1] : null;
+    const tzid = tzidMatch ? tzidMatch[1] : null;
 
     try {
       if (isAllDay) {
-        // DATE format: YYYYMMDD
+        // DATE format: YYYYMMDD - parse as local date
         const year = parseInt(value.substring(0, 4), 10);
-        const month = parseInt(value.substring(4, 6), 10) - 1;
+        const month = parseInt(value.substring(4, 6), 10);
         const day = parseInt(value.substring(6, 8), 10);
-        return { date: new Date(year, month, day), allDay: true };
+        const dt = DateTime.local(year, month, day);
+        return { date: dt.toJSDate(), allDay: true };
       }
 
       // DATETIME format: YYYYMMDDTHHMMSS[Z]
@@ -216,22 +222,47 @@ export class ICSParser {
       const dateStr = value.replace('Z', '');
 
       const year = parseInt(dateStr.substring(0, 4), 10);
-      const month = parseInt(dateStr.substring(4, 6), 10) - 1;
+      const month = parseInt(dateStr.substring(4, 6), 10);
       const day = parseInt(dateStr.substring(6, 8), 10);
       const hour = parseInt(dateStr.substring(9, 11), 10) || 0;
       const minute = parseInt(dateStr.substring(11, 13), 10) || 0;
       const second = parseInt(dateStr.substring(13, 15), 10) || 0;
 
+      let dt: DateTime;
+
       if (isUTC) {
-        return {
-          date: new Date(Date.UTC(year, month, day, hour, minute, second)),
-          allDay: false,
-        };
+        // UTC time (ends with Z)
+        dt = DateTime.utc(year, month, day, hour, minute, second);
+      } else if (tzid) {
+        // Has event-level timezone - parse in that timezone
+        dt = DateTime.fromObject(
+          { year, month, day, hour, minute, second },
+          { zone: tzid }
+        );
+        if (!dt.isValid) {
+          // Fall back to local if timezone is invalid
+          this.warnings.push(`Unknown timezone "${tzid}", using local time`);
+          dt = DateTime.local(year, month, day, hour, minute, second);
+        }
+      } else if (this.calendarTimezone) {
+        // No event-level timezone, but calendar has a default timezone
+        dt = DateTime.fromObject(
+          { year, month, day, hour, minute, second },
+          { zone: this.calendarTimezone }
+        );
+        if (!dt.isValid) {
+          // Fall back to local if calendar timezone is invalid
+          this.warnings.push(
+            `Unknown calendar timezone "${this.calendarTimezone}", using local time`
+          );
+          dt = DateTime.local(year, month, day, hour, minute, second);
+        }
+      } else {
+        // No timezone at all - treat as local time
+        dt = DateTime.local(year, month, day, hour, minute, second);
       }
 
-      // Local time (or with TZID - we treat as local for simplicity)
-      // Full timezone support would require a library like luxon
-      return { date: new Date(year, month, day, hour, minute, second), allDay: false };
+      return { date: dt.toJSDate(), allDay: false };
     } catch {
       this.warnings.push(`Failed to parse datetime: ${value}`);
       return { date: null, allDay: false };

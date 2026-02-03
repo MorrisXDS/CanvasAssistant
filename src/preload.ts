@@ -598,6 +598,65 @@ const api = {
     timestamp: string;
   }) => ipcRenderer.invoke('app:reportError', errorInfo),
 
+  // ============ Uninstall Preparation ============
+
+  /**
+   * Prepare for uninstall by cleaning up user data
+   * @param options - What data to delete
+   */
+  prepareUninstall: (options: {
+    deleteCredentials: boolean;
+    deleteAppData: boolean;
+    deleteDownloads: boolean;
+  }) =>
+    ipcRenderer.invoke('app:prepareUninstall', options) as Promise<{
+      success: boolean;
+      error?: string;
+    }>,
+
+  /**
+   * Get app installation paths
+   */
+  getAppPath: () =>
+    ipcRenderer.invoke('app:getAppPath') as Promise<{
+      appPath: string;
+      exePath: string;
+      resourcesPath: string;
+    }>,
+
+  /**
+   * Get current platform (win32, darwin, linux)
+   */
+  getPlatform: () => ipcRenderer.invoke('app:getPlatform') as Promise<string>,
+
+  /**
+   * Launch the Windows uninstaller (Windows only)
+   */
+  launchUninstaller: () =>
+    ipcRenderer.invoke('app:launchUninstaller') as Promise<{
+      success: boolean;
+      error?: string;
+    }>,
+
+  /**
+   * Open the app's location in file manager
+   */
+  openAppLocation: () =>
+    ipcRenderer.invoke('app:openAppLocation') as Promise<{
+      success: boolean;
+      error?: string;
+    }>,
+
+  /**
+   * Get Linux uninstall command (Linux only)
+   */
+  getLinuxUninstallCommand: () =>
+    ipcRenderer.invoke('app:getLinuxUninstallCommand') as Promise<{
+      type: 'appimage' | 'deb';
+      command: string;
+      path: string;
+    }>,
+
   // ============ Window Controls ============
 
   windowMinimize: () => ipcRenderer.send('window:minimize'),

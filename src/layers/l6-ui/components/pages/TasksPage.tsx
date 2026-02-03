@@ -237,9 +237,9 @@ export function TasksPage() {
       {/* Header */}
       <div style={styles.header}>
         <div>
-          <button onClick={() => navigate('/')} style={styles.backButton}>
+          <button onClick={() => navigate(-1)} style={styles.backButton}>
             <ArrowLeft size={16} />
-            <span>Dashboard</span>
+            <span>Back</span>
           </button>
           <div style={styles.headerContent}>
             <h1 style={styles.title}>All Tasks</h1>
@@ -481,9 +481,7 @@ export function TasksPage() {
           position={contextMenu.position}
           onClose={() => setContextMenu(null)}
           onEdit={() => {
-            navigate(
-              `/course/${contextMenu.course.id}?editTask=${contextMenu.task.id}`
-            );
+            navigate(`/course/${contextMenu.course.id}?editTask=${contextMenu.task.id}`);
             setContextMenu(null);
           }}
           onDuplicate={() => {

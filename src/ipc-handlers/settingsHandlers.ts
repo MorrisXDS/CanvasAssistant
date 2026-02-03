@@ -282,34 +282,40 @@ export function registerSettingsHandlers(ctx: IpcContext): void {
 
   // ============ Settings Export/Import Handlers ============
 
-  ipcMain.handle('settings:exportToFile', async (_event, settings: Record<string, unknown>) => {
-    const mainWindow = getMainWindow();
-    if (!mainWindow) {
-      return { success: false, error: 'No window available' };
-    }
+  ipcMain.handle(
+    'settings:exportToFile',
+    async (_event, settings: Record<string, unknown>) => {
+      const mainWindow = getMainWindow();
+      if (!mainWindow) {
+        return { success: false, error: 'No window available' };
+      }
 
-    const downloadsPath = app.getPath('downloads');
-    const result = await dialog.showSaveDialog(mainWindow, {
-      defaultPath: path.join(downloadsPath, `canvas-assistant-settings-${new Date().toISOString().split('T')[0]}.json`),
-      filters: [
-        { name: 'JSON Files', extensions: ['json'] },
-        { name: 'All Files', extensions: ['*'] },
-      ],
-    });
+      const downloadsPath = app.getPath('downloads');
+      const result = await dialog.showSaveDialog(mainWindow, {
+        defaultPath: path.join(
+          downloadsPath,
+          `canvas-assistant-settings-${new Date().toISOString().split('T')[0]}.json`
+        ),
+        filters: [
+          { name: 'JSON Files', extensions: ['json'] },
+          { name: 'All Files', extensions: ['*'] },
+        ],
+      });
 
-    if (result.canceled || !result.filePath) {
-      return { success: false, error: 'Export cancelled' };
-    }
+      if (result.canceled || !result.filePath) {
+        return { success: false, error: 'Export cancelled' };
+      }
 
-    try {
-      fs.writeFileSync(result.filePath, JSON.stringify(settings, null, 2), 'utf-8');
-      logger.info(`Settings exported to: ${result.filePath}`);
-      return { success: true, data: { filePath: result.filePath } };
-    } catch (error) {
-      logger.error('Failed to export settings:', error as Error);
-      return { success: false, error: String(error) };
+      try {
+        fs.writeFileSync(result.filePath, JSON.stringify(settings, null, 2), 'utf-8');
+        logger.info(`Settings exported to: ${result.filePath}`);
+        return { success: true, data: { filePath: result.filePath } };
+      } catch (error) {
+        logger.error('Failed to export settings:', error as Error);
+        return { success: false, error: String(error) };
+      }
     }
-  });
+  );
 
   ipcMain.handle('settings:importFromFile', async () => {
     const mainWindow = getMainWindow();
@@ -343,6 +349,58 @@ export function registerSettingsHandlers(ctx: IpcContext): void {
       return { success: true, data: { settings, filePath: result.filePaths[0] } };
     } catch (error) {
       logger.error('Failed to import settings:', error as Error);
+      return { success: false, error: String(error) };
+    }
+  });
+
+  // ============ Timezone Settings ============
+
+  /**
+   * Sync Canvas timezone from user profile
+   * Called during sync to update the Canvas timezone in settings
+   */
+  ipcMain.handle(
+    'settings:syncCanvasTimezone',
+    (_event, params: { timezone: string }) => {
+      const { timezone } = params;
+
+      if (!timezone) {
+        return { success: false, error: 'No timezone provided' };
+      }
+
+      try {
+        // Store in user_preferences for persistence
+        database.executeWrite(
+          `INSERT INTO user_preferences (key, value) VALUES ('canvasTimezone', ?)
+           ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+          [JSON.stringify({ timezone, syncedAt: new Date().toISOString() })],
+          'user_preferences'
+        );
+
+        logger.info(`Canvas timezone synced: ${timezone}`);
+        return { success: true, data: { timezone } };
+      } catch (error) {
+        logger.error('Failed to sync Canvas timezone:', error as Error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
+  /**
+   * Get the Canvas timezone stored in the database
+   */
+  ipcMain.handle('settings:getCanvasTimezone', () => {
+    try {
+      const row = database.executeReadOne<{ value: string }>(
+        "SELECT value FROM user_preferences WHERE key = 'canvasTimezone'"
+      );
+      if (row?.value) {
+        const data = JSON.parse(row.value);
+        return { success: true, data };
+      }
+      return { success: true, data: null };
+    } catch (error) {
+      logger.error('Failed to get Canvas timezone:', error as Error);
       return { success: false, error: String(error) };
     }
   });

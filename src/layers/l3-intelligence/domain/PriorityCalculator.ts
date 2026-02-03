@@ -5,6 +5,7 @@
  * All data must be passed in through the PriorityInput interface.
  */
 
+import { DateTime } from 'luxon';
 import {
   TaskQueue,
   TaskForPriority,
@@ -46,24 +47,36 @@ export function calculateTaskTypeBoost(taskType: string): number {
 }
 
 /**
- * Calculate urgency score based on time until due date
+ * Calculate urgency score based on time until due date (timezone-aware via luxon)
  * When due time is unknown, assumes end of day (23:59:59) for less artificial urgency
  * User decision: End of day is more reasonable than midnight start which inflates priority
+ *
+ * @param task - Task to calculate urgency for
+ * @param now - Current time
+ * @param timezone - IANA timezone (e.g., "America/Toronto") or 'local' for system timezone
  */
-export function calculateUrgencyScore(task: TaskForPriority, now: Date): number {
+export function calculateUrgencyScore(
+  task: TaskForPriority,
+  now: Date,
+  timezone: string = 'local'
+): number {
   if (!task.dueAt) return 30; // Medium urgency for no due date
 
-  // Get effective due time - use actual time or end of day if time unknown
-  let effectiveDueAt = task.dueAt;
+  // Parse dates using luxon with specified timezone
+  const nowDt = DateTime.fromJSDate(now).setZone(timezone);
+  let dueDt =
+    task.dueAt instanceof Date
+      ? DateTime.fromJSDate(task.dueAt).setZone(timezone)
+      : DateTime.fromISO(task.dueAt as unknown as string).setZone(timezone);
+
+  if (!dueDt.isValid) return 30;
+
+  // If time unknown, assume end of day (23:59:59) per user decision
   if (!task.dueTimeKnown) {
-    // Time unknown - assume end of day (23:59:59) per user decision
-    // This prevents artificially inflated priority scores for tasks with unknown times
-    effectiveDueAt = new Date(task.dueAt);
-    effectiveDueAt.setHours(23, 59, 59, 0);
+    dueDt = dueDt.endOf('day');
   }
 
-  const msUntilDue = effectiveDueAt.getTime() - now.getTime();
-  const hoursUntilDue = msUntilDue / (1000 * 60 * 60);
+  const hoursUntilDue = dueDt.diff(nowDt, 'hours').hours;
 
   if (hoursUntilDue < 0) {
     // Overdue - calculate based on how overdue

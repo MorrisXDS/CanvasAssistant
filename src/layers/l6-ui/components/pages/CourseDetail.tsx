@@ -3,28 +3,12 @@
  * Full course view with assignments, policies, announcements, and grade history
  */
 
-import React, { useEffect, useState, useMemo, useRef } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom';
-import DOMPurify from 'dompurify';
-import {
-  ArrowLeft,
-  BookOpen,
-  X,
-  Archive,
-  RefreshCw,
-} from 'lucide-react';
-import {
-  PolicyModal,
-  ConfirmDialog,
-} from '../shared';
+import { ArrowLeft, BookOpen, X, Archive, RefreshCw } from 'lucide-react';
+import { PolicyModal, ConfirmDialog } from '../shared';
 import { MissingDependenciesDialog } from '../Files/MissingDependenciesDialog';
-import type { PolicyModalData, PolicyType } from '../shared';
 import { useStore } from '../../../l5-presentation/store';
-import {
-  STORAGE_KEYS,
-  LINK_BEHAVIOR,
-  type LinkBehavior,
-} from '../../../l5-presentation/settings';
 import type { Task, Notification, Policy } from '../../../l5-presentation/types';
 import { getCourseColor } from '../../constants';
 import {
@@ -32,9 +16,7 @@ import {
   TaskContextMenu,
   MissingSyllabusWarning,
   DuplicateCourseworkBanner,
-  type CourseSyllabus,
 } from '../Course';
-import type { FileResource } from '../Files/FileListItem';
 import { useCourseDetailDragDrop } from './useCourseDetailDragDrop';
 import { useCourseDetailTaskState } from './useCourseDetailTaskState';
 import { useCourseDetailSettingsState } from './useCourseDetailSettingsState';
@@ -50,32 +32,6 @@ import {
   TaskSectionList,
   type GradeHistoryEntry,
 } from '../CourseDetail/components';
-
-/**
- * Get the user's link behavior preference from localStorage
- */
-function getLinkBehaviorPreference(): LinkBehavior {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEYS.CONTENT);
-    if (stored) {
-      const settings = JSON.parse(stored);
-      return settings.linkBehavior ?? LINK_BEHAVIOR.ALWAYS_EXTERNAL;
-    }
-  } catch {
-    // Ignore parse errors
-  }
-  return LINK_BEHAVIOR.ALWAYS_EXTERNAL;
-}
-
-/**
- * Extract Canvas file ID from a URL if possible
- * Returns null if not a Canvas file URL
- */
-function extractCanvasFileId(url: string): string | null {
-  // Match patterns like /files/12345 or /files/12345/download
-  const match = url.match(/\/files\/(\d+)/);
-  return match ? match[1] : null;
-}
 
 interface CourseDetailData {
   id: number;
@@ -95,31 +51,6 @@ interface CourseDetailData {
   credits: number;
   archivedAt: string | null;
   archiveSource: 'manual' | 'auto' | null;
-}
-
-// Format date for display
-function formatDate(dateStr: string | null): string {
-  if (!dateStr) return 'No date';
-  const date = new Date(dateStr);
-  return date.toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  });
-}
-
-// Get urgency color based on due date
-function getUrgencyColor(dueAt: string | null): string {
-  if (!dueAt) return 'var(--text-muted)';
-  const now = new Date();
-  const due = new Date(dueAt);
-  const hoursUntil = (due.getTime() - now.getTime()) / (1000 * 60 * 60);
-
-  if (hoursUntil < 0) return 'var(--color-error)';
-  if (hoursUntil < 24) return 'var(--color-high)';
-  if (hoursUntil < 72) return 'var(--color-medium)';
-  return 'var(--text-secondary)';
 }
 
 export function CourseDetail() {
@@ -287,7 +218,6 @@ export function CourseDetail() {
     handleTaskContextMenu,
     handleOpenTaskInCanvas,
     handleToggleOptional,
-    refreshArchivedCourseTasks,
   } = useCourseDetailTaskState({
     courseId,
     courseArchivedAt: course?.archivedAt ?? null,
@@ -457,7 +387,15 @@ export function CourseDetail() {
         }
       }
     }
-  }, [highlightTaskId, editTaskId, loading, setSearchParams, course?.archivedAt, archivedCourseTasks, storeTasks]);
+  }, [
+    highlightTaskId,
+    editTaskId,
+    loading,
+    setSearchParams,
+    course?.archivedAt,
+    archivedCourseTasks,
+    storeTasks,
+  ]);
 
   // Filter tasks for this course
   // For archived courses, use directly fetched tasks (bypasses visibility filtering)
@@ -597,9 +535,9 @@ export function CourseDetail() {
     <div style={styles.pageWrapper}>
       <div style={styles.page}>
         {/* Back Navigation */}
-        <button onClick={() => navigate('/courses')} style={styles.backButton}>
+        <button onClick={() => navigate(-1)} style={styles.backButton}>
           <ArrowLeft size={16} />
-          <span>Courses</span>
+          <span>Back</span>
         </button>
 
         {/* Course Header Card */}
@@ -1026,6 +964,5 @@ export function CourseDetail() {
     </div>
   );
 }
-
 
 export default CourseDetail;

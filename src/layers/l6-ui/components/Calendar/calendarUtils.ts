@@ -5,6 +5,19 @@
 
 import type { DisplayCalendarEvent } from '../../../l5-presentation/types';
 import type { CalendarView } from './CalendarGrid';
+import {
+  formatTimeInEffectiveTimezone,
+  getTimeInEffectiveTimezone,
+  getHourInEffectiveTimezone,
+  getMinuteOffsetInEffectiveTimezone,
+} from '../../../l5-presentation/settings';
+
+// Re-export timezone utilities for convenience
+export {
+  getTimeInEffectiveTimezone,
+  getHourInEffectiveTimezone,
+  getMinuteOffsetInEffectiveTimezone,
+};
 
 // ============ View Mode Persistence ============
 
@@ -130,14 +143,10 @@ export function isDeadlineEvent(event: DisplayCalendarEvent): boolean {
 
 /**
  * Format time for display (e.g., "2:00 PM")
+ * Uses effective timezone from cascade: userOverride → canvasTimezone → local
  */
 export function formatTime(dateStr: string): string {
-  const date = new Date(dateStr);
-  return date.toLocaleTimeString('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true,
-  });
+  return formatTimeInEffectiveTimezone(dateStr);
 }
 
 /**

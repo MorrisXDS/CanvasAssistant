@@ -265,9 +265,9 @@ export function AnnouncementsPage() {
     <div style={styles.page}>
       {/* Header */}
       <div style={styles.header}>
-        <button onClick={() => navigate('/')} style={styles.backButton}>
+        <button onClick={() => navigate(-1)} style={styles.backButton}>
           <ArrowLeft size={16} />
-          <span>Dashboard</span>
+          <span>Back</span>
         </button>
         <div style={styles.headerContent}>
           <h1 style={styles.title}>All Announcements</h1>
