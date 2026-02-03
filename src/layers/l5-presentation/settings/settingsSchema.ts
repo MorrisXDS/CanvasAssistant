@@ -97,6 +97,9 @@ export const STORAGE_KEYS = {
 
   // Export/backup settings
   EXPORT_SCHEDULE: 'exportSchedule',
+
+  // Timezone settings
+  TIMEZONE: 'timezoneSettings',
 } as const;
 
 export type StorageKey = (typeof STORAGE_KEYS)[keyof typeof STORAGE_KEYS];
@@ -283,6 +286,29 @@ export const SettingsPageSettingsSchema = z.object({
   defaultState: z.enum(['collapsed', 'expanded', 'remember']),
 });
 
+/**
+ * Timezone Settings Schema
+ *
+ * Controls how dates and times are displayed throughout the app.
+ * Uses IANA timezone identifiers (e.g., "America/Toronto", "America/New_York").
+ *
+ * Priority cascade:
+ * 1. userOverride (if set by user)
+ * 2. canvasTimezone (synced from Canvas profile)
+ * 3. 'local' (system timezone - fallback)
+ *
+ * Note: Fields use .default(null) to handle partial objects from storage
+ * (e.g., when userOverride wasn't saved initially)
+ */
+export const TimezoneSettingsSchema = z.object({
+  // Timezone synced from Canvas user profile (IANA format)
+  canvasTimezone: z.string().nullable().default(null),
+  // User's manual override (IANA format, null = use cascade)
+  userOverride: z.string().nullable().default(null),
+  // When Canvas timezone was last synced
+  lastSyncedAt: z.string().nullable().default(null),
+});
+
 // =============================================================================
 // TYPESCRIPT TYPES - Inferred from Zod schemas
 // =============================================================================
@@ -301,6 +327,7 @@ export type DashboardSettings = z.infer<typeof DashboardSettingsSchema>;
 export type LocalHtmlPathsSettings = z.infer<typeof LocalHtmlPathsSettingsSchema>;
 export type ExportSchedule = z.infer<typeof ExportScheduleSchema>;
 export type SettingsPageSettings = z.infer<typeof SettingsPageSettingsSchema>;
+export type TimezoneSettings = z.infer<typeof TimezoneSettingsSchema>;
 
 // Union type for all settings objects
 export type SettingsValue =
@@ -318,6 +345,7 @@ export type SettingsValue =
   | LocalHtmlPathsSettings
   | ExportSchedule
   | SettingsPageSettings
+  | TimezoneSettings
   | string
   | boolean
   | string[];
@@ -460,6 +488,12 @@ export const DEFAULT_SETTINGS_PAGE_SETTINGS: SettingsPageSettings = {
   defaultState: 'expanded', // All sections expanded by default
 };
 
+export const DEFAULT_TIMEZONE_SETTINGS: TimezoneSettings = {
+  canvasTimezone: null, // Will be populated from Canvas profile sync
+  userOverride: null, // User can override if needed
+  lastSyncedAt: null,
+};
+
 // Dashboard section order
 export const DEFAULT_DASHBOARD_ORDER = [
   'priority',
@@ -489,6 +523,7 @@ export interface SettingsTypeMap {
   [STORAGE_KEYS.DASHBOARD]: DashboardSettings;
   [STORAGE_KEYS.LOCAL_HTML_PATHS]: LocalHtmlPathsSettings;
   [STORAGE_KEYS.EXPORT_SCHEDULE]: ExportSchedule;
+  [STORAGE_KEYS.TIMEZONE]: TimezoneSettings;
   [STORAGE_KEYS.CANVAS_URL]: string;
   [STORAGE_KEYS.LANDING_PAGE]: string;
   [STORAGE_KEYS.SIDEBAR_COLLAPSED]: boolean;
@@ -544,6 +579,7 @@ export const SETTINGS_DEFAULTS: Partial<SettingsTypeMap> = {
   [STORAGE_KEYS.DASHBOARD]: DEFAULT_DASHBOARD_SETTINGS,
   [STORAGE_KEYS.LOCAL_HTML_PATHS]: DEFAULT_LOCAL_HTML_PATHS_SETTINGS,
   [STORAGE_KEYS.EXPORT_SCHEDULE]: DEFAULT_EXPORT_SCHEDULE,
+  [STORAGE_KEYS.TIMEZONE]: DEFAULT_TIMEZONE_SETTINGS,
   [STORAGE_KEYS.CANVAS_URL]: '',
   [STORAGE_KEYS.LANDING_PAGE]: '/',
   [STORAGE_KEYS.SIDEBAR_COLLAPSED]: false,
@@ -569,6 +605,7 @@ export const SETTINGS_SCHEMAS: Partial<Record<string, z.ZodType>> = {
   [STORAGE_KEYS.DASHBOARD]: DashboardSettingsSchema,
   [STORAGE_KEYS.LOCAL_HTML_PATHS]: LocalHtmlPathsSettingsSchema,
   [STORAGE_KEYS.EXPORT_SCHEDULE]: ExportScheduleSchema,
+  [STORAGE_KEYS.TIMEZONE]: TimezoneSettingsSchema,
 };
 
 // Settings metadata (SETTINGS_METADATA, SETTINGS_CATEGORIES, getSettingsByCategory,

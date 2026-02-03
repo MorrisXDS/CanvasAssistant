@@ -16,6 +16,10 @@ import React, {
 import type { Task, Course, DisplayCalendarEvent } from '../../../l5-presentation/types';
 import { styles } from './CalendarGridStyles';
 import { getCourseColor } from '../../constants';
+import {
+  getHourInEffectiveTimezone,
+  getTimeInEffectiveTimezone,
+} from '../../../l5-presentation/settings';
 
 // =============================================================================
 // TYPES
@@ -122,16 +126,15 @@ export function getEventFullLabel(event: CalendarEvent): string {
   return event.event.calendarName || 'Calendar';
 }
 
-// Format time as AM/PM
-export function formatTimeAmPm(date: Date): string {
-  const hours = date.getHours();
-  const minutes = date.getMinutes();
-  const ampm = hours >= 12 ? 'PM' : 'AM';
-  const displayHours = hours % 12 || 12;
-  if (minutes === 0) {
+// Format time as AM/PM using effective timezone
+export function formatTimeAmPm(dateStr: string): string {
+  const { hour, minute } = getTimeInEffectiveTimezone(dateStr);
+  const ampm = hour >= 12 ? 'PM' : 'AM';
+  const displayHours = hour % 12 || 12;
+  if (minute === 0) {
     return `${displayHours} ${ampm}`;
   }
-  return `${displayHours}:${minutes.toString().padStart(2, '0')} ${ampm}`;
+  return `${displayHours}:${minute.toString().padStart(2, '0')} ${ampm}`;
 }
 
 // Get event time range
@@ -139,13 +142,11 @@ export function getEventTimeRange(event: CalendarEvent): string | null {
   if (event.type === 'task') {
     const dueAt = event.task.dueAt;
     if (!dueAt) return null;
-    return `Due ${formatTimeAmPm(new Date(dueAt))}`;
+    return `Due ${formatTimeAmPm(dueAt)}`;
   }
   if (event.event.allDay) return null;
-  const start = new Date(event.event.startAt);
-  const end = event.event.endAt ? new Date(event.event.endAt) : null;
-  if (!end) return formatTimeAmPm(start);
-  return `${formatTimeAmPm(start)} - ${formatTimeAmPm(end)}`;
+  if (!event.event.endAt) return formatTimeAmPm(event.event.startAt);
+  return `${formatTimeAmPm(event.event.startAt)} - ${formatTimeAmPm(event.event.endAt)}`;
 }
 
 // Get event description
@@ -490,21 +491,20 @@ export function getEarliestEventHour(events: CalendarEvent[]): number | null {
     if (event.type === 'task') {
       // Task events: visual start is (due time - duration)
       if (event.task.dueAt) {
-        const dueDate = new Date(event.task.dueAt);
+        const dueHour = getHourInEffectiveTimezone(event.task.dueAt);
         const duration = getEventDurationHours(event);
-        effectiveStartHour = Math.max(0, dueDate.getHours() - duration);
+        effectiveStartHour = Math.max(0, dueHour - duration);
       }
     } else {
       // Check if it's a deadline task event (linked to a task, starts at epoch)
       if (isDeadlineTaskEvent(event) && event.event.endAt) {
         // Deadline task event: visual start is (end/due time - duration)
-        const dueDate = new Date(event.event.endAt);
+        const dueHour = getHourInEffectiveTimezone(event.event.endAt);
         const duration = getEventDurationHours(event);
-        effectiveStartHour = Math.max(0, dueDate.getHours() - duration);
+        effectiveStartHour = Math.max(0, dueHour - duration);
       } else {
         // Regular imported events: use actual start time
-        const startDate = new Date(event.event.startAt);
-        effectiveStartHour = startDate.getHours();
+        effectiveStartHour = getHourInEffectiveTimezone(event.event.startAt);
       }
     }
 

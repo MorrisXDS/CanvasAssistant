@@ -7,7 +7,7 @@
  */
 
 import React, { useEffect, useRef } from 'react';
-import type { Task, Course, DisplayCalendarEvent } from '../../../l5-presentation/types';
+import type { Course } from '../../../l5-presentation/types';
 import {
   CalendarGridProvider,
   useCalendarGrid,
@@ -48,115 +48,104 @@ export interface CalendarGridProps {
 
 /**
  * Inner component that handles scroll-to-earliest-event logic
+ * Note: This component is keyed by date period, so it re-mounts on navigation
  */
 function CalendarGridInner() {
   const { view, currentDate, events, weekGridRef, dayGridRef } = useCalendarGrid();
 
-  // Track the last view/date/event-count combo to avoid re-scrolling on minor event updates
-  const lastScrollKey = useRef<string>('');
+  // Track the last scroll target to avoid redundant scrolls
+  const lastScrollTarget = useRef<number | null>(null);
 
-  // Scroll to earliest event on mount and when view/date changes
+  // Scroll to earliest event on mount and when events load
   useEffect(() => {
     // Skip month view - no time-based scrolling
     if (view === 'month') return;
 
-    // Create a key including event count to re-scroll when events load
-    const scrollKey = `${view}-${currentDate.toDateString()}-${events.length}`;
+    // Get visible events for current date range
+    let visibleEvents: CalendarEvent[] = [];
 
-    // Skip if we've already scrolled for this exact state
-    if (lastScrollKey.current === scrollKey) return;
+    if (view === 'week') {
+      const weekDays = getWeekDays(currentDate);
+      const weekStart = weekDays[0];
+      const weekEnd = weekDays[6];
+      visibleEvents = events.filter((e) => {
+        const eventDate = getEventDate(e);
+        if (!eventDate) return false;
+        return (
+          eventDate >= weekStart &&
+          eventDate <= new Date(weekEnd.getTime() + 24 * 60 * 60 * 1000)
+        );
+      });
+    } else if (view === 'day') {
+      visibleEvents = events.filter((e) => {
+        const eventDate = getEventDate(e);
+        if (!eventDate) return false;
+        return isSameDay(eventDate, currentDate);
+      });
+    }
 
-    const scrollToEarliestEvent = () => {
-      const gridRef = view === 'week' ? weekGridRef : dayGridRef;
-      const hourHeight = view === 'week' ? WEEK_HOUR_HEIGHT : HOUR_HEIGHT;
+    const earliestEventHour = getEarliestEventHour(visibleEvents);
+    const hasEvents = earliestEventHour !== null;
 
-      // Wait for ref to be attached
-      if (!gridRef.current) {
-        requestAnimationFrame(scrollToEarliestEvent);
-        return;
-      }
+    const gridRef = view === 'week' ? weekGridRef : dayGridRef;
+    const hourHeight = view === 'week' ? WEEK_HOUR_HEIGHT : HOUR_HEIGHT;
 
-      // Get visible date range based on view
-      let visibleEvents: CalendarEvent[] = [];
+    // Check if viewing current period (today is in the visible range)
+    const now = new Date();
+    const isCurrentPeriod =
+      view === 'day'
+        ? isSameDay(currentDate, now)
+        : getWeekDays(currentDate).some((d) => isSameDay(d, now));
 
-      if (view === 'week') {
-        const weekDays = getWeekDays(currentDate);
-        const weekStart = weekDays[0];
-        const weekEnd = weekDays[6];
-        visibleEvents = events.filter((e) => {
-          const eventDate = getEventDate(e);
-          if (!eventDate) return false;
-          return (
-            eventDate >= weekStart &&
-            eventDate <= new Date(weekEnd.getTime() + 24 * 60 * 60 * 1000)
-          );
-        });
-      } else if (view === 'day') {
-        visibleEvents = events.filter((e) => {
-          const eventDate = getEventDate(e);
-          if (!eventDate) return false;
-          return isSameDay(eventDate, currentDate);
-        });
-      }
+    // Calculate target hour
+    let targetHour: number;
+    if (isCurrentPeriod) {
+      // Current week/day: scroll to current hour (show "now")
+      targetHour = Math.max(0, now.getHours() - 1);
+    } else if (hasEvents) {
+      // Future/past with events: scroll to earliest event
+      targetHour = earliestEventHour;
+    } else {
+      // Future/past without events: default to 8 AM
+      targetHour = 8;
+    }
 
-      // Determine scroll target hour
-      const earliestEventHour = getEarliestEventHour(visibleEvents);
-      let targetHour: number;
+    const scrollTarget = targetHour * hourHeight;
 
-      if (earliestEventHour !== null) {
-        // Scroll to earliest event
-        targetHour = earliestEventHour;
-      } else {
-        // No timed events - scroll to current hour (or 8 AM if viewing past/future)
-        const now = new Date();
-        const isCurrentPeriod =
-          view === 'day'
-            ? isSameDay(currentDate, now)
-            : getWeekDays(currentDate).some((d) => isSameDay(d, now));
-        targetHour = isCurrentPeriod ? Math.max(0, now.getHours() - 1) : 8;
-      }
+    // Skip if we've already scrolled to this exact position
+    // (allows re-scroll when events load and target changes)
+    if (lastScrollTarget.current === scrollTarget) return;
 
-      const scrollTarget = targetHour * hourHeight;
+    // Function to apply scroll when ready
+    const applyScroll = () => {
+      if (!gridRef.current) return false;
+      if (gridRef.current.scrollHeight <= gridRef.current.clientHeight) return false;
 
-      // Only scroll if actually scrollable
-      if (gridRef.current.scrollHeight > gridRef.current.clientHeight) {
-        gridRef.current.scrollTop = scrollTarget;
-        lastScrollKey.current = scrollKey;
-      } else {
-        // Not scrollable yet, retry after a delay
-        setTimeout(() => {
-          if (gridRef.current && gridRef.current.scrollHeight > gridRef.current.clientHeight) {
-            gridRef.current.scrollTop = scrollTarget;
-            lastScrollKey.current = scrollKey;
-          }
-        }, 100);
-      }
+      gridRef.current.scrollTop = scrollTarget;
+      lastScrollTarget.current = scrollTarget;
+      return true;
     };
 
-    // Wait for layout to be ready before scrolling
-    let frameCount = 0;
-    const maxFrames = 5;
+    // Try immediately
+    if (applyScroll()) return;
+
+    // Retry with animation frames and timeouts
+    let attempts = 0;
+    const maxAttempts = 10;
 
     const tryScroll = () => {
-      frameCount++;
-      const gridRef = view === 'week' ? weekGridRef : dayGridRef;
-
-      // Check if element is ready for scrolling (has scrollable content)
-      if (gridRef.current && gridRef.current.scrollHeight > gridRef.current.clientHeight) {
-        scrollToEarliestEvent();
-      } else if (frameCount < maxFrames) {
+      attempts++;
+      if (applyScroll()) return;
+      if (attempts < maxAttempts) {
         requestAnimationFrame(tryScroll);
-      } else {
-        // Force attempt after max frames
-        scrollToEarliestEvent();
       }
     };
 
-    requestAnimationFrame(tryScroll);
-
-    return () => {
-      frameCount = maxFrames;
-    };
+    // Start trying after a small delay to let React render
+    setTimeout(() => requestAnimationFrame(tryScroll), 0);
+    // Also try after longer delays for slow renders
+    setTimeout(() => applyScroll(), 100);
+    setTimeout(() => applyScroll(), 250);
   }, [view, events, currentDate, weekGridRef, dayGridRef]);
 
   // Render the appropriate view
@@ -183,6 +172,20 @@ export function CalendarGrid({
   onDateClick,
   onCourseClick,
 }: CalendarGridProps) {
+  // Create a key that changes when the view period changes
+  // This forces CalendarGridInner to re-mount and trigger fresh scroll
+  const getWeekKey = (date: Date) => {
+    const weekStart = getWeekDays(date)[0];
+    return `${weekStart.getFullYear()}-${weekStart.getMonth()}-${weekStart.getDate()}`;
+  };
+
+  const scrollKey =
+    view === 'month'
+      ? `month-${currentDate.getFullYear()}-${currentDate.getMonth()}`
+      : view === 'week'
+        ? `week-${getWeekKey(currentDate)}`
+        : `day-${currentDate.toDateString()}`;
+
   return (
     <CalendarGridProvider
       view={view}
@@ -193,7 +196,7 @@ export function CalendarGrid({
       onDateClick={onDateClick}
       onCourseClick={onCourseClick}
     >
-      <CalendarGridInner />
+      <CalendarGridInner key={scrollKey} />
     </CalendarGridProvider>
   );
 }

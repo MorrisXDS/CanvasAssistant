@@ -30,6 +30,7 @@ import {
   addPendingCommit,
   processPendingCommits,
 } from './storeHelpers';
+import { getEffectiveTimezone } from './settings';
 
 // Re-export for consumers
 export type { SyncResultSummary } from './types';
@@ -450,10 +451,13 @@ export const useStore = create<Store>()(
         }
 
         try {
+          // Get effective timezone for DST-aware recurrence expansion
+          const timezone = getEffectiveTimezone();
           const events = await api.getCalendarEventsForRange({
             startDate: startDate.toISOString(),
             endDate: endDate.toISOString(),
             includeHidden: false,
+            timezone: timezone !== 'local' ? timezone : undefined, // Only pass if specific timezone
           });
           // console.log('[Store] Fetched calendar events:', events.length, events);
           set({ calendarEvents: events });
@@ -1008,6 +1012,12 @@ export const useStore = create<Store>()(
             });
             // Refresh data after sync
             await get().refreshAll();
+
+            // Sync Canvas timezone during full sync
+            if (type === 'full') {
+              get().syncCanvasTimezone();
+            }
+
             // Return the full result including sync summary
             return { success: true, result: result.result, summary };
           } else {
@@ -1058,6 +1068,43 @@ export const useStore = create<Store>()(
        */
       clearAuthError: () => {
         set({ authError: null });
+      },
+
+      /**
+       * Sync Canvas timezone from user profile and store in localStorage
+       * This fetches the timezone from Canvas and updates the local settings
+       */
+      syncCanvasTimezone: async () => {
+        const api = getApi();
+        if (!api) return;
+
+        try {
+          // Fetch user profile from Canvas (includes time_zone)
+          const profileResult = await api.getUserProfile();
+          if (profileResult.success && profileResult.data?.time_zone) {
+            const timezone = profileResult.data.time_zone;
+
+            // Store in database via IPC
+            await api.syncCanvasTimezone(timezone);
+
+            // Update localStorage for renderer access
+            const currentSettings = JSON.parse(
+              localStorage.getItem('timezoneSettings') || '{}'
+            );
+            localStorage.setItem(
+              'timezoneSettings',
+              JSON.stringify({
+                ...currentSettings,
+                canvasTimezone: timezone,
+                lastSyncedAt: new Date().toISOString(),
+              })
+            );
+
+            console.log(`Canvas timezone synced: ${timezone}`);
+          }
+        } catch (error) {
+          console.error('Failed to sync Canvas timezone:', error);
+        }
       },
 
       /**

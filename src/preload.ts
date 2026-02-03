@@ -233,6 +233,7 @@ const api = {
     startDate: string;
     endDate: string;
     includeHidden?: boolean;
+    timezone?: string; // IANA timezone for DST-aware recurrence expansion
   }) => ipcRenderer.invoke('calendar:getEventsForRange', params),
 
   createCalendarEvent: (data: {
@@ -638,6 +639,22 @@ const api = {
       success: boolean;
       error?: string;
       data?: { settings: Record<string, unknown>; filePath: string };
+    }>,
+
+  // Sync Canvas timezone from user profile
+  syncCanvasTimezone: (timezone: string) =>
+    ipcRenderer.invoke('settings:syncCanvasTimezone', { timezone }) as Promise<{
+      success: boolean;
+      error?: string;
+      data?: { timezone: string };
+    }>,
+
+  // Get Canvas timezone from database
+  getCanvasTimezone: () =>
+    ipcRenderer.invoke('settings:getCanvasTimezone') as Promise<{
+      success: boolean;
+      error?: string;
+      data?: { timezone: string; syncedAt: string } | null;
     }>,
 
   // ============ Shell ============

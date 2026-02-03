@@ -511,10 +511,12 @@ export function registerCalendarHandlers(ctx: IpcContext): void {
         endDate: string;
         calendarIds?: number[];
         includeHidden?: boolean;
+        timezone?: string; // IANA timezone for DST-aware recurrence expansion
       }
     ) => {
       const startDate = new Date(params.startDate);
       const endDate = new Date(params.endDate);
+      const timezone = params.timezone; // e.g., "America/Toronto"
 
       // Build query based on filters
       // Join with tasks and courses to get task details for task-linked events
@@ -647,7 +649,8 @@ export function registerCalendarHandlers(ctx: IpcContext): void {
 
 
         // Use RRuleExpander to handle both recurring and non-recurring events
-        const expandedEvents = expander.expand(eventRecord, startDate, endDate);
+        // Pass timezone for DST-aware expansion of recurring events
+        const expandedEvents = expander.expand(eventRecord, startDate, endDate, timezone);
 
         for (const expanded of expandedEvents) {
           events.push({

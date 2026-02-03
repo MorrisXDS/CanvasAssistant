@@ -7,9 +7,11 @@
  * - EXDATE exception handling
  * - Date range filtering
  * - Duration calculation for instances
+ * - DST-aware timezone handling
  */
 
 import { RRule, RRuleSet } from 'rrule';
+import { DateTime } from 'luxon';
 
 export interface CalendarEventRecord {
   id: number;
@@ -44,8 +46,18 @@ export interface ExpandedEvent extends CalendarEventRecord {
 export class RRuleExpander {
   /**
    * Expand a single recurring event into instances within a date range
+   *
+   * @param event - The calendar event to expand
+   * @param rangeStart - Start of the date range
+   * @param rangeEnd - End of the date range
+   * @param timezone - IANA timezone for DST-aware expansion (e.g., "America/Toronto")
    */
-  expand(event: CalendarEventRecord, rangeStart: Date, rangeEnd: Date): ExpandedEvent[] {
+  expand(
+    event: CalendarEventRecord,
+    rangeStart: Date,
+    rangeEnd: Date,
+    timezone?: string
+  ): ExpandedEvent[] {
     // Non-recurring events are filtered by date range
     if (!event.recurrenceRule) {
       if (this.isInRange(event, rangeStart, rangeEnd)) {
@@ -62,7 +74,7 @@ export class RRuleExpander {
     try {
       const eventStart = new Date(event.startAt);
       const eventEnd = event.endAt ? new Date(event.endAt) : eventStart;
-      const duration = eventEnd.getTime() - eventStart.getTime();
+      const durationMs = eventEnd.getTime() - eventStart.getTime();
 
       // Create RRuleSet for handling both RRULE and EXDATE
       const rruleSet = new RRuleSet();
@@ -94,19 +106,68 @@ export class RRuleExpander {
         }
       }
 
-      // Get occurrences within the range
+      // Get occurrences within the range (these are at fixed UTC times)
       const occurrences = rruleSet.between(rangeStart, rangeEnd, true);
 
-      // Map occurrences to expanded events
-      return occurrences.map((occurrenceDate) => ({
-        ...event,
-        startAt: occurrenceDate.toISOString(),
-        endAt: new Date(occurrenceDate.getTime() + duration).toISOString(),
-        isRecurrenceInstance: true,
-        recurrenceDate: occurrenceDate.toISOString(),
-        originalEventId: event.id,
-        parentEventId: event.id,
-      }));
+      // If no timezone provided or invalid, return UTC-based occurrences
+      if (!timezone || timezone === 'local') {
+        return occurrences.map((occurrenceDate) => ({
+          ...event,
+          startAt: occurrenceDate.toISOString(),
+          endAt: new Date(occurrenceDate.getTime() + durationMs).toISOString(),
+          isRecurrenceInstance: true,
+          recurrenceDate: occurrenceDate.toISOString(),
+          originalEventId: event.id,
+          parentEventId: event.id,
+        }));
+      }
+
+      // DST-aware expansion: preserve local time across DST transitions
+      // Get the original event's local time in the target timezone
+      const originalDt = DateTime.fromISO(event.startAt).setZone(timezone);
+      if (!originalDt.isValid) {
+        // Fallback to UTC-based if timezone is invalid
+        return occurrences.map((occurrenceDate) => ({
+          ...event,
+          startAt: occurrenceDate.toISOString(),
+          endAt: new Date(occurrenceDate.getTime() + durationMs).toISOString(),
+          isRecurrenceInstance: true,
+          recurrenceDate: occurrenceDate.toISOString(),
+          originalEventId: event.id,
+          parentEventId: event.id,
+        }));
+      }
+
+      const originalHour = originalDt.hour;
+      const originalMinute = originalDt.minute;
+      const originalSecond = originalDt.second;
+
+      // Map occurrences with DST-aware time adjustment
+      return occurrences.map((occurrenceDate) => {
+        // Get the occurrence date in the target timezone
+        const occDt = DateTime.fromJSDate(occurrenceDate).setZone(timezone);
+
+        // Create a new DateTime with the same local time as the original event
+        // This preserves the local time across DST transitions
+        const adjustedDt = occDt.set({
+          hour: originalHour,
+          minute: originalMinute,
+          second: originalSecond,
+        });
+
+        // Calculate end time with same adjustment
+        const adjustedEndDt = adjustedDt.plus({ milliseconds: durationMs });
+
+        return {
+          ...event,
+          startAt: adjustedDt.toUTC().toISO() || occurrenceDate.toISOString(),
+          endAt: adjustedEndDt.toUTC().toISO() || new Date(occurrenceDate.getTime() + durationMs).toISOString(),
+          isRecurrenceInstance: true,
+          recurrenceDate: adjustedDt.toUTC().toISO() || occurrenceDate.toISOString(),
+          originalEventId: event.id,
+          parentEventId: event.id,
+        };
+      });
     } catch {
       // If RRULE parsing fails, return the original event as non-recurring
       // This is expected for malformed RRULE strings from external sources
