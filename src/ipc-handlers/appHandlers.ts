@@ -110,6 +110,15 @@ export function registerAppHandlers(ctx: IpcContext): void {
     return { success: false, error: 'Unknown action' };
   });
 
+  // ============ App Restart ============
+
+  // Restart the application
+  ipcMain.handle('app:restart', () => {
+    logger.info('App restart requested');
+    app.relaunch();
+    app.exit(0);
+  });
+
   // ============ Error Reporting ============
 
   // Handle renderer error reports (from React error boundaries)

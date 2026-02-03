@@ -69,6 +69,7 @@ import {
   registerCredentialHandlers,
   registerSettingsHandlers,
   registerExportHandlers,
+  registerDatabaseExportHandlers,
   registerAppHandlers,
   registerPagesHandlers,
   registerHtmlExportHandlers,
@@ -1261,6 +1262,7 @@ app.whenReady().then(async () => {
   registerCredentialHandlers(ipcContext);
   registerSettingsHandlers(ipcContext);
   registerExportHandlers(ipcContext);
+  registerDatabaseExportHandlers(ipcContext);
   registerAppHandlers(ipcContext);
   registerPagesHandlers(ipcContext);
   registerHtmlExportHandlers(ipcContext);

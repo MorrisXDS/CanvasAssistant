@@ -580,6 +580,8 @@ const api = {
 
   dismissCrashNotification: () => ipcRenderer.invoke('app:dismissCrashNotification'),
 
+  restartApp: () => ipcRenderer.invoke('app:restart'),
+
   reportError: (errorInfo: {
     message: string;
     stack?: string;
@@ -613,6 +615,22 @@ const api = {
   // Set close behavior and apply immediately (used by first-time dialog)
   setCloseBehaviorAndApply: (choice: 'minimize-to-tray' | 'quit') =>
     ipcRenderer.invoke('window:setCloseBehaviorAndApply', choice),
+
+  // Export settings to file using native dialog
+  exportSettingsToFile: (settings: Record<string, unknown>) =>
+    ipcRenderer.invoke('settings:exportToFile', settings) as Promise<{
+      success: boolean;
+      error?: string;
+      data?: { filePath: string };
+    }>,
+
+  // Import settings from file using native dialog
+  importSettingsFromFile: () =>
+    ipcRenderer.invoke('settings:importFromFile') as Promise<{
+      success: boolean;
+      error?: string;
+      data?: { settings: Record<string, unknown>; filePath: string };
+    }>,
 
   // ============ Shell ============
 

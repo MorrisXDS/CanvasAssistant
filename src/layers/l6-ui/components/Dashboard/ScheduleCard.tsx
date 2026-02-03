@@ -156,8 +156,12 @@ export function ScheduleCard({ maxItems }: ScheduleCardProps) {
   const calendarEvents = useStore((state) => state.calendarEvents);
   const tasks = useStore((state) => state.tasks);
   const courses = useStore((state) => state.courses);
+  const importedCalendars = useStore((state) => state.importedCalendars);
   const fetchCalendarEventsForRange = useStore(
     (state) => state.fetchCalendarEventsForRange
+  );
+  const fetchImportedCalendars = useStore(
+    (state) => state.fetchImportedCalendars
   );
 
   // Build course color map
@@ -169,8 +173,22 @@ export function ScheduleCard({ maxItems }: ScheduleCardProps) {
     return map;
   }, [courses]);
 
-  // Fetch today's events on mount
+  // Build imported calendar color map
+  const importedCalendarColorMap = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const cal of importedCalendars) {
+      if (cal.color) {
+        map.set(cal.id, cal.color);
+      }
+    }
+    return map;
+  }, [importedCalendars]);
+
+  // Fetch today's events and imported calendars on mount
   useEffect(() => {
+    // Fetch imported calendars first to ensure color map is available
+    fetchImportedCalendars();
+
     const today = new Date();
     const startOfDay = new Date(
       today.getFullYear(),
@@ -189,7 +207,7 @@ export function ScheduleCard({ maxItems }: ScheduleCardProps) {
       59
     );
     fetchCalendarEventsForRange(startOfDay, endOfDay);
-  }, [fetchCalendarEventsForRange]);
+  }, [fetchCalendarEventsForRange, fetchImportedCalendars]);
 
   // Build unified schedule items from calendar events and tasks with duration
   const todaysSchedule = useMemo(() => {
@@ -213,12 +231,28 @@ export function ScheduleCard({ maxItems }: ScheduleCardProps) {
         taskIdsFromEvents.add(event.taskId);
       }
 
+      // Resolve color: course color > imported calendar color > event color > fallback
+      // Course color takes priority if event is linked to a course
+      let eventColor = '';
+      if (event.courseId) {
+        eventColor = courseColorMap.get(event.courseId) || '';
+      }
+      if (!eventColor && event.importedCalendarId) {
+        eventColor = importedCalendarColorMap.get(event.importedCalendarId) || '';
+      }
+      if (!eventColor && event.color) {
+        eventColor = event.color;
+      }
+      if (!eventColor) {
+        eventColor = getEventColor(event);
+      }
+
       items.push({
         id: `event-${event.id}`,
         title: event.title,
         startAt: event.startAt,
         endAt: event.endAt!,
-        color: getEventColor(event),
+        color: eventColor,
         location: event.location,
         type: 'event',
         taskId: event.taskId ?? undefined,
@@ -264,7 +298,7 @@ export function ScheduleCard({ maxItems }: ScheduleCardProps) {
 
     // Only limit if maxItems is specified
     return maxItems ? sorted.slice(0, maxItems) : sorted;
-  }, [calendarEvents, tasks, courseColorMap, maxItems]);
+  }, [calendarEvents, tasks, courseColorMap, importedCalendarColorMap, maxItems]);
 
   const handleEventClick = () => {
     // Navigate to weekly calendar view

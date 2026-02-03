@@ -1400,6 +1400,10 @@ export const IpcContract = {
     }),
     result: ApiResultSchema(z.void()),
   },
+  'app:restart': {
+    params: z.void(),
+    result: z.void(),
+  },
 
   // ============ Window Behavior Settings ============
   'settings:getWindowBehavior': {

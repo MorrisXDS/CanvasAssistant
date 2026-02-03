@@ -5,6 +5,7 @@
 
 import { ipcMain, dialog, app } from 'electron';
 import fs from 'fs';
+import path from 'path';
 import { ExportManager } from '../layers/l2-daemon';
 import type { IpcContext } from './IpcContext';
 
@@ -28,8 +29,9 @@ export function registerDatabaseExportHandlers(ctx: IpcContext): void {
       return { success: false, error: 'No window available' };
     }
 
+    const downloadsPath = app.getPath('downloads');
     const result = await dialog.showSaveDialog(mainWindow, {
-      defaultPath: `canvas-backup-${new Date().toISOString().split('T')[0]}.db`,
+      defaultPath: path.join(downloadsPath, `canvas-backup-${new Date().toISOString().split('T')[0]}.db`),
       filters: [
         { name: 'SQLite Database', extensions: ['db'] },
         { name: 'All Files', extensions: ['*'] },
@@ -59,7 +61,9 @@ export function registerDatabaseExportHandlers(ctx: IpcContext): void {
       return { success: false, error: 'No window available' };
     }
 
+    const downloadsPath = app.getPath('downloads');
     const result = await dialog.showOpenDialog(mainWindow, {
+      defaultPath: downloadsPath,
       properties: ['openFile'],
       filters: [
         { name: 'Database & Backup Files', extensions: ['db', 'cbk'] },
@@ -132,10 +136,6 @@ export function registerDatabaseExportHandlers(ctx: IpcContext): void {
       logger.info(`Database imported from: ${importPath}`);
       logger.info(`Previous database backed up to: ${backupPath}`);
       metricsCollector.increment('data.import.database');
-
-      logger.info('Restarting app to apply imported database...');
-      app.relaunch();
-      app.exit(0);
 
       return {
         success: true,

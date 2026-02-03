@@ -221,8 +221,8 @@ interface SettingsContextType {
   setShowCsvDropdown: (show: boolean) => void;
   handleExportDatabase: () => Promise<void>;
   handleImportDatabase: () => Promise<void>;
-  handleExportSettings: () => void;
-  handleImportSettings: () => void;
+  handleExportSettings: () => Promise<void>;
+  handleImportSettings: () => Promise<void>;
 
   // Password modal for encrypted imports
   showPasswordModal: boolean;
@@ -231,6 +231,10 @@ interface SettingsContextType {
   isDecrypting: boolean;
   handleDecryptImport: () => Promise<void>;
   handleCancelPasswordModal: () => void;
+
+  // Restart modal for database import
+  showRestartModal: boolean;
+  handleRestartApp: () => Promise<void>;
 
   // Section ordering (drag and drop)
   sectionOrder: string[];
@@ -438,6 +442,9 @@ export function SettingsProvider({
   const [pendingImportPath, setPendingImportPath] = useState<string | null>(null);
   const [importPassword, setImportPassword] = useState('');
   const [isDecrypting, setIsDecrypting] = useState(false);
+
+  // Restart modal for database import
+  const [showRestartModal, setShowRestartModal] = useState(false);
 
   // Dock
   const [dockAutoHide, setDockAutoHide] = useState<boolean>(() => {
@@ -983,10 +990,8 @@ export function SettingsProvider({
     try {
       const result = await window.api.importDatabase();
       if (result.success) {
-        setExportMessage({
-          type: 'success',
-          text: 'Database imported successfully. Please restart the app to apply changes.',
-        });
+        // Show restart modal
+        setShowRestartModal(true);
       } else if (result.error === 'PASSWORD_REQUIRED' && result.data?.filePath) {
         // Encrypted backup detected - show password modal
         setPendingImportPath(result.data.filePath);
@@ -1003,6 +1008,10 @@ export function SettingsProvider({
     } finally {
       setIsImporting(false);
     }
+  };
+
+  const handleRestartApp = async () => {
+    await window.api.restartApp();
   };
 
   const handleDecryptImport = async () => {
@@ -1049,7 +1058,7 @@ export function SettingsProvider({
     setExportMessage({ type: 'error', text: 'Import cancelled' });
   };
 
-  const handleExportSettings = () => {
+  const handleExportSettings = async () => {
     try {
       const settings: Record<string, unknown> = {};
       const keys = Object.values(STORAGE_KEYS);
@@ -1064,19 +1073,12 @@ export function SettingsProvider({
         }
       }
 
-      const blob = new Blob([JSON.stringify(settings, null, 2)], {
-        type: 'application/json',
-      });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `canvas-assistant-settings-${new Date().toISOString().split('T')[0]}.json`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-
-      setExportMessage({ type: 'success', text: 'Settings exported successfully' });
+      const result = await window.api.exportSettingsToFile(settings);
+      if (result.success) {
+        setExportMessage({ type: 'success', text: 'Settings exported successfully' });
+      } else if (result.error !== 'Export cancelled') {
+        setExportMessage({ type: 'error', text: result.error || 'Export failed' });
+      }
     } catch (e) {
       setExportMessage({
         type: 'error',
@@ -1085,21 +1087,11 @@ export function SettingsProvider({
     }
   };
 
-  const handleImportSettings = () => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.json';
-    input.onchange = async (e) => {
-      const file = (e.target as HTMLInputElement).files?.[0];
-      if (!file) return;
-
-      try {
-        const text = await file.text();
-        const settings = JSON.parse(text);
-
-        if (typeof settings !== 'object' || settings === null) {
-          throw new Error('Invalid settings file format');
-        }
+  const handleImportSettings = async () => {
+    try {
+      const result = await window.api.importSettingsFromFile();
+      if (result.success && result.data?.settings) {
+        const settings = result.data.settings;
 
         for (const [key, value] of Object.entries(settings)) {
           if (typeof value === 'string') {
@@ -1111,14 +1103,15 @@ export function SettingsProvider({
 
         setExportMessage({ type: 'success', text: 'Settings imported. Reloading...' });
         setTimeout(() => window.location.reload(), 1000);
-      } catch (e) {
-        setExportMessage({
-          type: 'error',
-          text: e instanceof Error ? e.message : 'Import failed',
-        });
+      } else if (result.error && result.error !== 'Import cancelled') {
+        setExportMessage({ type: 'error', text: result.error || 'Import failed' });
       }
-    };
-    input.click();
+    } catch (e) {
+      setExportMessage({
+        type: 'error',
+        text: e instanceof Error ? e.message : 'Import failed',
+      });
+    }
   };
 
   // =========================================================================
@@ -1326,6 +1319,10 @@ export function SettingsProvider({
     isDecrypting,
     handleDecryptImport,
     handleCancelPasswordModal,
+
+    // Restart modal for database import
+    showRestartModal,
+    handleRestartApp,
 
     // Section ordering
     sectionOrder,

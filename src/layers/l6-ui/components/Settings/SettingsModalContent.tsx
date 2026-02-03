@@ -98,6 +98,10 @@ export function SettingsModalContent() {
     handleDecryptImport,
     handleCancelPasswordModal,
 
+    // Restart modal for database import
+    showRestartModal,
+    handleRestartApp,
+
     // Filtered settings
     filteredSettings,
   } = useSettings();
@@ -376,6 +380,28 @@ export function SettingsModalContent() {
               </button>
               <button style={styles.cancelButton} onClick={handleCancelPasswordModal}>
                 {MENU_LABELS.common.cancel}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Restart Modal for Database Import */}
+      {showRestartModal && (
+        <div style={styles.tokenModalOverlay}>
+          <div style={styles.tokenModal} onClick={(e) => e.stopPropagation()}>
+            <div style={styles.tokenModalHeader}>
+              <h4 style={styles.tokenModalTitle}>
+                <Database size={18} style={{ marginRight: '8px' }} />
+                Database Imported
+              </h4>
+            </div>
+            <p style={styles.tokenModalDesc}>
+              Database imported successfully. The app needs to restart to apply the changes.
+            </p>
+            <div style={styles.tokenModalButtons}>
+              <button style={styles.primaryButton} onClick={handleRestartApp}>
+                <RotateCcw size={14} /> Restart Now
               </button>
             </div>
           </div>

@@ -5,9 +5,12 @@
  * - Visibility settings (term selection)
  * - Window behavior settings
  * - Course settings
+ * - Settings export/import
  */
 
-import { ipcMain, app } from 'electron';
+import { ipcMain, app, dialog } from 'electron';
+import fs from 'fs';
+import path from 'path';
 import type { IpcContext } from './IpcContext';
 
 /**
@@ -276,4 +279,71 @@ export function registerSettingsHandlers(ctx: IpcContext): void {
       }
     }
   );
+
+  // ============ Settings Export/Import Handlers ============
+
+  ipcMain.handle('settings:exportToFile', async (_event, settings: Record<string, unknown>) => {
+    const mainWindow = getMainWindow();
+    if (!mainWindow) {
+      return { success: false, error: 'No window available' };
+    }
+
+    const downloadsPath = app.getPath('downloads');
+    const result = await dialog.showSaveDialog(mainWindow, {
+      defaultPath: path.join(downloadsPath, `canvas-assistant-settings-${new Date().toISOString().split('T')[0]}.json`),
+      filters: [
+        { name: 'JSON Files', extensions: ['json'] },
+        { name: 'All Files', extensions: ['*'] },
+      ],
+    });
+
+    if (result.canceled || !result.filePath) {
+      return { success: false, error: 'Export cancelled' };
+    }
+
+    try {
+      fs.writeFileSync(result.filePath, JSON.stringify(settings, null, 2), 'utf-8');
+      logger.info(`Settings exported to: ${result.filePath}`);
+      return { success: true, data: { filePath: result.filePath } };
+    } catch (error) {
+      logger.error('Failed to export settings:', error as Error);
+      return { success: false, error: String(error) };
+    }
+  });
+
+  ipcMain.handle('settings:importFromFile', async () => {
+    const mainWindow = getMainWindow();
+    if (!mainWindow) {
+      return { success: false, error: 'No window available' };
+    }
+
+    const downloadsPath = app.getPath('downloads');
+    const result = await dialog.showOpenDialog(mainWindow, {
+      defaultPath: downloadsPath,
+      properties: ['openFile'],
+      filters: [
+        { name: 'JSON Files', extensions: ['json'] },
+        { name: 'All Files', extensions: ['*'] },
+      ],
+    });
+
+    if (result.canceled || !result.filePaths.length) {
+      return { success: false, error: 'Import cancelled' };
+    }
+
+    try {
+      const content = fs.readFileSync(result.filePaths[0], 'utf-8');
+      const settings = JSON.parse(content);
+
+      if (typeof settings !== 'object' || settings === null) {
+        return { success: false, error: 'Invalid settings file format' };
+      }
+
+      logger.info(`Settings imported from: ${result.filePaths[0]}`);
+      return { success: true, data: { settings, filePath: result.filePaths[0] } };
+    } catch (error) {
+      logger.error('Failed to import settings:', error as Error);
+      return { success: false, error: String(error) };
+    }
+  });
 }

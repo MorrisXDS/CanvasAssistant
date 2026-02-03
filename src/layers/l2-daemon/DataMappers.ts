@@ -283,6 +283,20 @@ export function mapAssignment(
     }
   }
 
+  // Don't set unlock_at from Canvas if it spans multiple days (different dates)
+  // Multi-day assignments from Canvas have arbitrary start times that don't map well
+  let effectiveUnlockAt = unlockAt;
+  if (unlockAt && dueAt) {
+    const unlockDate = new Date(unlockAt);
+    const dueDate = new Date(dueAt);
+    // Compare dates (ignoring time) - if different days, don't use Canvas's unlock_at
+    const unlockDay = unlockDate.toISOString().split('T')[0];
+    const dueDay = dueDate.toISOString().split('T')[0];
+    if (unlockDay !== dueDay) {
+      effectiveUnlockAt = null;
+    }
+  }
+
   return {
     external_id: String(assignmentId),
     source_type: 'canvas',
@@ -291,7 +305,7 @@ export function mapAssignment(
     description,
     due_at: dueAt,
     due_time_known: dueTimeKnown,
-    unlock_at: unlockAt,
+    unlock_at: effectiveUnlockAt,
     lock_at: lockAt,
     points_possible: pointsPossible,
     submission_types: submissionTypes.length > 0 ? submissionTypes.join(',') : null,
