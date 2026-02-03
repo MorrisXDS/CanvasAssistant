@@ -6,6 +6,7 @@
 import { useState, useCallback, useRef } from 'react';
 import type { CourseSyllabus } from '../Course';
 import type { FileResource } from '../Files/FileListItem';
+import type { MissingDependency } from '../Files/MissingDependenciesDialog';
 
 export interface ConfirmDialogConfig {
   isOpen: boolean;
@@ -14,6 +15,14 @@ export interface ConfirmDialogConfig {
   type: 'danger' | 'warning' | 'info' | 'success';
   confirmText: string;
   onConfirm: () => void;
+}
+
+export interface MissingDepsDialogState {
+  isOpen: boolean;
+  dependencies: MissingDependency[];
+  totalSize: number;
+  isDownloading: boolean;
+  downloadProgress: number;
 }
 
 export interface UseCourseDetailSyllabusStateProps {
@@ -37,6 +46,12 @@ export interface UseCourseDetailSyllabusStateReturn {
   // Loading state
   syllabusLoading: boolean;
 
+  // Missing dependencies dialog
+  missingDepsDialog: MissingDepsDialogState;
+  handleDownloadDependencies: () => Promise<void>;
+  handleOpenSyllabusAnyway: () => void;
+  closeMissingDepsDialog: () => void;
+
   // Handlers
   handleSetSyllabus: (resourceId: number) => Promise<void>;
   handleMarkSyllabusReviewed: () => Promise<void>;
@@ -58,6 +73,15 @@ export function useCourseDetailSyllabusState({
   const [syllabusWarningDismissed, setSyllabusWarningDismissed] = useState(false);
   const [syllabusContextMenu, setSyllabusContextMenu] = useState<{ x: number; y: number } | null>(null);
   const syllabusClickTimeout = useRef<NodeJS.Timeout | null>(null);
+
+  // Missing dependencies dialog state
+  const [missingDepsDialog, setMissingDepsDialog] = useState<MissingDepsDialogState>({
+    isOpen: false,
+    dependencies: [],
+    totalSize: 0,
+    isDownloading: false,
+    downloadProgress: 0,
+  });
 
   // Set syllabus
   const handleSetSyllabus = useCallback(async (resourceId: number) => {
@@ -141,7 +165,7 @@ export function useCourseDetailSyllabusState({
   }, []);
 
   // Syllabus double-click - opens file or selector
-  const handleSyllabusDoubleClick = useCallback(() => {
+  const handleSyllabusDoubleClick = useCallback(async () => {
     // Cancel single-click action
     if (syllabusClickTimeout.current) {
       clearTimeout(syllabusClickTimeout.current);
@@ -185,17 +209,123 @@ export function useCourseDetailSyllabusState({
       return;
     }
 
-    // File is downloaded - open it
-    if (syllabus.resourceId < 0) {
-      api
-        ?.openAttachment(Math.abs(syllabus.resourceId))
-        .catch((error: unknown) => console.error('Failed to open syllabus:', error));
-    } else {
-      api
-        ?.openResource(syllabus.resourceId)
-        .catch((error: unknown) => console.error('Failed to open syllabus:', error));
+    // File is downloaded - open it and check for missing dependencies
+    try {
+      if (syllabus.resourceId < 0) {
+        // Attachment - just open it (no dependency checking for attachments)
+        await api?.openAttachment(Math.abs(syllabus.resourceId));
+      } else {
+        // Resource - check for missing dependencies
+        const result = await api?.openResource(syllabus.resourceId);
+
+        // Check if result indicates missing dependencies
+        const typedResult = result as {
+          success?: boolean;
+          hasMissingDependencies?: boolean;
+          missingDependencies?: MissingDependency[];
+          totalMissingSize?: number;
+        } | undefined;
+
+        if (typedResult?.hasMissingDependencies && typedResult.missingDependencies) {
+          console.log('[Syllabus] HTML has missing dependencies:', typedResult.missingDependencies);
+          setMissingDepsDialog({
+            isOpen: true,
+            dependencies: typedResult.missingDependencies,
+            totalSize: typedResult.totalMissingSize || 0,
+            isDownloading: false,
+            downloadProgress: 0,
+          });
+        }
+        // If success or no missing deps, file was opened
+      }
+    } catch (error) {
+      console.error('Failed to open syllabus:', error);
     }
   }, [syllabus, courseFiles, courseId, setConfirmDialog]);
+
+  // Download missing dependencies
+  const handleDownloadDependencies = useCallback(async () => {
+    const api = window.api;
+    if (!api || !syllabus) return;
+
+    setMissingDepsDialog((prev) => ({
+      ...prev,
+      isDownloading: true,
+      downloadProgress: 0,
+    }));
+
+    try {
+      // Simulate progress since we don't have real-time updates
+      const progressInterval = setInterval(() => {
+        setMissingDepsDialog((prev) => ({
+          ...prev,
+          downloadProgress: Math.min(prev.downloadProgress + 10, 90),
+        }));
+      }, 500);
+
+      const result = await api.downloadHtmlDependencies(syllabus.resourceId);
+
+      clearInterval(progressInterval);
+
+      if (result.success) {
+        setMissingDepsDialog((prev) => ({ ...prev, downloadProgress: 100 }));
+
+        // Close dialog and open the file after a brief delay
+        setTimeout(async () => {
+          setMissingDepsDialog({
+            isOpen: false,
+            dependencies: [],
+            totalSize: 0,
+            isDownloading: false,
+            downloadProgress: 0,
+          });
+
+          // Refresh course files
+          const updatedFiles = await api.getCourseFiles?.(courseId);
+          if (updatedFiles) setCourseFiles(updatedFiles);
+
+          // Open the file with skipDependencyCheck=true
+          api.openResource(syllabus.resourceId, true);
+        }, 500);
+      } else {
+        throw new Error(result.error || 'Download failed');
+      }
+    } catch (error) {
+      console.error('Failed to download dependencies:', error);
+      setMissingDepsDialog((prev) => ({ ...prev, isDownloading: false }));
+      throw error; // Re-throw so dialog shows error
+    }
+  }, [syllabus, courseId]);
+
+  // Open syllabus without dependencies (broken offline experience)
+  const handleOpenSyllabusAnyway = useCallback(() => {
+    const api = window.api;
+    if (!api || !syllabus) return;
+
+    // Close dialog
+    setMissingDepsDialog({
+      isOpen: false,
+      dependencies: [],
+      totalSize: 0,
+      isDownloading: false,
+      downloadProgress: 0,
+    });
+
+    // Open file with skipDependencyCheck=true
+    api.openResource(syllabus.resourceId, true);
+  }, [syllabus]);
+
+  // Close missing dependencies dialog
+  const closeMissingDepsDialog = useCallback(() => {
+    if (missingDepsDialog.isDownloading) return; // Prevent closing during download
+    setMissingDepsDialog({
+      isOpen: false,
+      dependencies: [],
+      totalSize: 0,
+      isDownloading: false,
+      downloadProgress: 0,
+    });
+  }, [missingDepsDialog.isDownloading]);
 
   // Syllabus context menu
   const handleSyllabusContextMenu = useCallback((e: React.MouseEvent) => {
@@ -218,6 +348,12 @@ export function useCourseDetailSyllabusState({
 
     // Loading state
     syllabusLoading,
+
+    // Missing dependencies dialog
+    missingDepsDialog,
+    handleDownloadDependencies,
+    handleOpenSyllabusAnyway,
+    closeMissingDepsDialog,
 
     // Handlers
     handleSetSyllabus,

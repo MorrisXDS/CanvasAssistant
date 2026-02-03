@@ -17,6 +17,7 @@ import {
   PolicyModal,
   ConfirmDialog,
 } from '../shared';
+import { MissingDependenciesDialog } from '../Files/MissingDependenciesDialog';
 import type { PolicyModalData, PolicyType } from '../shared';
 import { useStore } from '../../../l5-presentation/store';
 import {
@@ -210,6 +211,10 @@ export function CourseDetail() {
     setSyllabusWarningDismissed,
     syllabusContextMenu,
     setSyllabusContextMenu,
+    missingDepsDialog,
+    handleDownloadDependencies,
+    handleOpenSyllabusAnyway,
+    closeMissingDepsDialog,
     handleSetSyllabus,
     handleRemoveSyllabus,
     handleSyllabusClick,
@@ -1005,6 +1010,19 @@ export function CourseDetail() {
           </div>
         </div>
       )}
+
+      {/* Missing Dependencies Dialog for Syllabus */}
+      <MissingDependenciesDialog
+        isOpen={missingDepsDialog.isOpen}
+        onClose={closeMissingDepsDialog}
+        onDownload={handleDownloadDependencies}
+        onOpenAnyway={handleOpenSyllabusAnyway}
+        missingDependencies={missingDepsDialog.dependencies}
+        totalSize={missingDepsDialog.totalSize}
+        fileName={syllabus?.resourceTitle || 'Syllabus'}
+        isDownloading={missingDepsDialog.isDownloading}
+        downloadProgress={missingDepsDialog.downloadProgress}
+      />
     </div>
   );
 }
