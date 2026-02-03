@@ -9,26 +9,17 @@ import DOMPurify from 'dompurify';
 import {
   ArrowLeft,
   BookOpen,
-  Target,
-  TrendingUp,
-  Calendar,
-  FileText,
   CheckCircle,
   Clock,
   ChevronRight,
-  Edit3,
-  Save,
   X,
-  Settings,
-  EyeOff,
-  Eye,
   Plus,
   Trash2,
   ChevronDown,
   GripVertical,
   Archive,
   RefreshCw,
-  MapPin,
+  FileText,
 } from 'lucide-react';
 import {
   Card,
@@ -45,8 +36,7 @@ import {
   type LinkBehavior,
 } from '../../../l5-presentation/settings';
 import type { Task, Notification, Policy } from '../../../l5-presentation/types';
-import { COURSE_COLORS, getCourseColor, TASK_TYPES, formatGrade } from '../../constants';
-import { ColorPicker } from '../primitives';
+import { getCourseColor } from '../../constants';
 import {
   SyllabusSelector,
   TaskContextMenu,
@@ -63,14 +53,10 @@ import {
   PoliciesCard,
   AnnouncementsCard,
   GradeHistoryCard,
+  CourseHeader,
+  AddTaskForm,
   type GradeHistoryEntry,
 } from '../CourseDetail/components';
-
-function getShortCode(code: string): string {
-  // Stop before a letter followed by a digit and then space/end (e.g., "H1 " or "Y1")
-  const match = code.match(/^(.+?)(?=[A-Z]\d(?:\s|$))/i);
-  return match ? match[1] : code.split(/\s/)[0];
-}
 
 /**
  * Get the user's link behavior preference from localStorage
@@ -807,6 +793,95 @@ export function CourseDetail() {
     });
   };
 
+  // Syllabus click handlers for CourseHeader
+  const handleSyllabusClick = () => {
+    // Delay single-click to allow double-click to cancel it
+    if (syllabusClickTimeout.current) {
+      clearTimeout(syllabusClickTimeout.current);
+    }
+    syllabusClickTimeout.current = setTimeout(() => {
+      setShowSyllabusSelector(true);
+    }, 250);
+  };
+
+  const handleSyllabusDoubleClick = () => {
+    // Cancel single-click action
+    if (syllabusClickTimeout.current) {
+      clearTimeout(syllabusClickTimeout.current);
+      syllabusClickTimeout.current = null;
+    }
+    if (!syllabus) {
+      // No syllabus - open selector instead
+      setShowSyllabusSelector(true);
+      return;
+    }
+    const api = window.api;
+
+    // Check if syllabus file is downloaded
+    const syllabusFile = courseFiles.find((f) => f.id === syllabus.resourceId);
+    const isDownloaded = syllabusFile?.localPath != null;
+
+    if (!isDownloaded) {
+      // Prompt to download first
+      setConfirmDialog({
+        isOpen: true,
+        title: 'Download Syllabus',
+        message: `"${syllabus.resourceTitle}" hasn't been downloaded yet. Would you like to download it now?`,
+        type: 'info',
+        confirmText: 'Download',
+        onConfirm: async () => {
+          try {
+            if (syllabus.resourceId < 0) {
+              await api?.downloadAttachment(Math.abs(syllabus.resourceId));
+            } else {
+              await api?.downloadResource(syllabus.resourceId);
+            }
+            // Refresh course files to update download status
+            const updatedFiles = await api?.getCourseFiles?.(courseId);
+            if (updatedFiles) setCourseFiles(updatedFiles);
+          } catch (error) {
+            console.error('Failed to download syllabus:', error);
+          }
+          setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
+        },
+      });
+      return;
+    }
+
+    // File is downloaded - open it
+    if (syllabus.resourceId < 0) {
+      api
+        ?.openAttachment(Math.abs(syllabus.resourceId))
+        .catch((error: unknown) => console.error('Failed to open syllabus:', error));
+    } else {
+      api
+        ?.openResource(syllabus.resourceId)
+        .catch((error: unknown) => console.error('Failed to open syllabus:', error));
+    }
+  };
+
+  const handleSyllabusContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setSyllabusContextMenu({ x: e.clientX, y: e.clientY });
+  };
+
+  // Settings toggle handler
+  const handleToggleSettings = () => {
+    if (!course) return;
+    setNicknameInput(course.nickname || '');
+    setSelectedColor(course.color);
+    setTargetGradeInput(course.targetGrade.toString());
+    setCreditsInput(course.credits?.toString() || '1.0');
+    setShowSettings(!showSettings);
+  };
+
+  // Start editing target grade
+  const handleStartEditTarget = () => {
+    if (!course) return;
+    setTargetGradeInput(course.targetGrade.toString());
+    setEditingTarget(true);
+  };
+
   // Fetch course data
   useEffect(() => {
     const fetchData = async () => {
@@ -1065,450 +1140,49 @@ export function CourseDetail() {
         </button>
 
         {/* Course Header Card */}
-        <div style={styles.headerCard}>
-          <div style={{ ...styles.headerColorBar, backgroundColor: courseColor }} />
-          <div style={styles.headerContent}>
-            <div style={styles.headerMain}>
-              <div style={styles.headerInfo}>
-                <span style={{ ...styles.courseCodeBadge, backgroundColor: courseColor }}>
-                  {getShortCode(course.code)}
-                </span>
-                <h1 style={styles.courseName}>{course.nickname || course.name}</h1>
-                <span style={styles.fullCode}>{course.code}</span>
-                {course.archivedAt && (
-                  <span style={styles.archivedBadge}>
-                    ARCHIVED
-                    {course.archiveSource === 'auto' && ' (Term Ended)'}
-                  </span>
-                )}
-              </div>
-
-              {/* Grade Summary */}
-              <div style={styles.gradeSummary}>
-                <div style={styles.gradeItem}>
-                  <div style={styles.gradeLabel}>
-                    <Target size={14} />
-                    Target
-                  </div>
-                  {editingTarget ? (
-                    <div style={styles.editTargetRow}>
-                      <input
-                        type="number"
-                        value={targetGradeInput}
-                        onChange={(e) => setTargetGradeInput(e.target.value)}
-                        style={styles.targetInput}
-                        min="0"
-                        max="100"
-                        step="0.1"
-                        autoFocus
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') handleSaveTargetGrade();
-                          if (e.key === 'Escape') setEditingTarget(false);
-                        }}
-                      />
-                      <button
-                        style={styles.editIconButton}
-                        onClick={handleSaveTargetGrade}
-                      >
-                        <Save size={14} color="var(--color-success)" />
-                      </button>
-                      <button
-                        style={styles.editIconButton}
-                        onClick={() => setEditingTarget(false)}
-                      >
-                        <X size={14} color="var(--text-muted)" />
-                      </button>
-                    </div>
-                  ) : (
-                    <div
-                      style={styles.editableValue}
-                      onClick={() => {
-                        setTargetGradeInput(targetPercent.toString());
-                        setEditingTarget(true);
-                      }}
-                    >
-                      <span style={styles.gradeValue}>{targetPercent}%</span>
-                      <Edit3
-                        size={12}
-                        color="var(--text-muted)"
-                        style={{ marginLeft: '4px' }}
-                      />
-                    </div>
-                  )}
-                  <div style={styles.gradeSubtext}>
-                    final goal
-                    {course.targetGradeSource === 'default' && (
-                      <span
-                        style={{ color: 'var(--color-blue)', marginLeft: '4px' }}
-                        title="Using app default - will update when you change the default target grade in Settings"
-                      >
-                        (default)
-                      </span>
-                    )}
-                  </div>
-                </div>
-                <div style={styles.gradeDivider} />
-                <div style={styles.gradeItem}>
-                  <div style={styles.gradeLabel}>
-                    <TrendingUp size={14} />
-                    Earned
-                  </div>
-                  <div
-                    style={{
-                      ...styles.gradeValue,
-                      color:
-                        completedWeight > 0
-                          ? gradeStatus === 'on-track'
-                            ? 'var(--color-success)'
-                            : gradeStatus === 'warning'
-                              ? 'var(--color-medium)'
-                              : 'var(--color-high)'
-                          : 'var(--text-muted)',
-                    }}
-                  >
-                    {completedWeight > 0 ? formatGrade(earnedContribution) : '—'}
-                  </div>
-                  <div style={styles.gradeSubtext}>
-                    {completedWeight > 0
-                      ? `of ${completedWeight.toFixed(0)}% assessed`
-                      : '\u00A0'}
-                  </div>
-                </div>
-                <div style={styles.gradeDivider} />
-                <div style={styles.gradeItem}>
-                  <div style={styles.gradeLabel}>
-                    <TrendingUp size={14} />
-                    Trend
-                  </div>
-                  <div
-                    style={{
-                      ...styles.gradeValue,
-                      color:
-                        completedWeight > 0
-                          ? gradeStatus === 'on-track'
-                            ? 'var(--color-success)'
-                            : gradeStatus === 'warning'
-                              ? 'var(--color-medium)'
-                              : 'var(--color-high)'
-                          : 'var(--text-muted)',
-                    }}
-                  >
-                    {completedWeight > 0 ? formatGrade(effectiveGrade) : '—'}
-                  </div>
-                  <div style={styles.gradeSubtext}>
-                    {completedWeight > 0 ? 'avg on graded work' : '\u00A0'}
-                  </div>
-                </div>
-                {/* Syllabus */}
-                <div style={styles.gradeDivider} />
-                <div
-                  style={{
-                    ...styles.gradeItem,
-                    cursor: 'pointer',
-                    userSelect: 'none',
-                  }}
-                  onContextMenu={(e) => {
-                    e.preventDefault();
-                    setSyllabusContextMenu({ x: e.clientX, y: e.clientY });
-                  }}
-                  onClick={() => {
-                    // Delay single-click to allow double-click to cancel it
-                    if (syllabusClickTimeout.current) {
-                      clearTimeout(syllabusClickTimeout.current);
-                    }
-                    syllabusClickTimeout.current = setTimeout(() => {
-                      setShowSyllabusSelector(true);
-                    }, 250);
-                  }}
-                  onDoubleClick={() => {
-                    // Cancel single-click action
-                    if (syllabusClickTimeout.current) {
-                      clearTimeout(syllabusClickTimeout.current);
-                      syllabusClickTimeout.current = null;
-                    }
-                    if (!syllabus) {
-                      // No syllabus - open selector instead
-                      setShowSyllabusSelector(true);
-                      return;
-                    }
-                    const api = window.api;
-
-                    // Check if syllabus file is downloaded
-                    const syllabusFile = courseFiles.find(
-                      (f) => f.id === syllabus.resourceId
-                    );
-                    const isDownloaded = syllabusFile?.localPath != null;
-
-                    if (!isDownloaded) {
-                      // Prompt to download first
-                      setConfirmDialog({
-                        isOpen: true,
-                        title: 'Download Syllabus',
-                        message: `"${syllabus.resourceTitle}" hasn't been downloaded yet. Would you like to download it now?`,
-                        type: 'info',
-                        confirmText: 'Download',
-                        onConfirm: async () => {
-                          try {
-                            if (syllabus.resourceId < 0) {
-                              await api?.downloadAttachment(
-                                Math.abs(syllabus.resourceId)
-                              );
-                            } else {
-                              await api?.downloadResource(syllabus.resourceId);
-                            }
-                            // Refresh course files to update download status
-                            const updatedFiles = await api?.getCourseFiles?.(courseId);
-                            if (updatedFiles) setCourseFiles(updatedFiles);
-                          } catch (error) {
-                            console.error('Failed to download syllabus:', error);
-                          }
-                          setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
-                        },
-                      });
-                      return;
-                    }
-
-                    // File is downloaded - open it
-                    if (syllabus.resourceId < 0) {
-                      api
-                        ?.openAttachment(Math.abs(syllabus.resourceId))
-                        .catch((error: unknown) =>
-                          console.error('Failed to open syllabus:', error)
-                        );
-                    } else {
-                      api
-                        ?.openResource(syllabus.resourceId)
-                        .catch((error: unknown) =>
-                          console.error('Failed to open syllabus:', error)
-                        );
-                    }
-                  }}
-                  title={
-                    syllabus
-                      ? 'Click to change, double-click to open, right-click for options'
-                      : 'Click to select syllabus'
-                  }
-                >
-                  <div style={styles.gradeLabel}>
-                    <FileText size={14} />
-                    Syllabus
-                  </div>
-                  <div
-                    style={{
-                      ...styles.syllabusValue,
-                      color: syllabus ? 'var(--text-primary)' : 'var(--text-muted)',
-                    }}
-                  >
-                    {syllabus ? syllabus.resourceTitle : '—'}
-                  </div>
-                  <div style={styles.gradeSubtext}>
-                    {syllabus?.changeDetectedAt ? (
-                      <span style={{ color: 'var(--color-warning)' }}>file updated</span>
-                    ) : syllabus ? (
-                      'up to date'
-                    ) : (
-                      'click to select'
-                    )}
-                  </div>
-                </div>
-                {/* Settings Button */}
-                <div style={styles.gradeDivider} />
-                <button
-                  style={styles.settingsButton}
-                  onClick={() => {
-                    setNicknameInput(course.nickname || '');
-                    setSelectedColor(course.color);
-                    setTargetGradeInput(course.targetGrade.toString());
-                    setCreditsInput(course.credits?.toString() || '1.0');
-                    setShowSettings(!showSettings);
-                  }}
-                >
-                  <Settings size={18} />
-                </button>
-              </div>
-            </div>
-
-            {/* Settings Panel - Collapsible */}
-            {showSettings && (
-              <div style={styles.settingsPanel}>
-                <div style={styles.settingsGrid}>
-                  <div style={styles.settingsField}>
-                    <label style={styles.settingsLabel}>Nickname</label>
-                    <input
-                      type="text"
-                      value={nicknameInput}
-                      onChange={(e) => setNicknameInput(e.target.value)}
-                      placeholder={course.name}
-                      style={styles.settingsInput}
-                    />
-                  </div>
-                  <div style={styles.settingsField}>
-                    <label style={styles.settingsLabel}>Target Grade (%)</label>
-                    <input
-                      type="number"
-                      value={targetGradeInput || targetPercent.toString()}
-                      onChange={(e) => setTargetGradeInput(e.target.value)}
-                      style={styles.settingsInput}
-                      min="0"
-                      max="100"
-                      step="0.1"
-                    />
-                  </div>
-                  <div style={styles.settingsField}>
-                    <label style={styles.settingsLabel}>Credit</label>
-                    <input
-                      type="number"
-                      value={creditsInput}
-                      onChange={(e) => setCreditsInput(e.target.value)}
-                      style={styles.settingsInput}
-                      min="0"
-                      max="10"
-                      step="0.5"
-                      placeholder="1.0"
-                    />
-                  </div>
-                </div>
-                <div style={styles.settingsGrid}>
-                  <div style={styles.settingsField}>
-                    <label style={styles.settingsLabel}>Color</label>
-                    <ColorPicker
-                      value={selectedColor || getCourseColor(course.id, course.color)}
-                      onChange={setSelectedColor}
-                      presets={COURSE_COLORS}
-                      allowCustom={true}
-                      swatchSize={24}
-                    />
-                  </div>
-                  <div style={styles.settingsField}>
-                    <label style={styles.settingsLabel}>Visibility</label>
-                    <button style={styles.visibilityButton} onClick={handleToggleHidden}>
-                      {course.isHidden ? (
-                        <>
-                          <EyeOff size={16} />
-                          Hidden
-                        </>
-                      ) : (
-                        <>
-                          <Eye size={16} />
-                          Visible
-                        </>
-                      )}
-                    </button>
-                  </div>
-                  <div style={styles.settingsField}>
-                    <label style={styles.settingsLabel}>Archive</label>
-                    <button
-                      style={styles.archiveButton}
-                      onClick={handleArchiveCourse}
-                      title="Archive this course. Archived courses are hidden but can be restored."
-                    >
-                      <Archive size={16} />
-                      Archive Course
-                    </button>
-                  </div>
-                </div>
-
-                <div style={styles.settingsActions}>
-                  <button
-                    style={styles.cancelButton}
-                    onClick={() => setShowSettings(false)}
-                  >
-                    Cancel
-                  </button>
-                  <button style={styles.saveButton} onClick={handleSaveSettings}>
-                    Save Changes
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Grade Progress Bar - Two layers: assessed weight (background) and earned contribution (foreground) */}
-            {completedWeight > 0 ? (
-              <div style={styles.progressSection}>
-                <div style={styles.progressBar}>
-                  {/* Background layer: total assessed weight */}
-                  <div
-                    style={{
-                      ...styles.progressFillBackground,
-                      width: `${Math.min(completedWeight, 100)}%`,
-                    }}
-                  />
-                  {/* Foreground layer: earned contribution */}
-                  <div
-                    style={{
-                      ...styles.progressFill,
-                      width: `${Math.min(earnedContribution, 100)}%`,
-                      backgroundColor:
-                        gradeStatus === 'on-track'
-                          ? 'var(--color-success)'
-                          : gradeStatus === 'warning'
-                            ? 'var(--color-medium)'
-                            : 'var(--color-high)',
-                    }}
-                  />
-                  {/* Target marker: where you need to be */}
-                  <div
-                    style={{
-                      ...styles.targetMarker,
-                      left: `${targetPercent}%`,
-                    }}
-                  />
-                </div>
-                <div style={styles.progressLabels}>
-                  <span>0%</span>
-                  <span style={styles.progressLegend}>
-                    <span style={styles.legendItem}>
-                      <span
-                        style={{
-                          ...styles.legendDot,
-                          backgroundColor: 'var(--color-gray-300)',
-                        }}
-                      />
-                      Assessed: {completedWeight.toFixed(0)}%
-                    </span>
-                    <span style={styles.legendItem}>
-                      <span
-                        style={{
-                          ...styles.legendDot,
-                          backgroundColor:
-                            gradeStatus === 'on-track'
-                              ? 'var(--color-success)'
-                              : gradeStatus === 'warning'
-                                ? 'var(--color-medium)'
-                                : 'var(--color-high)',
-                        }}
-                      />
-                      Earned: {formatGrade(earnedContribution)}
-                    </span>
-                    <span style={styles.legendItem}>
-                      <span
-                        style={{
-                          ...styles.legendDot,
-                          backgroundColor: 'var(--color-navy)',
-                        }}
-                      />
-                      Target: {formatGrade(targetPercent)}
-                    </span>
-                  </span>
-                  <span>100%</span>
-                </div>
-              </div>
-            ) : (
-              <div style={styles.noProgressSection}>
-                <span style={styles.noProgressText}>
-                  No graded coursework with weight yet
-                </span>
-              </div>
-            )}
-
-            {/* Last Synced */}
-            {course.lastSyncedAt && (
-              <div style={styles.syncInfo}>
-                Last synced: {formatDate(course.lastSyncedAt)}
-              </div>
-            )}
-          </div>
-        </div>
+        <CourseHeader
+          course={{
+            id: course.id,
+            code: course.code,
+            name: course.name,
+            nickname: course.nickname,
+            color: course.color,
+            isHidden: course.isHidden,
+            targetGrade: course.targetGrade,
+            targetGradeSource: course.targetGradeSource,
+            lastSyncedAt: course.lastSyncedAt,
+            archivedAt: course.archivedAt,
+            archiveSource: course.archiveSource,
+            credits: course.credits,
+          }}
+          courseColor={courseColor}
+          completedWeight={completedWeight}
+          earnedContribution={earnedContribution}
+          effectiveGrade={effectiveGrade}
+          gradeStatus={gradeStatus}
+          editingTarget={editingTarget}
+          targetGradeInput={targetGradeInput}
+          onStartEditTarget={handleStartEditTarget}
+          onTargetGradeInputChange={setTargetGradeInput}
+          onSaveTargetGrade={handleSaveTargetGrade}
+          onCancelEditTarget={() => setEditingTarget(false)}
+          syllabus={syllabus}
+          onSyllabusClick={handleSyllabusClick}
+          onSyllabusDoubleClick={handleSyllabusDoubleClick}
+          onSyllabusContextMenu={handleSyllabusContextMenu}
+          showSettings={showSettings}
+          nicknameInput={nicknameInput}
+          creditsInput={creditsInput}
+          selectedColor={selectedColor}
+          onToggleSettings={handleToggleSettings}
+          onNicknameChange={setNicknameInput}
+          onCreditsChange={setCreditsInput}
+          onColorChange={setSelectedColor}
+          onToggleHidden={handleToggleHidden}
+          onArchive={handleArchiveCourse}
+          onSaveSettings={handleSaveSettings}
+          onCancelSettings={() => setShowSettings(false)}
+        />
 
         {/* Missing Syllabus Warning */}
         {!syllabusWarningDismissed && (
@@ -1683,86 +1357,22 @@ export function CourseDetail() {
 
                     {/* Add Task Form (only for pending section) */}
                     {isPending && showAddTask && (
-                      <div style={styles.addTaskForm}>
-                        <input
-                          type="text"
-                          placeholder="Task title *"
-                          value={newTaskTitle}
-                          onChange={(e) => setNewTaskTitle(e.target.value)}
-                          style={styles.addTaskInput}
-                          autoFocus
-                        />
-                        <textarea
-                          placeholder="Description (optional)"
-                          value={newTaskDescription}
-                          onChange={(e) => setNewTaskDescription(e.target.value)}
-                          style={styles.addTaskTextarea}
-                          rows={2}
-                        />
-                        {/* Row 1: Type + Start Date + Due Date */}
-                        <div style={styles.addTaskRow}>
-                          <div style={styles.addTaskDateGroup}>
-                            <label style={styles.addTaskDateLabel}>Type</label>
-                            <select
-                              value={newTaskType}
-                              onChange={(e) => setNewTaskType(e.target.value)}
-                              style={styles.addTaskSelectWithLabel}
-                            >
-                              <option value="">Select type...</option>
-                              {TASK_TYPES.map((type) => (
-                                <option key={type.value} value={type.value}>
-                                  {type.label}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                          <div style={styles.addTaskDateGroup}>
-                            <label style={styles.addTaskDateLabel}>Start</label>
-                            <input
-                              type="datetime-local"
-                              value={newTaskStartDate}
-                              onChange={(e) => setNewTaskStartDate(e.target.value)}
-                              style={styles.addTaskDateInput}
-                            />
-                          </div>
-                          <div style={styles.addTaskDateGroup}>
-                            <label style={styles.addTaskDateLabel}>Due *</label>
-                            <input
-                              type="datetime-local"
-                              value={newTaskDueDate}
-                              onChange={(e) => setNewTaskDueDate(e.target.value)}
-                              style={styles.addTaskDateInput}
-                            />
-                          </div>
-                        </div>
-                        {/* Row 2: Weight */}
-                        <div style={styles.addTaskRow}>
-                          <input
-                            type="number"
-                            placeholder="Weight %"
-                            value={newTaskWeight}
-                            onChange={(e) => setNewTaskWeight(e.target.value)}
-                            style={styles.addTaskInputSmall}
-                            min="0"
-                            max="100"
-                          />
-                        </div>
-                        <div style={styles.addTaskActions}>
-                          <button
-                            style={styles.cancelButton}
-                            onClick={() => setShowAddTask(false)}
-                          >
-                            Cancel
-                          </button>
-                          <button
-                            style={styles.saveButton}
-                            onClick={handleCreateTask}
-                            disabled={!newTaskTitle.trim()}
-                          >
-                            Create Task
-                          </button>
-                        </div>
-                      </div>
+                      <AddTaskForm
+                        title={newTaskTitle}
+                        description={newTaskDescription}
+                        startDate={newTaskStartDate}
+                        dueDate={newTaskDueDate}
+                        weight={newTaskWeight}
+                        taskType={newTaskType}
+                        onTitleChange={setNewTaskTitle}
+                        onDescriptionChange={setNewTaskDescription}
+                        onStartDateChange={setNewTaskStartDate}
+                        onDueDateChange={setNewTaskDueDate}
+                        onWeightChange={setNewTaskWeight}
+                        onTaskTypeChange={setNewTaskType}
+                        onCancel={() => setShowAddTask(false)}
+                        onCreate={handleCreateTask}
+                      />
                     )}
 
                     {sectionTasks.length === 0 && !(isPending && showAddTask) ? (
