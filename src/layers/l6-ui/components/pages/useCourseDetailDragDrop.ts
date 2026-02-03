@@ -12,7 +12,7 @@ const SIDEBAR_ORDER_KEY = 'courseDetailSidebarOrder';
 
 // Default section orders
 const DEFAULT_TASK_ORDER = ['pending', 'submitted', 'graded', 'info'];
-const DEFAULT_SIDEBAR_ORDER = ['policies', 'announcements', 'pages'];
+const DEFAULT_SIDEBAR_ORDER = ['policies', 'announcements'];
 
 export interface DragState {
   draggingId: string | null;

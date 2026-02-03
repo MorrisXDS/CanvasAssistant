@@ -10,6 +10,8 @@
  * - Line folding (continuation)
  */
 
+import crypto from 'crypto';
+
 export interface ParsedICSEvent {
   uid: string;
   summary: string;
@@ -26,6 +28,7 @@ export interface ParsedICSEvent {
 export interface ICSParserResult {
   calendarName: string | null;
   timezone: string | null;
+  version: string;
   events: ParsedICSEvent[];
   warnings: string[];
 }
@@ -57,6 +60,7 @@ export class ICSParser {
 
     let calendarName: string | null = null;
     let timezone: string | null = null;
+    let version: string = '2.0'; // Default ICS version
     const events: ParsedICSEvent[] = [];
 
     let currentEvent: Partial<ParsedICSEvent> | null = null;
@@ -73,6 +77,8 @@ export class ICSParser {
         timezone = line.substring(14);
       } else if (line.startsWith('TZID:') && !timezone) {
         timezone = line.substring(5);
+      } else if (line.startsWith('VERSION:')) {
+        version = line.substring(8);
       }
 
       // Event parsing
@@ -107,6 +113,7 @@ export class ICSParser {
     return {
       calendarName,
       timezone,
+      version,
       events,
       warnings: this.warnings,
     };
@@ -191,9 +198,9 @@ export class ICSParser {
   ): { date: Date | null; allDay: boolean } {
     const isAllDay = params.includes('VALUE=DATE') || value.length === 8;
 
-    // Extract TZID if present
+    // Extract TZID if present (stored for potential future timezone handling)
     const tzidMatch = params.match(/TZID=([^;:]+)/);
-    const tzid = tzidMatch ? tzidMatch[1] : null;
+    const _tzid = tzidMatch ? tzidMatch[1] : null;
 
     try {
       if (isAllDay) {
@@ -270,6 +277,37 @@ export class ICSParser {
       dateRange,
       warnings: result.warnings,
     };
+  }
+
+  /**
+   * Generate a stable content hash for duplicate detection
+   *
+   * Includes core event data:
+   * - VERSION, UID, SUMMARY, DTSTART, DTEND, RRULE, DESCRIPTION, LOCATION
+   *
+   * Excludes volatile ICS metadata:
+   * - DTSTAMP, PRODID, SEQUENCE, LAST-MODIFIED
+   */
+  generateContentHash(events: ParsedICSEvent[], version: string): string {
+    const eventStrings = events.map((event) => {
+      return [
+        event.uid || '',
+        event.summary || '',
+        event.dtstart?.toISOString() || '',
+        event.dtend?.toISOString() || '',
+        event.rrule || '',
+        event.description || '',
+        event.location || '',
+      ].join('|');
+    });
+
+    // Sort by UID for consistent ordering (calendar apps may reorder events)
+    eventStrings.sort();
+
+    // Include VERSION in the hash
+    const content = `VERSION:${version}\n${eventStrings.join('\n')}`;
+
+    return crypto.createHash('md5').update(content).digest('hex');
   }
 }
 

@@ -8,11 +8,80 @@
  */
 
 import { ipcMain, dialog } from 'electron';
-import crypto from 'crypto';
 import path from 'path';
 import type { IpcContext } from './IpcContext';
 import { ICSParser, RRuleExpander } from '../layers/l2-daemon';
 import type { CalendarEventRecord } from '../layers/l2-daemon/RRuleExpander';
+import type { ParsedICSEvent } from '../layers/l2-daemon/ICSParser';
+import type { Database } from '../layers/l1-persistence';
+import type { Logger } from '../layers/l0-utilities';
+
+/**
+ * Recompute content hashes for existing calendars
+ * This migrates old full-file MD5 hashes to the new content-based hash format
+ */
+function recomputeCalendarHashes(database: Database, logger: Logger): void {
+  try {
+    const calendars = database.executeRead<{ id: number; name: string }>(
+      'SELECT id, name FROM imported_calendars'
+    );
+
+    if (calendars.length === 0) return;
+
+    const parser = new ICSParser();
+    let updated = 0;
+
+    for (const calendar of calendars) {
+      // Fetch events for this calendar
+      const events = database.executeRead<{
+        uid: string | null;
+        title: string;
+        description: string | null;
+        start_at: string;
+        end_at: string | null;
+        recurrence_rule: string | null;
+        location: string | null;
+      }>(
+        `SELECT uid, title, description, start_at, end_at, recurrence_rule, location
+         FROM calendar_events WHERE imported_calendar_id = ?`,
+        [calendar.id]
+      );
+
+      if (events.length === 0) continue;
+
+      // Convert to ParsedICSEvent format for hash generation
+      const parsedEvents: ParsedICSEvent[] = events.map((e) => ({
+        uid: e.uid || '',
+        summary: e.title,
+        description: e.description,
+        dtstart: e.start_at ? new Date(e.start_at) : null,
+        dtend: e.end_at ? new Date(e.end_at) : null,
+        allDay: false,
+        location: e.location,
+        rrule: e.recurrence_rule,
+        exdates: null,
+        sequence: 0,
+      }));
+
+      // Generate new content hash (using default version since we don't store it)
+      const newHash = parser.generateContentHash(parsedEvents, '2.0');
+
+      // Update the hash
+      database.executeWrite(
+        'UPDATE imported_calendars SET file_hash = ? WHERE id = ?',
+        [newHash, calendar.id],
+        'imported_calendars'
+      );
+      updated++;
+    }
+
+    if (updated > 0) {
+      logger.info(`Recomputed content hashes for ${updated} imported calendar(s)`);
+    }
+  } catch (error) {
+    logger.warn(`Failed to recompute calendar hashes: ${error}`);
+  }
+}
 
 /**
  * Register all calendar-related IPC handlers
@@ -20,6 +89,9 @@ import type { CalendarEventRecord } from '../layers/l2-daemon/RRuleExpander';
 export function registerCalendarHandlers(ctx: IpcContext): void {
   const database = ctx.getDatabase();
   const logger = ctx.getLogger();
+
+  // Recompute hashes for existing calendars (one-time migration)
+  recomputeCalendarHashes(database, logger);
 
   // ============ Imported Calendar Handlers ============
 
@@ -75,17 +147,33 @@ export function registerCalendarHandlers(ctx: IpcContext): void {
         const parser = new ICSParser();
         const result = parser.parse(params.content);
 
-        // Generate file hash for duplicate detection
-        const fileHash = crypto.createHash('md5').update(params.content).digest('hex');
+        // Generate content hash for duplicate detection (uses core event data, ignores metadata)
+        const fileHash = parser.generateContentHash(result.events, result.version);
 
         // Check if already imported
-        const existing = database.executeReadOne<{ id: number }>(
-          'SELECT id FROM imported_calendars WHERE file_hash = ?',
+        const existing = database.executeReadOne<{
+          id: number;
+          name: string;
+          color: string;
+          event_count: number;
+          imported_at: string;
+        }>(
+          'SELECT id, name, color, event_count, imported_at FROM imported_calendars WHERE file_hash = ?',
           [fileHash]
         );
 
         if (existing) {
-          return { success: false, error: 'This calendar has already been imported' };
+          return {
+            success: false,
+            error: 'duplicate',
+            existingCalendar: {
+              id: existing.id,
+              name: existing.name,
+              color: existing.color,
+              eventCount: existing.event_count,
+              importedAt: existing.imported_at,
+            },
+          };
         }
 
         const calendarName =
@@ -355,8 +443,8 @@ export function registerCalendarHandlers(ctx: IpcContext): void {
         const parser = new ICSParser();
         const result = parser.parse(content);
 
-        // Update file hash
-        const fileHash = crypto.createHash('md5').update(content).digest('hex');
+        // Update content hash (uses core event data, ignores metadata)
+        const fileHash = parser.generateContentHash(result.events, result.version);
 
         let eventCount = 0;
 

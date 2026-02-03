@@ -8,6 +8,7 @@ import { Eye, EyeOff, Trash2, Edit2, Check, X, Calendar } from 'lucide-react';
 import type { ImportedCalendar } from '../../../l5-presentation/types';
 import { CALENDAR_COLORS } from '../../constants';
 import { ColorPicker } from '../primitives';
+import { ConfirmDialog } from '../shared';
 
 interface CalendarManagerPanelProps {
   calendars: ImportedCalendar[];
@@ -25,7 +26,7 @@ export function CalendarManagerPanel({
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editName, setEditName] = useState('');
   const [editColor, setEditColor] = useState('');
-  const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
+  const [calendarToDelete, setCalendarToDelete] = useState<ImportedCalendar | null>(null);
 
   const startEditing = (calendar: ImportedCalendar) => {
     setEditingId(calendar.id);
@@ -44,9 +45,11 @@ export function CalendarManagerPanel({
     cancelEditing();
   };
 
-  const confirmDelete = (id: number) => {
-    onDelete(id);
-    setDeleteConfirmId(null);
+  const confirmDelete = () => {
+    if (calendarToDelete) {
+      onDelete(calendarToDelete.id);
+      setCalendarToDelete(null);
+    }
   };
 
   if (calendars.length === 0) {
@@ -60,13 +63,14 @@ export function CalendarManagerPanel({
   }
 
   return (
-    <div style={styles.container}>
-      <div style={styles.header}>
-        <h3 style={styles.title}>My Calendars</h3>
-        <span style={styles.count}>{calendars.length}</span>
-      </div>
+    <>
+      <div style={styles.container}>
+        <div style={styles.header}>
+          <h3 style={styles.title}>My Calendars</h3>
+          <span style={styles.count}>{calendars.length}</span>
+        </div>
 
-      <div style={styles.calendarList}>
+        <div style={styles.calendarList}>
         {calendars.map((calendar) => (
           <div key={calendar.id} style={styles.calendarItem}>
             {editingId === calendar.id ? (
@@ -98,25 +102,6 @@ export function CalendarManagerPanel({
                   </button>
                   <button style={styles.cancelButton} onClick={cancelEditing}>
                     <X size={14} />
-                  </button>
-                </div>
-              </div>
-            ) : deleteConfirmId === calendar.id ? (
-              // Delete confirmation
-              <div style={styles.deleteConfirm}>
-                <span style={styles.deleteText}>Delete "{calendar.name}"?</span>
-                <div style={styles.deleteActions}>
-                  <button
-                    style={styles.confirmDeleteButton}
-                    onClick={() => confirmDelete(calendar.id)}
-                  >
-                    Delete
-                  </button>
-                  <button
-                    style={styles.cancelDeleteButton}
-                    onClick={() => setDeleteConfirmId(null)}
-                  >
-                    Cancel
                   </button>
                 </div>
               </div>
@@ -165,7 +150,7 @@ export function CalendarManagerPanel({
                   </button>
                   <button
                     style={styles.actionButton}
-                    onClick={() => setDeleteConfirmId(calendar.id)}
+                    onClick={() => setCalendarToDelete(calendar)}
                     title="Delete calendar"
                   >
                     <Trash2 size={14} />
@@ -177,6 +162,28 @@ export function CalendarManagerPanel({
         ))}
       </div>
     </div>
+
+      {/* Delete Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={calendarToDelete !== null}
+        title="Delete Calendar?"
+        message={`Are you sure you want to delete "${calendarToDelete?.name}"?`}
+        type="danger"
+        confirmText="Delete Calendar"
+        cancelText="Cancel"
+        onConfirm={confirmDelete}
+        onCancel={() => setCalendarToDelete(null)}
+      >
+        <div style={styles.deleteDetails}>
+          <p style={styles.deleteDetailText}>This will permanently remove:</p>
+          <ul style={styles.deleteDetailList}>
+            <li>{calendarToDelete?.eventCount || 0} calendar event{(calendarToDelete?.eventCount || 0) !== 1 ? 's' : ''}</li>
+            <li>All recurring event instances</li>
+          </ul>
+          <p style={styles.deleteWarning}>This action cannot be undone.</p>
+        </div>
+      </ConfirmDialog>
+    </>
   );
 }
 
@@ -349,42 +356,33 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
   },
 
-  // Delete confirmation styles
-  deleteConfirm: {
-    width: '100%',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 'var(--space-2)',
+  // Delete dialog detail styles
+  deleteDetails: {
+    marginTop: 'var(--space-3)',
+    padding: 'var(--space-3)',
+    backgroundColor: 'var(--bg-app)',
+    borderRadius: 'var(--radius-md)',
+    border: '1px solid var(--border-light)',
   },
 
-  deleteText: {
+  deleteDetailText: {
+    fontSize: 'var(--text-sm)',
+    color: 'var(--text-secondary)',
+    margin: '0 0 var(--space-2) 0',
+  },
+
+  deleteDetailList: {
     fontSize: 'var(--text-sm)',
     color: 'var(--text-primary)',
+    margin: '0 0 var(--space-2) 0',
+    paddingLeft: 'var(--space-4)',
   },
 
-  deleteActions: {
-    display: 'flex',
-    gap: 'var(--space-2)',
-  },
-
-  confirmDeleteButton: {
-    padding: 'var(--space-1) var(--space-3)',
+  deleteWarning: {
     fontSize: 'var(--text-xs)',
-    backgroundColor: 'var(--color-error)',
-    color: 'white',
-    border: 'none',
-    borderRadius: 'var(--radius-sm)',
-    cursor: 'pointer',
-  },
-
-  cancelDeleteButton: {
-    padding: 'var(--space-1) var(--space-3)',
-    fontSize: 'var(--text-xs)',
-    backgroundColor: 'transparent',
-    color: 'var(--text-secondary)',
-    border: '1px solid var(--border-default)',
-    borderRadius: 'var(--radius-sm)',
-    cursor: 'pointer',
+    color: 'var(--color-warning)',
+    margin: 0,
+    fontWeight: 'var(--font-medium)',
   },
 
   // Empty state

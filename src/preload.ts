@@ -196,6 +196,11 @@ const api = {
     }>;
   }) => ipcRenderer.invoke('html:exportBatch', params),
 
+  getHtmlExports: (courseId: number) =>
+    ipcRenderer.invoke('html:getExports', courseId) as Promise<
+      Array<{ sourceType: string; sourceId: string; localPath: string }>
+    >,
+
   // ============ Imported Calendars ============
 
   getImportedCalendars: () => ipcRenderer.invoke('calendar:getImportedCalendars'),
@@ -212,6 +217,9 @@ const api = {
 
   deleteImportedCalendar: (calendarId: number) =>
     ipcRenderer.invoke('calendar:deleteCalendar', calendarId),
+
+  reimportCalendar: (calendarId: number, content: string) =>
+    ipcRenderer.invoke('calendar:reimport', calendarId, content),
 
   toggleCalendarVisibility: (calendarId: number, isVisible: boolean) =>
     ipcRenderer.invoke('calendar:toggleVisibility', calendarId, isVisible),

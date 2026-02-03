@@ -14,6 +14,7 @@ export {
   EXTENDED_COLORS,
   getCourseColor,
   getColorByIndex,
+  getNextCalendarColor,
   isLightColor,
   getContrastTextColor,
   lightenColor,

@@ -125,7 +125,22 @@ export interface StoreActions {
     content: string,
     filename: string,
     options?: { name?: string; color?: string }
-  ) => Promise<{ success: boolean; calendarId?: number; eventCount?: number }>;
+  ) => Promise<{
+    success: boolean;
+    calendarId?: number;
+    eventCount?: number;
+    existingCalendar?: {
+      id: number;
+      name: string;
+      color: string;
+      eventCount: number;
+      importedAt: string;
+    };
+  }>;
+  reimportCalendar: (
+    calendarId: number,
+    content: string
+  ) => Promise<{ success: boolean; eventCount?: number }>;
   deleteImportedCalendar: (calendarId: number) => Promise<boolean>;
   toggleCalendarVisibility: (calendarId: number, isVisible: boolean) => Promise<boolean>;
   updateImportedCalendar: (

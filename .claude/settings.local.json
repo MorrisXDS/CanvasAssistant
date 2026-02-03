@@ -103,7 +103,9 @@
       "Bash(gh run:*)",
       "Bash(npx lint-staged)",
       "Bash(npm run:*)",
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "WebFetch(domain:stackoverflow.com)",
+      "Bash(curl:*)"
     ]
   }
 }

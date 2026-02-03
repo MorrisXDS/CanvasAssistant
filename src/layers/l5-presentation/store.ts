@@ -590,10 +590,12 @@ export const useStore = create<Store>()(
             await get().fetchImportedCalendars();
           }
 
+          // Return result including existingCalendar info for duplicate detection
           return {
             success: result.success,
             calendarId: result.data?.calendarId,
             eventCount: result.data?.eventCount,
+            existingCalendar: result.existingCalendar,
           };
         } catch (error) {
           console.error('Failed to import ICS:', error);
@@ -626,6 +628,26 @@ export const useStore = create<Store>()(
         } catch (error) {
           console.error('Failed to delete calendar:', error);
           return false;
+        }
+      },
+
+      /**
+       * Re-import an existing calendar (replace events with new content)
+       */
+      reimportCalendar: async (calendarId: number, content: string) => {
+        const api = getApi();
+        if (!api) return { success: false };
+
+        try {
+          const result = await api.reimportCalendar(calendarId, content);
+          if (result.success) {
+            // Refresh calendars and events
+            await get().fetchImportedCalendars();
+          }
+          return result;
+        } catch (error) {
+          console.error('Failed to reimport calendar:', error);
+          return { success: false };
         }
       },
 

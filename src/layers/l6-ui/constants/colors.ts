@@ -28,19 +28,70 @@ export const COURSE_COLORS = [
 ] as const;
 
 /**
- * Calendar-specific color palette
+ * Calendar-specific color palette - 40 distinct colors
  * Used for imported calendars and custom calendar events
  * (Different from course colors for visual distinction)
+ * First color is the default for new calendars
+ *
+ * Organized by hue families for reference, but the golden angle
+ * algorithm distributes picks optimally across the palette.
  */
 export const CALENDAR_COLORS = [
-  '#6366F1', // Indigo
-  '#EC4899', // Pink
-  '#10B981', // Emerald
-  '#F59E0B', // Amber
+  // Blues (default starts here)
+  '#66CCFF', // Sky Blue (default)
   '#3B82F6', // Blue
+  '#6366F1', // Indigo
+  '#1E40AF', // Dark Blue
+  '#0EA5E9', // Light Blue
+  '#2563EB', // Royal Blue
+
+  // Purples & Violets
   '#8B5CF6', // Violet
+  '#A855F7', // Purple
+  '#7C3AED', // Deep Violet
+  '#C084FC', // Lavender
+  '#9333EA', // Vivid Purple
+
+  // Pinks & Magentas
+  '#EC4899', // Pink
+  '#F472B6', // Light Pink
+  '#DB2777', // Deep Pink
+  '#E11D48', // Rose
+  '#BE185D', // Magenta
+
+  // Reds & Oranges
   '#EF4444', // Red
+  '#F97316', // Orange
+  '#DC2626', // Dark Red
+  '#FB923C', // Light Orange
+  '#EA580C', // Burnt Orange
+
+  // Yellows & Ambers
+  '#F59E0B', // Amber
+  '#FBBF24', // Yellow
+  '#EAB308', // Gold
+  '#D97706', // Dark Amber
+  '#FCD34D', // Pale Yellow
+
+  // Greens
+  '#10B981', // Emerald
+  '#22C55E', // Green
+  '#16A34A', // Forest Green
+  '#84CC16', // Lime
+  '#4ADE80', // Light Green
+
+  // Teals & Cyans
   '#14B8A6', // Teal
+  '#06B6D4', // Cyan
+  '#0D9488', // Dark Teal
+  '#2DD4BF', // Aqua
+  '#0891B2', // Deep Cyan
+
+  // Neutrals & Specialty
+  '#6B7280', // Gray
+  '#78716C', // Warm Gray
+  '#71717A', // Zinc
+  '#64748B', // Slate
 ] as const;
 
 /**
@@ -145,4 +196,32 @@ export function withAlpha(hexColor: string, alpha: number): string {
   const g = parseInt(hex.substring(2, 4), 16);
   const b = parseInt(hex.substring(4, 6), 16);
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+/**
+ * Golden Angle color selection for imported calendars
+ *
+ * Uses the golden angle (≈137.508°) to distribute colors optimally.
+ * This is the same algorithm used by D3.js, matplotlib, and other
+ * visualization libraries to ensure maximum visual distinction
+ * between consecutive items.
+ *
+ * The golden ratio (φ ≈ 1.618) has the property that each new item
+ * lands in the largest remaining gap, creating optimal distribution.
+ *
+ * @param existingCount - Number of calendars already imported
+ * @returns A color from CALENDAR_COLORS with optimal distribution
+ */
+export function getNextCalendarColor(existingCount: number): string {
+  // Golden ratio conjugate (1/φ ≈ 0.618)
+  const goldenRatioConjugate = 0.6180339887498949;
+
+  // Multiply by golden ratio and take fractional part
+  // This distributes indices optimally across the palette
+  const fractional = (existingCount * goldenRatioConjugate) % 1;
+
+  // Map to palette index
+  const index = Math.floor(fractional * CALENDAR_COLORS.length);
+
+  return CALENDAR_COLORS[index];
 }

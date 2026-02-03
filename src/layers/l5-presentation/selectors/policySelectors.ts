@@ -77,7 +77,8 @@ function computePoliciesHash(policies: Policy[]): string {
  * Check if a policy applies to a task based on task_type config
  */
 function policyAppliesToTask(policy: Policy, task: Task): boolean {
-  const config = policy.policyConfig as Record<string, unknown>;
+  const config = policy.policyConfig as Record<string, unknown> | undefined;
+  if (!config) return true; // If no config, applies to all tasks
   const taskType = config.task_type as string | undefined;
 
   // If no task_type specified, applies to all tasks
@@ -105,8 +106,9 @@ function policyAppliesToTask(policy: Policy, task: Task): boolean {
 /**
  * Format grace tokens policy as badge data
  */
-function formatGraceTokensBadge(policy: Policy): PolicyBadgeData {
-  const config = policy.policyConfig as unknown as GraceTokenConfig;
+function formatGraceTokensBadge(policy: Policy): PolicyBadgeData | null {
+  const config = policy.policyConfig as unknown as GraceTokenConfig | undefined;
+  if (!config) return null;
   const available = config.total_tokens - (config.tokens_used || 0);
   const hours = config.hours_per_token;
 
@@ -122,8 +124,9 @@ function formatGraceTokensBadge(policy: Policy): PolicyBadgeData {
 /**
  * Format late penalty policy as badge data
  */
-function formatLatePenaltyBadge(policy: Policy): PolicyBadgeData {
-  const config = policy.policyConfig as unknown as LatePenaltyConfig;
+function formatLatePenaltyBadge(policy: Policy): PolicyBadgeData | null {
+  const config = policy.policyConfig as unknown as LatePenaltyConfig | undefined;
+  if (!config) return null;
   const penalty = config.penalty_per_day;
   const maxPenalty = config.max_penalty;
 
@@ -147,8 +150,9 @@ function formatLatePenaltyBadge(policy: Policy): PolicyBadgeData {
 /**
  * Format drop lowest policy as badge data
  */
-function formatDropLowestBadge(policy: Policy): PolicyBadgeData {
-  const config = policy.policyConfig as unknown as DropLowestConfig;
+function formatDropLowestBadge(policy: Policy): PolicyBadgeData | null {
+  const config = policy.policyConfig as unknown as DropLowestConfig | undefined;
+  if (!config) return null;
   const count = config.drop_count;
   const total = config.category_total;
 
@@ -169,8 +173,9 @@ function formatDropLowestBadge(policy: Policy): PolicyBadgeData {
 /**
  * Format weight transfer policy as badge data
  */
-function formatWeightTransferBadge(policy: Policy): PolicyBadgeData {
-  const config = policy.policyConfig as unknown as WeightTransferConfig;
+function formatWeightTransferBadge(policy: Policy): PolicyBadgeData | null {
+  const config = policy.policyConfig as unknown as WeightTransferConfig | undefined;
+  if (!config) return null;
   const transferTo = config.transfer_to;
   const condition = config.condition;
 
@@ -191,8 +196,9 @@ function formatWeightTransferBadge(policy: Policy): PolicyBadgeData {
 /**
  * Format grade replacement policy as badge data
  */
-function formatGradeReplacementBadge(policy: Policy): PolicyBadgeData {
-  const config = policy.policyConfig as unknown as GradeReplacementConfig;
+function formatGradeReplacementBadge(policy: Policy): PolicyBadgeData | null {
+  const config = policy.policyConfig as unknown as GradeReplacementConfig | undefined;
+  if (!config) return null;
   const source = config.replacement_source;
   const condition = config.condition;
 
@@ -276,8 +282,10 @@ export function getTaskPolicyInfo(task: Task, policies: Policy[]): TaskPolicyInf
       // Track policy presence
       switch (policy.policyType as PolicyType) {
         case 'grace_tokens': {
-          const config = policy.policyConfig as unknown as GraceTokenConfig;
-          graceTokensAvailable = config.total_tokens - (config.tokens_used || 0);
+          const config = policy.policyConfig as unknown as GraceTokenConfig | undefined;
+          if (config) {
+            graceTokensAvailable = config.total_tokens - (config.tokens_used || 0);
+          }
           break;
         }
         case 'drop_lowest':

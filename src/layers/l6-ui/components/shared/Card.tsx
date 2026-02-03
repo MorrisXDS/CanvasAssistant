@@ -72,6 +72,8 @@ export function Card({
     padding: title || headerAction ? '0 24px 24px 24px' : paddingStyles[padding],
     flex: 1,
     overflow: 'auto',
+    display: 'flex',
+    flexDirection: 'column',
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {

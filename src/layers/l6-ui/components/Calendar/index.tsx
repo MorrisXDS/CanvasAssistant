@@ -23,6 +23,7 @@ import {
   ImportedCalendarEvent,
 } from './CalendarGrid';
 import { ImportConfirmationModal } from './ImportConfirmationModal';
+import { DuplicateCalendarModal } from './DuplicateCalendarModal';
 import { CalendarManagerPanel } from './CalendarManagerPanel';
 import { TaskDetailModal } from './TaskDetailModal';
 import { EventFormModal } from './EventFormModal';
@@ -56,6 +57,7 @@ export function CalendarPage() {
     fetchImportedCalendars,
     fetchCalendarEventsForRange,
     importICSFile,
+    reimportCalendar,
     deleteImportedCalendar,
     toggleCalendarVisibility,
     updateImportedCalendar,
@@ -87,6 +89,17 @@ export function CalendarPage() {
   const [showImportModal, setShowImportModal] = useState(false);
   const [importPreview, setImportPreview] = useState<ICSImportPreview | null>(null);
   const [pendingICSContent, setPendingICSContent] = useState<string>('');
+
+  // Duplicate calendar modal state
+  const [showDuplicateModal, setShowDuplicateModal] = useState(false);
+  const [duplicateFilename, setDuplicateFilename] = useState('');
+  const [existingCalendarInfo, setExistingCalendarInfo] = useState<{
+    id: number;
+    name: string;
+    color: string;
+    eventCount: number;
+    importedAt: string;
+  } | null>(null);
 
   // Panel states
   const [showCalendarManager, setShowCalendarManager] = useState(false);
@@ -346,7 +359,19 @@ export function CalendarPage() {
   const handleImportConfirm = useCallback(
     async (options: { name: string; color: string }) => {
       if (!pendingICSContent || !importPreview) return;
-      await importICSFile(pendingICSContent, importPreview.filename, options);
+      const result = await importICSFile(pendingICSContent, importPreview.filename, options);
+
+      // Check if this is a duplicate
+      if (!result.success && (result as { existingCalendar?: unknown }).existingCalendar) {
+        const existingCal = (result as { existingCalendar: typeof existingCalendarInfo }).existingCalendar;
+        setShowImportModal(false);
+        setDuplicateFilename(importPreview.filename);
+        setExistingCalendarInfo(existingCal);
+        setShowDuplicateModal(true);
+        // Keep pendingICSContent for potential reimport
+        return;
+      }
+
       setShowImportModal(false);
       setImportPreview(null);
       setPendingICSContent('');
@@ -362,6 +387,43 @@ export function CalendarPage() {
       visibleRange,
     ]
   );
+
+  // Duplicate calendar modal handlers
+  const handleDuplicateViewCalendar = useCallback(() => {
+    setShowDuplicateModal(false);
+    setExistingCalendarInfo(null);
+    setDuplicateFilename('');
+    setPendingICSContent('');
+    setImportPreview(null);
+    // Calendar is already visible in the list
+  }, []);
+
+  const handleDuplicateReimport = useCallback(async () => {
+    if (!existingCalendarInfo || !pendingICSContent) return;
+    await reimportCalendar(existingCalendarInfo.id, pendingICSContent);
+    setShowDuplicateModal(false);
+    setExistingCalendarInfo(null);
+    setDuplicateFilename('');
+    setPendingICSContent('');
+    setImportPreview(null);
+    await fetchImportedCalendars();
+    fetchCalendarEventsForRange(visibleRange.start, visibleRange.end);
+  }, [
+    existingCalendarInfo,
+    pendingICSContent,
+    reimportCalendar,
+    fetchImportedCalendars,
+    fetchCalendarEventsForRange,
+    visibleRange,
+  ]);
+
+  const handleDuplicateCancel = useCallback(() => {
+    setShowDuplicateModal(false);
+    setExistingCalendarInfo(null);
+    setDuplicateFilename('');
+    setPendingICSContent('');
+    setImportPreview(null);
+  }, []);
 
   const handleImportICS = () => {
     const input = document.createElement('input');
@@ -550,6 +612,14 @@ export function CalendarPage() {
           setImportPreview(null);
           setPendingICSContent('');
         }}
+      />
+      <DuplicateCalendarModal
+        isOpen={showDuplicateModal}
+        filename={duplicateFilename}
+        existingCalendar={existingCalendarInfo}
+        onViewCalendar={handleDuplicateViewCalendar}
+        onReimport={handleDuplicateReimport}
+        onCancel={handleDuplicateCancel}
       />
       <TaskDetailModal
         isOpen={selectedEvent !== null}
