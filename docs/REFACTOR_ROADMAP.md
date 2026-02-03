@@ -7,7 +7,7 @@
 | Phase | Total Files | Completed | In Progress |
 |-------|-------------|-----------|-------------|
 | Phase 1 | 5 | 5 ✅ | 0 |
-| Phase 2 | 8 | 4 | 4 |
+| Phase 2 | 8 | 6 | 2 |
 | Phase 3 | 7 | 2 | 5 |
 
 ---
@@ -32,10 +32,10 @@
 |---|------|----------|---------|-----------|--------|
 | 6 | `Layout.tsx` | 1,016 | 253 | 75% | ✅ Done |
 | 7 | `Calendar/index.tsx` | 1,587 | 790 | 50% | 🔶 Partial |
-| 8 | `CalendarPage.tsx` | 1,491 | 888 | 40% | 🔶 Partial |
+| 8 | `CalendarPage.tsx` | 1,491 | 888 | 40% | ⏳ **NEXT** |
 | 9 | `SettingsModal.tsx` | 3,610 | 45 | 99% | ✅ Done |
-| 10 | `EventFormModal.tsx` | 1,019 | 905 | 11% | ⏳ **NEXT** |
-| 11 | `SyncEngine.ts` | 5,587 | 1,947 | 65% | 🔶 Partial |
+| 10 | `EventFormModal.tsx` | 1,019 | 905 | 11% | ✅ Skip (form component, minimal gain) |
+| 11 | `SyncEngine.ts` | 5,587 | 1,947 | 65% | ✅ Done (8 modules extracted) |
 | 12 | `ExportManager.ts` | 942 | 342 | 64% | ✅ Done |
 | 13 | `CoursesPage.tsx` | 2,111 | 829 | 61% | 🔶 Partial |
 
@@ -57,9 +57,9 @@
 
 ## Next Target
 
-**`EventFormModal.tsx`** (905 lines, 11% reduction)
-- Complex form component with minimal refactoring done
-- Strategy: Extract form sections, validation logic, state hooks
+**`CalendarPage.tsx`** (888 lines, 40% reduction)
+- Calendar page with event handling and view switching
+- Strategy: Extract view components, event handlers, state hooks
 
 ---
 
