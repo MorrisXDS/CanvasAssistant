@@ -9,22 +9,13 @@ import DOMPurify from 'dompurify';
 import {
   ArrowLeft,
   BookOpen,
-  CheckCircle,
-  Clock,
-  ChevronRight,
   X,
-  Plus,
-  GripVertical,
   Archive,
   RefreshCw,
-  FileText,
 } from 'lucide-react';
 import {
-  Card,
   PolicyModal,
   ConfirmDialog,
-  PolicyBadgeGroup,
-  RichTextEditor,
 } from '../shared';
 import type { PolicyModalData, PolicyType } from '../shared';
 import { useStore } from '../../../l5-presentation/store';
@@ -45,15 +36,17 @@ import {
 import type { FileResource } from '../Files/FileListItem';
 import { useCourseDetailDragDrop } from './useCourseDetailDragDrop';
 import { useCourseDetailTaskState } from './useCourseDetailTaskState';
+import { useCourseDetailSettingsState } from './useCourseDetailSettingsState';
+import { useCourseDetailSyllabusState } from './useCourseDetailSyllabusState';
+import { useCourseDetailPolicyState } from './useCourseDetailPolicyState';
 import { courseDetailStyles as styles } from './CourseDetail.styles';
 import {
-  TaskItem,
   TaskListModal,
   PoliciesCard,
   AnnouncementsCard,
   GradeHistoryCard,
   CourseHeader,
-  AddTaskForm,
+  TaskSectionList,
   type GradeHistoryEntry,
 } from '../CourseDetail/components';
 
@@ -146,36 +139,34 @@ export function CourseDetail() {
   const [announcements, setAnnouncements] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Course settings editing state
-  const [editingTarget, setEditingTarget] = useState(false);
-  const [targetGradeInput, setTargetGradeInput] = useState('');
-  const [showSettings, setShowSettings] = useState(false);
-  const [nicknameInput, setNicknameInput] = useState('');
-  const [selectedColor, setSelectedColor] = useState<string | null>(null);
-  const [creditsInput, setCreditsInput] = useState('');
+  // Course settings state and handlers from custom hook
+  const {
+    editingTarget,
+    setEditingTarget,
+    targetGradeInput,
+    setTargetGradeInput,
+    showSettings,
+    setShowSettings,
+    nicknameInput,
+    setNicknameInput,
+    selectedColor,
+    setSelectedColor,
+    creditsInput,
+    setCreditsInput,
+    handleSaveTargetGrade,
+    handleSaveSettings,
+    handleToggleHidden,
+    handleArchiveCourse,
+    handleToggleSettings,
+    handleStartEditTarget,
+  } = useCourseDetailSettingsState({
+    courseId,
+    course,
+    setCourse,
+    navigate,
+  });
 
-  // Policy modal state
-  const [policyModalState, setPolicyModalState] = useState<{
-    isOpen: boolean;
-    editData?: {
-      id: number;
-      policyType: PolicyType;
-      policyName: string;
-      config: Record<string, unknown>;
-    };
-  }>({ isOpen: false });
-  const [policyLoading, setPolicyLoading] = useState(false);
-
-  // Syllabus and enhanced policy state
-  const [syllabus, setSyllabus] = useState<CourseSyllabus | null>(null);
-  const [courseFiles, setCourseFiles] = useState<FileResource[]>([]);
-  const [_settingsLoading, _setSettingsLoading] = useState(false);
-  const [showSyllabusSelector, setShowSyllabusSelector] = useState(false);
-  const [syllabusWarningDismissed, setSyllabusWarningDismissed] = useState(false);
-  const [syllabusContextMenu, setSyllabusContextMenu] = useState<{ x: number; y: number } | null>(null);
-  const syllabusClickTimeout = useRef<NodeJS.Timeout | null>(null);
-
-  // Confirm dialog state
+  // Confirm dialog state (declared early as other hooks depend on it)
   const [confirmDialog, setConfirmDialog] = useState<{
     isOpen: boolean;
     title: string;
@@ -190,6 +181,43 @@ export function CourseDetail() {
     type: 'warning',
     confirmText: 'Confirm',
     onConfirm: () => {},
+  });
+
+  // Policy state and handlers from custom hook
+  const {
+    policyModalState,
+    policyLoading,
+    handleSavePolicy,
+    openAddPolicyModal,
+    openEditPolicyModal,
+    closePolicyModal,
+    handleDeletePolicy,
+  } = useCourseDetailPolicyState({
+    courseId,
+    setPolicies,
+    setConfirmDialog,
+  });
+
+  // Syllabus state and handlers from custom hook
+  const {
+    syllabus,
+    setSyllabus,
+    courseFiles,
+    setCourseFiles,
+    showSyllabusSelector,
+    setShowSyllabusSelector,
+    syllabusWarningDismissed,
+    setSyllabusWarningDismissed,
+    syllabusContextMenu,
+    setSyllabusContextMenu,
+    handleSetSyllabus,
+    handleRemoveSyllabus,
+    handleSyllabusClick,
+    handleSyllabusDoubleClick,
+    handleSyllabusContextMenu,
+  } = useCourseDetailSyllabusState({
+    courseId,
+    setConfirmDialog,
   });
 
   // Task state and handlers from custom hook
@@ -311,375 +339,6 @@ export function CourseDetail() {
     sidebarDragState,
     sidebarDragHandlers,
   } = useCourseDetailDragDrop();
-
-  // Save target grade
-  const handleSaveTargetGrade = async () => {
-    const newTarget = parseFloat(targetGradeInput);
-    if (isNaN(newTarget) || newTarget < 0 || newTarget > 100) return;
-
-    const api = window.api;
-    if (!api?.dispatch) return;
-
-    try {
-      await api.dispatch('UpdateTargetGrade', { courseId, targetGrade: newTarget });
-      // Mark as 'manual' since user explicitly changed it
-      setCourse((prev) =>
-        prev ? { ...prev, targetGrade: newTarget, targetGradeSource: 'manual' } : null
-      );
-      setEditingTarget(false);
-    } catch (error) {
-      console.error('Failed to update target grade:', error);
-    }
-  };
-
-  // Save course settings
-  const handleSaveSettings = async () => {
-    const api = window.api;
-    if (!api?.dispatch) return;
-
-    try {
-      // Parse credits
-      const newCredits = parseFloat(creditsInput);
-      const validCredits = !isNaN(newCredits) && newCredits >= 0 && newCredits <= 10;
-
-      // Save course preferences (nickname, color, credits)
-      await api.dispatch('UpdateCoursePreferences', {
-        courseId,
-        preferences: {
-          nickname: nicknameInput || undefined,
-          color: selectedColor || undefined,
-          credits: validCredits ? newCredits : undefined,
-        },
-      });
-
-      // Save target grade if changed (marks as 'manual')
-      const newTarget = parseFloat(targetGradeInput);
-      if (
-        !isNaN(newTarget) &&
-        newTarget >= 0 &&
-        newTarget <= 100 &&
-        newTarget !== course?.targetGrade
-      ) {
-        await api.dispatch('UpdateTargetGrade', { courseId, targetGrade: newTarget });
-        setCourse((prev) =>
-          prev
-            ? {
-                ...prev,
-                nickname: nicknameInput || null,
-                color: selectedColor,
-                targetGrade: newTarget,
-                targetGradeSource: 'manual',
-                credits: validCredits ? newCredits : prev.credits,
-              }
-            : null
-        );
-      } else {
-        setCourse((prev) =>
-          prev
-            ? {
-                ...prev,
-                nickname: nicknameInput || null,
-                color: selectedColor,
-                credits: validCredits ? newCredits : prev.credits,
-              }
-            : null
-        );
-      }
-
-      setShowSettings(false);
-    } catch (error) {
-      console.error('Failed to update course settings:', error);
-    }
-  };
-
-  // Toggle course visibility
-  const handleToggleHidden = async () => {
-    const api = window.api;
-    if (!api?.dispatch || !course) return;
-
-    try {
-      const newHidden = !course.isHidden;
-      await api.dispatch('UpdateCoursePreferences', {
-        courseId,
-        preferences: { isHidden: newHidden },
-      });
-      setCourse((prev) => (prev ? { ...prev, isHidden: newHidden } : null));
-    } catch (error) {
-      console.error('Failed to toggle course visibility:', error);
-    }
-  };
-
-  // Archive/Unarchive course
-  const handleArchiveCourse = async () => {
-    const api = window.api;
-    if (!api?.dispatch || !course) return;
-
-    try {
-      const result = await api.dispatch('ArchiveCourse', { courseId });
-      if (result.success) {
-        // Navigate back to courses page after archiving
-        navigate('/courses');
-      }
-    } catch (error) {
-      console.error('Failed to archive course:', error);
-    }
-  };
-
-  // Syllabus handlers
-  const handleSetSyllabus = async (resourceId: number) => {
-    const api = window.api;
-    if (!api?.dispatch) return;
-
-    _setSettingsLoading(true);
-    try {
-      const result = await api.dispatch('SetCourseSyllabus', { courseId, resourceId });
-      if (result.success && result.data) {
-        const file = courseFiles.find((f) => f.id === resourceId);
-        setSyllabus({
-          id: result.data.syllabusId,
-          courseId,
-          resourceId,
-          resourceTitle: file?.title ?? 'Unknown file',
-          resourceUpdatedAt: null,
-          lastReviewedAt: result.data.lastReviewedAt,
-          changeDetectedAt: null,
-          markedAt: result.data.lastReviewedAt,
-        });
-      }
-    } catch (error) {
-      console.error('Failed to set syllabus:', error);
-    } finally {
-      _setSettingsLoading(false);
-    }
-  };
-
-  const _handleMarkSyllabusReviewed = async () => {
-    const api = window.api;
-    if (!api?.dispatch) return;
-
-    _setSettingsLoading(true);
-    try {
-      const result = await api.dispatch('MarkSyllabusReviewed', { courseId });
-      if (result.success && result.data) {
-        setSyllabus((prev) =>
-          prev
-            ? {
-                ...prev,
-                lastReviewedAt: result.data.lastReviewedAt,
-                changeDetectedAt: null,
-              }
-            : null
-        );
-      }
-    } catch (error) {
-      console.error('Failed to mark syllabus reviewed:', error);
-    } finally {
-      _setSettingsLoading(false);
-    }
-  };
-
-  const handleRemoveSyllabus = async () => {
-    const api = window.api;
-    if (!api?.dispatch) return;
-
-    _setSettingsLoading(true);
-    try {
-      await api.dispatch('RemoveCourseSyllabus', { courseId });
-      setSyllabus(null);
-    } catch (error) {
-      console.error('Failed to remove syllabus:', error);
-    } finally {
-      _setSettingsLoading(false);
-    }
-  };
-
-  // Policy handlers
-  const handleSavePolicy = async (data: PolicyModalData) => {
-    const api = window.api;
-    if (!api?.dispatch) {
-      console.error('[handleSavePolicy] API dispatch not available');
-      return;
-    }
-
-    setPolicyLoading(true);
-
-    try {
-      const policyId = policyModalState.editData?.id;
-
-      if (policyId) {
-        // Update existing
-        const result = await api.dispatch('UpdatePolicy', {
-          policyId,
-          updates: {
-            policyName: data.policyName,
-            policyConfig: data.config,
-          },
-        });
-
-        if (result.success) {
-          const policiesData = await api.getPolicies(courseId);
-          setPolicies(policiesData || []);
-          setPolicyModalState({ isOpen: false });
-        } else {
-          console.error('[handleSavePolicy] Update failed:', result.error);
-        }
-      } else {
-        // Add new
-        const result = await api.dispatch('AddPolicy', {
-          courseId,
-          policyType: data.policyType,
-          policyName: data.policyName,
-          policyConfig: data.config,
-        });
-
-        if (result.success) {
-          const policiesData = await api.getPolicies(courseId);
-          setPolicies(policiesData || []);
-          setPolicyModalState({ isOpen: false });
-        } else {
-          console.error('[handleSavePolicy] Add failed:', result.error);
-        }
-      }
-    } catch (error) {
-      console.error('[handleSavePolicy] Exception:', error);
-    } finally {
-      setPolicyLoading(false);
-    }
-  };
-
-  const openAddPolicyModal = () => {
-    setPolicyModalState({ isOpen: true });
-  };
-
-  const openEditPolicyModal = (policy: Policy) => {
-    setPolicyModalState({
-      isOpen: true,
-      editData: {
-        id: policy.id,
-        policyType: policy.policyType as PolicyType,
-        policyName: policy.policyName,
-        config: policy.policyConfig as Record<string, unknown>,
-      },
-    });
-  };
-
-  const closePolicyModal = () => {
-    setPolicyModalState({ isOpen: false });
-  };
-
-  const handleDeletePolicy = (policyId: number, policyName: string) => {
-    setConfirmDialog({
-      isOpen: true,
-      title: 'Delete Policy',
-      message: `Are you sure you want to delete "${policyName}"?`,
-      type: 'danger',
-      confirmText: 'Delete',
-      onConfirm: async () => {
-        const api = window.api;
-        if (!api?.dispatch) return;
-
-        try {
-          const result = await api.dispatch('DeletePolicy', { policyId });
-          if (result.success) {
-            const policiesData = await api.getPolicies(courseId);
-            setPolicies(policiesData || []);
-          }
-        } catch (error) {
-          console.error('Failed to delete policy:', error);
-        }
-        setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
-      },
-    });
-  };
-
-  // Syllabus click handlers for CourseHeader
-  const handleSyllabusClick = () => {
-    // Delay single-click to allow double-click to cancel it
-    if (syllabusClickTimeout.current) {
-      clearTimeout(syllabusClickTimeout.current);
-    }
-    syllabusClickTimeout.current = setTimeout(() => {
-      setShowSyllabusSelector(true);
-    }, 250);
-  };
-
-  const handleSyllabusDoubleClick = () => {
-    // Cancel single-click action
-    if (syllabusClickTimeout.current) {
-      clearTimeout(syllabusClickTimeout.current);
-      syllabusClickTimeout.current = null;
-    }
-    if (!syllabus) {
-      // No syllabus - open selector instead
-      setShowSyllabusSelector(true);
-      return;
-    }
-    const api = window.api;
-
-    // Check if syllabus file is downloaded
-    const syllabusFile = courseFiles.find((f) => f.id === syllabus.resourceId);
-    const isDownloaded = syllabusFile?.localPath != null;
-
-    if (!isDownloaded) {
-      // Prompt to download first
-      setConfirmDialog({
-        isOpen: true,
-        title: 'Download Syllabus',
-        message: `"${syllabus.resourceTitle}" hasn't been downloaded yet. Would you like to download it now?`,
-        type: 'info',
-        confirmText: 'Download',
-        onConfirm: async () => {
-          try {
-            if (syllabus.resourceId < 0) {
-              await api?.downloadAttachment(Math.abs(syllabus.resourceId));
-            } else {
-              await api?.downloadResource(syllabus.resourceId);
-            }
-            // Refresh course files to update download status
-            const updatedFiles = await api?.getCourseFiles?.(courseId);
-            if (updatedFiles) setCourseFiles(updatedFiles);
-          } catch (error) {
-            console.error('Failed to download syllabus:', error);
-          }
-          setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
-        },
-      });
-      return;
-    }
-
-    // File is downloaded - open it
-    if (syllabus.resourceId < 0) {
-      api
-        ?.openAttachment(Math.abs(syllabus.resourceId))
-        .catch((error: unknown) => console.error('Failed to open syllabus:', error));
-    } else {
-      api
-        ?.openResource(syllabus.resourceId)
-        .catch((error: unknown) => console.error('Failed to open syllabus:', error));
-    }
-  };
-
-  const handleSyllabusContextMenu = (e: React.MouseEvent) => {
-    e.preventDefault();
-    setSyllabusContextMenu({ x: e.clientX, y: e.clientY });
-  };
-
-  // Settings toggle handler
-  const handleToggleSettings = () => {
-    if (!course) return;
-    setNicknameInput(course.nickname || '');
-    setSelectedColor(course.color);
-    setTargetGradeInput(course.targetGrade.toString());
-    setCreditsInput(course.credits?.toString() || '1.0');
-    setShowSettings(!showSettings);
-  };
-
-  // Start editing target grade
-  const handleStartEditTarget = () => {
-    if (!course) return;
-    setTargetGradeInput(course.targetGrade.toString());
-    setEditingTarget(true);
-  };
 
   // Fetch course data
   useEffect(() => {
@@ -1039,229 +698,88 @@ export function CourseDetail() {
         <div style={styles.twoColumn}>
           {/* Left Column - Assignments */}
           <div style={styles.mainColumn}>
-            {taskSectionOrder.map((sectionId) => {
-              // Section configuration
-              const sectionConfig = {
-                pending: {
-                  title: 'Pending',
-                  tasks: pendingTasks,
-                  emptyIcon: <CheckCircle size={24} color="var(--color-success)" />,
-                  emptyText: 'No pending coursework',
-                  showAddButton: true,
-                  showViewAll: false,
-                  modalTitle: 'All Pending Tasks',
-                  getIsCompleted: (task: Task) => task.isCompleted,
-                },
-                submitted: {
-                  title: 'Submitted',
-                  tasks: submittedTasks,
-                  emptyIcon: <Clock size={24} color="var(--text-muted)" />,
-                  emptyText: 'No submitted coursework awaiting grades',
-                  showAddButton: false,
-                  showViewAll: true,
-                  modalTitle: 'All Submitted Tasks',
-                  getIsCompleted: (task: Task) => task.isCompleted,
-                },
-                graded: {
-                  title: 'Graded',
-                  tasks: gradedTasks,
-                  emptyIcon: <CheckCircle size={24} color="var(--text-muted)" />,
-                  emptyText: 'No graded coursework yet',
-                  showAddButton: false,
-                  showViewAll: true,
-                  modalTitle: 'All Graded Tasks',
-                  getIsCompleted: (task: Task) => task.isCompleted || task.grade !== null,
-                },
-                info: {
-                  title: 'Not for Grade',
-                  tasks: infoTasks,
-                  emptyIcon: <FileText size={24} color="var(--text-muted)" />,
-                  emptyText: 'No informational items',
-                  showAddButton: false,
-                  showViewAll: true,
-                  modalTitle: 'All Informational Items',
-                  getIsCompleted: () => true, // Info items are always "complete" (no submission needed)
-                },
-              }[sectionId];
-
-              if (!sectionConfig) return null;
-
-              const {
-                title,
-                tasks: sectionTasks,
-                emptyIcon,
-                emptyText,
-                showAddButton,
-                showViewAll,
-                modalTitle,
-                getIsCompleted,
-              } = sectionConfig;
-              const isDragging = taskDragState.draggingId === sectionId;
-              const isDragOver = taskDragState.dragOverId === sectionId;
-              const isPending = sectionId === 'pending';
-              const displayTasks = showViewAll
-                ? sectionTasks.slice(0, MAX_VISIBLE_ITEMS)
-                : sectionTasks;
-
-              return (
-                <div
-                  key={sectionId}
-                  draggable
-                  onDragStart={taskDragHandlers.onDragStart(sectionId)}
-                  onDragEnd={taskDragHandlers.onDragEnd}
-                  onDragOver={taskDragHandlers.onDragOver(sectionId)}
-                  onDragLeave={taskDragHandlers.onDragLeave}
-                  onDrop={taskDragHandlers.onDrop(sectionId)}
-                  style={{
-                    opacity: isDragging ? 0.5 : 1,
-                    borderTop: isDragOver
-                      ? '2px solid var(--color-blue)'
-                      : '2px solid transparent',
-                    transition: 'opacity 0.2s, border-color 0.2s',
-                  }}
-                >
-                  <Card padding="none">
-                    <div style={styles.cardHeader}>
-                      <div style={styles.cardHeaderLeft}>
-                        <GripVertical size={14} style={styles.sectionDragHandle} />
-                        <h3 style={styles.cardTitle}>
-                          {title} ({sectionTasks.length})
-                        </h3>
-                      </div>
-                      {showAddButton && (
-                        <button
-                          style={styles.addTaskButton}
-                          onClick={() => setShowAddTask(!showAddTask)}
-                        >
-                          <Plus size={16} />
-                          Add Task
-                        </button>
-                      )}
-                      {showViewAll && sectionTasks.length > MAX_VISIBLE_ITEMS && (
-                        <button
-                          style={styles.viewAllButton}
-                          onClick={() =>
-                            setTaskListModal({
-                              isOpen: true,
-                              title: modalTitle,
-                              tasks: sectionTasks,
-                            })
-                          }
-                        >
-                          View all {sectionTasks.length}
-                          <ChevronRight size={14} />
-                        </button>
-                      )}
-                    </div>
-
-                    {/* Add Task Form (only for pending section) */}
-                    {isPending && showAddTask && (
-                      <AddTaskForm
-                        title={newTaskTitle}
-                        description={newTaskDescription}
-                        startDate={newTaskStartDate}
-                        dueDate={newTaskDueDate}
-                        weight={newTaskWeight}
-                        taskType={newTaskType}
-                        onTitleChange={setNewTaskTitle}
-                        onDescriptionChange={setNewTaskDescription}
-                        onStartDateChange={setNewTaskStartDate}
-                        onDueDateChange={setNewTaskDueDate}
-                        onWeightChange={setNewTaskWeight}
-                        onTaskTypeChange={setNewTaskType}
-                        onCancel={() => setShowAddTask(false)}
-                        onCreate={handleCreateTask}
-                      />
-                    )}
-
-                    {sectionTasks.length === 0 && !(isPending && showAddTask) ? (
-                      <div style={styles.emptySection}>
-                        {emptyIcon}
-                        <span>{emptyText}</span>
-                      </div>
-                    ) : (
-                      <div style={styles.taskList}>
-                        {displayTasks.map((task, index) => (
-                          <TaskItem
-                            key={task.id}
-                            task={task}
-                            policies={policies}
-                            isFirst={index === 0 && !(isPending && showAddTask)}
-                            isCompleted={getIsCompleted(task)}
-                            isExpanded={expandedTaskId === task.id}
-                            isEditing={editingTaskId === task.id}
-                            isHighlighted={highlightedTaskId === task.id}
-                            editTitle={editTaskTitle}
-                            editDescription={editTaskDescription}
-                            editStartDate={editTaskStartDate}
-                            editDueDate={editTaskDueDate}
-                            editWeight={editTaskWeight}
-                            editGrade={editTaskGrade}
-                            onToggleExpand={() =>
-                              setExpandedTaskId(
-                                expandedTaskId === task.id ? null : task.id
-                              )
-                            }
-                            onToggleComplete={() => handleToggleComplete(task)}
-                            onDuplicate={() => handleDuplicateTask(task.id)}
-                            onStartEdit={() => startEditingTask(task)}
-                            onCancelEdit={() => {
-                              setEditingTaskId(null);
-                              setExpandedTaskId(null);
-                            }}
-                            onSaveEdit={handleSaveTask}
-                            onDelete={() => handleDeleteTask(task.id, task.title)}
-                            onEditTitleChange={setEditTaskTitle}
-                            onEditDescriptionChange={setEditTaskDescription}
-                            onEditStartDateChange={setEditTaskStartDate}
-                            onEditDueDateChange={setEditTaskDueDate}
-                            onEditWeightChange={setEditTaskWeight}
-                            onEditGradeChange={setEditTaskGrade}
-                            editTaskType={editTaskType}
-                            onEditTaskTypeChange={setEditTaskType}
-                            editLocation={editTaskLocation}
-                            onEditLocationChange={setEditTaskLocation}
-                            onContextMenu={(e) => handleTaskContextMenu(e, task)}
-                            taskRef={(el) => {
-                              if (el) taskRefs.current.set(task.id, el);
-                            }}
-                            onFileDownloadRequest={(file, href) => {
-                              setPendingFileDownload({
-                                fileId: file.id,
-                                title: file.title,
-                                href,
-                              });
-                              setConfirmDialog({
-                                isOpen: true,
-                                title: 'Download File',
-                                message: `"${file.title}" is not downloaded yet. Would you like to download it to your Files folder?`,
-                                type: 'info',
-                                confirmText: 'Download',
-                                onConfirm: async () => {
-                                  try {
-                                    const result = await window.api?.downloadResource(
-                                      file.id
-                                    );
-                                    if (result?.success && result.localPath) {
-                                      await window.api?.openResource(file.id);
-                                    } else {
-                                      window.api?.openExternal(href);
-                                    }
-                                  } catch {
-                                    window.api?.openExternal(href);
-                                  }
-                                  setPendingFileDownload(null);
-                                },
-                              });
-                            }}
-                          />
-                        ))}
-                      </div>
-                    )}
-                  </Card>
-                </div>
-              );
-            })}
+            <TaskSectionList
+              taskSectionOrder={taskSectionOrder}
+              pendingTasks={pendingTasks}
+              submittedTasks={submittedTasks}
+              gradedTasks={gradedTasks}
+              infoTasks={infoTasks}
+              policies={policies}
+              maxVisibleItems={MAX_VISIBLE_ITEMS}
+              taskDragState={taskDragState}
+              taskDragHandlers={taskDragHandlers}
+              showAddTask={showAddTask}
+              setShowAddTask={setShowAddTask}
+              newTaskTitle={newTaskTitle}
+              newTaskDescription={newTaskDescription}
+              newTaskStartDate={newTaskStartDate}
+              newTaskDueDate={newTaskDueDate}
+              newTaskWeight={newTaskWeight}
+              newTaskType={newTaskType}
+              setNewTaskTitle={setNewTaskTitle}
+              setNewTaskDescription={setNewTaskDescription}
+              setNewTaskStartDate={setNewTaskStartDate}
+              setNewTaskDueDate={setNewTaskDueDate}
+              setNewTaskWeight={setNewTaskWeight}
+              setNewTaskType={setNewTaskType}
+              handleCreateTask={handleCreateTask}
+              expandedTaskId={expandedTaskId}
+              setExpandedTaskId={setExpandedTaskId}
+              editingTaskId={editingTaskId}
+              setEditingTaskId={setEditingTaskId}
+              highlightedTaskId={highlightedTaskId}
+              editTaskTitle={editTaskTitle}
+              editTaskDescription={editTaskDescription}
+              editTaskStartDate={editTaskStartDate}
+              editTaskDueDate={editTaskDueDate}
+              editTaskWeight={editTaskWeight}
+              editTaskGrade={editTaskGrade}
+              editTaskType={editTaskType}
+              editTaskLocation={editTaskLocation}
+              setEditTaskTitle={setEditTaskTitle}
+              setEditTaskDescription={setEditTaskDescription}
+              setEditTaskStartDate={setEditTaskStartDate}
+              setEditTaskDueDate={setEditTaskDueDate}
+              setEditTaskWeight={setEditTaskWeight}
+              setEditTaskGrade={setEditTaskGrade}
+              setEditTaskType={setEditTaskType}
+              setEditTaskLocation={setEditTaskLocation}
+              setTaskListModal={setTaskListModal}
+              taskRefs={taskRefs}
+              handleToggleComplete={handleToggleComplete}
+              handleDuplicateTask={handleDuplicateTask}
+              startEditingTask={startEditingTask}
+              handleSaveTask={handleSaveTask}
+              handleDeleteTask={handleDeleteTask}
+              handleTaskContextMenu={handleTaskContextMenu}
+              onFileDownloadRequest={(file, href) => {
+                setPendingFileDownload({
+                  fileId: file.id,
+                  title: file.title,
+                  href,
+                });
+                setConfirmDialog({
+                  isOpen: true,
+                  title: 'Download File',
+                  message: `"${file.title}" is not downloaded yet. Would you like to download it to your Files folder?`,
+                  type: 'info',
+                  confirmText: 'Download',
+                  onConfirm: async () => {
+                    try {
+                      const result = await window.api?.downloadResource(file.id);
+                      if (result?.success && result.localPath) {
+                        await window.api?.openResource(file.id);
+                      } else {
+                        window.api?.openExternal(href);
+                      }
+                    } catch {
+                      window.api?.openExternal(href);
+                    }
+                    setPendingFileDownload(null);
+                  },
+                });
+              }}
+            />
           </div>
 
           {/* Right Column - Sidebar */}

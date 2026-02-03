@@ -13,7 +13,7 @@ export const editorStyles: Record<string, React.CSSProperties> = {
     overflow: 'hidden',
   },
   containerFocused: {
-    borderColor: 'var(--color-blue)',
+    border: '1px solid var(--color-blue)',
     boxShadow: '0 0 0 2px var(--color-blue-light)',
   },
   containerDisabled: {

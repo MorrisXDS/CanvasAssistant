@@ -11,3 +11,4 @@ export { GradeHistoryCard, type GradeHistoryCardProps, type GradeHistoryEntry } 
 export { SettingsPanel, type SettingsPanelProps } from './SettingsPanel';
 export { CourseHeader, type CourseHeaderProps } from './CourseHeader';
 export { AddTaskForm, type AddTaskFormProps } from './AddTaskForm';
+export { TaskSectionList, type TaskSectionListProps } from './TaskSectionList';
