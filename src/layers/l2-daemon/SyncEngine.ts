@@ -7,7 +7,6 @@
  * - Upserts data into local SQLite database
  * - Handles incremental sync using ETags
  * - Tracks sync metadata for optimization
- * - Detects policy-related announcements
  */
 
 import { EventEmitter } from 'events';
@@ -20,27 +19,17 @@ import {
   CanvasAssignment,
   CanvasAnnouncement,
   CanvasModule,
-  CanvasModuleItem,
   CanvasPage,
   CanvasFile,
   CanvasFolder,
   mapCourse,
-  mapAssignment,
-  mapAnnouncement,
-  mapModule,
-  mapModuleItem,
-  mapPage,
-  mapFile,
-  mapFolder,
-  detectPolicyKeywords,
-  calculatePolicyConfidence,
 } from './DataMappers';
 import {
   SyncConflictResolver,
   SyncConflict,
   ConflictResolution,
 } from './SyncConflictResolver';
-import { HtmlFileExtractor, ExtractedFileReference } from './HtmlFileExtractor';
+import { HtmlFileExtractor } from './HtmlFileExtractor';
 import { HtmlContentSync } from './HtmlContentSync';
 import { OperationCoordinator } from './OperationCoordinator';
 import { FileDownloadManager } from '../l0-utilities/FileDownloadManager';
@@ -59,11 +48,9 @@ import type {
   SyncDiagnosticEntry,
   EndpointBackoff,
 } from './SyncEngineTypes';
-import { BACKOFF_CONFIG } from './SyncEngineTypes';
 import { SyncCheckpointManager } from './SyncCheckpointManager';
 import { SyncBackoffManager } from './SyncBackoffManager';
 import type { SyncOperationContext, SyncOperationHelpers } from './SyncOperationContext';
-import { createSyncResult } from './SyncOperationContext';
 import {
   SyncCourseOperations,
   SyncTaskOperations,
@@ -821,6 +808,16 @@ export class SyncEngine extends EventEmitter {
       pages: Map<number, CanvasPage[]>;
       folders: Map<number, CanvasFolder[]>;
       files: Map<number, CanvasFile[]>;
+      assignmentGroups: Map<
+        number,
+        {
+          id: number;
+          name: string;
+          position: number;
+          group_weight: number | null;
+          rules?: { drop_lowest?: number; drop_highest?: number; never_drop?: number[] };
+        }[]
+      >;
     };
 
     try {

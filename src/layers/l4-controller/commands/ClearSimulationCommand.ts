@@ -5,13 +5,7 @@
  * Can optionally clear just a single task's simulation.
  */
 
-import {
-  Command,
-  CommandContext,
-  CommandResult,
-  ClearSimulationParams,
-  createSimulationContext,
-} from '../types';
+import { Command, CommandContext, CommandResult, ClearSimulationParams } from '../types';
 
 export interface ClearSimulationResult {
   clearedCount: number;
@@ -42,7 +36,7 @@ export class ClearSimulationCommand implements Command<
     }
 
     try {
-      const previousCount = context.simulationContext.grades.size;
+      const _previousCount = context.simulationContext.grades.size;
 
       if (params.taskId !== undefined) {
         // Clear single simulation

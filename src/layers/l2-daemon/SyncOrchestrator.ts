@@ -13,7 +13,6 @@ import {
   CanvasAssignment,
   CanvasAnnouncement,
   CanvasModule,
-  CanvasModuleItem,
   CanvasPage,
   CanvasFile,
   CanvasFolder,
@@ -25,19 +24,14 @@ import {
   mapPage,
   mapFile,
   mapFolder,
-  detectPolicyKeywords,
-  calculatePolicyConfidence,
+  mapAssignmentToQueueEntry,
 } from './DataMappers';
 import { SyncConflictResolver } from './SyncConflictResolver';
 import { SyncCheckpointManager } from './SyncCheckpointManager';
 import { SyncBackoffManager } from './SyncBackoffManager';
+import { findMatchingCanvasTask, LINK_THRESHOLDS } from './sync/TaskMatcher';
 import type { ComponentLogger } from '../l0-utilities/Logger';
-import type {
-  SyncOptions,
-  SyncResult,
-  FullSyncResult,
-  SyncCheckpoint,
-} from './SyncEngineTypes';
+import type { SyncOptions, SyncCheckpoint } from './SyncEngineTypes';
 
 export interface SyncOrchestratorConfig {
   client: CanvasClient;
@@ -79,6 +73,19 @@ interface FetchedData {
   pages: Map<number, CanvasPage[]>;
   folders: Map<number, CanvasFolder[]>;
   files: Map<number, CanvasFile[]>;
+  assignmentGroups: Map<number, CanvasAssignmentGroup[]>;
+}
+
+interface CanvasAssignmentGroup {
+  id: number;
+  name: string;
+  position: number;
+  group_weight: number | null;
+  rules?: {
+    drop_lowest?: number;
+    drop_highest?: number;
+    never_drop?: number[];
+  };
 }
 
 export class SyncOrchestrator {
@@ -171,6 +178,7 @@ export class SyncOrchestrator {
       pages: new Map(),
       folders: new Map(),
       files: new Map(),
+      assignmentGroups: new Map(),
     };
 
     // Restore from checkpoint if resuming
@@ -300,6 +308,7 @@ export class SyncOrchestrator {
       pages: 0,
       folders: 0,
       files: 0,
+      assignmentGroups: 0,
     };
 
     this.emitter.emit('sync-phase', { phase: 'commit', status: 'started' });
@@ -379,7 +388,61 @@ export class SyncOrchestrator {
         }
       }
 
-      // Commit tasks (with conflict detection like courses)
+      // Commit assignment groups BEFORE tasks (so we can link tasks to groups)
+      // Build canvas-to-local group ID lookup
+      const groupIdLookup = new Map<number, Map<number, number>>(); // courseId -> (canvasGroupId -> localGroupId)
+      for (const [canvasCourseId, groups] of fetched.assignmentGroups) {
+        const localCourseId = courseLookup.get(canvasCourseId);
+        if (!localCourseId) continue;
+
+        const courseGroupLookup = new Map<number, number>();
+        groupIdLookup.set(localCourseId, courseGroupLookup);
+
+        for (const group of groups) {
+          try {
+            const groupData = {
+              course_id: localCourseId,
+              canvas_group_id: group.id,
+              name: group.name,
+              position: group.position || 0,
+              group_weight: group.group_weight ?? null,
+              drop_lowest: group.rules?.drop_lowest ?? 0,
+              drop_highest: group.rules?.drop_highest ?? 0,
+              never_drop: group.rules?.never_drop
+                ? JSON.stringify(group.rules.never_drop)
+                : null,
+              synced_at: new Date().toISOString(),
+            };
+
+            // Pass updateTimestamp=false since canvas_assignment_groups uses synced_at instead of updated_at
+            this.db.upsert(
+              'canvas_assignment_groups',
+              groupData,
+              ['course_id', 'canvas_group_id'],
+              false
+            );
+
+            // Get local ID for the group
+            const localGroup = this.db.executeReadOne<{ id: number }>(
+              'SELECT id FROM canvas_assignment_groups WHERE course_id = ? AND canvas_group_id = ?',
+              [localCourseId, group.id]
+            );
+            if (localGroup) {
+              courseGroupLookup.set(group.id, localGroup.id);
+            }
+
+            counts.assignmentGroups++;
+          } catch (error) {
+            errors.push(
+              `Assignment group ${group.name}: ${error instanceof Error ? error.message : String(error)}`
+            );
+          }
+        }
+      }
+
+      // Commit tasks with queue-aware logic
+      // New Canvas tasks go to queue for user review; accepted tasks get grade updates
+      let queuedTaskCount = 0;
       for (const [canvasCourseId, tasks] of fetched.tasks) {
         const localCourseId = courseLookup.get(canvasCourseId);
         if (!localCourseId) continue;
@@ -393,41 +456,113 @@ export class SyncOrchestrator {
 
         for (const assignment of tasks) {
           try {
+            const externalId = String(assignment.id);
             const localTask = mapAssignment(assignment, localCourseId);
-            const existing = this.db.executeReadOne<Record<string, unknown>>(
-              'SELECT * FROM tasks WHERE external_id = ?',
-              [localTask.external_id]
+
+            // === DECISION 1: Already accepted task? ===
+            // Check if this Canvas assignment has an accepted task (acceptance_method IS NOT NULL)
+            const acceptedTask = this.db.executeReadOne<{
+              id: number;
+              acceptance_method: string | null;
+            }>(
+              `SELECT id, acceptance_method FROM tasks
+               WHERE external_id = ? AND acceptance_method IS NOT NULL`,
+              [externalId]
             );
 
-            const { autoResolved, conflicts, preservedFields } =
-              this.conflictResolver.detectConflicts(
-                'task',
-                'tasks',
-                (existing?.id as number) || 0,
-                localTask.external_id,
-                localTask.title,
-                existing,
-                localTask,
-                { courseName, courseId: localCourseId }
+            if (acceptedTask) {
+              // Already accepted - update grades/status only
+              this.db.executeWrite(
+                `UPDATE tasks SET
+                  grade = ?,
+                  submission_status = ?,
+                  is_completed = CASE WHEN is_completed = 1 THEN 1 ELSE ? END,
+                  completed_at = COALESCE(completed_at, ?),
+                  updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?`,
+                [
+                  localTask.grade,
+                  localTask.submission_status,
+                  localTask.is_completed,
+                  localTask.completed_at,
+                  acceptedTask.id,
+                ],
+                'tasks'
               );
-
-            if (conflicts.length > 0) {
-              this.emitter.emit('sync-conflicts', { entity: 'task', conflicts });
-              for (const conflict of conflicts) {
-                const conflictData = { ...localTask, id: existing?.id };
-                this.pendingConflictData.set(conflict.id, {
-                  tableName: 'tasks',
-                  data: conflictData,
-                });
-                this.persistConflictData(conflict.id, 'tasks', conflictData);
-              }
+              counts.tasks++;
+              continue;
             }
 
-            const finalData: Record<string, unknown> = { ...localTask };
-            for (const [field, value] of Object.entries(autoResolved)) {
-              finalData[field] = value;
+            // === DECISION 2: Rejected in queue? ===
+            const queueEntry = this.db.executeReadOne<{
+              id: number;
+              status: string;
+            }>('SELECT id, status FROM canvas_task_queue WHERE external_id = ?', [
+              externalId,
+            ]);
+
+            if (queueEntry?.status === 'rejected') {
+              // Rejected - update queue metadata but don't create task
+              this.db.executeWrite(
+                `UPDATE canvas_task_queue SET
+                  canvas_data = ?,
+                  title = ?,
+                  description = ?,
+                  due_at = ?,
+                  points_possible = ?,
+                  last_synced_at = CURRENT_TIMESTAMP,
+                  updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?`,
+                [
+                  JSON.stringify(assignment),
+                  assignment.name,
+                  assignment.description,
+                  assignment.due_at,
+                  assignment.points_possible,
+                  queueEntry.id,
+                ],
+                'canvas_task_queue'
+              );
+              counts.tasks++;
+              continue;
             }
+
+            // === DECISION 3: Existing task (legacy, pre-queue)? ===
+            const existing = this.db.executeReadOne<Record<string, unknown>>(
+              'SELECT * FROM tasks WHERE external_id = ?',
+              [externalId]
+            );
+
             if (existing) {
+              // Legacy task - sync with conflict detection, mark as legacy
+              const { autoResolved, conflicts, preservedFields } =
+                this.conflictResolver.detectConflicts(
+                  'task',
+                  'tasks',
+                  existing.id as number,
+                  localTask.external_id,
+                  localTask.title,
+                  existing,
+                  localTask,
+                  { courseName, courseId: localCourseId }
+                );
+
+              if (conflicts.length > 0) {
+                this.emitter.emit('sync-conflicts', { entity: 'task', conflicts });
+                for (const conflict of conflicts) {
+                  const conflictData = { ...localTask, id: existing.id };
+                  this.pendingConflictData.set(conflict.id, {
+                    tableName: 'tasks',
+                    data: conflictData,
+                  });
+                  this.persistConflictData(conflict.id, 'tasks', conflictData);
+                }
+              }
+
+              const finalData: Record<string, unknown> = { ...localTask };
+              for (const [field, value] of Object.entries(autoResolved)) {
+                finalData[field] = value;
+              }
               for (const field of preservedFields) {
                 if (existing[field] !== undefined) {
                   finalData[field] = existing[field];
@@ -438,9 +573,79 @@ export class SyncOrchestrator {
                   finalData[conflict.field] = existing[conflict.field];
                 }
               }
+
+              // Link task to its assignment group
+              if (assignment.assignment_group_id && groupIdLookup.has(localCourseId)) {
+                const courseGroups = groupIdLookup.get(localCourseId)!;
+                const localGroupId = courseGroups.get(assignment.assignment_group_id);
+                if (localGroupId) {
+                  finalData.assignment_group_id = localGroupId;
+                }
+              }
+
+              // Mark as legacy if not already accepted
+              if (!existing.acceptance_method) {
+                finalData.acceptance_method = 'legacy';
+              }
+
+              this.db.upsert('tasks', finalData, 'external_id', true, preservedFields);
+              counts.tasks++;
+
+              // Auto-link check for legacy tasks
+              const canvasTaskId = this.db.executeReadOne<{ id: number }>(
+                'SELECT id FROM tasks WHERE external_id = ?',
+                [localTask.external_id]
+              )?.id;
+
+              if (canvasTaskId) {
+                this.checkForUserTaskLinks(
+                  canvasTaskId,
+                  localTask.title,
+                  localTask.due_at as string | null,
+                  localCourseId
+                );
+              }
+              continue;
             }
 
-            this.db.upsert('tasks', finalData, 'external_id', true, preservedFields);
+            // === DECISION 4: New task - add to queue for user review ===
+            const queueData = mapAssignmentToQueueEntry(
+              assignment,
+              localCourseId,
+              null, // matchedUserTaskId - could add fuzzy matching later
+              null // matchConfidence
+            );
+
+            if (queueEntry) {
+              // Update existing pending queue entry
+              this.db.executeWrite(
+                `UPDATE canvas_task_queue SET
+                  canvas_data = ?,
+                  title = ?,
+                  description = ?,
+                  due_at = ?,
+                  points_possible = ?,
+                  task_type = ?,
+                  last_synced_at = CURRENT_TIMESTAMP,
+                  updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?`,
+                [
+                  queueData.canvas_data,
+                  queueData.title,
+                  queueData.description,
+                  queueData.due_at,
+                  queueData.points_possible,
+                  queueData.task_type,
+                  queueEntry.id,
+                ],
+                'canvas_task_queue'
+              );
+            } else {
+              // Insert new queue entry
+              this.db.upsert('canvas_task_queue', queueData, 'external_id', true);
+              queuedTaskCount++;
+            }
+
             counts.tasks++;
           } catch (error) {
             errors.push(
@@ -448,6 +653,11 @@ export class SyncOrchestrator {
             );
           }
         }
+      }
+
+      // Log queued task count for debugging
+      if (queuedTaskCount > 0) {
+        this.log?.info(`Queued ${queuedTaskCount} new Canvas tasks for user review`);
       }
 
       // Commit announcements
@@ -735,6 +945,21 @@ export class SyncOrchestrator {
     const errors: string[] = [];
     const fetchPromises: Promise<void>[] = [];
 
+    // Assignment Groups (fetch BEFORE tasks so we can link them)
+    fetchPromises.push(
+      this.rateLimiter
+        .enqueue(
+          () =>
+            this.client.getAll<CanvasAssignmentGroup>(
+              `/courses/${canvasCourseId}/assignment_groups`
+            ),
+          4
+        )
+        .then((data) => {
+          fetched.assignmentGroups.set(canvasCourseId, data);
+        })
+    );
+
     // Tasks
     fetchPromises.push(
       this.rateLimiter
@@ -876,5 +1101,149 @@ export class SyncOrchestrator {
     });
 
     return errors;
+  }
+
+  /**
+   * Check for user tasks that might match this Canvas task
+   * Auto-links high confidence matches, queues medium confidence for review
+   */
+  private checkForUserTaskLinks(
+    canvasTaskId: number,
+    canvasTitle: string,
+    canvasDueAt: string | null,
+    courseId: number
+  ): void {
+    // Get user tasks in same course that haven't been linked or graded yet
+    const userTasks = this.db.executeRead<{
+      id: number;
+      title: string;
+      external_id: string;
+      due_at: string | null;
+      weight: number | null;
+      notes: string | null;
+      user_expected_grade: number | null;
+    }>(
+      `SELECT id, title, external_id, due_at, weight, notes, user_expected_grade
+       FROM tasks
+       WHERE course_id = ?
+         AND source_type = 'user'
+         AND deleted_at IS NULL
+         AND merged_into_task_id IS NULL
+         AND (grade IS NULL OR grade = 0)`,
+      [courseId]
+    );
+
+    if (userTasks.length === 0) return;
+
+    const canvasTask = {
+      id: canvasTaskId,
+      title: canvasTitle,
+      courseId,
+      dueAt: canvasDueAt,
+      sourceType: 'canvas' as const,
+    };
+
+    for (const userTaskRow of userTasks) {
+      const userTask = {
+        id: userTaskRow.id,
+        title: userTaskRow.title,
+        courseId,
+        dueAt: userTaskRow.due_at,
+        sourceType: 'user' as const,
+      };
+
+      const match = findMatchingCanvasTask(userTask, [canvasTask]);
+
+      if (match.confidence >= LINK_THRESHOLDS.autoLink) {
+        // High confidence: auto-link
+        this.autoLinkTasks(userTaskRow, canvasTaskId, match.confidence);
+        this.log?.info(
+          `Auto-linked user task "${userTask.title}" to Canvas task "${canvasTitle}" (confidence: ${match.confidence.toFixed(2)})`
+        );
+      } else if (match.confidence >= LINK_THRESHOLDS.suggestLink) {
+        // Medium confidence: queue for user review
+        this.queueLinkSuggestion(userTaskRow.id, canvasTaskId, match.confidence);
+        this.log?.info(
+          `Queued link suggestion: "${userTask.title}" → "${canvasTitle}" (confidence: ${match.confidence.toFixed(2)})`
+        );
+      }
+    }
+  }
+
+  /**
+   * Auto-link a user task to a Canvas task
+   */
+  private autoLinkTasks(
+    userTask: {
+      id: number;
+      external_id: string;
+      weight: number | null;
+      notes: string | null;
+      user_expected_grade: number | null;
+    },
+    canvasTaskId: number,
+    confidence: number
+  ): void {
+    const now = new Date().toISOString();
+
+    // Update Canvas task to record the link and preserve user's custom fields
+    this.db.executeWrite(
+      `UPDATE tasks SET
+        linked_from_user_task = ?,
+        link_confidence = ?,
+        link_method = 'auto',
+        weight = COALESCE(?, weight),
+        notes = COALESCE(?, notes),
+        user_expected_grade = COALESCE(?, user_expected_grade)
+      WHERE id = ?`,
+      [
+        userTask.external_id,
+        confidence,
+        userTask.weight,
+        userTask.notes,
+        userTask.user_expected_grade,
+        canvasTaskId,
+      ],
+      'tasks'
+    );
+
+    // Soft-delete the user task and record merge target
+    this.db.executeWrite(
+      `UPDATE tasks SET deleted_at = ?, merged_into_task_id = ? WHERE id = ?`,
+      [now, canvasTaskId, userTask.id],
+      'tasks'
+    );
+  }
+
+  /**
+   * Queue a link suggestion for user review
+   */
+  private queueLinkSuggestion(
+    userTaskId: number,
+    canvasTaskId: number,
+    confidence: number
+  ): void {
+    // Check if suggestion already exists
+    const existing = this.db.executeReadOne<{ id: number }>(
+      'SELECT id FROM link_suggestions WHERE user_task_id = ? AND canvas_task_id = ?',
+      [userTaskId, canvasTaskId]
+    );
+
+    if (existing) {
+      // Update confidence if higher
+      this.db.executeWrite(
+        'UPDATE link_suggestions SET confidence = MAX(confidence, ?) WHERE user_task_id = ? AND canvas_task_id = ?',
+        [confidence, userTaskId, canvasTaskId],
+        'link_suggestions'
+      );
+    } else {
+      // Create new suggestion
+      this.db.executeWrite(
+        `INSERT INTO link_suggestions (user_task_id, canvas_task_id, confidence, status, created_at)
+         VALUES (?, ?, ?, 'pending', datetime('now'))`,
+        [userTaskId, canvasTaskId, confidence],
+        'link_suggestions'
+      );
+    }
   }
 }

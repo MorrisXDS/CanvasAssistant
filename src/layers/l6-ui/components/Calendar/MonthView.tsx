@@ -3,7 +3,7 @@
  * Renders the month calendar grid view
  */
 
-import React from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { styles } from './CalendarGridStyles';
 import {
   useCalendarGrid,
@@ -11,14 +11,13 @@ import {
   getEventId,
   getEventShortLabel,
   getEventTitle,
-  getEventTimeRange,
-  getEventFullLabel,
   isCompletedTask,
   isToday,
   WEEKDAYS,
 } from './CalendarGridContext';
 
 const MAX_VISIBLE = 2;
+const FADE_DURATION = 150; // ms
 
 export function MonthView() {
   const {
@@ -38,15 +37,43 @@ export function MonthView() {
     renderDetailModal,
   } = useCalendarGrid();
 
-  const days = getMonthDays(currentDate.getFullYear(), currentDate.getMonth());
-  const weeksNeeded = Math.ceil(days.length / 7);
+  // Track month changes for fade transition
+  const [displayDate, setDisplayDate] = useState(currentDate);
+  const [opacity, setOpacity] = useState(1);
+  const isTransitioning = useRef(false);
+
+  // Create month key for comparison
+  const currentMonthKey = `${currentDate.getFullYear()}-${currentDate.getMonth()}`;
+  const displayMonthKey = `${displayDate.getFullYear()}-${displayDate.getMonth()}`;
+
+  // Handle month changes with fade transition
+  useEffect(() => {
+    if (currentMonthKey !== displayMonthKey && !isTransitioning.current) {
+      isTransitioning.current = true;
+      // Fade out
+      setOpacity(0);
+      // After fade out, update display date and fade in
+      setTimeout(() => {
+        setDisplayDate(currentDate);
+        setOpacity(1);
+        setTimeout(() => {
+          isTransitioning.current = false;
+        }, FADE_DURATION);
+      }, FADE_DURATION);
+    }
+  }, [currentMonthKey, displayMonthKey, currentDate]);
+
+  const days = getMonthDays(displayDate.getFullYear(), displayDate.getMonth());
+  const _weeksNeeded = Math.ceil(days.length / 7);
 
   return (
     <div ref={containerRef} style={styles.monthWrapper} onMouseLeave={hidePopupDelayed}>
       <div
         style={{
           ...styles.monthGrid,
-          gridTemplateRows: `auto repeat(${weeksNeeded}, 1fr)`,
+          gridTemplateRows: `auto repeat(6, 1fr)`, // Always 6 rows for consistent height across months
+          opacity,
+          transition: `opacity ${FADE_DURATION}ms ease-in-out`,
         }}
       >
         {/* Weekday headers */}
@@ -59,7 +86,7 @@ export function MonthView() {
         {/* Day cells */}
         {days.map((date, index) => {
           const dayEvents = getEventsForDate(date);
-          const isCurrentMonth = date.getMonth() === currentDate.getMonth();
+          const isCurrentMonth = date.getMonth() === displayDate.getMonth();
           const visibleEvents = dayEvents.slice(0, MAX_VISIBLE);
           const hiddenEvents = dayEvents.slice(MAX_VISIBLE);
           const dateLabel = date.toLocaleDateString('en-US', {
