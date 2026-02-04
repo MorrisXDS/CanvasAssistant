@@ -61,12 +61,15 @@ export function generateICS(tasks: Task[], courses: Map<number, Course>): string
     lines.push(`SUMMARY:${summary}`);
     if (description) lines.push(`DESCRIPTION:${description}`);
     if (location) lines.push(`LOCATION:${location}`);
-    if (task.priorityScore >= 70) {
-      lines.push('PRIORITY:1'); // High priority
-    } else if (task.priorityScore >= 40) {
-      lines.push('PRIORITY:5'); // Medium priority
+    // Set ICS priority based on due date urgency
+    const now = new Date();
+    const hoursUntilDue = (dueDate.getTime() - now.getTime()) / (1000 * 60 * 60);
+    if (hoursUntilDue < 72) {
+      lines.push('PRIORITY:1'); // High urgency: due within 3 days
+    } else if (hoursUntilDue < 168) {
+      lines.push('PRIORITY:5'); // Medium urgency: due within 7 days
     } else {
-      lines.push('PRIORITY:9'); // Low priority
+      lines.push('PRIORITY:9'); // Low urgency: due in more than 7 days
     }
     lines.push('END:VEVENT');
   });

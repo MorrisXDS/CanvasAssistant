@@ -7,6 +7,7 @@
 
 import React, { useState } from 'react';
 import { AlertTriangle, Key, Loader2, Check, XCircle, LogOut } from 'lucide-react';
+import { STORAGE_KEYS } from '../../../l5-presentation/settings';
 
 interface ReAuthModalProps {
   reason?: string;
@@ -25,7 +26,7 @@ export function ReAuthModal({ reason, onReauthSuccess, onDisconnect }: ReAuthMod
   const [isReconnecting, setIsReconnecting] = useState(false);
 
   // Get the Canvas URL from localStorage
-  const canvasUrl = localStorage.getItem('canvasUrl') || '';
+  const canvasUrl = localStorage.getItem(STORAGE_KEYS.CANVAS_URL) || '';
 
   const handleValidateToken = async () => {
     if (!token || !canvasUrl) return;

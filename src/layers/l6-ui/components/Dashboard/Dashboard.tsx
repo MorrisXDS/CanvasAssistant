@@ -15,6 +15,7 @@ import { UnifiedDashboardGrid } from './UnifiedDashboardGrid';
 import { TaskContextMenu } from '../Course/TaskContextMenu';
 import type { Task } from '../../../l5-presentation/types';
 import { formatGrade } from '../../constants';
+import { STORAGE_KEYS } from '../../../l5-presentation/settings';
 
 // Debug flag - set to true only when debugging layout issues
 const DEBUG_LAYOUT = false;
@@ -351,7 +352,7 @@ export function Dashboard() {
             // Read term selection from academic settings
             let termSelection: 'all' | 'auto' | string = 'auto';
             try {
-              const academicSettings = localStorage.getItem('academicSettings');
+              const academicSettings = localStorage.getItem(STORAGE_KEYS.ACADEMIC);
               if (academicSettings) {
                 const settings = JSON.parse(academicSettings);
                 termSelection = settings.termSelection || 'auto';

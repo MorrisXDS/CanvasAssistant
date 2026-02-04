@@ -43,6 +43,7 @@ import {
   loadCalendarViewMode,
   saveCalendarViewMode,
   getVisibleRange,
+  getPrefetchRange,
   getHeaderTitle,
 } from './calendarUtils';
 import type {
@@ -133,6 +134,12 @@ export function CalendarPage() {
     [currentDate, view]
   );
 
+  // Prefetch range includes adjacent weeks for pre-rendering
+  const prefetchRange = useMemo(
+    () => getPrefetchRange(currentDate, view),
+    [currentDate, view]
+  );
+
   // Defer visible range for filtering to prevent flash when switching periods
   // This keeps showing old events until new ones are ready
   const deferredVisibleRange = useDeferredValue(visibleRange);
@@ -172,10 +179,10 @@ export function CalendarPage() {
     setCurrentDate(new Date());
   }, [location.key, location.state, tasks, courses, navigate, location.pathname]);
 
-  // Fetch events when range changes
+  // Fetch events when range changes (uses prefetch range for pre-rendering)
   useEffect(() => {
-    fetchCalendarEventsForRange(visibleRange.start, visibleRange.end);
-  }, [visibleRange, fetchCalendarEventsForRange]);
+    fetchCalendarEventsForRange(prefetchRange.start, prefetchRange.end);
+  }, [prefetchRange, fetchCalendarEventsForRange]);
 
   // Build courses with colors
   const coursesWithColors = useMemo(
@@ -245,17 +252,23 @@ export function CalendarPage() {
           }
         }
 
-        if (priorityFilter !== 'all') {
-          const score = task.priorityScore || 0;
+        if (priorityFilter !== 'all' && task.dueAt) {
+          // Use due-date-based urgency instead of priority score
+          const now = new Date();
+          const due = new Date(task.dueAt);
+          const hoursUntilDue = (due.getTime() - now.getTime()) / (1000 * 60 * 60);
           switch (priorityFilter) {
             case 'high':
-              if (score < 70) return false;
+              // High urgency: overdue or due within 3 days
+              if (hoursUntilDue > 72) return false;
               break;
             case 'medium':
-              if (score < 40 || score >= 70) return false;
+              // Medium urgency: due within 3-7 days
+              if (hoursUntilDue <= 72 || hoursUntilDue > 168) return false;
               break;
             case 'low':
-              if (score >= 40) return false;
+              // Low urgency: due in more than 7 days
+              if (hoursUntilDue <= 168) return false;
               break;
           }
         }
@@ -278,13 +291,41 @@ export function CalendarPage() {
   // Build imported events
   // Include: non-task events AND task-linked events with real start times
   // Exclude: task-linked events with epoch start (deadline only - rendered as task events)
-  const importedEvents: ImportedCalendarEvent[] = useMemo(
-    () =>
-      deferredCalendarEvents
-        .filter((e) => !e.taskId || hasRealStartTime(e.startAt))
-        .map((event) => ({ type: 'imported' as const, event })),
-    [deferredCalendarEvents]
-  );
+  // Also filter by selected courses (match event title/calendar to course codes)
+  const importedEvents: ImportedCalendarEvent[] = useMemo(() => {
+    return deferredCalendarEvents
+      .filter((e) => !e.taskId || hasRealStartTime(e.startAt))
+      .filter((event) => {
+        // If no course filter active, show all
+        if (selectedCourses === null) return true;
+        // If all courses deselected, hide all
+        if (selectedCourses.size === 0) return false;
+
+        // Check if event matches any selected course
+        const title = event.title.toLowerCase();
+        const calendarName = event.calendarName?.toLowerCase() || '';
+
+        for (const course of coursesWithColors) {
+          if (!selectedCourses.has(course.id)) continue;
+
+          const code = course.code.toLowerCase();
+          const shortCode = code.split(/[hy]\d/)[0];
+
+          if (
+            title.includes(code) ||
+            calendarName.includes(code) ||
+            (shortCode.length >= 3 &&
+              (title.includes(shortCode) || calendarName.includes(shortCode)))
+          ) {
+            return true;
+          }
+        }
+
+        // Event doesn't match any selected course - hide it
+        return false;
+      })
+      .map((event) => ({ type: 'imported' as const, event }));
+  }, [deferredCalendarEvents, selectedCourses, coursesWithColors]);
 
   const events: CalendarEvent[] = useMemo(
     () => [...taskEvents, ...importedEvents],
@@ -407,7 +448,7 @@ export function CalendarPage() {
       setImportPreview(null);
       setPendingICSContent('');
       await fetchImportedCalendars();
-      fetchCalendarEventsForRange(visibleRange.start, visibleRange.end);
+      fetchCalendarEventsForRange(prefetchRange.start, prefetchRange.end);
     },
     [
       pendingICSContent,
@@ -438,7 +479,7 @@ export function CalendarPage() {
     setPendingICSContent('');
     setImportPreview(null);
     await fetchImportedCalendars();
-    fetchCalendarEventsForRange(visibleRange.start, visibleRange.end);
+    fetchCalendarEventsForRange(prefetchRange.start, prefetchRange.end);
   }, [
     existingCalendarInfo,
     pendingICSContent,
@@ -533,6 +574,7 @@ export function CalendarPage() {
     notes?: string;
     reminderMinutes?: number;
     taskType?: string;
+    weight?: number;
   }) => {
     try {
       if (eventToEdit) {
@@ -552,7 +594,7 @@ export function CalendarPage() {
       }
       setShowEventFormModal(false);
       setEventToEdit(null);
-      fetchCalendarEventsForRange(visibleRange.start, visibleRange.end);
+      fetchCalendarEventsForRange(prefetchRange.start, prefetchRange.end);
     } catch (error) {
       console.error('Error saving event:', error);
       alert('An error occurred while saving the event.');
@@ -580,7 +622,7 @@ export function CalendarPage() {
         setEventToEdit(null);
         // Refetch calendar events to include the newly created calendar event
         // (CreateTask also creates a linked calendar_events row for user tasks)
-        fetchCalendarEventsForRange(visibleRange.start, visibleRange.end);
+        fetchCalendarEventsForRange(prefetchRange.start, prefetchRange.end);
         return { success: true, taskId: result.data?.taskId };
       }
       return { success: false };
@@ -595,7 +637,7 @@ export function CalendarPage() {
       await deleteCalendarEvent(eventToEdit.id);
       setShowEventFormModal(false);
       setEventToEdit(null);
-      fetchCalendarEventsForRange(visibleRange.start, visibleRange.end);
+      fetchCalendarEventsForRange(prefetchRange.start, prefetchRange.end);
     }
   };
 
@@ -603,6 +645,15 @@ export function CalendarPage() {
     if (selectedEvent?.type === 'imported') {
       handleOpenEditEvent(selectedEvent.event);
     } else if (selectedEvent?.type === 'task') {
+      // First try direct link via task.calendarEventId (for accepted/merged tasks)
+      const directEvent = selectedEvent.task.calendarEventId
+        ? calendarEvents.find((e) => e.id === selectedEvent.task.calendarEventId)
+        : null;
+      if (directEvent) {
+        handleOpenEditEvent(directEvent);
+        return;
+      }
+      // Fallback: find by taskId (for tasks linked by taskId in calendar event)
       const linkedEvent = calendarEvents.find((e) => e.taskId === selectedEvent.task.id);
       if (linkedEvent) handleOpenEditEvent(linkedEvent);
     }
@@ -612,7 +663,7 @@ export function CalendarPage() {
     if (selectedEvent?.type === 'imported') {
       await deleteCalendarEvent(selectedEvent.event.id);
       setSelectedEvent(null);
-      fetchCalendarEventsForRange(visibleRange.start, visibleRange.end);
+      fetchCalendarEventsForRange(prefetchRange.start, prefetchRange.end);
     }
   };
 

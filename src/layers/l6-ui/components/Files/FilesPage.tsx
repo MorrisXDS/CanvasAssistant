@@ -73,11 +73,11 @@ import {
 } from './folderTypes';
 import { useFolderDragDrop } from './useFolderDragDrop';
 import { useFilesCourseDragDrop } from './useFilesCourseDragDrop';
+import { STORAGE_KEYS } from '../../../l5-presentation/settings';
 
-// Storage keys
+// Storage keys (using centralized STORAGE_KEYS where available)
 const EXPANDED_STATE_KEY = 'fileExplorerExpandedState';
 const VIEW_PREFS_KEY = 'fileExplorerViewPrefs';
-const FILE_EXPLORER_SETTINGS_KEY = 'fileExplorerSettings';
 
 interface ExpandedState {
   courses: number[];
@@ -106,7 +106,7 @@ type ViewMode = 'list' | 'grid';
 // Storage helpers
 function loadFileExplorerSettings(): FileExplorerSettings {
   try {
-    const stored = localStorage.getItem(FILE_EXPLORER_SETTINGS_KEY);
+    const stored = localStorage.getItem(STORAGE_KEYS.FILE_EXPLORER);
     if (stored) return JSON.parse(stored);
   } catch (e) {
     console.error('Failed to load file explorer settings:', e);
@@ -1099,7 +1099,7 @@ export function FilesPage() {
         // Check if user has disabled the warning
         let skipWarning = false;
         try {
-          const storedSettings = localStorage.getItem('fileExplorerSettings');
+          const storedSettings = localStorage.getItem(STORAGE_KEYS.FILE_EXPLORER);
           if (storedSettings) {
             const settings = JSON.parse(storedSettings);
             skipWarning = settings.skipExternalLinkWarning === true;
@@ -1162,7 +1162,7 @@ export function FilesPage() {
             });
             return; // Don't fall through to Canvas URL
           }
-        } catch (error) {
+        } catch {
           console.log(
             '[FilesPage] Failed to open module page file, falling back to Canvas URL'
           );
@@ -1181,7 +1181,7 @@ export function FilesPage() {
           if ((openResult as { needsDownload?: boolean })?.needsDownload) {
             console.log('[FilesPage] Module file not downloaded, opening Canvas URL');
           }
-        } catch (error) {
+        } catch {
           console.log(
             '[FilesPage] Failed to open module file, falling back to Canvas URL'
           );
@@ -1396,10 +1396,10 @@ export function FilesPage() {
     // Save preference if user checked "Don't show again"
     if (dontShowAgain) {
       try {
-        const storedSettings = localStorage.getItem('fileExplorerSettings');
+        const storedSettings = localStorage.getItem(STORAGE_KEYS.FILE_EXPLORER);
         const settings = storedSettings ? JSON.parse(storedSettings) : {};
         settings.skipExternalLinkWarning = true;
-        localStorage.setItem('fileExplorerSettings', JSON.stringify(settings));
+        localStorage.setItem(STORAGE_KEYS.FILE_EXPLORER, JSON.stringify(settings));
       } catch (e) {
         console.error('Failed to save file explorer settings:', e);
       }
@@ -1514,7 +1514,7 @@ export function FilesPage() {
   const handleSync = async () => {
     let termSelection: 'all' | 'auto' | string = 'auto';
     try {
-      const academicSettings = localStorage.getItem('academicSettings');
+      const academicSettings = localStorage.getItem(STORAGE_KEYS.ACADEMIC);
       if (academicSettings) {
         const settings = JSON.parse(academicSettings);
         termSelection = settings.termSelection || 'auto';

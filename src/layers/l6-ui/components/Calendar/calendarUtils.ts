@@ -10,6 +10,7 @@ import {
   getTimeInEffectiveTimezone,
   getHourInEffectiveTimezone,
   getMinuteOffsetInEffectiveTimezone,
+  STORAGE_KEYS,
 } from '../../../l5-presentation/settings';
 
 // Re-export timezone utilities for convenience
@@ -26,7 +27,7 @@ export {
  */
 export function loadCalendarSettings(): { defaultViewMode: CalendarView } {
   try {
-    const stored = localStorage.getItem('calendarSettings');
+    const stored = localStorage.getItem(STORAGE_KEYS.CALENDAR);
     if (stored) {
       const parsed = JSON.parse(stored);
       if (
@@ -48,7 +49,7 @@ export function loadCalendarSettings(): { defaultViewMode: CalendarView } {
  */
 export function loadCalendarViewMode(): CalendarView {
   try {
-    const stored = localStorage.getItem('viewMode:calendar');
+    const stored = localStorage.getItem(STORAGE_KEYS.CALENDAR_VIEW_MODE);
     if (stored === 'month' || stored === 'week' || stored === 'day') {
       return stored;
     }
@@ -65,7 +66,7 @@ export function loadCalendarViewMode(): CalendarView {
  */
 export function saveCalendarViewMode(mode: CalendarView): void {
   try {
-    localStorage.setItem('viewMode:calendar', mode);
+    localStorage.setItem(STORAGE_KEYS.CALENDAR_VIEW_MODE, mode);
   } catch (e) {
     console.error('[Calendar] Failed to save view mode:', e);
   }
@@ -75,6 +76,7 @@ export function saveCalendarViewMode(mode: CalendarView): void {
 
 /**
  * Get the visible date range based on current view and date
+ * Returns just the current period (week/month/day) for display logic
  */
 export function getVisibleRange(
   currentDate: Date,
@@ -93,6 +95,39 @@ export function getVisibleRange(
     start.setDate(start.getDate() - start.getDay());
     start.setHours(0, 0, 0, 0);
     end.setTime(start.getTime() + 6 * 24 * 60 * 60 * 1000);
+    end.setHours(23, 59, 59, 999);
+  } else {
+    start.setHours(0, 0, 0, 0);
+    end.setHours(23, 59, 59, 999);
+  }
+
+  return { start, end };
+}
+
+/**
+ * Get the prefetch date range for data fetching
+ * Expands week view by ±1 week for pre-rendering adjacent weeks
+ */
+export function getPrefetchRange(
+  currentDate: Date,
+  view: CalendarView
+): { start: Date; end: Date } {
+  const start = new Date(currentDate);
+  const end = new Date(currentDate);
+
+  if (view === 'month') {
+    start.setDate(1);
+    start.setHours(0, 0, 0, 0);
+    end.setMonth(end.getMonth() + 1);
+    end.setDate(0);
+    end.setHours(23, 59, 59, 999);
+  } else if (view === 'week') {
+    // Get current week's Sunday
+    start.setDate(start.getDate() - start.getDay());
+    start.setHours(0, 0, 0, 0);
+    // Expand range by 1 week before and after for pre-rendering
+    start.setDate(start.getDate() - 7); // 1 week before
+    end.setTime(start.getTime() + 20 * 24 * 60 * 60 * 1000); // 3 weeks total (21 days - 1)
     end.setHours(23, 59, 59, 999);
   } else {
     start.setHours(0, 0, 0, 0);

@@ -70,7 +70,6 @@ function getUrgencyLevel(task: Task): 'critical' | 'high' | 'medium' | 'low' {
   if (hoursUntilDue < 0) return 'critical';
   if (hoursUntilDue < 24) return 'critical';
   if (hoursUntilDue < 72) return 'high';
-  if (task.priorityScore > 70) return 'high';
   if (hoursUntilDue < 168) return 'medium';
   return 'low';
 }
@@ -274,9 +273,17 @@ export function computeCourseDetailViewModel(
 
   const simulatedTasks = taskViewModels.filter((t) => t.isSimulated);
 
+  // Sort by due date (earliest first), then by title
+  const sortedTasks = taskViewModels.sort((a, b) => {
+    const aDue = a.task.dueAt ? new Date(a.task.dueAt).getTime() : Infinity;
+    const bDue = b.task.dueAt ? new Date(b.task.dueAt).getTime() : Infinity;
+    if (aDue !== bDue) return aDue - bDue;
+    return a.task.title.localeCompare(b.task.title);
+  });
+
   return {
     course,
-    tasks: taskViewModels.sort((a, b) => b.task.priorityScore - a.task.priorityScore),
+    tasks: sortedTasks,
     gradeBreakdown,
     effectiveAssessedGrade,
     targetDelta,

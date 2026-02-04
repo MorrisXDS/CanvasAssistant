@@ -55,7 +55,6 @@ function getUrgencyLevel(task: Task): 'critical' | 'high' | 'medium' | 'low' {
   if (hoursUntilDue < 0) return 'critical'; // Overdue
   if (hoursUntilDue < 24) return 'critical'; // Due within 24 hours
   if (hoursUntilDue < 72) return 'high'; // Due within 3 days
-  if (task.priorityScore > 70) return 'high'; // High priority score
   if (hoursUntilDue < 168) return 'medium'; // Due within a week
   return 'low';
 }

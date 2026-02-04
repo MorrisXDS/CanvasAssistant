@@ -35,6 +35,7 @@ import { ExportDialog } from '../shared/ExportDialog';
 import { Accordion, SearchInput, SettingsDock } from '../primitives';
 import { SETTINGS_LABELS, MENU_LABELS } from '../../constants';
 import { styles } from '../SettingsModalStyles';
+import { STORAGE_KEYS } from '../../../l5-presentation/settings';
 
 export function SettingsModalContent() {
   const { setAuthenticated } = useStore();
@@ -397,7 +398,8 @@ export function SettingsModalContent() {
               </h4>
             </div>
             <p style={styles.tokenModalDesc}>
-              Database imported successfully. The app needs to restart to apply the changes.
+              Database imported successfully. The app needs to restart to apply the
+              changes.
             </p>
             <div style={styles.tokenModalButtons}>
               <button style={styles.primaryButton} onClick={handleRestartApp}>
@@ -429,10 +431,10 @@ export function SettingsModalContent() {
           try {
             await window.api.clearAllData({ deleteToken: deleteTokenOnClear });
             if (!deleteTokenOnClear) {
-              const savedCanvasUrl = localStorage.getItem('canvasUrl');
+              const savedCanvasUrl = localStorage.getItem(STORAGE_KEYS.CANVAS_URL);
               localStorage.clear();
               if (savedCanvasUrl) {
-                localStorage.setItem('canvasUrl', savedCanvasUrl);
+                localStorage.setItem(STORAGE_KEYS.CANVAS_URL, savedCanvasUrl);
               }
               window.location.reload();
             }

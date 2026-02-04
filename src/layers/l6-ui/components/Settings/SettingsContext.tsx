@@ -290,7 +290,7 @@ export function SettingsProvider({
   onClose,
   isFullPage = false,
 }: SettingsProviderProps) {
-  const { courses, fetchCourses, setAuthenticated } = useStore();
+  const { courses, fetchCourses, setAuthenticated: _setAuthenticated } = useStore();
 
   // =========================================================================
   // STATE
@@ -879,7 +879,7 @@ export function SettingsProvider({
     setCalendarSettings(newSettings);
     settingsManager.set(STORAGE_KEYS.CALENDAR, newSettings);
     if (updates.defaultViewMode) {
-      localStorage.removeItem('viewMode:calendar');
+      localStorage.removeItem(STORAGE_KEYS.CALENDAR_VIEW_MODE);
     }
   };
 

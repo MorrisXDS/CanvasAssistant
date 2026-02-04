@@ -4,6 +4,7 @@
  */
 
 import type { Course } from '../../../l5-presentation/types';
+import { STORAGE_KEYS } from '../../../l5-presentation/settings';
 
 export type ViewMode = 'grid' | 'list';
 export type GradeFilter = 'all' | 'on-track' | 'at-risk' | 'behind';
@@ -55,7 +56,7 @@ export function getCourseType(course: Course): string | null {
  */
 export function loadPinnedCourses(): Set<number> {
   try {
-    const stored = localStorage.getItem('pinnedCourses');
+    const stored = localStorage.getItem(STORAGE_KEYS.PINNED_COURSES);
     if (stored) {
       return new Set(JSON.parse(stored));
     }
@@ -70,7 +71,7 @@ export function loadPinnedCourses(): Set<number> {
  */
 export function savePinnedCourses(pinned: Set<number>): void {
   try {
-    localStorage.setItem('pinnedCourses', JSON.stringify([...pinned]));
+    localStorage.setItem(STORAGE_KEYS.PINNED_COURSES, JSON.stringify([...pinned]));
   } catch (e) {
     console.error('Failed to save pinned courses:', e);
   }
@@ -84,7 +85,7 @@ export function loadCourseSettings(): {
   showHiddenByDefault: boolean;
 } {
   try {
-    const stored = localStorage.getItem('courseSettings');
+    const stored = localStorage.getItem(STORAGE_KEYS.COURSES);
     if (stored) {
       const parsed = JSON.parse(stored);
       return {

@@ -22,12 +22,16 @@ export const selectors = {
     state.tasks.filter((t) => t.courseId === courseId),
 
   /**
-   * Get incomplete tasks sorted by priority
+   * Get incomplete tasks sorted by due date (earliest first)
    */
   priorityTasks: (state: StoreState) =>
     state.tasks
       .filter((t) => !t.isCompleted)
-      .sort((a, b) => b.priorityScore - a.priorityScore),
+      .sort((a, b) => {
+        const aDue = a.dueAt ? new Date(a.dueAt).getTime() : Infinity;
+        const bDue = b.dueAt ? new Date(b.dueAt).getTime() : Infinity;
+        return aDue - bDue;
+      }),
 
   /**
    * Get undismissed notifications

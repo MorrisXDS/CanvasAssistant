@@ -89,6 +89,10 @@ export const STORAGE_KEYS = {
   // Onboarding
   ONBOARDING_COMPLETED: 'onboardingCompleted',
 
+  // Archived course warnings
+  ARCHIVED_COURSE_WARNING_DISMISSED: 'archivedCourseWarningDismissed',
+  ARCHIVED_COURSE_WARNING_DISMISSED_IDS: 'archivedCourseWarningDismissedIds',
+
   // AI/Intelligence settings
   AI_CONFIG: 'aiConfig',
 
@@ -548,6 +552,8 @@ export interface SettingsTypeMap {
   [STORAGE_KEYS.ANNOUNCEMENT_SORT_ORDER]: 'asc' | 'desc';
   [STORAGE_KEYS.QUEUE_DEFAULT_EXPANDED]: boolean;
   [STORAGE_KEYS.ONBOARDING_COMPLETED]: boolean;
+  [STORAGE_KEYS.ARCHIVED_COURSE_WARNING_DISMISSED]: string;
+  [STORAGE_KEYS.ARCHIVED_COURSE_WARNING_DISMISSED_IDS]: string;
 }
 
 // Default order for settings sections

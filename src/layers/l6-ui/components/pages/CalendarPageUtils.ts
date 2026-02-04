@@ -4,6 +4,7 @@
  */
 
 import type { Task } from '../../../l5-presentation/types';
+import { STORAGE_KEYS } from '../../../l5-presentation/settings';
 
 // View modes
 export type ViewMode = 'month' | 'week';
@@ -28,11 +29,15 @@ export const MONTHS = [
 ];
 
 /**
- * Get priority from task based on priority score
+ * Get urgency from task based on due date
  */
 export function getTaskPriority(task: Task): 'high' | 'medium' | 'low' {
-  if (task.priorityScore >= 70) return 'high';
-  if (task.priorityScore >= 40) return 'medium';
+  if (!task.dueAt) return 'low';
+  const now = new Date();
+  const due = new Date(task.dueAt);
+  const hoursUntilDue = (due.getTime() - now.getTime()) / (1000 * 60 * 60);
+  if (hoursUntilDue < 72) return 'high'; // Due within 3 days
+  if (hoursUntilDue < 168) return 'medium'; // Due within 7 days
   return 'low';
 }
 
@@ -121,7 +126,7 @@ export function formatWeekTitle(date: Date): string {
  */
 export function loadCalendarSettings(): { defaultViewMode: ViewMode } {
   try {
-    const stored = localStorage.getItem('calendarSettings');
+    const stored = localStorage.getItem(STORAGE_KEYS.CALENDAR);
     if (stored) {
       const parsed = JSON.parse(stored);
       if (parsed.defaultViewMode === 'month' || parsed.defaultViewMode === 'week') {
@@ -140,7 +145,7 @@ export function loadCalendarSettings(): { defaultViewMode: ViewMode } {
 export function loadCalendarViewMode(): ViewMode {
   try {
     // First check if user has a saved preference
-    const stored = localStorage.getItem('viewMode:calendar');
+    const stored = localStorage.getItem(STORAGE_KEYS.CALENDAR_VIEW_MODE);
     if (stored === 'month' || stored === 'week') {
       return stored;
     }
@@ -158,7 +163,7 @@ export function loadCalendarViewMode(): ViewMode {
  */
 export function saveCalendarViewMode(mode: ViewMode): void {
   try {
-    localStorage.setItem('viewMode:calendar', mode);
+    localStorage.setItem(STORAGE_KEYS.CALENDAR_VIEW_MODE, mode);
   } catch (e) {
     console.error('[CalendarPage] Failed to save calendar view mode:', e);
   }

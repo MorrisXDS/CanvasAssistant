@@ -4,10 +4,7 @@
  */
 
 import { useState, useCallback, useEffect } from 'react';
-
-// localStorage keys
-const SECTION_ORDER_KEY = 'dashboardSectionOrder';
-const COLLAPSED_SECTIONS_KEY = 'dashboardCollapsedSections';
+import { STORAGE_KEYS } from '../../../l5-presentation/settings';
 
 // Default section order - must match section IDs in UnifiedDashboardGrid.tsx
 const DEFAULT_ORDER = ['priority', 'notifications', 'schedule', 'importantWorks'];
@@ -31,7 +28,7 @@ export interface DashboardDragDropActions {
 
 function loadSectionOrder(): string[] {
   try {
-    const stored = localStorage.getItem(SECTION_ORDER_KEY);
+    const stored = localStorage.getItem(STORAGE_KEYS.DASHBOARD_SECTION_ORDER);
     if (stored) {
       const parsed = JSON.parse(stored);
       // Ensure all default sections are present
@@ -47,7 +44,7 @@ function loadSectionOrder(): string[] {
 
 function saveSectionOrder(order: string[]): void {
   try {
-    localStorage.setItem(SECTION_ORDER_KEY, JSON.stringify(order));
+    localStorage.setItem(STORAGE_KEYS.DASHBOARD_SECTION_ORDER, JSON.stringify(order));
   } catch (e) {
     console.error('Failed to save section order:', e);
   }
@@ -55,7 +52,7 @@ function saveSectionOrder(order: string[]): void {
 
 function loadCollapsedSections(): Set<string> {
   try {
-    const stored = localStorage.getItem(COLLAPSED_SECTIONS_KEY);
+    const stored = localStorage.getItem(STORAGE_KEYS.DASHBOARD_COLLAPSED_SECTIONS);
     if (stored) {
       return new Set(JSON.parse(stored));
     }
@@ -67,7 +64,10 @@ function loadCollapsedSections(): Set<string> {
 
 function saveCollapsedSections(collapsed: Set<string>): void {
   try {
-    localStorage.setItem(COLLAPSED_SECTIONS_KEY, JSON.stringify([...collapsed]));
+    localStorage.setItem(
+      STORAGE_KEYS.DASHBOARD_COLLAPSED_SECTIONS,
+      JSON.stringify([...collapsed])
+    );
   } catch (e) {
     console.error('Failed to save collapsed sections:', e);
   }
@@ -163,8 +163,8 @@ export function useDashboardDragDrop(): DashboardDragDropState &
   const resetLayout = useCallback(() => {
     setSectionOrder([...DEFAULT_ORDER]);
     setCollapsedSections(new Set());
-    localStorage.removeItem(SECTION_ORDER_KEY);
-    localStorage.removeItem(COLLAPSED_SECTIONS_KEY);
+    localStorage.removeItem(STORAGE_KEYS.DASHBOARD_SECTION_ORDER);
+    localStorage.removeItem(STORAGE_KEYS.DASHBOARD_COLLAPSED_SECTIONS);
   }, []);
 
   return {

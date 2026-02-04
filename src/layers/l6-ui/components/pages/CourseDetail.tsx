@@ -265,26 +265,28 @@ export function CourseDetail() {
   // Archived course warning state
   const [archivedWarningAcknowledged, setArchivedWarningAcknowledged] = useState(() => {
     // Check if user has globally dismissed archived warnings
-    const globalDismiss = localStorage.getItem('archivedCourseWarningDismissed');
+    const globalDismiss = localStorage.getItem(
+      STORAGE_KEYS.ARCHIVED_COURSE_WARNING_DISMISSED
+    );
     if (globalDismiss === 'true') return true;
     // Check if dismissed for this specific course
     const dismissedCourses = JSON.parse(
-      localStorage.getItem('archivedCourseWarningDismissedIds') || '[]'
+      localStorage.getItem(STORAGE_KEYS.ARCHIVED_COURSE_WARNING_DISMISSED_IDS) || '[]'
     );
     return dismissedCourses.includes(Number(id));
   });
 
   const handleAcknowledgeArchivedWarning = (neverShowAgain: boolean) => {
     if (neverShowAgain) {
-      localStorage.setItem('archivedCourseWarningDismissed', 'true');
+      localStorage.setItem(STORAGE_KEYS.ARCHIVED_COURSE_WARNING_DISMISSED, 'true');
     } else {
       const dismissedCourses = JSON.parse(
-        localStorage.getItem('archivedCourseWarningDismissedIds') || '[]'
+        localStorage.getItem(STORAGE_KEYS.ARCHIVED_COURSE_WARNING_DISMISSED_IDS) || '[]'
       );
       if (!dismissedCourses.includes(courseId)) {
         dismissedCourses.push(courseId);
         localStorage.setItem(
-          'archivedCourseWarningDismissedIds',
+          STORAGE_KEYS.ARCHIVED_COURSE_WARNING_DISMISSED_IDS,
           JSON.stringify(dismissedCourses)
         );
       }
