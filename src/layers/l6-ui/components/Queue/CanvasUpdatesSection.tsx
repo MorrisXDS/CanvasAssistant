@@ -109,7 +109,8 @@ const styles = {
     // No padding - rows go edge to edge
   } as React.CSSProperties,
   tableHeader: {
-    display: 'flex',
+    display: 'grid',
+    gridTemplateColumns: '28px 2fr 1fr 1fr 1fr',
     alignItems: 'center',
     gap: 'var(--space-3)',
     padding: 'var(--space-2) var(--space-3)',
@@ -120,29 +121,21 @@ const styles = {
     color: 'var(--text-muted)',
   } as React.CSSProperties,
   colSpacer: {
-    width: '22px', // Match expand toggle width
-    flexShrink: 0,
+    // Grid handles sizing
   } as React.CSSProperties,
   colTitle: {
-    flex: 1,
-    maxWidth: '50%',
     minWidth: 0,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
   } as React.CSSProperties,
   colType: {
-    width: '140px',
-    flexShrink: 0,
     textAlign: 'left' as const,
   } as React.CSSProperties,
   colDue: {
-    width: '90px',
-    flexShrink: 0,
     textAlign: 'left' as const,
   } as React.CSSProperties,
   colActions: {
-    width: '120px',
-    flexShrink: 0,
     textAlign: 'right' as const,
-    marginLeft: 'auto',
   } as React.CSSProperties,
   emptyState: {
     display: 'flex',

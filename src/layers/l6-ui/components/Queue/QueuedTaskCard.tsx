@@ -58,7 +58,8 @@ function getTaskTypeShort(taskType: string | null | undefined): string {
 const styles = {
   // Row styles
   row: {
-    display: 'flex',
+    display: 'grid',
+    gridTemplateColumns: '28px 2fr 1fr 1fr 1fr',
     alignItems: 'center',
     gap: 'var(--space-3)',
     padding: 'var(--space-2) var(--space-3)',
@@ -81,11 +82,8 @@ const styles = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    flexShrink: 0,
   } as React.CSSProperties,
   title: {
-    flex: 1,
-    maxWidth: '50%',
     minWidth: 0,
     fontSize: 'var(--text-sm)',
     fontWeight: 'var(--font-medium)',
@@ -95,8 +93,6 @@ const styles = {
     whiteSpace: 'nowrap' as const,
   } as React.CSSProperties,
   taskType: {
-    width: '140px',
-    flexShrink: 0,
     fontSize: 'var(--text-xs)',
     color: 'var(--text-secondary)',
     overflow: 'hidden',
@@ -105,8 +101,6 @@ const styles = {
     textAlign: 'left' as const,
   } as React.CSSProperties,
   dueDate: {
-    width: '90px',
-    flexShrink: 0,
     fontSize: 'var(--text-xs)',
     color: 'var(--text-secondary)',
     textAlign: 'left' as const,
@@ -114,8 +108,7 @@ const styles = {
   actions: {
     display: 'flex',
     gap: '8px',
-    flexShrink: 0,
-    marginLeft: 'auto',
+    justifyContent: 'flex-end',
   } as React.CSSProperties,
   iconButton: {
     width: '28px',
