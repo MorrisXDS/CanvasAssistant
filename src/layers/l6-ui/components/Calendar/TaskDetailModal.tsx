@@ -232,12 +232,6 @@ export function TaskDetailModal({
                         </span>
                       </div>
                     )}
-                    {task.pointsPossible !== null && (
-                      <div style={styles.statItem}>
-                        <span style={styles.statLabel}>Points</span>
-                        <span style={styles.statValue}>{task.pointsPossible}</span>
-                      </div>
-                    )}
                   </div>
                 </div>
               )}
