@@ -147,6 +147,18 @@ function getMatchScoreColor(score: number): string {
   return 'var(--text-muted)';
 }
 
+// Strip HTML tags from a string for display
+function stripHtml(html: string): string {
+  if (!html) return '';
+  // Create a temporary element to parse HTML
+  const tmp = document.createElement('div');
+  tmp.innerHTML = html;
+  // Get text content, which strips all HTML
+  const text = tmp.textContent || tmp.innerText || '';
+  // Clean up whitespace
+  return text.replace(/\s+/g, ' ').trim();
+}
+
 const styles = {
   overlay: {
     position: 'fixed' as const,
@@ -323,10 +335,16 @@ const styles = {
   fieldCell: {
     padding: 'var(--space-3) var(--space-4)',
     cursor: 'pointer',
-    transition: 'background-color var(--transition-fast)',
+    transition: 'all var(--transition-fast)',
+    margin: '2px',
+  } as React.CSSProperties,
+  fieldCellHover: {
+    backgroundColor: 'var(--bg-tertiary)',
   } as React.CSSProperties,
   fieldCellSelected: {
     backgroundColor: 'var(--color-primary-bg)',
+    boxShadow: 'inset 0 0 0 2px var(--color-primary)',
+    borderRadius: 'var(--radius-sm)',
   } as React.CSSProperties,
   fieldCellDisabled: {
     opacity: 0.5,
@@ -336,16 +354,18 @@ const styles = {
     display: 'inline-flex',
     alignItems: 'center',
     justifyContent: 'center',
-    width: '16px',
-    height: '16px',
+    width: '18px',
+    height: '18px',
     borderRadius: '50%',
-    border: '2px solid var(--border-default)',
+    border: '2px solid var(--border-strong)',
     marginRight: 'var(--space-2)',
     flexShrink: 0,
+    transition: 'all var(--transition-fast)',
   } as React.CSSProperties,
   radioIndicatorSelected: {
     borderColor: 'var(--color-primary)',
     backgroundColor: 'var(--color-primary)',
+    boxShadow: '0 0 0 3px var(--color-primary-bg)',
   } as React.CSSProperties,
   quickOptions: {
     display: 'flex',
@@ -362,6 +382,12 @@ const styles = {
     backgroundColor: 'var(--bg-card)',
     color: 'var(--text-secondary)',
     cursor: 'pointer',
+    transition: 'all var(--transition-fast)',
+  } as React.CSSProperties,
+  quickButtonHover: {
+    backgroundColor: 'var(--bg-tertiary)',
+    borderColor: 'var(--color-primary)',
+    color: 'var(--color-primary)',
   } as React.CSSProperties,
   footer: {
     display: 'flex',
@@ -671,8 +697,12 @@ export function TaskLinkDialog({
         key: 'notes',
         label: 'Notes/Description',
         icon: null,
-        canvasValue: queuedTask.description || '(none)',
-        userValue: selectedTask.description || '(none)',
+        canvasValue: queuedTask.description
+          ? stripHtml(queuedTask.description)
+          : '(none)',
+        userValue: selectedTask.description
+          ? stripHtml(selectedTask.description)
+          : '(none)',
         canvasEmpty: !queuedTask.description,
         userEmpty: !selectedTask.description,
       },
@@ -690,7 +720,7 @@ export function TaskLinkDialog({
               </div>
               <div style={{ ...styles.columnHeader, ...styles.userHeader }}>
                 <User size={16} />
-                Yours
+                Local
               </div>
             </div>
 
@@ -706,6 +736,16 @@ export function TaskLinkDialog({
                       : {}),
                   }}
                   onClick={() => handleFieldChoice(field.key, 'canvas')}
+                  onMouseEnter={(e) => {
+                    if (fieldChoices[field.key] !== 'canvas') {
+                      e.currentTarget.style.backgroundColor = 'var(--bg-tertiary)';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (fieldChoices[field.key] !== 'canvas') {
+                      e.currentTarget.style.backgroundColor = '';
+                    }
+                  }}
                 >
                   <div style={{ display: 'flex', alignItems: 'flex-start' }}>
                     <span
@@ -739,7 +779,7 @@ export function TaskLinkDialog({
                   </div>
                 </div>
 
-                {/* User cell */}
+                {/* Local cell */}
                 <div
                   style={{
                     ...styles.fieldCell,
@@ -748,6 +788,16 @@ export function TaskLinkDialog({
                       : {}),
                   }}
                   onClick={() => handleFieldChoice(field.key, 'user')}
+                  onMouseEnter={(e) => {
+                    if (fieldChoices[field.key] !== 'user') {
+                      e.currentTarget.style.backgroundColor = 'var(--bg-tertiary)';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (fieldChoices[field.key] !== 'user') {
+                      e.currentTarget.style.backgroundColor = '';
+                    }
+                  }}
                 >
                   <div style={{ display: 'flex', alignItems: 'flex-start' }}>
                     <span
@@ -786,13 +836,55 @@ export function TaskLinkDialog({
 
           {/* Quick options */}
           <div style={styles.quickOptions}>
-            <button style={styles.quickButton} onClick={handleUseAllCanvas}>
+            <button
+              style={styles.quickButton}
+              onClick={handleUseAllCanvas}
+              title="Select all values from Canvas for every field"
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = 'var(--bg-tertiary)';
+                e.currentTarget.style.borderColor = 'var(--color-primary)';
+                e.currentTarget.style.color = 'var(--color-primary)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = 'var(--bg-card)';
+                e.currentTarget.style.borderColor = 'var(--border-default)';
+                e.currentTarget.style.color = 'var(--text-secondary)';
+              }}
+            >
               Use All Canvas
             </button>
-            <button style={styles.quickButton} onClick={handleUseAllUser}>
-              Use All Mine
+            <button
+              style={styles.quickButton}
+              onClick={handleUseAllUser}
+              title="Select all values from your local task for every field"
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = 'var(--bg-tertiary)';
+                e.currentTarget.style.borderColor = 'var(--color-primary)';
+                e.currentTarget.style.color = 'var(--color-primary)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = 'var(--bg-card)';
+                e.currentTarget.style.borderColor = 'var(--border-default)';
+                e.currentTarget.style.color = 'var(--text-secondary)';
+              }}
+            >
+              Use All Local
             </button>
-            <button style={styles.quickButton} onClick={handleSmartMerge}>
+            <button
+              style={styles.quickButton}
+              onClick={handleSmartMerge}
+              title="Use Canvas for title, due date, and type; keep your local notes"
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = 'var(--bg-tertiary)';
+                e.currentTarget.style.borderColor = 'var(--color-primary)';
+                e.currentTarget.style.color = 'var(--color-primary)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = 'var(--bg-card)';
+                e.currentTarget.style.borderColor = 'var(--border-default)';
+                e.currentTarget.style.color = 'var(--text-secondary)';
+              }}
+            >
               Smart Merge
             </button>
           </div>
