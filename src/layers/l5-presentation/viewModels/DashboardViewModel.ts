@@ -109,22 +109,11 @@ function calculateEffectiveAssessedGrade(
 }
 
 /**
- * Options for creating priority items
- */
-interface PriorityItemsOptions {
-  /** Whether to use priority-based sorting (default: false = due date only) */
-  prioritySortingEnabled?: boolean;
-}
-
-/**
  * Create priority items from tasks
+ * Sorts by due date (ascending - earliest first)
  */
-function createPriorityItems(
-  state: StoreState,
-  options: PriorityItemsOptions = {}
-): PriorityItem[] {
+function createPriorityItems(state: StoreState): PriorityItem[] {
   const { tasks, courses } = state;
-  const { prioritySortingEnabled = false } = options;
   const courseMap = new Map(courses.map((c) => [c.id, c]));
 
   return tasks
@@ -143,17 +132,7 @@ function createPriorityItems(
     })
     .filter((item): item is PriorityItem => item !== null)
     .sort((a, b) => {
-      if (prioritySortingEnabled) {
-        // Priority sorting: by urgency level, then priority score, then due date
-        const urgencyOrder = { critical: 0, high: 1, medium: 2, low: 3 };
-        const urgencyDiff = urgencyOrder[a.urgencyLevel] - urgencyOrder[b.urgencyLevel];
-        if (urgencyDiff !== 0) return urgencyDiff;
-
-        const scoreDiff = b.task.priorityScore - a.task.priorityScore;
-        if (scoreDiff !== 0) return scoreDiff;
-      }
-
-      // Default/fallback: sort by due date (ascending - earliest first)
+      // Sort by due date (ascending - earliest first)
       const aDue = a.task.dueAt ? new Date(a.task.dueAt).getTime() : Infinity;
       const bDue = b.task.dueAt ? new Date(b.task.dueAt).getTime() : Infinity;
       return aDue - bDue;
@@ -251,23 +230,10 @@ function calculateStats(
 }
 
 /**
- * Options for computing dashboard view model
- */
-export interface DashboardViewModelOptions {
-  /** Whether to use priority-based sorting (default: false = due date only) */
-  prioritySortingEnabled?: boolean;
-}
-
-/**
  * Compute the complete dashboard view model from store state
  */
-export function computeDashboardViewModel(
-  state: StoreState,
-  options: DashboardViewModelOptions = {}
-): DashboardViewModel {
-  const priorityQueue = createPriorityItems(state, {
-    prioritySortingEnabled: options.prioritySortingEnabled,
-  });
+export function computeDashboardViewModel(state: StoreState): DashboardViewModel {
+  const priorityQueue = createPriorityItems(state);
   const courseSummaries = createCourseSummaries(state);
   const stats = calculateStats(state, courseSummaries);
 
@@ -284,9 +250,6 @@ export function computeDashboardViewModel(
  * React hook for dashboard view model
  * Uses selector pattern for optimal re-renders
  */
-export function useDashboardViewModel(
-  state: StoreState,
-  options: DashboardViewModelOptions = {}
-): DashboardViewModel {
-  return computeDashboardViewModel(state, options);
+export function useDashboardViewModel(state: StoreState): DashboardViewModel {
+  return computeDashboardViewModel(state);
 }

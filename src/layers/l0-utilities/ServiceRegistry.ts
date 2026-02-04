@@ -240,13 +240,6 @@ export class ServiceRegistry extends EventEmitter {
       return new TaskRepository(this.get('database'));
     });
 
-    this.register('policyRepository', () => {
-      const {
-        PolicyRepository,
-      } = require('../l1-persistence/repositories/PolicyRepository');
-      return new PolicyRepository(this.get('database'));
-    });
-
     this.register('notificationRepository', () => {
       const {
         NotificationRepository,
@@ -278,76 +271,6 @@ export class ServiceRegistry extends EventEmitter {
     this.register('syncEngine', () => null);
 
     // L3 Intelligence
-    this.register('priorityEngine', () => {
-      const { PriorityEngine } = require('../l3-intelligence/PriorityEngine');
-      const db = this.get('database');
-      return new PriorityEngine(db);
-    });
-
-    this.register('priorityOrchestrator', () => {
-      const {
-        PriorityOrchestrator,
-      } = require('../l3-intelligence/orchestration/PriorityOrchestrator');
-      const db = this.get('database');
-      return new PriorityOrchestrator(db, {
-        refreshIntervalMs: 15 * 60 * 1000, // 15 minutes
-        autoRefresh: true,
-      });
-    });
-
-    this.register('recommendationOrchestrator', () => {
-      const {
-        RecommendationOrchestrator,
-      } = require('../l3-intelligence/orchestration/RecommendationOrchestrator');
-      const db = this.get('database');
-      return new RecommendationOrchestrator(db, {
-        refreshIntervalMs: 30 * 60 * 1000, // 30 minutes
-        autoRefresh: true,
-      });
-    });
-
-    this.register('insightOrchestrator', () => {
-      const {
-        InsightOrchestrator,
-      } = require('../l3-intelligence/orchestration/InsightOrchestrator');
-      const db = this.get('database');
-      return new InsightOrchestrator(db, {
-        refreshIntervalMs: 6 * 60 * 60 * 1000, // 6 hours
-        autoRefresh: true,
-      });
-    });
-
-    this.register('workloadOrchestrator', () => {
-      const {
-        WorkloadOrchestrator,
-      } = require('../l3-intelligence/orchestration/WorkloadOrchestrator');
-      const db = this.get('database');
-      return new WorkloadOrchestrator(db, {
-        defaultAvailableHoursPerDay: 4,
-        defaultLookAheadDays: 14,
-      });
-    });
-
-    this.register('behaviorTrackingOrchestrator', () => {
-      const {
-        BehaviorTrackingOrchestrator,
-      } = require('../l3-intelligence/orchestration/BehaviorTrackingOrchestrator');
-      const db = this.get('database');
-      return new BehaviorTrackingOrchestrator(db, {
-        autoRefresh: true,
-      });
-    });
-
-    this.register('adaptiveLearningOrchestrator', () => {
-      const {
-        AdaptiveLearningOrchestrator,
-      } = require('../l3-intelligence/orchestration/AdaptiveLearningOrchestrator');
-      const db = this.get('database');
-      return new AdaptiveLearningOrchestrator(db, {
-        autoRefresh: true,
-      });
-    });
-
     this.register('gradeCalculationService', () => {
       const {
         GradeCalculationService,
@@ -355,19 +278,11 @@ export class ServiceRegistry extends EventEmitter {
       return new GradeCalculationService();
     });
 
-    this.register('graceTokenService', () => {
-      const {
-        GraceTokenService,
-      } = require('../l3-intelligence/domain/GraceTokenService');
-      return new GraceTokenService();
-    });
-
     // L4 Controller
     this.register('commandDispatcher', () => {
       const { CommandDispatcher } = require('../l4-controller/CommandDispatcher');
       return new CommandDispatcher({
         db: this.get('database'),
-        priorityEngine: this.get('priorityEngine'),
       });
     });
   }

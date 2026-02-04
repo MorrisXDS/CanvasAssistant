@@ -88,6 +88,7 @@ export class TaskRepository extends BaseRepository<Task, TaskRow> {
       courseId: row.course_id,
       title: row.title,
       description: row.description,
+      notes: row.notes ?? null,
       unlockAt: row.unlock_at ?? null,
       dueAt: row.due_at,
       dueTimeKnown: Boolean(row.due_time_known ?? 1),

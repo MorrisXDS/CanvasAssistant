@@ -12,6 +12,8 @@ export type {
   CourseDetail,
   EnrollmentTerm,
   Task,
+  QueuedTask,
+  QueuedTaskStatus,
   Notification,
   NotificationAttachment,
   AnnouncementFileReference,
@@ -61,7 +63,10 @@ export interface StoreState {
   courses: import('../../shared/ipc-contract').Course[];
   tasks: import('../../shared/ipc-contract').Task[];
   notifications: import('../../shared/ipc-contract').Notification[];
-  policies: import('../../shared/ipc-contract').Policy[];
+
+  // Canvas Task Queue (new Canvas tasks awaiting user review)
+  taskQueue: import('../../shared/ipc-contract').QueuedTask[];
+  taskQueueCount: number;
 
   // Imported Calendars
   importedCalendars: import('../../shared/ipc-contract').ImportedCalendar[];
@@ -115,7 +120,6 @@ export interface StoreActions {
   fetchCourses: () => Promise<void>;
   fetchTasks: (courseId?: number) => Promise<void>;
   fetchNotifications: () => Promise<void>;
-  fetchPolicies: () => Promise<void>;
   refreshAll: () => Promise<void>;
 
   // Imported Calendars
@@ -178,6 +182,25 @@ export interface StoreActions {
     consolidate?: boolean;
     dateRange?: { start: string; end: string };
   }) => Promise<{ success: boolean; content?: string; eventCount?: number }>;
+
+  // Canvas Task Queue
+  fetchTaskQueue: (options?: { courseId?: number }) => Promise<void>;
+  fetchTaskQueueCount: (options?: { courseId?: number }) => Promise<void>;
+  acceptQueuedTask: (
+    queueId: number,
+    edits?: { title?: string; dueAt?: string | null; taskType?: string | null }
+  ) => Promise<{ success: boolean; taskId?: number }>;
+  rejectQueuedTask: (queueId: number) => Promise<boolean>;
+  bulkAcceptQueuedTasks: (options?: { courseId?: number }) => Promise<{
+    success: boolean;
+    acceptedCount?: number;
+    taskIds?: number[];
+  }>;
+  mergeQueuedTask: (params: {
+    queueId: number;
+    userTaskId: number;
+    keepFromUser?: { notes?: boolean; dueAt?: boolean; title?: boolean };
+  }) => Promise<{ success: boolean; taskId?: number }>;
 
   // Commands
   updateTargetGrade: (courseId: number, targetGrade: number) => Promise<boolean>;

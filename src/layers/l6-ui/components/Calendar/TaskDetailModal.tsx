@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 import type { Task } from '../../../l5-presentation/types';
 import type { CalendarEvent } from './CalendarGrid';
-import { PolicyBadgeGroup, HtmlContent } from '../shared';
+import { HtmlContent } from '../shared';
 import { useStore } from '../../../l5-presentation/store';
 import { styles } from './TaskDetailModal.styles';
 
@@ -88,7 +88,6 @@ export function TaskDetailModal({
   onDelete,
 }: TaskDetailModalProps) {
   const navigate = useNavigate();
-  const policies = useStore((state) => state.policies);
   const tasks = useStore((state) => state.tasks);
   const courses = useStore((state) => state.courses);
   const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false);
@@ -108,7 +107,9 @@ export function TaskDetailModal({
 
   // If imported event has a taskId, look up the actual task to show task view
   const linkedTask = linkedTaskId ? tasks.find((t) => t.id === linkedTaskId) : null;
-  const linkedCourse = linkedTask ? courses.find((c) => c.id === linkedTask.courseId) : null;
+  const linkedCourse = linkedTask
+    ? courses.find((c) => c.id === linkedTask.courseId)
+    : null;
 
   // Use linked task if available, otherwise use direct task event
   const isTask = event.type === 'task' || Boolean(linkedTask);
@@ -238,20 +239,6 @@ export function TaskDetailModal({
                       </div>
                     )}
                   </div>
-                </div>
-              )}
-
-              {/* Course Policies */}
-              {policies.filter((p) => p.courseId === task.courseId && p.isActive).length >
-                0 && (
-                <div style={styles.section}>
-                  <div style={styles.descriptionLabel}>Course Policies</div>
-                  <PolicyBadgeGroup
-                    task={task}
-                    policies={policies}
-                    maxBadges={5}
-                    size="md"
-                  />
                 </div>
               )}
 

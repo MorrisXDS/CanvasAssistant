@@ -115,6 +115,7 @@ export function mapTaskRowToEntity(row: {
   course_id: number;
   title: string;
   description: string | null;
+  notes?: string | null;
   unlock_at?: string | null;
   due_at: string | null;
   due_time_known?: number | boolean;
@@ -155,6 +156,7 @@ export function mapTaskRowToEntity(row: {
     courseId: row.course_id,
     title: row.title,
     description: row.description,
+    notes: row.notes ?? null,
     unlockAt: row.unlock_at ?? null,
     dueAt: row.due_at,
     dueTimeKnown: Boolean(row.due_time_known ?? 1), // Default true for backward compat

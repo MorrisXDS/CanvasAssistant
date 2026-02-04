@@ -123,18 +123,8 @@ export class SimulateGradeCommand implements Command<
       }
 
       if (simulation) {
-        // Calculate simulated priority using PriorityEngine if available
-        let simulatedPriority = task.priority_score;
-
-        if (context.priorityEngine && simulation.simulatedGrade !== null) {
-          const calculated = context.priorityEngine.getSimulatedTaskPriority(
-            task.id,
-            simulation.simulatedGrade
-          );
-          if (calculated !== null) {
-            simulatedPriority = calculated;
-          }
-        }
+        // Priority system removed - use stored priority score
+        const simulatedPriority = task.priority_score;
 
         affectedTasks.push({
           id: task.id,

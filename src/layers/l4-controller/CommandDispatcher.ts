@@ -18,7 +18,6 @@ import {
 } from './types';
 import { Database } from '../l1-persistence/Database';
 import { VisibleDataProvider } from '../l1-persistence/VisibleDataProvider';
-import { PriorityEngine } from '../l3-intelligence/PriorityEngine';
 import { SimulationManager } from './SimulationManager';
 import { ILogger, createTimer, createNoopLogger } from '../l0-utilities/Logger';
 
@@ -30,14 +29,10 @@ import { MarkTaskCompleteCommand } from './commands/MarkTaskCompleteCommand';
 import { TriggerSyncCommand } from './commands/TriggerSyncCommand';
 import { SimulateGradeCommand } from './commands/SimulateGradeCommand';
 import { ClearSimulationCommand } from './commands/ClearSimulationCommand';
-import { UseGraceTokenCommand } from './commands/UseGraceTokenCommand';
-import { UpdatePolicyCommand } from './commands/UpdatePolicyCommand';
-import { AddPolicyCommand } from './commands/AddPolicyCommand';
 import { CreateTaskCommand } from './commands/CreateTaskCommand';
 import { DuplicateTaskCommand } from './commands/DuplicateTaskCommand';
 import { UpdateTaskCommand } from './commands/UpdateTaskCommand';
 import { DeleteTaskCommand } from './commands/DeleteTaskCommand';
-import { DeletePolicyCommand } from './commands/DeletePolicyCommand';
 import { SetCourseSyllabusCommand } from './commands/SetCourseSyllabusCommand';
 import { MarkSyllabusReviewedCommand } from './commands/MarkSyllabusReviewedCommand';
 import { RemoveCourseSyllabusCommand } from './commands/RemoveCourseSyllabusCommand';
@@ -46,7 +41,6 @@ import { UnarchiveCourseCommand } from './commands/UnarchiveCourseCommand';
 
 export interface CommandDispatcherOptions {
   db: Database;
-  priorityEngine?: PriorityEngine;
   visibleDataProvider?: VisibleDataProvider;
   logger?: ILogger;
 }
@@ -62,14 +56,10 @@ export type CommandName =
   | 'TriggerSync'
   | 'SimulateGrade'
   | 'ClearSimulation'
-  | 'UseGraceToken'
-  | 'UpdatePolicy'
-  | 'AddPolicy'
   | 'CreateTask'
   | 'DuplicateTask'
   | 'UpdateTask'
   | 'DeleteTask'
-  | 'DeletePolicy'
   | 'SetCourseSyllabus'
   | 'MarkSyllabusReviewed'
   | 'RemoveCourseSyllabus'
@@ -105,7 +95,6 @@ export class CommandDispatcher extends EventEmitter {
     // Create command context
     this.context = {
       db: options.db,
-      priorityEngine: options.priorityEngine,
       visibleDataProvider: options.visibleDataProvider,
       simulationContext,
     };
@@ -113,7 +102,6 @@ export class CommandDispatcher extends EventEmitter {
     // Initialize simulation manager
     this.simulationManager = new SimulationManager({
       db: options.db,
-      priorityEngine: options.priorityEngine,
     });
 
     // Forward simulation events (store handlers for cleanup)
@@ -151,14 +139,10 @@ export class CommandDispatcher extends EventEmitter {
 
     this.register(new SimulateGradeCommand());
     this.register(new ClearSimulationCommand());
-    this.register(new UseGraceTokenCommand());
-    this.register(new UpdatePolicyCommand());
-    this.register(new AddPolicyCommand());
     this.register(new CreateTaskCommand());
     this.register(new DuplicateTaskCommand());
     this.register(new UpdateTaskCommand());
     this.register(new DeleteTaskCommand());
-    this.register(new DeletePolicyCommand());
     this.register(new SetCourseSyllabusCommand());
     this.register(new MarkSyllabusReviewedCommand());
     this.register(new RemoveCourseSyllabusCommand());
@@ -283,14 +267,6 @@ export class CommandDispatcher extends EventEmitter {
    */
   isSimulationActive(): boolean {
     return this.context.simulationContext.isActive;
-  }
-
-  /**
-   * Set the priority engine (for late initialization)
-   */
-  setPriorityEngine(engine: PriorityEngine): void {
-    this.context.priorityEngine = engine;
-    this.simulationManager.setPriorityEngine(engine);
   }
 
   /**

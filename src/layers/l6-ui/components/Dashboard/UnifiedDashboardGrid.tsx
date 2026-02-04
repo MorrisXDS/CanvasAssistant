@@ -35,8 +35,6 @@ export interface UnifiedDashboardGridProps {
   onTaskContextMenu?: (e: React.MouseEvent, task: Task) => void;
   onToggleComplete?: (taskId: number, isCompleted: boolean) => void;
   onDismissNotification: (id: number) => void;
-  /** Whether priority sorting is enabled (controls urgency badge visibility) */
-  prioritySortingEnabled?: boolean;
 }
 
 export function UnifiedDashboardGrid({
@@ -48,7 +46,6 @@ export function UnifiedDashboardGrid({
   onTaskContextMenu,
   onToggleComplete,
   onDismissNotification,
-  prioritySortingEnabled = false,
 }: UnifiedDashboardGridProps) {
   const {
     sectionOrder,
@@ -74,7 +71,6 @@ export function UnifiedDashboardGrid({
             onTaskContextMenu={onTaskContextMenu}
             onToggleComplete={onToggleComplete}
             maxItems={6}
-            showUrgencyBadges={prioritySortingEnabled}
           />
         );
       case 'notifications':

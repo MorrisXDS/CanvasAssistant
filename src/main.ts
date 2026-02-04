@@ -30,15 +30,6 @@ import {
 } from './layers/l2-daemon';
 import { HtmlLocalPathManager } from './layers/l2-daemon/HtmlLocalPathManager';
 
-// L3 - Intelligence
-import { PriorityEngine } from './layers/l3-intelligence/PriorityEngine';
-import { PriorityOrchestrator } from './layers/l3-intelligence/orchestration/PriorityOrchestrator';
-import { RecommendationOrchestrator } from './layers/l3-intelligence/orchestration/RecommendationOrchestrator';
-import { InsightOrchestrator } from './layers/l3-intelligence/orchestration/InsightOrchestrator';
-import { WorkloadOrchestrator } from './layers/l3-intelligence/orchestration/WorkloadOrchestrator';
-import { BehaviorTrackingOrchestrator } from './layers/l3-intelligence/orchestration/BehaviorTrackingOrchestrator';
-import { AdaptiveLearningOrchestrator } from './layers/l3-intelligence/orchestration/AdaptiveLearningOrchestrator';
-
 // L4 - Controller
 import { CommandDispatcher } from './layers/l4-controller';
 
@@ -176,11 +167,6 @@ if (!fs.existsSync(PROJECT_DB_DIR)) {
 // Create component loggers for each layer
 const databaseLogger = logger.child('database');
 const commandDispatcherLogger = logger.child('commandDispatcher');
-const priorityEngineLogger = logger.child('priorityEngine');
-const priorityOrchestratorLogger = logger.child('priorityOrchestrator');
-const insightOrchestratorLogger = logger.child('insightOrchestrator');
-const recommendationOrchestratorLogger = logger.child('recommendationOrchestrator');
-const workloadOrchestratorLogger = logger.child('workloadOrchestrator');
 
 // Initialize Layer 1 persistence
 const database = new Database({
@@ -202,13 +188,6 @@ let operationCoordinator: OperationCoordinator | null = null;
 // Initialize Layer 4 controller (after database is ready)
 // Note: CommandDispatcher is initialized lazily after database.initialize()
 let commandDispatcher: CommandDispatcher | null = null;
-let priorityEngine: PriorityEngine | null = null;
-let priorityOrchestrator: PriorityOrchestrator | null = null;
-let recommendationOrchestrator: RecommendationOrchestrator | null = null;
-let insightOrchestrator: InsightOrchestrator | null = null;
-let workloadOrchestrator: WorkloadOrchestrator | null = null;
-let behaviorTrackingOrchestrator: BehaviorTrackingOrchestrator | null = null;
-let adaptiveLearningOrchestrator: AdaptiveLearningOrchestrator | null = null;
 
 // Initialize Layer 2 daemon components (lazy-init for CanvasClient/SyncEngine)
 // Canvas allows ~700 requests/min (~11.7 req/sec)
@@ -961,77 +940,12 @@ app.whenReady().then(async () => {
       getSyncPreferences,
     });
 
-    // Initialize L3 PriorityEngine for simulation support
-    priorityEngine = new PriorityEngine(database, undefined, priorityEngineLogger);
-
-    // Initialize L4 CommandDispatcher with PriorityEngine and VisibleDataProvider
+    // Initialize L4 CommandDispatcher with VisibleDataProvider
     commandDispatcher = new CommandDispatcher({
       db: database,
-      priorityEngine,
       visibleDataProvider: visibleDataProvider ?? undefined,
       logger: commandDispatcherLogger,
     });
-
-    // Initialize L3 PriorityOrchestrator with visibility filtering
-    priorityOrchestrator = new PriorityOrchestrator(
-      database,
-      {
-        refreshIntervalMs: 15 * 60 * 1000, // 15 minutes
-        autoRefresh: true,
-      },
-      visibleDataProvider ?? undefined,
-      priorityOrchestratorLogger
-    );
-
-    // Initialize L3 Intelligence Orchestrators with visibility filtering
-    recommendationOrchestrator = new RecommendationOrchestrator(
-      database,
-      {
-        refreshIntervalMs: 30 * 60 * 1000, // 30 minutes
-        autoRefresh: true,
-      },
-      recommendationOrchestratorLogger
-    );
-
-    insightOrchestrator = new InsightOrchestrator(
-      database,
-      {
-        refreshIntervalMs: 6 * 60 * 60 * 1000, // 6 hours
-        autoRefresh: true,
-      },
-      visibleDataProvider ?? undefined,
-      insightOrchestratorLogger
-    );
-
-    workloadOrchestrator = new WorkloadOrchestrator(
-      database,
-      {
-        defaultAvailableHoursPerDay: 4,
-        defaultLookAheadDays: 14,
-      },
-      visibleDataProvider ?? undefined,
-      workloadOrchestratorLogger
-    );
-
-    behaviorTrackingOrchestrator = new BehaviorTrackingOrchestrator(
-      database,
-      {
-        refreshIntervalMs: 60 * 60 * 1000, // 1 hour
-        maxEventAgeDays: 180,
-        autoRefresh: true,
-      },
-      visibleDataProvider ?? undefined
-    );
-
-    adaptiveLearningOrchestrator = new AdaptiveLearningOrchestrator(database, {
-      recalculateIntervalMs: 24 * 60 * 60 * 1000, // 24 hours
-      minSampleSize: 10,
-      autoRecalculate: true,
-    });
-
-    logger.info(
-      'L3 Intelligence orchestrators initialized (including behavior tracking and adaptive learning)'
-    );
 
     // Forward sync requests from CommandDispatcher to SyncEngine
     commandDispatcher.on('sync-requested', async (event) => {
@@ -1050,88 +964,9 @@ app.whenReady().then(async () => {
       }
     });
 
-    // Track command metrics and behavior events
-    commandDispatcher.on('command-completed', ({ command, params, result }) => {
+    // Track command metrics
+    commandDispatcher.on('command-completed', ({ command }) => {
       metricsCollector.increment(`command.${command}.executed`);
-
-      // Track task completions for behavior analysis and adaptive learning
-      if (command === 'MarkTaskComplete' && result?.success && params?.isComplete) {
-        try {
-          const taskId = params.taskId as number;
-
-          // Get task details for tracking
-          const task = database.executeReadOne<{
-            id: number;
-            course_id: number;
-            task_type: string | null;
-            due_at: string | null;
-            points_possible: number | null;
-            grade: number | null;
-          }>(
-            'SELECT id, course_id, task_type, due_at, points_possible, grade FROM tasks WHERE id = ?',
-            [taskId]
-          );
-
-          if (task) {
-            const completedAt = new Date();
-            const dueAt = task.due_at ? new Date(task.due_at) : null;
-            const wasLate = dueAt ? completedAt > dueAt : false;
-            const daysBeforeDue = dueAt
-              ? Math.round(
-                  (dueAt.getTime() - completedAt.getTime()) / (1000 * 60 * 60 * 24)
-                )
-              : null;
-
-            // Record to behavior tracking
-            if (behaviorTrackingOrchestrator) {
-              behaviorTrackingOrchestrator.recordCompletionEvent(
-                task.id,
-                task.course_id,
-                task.task_type || 'assignment',
-                completedAt,
-                {
-                  dueAt: dueAt ?? undefined,
-                  pointsPossible: task.points_possible ?? undefined,
-                  scoreAchieved: task.grade ?? undefined,
-                }
-              );
-            }
-
-            // Record to adaptive learning (simplified - without full priority factors)
-            // Note: Full integration would require storing priority factors at task completion time
-            if (adaptiveLearningOrchestrator) {
-              const defaultFactors = {
-                urgency: 50,
-                weight: task.points_possible
-                  ? Math.min(50, task.points_possible / 2)
-                  : 10,
-                courseGap: 15,
-                policyAdjustment: 0,
-                dependency: 0,
-                taskTypeBoost: 0,
-                lockTimeUrgency: 0,
-                graceTokenFactor: 0,
-                submissionFactor: 0,
-              };
-              adaptiveLearningOrchestrator.recordOutcome(
-                task.id,
-                task.course_id,
-                task.task_type || 'assignment',
-                50, // Placeholder priority score
-                defaultFactors,
-                wasLate,
-                daysBeforeDue
-              );
-            }
-
-            logger.debug(
-              `Recorded task completion for behavior tracking: task ${taskId}`
-            );
-          }
-        } catch (error) {
-          logger.warn(`Failed to track task completion for behavior analysis: ${error}`);
-        }
-      }
     });
 
     // Forward simulation state changes to renderer
@@ -1215,12 +1050,6 @@ app.whenReady().then(async () => {
       canvasClientManager?.clear();
     },
     initializeCanvasClient,
-    getPriorityOrchestrator: () => priorityOrchestrator,
-    getRecommendationOrchestrator: () => recommendationOrchestrator,
-    getInsightOrchestrator: () => insightOrchestrator,
-    getWorkloadOrchestrator: () => workloadOrchestrator,
-    getBehaviorTrackingOrchestrator: () => behaviorTrackingOrchestrator,
-    getAdaptiveLearningOrchestrator: () => adaptiveLearningOrchestrator,
     getCommandDispatcher: () => commandDispatcher,
     getWindowBehavior,
     setWindowBehavior,
@@ -1479,14 +1308,6 @@ app.on('quit', () => {
   // Clear simulation state (as per spec: clears on app close)
   if (commandDispatcher) {
     commandDispatcher.clearSimulation();
-  }
-
-  // Stop L3 Intelligence orchestrators
-  if (recommendationOrchestrator) {
-    recommendationOrchestrator.stop();
-  }
-  if (insightOrchestrator) {
-    insightOrchestrator.stop();
   }
 
   // Stop all background services

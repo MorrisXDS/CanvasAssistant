@@ -54,6 +54,21 @@ export class DeleteTaskCommand implements Command<
         };
       }
 
+      // Clear foreign key references before deleting
+      // 1. Clear merged_into_task_id references pointing to this task
+      context.db.executeWrite(
+        'UPDATE tasks SET merged_into_task_id = NULL WHERE merged_into_task_id = ?',
+        [params.taskId],
+        'tasks'
+      );
+
+      // 2. Delete link_suggestions referencing this task
+      context.db.executeWrite(
+        'DELETE FROM link_suggestions WHERE user_task_id = ? OR canvas_task_id = ?',
+        [params.taskId, params.taskId],
+        'link_suggestions'
+      );
+
       // Delete the task
       context.db.executeWrite('DELETE FROM tasks WHERE id = ?', [params.taskId], 'tasks');
 

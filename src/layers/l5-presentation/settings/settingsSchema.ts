@@ -83,6 +83,9 @@ export const STORAGE_KEYS = {
   // Announcement settings
   ANNOUNCEMENT_SORT_ORDER: 'announcementSortOrder',
 
+  // Queue settings
+  QUEUE_DEFAULT_EXPANDED: 'queueDefaultExpanded',
+
   // Onboarding
   ONBOARDING_COMPLETED: 'onboardingCompleted',
 
@@ -144,12 +147,9 @@ export const AppearanceSettingsSchema = z.object({
 
 export const NotificationSettingsSchema = z.object({
   enabled: z.boolean(),
-  priorityAlerts: z.boolean(),
   syncStatus: z.boolean(),
   dueDateReminders: z.boolean(),
   gradeAlerts: z.boolean(),
-  workloadPredictions: z.boolean(),
-  riskWarnings: z.boolean(),
   quietWhenUnplugged: z.boolean(),
   quietWhenFullscreen: z.boolean(),
   quietWhenBusy: z.boolean(),
@@ -243,8 +243,6 @@ export const DashboardSettingsSchema = z.object({
   // Threshold for showing tasks in "Important Works" section (percentage)
   // Kept for backward compatibility, use importantWorksFilter.globalThreshold instead
   importantWorksThreshold: z.number().min(0).max(100),
-  // Whether to sort tasks by priority score (false = sort by due date only)
-  prioritySortingEnabled: z.boolean(),
   // Advanced filter configuration for Important Works
   importantWorksFilter: ImportantWorksFilterSchema.optional(),
 });
@@ -373,12 +371,9 @@ export const DEFAULT_APPEARANCE_SETTINGS: AppearanceSettings = {
 
 export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
   enabled: true,
-  priorityAlerts: true,
   syncStatus: true,
   dueDateReminders: true,
   gradeAlerts: true,
-  workloadPredictions: true,
-  riskWarnings: true,
   quietWhenUnplugged: false,
   quietWhenFullscreen: true,
   quietWhenBusy: false,
@@ -446,9 +441,12 @@ export const DEFAULT_IMPORTANT_WORKS_FILTER: ImportantWorksFilter = {
     'homework',
     'lab',
     'essay',
+    'writing',
     'attendance',
     'participation',
     'project',
+    'presentation',
+    'performing',
     'midterm',
     'termtest',
     'final_exam',
@@ -456,6 +454,7 @@ export const DEFAULT_IMPORTANT_WORKS_FILTER: ImportantWorksFilter = {
     'lab_report',
     'reading_response',
     'discussion',
+    'meeting',
     'reading',
     'external',
     'info',
@@ -466,7 +465,6 @@ export const DEFAULT_IMPORTANT_WORKS_FILTER: ImportantWorksFilter = {
 
 export const DEFAULT_DASHBOARD_SETTINGS: DashboardSettings = {
   importantWorksThreshold: 10, // 10% default (legacy, use importantWorksFilter instead)
-  prioritySortingEnabled: false, // Default to simple due date sorting
   importantWorksFilter: DEFAULT_IMPORTANT_WORKS_FILTER,
 };
 
@@ -495,12 +493,7 @@ export const DEFAULT_TIMEZONE_SETTINGS: TimezoneSettings = {
 };
 
 // Dashboard section order
-export const DEFAULT_DASHBOARD_ORDER = [
-  'priority',
-  'notifications',
-  'schedule',
-  'importantWorks',
-];
+export const DEFAULT_DASHBOARD_ORDER = ['notifications', 'schedule', 'importantWorks'];
 
 // Nav item order (default sidebar navigation)
 export const DEFAULT_NAV_ORDER = ['/', '/calendar', '/tasks', '/courses', '/files'];
@@ -553,6 +546,7 @@ export interface SettingsTypeMap {
   [STORAGE_KEYS.SETTINGS_OPEN_SECTIONS]: string[];
   [STORAGE_KEYS.SETTINGS_DOCK_AUTO_HIDE]: boolean;
   [STORAGE_KEYS.ANNOUNCEMENT_SORT_ORDER]: 'asc' | 'desc';
+  [STORAGE_KEYS.QUEUE_DEFAULT_EXPANDED]: boolean;
   [STORAGE_KEYS.ONBOARDING_COMPLETED]: boolean;
 }
 
@@ -588,6 +582,7 @@ export const SETTINGS_DEFAULTS: Partial<SettingsTypeMap> = {
   [STORAGE_KEYS.CALENDAR_VIEW_MODE]: 'month',
   [STORAGE_KEYS.FILES_DEFAULT_STATE]: 'remember',
   [STORAGE_KEYS.SETTINGS_SECTION_ORDER]: DEFAULT_SETTINGS_SECTION_ORDER,
+  [STORAGE_KEYS.QUEUE_DEFAULT_EXPANDED]: false, // Collapsed by default
 };
 
 // Schema map for validation

@@ -114,7 +114,6 @@ export function processPendingCommits(
   fetchCourses: () => void,
   fetchTasks: () => void,
   fetchNotifications: () => void,
-  fetchPolicies: () => void,
   fetchImportedCalendars: () => void,
   refreshAll: () => void
 ): void {
@@ -132,7 +131,6 @@ export function processPendingCommits(
   if (tables.has('courses')) fetchCourses();
   if (tables.has('tasks')) fetchTasks();
   if (tables.has('notifications')) fetchNotifications();
-  if (tables.has('course_policies')) fetchPolicies();
   if (tables.has('imported_calendars') || tables.has('calendar_events')) {
     fetchImportedCalendars();
   }

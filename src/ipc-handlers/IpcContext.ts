@@ -12,12 +12,6 @@ import type { FileDownloadManager } from '../layers/l0-utilities/FileDownloadMan
 import type { HealthCheck } from '../layers/l0-utilities/HealthCheck';
 import type { SystemMonitor } from '../layers/l0-utilities/SystemMonitor';
 import type { SyncEngine, CanvasClient, OperationCoordinator } from '../layers/l2-daemon';
-import type { PriorityOrchestrator } from '../layers/l3-intelligence/orchestration/PriorityOrchestrator';
-import type { RecommendationOrchestrator } from '../layers/l3-intelligence/orchestration/RecommendationOrchestrator';
-import type { InsightOrchestrator } from '../layers/l3-intelligence/orchestration/InsightOrchestrator';
-import type { WorkloadOrchestrator } from '../layers/l3-intelligence/orchestration/WorkloadOrchestrator';
-import type { BehaviorTrackingOrchestrator } from '../layers/l3-intelligence/orchestration/BehaviorTrackingOrchestrator';
-import type { AdaptiveLearningOrchestrator } from '../layers/l3-intelligence/orchestration/AdaptiveLearningOrchestrator';
 import type { CommandDispatcher } from '../layers/l4-controller';
 import type { VisibleDataProvider } from '../layers/l1-persistence';
 import type { CrashProtectionManager } from '../CrashProtectionManager';
@@ -87,14 +81,6 @@ export interface IpcContext {
   };
   startAutoSync: () => void;
   stopAutoSync: () => void;
-
-  // L3 - Intelligence
-  getPriorityOrchestrator: () => PriorityOrchestrator | null;
-  getRecommendationOrchestrator: () => RecommendationOrchestrator | null;
-  getInsightOrchestrator: () => InsightOrchestrator | null;
-  getWorkloadOrchestrator: () => WorkloadOrchestrator | null;
-  getBehaviorTrackingOrchestrator: () => BehaviorTrackingOrchestrator | null;
-  getAdaptiveLearningOrchestrator: () => AdaptiveLearningOrchestrator | null;
 
   // L4 - Controller
   getCommandDispatcher: () => CommandDispatcher | null;

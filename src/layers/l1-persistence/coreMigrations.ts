@@ -1802,4 +1802,283 @@ export const coreMigrations: Migration[] = [
       SELECT 1;
     `,
   },
+  {
+    version: 81,
+    description: 'Add Canvas late penalty tracking fields to tasks',
+    up: `
+      -- Pre-penalty grade (what Canvas shows before late deductions)
+      ALTER TABLE tasks ADD COLUMN entered_grade REAL;
+      -- Points deducted by Canvas late policy
+      ALTER TABLE tasks ADD COLUMN points_deducted REAL;
+      -- Canvas late policy status: 'none' | 'late' | 'missing' | 'extended'
+      ALTER TABLE tasks ADD COLUMN late_policy_status TEXT DEFAULT 'none';
+      -- How late the submission was in seconds
+      ALTER TABLE tasks ADD COLUMN seconds_late INTEGER DEFAULT 0;
+      -- Whether assignment was excused by instructor
+      ALTER TABLE tasks ADD COLUMN is_excused INTEGER DEFAULT 0;
+      -- Whether assignment is marked as missing
+      ALTER TABLE tasks ADD COLUMN is_missing INTEGER DEFAULT 0;
+    `,
+    down: `
+      -- SQLite doesn't support DROP COLUMN easily
+      SELECT 1;
+    `,
+  },
+  {
+    version: 82,
+    description: 'Create canvas_assignment_groups table for drop/weight rules',
+    up: `
+      -- Store Canvas assignment group metadata for drop_lowest, group weights
+      CREATE TABLE canvas_assignment_groups (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        course_id INTEGER NOT NULL,
+        canvas_group_id INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        position INTEGER DEFAULT 0,
+        group_weight REAL,
+        drop_lowest INTEGER DEFAULT 0,
+        drop_highest INTEGER DEFAULT 0,
+        never_drop TEXT,
+        synced_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(course_id) REFERENCES courses(id) ON DELETE CASCADE,
+        UNIQUE(course_id, canvas_group_id)
+      );
+
+      CREATE INDEX idx_assignment_groups_course ON canvas_assignment_groups(course_id);
+
+      -- Add FK from tasks to assignment groups (local ID reference)
+      ALTER TABLE tasks ADD COLUMN assignment_group_id INTEGER REFERENCES canvas_assignment_groups(id);
+
+      CREATE INDEX idx_tasks_assignment_group ON tasks(assignment_group_id);
+    `,
+    down: `
+      DROP INDEX IF EXISTS idx_tasks_assignment_group;
+      DROP INDEX IF EXISTS idx_assignment_groups_course;
+      DROP TABLE IF EXISTS canvas_assignment_groups;
+      -- Can't drop column from tasks
+      SELECT 1;
+    `,
+  },
+  {
+    version: 83,
+    description: 'Add per-course policy authority settings',
+    up: `
+      -- Authority for late penalty: 'canvas' | 'local' | 'both'
+      ALTER TABLE courses ADD COLUMN late_penalty_authority TEXT DEFAULT 'canvas';
+      -- Authority for drop lowest: 'canvas' | 'local' | 'off'
+      ALTER TABLE courses ADD COLUMN drop_lowest_authority TEXT DEFAULT 'canvas';
+      -- Grade calculation mode: 'canvas' | 'local' | 'both'
+      ALTER TABLE courses ADD COLUMN grade_calc_mode TEXT DEFAULT 'canvas';
+    `,
+    down: `
+      -- SQLite doesn't support DROP COLUMN easily
+      SELECT 1;
+    `,
+  },
+  {
+    version: 84,
+    description: 'Add task linking columns for user-Canvas task matching',
+    up: `
+      -- Track which user task this Canvas task was linked from
+      ALTER TABLE tasks ADD COLUMN linked_from_user_task TEXT;
+      -- Track which Canvas task a user task was merged into (for soft-deleted user tasks)
+      ALTER TABLE tasks ADD COLUMN merged_into_task_id INTEGER REFERENCES tasks(id);
+      -- Confidence score of the link (0.0 - 1.0)
+      ALTER TABLE tasks ADD COLUMN link_confidence REAL;
+      -- How the link was created: 'auto', 'suggested', 'manual'
+      ALTER TABLE tasks ADD COLUMN link_method TEXT;
+
+      CREATE INDEX idx_tasks_linked_from ON tasks(linked_from_user_task);
+      CREATE INDEX idx_tasks_merged_into ON tasks(merged_into_task_id);
+    `,
+    down: `
+      DROP INDEX IF EXISTS idx_tasks_merged_into;
+      DROP INDEX IF EXISTS idx_tasks_linked_from;
+      -- SQLite doesn't support DROP COLUMN easily
+      SELECT 1;
+    `,
+  },
+  {
+    version: 85,
+    description: 'Create link_suggestions table for user review of task matches',
+    up: `
+      CREATE TABLE link_suggestions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+        canvas_task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+        confidence REAL NOT NULL,
+        status TEXT DEFAULT 'pending',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        resolved_at DATETIME,
+        resolved_by TEXT,
+        UNIQUE(user_task_id, canvas_task_id)
+      );
+
+      CREATE INDEX idx_link_suggestions_status ON link_suggestions(status);
+      CREATE INDEX idx_link_suggestions_user_task ON link_suggestions(user_task_id);
+    `,
+    down: `
+      DROP INDEX IF EXISTS idx_link_suggestions_user_task;
+      DROP INDEX IF EXISTS idx_link_suggestions_status;
+      DROP TABLE IF EXISTS link_suggestions;
+    `,
+  },
+  {
+    version: 86,
+    description: 'Add user notes, expected grade, and soft-delete columns to tasks',
+    up: `
+      -- User's personal notes on the task
+      ALTER TABLE tasks ADD COLUMN notes TEXT;
+
+      -- User's expected/estimated grade before Canvas grades it
+      ALTER TABLE tasks ADD COLUMN user_expected_grade REAL;
+
+      -- Whether to use user's expected grade in calculations
+      ALTER TABLE tasks ADD COLUMN use_expected_in_calc INTEGER DEFAULT 0;
+
+      -- Soft-delete timestamp (for merged user tasks)
+      ALTER TABLE tasks ADD COLUMN deleted_at DATETIME;
+
+      CREATE INDEX idx_tasks_deleted_at ON tasks(deleted_at);
+    `,
+    down: `
+      DROP INDEX IF EXISTS idx_tasks_deleted_at;
+      -- SQLite doesn't support DROP COLUMN in older versions
+      -- These columns would need table recreation to remove
+    `,
+  },
+  {
+    version: 87,
+    description: 'Add deleted_at column to tasks (fix for partial v86 migration)',
+    up: `
+      -- Soft-delete timestamp (for merged user tasks)
+      -- Using IF NOT EXISTS pattern via PRAGMA
+      ALTER TABLE tasks ADD COLUMN deleted_at DATETIME;
+
+      CREATE INDEX IF NOT EXISTS idx_tasks_deleted_at ON tasks(deleted_at);
+    `,
+    down: `
+      DROP INDEX IF EXISTS idx_tasks_deleted_at;
+    `,
+  },
+  {
+    version: 88,
+    description: 'Ensure all v86 task columns exist (robust fix)',
+    up: `
+      -- These will error on "duplicate column name" which MigrationRunner handles
+      -- This ensures all columns exist even if v86 was partially applied
+      ALTER TABLE tasks ADD COLUMN notes TEXT;
+      ALTER TABLE tasks ADD COLUMN user_expected_grade REAL;
+      ALTER TABLE tasks ADD COLUMN use_expected_in_calc INTEGER DEFAULT 0;
+      ALTER TABLE tasks ADD COLUMN deleted_at DATETIME;
+      CREATE INDEX IF NOT EXISTS idx_tasks_deleted_at ON tasks(deleted_at);
+    `,
+    down: `
+      DROP INDEX IF EXISTS idx_tasks_deleted_at;
+    `,
+  },
+  {
+    version: 89,
+    description: 'Create canvas_task_queue table for staging new Canvas tasks',
+    up: `
+      -- Queue for staging new Canvas assignments before user acceptance
+      -- All new Canvas tasks are staged here for user review
+      CREATE TABLE canvas_task_queue (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        external_id TEXT UNIQUE NOT NULL,      -- Canvas assignment ID
+        canvas_data TEXT NOT NULL,              -- JSON: full Canvas payload
+        course_id INTEGER NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+
+        -- Denormalized for UI (avoid JSON parsing)
+        title TEXT NOT NULL,
+        description TEXT,
+        due_at DATETIME,
+        points_possible REAL,
+        task_type TEXT,
+
+        -- Queue state
+        status TEXT NOT NULL DEFAULT 'pending'
+          CHECK(status IN ('pending', 'accepted', 'rejected', 'merged')),
+
+        -- User task matching
+        matched_user_task_id INTEGER REFERENCES tasks(id) ON DELETE SET NULL,
+        match_confidence REAL,
+
+        -- Timestamps
+        first_seen_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        last_synced_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        resolved_at DATETIME,
+        resolved_by TEXT,  -- 'user' | 'auto' | 'bulk'
+
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE INDEX idx_canvas_task_queue_course ON canvas_task_queue(course_id);
+      CREATE INDEX idx_canvas_task_queue_status ON canvas_task_queue(status);
+      CREATE INDEX idx_canvas_task_queue_external ON canvas_task_queue(external_id);
+    `,
+    down: `
+      DROP INDEX IF EXISTS idx_canvas_task_queue_external;
+      DROP INDEX IF EXISTS idx_canvas_task_queue_status;
+      DROP INDEX IF EXISTS idx_canvas_task_queue_course;
+      DROP TABLE IF EXISTS canvas_task_queue;
+    `,
+  },
+  {
+    version: 90,
+    description: 'Add queue acceptance tracking columns to tasks table',
+    up: `
+      -- Track which queue entry a task was accepted from
+      ALTER TABLE tasks ADD COLUMN accepted_from_queue_id INTEGER
+        REFERENCES canvas_task_queue(id) ON DELETE SET NULL;
+      -- How the task was accepted: 'manual'|'auto'|'bulk'|'legacy'
+      ALTER TABLE tasks ADD COLUMN acceptance_method TEXT;
+      -- When the task was accepted from the queue
+      ALTER TABLE tasks ADD COLUMN accepted_at DATETIME;
+
+      CREATE INDEX idx_tasks_accepted_from ON tasks(accepted_from_queue_id);
+
+      -- Mark all existing Canvas tasks as 'legacy' (accepted before queue system)
+      UPDATE tasks SET acceptance_method = 'legacy' WHERE source_type = 'canvas';
+    `,
+    down: `
+      DROP INDEX IF EXISTS idx_tasks_accepted_from;
+      -- SQLite doesn't support DROP COLUMN easily
+      SELECT 1;
+    `,
+  },
+  {
+    version: 91,
+    description: 'Add auto_accept_canvas_tasks setting to courses table',
+    up: `
+      -- Per-course setting for automatic queue acceptance
+      -- 0 = queue all (default) - all new tasks go to queue for review
+      -- 1 = auto-accept all - new tasks become active immediately
+      -- 2 = auto-accept if matching user task exists - merge automatically
+      ALTER TABLE courses ADD COLUMN auto_accept_canvas_tasks INTEGER DEFAULT 0;
+    `,
+    down: `
+      -- SQLite doesn't support DROP COLUMN easily
+      SELECT 1;
+    `,
+  },
+  {
+    version: 92,
+    description: 'Add start_at column to tasks for user-defined task start dates',
+    up: `
+      -- User-defined start date for a task (independent of Canvas unlock_at)
+      -- This is local-only: not synced from Canvas, never overwritten by sync
+      -- unlock_at = Canvas availability date (when assignment unlocks)
+      -- start_at = User's planned start date (when they want to begin working)
+      ALTER TABLE tasks ADD COLUMN start_at DATETIME;
+
+      CREATE INDEX idx_tasks_start_at ON tasks(start_at);
+    `,
+    down: `
+      DROP INDEX IF EXISTS idx_tasks_start_at;
+      -- SQLite doesn't support DROP COLUMN easily
+      SELECT 1;
+    `,
+  },
 ];

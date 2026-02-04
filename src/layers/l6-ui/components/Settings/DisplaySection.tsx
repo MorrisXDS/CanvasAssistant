@@ -227,31 +227,6 @@ export function DisplaySection({ sectionRef }: DisplaySectionProps) {
             {!isSearching && <div style={styles.divider} />}
 
             {/* Dashboard Settings */}
-            {shouldShowSetting('dashboard.prioritySortingEnabled') && (
-              <SettingRow
-                settingKey="dashboard.prioritySortingEnabled"
-                label="Priority sorting"
-                description="Sort tasks by urgency and priority score instead of due date only"
-                isModified={
-                  dashboardSettings.prioritySortingEnabled !==
-                  DEFAULT_DASHBOARD_SETTINGS.prioritySortingEnabled
-                }
-                onReset={() =>
-                  updateDashboardSettings({
-                    prioritySortingEnabled:
-                      DEFAULT_DASHBOARD_SETTINGS.prioritySortingEnabled,
-                  })
-                }
-              >
-                <ToggleSwitch
-                  checked={dashboardSettings.prioritySortingEnabled}
-                  onChange={(checked) =>
-                    updateDashboardSettings({ prioritySortingEnabled: checked })
-                  }
-                />
-              </SettingRow>
-            )}
-
             {shouldShowSetting('dashboard.importantWorksThreshold') && (
               <SettingRow
                 settingKey="dashboard.importantWorksThreshold"

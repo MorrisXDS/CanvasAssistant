@@ -36,12 +36,6 @@ export const selectors = {
     state.notifications.filter((n) => !n.dismissedAt),
 
   /**
-   * Get policies for a specific course
-   */
-  coursePolicies: (courseId: number) => (state: StoreState) =>
-    state.policies.filter((p) => p.courseId === courseId && p.isActive),
-
-  /**
    * Get simulated grade for a task
    */
   simulatedGrade: (taskId: number) => (state: StoreState) =>
@@ -92,7 +86,8 @@ export const selectors = {
    * Get all course grades (memoized)
    */
   allCourseGrades: (state: StoreState) => {
-    const grades: Record<number, { earned: number; trend: number; assessed: number }> = {};
+    const grades: Record<number, { earned: number; trend: number; assessed: number }> =
+      {};
     for (const course of state.courses) {
       grades[course.id] = getCachedCourseGrades(course.id, state.tasks);
     }

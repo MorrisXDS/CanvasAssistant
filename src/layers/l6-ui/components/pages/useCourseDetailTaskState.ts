@@ -3,7 +3,7 @@
  * Manages task-related state and handlers for CourseDetail page
  */
 
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import type { Task } from '../../../l5-presentation/types';
 
 export interface TaskListModalState {
@@ -64,6 +64,8 @@ export interface UseCourseDetailTaskStateReturn {
   editTaskDescription: string;
   setEditTaskDescription: (desc: string) => void;
   editTaskOriginalDescription: string;
+  editTaskNotes: string;
+  setEditTaskNotes: (notes: string) => void;
   editTaskStartDate: string;
   setEditTaskStartDate: (date: string) => void;
   editTaskDueDate: string;
@@ -109,7 +111,7 @@ export function useCourseDetailTaskState({
   courseId,
   courseArchivedAt,
   setConfirmDialog,
-  navigate,
+  navigate: _navigate,
 }: UseCourseDetailTaskStateProps): UseCourseDetailTaskStateReturn {
   // New task form state
   const [showAddTask, setShowAddTask] = useState(false);
@@ -129,6 +131,7 @@ export function useCourseDetailTaskState({
   const [editTaskTitle, setEditTaskTitle] = useState('');
   const [editTaskDescription, setEditTaskDescription] = useState('');
   const [editTaskOriginalDescription, setEditTaskOriginalDescription] = useState('');
+  const [editTaskNotes, setEditTaskNotes] = useState('');
   const [editTaskStartDate, setEditTaskStartDate] = useState('');
   const [editTaskDueDate, setEditTaskDueDate] = useState('');
   const [editTaskWeight, setEditTaskWeight] = useState('');
@@ -144,7 +147,9 @@ export function useCourseDetailTaskState({
   });
 
   // Task context menu
-  const [taskContextMenu, setTaskContextMenu] = useState<TaskContextMenuState | null>(null);
+  const [taskContextMenu, setTaskContextMenu] = useState<TaskContextMenuState | null>(
+    null
+  );
 
   // Archived course tasks
   const [archivedCourseTasks, setArchivedCourseTasks] = useState<Task[]>([]);
@@ -171,18 +176,16 @@ export function useCourseDetailTaskState({
     if (!api?.dispatch || !newTaskTitle.trim()) return;
 
     try {
-      const unlockAt = newTaskStartDate
+      const startAt = newTaskStartDate
         ? new Date(newTaskStartDate).toISOString()
         : undefined;
-      const dueAt = newTaskDueDate
-        ? new Date(newTaskDueDate).toISOString()
-        : undefined;
+      const dueAt = newTaskDueDate ? new Date(newTaskDueDate).toISOString() : undefined;
 
       await api.dispatch('CreateTask', {
         courseId,
         title: newTaskTitle.trim(),
         description: newTaskDescription.trim() || undefined,
-        unlockAt,
+        startAt,
         dueAt,
         weight: newTaskWeight ? parseFloat(newTaskWeight) : undefined,
         taskType: newTaskType || undefined,
@@ -213,33 +216,39 @@ export function useCourseDetailTaskState({
   ]);
 
   // Duplicate task
-  const handleDuplicateTask = useCallback(async (taskId: number) => {
-    const api = window.api;
-    if (!api?.dispatch) return;
+  const handleDuplicateTask = useCallback(
+    async (taskId: number) => {
+      const api = window.api;
+      if (!api?.dispatch) return;
 
-    try {
-      await api.dispatch('DuplicateTask', { taskId });
-      await refreshArchivedCourseTasks();
-    } catch (error) {
-      console.error('Failed to duplicate task:', error);
-    }
-  }, [refreshArchivedCourseTasks]);
+      try {
+        await api.dispatch('DuplicateTask', { taskId });
+        await refreshArchivedCourseTasks();
+      } catch (error) {
+        console.error('Failed to duplicate task:', error);
+      }
+    },
+    [refreshArchivedCourseTasks]
+  );
 
   // Toggle task completion
-  const handleToggleComplete = useCallback(async (task: Task) => {
-    const api = window.api;
-    if (!api?.dispatch) return;
+  const handleToggleComplete = useCallback(
+    async (task: Task) => {
+      const api = window.api;
+      if (!api?.dispatch) return;
 
-    try {
-      await api.dispatch('MarkTaskComplete', {
-        taskId: task.id,
-        isComplete: !task.isCompleted,
-      });
-      await refreshArchivedCourseTasks();
-    } catch (error) {
-      console.error('Failed to toggle task completion:', error);
-    }
-  }, [refreshArchivedCourseTasks]);
+      try {
+        await api.dispatch('MarkTaskComplete', {
+          taskId: task.id,
+          isComplete: !task.isCompleted,
+        });
+        await refreshArchivedCourseTasks();
+      } catch (error) {
+        console.error('Failed to toggle task completion:', error);
+      }
+    },
+    [refreshArchivedCourseTasks]
+  );
 
   // Start editing a task
   const startEditingTask = useCallback((task: Task) => {
@@ -247,6 +256,7 @@ export function useCourseDetailTaskState({
     const originalDescription = task.description || '';
     setEditTaskDescription(originalDescription);
     setEditTaskOriginalDescription(originalDescription);
+    setEditTaskNotes(task.notes || '');
 
     const formatDateForInput = (isoString: string | null): string => {
       if (!isoString) return '';
@@ -285,6 +295,7 @@ export function useCourseDetailTaskState({
         taskId: editingTaskId,
         title: editTaskTitle.trim() || undefined,
         ...(descriptionChanged && { description: editTaskDescription || null }),
+        notes: editTaskNotes || null,
         unlockAt,
         dueAt: editTaskDueDate || null,
         weight: editTaskWeight ? parseFloat(editTaskWeight) : undefined,
@@ -303,6 +314,7 @@ export function useCourseDetailTaskState({
     editTaskTitle,
     editTaskDescription,
     editTaskOriginalDescription,
+    editTaskNotes,
     editTaskStartDate,
     editTaskDueDate,
     editTaskWeight,
@@ -313,31 +325,34 @@ export function useCourseDetailTaskState({
   ]);
 
   // Delete task
-  const handleDeleteTask = useCallback((taskId: number, taskTitle: string) => {
-    setConfirmDialog({
-      isOpen: true,
-      title: 'Delete Task',
-      message: `Are you sure you want to delete "${taskTitle}"? This action cannot be undone.`,
-      type: 'danger',
-      confirmText: 'Delete',
-      onConfirm: async () => {
-        const api = window.api;
-        if (!api?.dispatch) return;
+  const handleDeleteTask = useCallback(
+    (taskId: number, taskTitle: string) => {
+      setConfirmDialog({
+        isOpen: true,
+        title: 'Delete Task',
+        message: `Are you sure you want to delete "${taskTitle}"? This action cannot be undone.`,
+        type: 'danger',
+        confirmText: 'Delete',
+        onConfirm: async () => {
+          const api = window.api;
+          if (!api?.dispatch) return;
 
-        try {
-          const result = await api.dispatch('DeleteTask', { taskId, force: true });
-          if (result.success) {
-            setExpandedTaskId(null);
-            setEditingTaskId(null);
-            await refreshArchivedCourseTasks();
+          try {
+            const result = await api.dispatch('DeleteTask', { taskId, force: true });
+            if (result.success) {
+              setExpandedTaskId(null);
+              setEditingTaskId(null);
+              await refreshArchivedCourseTasks();
+            }
+          } catch (error) {
+            console.error('Failed to delete task:', error);
           }
-        } catch (error) {
-          console.error('Failed to delete task:', error);
-        }
-        setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
-      },
-    });
-  }, [setConfirmDialog, refreshArchivedCourseTasks]);
+          setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
+        },
+      });
+    },
+    [setConfirmDialog, refreshArchivedCourseTasks]
+  );
 
   // Task context menu
   const handleTaskContextMenu = useCallback((e: React.MouseEvent, task: Task) => {
@@ -361,35 +376,38 @@ export function useCourseDetailTaskState({
   }, []);
 
   // Toggle optional status
-  const handleToggleOptional = useCallback((task: Task) => {
-    const isCurrentlyOptional = task.isOptional;
-    const action = isCurrentlyOptional ? 'restore' : 'mark as optional';
-    const description = isCurrentlyOptional
-      ? `This will move "${task.title}" back to its original section based on submission status.`
-      : `This will move "${task.title}" to the "Not for Grade" section. Canvas sync will no longer update its status.`;
+  const handleToggleOptional = useCallback(
+    (task: Task) => {
+      const isCurrentlyOptional = task.isOptional;
+      const action = isCurrentlyOptional ? 'restore' : 'mark as optional';
+      const description = isCurrentlyOptional
+        ? `This will move "${task.title}" back to its original section based on submission status.`
+        : `This will move "${task.title}" to the "Not for Grade" section. Canvas sync will no longer update its status.`;
 
-    setConfirmDialog({
-      isOpen: true,
-      title: isCurrentlyOptional ? 'Restore Task' : 'Mark as Optional',
-      message: description,
-      type: 'info',
-      confirmText: isCurrentlyOptional ? 'Restore' : 'Mark Optional',
-      onConfirm: async () => {
-        const api = window.api;
-        if (!api?.dispatch) return;
+      setConfirmDialog({
+        isOpen: true,
+        title: isCurrentlyOptional ? 'Restore Task' : 'Mark as Optional',
+        message: description,
+        type: 'info',
+        confirmText: isCurrentlyOptional ? 'Restore' : 'Mark Optional',
+        onConfirm: async () => {
+          const api = window.api;
+          if (!api?.dispatch) return;
 
-        try {
-          await api.dispatch('UpdateTask', {
-            taskId: task.id,
-            isOptional: !isCurrentlyOptional,
-          });
-        } catch (error) {
-          console.error(`Failed to ${action} task:`, error);
-        }
-        setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
-      },
-    });
-  }, [setConfirmDialog]);
+          try {
+            await api.dispatch('UpdateTask', {
+              taskId: task.id,
+              isOptional: !isCurrentlyOptional,
+            });
+          } catch (error) {
+            console.error(`Failed to ${action} task:`, error);
+          }
+          setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
+        },
+      });
+    },
+    [setConfirmDialog]
+  );
 
   return {
     // New task form state
@@ -422,6 +440,8 @@ export function useCourseDetailTaskState({
     editTaskDescription,
     setEditTaskDescription,
     editTaskOriginalDescription,
+    editTaskNotes,
+    setEditTaskNotes,
     editTaskStartDate,
     setEditTaskStartDate,
     editTaskDueDate,

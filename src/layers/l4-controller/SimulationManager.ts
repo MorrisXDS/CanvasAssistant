@@ -16,11 +16,9 @@ import {
   createSimulationContext,
 } from './types';
 import { Database } from '../l1-persistence/Database';
-import { PriorityEngine } from '../l3-intelligence/PriorityEngine';
 
 export interface SimulationManagerOptions {
   db: Database;
-  priorityEngine?: PriorityEngine;
 }
 
 /**
@@ -36,13 +34,11 @@ export interface SimulationManagerOptions {
 export class SimulationManager extends EventEmitter {
   private context: SimulationContext;
   private db: Database;
-  private priorityEngine?: PriorityEngine;
 
   constructor(options: SimulationManagerOptions) {
     super();
     this.context = createSimulationContext();
     this.db = options.db;
-    this.priorityEngine = options.priorityEngine;
   }
 
   /**
@@ -61,7 +57,7 @@ export class SimulationManager extends EventEmitter {
       return null;
     }
 
-    const wasActive = this.context.isActive;
+    const _wasActive = this.context.isActive;
 
     // Create simulation entry
     const simulation: SimulatedGrade = {
@@ -221,18 +217,10 @@ export class SimulationManager extends EventEmitter {
       // Track affected tasks (those with simulations)
       const simulation = this.context.grades.get(task.id);
       if (simulation) {
-        // Recalculate priority if PriorityEngine is available
-        let simulatedPriority = task.priority_score;
-        if (this.priorityEngine) {
-          const explanation = this.priorityEngine.getTaskExplanation(task.id);
-          if (explanation) {
-            simulatedPriority = explanation.finalScore;
-          }
-        }
         affectedTasks.push({
           id: task.id,
           originalPriority: task.priority_score,
-          simulatedPriority,
+          simulatedPriority: task.priority_score, // Priority system removed
         });
       }
     }
@@ -253,12 +241,5 @@ export class SimulationManager extends EventEmitter {
         simulatedTargetDelta,
       },
     };
-  }
-
-  /**
-   * Set the priority engine for full recalculations
-   */
-  setPriorityEngine(engine: PriorityEngine): void {
-    this.priorityEngine = engine;
   }
 }

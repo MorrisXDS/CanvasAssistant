@@ -6,20 +6,20 @@
 import React from 'react';
 import { X } from 'lucide-react';
 import { TaskItem } from './TaskItem';
-import type { Task, Policy } from '../../../../l5-presentation/types';
+import type { Task } from '../../../../l5-presentation/types';
 import { courseDetailStyles as styles } from '../../pages/CourseDetail.styles';
 
 export interface TaskListModalProps {
   isOpen: boolean;
   title: string;
   tasks: Task[];
-  policies: Policy[];
   onClose: () => void;
   expandedTaskId: number | null;
   editingTaskId: number | null;
   highlightedTaskId: number | null;
   editTitle: string;
   editDescription: string;
+  editNotes: string;
   editStartDate: string;
   editDueDate: string;
   editWeight: string;
@@ -35,6 +35,7 @@ export interface TaskListModalProps {
   onDelete: (taskId: number, taskTitle: string) => void;
   onEditTitleChange: (value: string) => void;
   onEditDescriptionChange: (value: string) => void;
+  onEditNotesChange: (value: string) => void;
   onEditStartDateChange: (value: string) => void;
   onEditDueDateChange: (value: string) => void;
   onEditWeightChange: (value: string) => void;
@@ -48,13 +49,13 @@ export function TaskListModal({
   isOpen,
   title,
   tasks,
-  policies,
   onClose,
   expandedTaskId,
   editingTaskId,
   highlightedTaskId,
   editTitle,
   editDescription,
+  editNotes,
   editStartDate,
   editDueDate,
   editWeight,
@@ -70,6 +71,7 @@ export function TaskListModal({
   onDelete,
   onEditTitleChange,
   onEditDescriptionChange,
+  onEditNotesChange,
   onEditStartDateChange,
   onEditDueDateChange,
   onEditWeightChange,
@@ -100,7 +102,6 @@ export function TaskListModal({
                 <TaskItem
                   key={task.id}
                   task={task}
-                  policies={policies}
                   isFirst={index === 0}
                   isCompleted={task.isCompleted || task.grade !== null}
                   isExpanded={expandedTaskId === task.id}
@@ -108,6 +109,7 @@ export function TaskListModal({
                   isHighlighted={highlightedTaskId === task.id}
                   editTitle={editTitle}
                   editDescription={editDescription}
+                  editNotes={editNotes}
                   editStartDate={editStartDate}
                   editDueDate={editDueDate}
                   editWeight={editWeight}
@@ -121,6 +123,7 @@ export function TaskListModal({
                   onDelete={() => onDelete(task.id, task.title)}
                   onEditTitleChange={onEditTitleChange}
                   onEditDescriptionChange={onEditDescriptionChange}
+                  onEditNotesChange={onEditNotesChange}
                   onEditStartDateChange={onEditStartDateChange}
                   onEditDueDateChange={onEditDueDateChange}
                   onEditWeightChange={onEditWeightChange}

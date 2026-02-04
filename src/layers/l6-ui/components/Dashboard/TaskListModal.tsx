@@ -7,10 +7,9 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { X, AlertTriangle, Clock, ExternalLink } from 'lucide-react';
-import { Badge, PolicyBadgeGroup } from '../shared';
+import { Badge } from '../shared';
 import { formatDueDate, getBadgeUrgency } from '../../constants';
-import type { Task, Course, Policy } from '../../../l5-presentation/types';
-import { useStore } from '../../../l5-presentation/store';
+import type { Task, Course } from '../../../l5-presentation/types';
 
 export interface TaskWithCourse {
   task: Task;
@@ -34,7 +33,6 @@ export function TaskListModal({
   type,
 }: TaskListModalProps) {
   const navigate = useNavigate();
-  const policies = useStore((state) => state.policies);
 
   if (!isOpen) return null;
 
@@ -118,17 +116,11 @@ export function TaskListModal({
                       </Badge>
                     </div>
                     <div style={styles.taskTitle}>{item.task.title}</div>
-                    <div style={styles.taskMeta}>
-                      {item.task.weight > 0 && (
+                    {item.task.weight > 0 && (
+                      <div style={styles.taskMeta}>
                         <span style={styles.taskWeight}>{item.task.weight}% weight</span>
-                      )}
-                      <PolicyBadgeGroup
-                        task={item.task}
-                        policies={policies}
-                        maxBadges={2}
-                        size="sm"
-                      />
-                    </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Go to course indicator */}

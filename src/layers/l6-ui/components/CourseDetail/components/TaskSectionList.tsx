@@ -13,7 +13,7 @@ import {
   FileText,
 } from 'lucide-react';
 import { Card } from '../../shared';
-import type { Task, Policy } from '../../../../l5-presentation/types';
+import type { Task } from '../../../../l5-presentation/types';
 import { courseDetailStyles as styles } from '../../pages/CourseDetail.styles';
 import { TaskItem } from './TaskItem';
 import { AddTaskForm } from './AddTaskForm';
@@ -25,7 +25,6 @@ export interface TaskSectionListProps {
   submittedTasks: Task[];
   gradedTasks: Task[];
   infoTasks: Task[];
-  policies: Policy[];
   maxVisibleItems: number;
 
   // Drag state
@@ -68,6 +67,7 @@ export interface TaskSectionListProps {
   // Edit task form state
   editTaskTitle: string;
   editTaskDescription: string;
+  editTaskNotes: string;
   editTaskStartDate: string;
   editTaskDueDate: string;
   editTaskWeight: string;
@@ -76,6 +76,7 @@ export interface TaskSectionListProps {
   editTaskLocation: string;
   setEditTaskTitle: (value: string) => void;
   setEditTaskDescription: (value: string) => void;
+  setEditTaskNotes: (value: string) => void;
   setEditTaskStartDate: (value: string) => void;
   setEditTaskDueDate: (value: string) => void;
   setEditTaskWeight: (value: string) => void;
@@ -84,11 +85,13 @@ export interface TaskSectionListProps {
   setEditTaskLocation: (value: string) => void;
 
   // Task list modal
-  setTaskListModal: React.Dispatch<React.SetStateAction<{
-    isOpen: boolean;
-    title: string;
-    tasks: Task[];
-  }>>;
+  setTaskListModal: React.Dispatch<
+    React.SetStateAction<{
+      isOpen: boolean;
+      title: string;
+      tasks: Task[];
+    }>
+  >;
 
   // Task refs
   taskRefs: React.MutableRefObject<Map<number, HTMLDivElement>>;
@@ -111,7 +114,6 @@ export function TaskSectionList({
   submittedTasks,
   gradedTasks,
   infoTasks,
-  policies,
   maxVisibleItems,
   taskDragState,
   taskDragHandlers,
@@ -137,6 +139,7 @@ export function TaskSectionList({
   highlightedTaskId,
   editTaskTitle,
   editTaskDescription,
+  editTaskNotes,
   editTaskStartDate,
   editTaskDueDate,
   editTaskWeight,
@@ -145,6 +148,7 @@ export function TaskSectionList({
   editTaskLocation,
   setEditTaskTitle,
   setEditTaskDescription,
+  setEditTaskNotes,
   setEditTaskStartDate,
   setEditTaskDueDate,
   setEditTaskWeight,
@@ -309,7 +313,6 @@ export function TaskSectionList({
                     <TaskItem
                       key={task.id}
                       task={task}
-                      policies={policies}
                       isFirst={index === 0 && !(isPending && showAddTask)}
                       isCompleted={getIsCompleted(task)}
                       isExpanded={expandedTaskId === task.id}
@@ -317,14 +320,13 @@ export function TaskSectionList({
                       isHighlighted={highlightedTaskId === task.id}
                       editTitle={editTaskTitle}
                       editDescription={editTaskDescription}
+                      editNotes={editTaskNotes}
                       editStartDate={editTaskStartDate}
                       editDueDate={editTaskDueDate}
                       editWeight={editTaskWeight}
                       editGrade={editTaskGrade}
                       onToggleExpand={() =>
-                        setExpandedTaskId(
-                          expandedTaskId === task.id ? null : task.id
-                        )
+                        setExpandedTaskId(expandedTaskId === task.id ? null : task.id)
                       }
                       onToggleComplete={() => handleToggleComplete(task)}
                       onDuplicate={() => handleDuplicateTask(task.id)}
@@ -337,6 +339,7 @@ export function TaskSectionList({
                       onDelete={() => handleDeleteTask(task.id, task.title)}
                       onEditTitleChange={setEditTaskTitle}
                       onEditDescriptionChange={setEditTaskDescription}
+                      onEditNotesChange={setEditTaskNotes}
                       onEditStartDateChange={setEditTaskStartDate}
                       onEditDueDateChange={setEditTaskDueDate}
                       onEditWeightChange={setEditTaskWeight}

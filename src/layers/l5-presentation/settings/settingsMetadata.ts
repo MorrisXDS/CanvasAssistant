@@ -134,14 +134,6 @@ export const SETTINGS_METADATA: SettingMetadata[] = [
     keywords: ['home', 'startup', 'default'],
   },
   {
-    key: 'dashboard.prioritySortingEnabled',
-    label: 'Priority sorting',
-    description: 'Sort tasks by urgency and priority score instead of due date only',
-    category: 'display',
-    component: 'toggle',
-    keywords: ['order', 'ranking', 'importance'],
-  },
-  {
     key: 'dashboard.importantWorksThreshold',
     label: 'Important works threshold',
     description: 'Show tasks with grade weight above this percentage in Important Works',
@@ -288,14 +280,6 @@ export const SETTINGS_METADATA: SettingMetadata[] = [
     keywords: ['alerts', 'desktop', 'popup'],
   },
   {
-    key: 'notifications.priorityAlerts',
-    label: 'Priority alerts',
-    description: 'Intelligence flags high-priority or at-risk tasks',
-    category: 'notifications',
-    component: 'toggle',
-    keywords: ['urgent', 'important', 'warning'],
-  },
-  {
     key: 'notifications.syncStatus',
     label: 'Sync status',
     description: 'Notify on sync success or failure',
@@ -318,22 +302,6 @@ export const SETTINGS_METADATA: SettingMetadata[] = [
     category: 'notifications',
     component: 'toggle',
     keywords: ['score', 'marks', 'results'],
-  },
-  {
-    key: 'notifications.workloadPredictions',
-    label: 'Workload predictions',
-    description: 'AI predicts busy periods and suggests planning',
-    category: 'notifications',
-    component: 'toggle',
-    keywords: ['ai', 'intelligence', 'busy'],
-  },
-  {
-    key: 'notifications.riskWarnings',
-    label: 'Risk warnings',
-    description: 'Alert when predicted time exceeds remaining time',
-    category: 'notifications',
-    component: 'toggle',
-    keywords: ['danger', 'late', 'overdue'],
   },
   {
     key: 'notifications.quietWhenFullscreen',

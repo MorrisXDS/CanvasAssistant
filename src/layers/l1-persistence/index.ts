@@ -27,7 +27,6 @@ export {
   BaseRepository,
   CourseRepository,
   TaskRepository,
-  PolicyRepository,
   NotificationRepository,
 } from './repositories';
 
@@ -35,10 +34,6 @@ export type {
   CourseUpdates,
   TaskUpdates,
   CreateTaskParams,
-  PolicyConfig,
-  GraceTokenConfig,
-  PolicyUpdates,
-  CreatePolicyParams,
   NotificationUpdates,
 } from './repositories';
 

@@ -111,30 +111,6 @@ export function NotificationsSection({ sectionRef }: NotificationsSectionProps) 
                   </div>
                 )}
 
-                {shouldShowSetting('notifications.priorityAlerts') && (
-                  <SettingRow
-                    settingKey="notifications.priorityAlerts"
-                    label="Priority alerts"
-                    description="Intelligence flags high-priority or at-risk tasks"
-                    isModified={
-                      notifications.priorityAlerts !==
-                      DEFAULT_NOTIFICATION_SETTINGS.priorityAlerts
-                    }
-                    onReset={() =>
-                      updateNotifications({
-                        priorityAlerts: DEFAULT_NOTIFICATION_SETTINGS.priorityAlerts,
-                      })
-                    }
-                  >
-                    <ToggleSwitch
-                      checked={notifications.priorityAlerts}
-                      onChange={(checked) =>
-                        updateNotifications({ priorityAlerts: checked })
-                      }
-                    />
-                  </SettingRow>
-                )}
-
                 {shouldShowSetting('notifications.syncStatus') && (
                   <SettingRow
                     settingKey="notifications.syncStatus"
@@ -200,62 +176,6 @@ export function NotificationsSection({ sectionRef }: NotificationsSectionProps) 
                       checked={notifications.gradeAlerts}
                       onChange={(checked) =>
                         updateNotifications({ gradeAlerts: checked })
-                      }
-                    />
-                  </SettingRow>
-                )}
-
-                {!isSearching && <div style={styles.divider} />}
-                {!isSearching && (
-                  <div style={styles.subsectionTitle}>
-                    {SETTINGS_LABELS.sections.intelligenceAlerts}
-                  </div>
-                )}
-
-                {shouldShowSetting('notifications.workloadPredictions') && (
-                  <SettingRow
-                    settingKey="notifications.workloadPredictions"
-                    label="Workload predictions"
-                    description="AI predicts busy periods and suggests planning"
-                    isModified={
-                      notifications.workloadPredictions !==
-                      DEFAULT_NOTIFICATION_SETTINGS.workloadPredictions
-                    }
-                    onReset={() =>
-                      updateNotifications({
-                        workloadPredictions:
-                          DEFAULT_NOTIFICATION_SETTINGS.workloadPredictions,
-                      })
-                    }
-                  >
-                    <ToggleSwitch
-                      checked={notifications.workloadPredictions}
-                      onChange={(checked) =>
-                        updateNotifications({ workloadPredictions: checked })
-                      }
-                    />
-                  </SettingRow>
-                )}
-
-                {shouldShowSetting('notifications.riskWarnings') && (
-                  <SettingRow
-                    settingKey="notifications.riskWarnings"
-                    label="Risk warnings"
-                    description="Alert when predicted time exceeds remaining time"
-                    isModified={
-                      notifications.riskWarnings !==
-                      DEFAULT_NOTIFICATION_SETTINGS.riskWarnings
-                    }
-                    onReset={() =>
-                      updateNotifications({
-                        riskWarnings: DEFAULT_NOTIFICATION_SETTINGS.riskWarnings,
-                      })
-                    }
-                  >
-                    <ToggleSwitch
-                      checked={notifications.riskWarnings}
-                      onChange={(checked) =>
-                        updateNotifications({ riskWarnings: checked })
                       }
                     />
                   </SettingRow>

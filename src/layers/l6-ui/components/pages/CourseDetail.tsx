@@ -1,31 +1,36 @@
 /**
  * CourseDetail Page
- * Full course view with assignments, policies, announcements, and grade history
+ * Full course view with assignments, announcements, and grade history
  */
 
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, BookOpen, X, Archive, RefreshCw } from 'lucide-react';
-import { PolicyModal, ConfirmDialog } from '../shared';
+import { ConfirmDialog } from '../shared';
 import { MissingDependenciesDialog } from '../Files/MissingDependenciesDialog';
 import { useStore } from '../../../l5-presentation/store';
-import type { Task, Notification, Policy } from '../../../l5-presentation/types';
+import type { Task, Notification, QueuedTask } from '../../../l5-presentation/types';
 import { getCourseColor } from '../../constants';
+import { STORAGE_KEYS, SETTINGS_DEFAULTS } from '../../../l5-presentation/settings';
 import {
   SyllabusSelector,
   TaskContextMenu,
   MissingSyllabusWarning,
   DuplicateCourseworkBanner,
 } from '../Course';
+import {
+  CanvasUpdatesSection,
+  TaskMergeDialog,
+  TaskLinkDialog,
+  type QueuedTaskEdits,
+} from '../Queue';
 import { useCourseDetailDragDrop } from './useCourseDetailDragDrop';
 import { useCourseDetailTaskState } from './useCourseDetailTaskState';
 import { useCourseDetailSettingsState } from './useCourseDetailSettingsState';
 import { useCourseDetailSyllabusState } from './useCourseDetailSyllabusState';
-import { useCourseDetailPolicyState } from './useCourseDetailPolicyState';
 import { courseDetailStyles as styles } from './CourseDetail.styles';
 import {
   TaskListModal,
-  PoliciesCard,
   AnnouncementsCard,
   GradeHistoryCard,
   CourseHeader,
@@ -66,10 +71,48 @@ export function CourseDetail() {
 
   // Course and related data state
   const [course, setCourse] = useState<CourseDetailData | null>(null);
-  const [policies, setPolicies] = useState<Policy[]>([]);
   const [gradeHistory, setGradeHistory] = useState<GradeHistoryEntry[]>([]);
   const [announcements, setAnnouncements] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Canvas Task Queue state
+  const [queuedTasks, setQueuedTasks] = useState<QueuedTask[]>([]);
+
+  // Queue expanded setting from localStorage
+  const queueDefaultExpanded = useMemo(() => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEYS.QUEUE_DEFAULT_EXPANDED);
+      if (stored !== null) {
+        return JSON.parse(stored) === true;
+      }
+    } catch {
+      // Ignore parse errors
+    }
+    return SETTINGS_DEFAULTS[STORAGE_KEYS.QUEUE_DEFAULT_EXPANDED] ?? false;
+  }, []);
+  // Link dialog state - shows all linkable tasks with match scores
+  const [linkDialogState, setLinkDialogState] = useState<{
+    isOpen: boolean;
+    queuedTask: QueuedTask | null;
+  }>({
+    isOpen: false,
+    queuedTask: null,
+  });
+
+  // Legacy merge dialog state (for auto-detected matches)
+  const [mergeDialogState, setMergeDialogState] = useState<{
+    isOpen: boolean;
+    queuedTask: QueuedTask | null;
+    userTask: Task | null;
+  }>({
+    isOpen: false,
+    queuedTask: null,
+    userTask: null,
+  });
+
+  // Store actions for queue operations
+  const { acceptQueuedTask, rejectQueuedTask, bulkAcceptQueuedTasks, mergeQueuedTask } =
+    useStore();
 
   // Course settings state and handlers from custom hook
   const {
@@ -113,21 +156,6 @@ export function CourseDetail() {
     type: 'warning',
     confirmText: 'Confirm',
     onConfirm: () => {},
-  });
-
-  // Policy state and handlers from custom hook
-  const {
-    policyModalState,
-    policyLoading,
-    handleSavePolicy,
-    openAddPolicyModal,
-    openEditPolicyModal,
-    closePolicyModal,
-    handleDeletePolicy,
-  } = useCourseDetailPolicyState({
-    courseId,
-    setPolicies,
-    setConfirmDialog,
   });
 
   // Syllabus state and handlers from custom hook
@@ -185,6 +213,8 @@ export function CourseDetail() {
     setEditTaskTitle,
     editTaskDescription,
     setEditTaskDescription,
+    editTaskNotes,
+    setEditTaskNotes,
     editTaskStartDate,
     setEditTaskStartDate,
     editTaskDueDate,
@@ -291,24 +321,24 @@ export function CourseDetail() {
         // Fetch all data in parallel
         const [
           courseData,
-          policiesData,
           historyData,
           announcementsData,
           syllabusData,
           filesData,
+          queueData,
         ] = await Promise.all([
           api.getCourse(courseId),
-          api.getPolicies(courseId),
           api.getGradeHistory(courseId),
           api.getCourseNotifications(courseId),
           api.getCourseSyllabus?.(courseId).catch(() => null),
           api.getCourseFiles?.(courseId).catch(() => []),
+          api.getTaskQueueForCourse?.(courseId).catch(() => []),
         ]);
 
         setCourse(courseData);
-        setPolicies(policiesData || []);
         setGradeHistory(historyData || []);
         setAnnouncements(announcementsData || []);
+        setQueuedTasks(queueData || []);
 
         // Map syllabus API response to CourseSyllabus interface
         if (syllabusData && syllabusData.type === 'resource') {
@@ -485,6 +515,87 @@ export function CourseDetail() {
     };
   }, [courseTasks]);
 
+  // Queue action handlers
+  const handleQueueAccept = useCallback(
+    async (queueId: number, edits?: QueuedTaskEdits) => {
+      const result = await acceptQueuedTask(queueId, edits);
+      if (result.success) {
+        setQueuedTasks((prev) => prev.filter((q) => q.id !== queueId));
+      }
+      return result;
+    },
+    [acceptQueuedTask]
+  );
+
+  const handleQueueReject = useCallback(
+    async (queueId: number) => {
+      const success = await rejectQueuedTask(queueId);
+      if (success) {
+        setQueuedTasks((prev) => prev.filter((q) => q.id !== queueId));
+      }
+      return success;
+    },
+    [rejectQueuedTask]
+  );
+
+  const handleQueueBulkAccept = useCallback(async () => {
+    const result = await bulkAcceptQueuedTasks({ courseId });
+    if (result.success) {
+      setQueuedTasks([]);
+    }
+    return result;
+  }, [bulkAcceptQueuedTasks, courseId]);
+
+  // Open link dialog to select which task to link
+  const handleOpenLinkDialog = useCallback(
+    (queueId: number) => {
+      const queuedTask = queuedTasks.find((q) => q.id === queueId);
+      if (queuedTask) {
+        // Get all user tasks that can be linked (not already linked to Canvas)
+        const userTasksOnly = courseTasks.filter((t) => t.sourceType === 'user');
+        if (userTasksOnly.length > 0) {
+          // Open link dialog with all linkable tasks
+          setLinkDialogState({
+            isOpen: true,
+            queuedTask,
+          });
+        } else {
+          // No user tasks to link to - just accept directly
+          handleQueueAccept(queueId);
+        }
+      }
+    },
+    [queuedTasks, courseTasks, handleQueueAccept]
+  );
+
+  // Close link dialog
+  const closeLinkDialog = useCallback(() => {
+    setLinkDialogState({ isOpen: false, queuedTask: null });
+  }, []);
+
+  const handleMergeTask = useCallback(
+    async (params: {
+      queueId: number;
+      userTaskId: number;
+      keepFromUser?: { notes?: boolean; dueAt?: boolean; title?: boolean };
+    }) => {
+      const result = await mergeQueuedTask(params);
+      if (result.success) {
+        setQueuedTasks((prev) => prev.filter((q) => q.id !== params.queueId));
+      }
+      return result;
+    },
+    [mergeQueuedTask]
+  );
+
+  const closeMergeDialog = useCallback(() => {
+    setMergeDialogState({
+      isOpen: false,
+      queuedTask: null,
+      userTask: null,
+    });
+  }, []);
+
   if (loading) {
     return (
       <div style={styles.pageWrapper}>
@@ -637,6 +748,18 @@ export function CourseDetail() {
           </div>
         )}
 
+        {/* Canvas Updates Section - Only show for non-archived courses */}
+        {!course.archivedAt && queuedTasks.length > 0 && (
+          <CanvasUpdatesSection
+            queuedTasks={queuedTasks}
+            onAccept={handleQueueAccept}
+            onReject={handleQueueReject}
+            onBulkAccept={handleQueueBulkAccept}
+            onLink={handleOpenLinkDialog}
+            defaultExpanded={queueDefaultExpanded}
+          />
+        )}
+
         {/* Two Column Layout */}
         <div style={styles.twoColumn}>
           {/* Left Column - Assignments */}
@@ -647,7 +770,6 @@ export function CourseDetail() {
               submittedTasks={submittedTasks}
               gradedTasks={gradedTasks}
               infoTasks={infoTasks}
-              policies={policies}
               maxVisibleItems={MAX_VISIBLE_ITEMS}
               taskDragState={taskDragState}
               taskDragHandlers={taskDragHandlers}
@@ -673,6 +795,7 @@ export function CourseDetail() {
               highlightedTaskId={highlightedTaskId}
               editTaskTitle={editTaskTitle}
               editTaskDescription={editTaskDescription}
+              editTaskNotes={editTaskNotes}
               editTaskStartDate={editTaskStartDate}
               editTaskDueDate={editTaskDueDate}
               editTaskWeight={editTaskWeight}
@@ -681,6 +804,7 @@ export function CourseDetail() {
               editTaskLocation={editTaskLocation}
               setEditTaskTitle={setEditTaskTitle}
               setEditTaskDescription={setEditTaskDescription}
+              setEditTaskNotes={setEditTaskNotes}
               setEditTaskStartDate={setEditTaskStartDate}
               setEditTaskDueDate={setEditTaskDueDate}
               setEditTaskWeight={setEditTaskWeight}
@@ -731,25 +855,6 @@ export function CourseDetail() {
               const isDragging = sidebarDragState.draggingId === sectionId;
               const isDragOver = sidebarDragState.dragOverId === sectionId;
 
-              if (sectionId === 'policies') {
-                return (
-                  <PoliciesCard
-                    key={sectionId}
-                    policies={policies}
-                    isDragging={isDragging}
-                    isDragOver={isDragOver}
-                    onDragStart={sidebarDragHandlers.onDragStart(sectionId)}
-                    onDragEnd={sidebarDragHandlers.onDragEnd}
-                    onDragOver={sidebarDragHandlers.onDragOver(sectionId)}
-                    onDragLeave={sidebarDragHandlers.onDragLeave}
-                    onDrop={sidebarDragHandlers.onDrop(sectionId)}
-                    onAddPolicy={openAddPolicyModal}
-                    onEditPolicy={openEditPolicyModal}
-                    onDeletePolicy={handleDeletePolicy}
-                  />
-                );
-              }
-
               if (sectionId === 'announcements') {
                 return (
                   <AnnouncementsCard
@@ -769,20 +874,6 @@ export function CourseDetail() {
 
               return null;
             })}
-
-            {/* Policy Modal */}
-            <PolicyModal
-              isOpen={policyModalState.isOpen}
-              onClose={closePolicyModal}
-              onSave={handleSavePolicy}
-              courseId={courseId}
-              courseCode={course?.code}
-              tasks={courseTasks}
-              taskGroups={[]}
-              existingPolicyNames={policies.map((p) => p.policyName)}
-              editData={policyModalState.editData}
-              isLoading={policyLoading}
-            />
 
             {/* Grade History */}
             <GradeHistoryCard gradeHistory={gradeHistory} />
@@ -818,13 +909,13 @@ export function CourseDetail() {
           isOpen={taskListModal.isOpen}
           title={taskListModal.title}
           tasks={taskListModal.tasks}
-          policies={policies}
           onClose={() => setTaskListModal((prev) => ({ ...prev, isOpen: false }))}
           expandedTaskId={expandedTaskId}
           editingTaskId={editingTaskId}
           highlightedTaskId={highlightedTaskId}
           editTitle={editTaskTitle}
           editDescription={editTaskDescription}
+          editNotes={editTaskNotes}
           editStartDate={editTaskStartDate}
           editDueDate={editTaskDueDate}
           editWeight={editTaskWeight}
@@ -845,6 +936,7 @@ export function CourseDetail() {
           onDelete={(taskId, taskTitle) => handleDeleteTask(taskId, taskTitle)}
           onEditTitleChange={setEditTaskTitle}
           onEditDescriptionChange={setEditTaskDescription}
+          onEditNotesChange={setEditTaskNotes}
           onEditStartDateChange={setEditTaskStartDate}
           onEditDueDateChange={setEditTaskDueDate}
           onEditWeightChange={setEditTaskWeight}
@@ -961,6 +1053,30 @@ export function CourseDetail() {
         isDownloading={missingDepsDialog.isDownloading}
         downloadProgress={missingDepsDialog.downloadProgress}
       />
+
+      {/* Task Link Dialog (two-step: select task, then resolve fields) */}
+      {linkDialogState.isOpen && linkDialogState.queuedTask && (
+        <TaskLinkDialog
+          isOpen={linkDialogState.isOpen}
+          queuedTask={linkDialogState.queuedTask}
+          linkableTasks={courseTasks.filter((t) => t.sourceType === 'user')}
+          onMerge={handleMergeTask}
+          onCancel={closeLinkDialog}
+        />
+      )}
+
+      {/* Task Merge Dialog (legacy - for auto-detected matches) */}
+      {mergeDialogState.isOpen &&
+        mergeDialogState.queuedTask &&
+        mergeDialogState.userTask && (
+          <TaskMergeDialog
+            isOpen={mergeDialogState.isOpen}
+            queuedTask={mergeDialogState.queuedTask}
+            userTask={mergeDialogState.userTask}
+            onMerge={handleMergeTask}
+            onCancel={closeMergeDialog}
+          />
+        )}
     </div>
   );
 }

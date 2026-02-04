@@ -59,12 +59,33 @@ export class CreateTaskCommand implements Command<CreateTaskParams, { taskId: nu
       // Use epoch time as default for unlock_at if not provided
       const unlockAt = params.unlockAt || '1970-01-01T00:00:00.000Z';
 
+      // Build field_sources - all fields come from user for user-created tasks
+      const fieldSources: Record<string, string> = {
+        title: 'user',
+        description: 'user',
+        due_at: 'user',
+        start_at: 'user',
+        task_type: 'user',
+      };
+      const fieldSourcesJson = JSON.stringify(fieldSources);
+
+      // All user-provided fields are considered "local modified"
+      const localModifiedFields = [
+        'title',
+        'description',
+        'due_at',
+        'start_at',
+        'task_type',
+      ];
+      const localModifiedFieldsJson = JSON.stringify(localModifiedFields);
+
       // Insert the new task
       const result = context.db.executeWrite(
         `INSERT INTO tasks (
           external_id, source_type, course_id, title, description,
-          unlock_at, due_at, weight, points_possible, is_completed, priority_score, task_type, location
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          unlock_at, start_at, due_at, weight, points_possible, is_completed, priority_score,
+          task_type, location, field_sources, local_modified_fields
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           externalId,
           'user',
@@ -72,6 +93,7 @@ export class CreateTaskCommand implements Command<CreateTaskParams, { taskId: nu
           params.title.trim(),
           params.description?.trim() || null,
           unlockAt,
+          params.startAt || null,
           params.dueAt || null,
           params.weight ?? 0,
           params.pointsPossible ?? null,
@@ -79,6 +101,8 @@ export class CreateTaskCommand implements Command<CreateTaskParams, { taskId: nu
           50, // default priority score
           params.taskType || null,
           params.location?.trim() || null,
+          fieldSourcesJson,
+          localModifiedFieldsJson,
         ],
         'tasks'
       );
@@ -115,9 +139,8 @@ export class CreateTaskCommand implements Command<CreateTaskParams, { taskId: nu
             [calendarEventId, taskId],
             'tasks'
           );
-        } catch (calendarError) {
-          // Log but don't fail - task was created successfully
-          console.warn('Failed to create calendar event for task:', calendarError);
+        } catch {
+          // Ignore calendar event creation failure - task was created successfully
         }
       }
 

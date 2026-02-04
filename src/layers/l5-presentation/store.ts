@@ -21,7 +21,6 @@ import {
   DbCommitEvent,
   DisplayCalendarEvent,
   SyncResultSummary,
-  SyncConflictItem,
 } from './types';
 import {
   markOptimisticUpdate,
@@ -45,7 +44,8 @@ const initialState: StoreState = {
   courses: [],
   tasks: [],
   notifications: [],
-  policies: [],
+  taskQueue: [],
+  taskQueueCount: 0,
   importedCalendars: [],
   calendarEvents: [],
   simulation: {
@@ -347,33 +347,161 @@ export const useStore = create<Store>()(
         }
       },
 
+      // =========================================================================
+      // Canvas Task Queue Actions
+      // =========================================================================
+
       /**
-       * Fetch policies for visible courses
-       * Used for displaying policy badges on task cards
+       * Fetch pending queue entries (new Canvas tasks awaiting user review)
        */
-      fetchPolicies: async () => {
+      fetchTaskQueue: async (options?: { courseId?: number }) => {
         const api = getApi();
         if (!api) return;
 
         try {
-          const allCourses = get().courses;
-
-          if (allCourses.length === 0) {
-            // No courses loaded yet - fetch all policies
-            const policies = await api.getAllPolicies();
-            set({ policies });
+          let taskQueue;
+          if (options?.courseId) {
+            taskQueue = await api.getTaskQueueForCourse(options.courseId);
           } else {
-            // Get visible course IDs and fetch only those policies
-            const visibleCourseIds = allCourses
-              .filter((c: Course) => !c.isHidden)
-              .map((c: Course) => c.id);
-
-            const policies = await api.getAllPolicies({ courseIds: visibleCourseIds });
-            set({ policies });
+            taskQueue = await api.getTaskQueue({ status: 'pending' });
           }
+          set({ taskQueue });
         } catch (error) {
-          console.error('Failed to fetch policies:', error);
-          // Don't set lastError for policies - not critical
+          console.error('Failed to fetch task queue:', error);
+        }
+      },
+
+      /**
+       * Fetch count of pending queue entries (for badges)
+       */
+      fetchTaskQueueCount: async (options?: { courseId?: number }) => {
+        const api = getApi();
+        if (!api) return;
+
+        try {
+          const taskQueueCount = await api.getTaskQueueCount(options);
+          set({ taskQueueCount });
+        } catch (error) {
+          console.error('Failed to fetch task queue count:', error);
+        }
+      },
+
+      /**
+       * Accept a queued task (creates it as active coursework)
+       * @param edits Optional edits to apply when creating the task
+       */
+      acceptQueuedTask: async (
+        queueId: number,
+        edits?: { title?: string; dueAt?: string | null; taskType?: string | null }
+      ) => {
+        const api = getApi();
+        if (!api) return { success: false };
+
+        logUserAction('acceptQueuedTask', { queueId, edits });
+
+        try {
+          const result = await api.acceptQueuedTask(queueId, edits);
+          if (result.success) {
+            // Remove from local queue state
+            set((state) => ({
+              taskQueue: state.taskQueue.filter((q) => q.id !== queueId),
+              taskQueueCount: Math.max(0, state.taskQueueCount - 1),
+            }));
+            // Refresh tasks to include the newly accepted task
+            await get().fetchTasks();
+          }
+          return result;
+        } catch (error) {
+          console.error('Failed to accept queued task:', error);
+          return { success: false };
+        }
+      },
+
+      /**
+       * Reject a queued task (won't resurface on re-sync)
+       */
+      rejectQueuedTask: async (queueId: number) => {
+        const api = getApi();
+        if (!api) return false;
+
+        logUserAction('rejectQueuedTask', { queueId });
+
+        try {
+          const result = await api.rejectQueuedTask(queueId);
+          if (result.success) {
+            // Remove from local queue state
+            set((state) => ({
+              taskQueue: state.taskQueue.filter((q) => q.id !== queueId),
+              taskQueueCount: Math.max(0, state.taskQueueCount - 1),
+            }));
+          }
+          return result.success;
+        } catch (error) {
+          console.error('Failed to reject queued task:', error);
+          return false;
+        }
+      },
+
+      /**
+       * Bulk accept all pending queue entries
+       */
+      bulkAcceptQueuedTasks: async (options?: { courseId?: number }) => {
+        const api = getApi();
+        if (!api) return { success: false };
+
+        logUserAction('bulkAcceptQueuedTasks', options);
+
+        try {
+          const result = await api.bulkAcceptQueuedTasks(options);
+          if (result.success) {
+            // Clear queue (or filter by course if courseId specified)
+            if (options?.courseId) {
+              set((state) => ({
+                taskQueue: state.taskQueue.filter((q) => q.courseId !== options.courseId),
+              }));
+            } else {
+              set({ taskQueue: [], taskQueueCount: 0 });
+            }
+            // Refresh tasks to include newly accepted tasks
+            await get().fetchTasks();
+            // Refresh queue count
+            await get().fetchTaskQueueCount();
+          }
+          return result;
+        } catch (error) {
+          console.error('Failed to bulk accept queued tasks:', error);
+          return { success: false };
+        }
+      },
+
+      /**
+       * Merge a queued task with an existing user task
+       */
+      mergeQueuedTask: async (params: {
+        queueId: number;
+        userTaskId: number;
+        keepFromUser?: { notes?: boolean; dueAt?: boolean; title?: boolean };
+      }) => {
+        const api = getApi();
+        if (!api) return { success: false };
+
+        logUserAction('mergeQueuedTask', params);
+
+        try {
+          const result = await api.mergeQueuedTask(params);
+          if (result.success) {
+            // Remove from local queue state
+            set((state) => ({
+              taskQueue: state.taskQueue.filter((q) => q.id !== params.queueId),
+              taskQueueCount: Math.max(0, state.taskQueueCount - 1),
+            }));
+            // Refresh tasks to show updated merged task
+            await get().fetchTasks();
+          }
+          return result;
+        } catch (error) {
+          console.error('Failed to merge queued task:', error);
+          return { success: false };
         }
       },
 
@@ -388,8 +516,8 @@ export const useStore = create<Store>()(
           fetchCourses,
           fetchTasks,
           fetchNotifications,
-          fetchPolicies,
           fetchImportedCalendars,
+          fetchTaskQueueCount,
         } = get();
         try {
           // Fetch courses FIRST since tasks filtering depends on courses being loaded
@@ -398,8 +526,8 @@ export const useStore = create<Store>()(
           const results = await Promise.allSettled([
             fetchTasks(),
             fetchNotifications(),
-            fetchPolicies(),
             fetchImportedCalendars(),
+            fetchTaskQueueCount(),
           ]);
 
           // Log any unexpected failures (individual fetch methods already handle their own errors)
@@ -452,12 +580,16 @@ export const useStore = create<Store>()(
 
         try {
           // Get effective timezone for DST-aware recurrence expansion
-          const timezone = getEffectiveTimezone();
+          let timezone = getEffectiveTimezone();
+          // If 'local', resolve to actual system timezone IANA string
+          if (timezone === 'local') {
+            timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+          }
           const events = await api.getCalendarEventsForRange({
             startDate: startDate.toISOString(),
             endDate: endDate.toISOString(),
             includeHidden: false,
-            timezone: timezone !== 'local' ? timezone : undefined, // Only pass if specific timezone
+            timezone, // Always pass timezone for DST-aware expansion
           });
           // console.log('[Store] Fetched calendar events:', events.length, events);
           set({ calendarEvents: events });
@@ -681,6 +813,7 @@ export const useStore = create<Store>()(
           notes?: string;
           reminderMinutes?: number;
           taskType?: string;
+          weight?: number;
         }
       ) => {
         const api = getApi();
@@ -689,7 +822,11 @@ export const useStore = create<Store>()(
         try {
           const result = await api.updateCalendarEvent(id, data);
           if (result.success) {
-            // Optimistic update
+            // Get the event to find linked taskId before updating
+            const currentEvent = get().calendarEvents.find((e) => e.id === id);
+            const linkedTaskId = currentEvent?.taskId;
+
+            // Optimistic update for calendar events
             set((state) => ({
               calendarEvents: state.calendarEvents.map((e) =>
                 e.id === id
@@ -716,6 +853,31 @@ export const useStore = create<Store>()(
                   : e
               ),
             }));
+
+            // Bidirectional sync: also update linked task in store immediately
+            if (linkedTaskId) {
+              set((state) => ({
+                tasks: state.tasks.map((t) =>
+                  t.id === linkedTaskId
+                    ? {
+                        ...t,
+                        ...(data.title !== undefined && { title: data.title }),
+                        ...(data.description !== undefined && {
+                          description: data.description,
+                        }),
+                        ...(data.startAt !== undefined && { unlockAt: data.startAt }),
+                        ...(data.endAt !== undefined && { dueAt: data.endAt }),
+                        ...(data.location !== undefined && { location: data.location }),
+                        // Only update courseId if it's a valid number (not null)
+                        ...(data.courseId !== undefined &&
+                          data.courseId !== null && { courseId: data.courseId }),
+                        ...(data.taskType !== undefined && { taskType: data.taskType }),
+                        ...(data.weight !== undefined && { weight: data.weight }),
+                      }
+                    : t
+                ),
+              }));
+            }
           }
           return result.success;
         } catch (error) {
@@ -1150,7 +1312,6 @@ export const useStore = create<Store>()(
           fetchCourses,
           fetchTasks,
           fetchNotifications,
-          fetchPolicies,
           fetchImportedCalendars,
           refreshAll,
         } = get();
@@ -1159,7 +1320,6 @@ export const useStore = create<Store>()(
             fetchCourses,
             fetchTasks,
             fetchNotifications,
-            fetchPolicies,
             fetchImportedCalendars,
             refreshAll
           );

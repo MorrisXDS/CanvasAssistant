@@ -1,114 +1,62 @@
 /**
  * Layer 3 - Intelligence
  *
- * Priority calculation and task ranking system.
+ * Domain services for grade calculation, data analysis, and content extraction.
  *
  * Features:
- * - Multi-factor priority scoring
- * - Policy-aware adjustments (grace tokens, late penalties, drops)
- * - Dependency resolution for sequential progress
- * - Grade impact analysis
- * - Explainable rankings with detailed breakdowns
- * - Hierarchical refresh scheduling
- * - Submission window calculations
- * - Pure domain services for business logic
+ * - Grade calculation service
+ * - Data completeness analysis
+ * - Submission status tracking
+ * - Text extraction and rule-based parsing
+ * - ML and LLM services (optional)
  */
-
-export { PriorityConfig, DEFAULT_CONFIG } from './PriorityConfig';
-export type {
-  PriorityConfigData,
-  FactorWeights,
-  UrgencyCurve,
-  RefreshTier,
-} from './PriorityConfig';
-
-export { PriorityEngine } from './PriorityEngine';
-
-export { PolicyEvaluator } from './PolicyEvaluator';
-export type { PolicyEvaluationResult } from './PolicyEvaluator';
-
-// PolicyEngine is deprecated - types are now in l1-persistence/repositories/PolicyRepository
-// and domain logic is in domain/PolicyEvaluator and domain/GraceTokenService
-
-export { DependencyResolver } from './DependencyResolver';
-export type { DependencyResult } from './DependencyResolver';
-
-export { RefreshScheduler } from './RefreshScheduler';
-export type { RefreshStats } from './RefreshScheduler';
 
 // Domain Services (pure business logic)
 export {
+  // Constants
+  HOURS,
+  MS,
+  DAY_NAMES,
+  DEFAULT_EFFORT_MINUTES,
+  MINUTES_PER_POINT,
+  EFFORT_THRESHOLDS,
+  WORKLOAD_THRESHOLDS,
+  WEIGHT_THRESHOLDS,
+  INSIGHT_THRESHOLDS,
+  INSIGHT_EXPIRATION,
+  RECOMMENDATION_THRESHOLDS,
+  RECOMMENDATION_VALIDITY,
+  BEHAVIOR_THRESHOLDS,
+  HIGH_VALUE_TASK_TYPES,
+  HIGH_PRIORITY_TASK_TYPES,
+  ORCHESTRATOR_DEFAULTS,
+  GRADE_THRESHOLDS,
   // Grade Calculation
   GradeCalculationService,
-  GraceTokenService,
-  // Priority Calculator
-  calculatePriority,
-  calculateUrgencyScore,
-  calculateWeightScore,
-  calculateCourseGapFactor,
-  calculateLockTimeUrgency,
-  calculateGraceTokenFactor,
-  calculateSubmissionFactor,
-  calculatePolicyAdjustment,
-  calculateTaskTypeBoost,
-  calculateAllFactors,
-  calculateFinalScore,
-  assignQueue,
-  // Behavior Analytics
-  analyzeWeeklyRhythm,
-  calculateCourseDifficulty,
-  identifyStrugglePatterns,
-  predictOptimalWorkTime,
-  getProductivityScore,
-  analyzeCompletionTiming,
-  // Effort Estimation
-  DEFAULT_EFFORT_MINUTES,
-  getDefaultEffort,
-  calculatePointsBasedEffort,
-  calculateHistoricalAverage,
-  calculateCourseMultiplier,
-  estimateEffort,
-  batchEstimateEffort,
-  calibrateEstimates,
-  calculateAccuracyMetrics,
-  formatEffortEstimate,
-  getEffortLevel,
-  // Workload Analysis
-  calculateClusteringScore,
-  analyzeWorkloadDistribution,
-  suggestRedistribution,
-  detectNeglectedCourses,
-  calculateCourseBalanceScore,
-  getDailyWorkloadSummary,
-  identifyDeadlineClusters,
-  // Recommendation Engine
-  generateWorkNowRecommendation,
-  generateStartEarlyRecommendation,
-  generateBreakRecommendation,
-  generateCourseFocusRecommendation,
-  generateAllRecommendations,
-  isRecommendationValid,
-  getActiveRecommendations,
-  // Insight Generator
-  generateDeadlinePatternInsight,
-  generateCourseStruggleInsight,
-  generateProductivityWindowInsight,
-  generateWorkloadWarningInsight,
-  generateStreakInsight,
-  generateImprovementInsight,
-  generateAllInsights,
-  isInsightValid,
-  getActiveInsights,
-  getInsightIcon,
-  getSeverityColor,
-  // Adaptive Weight Service
-  calculateAdaptiveWeights,
-  applyAdaptiveWeights,
-  detectWeightDrift,
-  buildAdaptiveWeights,
-  getAdjustmentSummary,
-  determineOutcome,
-  createLearningInput,
+  // Data Completeness
+  analyzeCourseCompleteness,
+  analyzeTaskCompleteness,
+  generateDataCompletenessInsights,
+  getDataCompletenessSummary,
+  // Text Extraction
+  extractTextFromHtml,
+  extractTextFromFile,
+  extractTextFromPdf,
+  normalizeText,
+  detectDocumentType,
+  // Rule-Based Extraction
+  extractDates,
+  extractPercentages,
+  extractPolicies,
+  extractKeywords,
+  extractAssignmentWeights,
+  runRuleBasedExtraction,
+  // Local ML Service
+  LocalMLService,
+  getLocalMLService,
+  // LLM Service
+  LLMService,
+  getLLMService,
   // Submission Status Service
   getEffectiveSubmissionStatus,
   isEffectivelySubmitted,
@@ -118,34 +66,34 @@ export {
 } from './domain';
 
 export type {
+  // Grade Calculation types
   GradeData,
   GradeCalculationResult,
   WhatIfScenario,
   WhatIfResult,
   GradeProjection,
-  TokenCheckResult,
-  TokenApplicationResult,
-  TokenStatus,
+  // Data Completeness types
+  MissingFieldNotification,
+  DataCompletenessSummary,
+  // Text Extraction types
+  TextExtractionResult,
+  TextExtractionOptions,
+  // Rule-Based Extraction types
+  ExtractedDate,
+  ExtractedPercentage,
+  ExtractedPolicy,
+  RuleBasedExtractionResult,
+  // Local ML types
+  DocumentClassification,
+  NamedEntity,
+  TextEmbedding,
+  LocalMLResult,
+  LocalMLConfig,
+  // LLM types
+  LLMProvider,
+  LLMRequest,
+  LLMResponse,
+  LLMServiceConfig,
+  // Submission Status types
   SubmissionStatus,
 } from './domain';
-
-// Orchestration (coordinates domain + DB)
-export {
-  PriorityOrchestrator,
-  BehaviorTrackingOrchestrator,
-  WorkloadOrchestrator,
-  RecommendationOrchestrator,
-  InsightOrchestrator,
-  AdaptiveLearningOrchestrator,
-} from './orchestration';
-
-export type {
-  PriorityOrchestratorConfig,
-  BehaviorTrackingOrchestratorConfig,
-  WorkloadOrchestratorConfig,
-  RecommendationOrchestratorConfig,
-  InsightOrchestratorConfig,
-  AdaptiveLearningOrchestratorConfig,
-} from './orchestration';
-
-export * from './types';

@@ -8,11 +8,6 @@ import { useNavigate } from 'react-router-dom';
 import { RefreshCw, FlaskConical, X } from 'lucide-react';
 import { useStore } from '../../../l5-presentation/store';
 import { useDashboardViewModel } from '../../../l5-presentation/viewModels/DashboardViewModel';
-import {
-  STORAGE_KEYS,
-  useSetting,
-  DEFAULT_DASHBOARD_SETTINGS,
-} from '../../../l5-presentation/settings';
 import { QuickStats, StatItem } from './QuickStats';
 import { TaskListModal, TaskWithCourse } from './TaskListModal';
 import { GradeBreakdownModal } from './GradeBreakdownModal';
@@ -95,13 +90,7 @@ export function Dashboard() {
   const navigate = useNavigate();
   const state = useStore();
 
-  // Get dashboard settings for priority sorting
-  const [dashboardSettings] = useSetting(STORAGE_KEYS.DASHBOARD);
-  const prioritySortingEnabled =
-    dashboardSettings?.prioritySortingEnabled ??
-    DEFAULT_DASHBOARD_SETTINGS.prioritySortingEnabled;
-
-  const viewModel = useDashboardViewModel(state, { prioritySortingEnabled });
+  const viewModel = useDashboardViewModel(state);
 
   // Modal states
   const [showPendingTasksModal, setShowPendingTasksModal] = useState(false);
@@ -208,9 +197,10 @@ export function Dashboard() {
     },
     {
       label: 'Avg. Grade',
-      value: viewModel.stats.averageGrade !== null
-        ? formatGrade(viewModel.stats.averageGrade)
-        : 'N/A',
+      value:
+        viewModel.stats.averageGrade !== null
+          ? formatGrade(viewModel.stats.averageGrade)
+          : 'N/A',
       icon: 'grade',
       action: 'grade',
     },
@@ -288,9 +278,27 @@ export function Dashboard() {
     }
   };
 
-  const handleOpenInCanvas = () => {
+  const handleOpenInCanvas = async () => {
     if (!contextMenu) return;
-    navigate(`/course/${contextMenu.task.courseId}?highlightTask=${contextMenu.task.id}`);
+    const api = window.api;
+    if (!api?.getTaskCanvasUrl || !api?.openExternal) return;
+
+    try {
+      const result = await api.getTaskCanvasUrl(contextMenu.task.id);
+      if (result.success && result.data?.canvasUrl) {
+        api.openExternal(result.data.canvasUrl);
+      }
+    } catch (error) {
+      console.error('Failed to open task in Canvas:', error);
+    }
+  };
+
+  const handleViewInCalendar = () => {
+    if (!contextMenu?.task.dueAt) return;
+    navigate('/calendar', {
+      state: { taskId: contextMenu.task.id, targetDate: contextMenu.task.dueAt },
+    });
+    setContextMenu(null);
   };
 
   const handleDismissNotification = async (notificationId: number) => {
@@ -387,7 +395,6 @@ export function Dashboard() {
             onTaskContextMenu={handleTaskContextMenu}
             onToggleComplete={handleToggleComplete}
             onDismissNotification={handleDismissNotification}
-            prioritySortingEnabled={prioritySortingEnabled}
           />
         </section>
       </div>
@@ -423,6 +430,8 @@ export function Dashboard() {
             isCompleted: contextMenu.task.isCompleted,
             isOptional: contextMenu.task.isOptional,
             sourceType: contextMenu.task.sourceType,
+            dueAt: contextMenu.task.dueAt,
+            calendarEventId: contextMenu.task.calendarEventId,
           }}
           position={contextMenu.position}
           onClose={() => setContextMenu(null)}
@@ -448,6 +457,7 @@ export function Dashboard() {
             handleDeleteTask();
             setContextMenu(null);
           }}
+          onViewInCalendar={contextMenu.task.dueAt ? handleViewInCalendar : undefined}
         />
       )}
     </div>

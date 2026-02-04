@@ -16,21 +16,5 @@ export type { CourseUpdates } from './CourseRepository';
 export { TaskRepository } from './TaskRepository';
 export type { TaskUpdates, CreateTaskParams } from './TaskRepository';
 
-export { PolicyRepository } from './PolicyRepository';
-export type {
-  PolicyConfig,
-  GraceTokenConfig,
-  PolicyUpdates,
-  CreatePolicyParams,
-} from './PolicyRepository';
-
 export { NotificationRepository } from './NotificationRepository';
 export type { NotificationUpdates } from './NotificationRepository';
-
-export { GraceTokenUsageRepository } from './GraceTokenUsageRepository';
-export type {
-  TokenUsageRow,
-  TokenUsageRecord,
-  TokenUsageWithContext,
-  RecordUsageParams,
-} from './GraceTokenUsageRepository';

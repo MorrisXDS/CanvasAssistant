@@ -5,7 +5,49 @@
  * priority calculation quality and generate actionable notifications.
  */
 
-import { CourseForPriority, TaskForPriority, Insight, InsightSeverity } from '../types';
+// Local type definitions (previously imported from types.ts)
+
+/**
+ * Course data needed for completeness analysis
+ */
+interface CourseForPriority {
+  id: number;
+  code: string;
+  name: string;
+  currentGrade: number | null;
+  targetGrade: number;
+  totalWeight: number;
+}
+
+/**
+ * Task data needed for completeness analysis
+ */
+interface TaskForPriority {
+  id: number;
+  courseId: number;
+  title: string;
+  dueAt: Date | null;
+  weight: number | null;
+  isCompleted: boolean;
+}
+
+/**
+ * Insight severity level
+ */
+type InsightSeverity = 'info' | 'warning' | 'critical';
+
+/**
+ * A generated insight
+ */
+interface Insight {
+  type: string;
+  title: string;
+  description: string;
+  severity: InsightSeverity;
+  data: Record<string, unknown>;
+  acknowledgedAt: Date | null;
+  expiresAt: Date | null;
+}
 
 /**
  * Severity levels for missing fields

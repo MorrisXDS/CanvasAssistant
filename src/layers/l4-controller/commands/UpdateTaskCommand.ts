@@ -71,6 +71,11 @@ export class UpdateTaskCommand implements Command<UpdateTaskParams, { taskId: nu
         values.push(params.description?.trim() || null);
       }
 
+      if (params.notes !== undefined) {
+        updates.push('notes = ?');
+        values.push(params.notes?.trim() || null);
+      }
+
       if (params.unlockAt !== undefined) {
         updates.push('unlock_at = ?');
         values.push(params.unlockAt || null);
@@ -141,7 +146,13 @@ export class UpdateTaskCommand implements Command<UpdateTaskParams, { taskId: nu
       }
 
       // Bidirectional sync: if title, description, unlock_at, due_at, or location changed, sync to calendar event
-      if (params.title !== undefined || params.description !== undefined || params.unlockAt !== undefined || params.dueAt !== undefined || params.location !== undefined) {
+      if (
+        params.title !== undefined ||
+        params.description !== undefined ||
+        params.unlockAt !== undefined ||
+        params.dueAt !== undefined ||
+        params.location !== undefined
+      ) {
         const taskWithLink = context.db.executeReadOne<{
           calendar_event_id: number | null;
           title: string;
@@ -214,13 +225,18 @@ export class UpdateTaskCommand implements Command<UpdateTaskParams, { taskId: nu
         } else if (taskWithLink) {
           // No calendar event exists - create one if task has dates
           // Use the new unlockAt/dueAt if provided, otherwise fall back to existing values
-          const effectiveUnlockAt = params.unlockAt !== undefined ? params.unlockAt : taskWithLink.unlock_at;
-          const effectiveDueAt = params.dueAt !== undefined ? params.dueAt : taskWithLink.due_at;
+          const effectiveUnlockAt =
+            params.unlockAt !== undefined ? params.unlockAt : taskWithLink.unlock_at;
+          const effectiveDueAt =
+            params.dueAt !== undefined ? params.dueAt : taskWithLink.due_at;
 
           // Only create calendar event if we have at least a due date
           if (effectiveDueAt) {
             const startAt = effectiveUnlockAt || '1970-01-01T00:00:00.000Z';
-            const effectiveLocation = params.location !== undefined ? params.location?.trim() || null : taskWithLink.location;
+            const effectiveLocation =
+              params.location !== undefined
+                ? params.location?.trim() || null
+                : taskWithLink.location;
             const eventResult = context.db.executeWrite(
               `INSERT INTO calendar_events (
                 source_type, course_id, task_id, title, description,

@@ -15,8 +15,8 @@ import {
   Trash2,
   MapPin,
 } from 'lucide-react';
-import { PolicyBadgeGroup, RichTextEditor } from '../../shared';
-import type { Task, Policy } from '../../../../l5-presentation/types';
+import { RichTextEditor } from '../../shared';
+import type { Task } from '../../../../l5-presentation/types';
 import {
   STORAGE_KEYS,
   LINK_BEHAVIOR,
@@ -76,7 +76,6 @@ function extractCanvasFileId(url: string): string | null {
 
 export interface TaskItemProps {
   task: Task;
-  policies: Policy[];
   isFirst: boolean;
   isCompleted?: boolean;
   isExpanded: boolean;
@@ -84,6 +83,7 @@ export interface TaskItemProps {
   isHighlighted?: boolean;
   editTitle: string;
   editDescription: string;
+  editNotes: string;
   editStartDate: string;
   editDueDate: string;
   editWeight: string;
@@ -99,6 +99,7 @@ export interface TaskItemProps {
   onDelete: () => void;
   onEditTitleChange: (value: string) => void;
   onEditDescriptionChange: (value: string) => void;
+  onEditNotesChange: (value: string) => void;
   onEditStartDateChange: (value: string) => void;
   onEditDueDateChange: (value: string) => void;
   onEditWeightChange: (value: string) => void;
@@ -112,7 +113,6 @@ export interface TaskItemProps {
 
 export function TaskItem({
   task,
-  policies,
   isFirst,
   isCompleted,
   isExpanded,
@@ -120,6 +120,7 @@ export function TaskItem({
   isHighlighted,
   editTitle,
   editDescription,
+  editNotes,
   editStartDate,
   editDueDate,
   editWeight,
@@ -135,6 +136,7 @@ export function TaskItem({
   onDelete,
   onEditTitleChange,
   onEditDescriptionChange,
+  onEditNotesChange,
   onEditStartDateChange,
   onEditDueDateChange,
   onEditWeightChange,
@@ -292,7 +294,6 @@ export function TaskItem({
                 Score: {formatGrade(task.grade)}
               </span>
             )}
-            <PolicyBadgeGroup task={task} policies={policies} maxBadges={2} size="sm" />
           </div>
         </div>
         <div
@@ -442,15 +443,63 @@ export function TaskItem({
                 style={styles.taskEditInput}
               />
             </div>
-            <div style={styles.taskEditRow}>
-              <label style={styles.taskEditLabel}>Description</label>
-              <RichTextEditor
-                value={editDescription}
-                onChange={onEditDescriptionChange}
-                placeholder="Enter task description..."
-                minHeight={100}
-              />
-            </div>
+            {/* Description - Read-only for Canvas tasks, editable for user tasks */}
+            {task.sourceType === 'canvas' ? (
+              <>
+                <div style={styles.taskEditRow}>
+                  <label style={styles.taskEditLabel}>Description (from Canvas)</label>
+                  <div
+                    style={{
+                      maxHeight: '120px',
+                      overflowY: 'auto',
+                      padding: 'var(--space-3)',
+                      fontSize: 'var(--text-sm)',
+                      border: '1px solid var(--border-default)',
+                      borderRadius: 'var(--radius-md)',
+                      backgroundColor: 'var(--bg-secondary)',
+                      color: 'var(--text-primary)',
+                      lineHeight: '1.5',
+                    }}
+                    dangerouslySetInnerHTML={{
+                      __html:
+                        task.description ||
+                        '<span style="color: var(--text-muted); font-style: italic;">No description provided</span>',
+                    }}
+                  />
+                </div>
+                <div style={styles.taskEditRow}>
+                  <label style={styles.taskEditLabel}>Notes</label>
+                  <textarea
+                    value={editNotes}
+                    onChange={(e) => onEditNotesChange(e.target.value)}
+                    placeholder="Add your personal notes..."
+                    style={{
+                      padding: 'var(--space-3)',
+                      fontSize: 'var(--text-sm)',
+                      border: '1px solid var(--border-default)',
+                      borderRadius: 'var(--radius-md)',
+                      backgroundColor: 'var(--bg-card)',
+                      color: 'var(--text-primary)',
+                      outline: 'none',
+                      minHeight: '80px',
+                      resize: 'vertical',
+                      fontFamily: 'inherit',
+                      width: '100%',
+                    }}
+                  />
+                </div>
+              </>
+            ) : (
+              <div style={styles.taskEditRow}>
+                <label style={styles.taskEditLabel}>Description</label>
+                <RichTextEditor
+                  value={editDescription}
+                  onChange={onEditDescriptionChange}
+                  placeholder="Enter task description..."
+                  minHeight={100}
+                />
+              </div>
+            )}
             <div style={styles.taskEditRow}>
               <label style={styles.taskEditLabel}>Type</label>
               <select

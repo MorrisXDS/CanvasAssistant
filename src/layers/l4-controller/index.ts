@@ -8,7 +8,6 @@
  * - Validation before execution
  * - Atomic transactions via L1
  * - What-if grade simulations (session-only)
- * - Policy management (grace tokens, late penalties, etc.)
  */
 
 // Core types
@@ -29,6 +28,11 @@ export {
   TriggerSyncParams,
   SimulateGradeParams,
   ClearSimulationParams,
+  // Queue command param types
+  AcceptQueuedTaskParams,
+  RejectQueuedTaskParams,
+  BulkAcceptQueuedTasksParams,
+  MergeQueuedTaskParams,
 } from './types';
 
 // Simulation manager
@@ -53,22 +57,6 @@ export {
   ClearSimulationResult,
 } from './commands/ClearSimulationCommand';
 export {
-  UseGraceTokenCommand,
-  UseGraceTokenParams,
-  UseGraceTokenResult,
-} from './commands/UseGraceTokenCommand';
-export {
-  UpdatePolicyCommand,
-  UpdatePolicyParams,
-  UpdatePolicyResult,
-} from './commands/UpdatePolicyCommand';
-export {
-  AddPolicyCommand,
-  AddPolicyParams,
-  AddPolicyResult,
-  PolicyType,
-} from './commands/AddPolicyCommand';
-export {
   ArchiveCourseCommand,
   ArchiveCourseParams,
   ArchiveCourseResult,
@@ -78,3 +66,9 @@ export {
   UnarchiveCourseParams,
   UnarchiveCourseResult,
 } from './commands/UnarchiveCourseCommand';
+
+// Queue commands
+export { AcceptQueuedTaskCommand } from './commands/AcceptQueuedTaskCommand';
+export { RejectQueuedTaskCommand } from './commands/RejectQueuedTaskCommand';
+export { BulkAcceptQueuedTasksCommand } from './commands/BulkAcceptQueuedTasksCommand';
+export { MergeQueuedTaskCommand } from './commands/MergeQueuedTaskCommand';

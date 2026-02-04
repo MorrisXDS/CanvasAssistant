@@ -6,14 +6,12 @@
 
 import { Database } from '../l1-persistence/Database';
 import { VisibleDataProvider } from '../l1-persistence/VisibleDataProvider';
-import { PriorityEngine } from '../l3-intelligence/PriorityEngine';
 
 /**
  * Command execution context - provides access to lower layers
  */
 export interface CommandContext {
   db: Database;
-  priorityEngine?: PriorityEngine;
   visibleDataProvider?: VisibleDataProvider;
   simulationContext: SimulationContext;
 }
@@ -127,8 +125,10 @@ export interface CreateTaskParams {
   courseId: number;
   title: string;
   description?: string;
-  /** Start/unlock date for the task (ISO timestamp) */
+  /** When the task becomes available (Canvas unlock_at equivalent) */
   unlockAt?: string;
+  /** User-defined start date - when to start working on the task */
+  startAt?: string;
   dueAt?: string;
   weight?: number;
   pointsPossible?: number;
@@ -147,6 +147,7 @@ export interface UpdateTaskParams {
   taskId: number;
   title?: string;
   description?: string | null;
+  notes?: string | null;
   /** Start/unlock date for the task (ISO timestamp) */
   unlockAt?: string | null;
   dueAt?: string | null;
@@ -165,6 +166,59 @@ export interface DeleteTaskParams {
   taskId: number;
   /** Force delete even if it's a Canvas-synced task */
   force?: boolean;
+}
+
+// =============================================================================
+// Canvas Task Queue Command Params
+// =============================================================================
+
+/**
+ * Accept a queued Canvas task, creating it as an active task
+ */
+export interface AcceptQueuedTaskParams {
+  queueId: number;
+  /** Optional edits to apply when creating the task */
+  edits?: {
+    title?: string;
+    dueAt?: string | null;
+    startAt?: string | null;
+    taskType?: string | null;
+    weight?: number | null;
+    location?: string | null;
+    notes?: string | null;
+  };
+}
+
+/**
+ * Reject a queued Canvas task (won't resurface on re-sync)
+ */
+export interface RejectQueuedTaskParams {
+  queueId: number;
+}
+
+/**
+ * Bulk accept all pending queued tasks for a course
+ */
+export interface BulkAcceptQueuedTasksParams {
+  /** Optional: accept for specific course only */
+  courseId?: number;
+}
+
+/**
+ * Merge a queued Canvas task with an existing user task
+ */
+export interface MergeQueuedTaskParams {
+  queueId: number;
+  userTaskId: number;
+  /** Which fields to keep from the user's task */
+  keepFromUser?: {
+    notes?: boolean;
+    dueAt?: boolean;
+    title?: boolean;
+    description?: boolean;
+    startAt?: boolean; // true = keep user's start_at, false = use Canvas unlock_at
+    taskType?: boolean; // true = keep user's task_type, false = use Canvas task_type
+  };
 }
 
 /**

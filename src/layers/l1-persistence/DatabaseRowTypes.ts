@@ -42,6 +42,17 @@ export interface CourseRow {
   archive_source: 'manual' | 'auto' | null;
   created_at: string;
   updated_at: string;
+  // Policy authority settings (v83)
+  /** Authority for late penalty: 'canvas' | 'local' | 'both' */
+  late_penalty_authority: string | null;
+  /** Authority for drop lowest: 'canvas' | 'local' | 'off' */
+  drop_lowest_authority: string | null;
+  /** Grade calculation mode: 'canvas' | 'local' | 'both' */
+  grade_calc_mode: string | null;
+
+  // Queue acceptance settings (v91)
+  /** Per-course auto-accept setting: 0=queue all, 1=auto-accept all, 2=auto-accept if matching user task */
+  auto_accept_canvas_tasks: number;
 }
 
 /**
@@ -79,6 +90,9 @@ export interface TaskRow {
   description: string | null;
   due_at: string | null;
   due_time_known: number; // 1 = time known, 0 = only date known (assume midnight)
+  /** User-defined start date for when to begin working on the task (local-only, not synced from Canvas) */
+  start_at?: string | null;
+  /** Canvas availability date (when assignment unlocks) */
   unlock_at?: string | null;
   lock_at?: string | null;
   weight: number;
@@ -101,6 +115,49 @@ export interface TaskRow {
   field_sources: string | null; // JSON: {"due_at": "guessed", "grade": "canvas"}
   created_at: string;
   updated_at: string;
+  // Late penalty tracking fields (v81)
+  /** Pre-penalty percentage grade from Canvas */
+  entered_grade: number | null;
+  /** Points deducted by Canvas late policy */
+  points_deducted: number | null;
+  /** Canvas late policy status: 'none' | 'late' | 'missing' | 'extended' */
+  late_policy_status: string | null;
+  /** How late the submission was in seconds */
+  seconds_late: number | null;
+  /** Whether assignment was excused by instructor */
+  is_excused: number | null;
+  /** Whether assignment is marked as missing */
+  is_missing: number | null;
+  // Assignment group linking (v82)
+  /** FK to canvas_assignment_groups.id */
+  assignment_group_id: number | null;
+  // Task linking fields (v84)
+  /** External ID of user task this Canvas task was linked from */
+  linked_from_user_task: string | null;
+  /** ID of Canvas task this user task was merged into */
+  merged_into_task_id: number | null;
+  /** Confidence score of the link (0.0 - 1.0) */
+  link_confidence: number | null;
+  /** How the link was created: 'auto', 'suggested', 'manual' */
+  link_method: string | null;
+
+  // User notes and grade estimate (v86)
+  /** User's personal notes on this task */
+  notes: string | null;
+  /** User's expected/estimated grade before Canvas grades it */
+  user_expected_grade: number | null;
+  /** Whether to use user's expected grade in calculations */
+  use_expected_in_calc: number;
+  /** Soft-delete timestamp (for merged user tasks) */
+  deleted_at: string | null;
+
+  // Queue acceptance tracking (v90)
+  /** FK to canvas_task_queue.id - which queue entry this task was accepted from */
+  accepted_from_queue_id: number | null;
+  /** How the task was accepted: 'manual' | 'auto' | 'bulk' | 'legacy' */
+  acceptance_method: string | null;
+  /** When the task was accepted from the queue */
+  accepted_at: string | null;
 }
 
 /**
@@ -112,6 +169,8 @@ export interface TaskRowMinimal {
   title: string;
   due_at: string | null;
   due_time_known: number; // 1 = time known, 0 = only date known
+  /** User-defined start date for when to begin working on the task */
+  start_at?: string | null;
   unlock_at: string | null;
   lock_at: string | null;
   points_possible: number | null;
@@ -449,4 +508,104 @@ export interface ModuleItemRow {
   course_id: number;
   course_code: string;
   course_name: string;
+}
+
+// =============================================================================
+// Canvas Assignment Groups (v82)
+// =============================================================================
+
+/**
+ * Assignment group row from canvas_assignment_groups table
+ * Stores Canvas assignment group metadata for drop_lowest, group weights
+ */
+export interface AssignmentGroupRow {
+  id: number;
+  course_id: number;
+  canvas_group_id: number;
+  name: string;
+  position: number;
+  group_weight: number | null;
+  drop_lowest: number;
+  drop_highest: number;
+  never_drop: string | null; // JSON array of Canvas assignment IDs
+  synced_at: string;
+}
+
+// =============================================================================
+// Task Link Suggestions (v85)
+// =============================================================================
+
+/**
+ * Link suggestion row from link_suggestions table
+ * For user review of medium-confidence task matches
+ */
+export interface LinkSuggestionRow {
+  id: number;
+  user_task_id: number;
+  canvas_task_id: number;
+  confidence: number;
+  status: 'pending' | 'accepted' | 'rejected' | 'dismissed';
+  created_at: string;
+  resolved_at: string | null;
+  resolved_by: string | null; // 'user' | 'auto' | 'manual'
+}
+
+// =============================================================================
+// Canvas Task Queue Rows (v89)
+// =============================================================================
+
+/**
+ * Canvas task queue row from canvas_task_queue table
+ * Stages new Canvas assignments for user review before becoming active tasks
+ */
+export interface CanvasTaskQueueRow {
+  id: number;
+  /** Canvas assignment external ID */
+  external_id: string;
+  /** Full Canvas API payload as JSON string */
+  canvas_data: string;
+  course_id: number;
+
+  // Denormalized fields for UI display
+  title: string;
+  description: string | null;
+  due_at: string | null;
+  points_possible: number | null;
+  task_type: string | null;
+
+  /** Queue status: 'pending' | 'accepted' | 'rejected' | 'merged' */
+  status: 'pending' | 'accepted' | 'rejected' | 'merged';
+
+  /** ID of matching user task (for merge suggestions) */
+  matched_user_task_id: number | null;
+  /** Confidence score of the match (0.0 - 1.0) */
+  match_confidence: number | null;
+
+  /** When the task was first seen from Canvas */
+  first_seen_at: string;
+  /** When the task was last synced from Canvas */
+  last_synced_at: string;
+  /** When the queue entry was resolved (accepted/rejected/merged) */
+  resolved_at: string | null;
+  /** How the entry was resolved: 'user' | 'auto' | 'bulk' */
+  resolved_by: string | null;
+
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * Minimal queue row for list displays
+ */
+export interface CanvasTaskQueueRowMinimal {
+  id: number;
+  external_id: string;
+  course_id: number;
+  title: string;
+  due_at: string | null;
+  task_type: string | null;
+  status: string;
+  matched_user_task_id: number | null;
+  match_confidence: number | null;
+  first_seen_at: string;
 }
