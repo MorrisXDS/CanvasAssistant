@@ -5,7 +5,7 @@
  */
 
 import React, { useState } from 'react';
-import { Check, X, Link2, ChevronDown, ChevronUp } from 'lucide-react';
+import { Check, X, Link2, ChevronDown, ChevronRight } from 'lucide-react';
 import type { QueuedTask } from '../../../l5-presentation/types';
 import { TASK_TYPES } from '../../constants';
 
@@ -353,7 +353,7 @@ export function QueuedTaskCard({
           }}
           title={isExpanded ? 'Collapse' : 'Edit before accepting'}
         >
-          {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
         </button>
 
         {/* Title */}
