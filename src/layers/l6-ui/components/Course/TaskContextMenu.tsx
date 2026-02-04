@@ -168,8 +168,9 @@ export function TaskContextMenu({
       : {}),
   });
 
-  // Check if task can be viewed in calendar (has a linked event or due date)
-  const canViewInCalendar = Boolean(task.calendarEventId || task.dueAt);
+  // Check if task can be viewed in calendar (has a linked event or valid due date)
+  const hasValidDueDate = task.dueAt && task.dueAt.trim() !== '';
+  const canViewInCalendar = Boolean(task.calendarEventId || hasValidDueDate);
 
   return (
     <div
