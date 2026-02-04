@@ -3,7 +3,13 @@
  * Full calendar view with month/week/day toggle and filtering
  */
 
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, {
+  useState,
+  useMemo,
+  useEffect,
+  useCallback,
+  useDeferredValue,
+} from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   ChevronLeft,
@@ -68,6 +74,10 @@ export function CalendarPage() {
   const location = useLocation();
   const navigate = useNavigate();
 
+  // Defer calendar events to prevent flash when switching weeks
+  // Old events stay visible until new ones are ready
+  const deferredCalendarEvents = useDeferredValue(calendarEvents);
+
   // View state
   const [view, setViewState] = useState<CalendarView>(() => loadCalendarViewMode());
   const setView = (newView: CalendarView) => {
@@ -122,6 +132,10 @@ export function CalendarPage() {
     () => getVisibleRange(currentDate, view),
     [currentDate, view]
   );
+
+  // Defer visible range for filtering to prevent flash when switching periods
+  // This keeps showing old events until new ones are ready
+  const deferredVisibleRange = useDeferredValue(visibleRange);
 
   const hasActiveFilters =
     selectedCourses !== null || deadlineFilter !== 'all' || priorityFilter !== 'all';
@@ -184,13 +198,13 @@ export function CalendarPage() {
   // These tasks should NOT be rendered as task events (they'll be rendered as calendar events)
   const tasksWithRealStartEvents = useMemo(() => {
     const taskIds = new Set<number>();
-    for (const event of calendarEvents) {
+    for (const event of deferredCalendarEvents) {
       if (event.taskId && hasRealStartTime(event.startAt)) {
         taskIds.add(event.taskId);
       }
     }
     return taskIds;
-  }, [calendarEvents]);
+  }, [deferredCalendarEvents]);
 
   // Build task events with filtering
   // Excludes tasks that have linked calendar events with real start times
@@ -252,17 +266,24 @@ export function CalendarPage() {
         if (course) acc.push({ type: 'task', task, course });
         return acc;
       }, []);
-  }, [tasks, courseMap, selectedCourses, deadlineFilter, priorityFilter, tasksWithRealStartEvents]);
+  }, [
+    tasks,
+    courseMap,
+    selectedCourses,
+    deadlineFilter,
+    priorityFilter,
+    tasksWithRealStartEvents,
+  ]);
 
   // Build imported events
   // Include: non-task events AND task-linked events with real start times
   // Exclude: task-linked events with epoch start (deadline only - rendered as task events)
   const importedEvents: ImportedCalendarEvent[] = useMemo(
     () =>
-      calendarEvents
+      deferredCalendarEvents
         .filter((e) => !e.taskId || hasRealStartTime(e.startAt))
         .map((event) => ({ type: 'imported' as const, event })),
-    [calendarEvents]
+    [deferredCalendarEvents]
   );
 
   const events: CalendarEvent[] = useMemo(
@@ -270,19 +291,21 @@ export function CalendarPage() {
     [taskEvents, importedEvents]
   );
 
-  // Filter events to visible range
+  // Filter events to visible range (using deferred range to prevent flash)
   const visibleEvents = useMemo(() => {
     return events.filter((e) => {
       if (e.type === 'task') {
         if (!e.task.dueAt) return false;
         const dueDate = new Date(e.task.dueAt);
-        return dueDate >= visibleRange.start && dueDate <= visibleRange.end;
+        return (
+          dueDate >= deferredVisibleRange.start && dueDate <= deferredVisibleRange.end
+        );
       }
       const startAt = new Date(e.event.startAt);
       const endAt = e.event.endAt ? new Date(e.event.endAt) : startAt;
-      return startAt < visibleRange.end && endAt > visibleRange.start;
+      return startAt < deferredVisibleRange.end && endAt > deferredVisibleRange.start;
     });
-  }, [events, visibleRange]);
+  }, [events, deferredVisibleRange]);
 
   // Get visible courses
   const visibleCourses = useMemo(() => {
@@ -359,11 +382,19 @@ export function CalendarPage() {
   const handleImportConfirm = useCallback(
     async (options: { name: string; color: string }) => {
       if (!pendingICSContent || !importPreview) return;
-      const result = await importICSFile(pendingICSContent, importPreview.filename, options);
+      const result = await importICSFile(
+        pendingICSContent,
+        importPreview.filename,
+        options
+      );
 
       // Check if this is a duplicate
-      if (!result.success && (result as { existingCalendar?: unknown }).existingCalendar) {
-        const existingCal = (result as { existingCalendar: typeof existingCalendarInfo }).existingCalendar;
+      if (
+        !result.success &&
+        (result as { existingCalendar?: unknown }).existingCalendar
+      ) {
+        const existingCal = (result as { existingCalendar: typeof existingCalendarInfo })
+          .existingCalendar;
         setShowImportModal(false);
         setDuplicateFilename(importPreview.filename);
         setExistingCalendarInfo(existingCal);
@@ -533,6 +564,7 @@ export function CalendarPage() {
     title: string;
     description?: string;
     unlockAt?: string;
+    startAt?: string;
     dueAt?: string;
     weight?: number;
     pointsPossible?: number;
@@ -758,6 +790,7 @@ export function CalendarPage() {
         </div>
       )}
 
+      {/* Calendar Grid */}
       {/* Calendar Grid */}
       <CalendarGrid
         view={view}

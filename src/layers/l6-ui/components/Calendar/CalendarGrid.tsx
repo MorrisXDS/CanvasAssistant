@@ -48,13 +48,13 @@ export interface CalendarGridProps {
 
 /**
  * Inner component that handles scroll-to-earliest-event logic
- * Note: This component is keyed by date period, so it re-mounts on navigation
  */
 function CalendarGridInner() {
   const { view, currentDate, events, weekGridRef, dayGridRef } = useCalendarGrid();
 
-  // Track the last scroll target to avoid redundant scrolls
+  // Track the last scroll target and period to avoid redundant scrolls
   const lastScrollTarget = useRef<number | null>(null);
+  const lastPeriodKey = useRef<string | null>(null);
 
   // Scroll to earliest event on mount and when events load
   useEffect(() => {
@@ -99,35 +99,66 @@ function CalendarGridInner() {
 
     // Calculate target hour
     let targetHour: number;
-    if (isCurrentPeriod) {
-      // Current week/day: scroll to current hour (show "now")
-      targetHour = Math.max(0, now.getHours() - 1);
-    } else if (hasEvents) {
-      // Future/past with events: scroll to earliest event
+    if (hasEvents) {
+      // Has events: scroll to earliest event
       targetHour = earliestEventHour;
+    } else if (isCurrentPeriod) {
+      // Current week/day without events: scroll to current hour
+      targetHour = Math.max(0, now.getHours() - 1);
     } else {
-      // Future/past without events: default to 8 AM
+      // Past/future without events: default to 8 AM
       targetHour = 8;
     }
 
     const scrollTarget = targetHour * hourHeight;
 
-    // Skip if we've already scrolled to this exact position
-    // (allows re-scroll when events load and target changes)
-    if (lastScrollTarget.current === scrollTarget) return;
+    // Create a period key to detect week/day changes
+    const periodKey =
+      view === 'week'
+        ? `week-${getWeekDays(currentDate)[0].toDateString()}`
+        : `day-${currentDate.toDateString()}`;
+
+    // Skip if same period and same scroll target
+    const periodChanged = lastPeriodKey.current !== periodKey;
+    if (!periodChanged && lastScrollTarget.current === scrollTarget) return;
+
+    // Update tracking refs
+    lastPeriodKey.current = periodKey;
 
     // Function to apply scroll when ready
-    const applyScroll = () => {
+    const applyScroll = (forceAnimation = false) => {
       if (!gridRef.current) return false;
       if (gridRef.current.scrollHeight <= gridRef.current.clientHeight) return false;
 
-      gridRef.current.scrollTop = scrollTarget;
+      // Check if already at target position (must check when ref is available)
+      const currentScrollTop = gridRef.current.scrollTop;
+      const alreadyAtTarget = Math.abs(currentScrollTop - scrollTarget) < 1;
+
+      if (forceAnimation && alreadyAtTarget && periodChanged) {
+        // Force scroll from top to mask the content flash
+        // Jump to top, then smoothly scroll to target
+        gridRef.current.scrollTop = 0;
+        requestAnimationFrame(() => {
+          if (gridRef.current) {
+            gridRef.current.style.scrollBehavior = 'smooth';
+            gridRef.current.scrollTop = scrollTarget;
+            // Reset scroll behavior after animation
+            setTimeout(() => {
+              if (gridRef.current) {
+                gridRef.current.style.scrollBehavior = 'auto';
+              }
+            }, 300);
+          }
+        });
+      } else {
+        gridRef.current.scrollTop = scrollTarget;
+      }
       lastScrollTarget.current = scrollTarget;
       return true;
     };
 
-    // Try immediately
-    if (applyScroll()) return;
+    // Try immediately with animation if needed
+    if (applyScroll(true)) return;
 
     // Retry with animation frames and timeouts
     let attempts = 0;
@@ -135,7 +166,7 @@ function CalendarGridInner() {
 
     const tryScroll = () => {
       attempts++;
-      if (applyScroll()) return;
+      if (applyScroll(false)) return;
       if (attempts < maxAttempts) {
         requestAnimationFrame(tryScroll);
       }
@@ -144,8 +175,8 @@ function CalendarGridInner() {
     // Start trying after a small delay to let React render
     setTimeout(() => requestAnimationFrame(tryScroll), 0);
     // Also try after longer delays for slow renders
-    setTimeout(() => applyScroll(), 100);
-    setTimeout(() => applyScroll(), 250);
+    setTimeout(() => applyScroll(false), 100);
+    setTimeout(() => applyScroll(false), 250);
   }, [view, events, currentDate, weekGridRef, dayGridRef]);
 
   // Render the appropriate view
@@ -172,20 +203,6 @@ export function CalendarGrid({
   onDateClick,
   onCourseClick,
 }: CalendarGridProps) {
-  // Create a key that changes when the view period changes
-  // This forces CalendarGridInner to re-mount and trigger fresh scroll
-  const getWeekKey = (date: Date) => {
-    const weekStart = getWeekDays(date)[0];
-    return `${weekStart.getFullYear()}-${weekStart.getMonth()}-${weekStart.getDate()}`;
-  };
-
-  const scrollKey =
-    view === 'month'
-      ? `month-${currentDate.getFullYear()}-${currentDate.getMonth()}`
-      : view === 'week'
-        ? `week-${getWeekKey(currentDate)}`
-        : `day-${currentDate.toDateString()}`;
-
   return (
     <CalendarGridProvider
       view={view}
@@ -196,7 +213,7 @@ export function CalendarGrid({
       onDateClick={onDateClick}
       onCourseClick={onCourseClick}
     >
-      <CalendarGridInner key={scrollKey} />
+      <CalendarGridInner />
     </CalendarGridProvider>
   );
 }
