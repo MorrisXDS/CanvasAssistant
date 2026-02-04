@@ -246,7 +246,7 @@ export function TaskContextMenu({
       )}
 
       {/* Divider - only show if there are items below */}
-      {(task.sourceType === 'canvas' || onViewInCalendar) && (
+      {(task.sourceType === 'canvas' || (onViewInCalendar && canViewInCalendar)) && (
         <div style={styles.contextMenuDivider} />
       )}
 
@@ -264,16 +264,14 @@ export function TaskContextMenu({
         </button>
       )}
 
-      {/* View in Calendar */}
-      {onViewInCalendar && (
+      {/* View in Calendar - only show if task has a due date or linked event */}
+      {onViewInCalendar && canViewInCalendar && (
         <button
-          style={getItemStyle('calendar', false, !canViewInCalendar)}
-          onClick={() => canViewInCalendar && handleAction(onViewInCalendar)}
+          style={getItemStyle('calendar')}
+          onClick={() => handleAction(onViewInCalendar)}
           onMouseEnter={() => setHoveredItem('calendar')}
           onMouseLeave={() => setHoveredItem(null)}
           role="menuitem"
-          disabled={!canViewInCalendar}
-          title={!canViewInCalendar ? 'No due date or linked calendar event' : undefined}
         >
           <Calendar size={14} />
           <span>{MENU_LABELS.task.viewInCalendar}</span>
