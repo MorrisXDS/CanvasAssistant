@@ -225,10 +225,11 @@ export function UnifiedTaskList({
     info: infoTasks.length,
   };
 
-  // Get completion status for a task based on its category
+  // Get completion status for a task - respect the actual isCompleted field
   const getIsCompleted = (task: Task & { _category: string }) => {
-    if (task._category === 'graded') return true;
+    // Info tasks are always shown as complete (they're informational only)
     if (task._category === 'info') return true;
+    // For all other tasks, use the actual isCompleted field
     return task.isCompleted;
   };
 

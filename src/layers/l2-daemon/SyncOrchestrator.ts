@@ -471,24 +471,97 @@ export class SyncOrchestrator {
             );
 
             if (acceptedTask) {
-              // Already accepted - update grades/status only
-              this.db.executeWrite(
-                `UPDATE tasks SET
-                  grade = ?,
-                  submission_status = ?,
-                  is_completed = CASE WHEN is_completed = 1 THEN 1 ELSE ? END,
-                  completed_at = COALESCE(completed_at, ?),
-                  updated_at = CURRENT_TIMESTAMP
-                WHERE id = ?`,
-                [
-                  localTask.grade,
-                  localTask.submission_status,
-                  localTask.is_completed,
-                  localTask.completed_at,
-                  acceptedTask.id,
-                ],
-                'tasks'
+              // Already accepted - update grades/status with conflict detection
+              // Fetch full task data for conflict detection
+              const existingAccepted = this.db.executeReadOne<Record<string, unknown>>(
+                'SELECT * FROM tasks WHERE id = ?',
+                [acceptedTask.id]
               );
+
+              if (existingAccepted) {
+                // Use conflict detection for is_completed, title, due_at
+                const { autoResolved, conflicts, preservedFields } =
+                  this.conflictResolver.detectConflicts(
+                    'task',
+                    'tasks',
+                    acceptedTask.id,
+                    localTask.external_id,
+                    localTask.title,
+                    existingAccepted,
+                    localTask,
+                    { courseName, courseId: localCourseId }
+                  );
+
+                if (conflicts.length > 0) {
+                  this.emitter.emit('sync-conflicts', { entity: 'task', conflicts });
+                  for (const conflict of conflicts) {
+                    const conflictData = { ...localTask, id: acceptedTask.id };
+                    this.pendingConflictData.set(conflict.id, {
+                      tableName: 'tasks',
+                      data: conflictData,
+                    });
+                    this.persistConflictData(conflict.id, 'tasks', conflictData);
+                  }
+                }
+
+                // Build final data respecting conflicts and preserved fields
+                const finalGrade = autoResolved.grade ?? localTask.grade;
+                const finalSubmissionStatus =
+                  autoResolved.submission_status ?? localTask.submission_status;
+
+                // For is_completed: use preserved value if in conflict, otherwise use auto-resolved or Canvas value
+                let finalIsCompleted = existingAccepted.is_completed;
+                if (
+                  preservedFields.includes('is_completed') ||
+                  conflicts.some((c) => c.field === 'is_completed')
+                ) {
+                  // Keep local value - user modified it or it's in conflict
+                  finalIsCompleted = existingAccepted.is_completed;
+                } else if (autoResolved.is_completed !== undefined) {
+                  finalIsCompleted = autoResolved.is_completed;
+                } else {
+                  // Fall back to original logic: keep completed if already completed
+                  finalIsCompleted =
+                    existingAccepted.is_completed === 1 ? 1 : localTask.is_completed;
+                }
+
+                this.db.executeWrite(
+                  `UPDATE tasks SET
+                    grade = ?,
+                    submission_status = ?,
+                    is_completed = ?,
+                    completed_at = CASE WHEN ? = 1 AND completed_at IS NULL THEN CURRENT_TIMESTAMP ELSE completed_at END,
+                    updated_at = CURRENT_TIMESTAMP
+                  WHERE id = ?`,
+                  [
+                    finalGrade,
+                    finalSubmissionStatus,
+                    finalIsCompleted,
+                    finalIsCompleted,
+                    acceptedTask.id,
+                  ],
+                  'tasks'
+                );
+              } else {
+                // Fallback if somehow we can't fetch the task (shouldn't happen)
+                this.db.executeWrite(
+                  `UPDATE tasks SET
+                    grade = ?,
+                    submission_status = ?,
+                    is_completed = CASE WHEN is_completed = 1 THEN 1 ELSE ? END,
+                    completed_at = COALESCE(completed_at, ?),
+                    updated_at = CURRENT_TIMESTAMP
+                  WHERE id = ?`,
+                  [
+                    localTask.grade,
+                    localTask.submission_status,
+                    localTask.is_completed,
+                    localTask.completed_at,
+                    acceptedTask.id,
+                  ],
+                  'tasks'
+                );
+              }
               counts.tasks++;
               continue;
             }

@@ -5,6 +5,7 @@
 
 import { useState, useCallback, useRef } from 'react';
 import type { Task } from '../../../l5-presentation/types';
+import { useStore } from '../../../l5-presentation/store';
 
 export interface TaskListModalState {
   isOpen: boolean;
@@ -104,7 +105,7 @@ export interface UseCourseDetailTaskStateReturn {
   handleTaskContextMenu: (e: React.MouseEvent, task: Task) => void;
   handleOpenTaskInCanvas: (task: Task) => Promise<void>;
   handleToggleOptional: (task: Task) => void;
-  refreshArchivedCourseTasks: () => Promise<void>;
+  refreshTasks: () => Promise<void>;
 }
 
 export function useCourseDetailTaskState({
@@ -113,6 +114,9 @@ export function useCourseDetailTaskState({
   setConfirmDialog,
   navigate: _navigate,
 }: UseCourseDetailTaskStateProps): UseCourseDetailTaskStateReturn {
+  // Store fetchTasks for refreshing non-archived course tasks
+  const fetchTasks = useStore((state) => state.fetchTasks);
+
   // New task form state
   const [showAddTask, setShowAddTask] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState('');
@@ -157,18 +161,23 @@ export function useCourseDetailTaskState({
   // Task refs for scrolling
   const taskRefs = useRef<Map<number, HTMLDivElement>>(new Map());
 
-  // Refresh archived course tasks
-  const refreshArchivedCourseTasks = useCallback(async () => {
-    if (!courseArchivedAt) return;
-    const api = window.api;
-    if (!api?.getTasksForArchivedCourse) return;
-    try {
-      const tasks = await api.getTasksForArchivedCourse(courseId);
-      setArchivedCourseTasks(tasks || []);
-    } catch (error) {
-      console.error('Failed to refresh archived course tasks:', error);
+  // Refresh tasks for the current course (handles both archived and non-archived)
+  const refreshTasks = useCallback(async () => {
+    if (courseArchivedAt) {
+      // Archived courses use local state
+      const api = window.api;
+      if (!api?.getTasksForArchivedCourse) return;
+      try {
+        const tasks = await api.getTasksForArchivedCourse(courseId);
+        setArchivedCourseTasks(tasks || []);
+      } catch (error) {
+        console.error('Failed to refresh archived course tasks:', error);
+      }
+    } else {
+      // Non-archived courses use the store
+      await fetchTasks(courseId);
     }
-  }, [courseId, courseArchivedAt]);
+  }, [courseId, courseArchivedAt, fetchTasks]);
 
   // Create new task
   const handleCreateTask = useCallback(async () => {
@@ -200,7 +209,7 @@ export function useCourseDetailTaskState({
       setNewTaskType('');
       setShowAddTask(false);
 
-      await refreshArchivedCourseTasks();
+      await refreshTasks();
     } catch (error) {
       console.error('Failed to create task:', error);
     }
@@ -212,7 +221,7 @@ export function useCourseDetailTaskState({
     newTaskDueDate,
     newTaskWeight,
     newTaskType,
-    refreshArchivedCourseTasks,
+    refreshTasks,
   ]);
 
   // Duplicate task
@@ -223,31 +232,31 @@ export function useCourseDetailTaskState({
 
       try {
         await api.dispatch('DuplicateTask', { taskId });
-        await refreshArchivedCourseTasks();
+        await refreshTasks();
       } catch (error) {
         console.error('Failed to duplicate task:', error);
       }
     },
-    [refreshArchivedCourseTasks]
+    [refreshTasks]
   );
 
-  // Toggle task completion
+  // Toggle task completion - uses store method for proper state updates
+  const markTaskComplete = useStore((state) => state.markTaskComplete);
   const handleToggleComplete = useCallback(
     async (task: Task) => {
-      const api = window.api;
-      if (!api?.dispatch) return;
-
       try {
-        await api.dispatch('MarkTaskComplete', {
-          taskId: task.id,
-          isComplete: !task.isCompleted,
-        });
-        await refreshArchivedCourseTasks();
+        const success = await markTaskComplete(task.id, !task.isCompleted);
+        if (success) {
+          // Also refresh to get any related updates (archived courses use local state)
+          if (courseArchivedAt) {
+            await refreshTasks();
+          }
+        }
       } catch (error) {
         console.error('Failed to toggle task completion:', error);
       }
     },
-    [refreshArchivedCourseTasks]
+    [markTaskComplete, courseArchivedAt, refreshTasks]
   );
 
   // Start editing a task
@@ -305,7 +314,7 @@ export function useCourseDetailTaskState({
       });
 
       setEditingTaskId(null);
-      await refreshArchivedCourseTasks();
+      await refreshTasks();
     } catch (error) {
       console.error('Failed to update task:', error);
     }
@@ -321,7 +330,7 @@ export function useCourseDetailTaskState({
     editTaskGrade,
     editTaskType,
     editTaskLocation,
-    refreshArchivedCourseTasks,
+    refreshTasks,
   ]);
 
   // Delete task
@@ -342,7 +351,7 @@ export function useCourseDetailTaskState({
             if (result.success) {
               setExpandedTaskId(null);
               setEditingTaskId(null);
-              await refreshArchivedCourseTasks();
+              await refreshTasks();
             }
           } catch (error) {
             console.error('Failed to delete task:', error);
@@ -351,7 +360,7 @@ export function useCourseDetailTaskState({
         },
       });
     },
-    [setConfirmDialog, refreshArchivedCourseTasks]
+    [setConfirmDialog, refreshTasks]
   );
 
   // Task context menu
@@ -480,7 +489,7 @@ export function useCourseDetailTaskState({
     handleTaskContextMenu,
     handleOpenTaskInCanvas,
     handleToggleOptional,
-    refreshArchivedCourseTasks,
+    refreshTasks,
   };
 }
 

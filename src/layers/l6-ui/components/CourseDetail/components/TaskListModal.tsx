@@ -103,7 +103,7 @@ export function TaskListModal({
                   key={task.id}
                   task={task}
                   isFirst={index === 0}
-                  isCompleted={task.isCompleted || task.grade !== null}
+                  isCompleted={task.isCompleted}
                   isExpanded={expandedTaskId === task.id}
                   isEditing={editingTaskId === task.id}
                   isHighlighted={highlightedTaskId === task.id}

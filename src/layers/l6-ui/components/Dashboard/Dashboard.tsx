@@ -237,10 +237,8 @@ export function Dashboard() {
     });
   };
 
+  const markTaskComplete = useStore((state) => state.markTaskComplete);
   const handleToggleComplete = async (taskId?: number, currentlyCompleted?: boolean) => {
-    const api = window.api;
-    if (!api?.dispatch) return;
-
     // Use passed params or fall back to context menu
     const id = taskId ?? contextMenu?.task.id;
     const isCompleted = currentlyCompleted ?? contextMenu?.task.isCompleted;
@@ -248,10 +246,7 @@ export function Dashboard() {
     if (id === undefined || isCompleted === undefined) return;
 
     try {
-      await api.dispatch('MarkTaskComplete', {
-        taskId: id,
-        isComplete: !isCompleted,
-      });
+      await markTaskComplete(id, !isCompleted);
     } catch (error) {
       console.error('Failed to toggle task complete:', error);
     }

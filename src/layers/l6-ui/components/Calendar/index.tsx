@@ -89,6 +89,7 @@ export function CalendarPage() {
 
   // Track the last processed location.key to avoid re-processing
   const lastProcessedKey = React.useRef<string | null>(null);
+  const hasInitializedDate = React.useRef(false);
 
   // Filter state
   const [showFilters, setShowFilters] = useState(false);
@@ -117,6 +118,9 @@ export function CalendarPage() {
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   const [showEventFormModal, setShowEventFormModal] = useState(false);
   const [eventToEdit, setEventToEdit] = useState<DisplayCalendarEvent | null>(null);
+
+  // Highlighted task for "View in Calendar" navigation
+  const [highlightedTaskId, setHighlightedTaskId] = useState<number | null>(null);
 
   // Drag-and-drop
   const handleImportReady = useCallback((content: string, preview: ICSImportPreview) => {
@@ -164,19 +168,38 @@ export function CalendarPage() {
       const targetDate = new Date(state.targetDate);
       if (!isNaN(targetDate.getTime())) {
         setCurrentDate(targetDate);
+        hasInitializedDate.current = true;
         if (state.taskId) {
+          // Open the task detail modal
           const task = tasks.find((t) => t.id === state.taskId);
           const course = task ? courses.find((c) => c.id === task.courseId) : null;
           if (task && course) {
             setSelectedEvent({ type: 'task', task, course });
           }
+          // Highlight the task and scroll to it
+          setHighlightedTaskId(state.taskId);
+          // Scroll to the event after a short delay to allow render
+          setTimeout(() => {
+            const eventEl = document.querySelector(`[data-task-id="${state.taskId}"]`);
+            if (eventEl) {
+              eventEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+          }, 100);
+          // Clear highlight after 3 seconds
+          setTimeout(() => {
+            setHighlightedTaskId(null);
+          }, 3000);
         }
         // Clear the navigation state to prevent modal from reopening on refresh/view changes
         navigate(location.pathname, { replace: true, state: null });
         return;
       }
     }
-    setCurrentDate(new Date());
+    // Only reset to today on initial mount, not when clearing navigation state
+    if (!hasInitializedDate.current) {
+      setCurrentDate(new Date());
+      hasInitializedDate.current = true;
+    }
   }, [location.key, location.state, tasks, courses, navigate, location.pathname]);
 
   // Fetch events when range changes (uses prefetch range for pre-rendering)
@@ -532,14 +555,10 @@ export function CalendarPage() {
   // Event handlers
   const handleEventClick = (event: CalendarEvent) => setSelectedEvent(event);
 
+  const markTaskComplete = useStore((state) => state.markTaskComplete);
   const handleToggleTaskComplete = async (task: Task) => {
-    const api = window.api;
-    if (!api?.dispatch) return;
     try {
-      await api.dispatch('MarkTaskComplete', {
-        taskId: task.id,
-        isComplete: !task.isCompleted,
-      });
+      await markTaskComplete(task.id, !task.isCompleted);
       setSelectedEvent(null);
     } catch (error) {
       console.error('Failed to toggle task completion:', error);
@@ -851,6 +870,7 @@ export function CalendarPage() {
         onEventClick={handleEventClick}
         onDateClick={handleDateClick}
         onCourseClick={(courseId) => navigate(`/course/${courseId}`)}
+        highlightedTaskId={highlightedTaskId}
       />
 
       {/* Course Legend */}

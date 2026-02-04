@@ -22,6 +22,11 @@ export class SyncTaskOperations {
     const errors: string[] = [];
     let count = 0;
 
+    this.ctx.log?.info('[SyncTaskOps] syncTasks START', {
+      canvasCourseId,
+      localCourseId,
+    });
+
     const courseSettings = this.helpers.getCourseSettings(localCourseId);
     const todayEndTime = this.helpers.getTodayEndTime();
 
@@ -42,6 +47,12 @@ export class SyncTaskOperations {
           ),
         5
       );
+
+      this.ctx.log?.info('[SyncTaskOps] Fetched assignments', {
+        courseId: localCourseId,
+        count: assignments.length,
+        titles: assignments.slice(0, 5).map((a) => a.name),
+      });
 
       this.ctx.db.transaction(() => {
         for (const assignment of assignments) {
@@ -113,6 +124,10 @@ export class SyncTaskOperations {
                 );
 
               if (conflicts.length > 0) {
+                this.ctx.log?.info(`[SyncTaskOps] EMITTING conflicts`, {
+                  count: conflicts.length,
+                  taskId: existing?.id,
+                });
                 this.ctx.emitter.emit('sync-conflicts', { entity: 'task', conflicts });
 
                 for (const conflict of conflicts) {
@@ -247,11 +262,30 @@ export class SyncTaskOperations {
 
   /**
    * Auto-complete tasks that have both weight > 0 and grade set.
+   * Respects local_modified_fields - if user explicitly marked a task as incomplete,
+   * we don't auto-complete it even if it has a grade.
    */
   autoCompleteGradedTasks(courseId?: number): void {
+    // Only auto-complete tasks where user hasn't explicitly modified is_completed
     const whereClause = courseId
-      ? 'WHERE course_id = ? AND weight > 0 AND grade IS NOT NULL AND is_completed = 0'
-      : 'WHERE weight > 0 AND grade IS NOT NULL AND is_completed = 0';
+      ? `WHERE course_id = ? AND weight > 0 AND grade IS NOT NULL AND is_completed = 0
+         AND (
+           local_modified_fields IS NULL
+           OR NOT json_valid(local_modified_fields)
+           OR NOT EXISTS (
+             SELECT 1 FROM json_each(local_modified_fields)
+             WHERE value = 'is_completed'
+           )
+         )`
+      : `WHERE weight > 0 AND grade IS NOT NULL AND is_completed = 0
+         AND (
+           local_modified_fields IS NULL
+           OR NOT json_valid(local_modified_fields)
+           OR NOT EXISTS (
+             SELECT 1 FROM json_each(local_modified_fields)
+             WHERE value = 'is_completed'
+           )
+         )`;
     const params = courseId ? [courseId] : [];
 
     const result = this.ctx.db.executeWrite(
@@ -394,16 +428,15 @@ export class SyncTaskOperations {
               );
               updated++;
             } else {
-              const existing = this.ctx.db.executeReadOne<{ id: number; start_at: string }>(
-                'SELECT id, start_at FROM calendar_events WHERE task_id = ?',
-                [task.id]
-              );
+              const existing = this.ctx.db.executeReadOne<{
+                id: number;
+                start_at: string;
+              }>('SELECT id, start_at FROM calendar_events WHERE task_id = ?', [task.id]);
 
               if (existing) {
                 // Preserve user-set start time (non-epoch)
                 const preserveStart =
-                  existing.start_at &&
-                  new Date(existing.start_at).getTime() >= 86400000;
+                  existing.start_at && new Date(existing.start_at).getTime() >= 86400000;
 
                 this.ctx.db.executeWrite(
                   `UPDATE calendar_events SET

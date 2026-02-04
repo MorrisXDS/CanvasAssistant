@@ -398,26 +398,11 @@ export class SyncConflictResolver extends EventEmitter {
         continue;
       }
 
-      // Debug logging for is_completed field
-      if (field === 'is_completed') {
-        console.log('[SyncConflict] is_completed check:', {
-          entityName,
-          localValue,
-          canvasValue,
-          fieldSource,
-          inLocalModified: localModifiedFields.has(field),
-          localModifiedFields: Array.from(localModifiedFields),
-        });
-      }
-
       // Check field source first (new system)
       // BUT: respect local_modified_fields - if user explicitly modified this field,
       // don't auto-accept Canvas value even if field_sources says 'canvas'
       if (fieldSource === 'canvas' && !localModifiedFields.has(field)) {
         // Field came from Canvas AND user hasn't modified it - accept Canvas updates
-        if (field === 'is_completed') {
-          console.log('[SyncConflict] is_completed: auto-accepting Canvas (fieldSource=canvas, not locally modified)');
-        }
         autoResolved[field] = canvasValue;
         continue;
       }
@@ -437,9 +422,6 @@ export class SyncConflictResolver extends EventEmitter {
 
       if (!isModified) {
         // User hasn't modified this field - use Canvas value
-        if (field === 'is_completed') {
-          console.log('[SyncConflict] is_completed: auto-accepting Canvas (not modified)');
-        }
         autoResolved[field] = canvasValue;
         continue;
       }
@@ -447,15 +429,8 @@ export class SyncConflictResolver extends EventEmitter {
       // User has modified this field - check for actual difference
       if (this.valuesEqual(localValue, canvasValue)) {
         // Values are the same - no conflict
-        if (field === 'is_completed') {
-          console.log('[SyncConflict] is_completed: values equal, no conflict');
-        }
         autoResolved[field] = canvasValue;
         continue;
-      }
-
-      if (field === 'is_completed') {
-        console.log('[SyncConflict] is_completed: values differ, checking for conflict');
       }
 
       // Values differ - check for saved preference
@@ -528,9 +503,39 @@ export class SyncConflictResolver extends EventEmitter {
       return Math.abs(a - b) < 0.0001;
     }
     if (typeof a === 'string' && typeof b === 'string') {
+      // Check if both look like ISO dates and compare as dates
+      if (this.looksLikeIsoDate(a) && this.looksLikeIsoDate(b)) {
+        return this.datesEqual(a, b);
+      }
       return a.trim() === b.trim();
     }
     return JSON.stringify(a) === JSON.stringify(b);
+  }
+
+  /**
+   * Check if a string looks like an ISO date
+   */
+  private looksLikeIsoDate(s: string): boolean {
+    // Match patterns like: 2026-01-30T23:59, 2026-01-31T04:59:00Z, 2026-01-30T23:59:00.000Z
+    return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(s);
+  }
+
+  /**
+   * Compare two date strings for equality (within 1 minute tolerance)
+   */
+  private datesEqual(a: string, b: string): boolean {
+    try {
+      const dateA = new Date(a);
+      const dateB = new Date(b);
+      // If either is invalid, fall back to string comparison
+      if (isNaN(dateA.getTime()) || isNaN(dateB.getTime())) {
+        return a.trim() === b.trim();
+      }
+      // Compare with 1 minute tolerance (60000ms) to handle rounding differences
+      return Math.abs(dateA.getTime() - dateB.getTime()) < 60000;
+    } catch {
+      return a.trim() === b.trim();
+    }
   }
 
   /**

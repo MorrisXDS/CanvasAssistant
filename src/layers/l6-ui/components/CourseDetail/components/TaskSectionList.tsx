@@ -198,7 +198,7 @@ export function TaskSectionList({
             showAddButton: false,
             showViewAll: true,
             modalTitle: 'All Graded Tasks',
-            getIsCompleted: (task: Task) => task.isCompleted || task.grade !== null,
+            getIsCompleted: (task: Task) => task.isCompleted,
           },
           info: {
             title: 'Not for Grade',

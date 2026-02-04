@@ -56,18 +56,48 @@ const ENTITY_LABELS: Record<string, string> = {
 };
 
 /**
+ * Format a date string for display
+ */
+function formatDateValue(val: unknown): string {
+  if (val === null || val === undefined || val === '') return '(not set)';
+
+  try {
+    const date = new Date(val as string);
+    if (isNaN(date.getTime())) return String(val);
+
+    // Format as "Jan 24, 2026 at 11:59 PM"
+    return date.toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    });
+  } catch {
+    return String(val);
+  }
+}
+
+/**
  * Field-specific value formatters for human-readable display
  */
 const VALUE_FORMATTERS: Record<string, Record<string, (val: unknown) => string>> = {
   task: {
     is_completed: (val) => (val ? 'Completed' : 'Not completed'),
     is_optional: (val) => (val ? 'Optional' : 'Required'),
+    due_at: formatDateValue,
+    unlock_at: formatDateValue,
+    lock_at: formatDateValue,
+    completed_at: formatDateValue,
   },
   course: {
     is_hidden: (val) => (val ? 'Hidden' : 'Visible'),
   },
   notification: {
     is_read: (val) => (val ? 'Read' : 'Unread'),
+    published_at: formatDateValue,
+    dismissed_at: formatDateValue,
   },
 };
 
