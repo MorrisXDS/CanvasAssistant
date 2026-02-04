@@ -205,5 +205,5 @@ export const layoutStyles: Record<string, React.CSSProperties> = {
     transition: 'margin-left 250ms cubic-bezier(0.33, 1, 0.68, 1)',
     display: 'flex',
     flexDirection: 'column',
-  },
+  } as React.CSSProperties,
 };

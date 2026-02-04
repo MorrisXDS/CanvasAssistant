@@ -101,11 +101,13 @@ export const styles: Record<string, React.CSSProperties> = {
     borderRadius: '12px',
     overflow: 'hidden',
     boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+    height: '100%',
+    minHeight: 0, // Allow flex children to shrink
   },
 
   weekHeader: {
     display: 'grid',
-    gridTemplateColumns: '60px repeat(7, 1fr)',
+    gridTemplateColumns: '64px repeat(7, 1fr)',
     borderBottom: '1px solid var(--border-default)',
     backgroundColor: 'var(--bg-card)',
     position: 'sticky' as const,
@@ -114,12 +116,16 @@ export const styles: Record<string, React.CSSProperties> = {
   },
 
   timeGutter: {
+    width: '64px',
+    minWidth: '64px',
+    maxWidth: '64px',
     borderRight: '1px solid var(--border-light)',
+    boxSizing: 'border-box',
   },
 
   allDayRow: {
     display: 'grid',
-    gridTemplateColumns: '60px repeat(7, 1fr)',
+    gridTemplateColumns: '64px repeat(7, 1fr)',
     backgroundColor: 'var(--bg-card)',
     borderBottom: '1px solid var(--border-default)',
     position: 'sticky' as const,
@@ -133,24 +139,25 @@ export const styles: Record<string, React.CSSProperties> = {
     fontWeight: 'var(--font-semibold)',
     color: 'var(--text-secondary)',
     borderRight: '1px solid var(--border-light)',
-    display: 'flex',
-    alignItems: 'flex-start',
+    boxSizing: 'border-box',
   },
 
   allDayCell: {
     padding: '2px',
     borderRight: '1px solid var(--border-light)',
     minHeight: '32px',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '1px',
     overflow: 'hidden',
+    boxSizing: 'border-box',
+    minWidth: 0,
   },
 
   weekDayHeader: {
     padding: 'var(--space-2)',
     textAlign: 'center',
     borderRight: '1px solid var(--border-light)',
+    overflow: 'hidden',
+    boxSizing: 'border-box',
+    minWidth: 0,
   },
 
   weekDayName: {
@@ -183,6 +190,7 @@ export const styles: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
     marginBottom: '2px',
     width: '100%',
+    maxWidth: '100%',
     boxSizing: 'border-box',
     boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
     transition: 'transform 150ms ease, box-shadow 150ms ease',
@@ -238,19 +246,25 @@ export const styles: Record<string, React.CSSProperties> = {
   // Week grid with positioned events - scales with viewport
   weekGridContainer: {
     position: 'relative',
-    height: 'calc(100vh - 220px)', // Taller since header/all-day are now inside
-    minHeight: '400px',
+    flex: 1, // Fill remaining space in weekContainer after header/all-day row
+    minHeight: 0, // Allow flex item to shrink to fit container
     overflowY: 'auto',
-  },
+    overflowX: 'hidden',
+  } as React.CSSProperties,
 
   // Wrapper for grid background and events overlay - enables correct absolute positioning
   weekGridWrapper: {
     position: 'relative',
+    width: '100%',
+    height: `${24 * 48}px`, // 24 hours * 48px per hour = 1152px
+    minHeight: `${24 * 48}px`,
   },
 
   weekGridBackground: {
     display: 'grid',
-    gridTemplateColumns: '60px repeat(7, 1fr)',
+    gridTemplateColumns: '64px repeat(7, 1fr)',
+    gridTemplateRows: 'repeat(24, 48px)', // Force exactly 24 rows of 48px each
+    height: `${24 * 48}px`, // 24 hours * 48px = 1152px
   },
 
   timeLabel: {
@@ -264,6 +278,9 @@ export const styles: Record<string, React.CSSProperties> = {
     backgroundColor: 'var(--bg-card)',
     height: '48px',
     boxSizing: 'border-box',
+    width: '64px',
+    minWidth: '64px',
+    maxWidth: '64px',
   },
 
   hourCellBackground: {
@@ -271,6 +288,8 @@ export const styles: Record<string, React.CSSProperties> = {
     borderRight: '1px solid var(--border-light)',
     borderBottom: '1px solid var(--border-light)',
     backgroundColor: 'var(--bg-card)',
+    minWidth: 0,
+    boxSizing: 'border-box',
   },
 
   weekEventsOverlay: {
@@ -280,17 +299,23 @@ export const styles: Record<string, React.CSSProperties> = {
     right: 0,
     bottom: 0,
     display: 'grid',
-    gridTemplateColumns: '60px repeat(7, 1fr)',
+    gridTemplateColumns: '64px repeat(7, 1fr)',
     pointerEvents: 'none',
   },
 
   timeGutterSpacer: {
     pointerEvents: 'none',
+    width: '64px',
+    minWidth: '64px',
+    maxWidth: '64px',
+    boxSizing: 'border-box',
   },
 
   weekDayColumn: {
     position: 'relative',
     pointerEvents: 'auto',
+    minWidth: 0,
+    overflow: 'hidden',
   },
 
   weekPositionedEvent: {
@@ -307,7 +332,6 @@ export const styles: Record<string, React.CSSProperties> = {
     flexDirection: 'column',
     justifyContent: 'flex-start',
     overflow: 'hidden',
-    margin: '1px',
   },
 
   hourCell: {
@@ -357,7 +381,7 @@ export const styles: Record<string, React.CSSProperties> = {
   },
 
   dayAllDayLabel: {
-    width: '60px',
+    width: '64px',
     padding: 'var(--space-2)',
     fontSize: 'var(--text-xs)',
     fontWeight: 'var(--font-semibold)',
@@ -384,11 +408,11 @@ export const styles: Record<string, React.CSSProperties> = {
   dayHourRow: {
     display: 'flex',
     borderBottom: '1px solid var(--border-light)',
-    height: '60px',
+    height: '64px',
   },
 
   dayTimeLabel: {
-    width: '60px',
+    width: '64px',
     padding: 'var(--space-2)',
     fontSize: 'var(--text-xs)',
     color: 'var(--text-muted)',
@@ -509,7 +533,7 @@ export const styles: Record<string, React.CSSProperties> = {
   },
 
   dayTimeLabelSpacer: {
-    width: '60px',
+    width: '64px',
     flexShrink: 0,
     pointerEvents: 'none',
   },
@@ -657,6 +681,8 @@ export const styles: Record<string, React.CSSProperties> = {
 
   weekWrapper: {
     position: 'relative',
+    height: 'calc(100vh - 280px)', // Fixed height for consistent layout
+    minHeight: '400px',
   },
 
   // Overflow dots
