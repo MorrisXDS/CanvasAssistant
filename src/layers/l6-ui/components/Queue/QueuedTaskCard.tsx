@@ -108,7 +108,7 @@ const styles = {
   actions: {
     display: 'flex',
     gap: '12px',
-    justifyContent: 'flex-start',
+    justifyContent: 'center',
   } as React.CSSProperties,
   iconButton: {
     width: '28px',
