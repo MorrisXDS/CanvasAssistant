@@ -59,7 +59,7 @@ const styles = {
   // Row styles
   row: {
     display: 'grid',
-    gridTemplateColumns: '28px 3fr 1.2fr 0.8fr 1fr',
+    gridTemplateColumns: '28px 3fr 1.2fr 0.8fr 110px',
     alignItems: 'center',
     gap: 'var(--space-3)',
     padding: 'var(--space-2) var(--space-3)',
