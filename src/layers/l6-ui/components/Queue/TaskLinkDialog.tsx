@@ -342,9 +342,9 @@ const styles = {
     backgroundColor: 'var(--bg-tertiary)',
   } as React.CSSProperties,
   fieldCellSelected: {
-    backgroundColor: 'var(--color-primary-bg)',
-    boxShadow: 'inset 0 0 0 2px var(--color-primary)',
-    borderRadius: 'var(--radius-sm)',
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    boxShadow: 'inset 0 0 0 2px #10b981',
+    borderRadius: '6px',
   } as React.CSSProperties,
   fieldCellDisabled: {
     opacity: 0.5,
@@ -354,18 +354,19 @@ const styles = {
     display: 'inline-flex',
     alignItems: 'center',
     justifyContent: 'center',
-    width: '18px',
-    height: '18px',
+    width: '20px',
+    height: '20px',
     borderRadius: '50%',
-    border: '2px solid var(--border-strong)',
+    border: '2px solid #9ca3af',
     marginRight: 'var(--space-2)',
     flexShrink: 0,
-    transition: 'all var(--transition-fast)',
+    transition: 'all 0.15s ease',
+    backgroundColor: 'transparent',
   } as React.CSSProperties,
   radioIndicatorSelected: {
-    borderColor: 'var(--color-primary)',
-    backgroundColor: 'var(--color-primary)',
-    boxShadow: '0 0 0 3px var(--color-primary-bg)',
+    borderColor: '#10b981',
+    backgroundColor: '#10b981',
+    boxShadow: '0 0 0 3px rgba(16, 185, 129, 0.2)',
   } as React.CSSProperties,
   quickOptions: {
     display: 'flex',
@@ -738,7 +739,7 @@ export function TaskLinkDialog({
                   onClick={() => handleFieldChoice(field.key, 'canvas')}
                   onMouseEnter={(e) => {
                     if (fieldChoices[field.key] !== 'canvas') {
-                      e.currentTarget.style.backgroundColor = 'var(--bg-tertiary)';
+                      e.currentTarget.style.backgroundColor = 'rgba(16, 185, 129, 0.05)';
                     }
                   }}
                   onMouseLeave={(e) => {
@@ -790,7 +791,7 @@ export function TaskLinkDialog({
                   onClick={() => handleFieldChoice(field.key, 'user')}
                   onMouseEnter={(e) => {
                     if (fieldChoices[field.key] !== 'user') {
-                      e.currentTarget.style.backgroundColor = 'var(--bg-tertiary)';
+                      e.currentTarget.style.backgroundColor = 'rgba(16, 185, 129, 0.05)';
                     }
                   }}
                   onMouseLeave={(e) => {
