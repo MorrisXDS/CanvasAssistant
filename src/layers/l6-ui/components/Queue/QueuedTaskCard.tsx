@@ -40,7 +40,7 @@ function formatDateForInput(dateStr: string | null | undefined): string {
 
 // Format date for display (compact)
 function formatDateCompact(dateStr: string | null | undefined): string {
-  if (!dateStr) return '—';
+  if (!dateStr) return '–'; // en-dash for empty
   const date = new Date(dateStr);
   return date.toLocaleDateString('en-US', {
     month: 'short',
@@ -94,7 +94,7 @@ const styles = {
     whiteSpace: 'nowrap' as const,
   } as React.CSSProperties,
   taskType: {
-    width: '90px',
+    width: '120px',
     flexShrink: 0,
     fontSize: 'var(--text-xs)',
     color: 'var(--text-secondary)',
@@ -111,7 +111,7 @@ const styles = {
   } as React.CSSProperties,
   actions: {
     display: 'flex',
-    gap: '4px',
+    gap: '6px',
     flexShrink: 0,
   } as React.CSSProperties,
   iconButton: {

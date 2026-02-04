@@ -128,7 +128,7 @@ const styles = {
     minWidth: 0,
   } as React.CSSProperties,
   colType: {
-    width: '90px',
+    width: '120px',
     flexShrink: 0,
   } as React.CSSProperties,
   colDue: {
@@ -137,7 +137,7 @@ const styles = {
     textAlign: 'right' as const,
   } as React.CSSProperties,
   colActions: {
-    width: '100px', // 3 buttons * 28px + gaps
+    width: '110px', // 3 buttons * 28px + 6px gaps
     flexShrink: 0,
     textAlign: 'center' as const,
   } as React.CSSProperties,
