@@ -458,7 +458,7 @@ export function Dashboard() {
             handleDeleteTask();
             setContextMenu(null);
           }}
-          onViewInCalendar={contextMenu.task.dueAt ? handleViewInCalendar : undefined}
+          onViewInCalendar={handleViewInCalendar}
         />
       )}
     </div>

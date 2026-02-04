@@ -75,6 +75,10 @@ const styles = {
   contextMenuItemDanger: {
     color: 'var(--color-error)',
   },
+  contextMenuItemDisabled: {
+    opacity: 0.4,
+    cursor: 'not-allowed',
+  },
   contextMenuDivider: {
     height: '1px',
     backgroundColor: 'var(--border-light)',
@@ -154,14 +158,18 @@ export function TaskContextMenu({
     onClose();
   };
 
-  const getItemStyle = (itemKey: string, isDanger = false) => ({
+  const getItemStyle = (itemKey: string, isDanger = false, isDisabled = false) => ({
     ...styles.contextMenuItem,
-    ...(hoveredItem === itemKey ? styles.contextMenuItemHover : {}),
+    ...(isDisabled ? styles.contextMenuItemDisabled : {}),
+    ...(!isDisabled && hoveredItem === itemKey ? styles.contextMenuItemHover : {}),
     ...(isDanger ? styles.contextMenuItemDanger : {}),
-    ...(isDanger && hoveredItem === itemKey
+    ...(isDanger && !isDisabled && hoveredItem === itemKey
       ? { backgroundColor: 'rgba(220, 38, 38, 0.1)' }
       : {}),
   });
+
+  // Check if task can be viewed in calendar (has a linked event or due date)
+  const canViewInCalendar = Boolean(task.calendarEventId || task.dueAt);
 
   return (
     <div
@@ -259,11 +267,13 @@ export function TaskContextMenu({
       {/* View in Calendar */}
       {onViewInCalendar && (
         <button
-          style={getItemStyle('calendar')}
-          onClick={() => handleAction(onViewInCalendar)}
+          style={getItemStyle('calendar', false, !canViewInCalendar)}
+          onClick={() => canViewInCalendar && handleAction(onViewInCalendar)}
           onMouseEnter={() => setHoveredItem('calendar')}
           onMouseLeave={() => setHoveredItem(null)}
           role="menuitem"
+          disabled={!canViewInCalendar}
+          title={!canViewInCalendar ? 'No due date or linked calendar event' : undefined}
         >
           <Calendar size={14} />
           <span>{MENU_LABELS.task.viewInCalendar}</span>
