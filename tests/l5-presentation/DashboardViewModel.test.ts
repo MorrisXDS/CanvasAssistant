@@ -6,7 +6,7 @@
 
 // Jest globals are available
 import { computeDashboardViewModel } from '../../src/layers/l5-presentation/viewModels/DashboardViewModel';
-import { StoreState, Course, Task, SimulationState } from '../../src/layers/l5-presentation/types';
+import { StoreState, Course, Task } from '../../src/layers/l5-presentation/types';
 
 // Helper to create a base store state
 function createBaseState(overrides: Partial<StoreState> = {}): StoreState {
@@ -15,6 +15,8 @@ function createBaseState(overrides: Partial<StoreState> = {}): StoreState {
     tasks: [],
     notifications: [],
     policies: [],
+    taskQueue: [],
+    taskQueueCount: 0,
     simulation: {
       isActive: false,
       startedAt: null,
@@ -56,6 +58,7 @@ function createCourse(overrides: Partial<Course> = {}): Course {
     enrollmentTermId: null,
     archivedAt: null,
     archiveSource: null,
+    credits: 1.0,
     ...overrides,
   };
 }
@@ -69,9 +72,11 @@ function createTask(overrides: Partial<Task> = {}): Task {
   return {
     id: 1,
     externalId: 'task-1',
+    sourceType: 'canvas',
     courseId: 1,
     title: 'Assignment 1',
     description: 'First assignment',
+    unlockAt: null,
     dueAt: defaultDueAt.toISOString(),
     dueTimeKnown: true,
     weight: 10,
@@ -87,6 +92,7 @@ function createTask(overrides: Partial<Task> = {}): Task {
     taskType: null,
     taskGroupId: null,
     calendarEventId: null,
+    location: null,
     ...overrides,
   };
 }
@@ -111,7 +117,11 @@ describe('DashboardViewModel', () => {
     describe('priority queue', () => {
       it('includes only incomplete tasks', () => {
         const course = createCourse();
-        const incompleteTask = createTask({ id: 1, priorityScore: 80, isCompleted: false });
+        const incompleteTask = createTask({
+          id: 1,
+          priorityScore: 80,
+          isCompleted: false,
+        });
         const completedTask = createTask({ id: 2, priorityScore: 90, isCompleted: true });
 
         const state = createBaseState({
@@ -137,7 +147,9 @@ describe('DashboardViewModel', () => {
         });
 
         // Must enable priority sorting to sort by priorityScore
-        const viewModel = computeDashboardViewModel(state, { prioritySortingEnabled: true });
+        const viewModel = computeDashboardViewModel(state, {
+          prioritySortingEnabled: true,
+        });
 
         expect(viewModel.priorityQueue[0].task.id).toBe(2); // High priority
         expect(viewModel.priorityQueue[1].task.id).toBe(3); // Medium priority
@@ -299,8 +311,18 @@ describe('DashboardViewModel', () => {
         tomorrow.setDate(tomorrow.getDate() + 1);
 
         const tasks = [
-          createTask({ id: 1, courseId: 1, dueAt: tomorrow.toISOString(), isCompleted: false }),
-          createTask({ id: 2, courseId: 1, dueAt: tomorrow.toISOString(), isCompleted: true }),
+          createTask({
+            id: 1,
+            courseId: 1,
+            dueAt: tomorrow.toISOString(),
+            isCompleted: false,
+          }),
+          createTask({
+            id: 2,
+            courseId: 1,
+            dueAt: tomorrow.toISOString(),
+            isCompleted: true,
+          }),
         ];
 
         const state = createBaseState({
@@ -319,8 +341,18 @@ describe('DashboardViewModel', () => {
         yesterday.setDate(yesterday.getDate() - 1);
 
         const tasks = [
-          createTask({ id: 1, courseId: 1, dueAt: yesterday.toISOString(), isCompleted: false }),
-          createTask({ id: 2, courseId: 1, dueAt: yesterday.toISOString(), isCompleted: true }),
+          createTask({
+            id: 1,
+            courseId: 1,
+            dueAt: yesterday.toISOString(),
+            isCompleted: false,
+          }),
+          createTask({
+            id: 2,
+            courseId: 1,
+            dueAt: yesterday.toISOString(),
+            isCompleted: true,
+          }),
         ];
 
         const state = createBaseState({
@@ -352,9 +384,7 @@ describe('DashboardViewModel', () => {
 
       it('calculates target delta', () => {
         const course = createCourse({ id: 1, targetGrade: 90 });
-        const tasks = [
-          createTask({ id: 1, courseId: 1, weight: 100, grade: 80 }),
-        ];
+        const tasks = [createTask({ id: 1, courseId: 1, weight: 100, grade: 80 })];
 
         const state = createBaseState({
           courses: [course],
@@ -381,10 +411,7 @@ describe('DashboardViewModel', () => {
 
     describe('statistics', () => {
       it('calculates total courses and tasks', () => {
-        const courses = [
-          createCourse({ id: 1 }),
-          createCourse({ id: 2 }),
-        ];
+        const courses = [createCourse({ id: 1 }), createCourse({ id: 2 })];
         const tasks = [
           createTask({ id: 1, courseId: 1 }),
           createTask({ id: 2, courseId: 2 }),
@@ -466,8 +493,20 @@ describe('DashboardViewModel', () => {
             isActive: true,
             startedAt: '2024-01-15T10:00:00Z',
             grades: [
-              { taskId: 1, courseId: 1, originalGrade: null, simulatedGrade: 85, timestamp: '2024-01-15T10:00:00Z' },
-              { taskId: 2, courseId: 1, originalGrade: 80, simulatedGrade: 90, timestamp: '2024-01-15T10:00:00Z' },
+              {
+                taskId: 1,
+                courseId: 1,
+                originalGrade: null,
+                simulatedGrade: 85,
+                timestamp: '2024-01-15T10:00:00Z',
+              },
+              {
+                taskId: 2,
+                courseId: 1,
+                originalGrade: 80,
+                simulatedGrade: 90,
+                timestamp: '2024-01-15T10:00:00Z',
+              },
             ],
           },
         });
@@ -488,7 +527,13 @@ describe('DashboardViewModel', () => {
             isActive: true,
             startedAt: '2024-01-15T10:00:00Z',
             grades: [
-              { taskId: 1, courseId: 1, originalGrade: 70, simulatedGrade: 90, timestamp: '2024-01-15T10:00:00Z' },
+              {
+                taskId: 1,
+                courseId: 1,
+                originalGrade: 70,
+                simulatedGrade: 90,
+                timestamp: '2024-01-15T10:00:00Z',
+              },
             ],
           },
         });

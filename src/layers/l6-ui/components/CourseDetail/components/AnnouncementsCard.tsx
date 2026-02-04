@@ -49,9 +49,7 @@ export function AnnouncementsCard({
       style={{
         ...styles.sidebarCardWrapper,
         opacity: isDragging ? 0.5 : 1,
-        borderTop: isDragOver
-          ? '2px solid var(--color-blue)'
-          : '2px solid transparent',
+        borderTop: isDragOver ? '2px solid var(--color-blue)' : '2px solid transparent',
         transition: 'opacity 0.2s, border-color 0.2s',
       }}
     >
@@ -69,7 +67,7 @@ export function AnnouncementsCard({
           </div>
         ) : (
           <div style={styles.announcementList}>
-            {announcements.slice(0, 5).map((ann) => (
+            {announcements.slice(0, 8).map((ann) => (
               <Link
                 key={ann.id}
                 to={`/announcement/${ann.id}`}
@@ -81,11 +79,8 @@ export function AnnouncementsCard({
                 </div>
               </Link>
             ))}
-            {announcements.length > 5 && (
-              <Link
-                to={`/announcements?course=${courseId}`}
-                style={styles.viewAllLink}
-              >
+            {announcements.length > 8 && (
+              <Link to={`/announcements?course=${courseId}`} style={styles.viewAllLink}>
                 View all {announcements.length} announcements
                 <ChevronRight size={14} />
               </Link>

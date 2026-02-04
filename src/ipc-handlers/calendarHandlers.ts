@@ -235,7 +235,10 @@ export function registerCalendarHandlers(ctx: IpcContext): void {
             if (course.code) {
               const codeUpper = course.code.toUpperCase();
               const codeWithoutSection = codeUpper.split(/\s+/)[0];
-              if (codeWithoutSection !== codeUpper && titleUpper.includes(codeWithoutSection)) {
+              if (
+                codeWithoutSection !== codeUpper &&
+                titleUpper.includes(codeWithoutSection)
+              ) {
                 return course.id;
               }
             }
@@ -264,8 +267,18 @@ export function registerCalendarHandlers(ctx: IpcContext): void {
 
           // Pass 6: Try significant words from course name (least specific)
           const commonWords = new Set([
-            'AND', 'THE', 'FOR', 'WITH', 'INTO', 'FROM', 'COURSE',
-            'INTRODUCTION', 'INTRO', 'ADVANCED', 'TOPICS', 'SELECTED',
+            'AND',
+            'THE',
+            'FOR',
+            'WITH',
+            'INTO',
+            'FROM',
+            'COURSE',
+            'INTRODUCTION',
+            'INTRO',
+            'ADVANCED',
+            'TOPICS',
+            'SELECTED',
           ]);
           for (const course of courses) {
             if (course.name) {
@@ -534,14 +547,16 @@ export function registerCalendarHandlers(ctx: IpcContext): void {
       const sqlParams: (string | number)[] = [];
 
       // Filter by calendar visibility
+      // Include: visible imported calendars, user events, and canvas task events
       if (!params.includeHidden) {
-        sql += " AND (ic.is_visible = 1 OR ce.source_type = 'user')";
+        sql +=
+          " AND (ic.is_visible = 1 OR ce.source_type = 'user' OR ce.source_type = 'canvas')";
       }
 
       // Filter by specific calendars
       if (params.calendarIds && params.calendarIds.length > 0) {
         const placeholders = params.calendarIds.map(() => '?').join(',');
-        sql += ` AND (ce.imported_calendar_id IN (${placeholders}) OR ce.source_type = 'user')`;
+        sql += ` AND (ce.imported_calendar_id IN (${placeholders}) OR ce.source_type = 'user' OR ce.source_type = 'canvas')`;
         sqlParams.push(...params.calendarIds);
       }
 
@@ -647,7 +662,6 @@ export function registerCalendarHandlers(ctx: IpcContext): void {
         const courseCode = row.course_code;
         const courseName = row.course_name;
 
-
         // Use RRuleExpander to handle both recurring and non-recurring events
         // Pass timezone for DST-aware expansion of recurring events
         const expandedEvents = expander.expand(eventRecord, startDate, endDate, timezone);
@@ -718,7 +732,9 @@ export function registerCalendarHandlers(ctx: IpcContext): void {
       }
     ) => {
       try {
-        logger.info(`Creating calendar event: title="${params.title}", startAt=${params.startAt}`);
+        logger.info(
+          `Creating calendar event: title="${params.title}", startAt=${params.startAt}`
+        );
 
         // Use basic columns first, then try to add optional columns
         // This handles cases where migration 70 hasn't run yet
@@ -803,23 +819,19 @@ export function registerCalendarHandlers(ctx: IpcContext): void {
         notes?: string;
         reminderMinutes?: number;
         recurrenceRule?: string;
+        weight?: number;
       }
     ) => {
       try {
-        logger.debug(`calendar:updateEvent called for id=${id}, updates=${JSON.stringify(updates)}`);
+        logger.debug(
+          `calendar:updateEvent called for id=${id}, updates=${JSON.stringify(updates)}`
+        );
 
-        // Check event type - allow editing user events and events linked to user tasks
+        // Get event to check if it exists and get task_id for syncing
         const event = database.executeReadOne<{
           source_type: string;
           task_id: number | null;
-          task_source_type: string | null;
-        }>(
-          `SELECT ce.source_type, ce.task_id, t.source_type as task_source_type
-           FROM calendar_events ce
-           LEFT JOIN tasks t ON ce.task_id = t.id
-           WHERE ce.id = ?`,
-          [id]
-        );
+        }>(`SELECT source_type, task_id FROM calendar_events WHERE id = ?`, [id]);
 
         if (!event) {
           logger.warn(`calendar:updateEvent - Event not found for id=${id}`);
@@ -827,22 +839,8 @@ export function registerCalendarHandlers(ctx: IpcContext): void {
         }
 
         logger.debug(
-          `calendar:updateEvent - Found event: source_type=${event.source_type}, task_id=${event.task_id}, task_source_type=${event.task_source_type}`
+          `calendar:updateEvent - Found event: source_type=${event.source_type}, task_id=${event.task_id}`
         );
-
-        // Allow editing if:
-        // 1. Event source_type is 'user', OR
-        // 2. Event source_type is 'imported' (imported calendar events), OR
-        // 3. Event is linked to a user-created task
-        const canEdit =
-          event.source_type === 'user' ||
-          event.source_type === 'imported' ||
-          (event.task_id && event.task_source_type === 'user');
-
-        if (!canEdit) {
-          logger.warn(`calendar:updateEvent - Cannot edit Canvas-synced event id=${id}`);
-          return { success: false, error: 'Cannot edit Canvas-synced events' };
-        }
 
         const setClauses: string[] = [];
         const params: (string | number | null)[] = [];
@@ -960,6 +958,15 @@ export function registerCalendarHandlers(ctx: IpcContext): void {
               'tasks'
             );
             logger.info(`Updated task ${event.task_id} location to ${updates.location}`);
+          }
+          // Sync weight to task
+          if (updates.weight !== undefined) {
+            database.executeWrite(
+              'UPDATE tasks SET weight = ? WHERE id = ?',
+              [updates.weight, event.task_id],
+              'tasks'
+            );
+            logger.info(`Updated task ${event.task_id} weight to ${updates.weight}`);
           }
         }
 

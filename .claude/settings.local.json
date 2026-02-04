@@ -105,7 +105,17 @@
       "Bash(npm run:*)",
       "Bash(cat:*)",
       "WebFetch(domain:stackoverflow.com)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(__NEW_LINE_2f6287b80a5f7421__ echo \"\")",
+      "WebFetch(domain:canvas.instructure.com)",
+      "WebFetch(domain:www.canvas.instructure.com)",
+      "WebFetch(domain:community.canvaslms.com)",
+      "WebFetch(domain:community.instructure.com)",
+      "Bash(node_modules/.bin/electron:*)",
+      "Bash(npx -c \"console.log\\(''Current Node in Electron: v'' + process.version\\)\")",
+      "Bash(cmd /c \"tasklist /FI \"\"IMAGENAME eq node.exe\"\"\")",
+      "Bash(git show:*)",
+      "Bash(git reset:*)"
     ]
   }
 }

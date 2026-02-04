@@ -3,7 +3,7 @@
  * Root component with routing and auth state management
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, Suspense, lazy } from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 
 import { useStore, subscribeToIpcEvents } from '../l5-presentation/store';
@@ -15,24 +15,26 @@ import {
   DEFAULT_APPEARANCE_SETTINGS,
 } from '../l5-presentation/settings';
 import { Layout } from './components/Layout';
-import { Dashboard } from './components/Dashboard';
-import { Onboarding } from './components/Onboarding';
 import { ReAuthModal } from './components/shared/ReAuthModal';
 import { RecoveryBanner, type RecoveryStatus } from './components/shared/RecoveryBanner';
 import {
   CorruptionDialog,
   type CorruptionInfo,
 } from './components/shared/CorruptionDialog';
-import {
-  AnnouncementDetail,
-  AnnouncementsPage,
-  CalendarPage,
-  CourseDetail,
-  CoursesPage,
-  FilesPage,
-  SettingsPage,
-  TasksPage,
-} from './components/pages';
+
+// Lazy load Dashboard and Onboarding
+const Dashboard = lazy(() => import('./components/Dashboard/Dashboard'));
+const Onboarding = lazy(() => import('./components/Onboarding'));
+
+// Lazy load heavy page components for code-splitting
+const AnnouncementDetail = lazy(() => import('./components/pages/AnnouncementDetail'));
+const AnnouncementsPage = lazy(() => import('./components/pages/AnnouncementsPage'));
+const CalendarPage = lazy(() => import('./components/Calendar'));
+const CourseDetail = lazy(() => import('./components/pages/CourseDetail'));
+const CoursesPage = lazy(() => import('./components/pages/CoursesPage'));
+const FilesPage = lazy(() => import('./components/pages/FilesPage'));
+const SettingsPage = lazy(() => import('./components/pages/SettingsPage'));
+const TasksPage = lazy(() => import('./components/pages/TasksPage'));
 
 import './styles/global.css';
 
@@ -100,7 +102,7 @@ function useSystemThemeListener() {
 }
 
 /**
- * Loading Screen
+ * Loading Screen (full page - for initial app load)
  */
 function LoadingScreen() {
   return (
@@ -109,6 +111,17 @@ function LoadingScreen() {
         <span style={styles.loadingIcon}>🎓</span>
         <span style={styles.loadingText}>Loading...</span>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Page Loading Fallback (inline - for lazy-loaded pages)
+ */
+function PageLoadingFallback() {
+  return (
+    <div style={styles.pageLoadingContainer}>
+      <div style={styles.pageLoadingSpinner} />
     </div>
   );
 }
@@ -246,7 +259,11 @@ function AppContent() {
 
   // Show onboarding if not authenticated
   if (!isAuthenticated) {
-    return <Onboarding onComplete={handleOnboardingComplete} />;
+    return (
+      <Suspense fallback={<LoadingScreen />}>
+        <Onboarding onComplete={handleOnboardingComplete} />
+      </Suspense>
+    );
   }
 
   // Show main app with modals and overlays
@@ -279,20 +296,22 @@ function AppContent() {
         />
       )}
 
-      <Routes>
-        <Route element={<Layout />}>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/announcement/:id" element={<AnnouncementDetail />} />
-          <Route path="/announcements" element={<AnnouncementsPage />} />
-          <Route path="/calendar" element={<CalendarPage />} />
-          <Route path="/courses" element={<CoursesPage />} />
-          <Route path="/course/:id" element={<CourseDetail />} />
-          <Route path="/files" element={<FilesPage />} />
-          <Route path="/settings" element={<SettingsPage />} />
-          <Route path="/tasks" element={<TasksPage />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Route>
-      </Routes>
+      <Suspense fallback={<PageLoadingFallback />}>
+        <Routes>
+          <Route element={<Layout />}>
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/announcement/:id" element={<AnnouncementDetail />} />
+            <Route path="/announcements" element={<AnnouncementsPage />} />
+            <Route path="/calendar" element={<CalendarPage />} />
+            <Route path="/courses" element={<CoursesPage />} />
+            <Route path="/course/:id" element={<CourseDetail />} />
+            <Route path="/files" element={<FilesPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/tasks" element={<TasksPage />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Route>
+        </Routes>
+      </Suspense>
     </>
   );
 }
@@ -334,5 +353,22 @@ const styles: Record<string, React.CSSProperties> = {
   loadingText: {
     fontSize: 'var(--text-sm)',
     color: 'var(--text-secondary)',
+  },
+
+  pageLoadingContainer: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: '200px',
+    width: '100%',
+  },
+
+  pageLoadingSpinner: {
+    width: '32px',
+    height: '32px',
+    border: '3px solid var(--border-default)',
+    borderTopColor: 'var(--color-primary)',
+    borderRadius: '50%',
+    animation: 'spin 0.8s linear infinite',
   },
 };

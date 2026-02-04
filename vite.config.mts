@@ -8,15 +8,27 @@ export default defineConfig({
   build: {
     outDir: 'dist/renderer',
     emptyOutDir: true,
+    chunkSizeWarningLimit: 600, // Raise limit slightly (default is 500)
     rollupOptions: {
       output: {
         manualChunks: {
           // React core
           'vendor-react': ['react', 'react-dom', 'react-router-dom'],
           // UI libraries
-          'vendor-ui': ['lucide-react', 'react-window'],
+          'vendor-ui': ['lucide-react', 'react-window', 'react-hotkeys-hook'],
           // State & utilities
           'vendor-utils': ['zustand', 'zod', 'axios'],
+          // Date handling (used heavily in Calendar)
+          'vendor-date': ['luxon', 'rrule'],
+          // Text editor (TipTap - heavy)
+          'vendor-editor': [
+            '@tiptap/react',
+            '@tiptap/starter-kit',
+            '@tiptap/extension-link',
+            '@tiptap/extension-placeholder',
+          ],
+          // Security/sanitization
+          'vendor-security': ['dompurify'],
         },
       },
     },

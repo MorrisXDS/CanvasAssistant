@@ -6,7 +6,12 @@
 
 // Jest globals are available
 import { selectors } from '../../src/layers/l5-presentation/store';
-import { StoreState, Course, Task, Notification } from '../../src/layers/l5-presentation/types';
+import {
+  StoreState,
+  Course,
+  Task,
+  Notification,
+} from '../../src/layers/l5-presentation/types';
 
 // Helper to create a base store state
 function createBaseState(overrides: Partial<StoreState> = {}): StoreState {
@@ -15,6 +20,8 @@ function createBaseState(overrides: Partial<StoreState> = {}): StoreState {
     tasks: [],
     notifications: [],
     policies: [],
+    taskQueue: [],
+    taskQueueCount: 0,
     simulation: {
       isActive: false,
       startedAt: null,
@@ -255,8 +262,20 @@ describe('L5 Selectors', () => {
           isActive: true,
           startedAt: '2024-01-15T10:00:00Z',
           grades: [
-            { taskId: 1, courseId: 1, originalGrade: 70, simulatedGrade: 90, timestamp: '2024-01-15T10:00:00Z' },
-            { taskId: 2, courseId: 1, originalGrade: null, simulatedGrade: 85, timestamp: '2024-01-15T10:00:00Z' },
+            {
+              taskId: 1,
+              courseId: 1,
+              originalGrade: 70,
+              simulatedGrade: 90,
+              timestamp: '2024-01-15T10:00:00Z',
+            },
+            {
+              taskId: 2,
+              courseId: 1,
+              originalGrade: null,
+              simulatedGrade: 85,
+              timestamp: '2024-01-15T10:00:00Z',
+            },
           ],
         },
       });
@@ -271,7 +290,13 @@ describe('L5 Selectors', () => {
           isActive: true,
           startedAt: '2024-01-15T10:00:00Z',
           grades: [
-            { taskId: 1, courseId: 1, originalGrade: 70, simulatedGrade: 90, timestamp: '2024-01-15T10:00:00Z' },
+            {
+              taskId: 1,
+              courseId: 1,
+              originalGrade: 70,
+              simulatedGrade: 90,
+              timestamp: '2024-01-15T10:00:00Z',
+            },
           ],
         },
       });
@@ -295,7 +320,13 @@ describe('L5 Selectors', () => {
           isActive: true,
           startedAt: '2024-01-15T10:00:00Z',
           grades: [
-            { taskId: 1, courseId: 1, originalGrade: 70, simulatedGrade: 90, timestamp: '2024-01-15T10:00:00Z' },
+            {
+              taskId: 1,
+              courseId: 1,
+              originalGrade: 70,
+              simulatedGrade: 90,
+              timestamp: '2024-01-15T10:00:00Z',
+            },
           ],
         },
       });
@@ -331,7 +362,13 @@ describe('L5 Selectors', () => {
           isActive: true,
           startedAt: '2024-01-15T10:00:00Z',
           grades: [
-            { taskId: 1, courseId: 1, originalGrade: null, simulatedGrade: 85, timestamp: '2024-01-15T10:00:00Z' },
+            {
+              taskId: 1,
+              courseId: 1,
+              originalGrade: null,
+              simulatedGrade: 85,
+              timestamp: '2024-01-15T10:00:00Z',
+            },
           ],
         },
       });

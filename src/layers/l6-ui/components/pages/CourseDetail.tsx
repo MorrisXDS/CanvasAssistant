@@ -34,7 +34,7 @@ import {
   AnnouncementsCard,
   GradeHistoryCard,
   CourseHeader,
-  TaskSectionList,
+  UnifiedTaskList,
   type GradeHistoryEntry,
 } from '../CourseDetail/components';
 
@@ -294,18 +294,9 @@ export function CourseDetail() {
     setArchivedWarningAcknowledged(true);
   };
 
-  // Maximum items to show in each list before "View all"
-  const MAX_VISIBLE_ITEMS = 5;
-
-  // Drag-and-drop for section reordering
-  const {
-    taskSectionOrder,
-    taskDragState,
-    taskDragHandlers,
-    sidebarOrder,
-    sidebarDragState,
-    sidebarDragHandlers,
-  } = useCourseDetailDragDrop();
+  // Drag-and-drop for sidebar section reordering
+  const { sidebarOrder, sidebarDragState, sidebarDragHandlers } =
+    useCourseDetailDragDrop();
 
   // Fetch course data
   useEffect(() => {
@@ -766,15 +757,11 @@ export function CourseDetail() {
         <div style={styles.twoColumn}>
           {/* Left Column - Assignments */}
           <div style={styles.mainColumn}>
-            <TaskSectionList
-              taskSectionOrder={taskSectionOrder}
+            <UnifiedTaskList
               pendingTasks={pendingTasks}
               submittedTasks={submittedTasks}
               gradedTasks={gradedTasks}
               infoTasks={infoTasks}
-              maxVisibleItems={MAX_VISIBLE_ITEMS}
-              taskDragState={taskDragState}
-              taskDragHandlers={taskDragHandlers}
               showAddTask={showAddTask}
               setShowAddTask={setShowAddTask}
               newTaskTitle={newTaskTitle}
@@ -813,7 +800,6 @@ export function CourseDetail() {
               setEditTaskGrade={setEditTaskGrade}
               setEditTaskType={setEditTaskType}
               setEditTaskLocation={setEditTaskLocation}
-              setTaskListModal={setTaskListModal}
               taskRefs={taskRefs}
               handleToggleComplete={handleToggleComplete}
               handleDuplicateTask={handleDuplicateTask}

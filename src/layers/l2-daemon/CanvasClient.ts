@@ -447,6 +447,14 @@ export class CanvasClient extends EventEmitter {
   }
 
   /**
+   * Get assignment groups for a course
+   * Returns group metadata including drop rules and weights
+   */
+  async getAssignmentGroups(courseId: number): Promise<CanvasAssignmentGroup[]> {
+    return this.getAll<CanvasAssignmentGroup>(`/courses/${courseId}/assignment_groups`);
+  }
+
+  /**
    * Get the base URL
    */
   getBaseUrl(): string {
@@ -467,4 +475,19 @@ export class CanvasClient extends EventEmitter {
     this.accessToken = newToken;
     this.client.defaults.headers['Authorization'] = `Bearer ${newToken}`;
   }
+}
+
+/**
+ * Canvas Assignment Group interface from Canvas API
+ */
+export interface CanvasAssignmentGroup {
+  id: number;
+  name: string;
+  position: number;
+  group_weight: number | null;
+  rules?: {
+    drop_lowest?: number;
+    drop_highest?: number;
+    never_drop?: number[];
+  };
 }

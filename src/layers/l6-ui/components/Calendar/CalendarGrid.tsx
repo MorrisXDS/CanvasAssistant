@@ -118,47 +118,27 @@ function CalendarGridInner() {
         ? `week-${getWeekDays(currentDate)[0].toDateString()}`
         : `day-${currentDate.toDateString()}`;
 
-    // Skip if same period and same scroll target
+    // Detect period change
     const periodChanged = lastPeriodKey.current !== periodKey;
+
+    // Skip if same period and same scroll target
     if (!periodChanged && lastScrollTarget.current === scrollTarget) return;
 
     // Update tracking refs
     lastPeriodKey.current = periodKey;
 
-    // Function to apply scroll when ready
-    const applyScroll = (forceAnimation = false) => {
+    // Function to apply scroll when ready (for initial mount or retry)
+    const applyScroll = () => {
       if (!gridRef.current) return false;
       if (gridRef.current.scrollHeight <= gridRef.current.clientHeight) return false;
 
-      // Check if already at target position (must check when ref is available)
-      const currentScrollTop = gridRef.current.scrollTop;
-      const alreadyAtTarget = Math.abs(currentScrollTop - scrollTarget) < 1;
-
-      if (forceAnimation && alreadyAtTarget && periodChanged) {
-        // Force scroll from top to mask the content flash
-        // Jump to top, then smoothly scroll to target
-        gridRef.current.scrollTop = 0;
-        requestAnimationFrame(() => {
-          if (gridRef.current) {
-            gridRef.current.style.scrollBehavior = 'smooth';
-            gridRef.current.scrollTop = scrollTarget;
-            // Reset scroll behavior after animation
-            setTimeout(() => {
-              if (gridRef.current) {
-                gridRef.current.style.scrollBehavior = 'auto';
-              }
-            }, 300);
-          }
-        });
-      } else {
-        gridRef.current.scrollTop = scrollTarget;
-      }
+      gridRef.current.scrollTop = scrollTarget;
       lastScrollTarget.current = scrollTarget;
       return true;
     };
 
-    // Try immediately with animation if needed
-    if (applyScroll(true)) return;
+    // Try immediately
+    if (applyScroll()) return;
 
     // Retry with animation frames and timeouts
     let attempts = 0;
@@ -166,7 +146,7 @@ function CalendarGridInner() {
 
     const tryScroll = () => {
       attempts++;
-      if (applyScroll(false)) return;
+      if (applyScroll()) return;
       if (attempts < maxAttempts) {
         requestAnimationFrame(tryScroll);
       }
@@ -175,8 +155,8 @@ function CalendarGridInner() {
     // Start trying after a small delay to let React render
     setTimeout(() => requestAnimationFrame(tryScroll), 0);
     // Also try after longer delays for slow renders
-    setTimeout(() => applyScroll(false), 100);
-    setTimeout(() => applyScroll(false), 250);
+    setTimeout(() => applyScroll(), 100);
+    setTimeout(() => applyScroll(), 250);
   }, [view, events, currentDate, weekGridRef, dayGridRef]);
 
   // Render the appropriate view

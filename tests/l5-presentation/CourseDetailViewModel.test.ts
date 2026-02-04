@@ -15,6 +15,8 @@ function createBaseState(overrides: Partial<StoreState> = {}): StoreState {
     tasks: [],
     notifications: [],
     policies: [],
+    taskQueue: [],
+    taskQueueCount: 0,
     simulation: {
       isActive: false,
       startedAt: null,
@@ -56,6 +58,7 @@ function createCourse(overrides: Partial<Course> = {}): Course {
     enrollmentTermId: null,
     archivedAt: null,
     archiveSource: null,
+    credits: 1.0,
     ...overrides,
   };
 }
@@ -65,9 +68,11 @@ function createTask(overrides: Partial<Task> = {}): Task {
   return {
     id: 1,
     externalId: 'task-1',
+    sourceType: 'canvas',
     courseId: 1,
     title: 'Assignment 1',
     description: 'First assignment',
+    unlockAt: null,
     dueAt: null,
     dueTimeKnown: true,
     weight: 10,
@@ -83,6 +88,7 @@ function createTask(overrides: Partial<Task> = {}): Task {
     taskType: null,
     taskGroupId: null,
     calendarEventId: null,
+    location: null,
     ...overrides,
   };
 }
@@ -167,7 +173,13 @@ describe('CourseDetailViewModel', () => {
             isActive: true,
             startedAt: '2024-01-15T10:00:00Z',
             grades: [
-              { taskId: 1, courseId: 1, originalGrade: 70, simulatedGrade: 90, timestamp: '2024-01-15T10:00:00Z' },
+              {
+                taskId: 1,
+                courseId: 1,
+                originalGrade: 70,
+                simulatedGrade: 90,
+                timestamp: '2024-01-15T10:00:00Z',
+              },
             ],
           },
         });
@@ -189,8 +201,8 @@ describe('CourseDetailViewModel', () => {
         const state = createBaseState({ courses: [course], tasks });
         const viewModel = computeCourseDetailViewModel(state, 1);
 
-        const task1 = viewModel.tasks.find(t => t.task.id === 1);
-        const task2 = viewModel.tasks.find(t => t.task.id === 2);
+        const task1 = viewModel.tasks.find((t) => t.task.id === 1);
+        const task2 = viewModel.tasks.find((t) => t.task.id === 2);
 
         expect(task1?.gradeImpact).toBe(25);
         expect(task2?.gradeImpact).toBe(75);
@@ -496,7 +508,13 @@ describe('CourseDetailViewModel', () => {
             isActive: true,
             startedAt: '2024-01-15T10:00:00Z',
             grades: [
-              { taskId: 2, courseId: 1, originalGrade: null, simulatedGrade: 100, timestamp: '2024-01-15T10:00:00Z' },
+              {
+                taskId: 2,
+                courseId: 1,
+                originalGrade: null,
+                simulatedGrade: 100,
+                timestamp: '2024-01-15T10:00:00Z',
+              },
             ],
           },
         });
@@ -513,9 +531,7 @@ describe('CourseDetailViewModel', () => {
     describe('course summary stats', () => {
       it('calculates effective assessed grade', () => {
         const course = createCourse({ id: 1, targetGrade: 90 });
-        const tasks = [
-          createTask({ id: 1, courseId: 1, weight: 100, grade: 80 }),
-        ];
+        const tasks = [createTask({ id: 1, courseId: 1, weight: 100, grade: 80 })];
 
         const state = createBaseState({ courses: [course], tasks });
         const viewModel = computeCourseDetailViewModel(state, 1);
@@ -525,9 +541,7 @@ describe('CourseDetailViewModel', () => {
 
       it('calculates target delta', () => {
         const course = createCourse({ id: 1, targetGrade: 90 });
-        const tasks = [
-          createTask({ id: 1, courseId: 1, weight: 100, grade: 80 }),
-        ];
+        const tasks = [createTask({ id: 1, courseId: 1, weight: 100, grade: 80 })];
 
         const state = createBaseState({ courses: [course], tasks });
         const viewModel = computeCourseDetailViewModel(state, 1);
@@ -556,9 +570,24 @@ describe('CourseDetailViewModel', () => {
         tomorrow.setDate(tomorrow.getDate() + 1);
 
         const tasks = [
-          createTask({ id: 1, courseId: 1, dueAt: tomorrow.toISOString(), isCompleted: false }),
-          createTask({ id: 2, courseId: 1, dueAt: tomorrow.toISOString(), isCompleted: false }),
-          createTask({ id: 3, courseId: 1, dueAt: tomorrow.toISOString(), isCompleted: true }),
+          createTask({
+            id: 1,
+            courseId: 1,
+            dueAt: tomorrow.toISOString(),
+            isCompleted: false,
+          }),
+          createTask({
+            id: 2,
+            courseId: 1,
+            dueAt: tomorrow.toISOString(),
+            isCompleted: false,
+          }),
+          createTask({
+            id: 3,
+            courseId: 1,
+            dueAt: tomorrow.toISOString(),
+            isCompleted: true,
+          }),
         ];
 
         const state = createBaseState({ courses: [course], tasks });
@@ -573,8 +602,18 @@ describe('CourseDetailViewModel', () => {
         yesterday.setDate(yesterday.getDate() - 1);
 
         const tasks = [
-          createTask({ id: 1, courseId: 1, dueAt: yesterday.toISOString(), isCompleted: false }),
-          createTask({ id: 2, courseId: 1, dueAt: yesterday.toISOString(), isCompleted: true }),
+          createTask({
+            id: 1,
+            courseId: 1,
+            dueAt: yesterday.toISOString(),
+            isCompleted: false,
+          }),
+          createTask({
+            id: 2,
+            courseId: 1,
+            dueAt: yesterday.toISOString(),
+            isCompleted: true,
+          }),
         ];
 
         const state = createBaseState({ courses: [course], tasks });
@@ -616,8 +655,20 @@ describe('CourseDetailViewModel', () => {
             isActive: true,
             startedAt: '2024-01-15T10:00:00Z',
             grades: [
-              { taskId: 1, courseId: 1, originalGrade: null, simulatedGrade: 90, timestamp: '2024-01-15T10:00:00Z' },
-              { taskId: 3, courseId: 1, originalGrade: null, simulatedGrade: 85, timestamp: '2024-01-15T10:00:00Z' },
+              {
+                taskId: 1,
+                courseId: 1,
+                originalGrade: null,
+                simulatedGrade: 90,
+                timestamp: '2024-01-15T10:00:00Z',
+              },
+              {
+                taskId: 3,
+                courseId: 1,
+                originalGrade: null,
+                simulatedGrade: 85,
+                timestamp: '2024-01-15T10:00:00Z',
+              },
             ],
           },
         });
@@ -625,7 +676,7 @@ describe('CourseDetailViewModel', () => {
         const viewModel = computeCourseDetailViewModel(state, 1);
 
         expect(viewModel.simulatedTasks).toHaveLength(2);
-        expect(viewModel.simulatedTasks.map(t => t.task.id).sort()).toEqual([1, 3]);
+        expect(viewModel.simulatedTasks.map((t) => t.task.id).sort()).toEqual([1, 3]);
       });
     });
   });

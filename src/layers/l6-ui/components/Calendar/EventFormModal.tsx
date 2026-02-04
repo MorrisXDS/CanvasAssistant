@@ -75,6 +75,7 @@ interface EventFormModalProps {
     reminderMinutes?: number;
     // Task-specific fields (only for task-linked events)
     taskType?: string;
+    weight?: number;
   }) => Promise<void>;
   onSaveCoursework: (data: {
     courseId: number;
@@ -425,6 +426,7 @@ export function EventFormModal({
             reminderMinutes: reminderMinutes > 0 ? reminderMinutes : undefined,
             // Task-specific fields (synced back to the task)
             taskType: taskType || undefined,
+            weight: weight !== undefined ? weight : undefined,
           });
           onClose();
         } else {

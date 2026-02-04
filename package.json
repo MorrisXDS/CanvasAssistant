@@ -4,9 +4,14 @@
   "description": "Offline-first academic command center for Canvas LMS",
   "main": "dist/main.js",
   "engines": {
-    "node": ">=20.18.0"
+    "node": ">=20.19.0"
   },
   "scripts": {
+    "preinstall": "node scripts/check-node-version.js || exit 0",
+    "postinstall": "electron-builder install-app-deps",
+    "setup": "npm install && npm run rebuild",
+    "rebuild": "electron-builder install-app-deps",
+    "predev": "node scripts/check-node-version.js",
     "dev": "concurrently \"npm run dev:main\" \"npm run dev:renderer\" \"npm run dev:electron\"",
     "dev:main": "tsc -w",
     "dev:renderer": "vite",
@@ -20,8 +25,7 @@
     "package": "electron-builder",
     "package:mac": "electron-builder --mac",
     "package:win": "electron-builder --win",
-    "package:linux": "electron-builder --linux",
-    "postinstall": "electron-builder install-app-deps"
+    "package:linux": "electron-builder --linux"
   },
   "keywords": [
     "canvas",

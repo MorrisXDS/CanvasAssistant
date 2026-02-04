@@ -89,9 +89,39 @@ export const TaskSchema = z.object({
   calendarEventId: z.number().nullable(),
   /** Location for the task (e.g., room, building) */
   location: z.string().nullable(),
+  /** User's personal notes for this task */
+  notes: z.string().nullable(),
   fieldSources: z.record(z.string(), z.enum(['canvas', 'user', 'guessed'])).optional(),
 });
 export type Task = z.infer<typeof TaskSchema>;
+
+// Canvas Task Queue - staging area for new Canvas tasks
+export const QueuedTaskStatusSchema = z.enum([
+  'pending',
+  'accepted',
+  'rejected',
+  'merged',
+]);
+export type QueuedTaskStatus = z.infer<typeof QueuedTaskStatusSchema>;
+
+export const QueuedTaskSchema = z.object({
+  id: z.number(),
+  externalId: z.string(),
+  courseId: z.number(),
+  title: z.string(),
+  description: z.string().nullable(),
+  dueAt: z.string().nullable(),
+  pointsPossible: z.number().nullable(),
+  taskType: z.string().nullable(),
+  status: QueuedTaskStatusSchema,
+  matchedUserTaskId: z.number().nullable(),
+  matchConfidence: z.number().nullable(),
+  firstSeenAt: z.string(),
+  lastSyncedAt: z.string(),
+  resolvedAt: z.string().nullable(),
+  resolvedBy: z.string().nullable(),
+});
+export type QueuedTask = z.infer<typeof QueuedTaskSchema>;
 
 export const DownloadStatusSchema = z.enum([
   'pending',
@@ -291,6 +321,12 @@ export const UpdateCalendarEventSchema = z.object({
   notes: z.string().optional(),
   /** Reminder offset in minutes */
   reminderMinutes: z.number().optional(),
+  /** Task weight (synced to linked task) */
+  weight: z.number().optional(),
+  /** Task type (synced to linked task) */
+  taskType: z.string().optional(),
+  /** Course ID */
+  courseId: z.number().nullable().optional(),
 });
 export type UpdateCalendarEventInput = z.infer<typeof UpdateCalendarEventSchema>;
 

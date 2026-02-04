@@ -6,7 +6,7 @@
 import React from 'react';
 
 export const styles: Record<string, React.CSSProperties> = {
-  // Month view - adaptive sizing
+  // Month view - consistent row heights that scale with viewport
   monthGrid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(7, 1fr)',
@@ -15,7 +15,7 @@ export const styles: Record<string, React.CSSProperties> = {
     borderRadius: '12px',
     overflow: 'hidden',
     boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
-    height: 'calc(100vh - 220px)', // Viewport - header/nav/controls
+    height: 'calc(100vh - 280px)',
     minHeight: '400px',
   },
 

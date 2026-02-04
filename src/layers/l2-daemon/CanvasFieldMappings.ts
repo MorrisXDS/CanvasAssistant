@@ -19,9 +19,9 @@
  * Subset of Canvas fields that ALWAYS use Canvas values without user prompts.
  * These represent Canvas's ground truth:
  * - `grade` - Canvas submission score is authoritative (user cannot override)
- * - `due_at` - Canvas due date is authoritative (user cannot override)
  * - `submission_status` - Canvas workflow_state is authoritative
  * - `completed_at` - Canvas submitted_at is authoritative
+ * - `unlock_at`, `lock_at` - Canvas availability dates are authoritative
  *
  * Note: `is_completed` is NOT authoritative - users can mark tasks complete
  * locally and it will persist even if Canvas shows incomplete.
@@ -108,7 +108,7 @@ export const TASK_CANVAS_FIELDS = [
  *        Instructor grades are always authoritative.
  *
  * @field due_at - Due date from Canvas assignment.due_at.
- *        Canvas assignment dates are authoritative for academic compliance.
+ *        NOT authoritative - user can override and will see conflict UI.
  *
  * @field unlock_at - Date when assignment becomes available.
  *        Canvas controls assignment availability.
@@ -129,9 +129,9 @@ export const TASK_AUTHORITATIVE_FIELDS = [
   'submission_status', // Canvas workflow_state is authoritative
   'completed_at', // Canvas submitted_at is authoritative
   'grade', // Canvas score is authoritative
-  'due_at', // Canvas due date is authoritative
   'unlock_at', // Canvas unlock date is authoritative
   'lock_at', // Canvas lock date is authoritative
+  // Note: due_at is NOT authoritative - user can override with conflict UI
 ] as const;
 
 /**
@@ -146,6 +146,8 @@ export const TASK_LOCAL_FIELDS = [
   'is_optional', // User-marked optional (moves to "Not for Grade")
   'calendar_event_id', // Link to calendar event (bidirectional sync)
   'user_submission_status', // User-set submission status (OR logic with Canvas)
+  'start_at', // User-defined start date (independent of Canvas unlock_at)
+  'location', // User-defined location (room, building, etc.)
 ] as const;
 
 /**

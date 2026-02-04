@@ -1,7 +1,7 @@
 /**
  * WeekView Component
  * Renders the week calendar grid view with hourly time slots
- * Pre-renders ±2 adjacent weeks to eliminate flash when navigating
+ * Uses scroll animation + useDeferredValue (in parent) to eliminate flash when navigating
  */
 
 import React, { useMemo, useRef } from 'react';

@@ -41,6 +41,12 @@ export interface CanvasSubmission {
   late?: boolean;
   missing?: boolean;
   excused?: boolean;
+  // Late penalty fields from Canvas API
+  late_policy_status?: 'none' | 'late' | 'missing' | 'extended' | null;
+  points_deducted?: number | null;
+  seconds_late?: number;
+  entered_score?: number | null; // Pre-penalty score
+  entered_grade?: string | null; // Pre-penalty grade string
 }
 
 export interface CanvasAssignment {
@@ -196,6 +202,15 @@ export interface LocalTask {
   is_completed: number; // SQLite boolean: 0 or 1
   submission_status: 'pending' | 'submitted' | 'graded'; // Canvas workflow state mapped
   completed_at: string | null;
+  // Late penalty tracking fields
+  entered_grade: number | null; // Pre-penalty percentage grade
+  points_deducted: number | null; // Points removed by late policy
+  late_policy_status: string; // 'none' | 'late' | 'missing' | 'extended'
+  seconds_late: number; // How late the submission was
+  is_excused: number; // SQLite boolean: 0 or 1
+  is_missing: number; // SQLite boolean: 0 or 1
+  // Task linking fields
+  assignment_group_id: number | null; // FK to canvas_assignment_groups
 }
 
 export interface LocalNotification {
@@ -310,4 +325,33 @@ export interface FileReference {
   matchedText: string;
   originalUrl: string | null;
   attachmentExternalId: string | null; // To link to attachment after insert
+}
+
+// =============================================================================
+// CANVAS TASK QUEUE TYPES
+// =============================================================================
+
+/**
+ * Local database record for canvas_task_queue table
+ * Stages new Canvas assignments for user review before acceptance
+ */
+export interface LocalCanvasTaskQueue {
+  [key: string]: unknown;
+  external_id: string;
+  canvas_data: string; // JSON string of full CanvasAssignment
+  course_id: number;
+
+  // Denormalized fields for UI display (avoid JSON parsing)
+  title: string;
+  description: string | null;
+  due_at: string | null;
+  points_possible: number | null;
+  task_type: string | null;
+
+  // Queue state
+  status: 'pending' | 'accepted' | 'rejected' | 'merged';
+
+  // User task matching
+  matched_user_task_id: number | null;
+  match_confidence: number | null;
 }

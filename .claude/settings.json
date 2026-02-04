@@ -4,5 +4,9 @@
       "Bash(powershell.exe -Command \"node --version\")",
       "Bash(powershell.exe -Command \"winget install OpenJS.NodeJS.LTS --version 20.18.3 --silent --accept-package-agreements --accept-source-agreements\")"
     ]
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "powershell.exe -NoProfile -Command \"$input = $input | ConvertFrom-Json; $model = $input.model.display_name; $dir = Split-Path -Leaf $input.workspace.current_dir; $style = $input.output_style.name; $remaining = $input.context_window.remaining_percentage; if ($remaining -ne $null) { $ctx = \\\"$([math]::Round($remaining))% left\\\" } else { $ctx = \\\"\\\" }; if ($ctx) { Write-Host \\\"$model | $dir | $style | $ctx\\\" -ForegroundColor DarkGray } else { Write-Host \\\"$model | $dir | $style\\\" -ForegroundColor DarkGray }\""
   }
 }

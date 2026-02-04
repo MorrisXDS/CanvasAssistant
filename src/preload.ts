@@ -72,6 +72,115 @@ const api = {
   getAllPolicies: (options?: { courseIds?: number[] }) =>
     ipcRenderer.invoke('data:getAllPolicies', options),
 
+  getCourseAuthority: (courseId: number) =>
+    ipcRenderer.invoke('data:getCourseAuthority', courseId),
+
+  updateCourseAuthority: (
+    courseId: number,
+    settings: {
+      latePenaltyAuthority?: 'canvas' | 'local' | 'both';
+      dropLowestAuthority?: 'canvas' | 'local' | 'off';
+      gradeCalcMode?: 'canvas' | 'local' | 'both';
+    }
+  ) => ipcRenderer.invoke('data:updateCourseAuthority', courseId, settings),
+
+  // ============ Canvas Task Queue ============
+
+  /**
+   * Get pending queue entries (new Canvas tasks awaiting user review)
+   */
+  getTaskQueue: (options?: { status?: string }) =>
+    ipcRenderer.invoke('data:getTaskQueue', options),
+
+  /**
+   * Get count of pending queue entries (for badges)
+   */
+  getTaskQueueCount: (options?: { courseId?: number }) =>
+    ipcRenderer.invoke('data:getTaskQueueCount', options),
+
+  /**
+   * Get queue entries for a specific course
+   */
+  getTaskQueueForCourse: (courseId: number) =>
+    ipcRenderer.invoke('data:getTaskQueueForCourse', courseId),
+
+  /**
+   * Accept a queued task (creates it as active coursework)
+   * @param edits Optional edits to apply when creating the task
+   */
+  acceptQueuedTask: (
+    queueId: number,
+    edits?: {
+      title?: string;
+      dueAt?: string | null;
+      startAt?: string | null;
+      taskType?: string | null;
+      weight?: number | null;
+      location?: string | null;
+      notes?: string | null;
+    }
+  ) => ipcRenderer.invoke('data:acceptQueuedTask', queueId, edits),
+
+  /**
+   * Reject a queued task (won't resurface on re-sync)
+   */
+  rejectQueuedTask: (queueId: number) =>
+    ipcRenderer.invoke('data:rejectQueuedTask', queueId),
+
+  /**
+   * Bulk accept all pending queue entries
+   */
+  bulkAcceptQueuedTasks: (options?: { courseId?: number }) =>
+    ipcRenderer.invoke('data:bulkAcceptQueuedTasks', options),
+
+  /**
+   * Merge a queued task with an existing user task
+   */
+  mergeQueuedTask: (params: {
+    queueId: number;
+    userTaskId: number;
+    keepFromUser?: { notes?: boolean; dueAt?: boolean; title?: boolean };
+  }) => ipcRenderer.invoke('data:mergeQueuedTask', params),
+
+  /**
+   * DEBUG: Get queue and task state for debugging
+   */
+  debugGetQueueState: (courseId?: number) =>
+    ipcRenderer.invoke('debug:getQueueState', courseId),
+
+  /**
+   * DEBUG: Force delete a task by ID (bypasses all checks)
+   */
+  debugForceDeleteTask: (taskId: number) =>
+    ipcRenderer.invoke('debug:forceDeleteTask', taskId),
+
+  /**
+   * DEBUG: Check course auto-accept settings
+   */
+  debugGetCourseSettings: () => ipcRenderer.invoke('debug:getCourseSettings'),
+
+  // ============ Task Link Suggestions ============
+
+  getLinkSuggestions: (status?: string) =>
+    ipcRenderer.invoke('data:getLinkSuggestions', status),
+
+  acceptLinkSuggestion: (suggestionId: number) =>
+    ipcRenderer.invoke('data:acceptLinkSuggestion', suggestionId),
+
+  rejectLinkSuggestion: (suggestionId: number) =>
+    ipcRenderer.invoke('data:rejectLinkSuggestion', suggestionId),
+
+  getPendingSuggestionCount: () => ipcRenderer.invoke('data:getPendingSuggestionCount'),
+
+  getCanvasTasksForLinking: (courseId: number) =>
+    ipcRenderer.invoke('data:getCanvasTasksForLinking', courseId),
+
+  manuallyLinkTasks: (userTaskId: number, canvasTaskId: number) =>
+    ipcRenderer.invoke('data:manuallyLinkTasks', userTaskId, canvasTaskId),
+
+  unlinkTasks: (canvasTaskId: number) =>
+    ipcRenderer.invoke('data:unlinkTasks', canvasTaskId),
+
   getCourseSyllabus: (courseId: number) =>
     ipcRenderer.invoke('data:getCourseSyllabus', courseId),
 
@@ -263,6 +372,7 @@ const api = {
       notes?: string;
       reminderMinutes?: number;
       taskType?: string;
+      weight?: number;
     }
   ) => ipcRenderer.invoke('calendar:updateEvent', id, data),
 

@@ -35,6 +35,7 @@ export type {
   LocalResource,
   MappedAnnouncement,
   FileReference,
+  LocalCanvasTaskQueue,
 } from './DataMapperTypes';
 
 // Import types for use in this file
@@ -57,6 +58,7 @@ import type {
   LocalResource,
   MappedAnnouncement,
   FileReference,
+  LocalCanvasTaskQueue,
 } from './DataMapperTypes';
 
 // Validation schemas for defensive parsing
@@ -265,6 +267,20 @@ export function mapAssignment(
     grade = (score / pointsPossible) * 100;
   }
 
+  // Extract late penalty fields from Canvas submission
+  const enteredScore = submission?.entered_score ?? null;
+  const pointsDeducted = submission?.points_deducted ?? null;
+  const latePolicyStatus = submission?.late_policy_status ?? 'none';
+  const secondsLate = submission?.seconds_late ?? 0;
+  const isExcused = submission?.excused ?? false;
+  const isMissing = submission?.missing ?? false;
+
+  // Calculate entered_grade (pre-penalty percentage)
+  let enteredGrade: number | null = null;
+  if (enteredScore != null && pointsPossible != null && pointsPossible > 0) {
+    enteredGrade = (enteredScore / pointsPossible) * 100;
+  }
+
   // Derive task_type from submission_types
   const taskType = deriveTaskType(submissionTypes);
 
@@ -316,6 +332,15 @@ export function mapAssignment(
     submission_status: submissionStatus,
     completed_at:
       submittedAt || (submissionStatus !== 'pending' ? new Date().toISOString() : null),
+    // Late penalty tracking fields
+    entered_grade: enteredGrade,
+    points_deducted: pointsDeducted,
+    late_policy_status: latePolicyStatus ?? 'none',
+    seconds_late: secondsLate,
+    is_excused: isExcused ? 1 : 0,
+    is_missing: isMissing ? 1 : 0,
+    // Assignment group linking (will be resolved in TaskSyncStrategy)
+    assignment_group_id: null,
   };
 }
 
@@ -893,4 +918,70 @@ export function calculatePolicyConfidence(text: string, keywords: string[]): num
   }
 
   return Math.min(keywordScore + patternBoost, 1.0);
+}
+
+// =============================================================================
+// CANVAS TASK QUEUE MAPPER
+// =============================================================================
+
+/**
+ * Map Canvas assignment to a queue entry for staging
+ *
+ * Used when a new Canvas assignment needs user review before becoming
+ * an active task. Stores the full Canvas payload for later task creation.
+ *
+ * @param canvas - Canvas assignment from API
+ * @param localCourseId - Local database course ID
+ * @param matchedUserTaskId - Optional ID of matching user task
+ * @param matchConfidence - Optional confidence score of match (0.0-1.0)
+ */
+export function mapAssignmentToQueueEntry(
+  canvas: CanvasAssignment,
+  localCourseId: number,
+  matchedUserTaskId?: number | null,
+  matchConfidence?: number | null
+): LocalCanvasTaskQueue {
+  // Validate incoming data with safe defaults
+  const assignmentId = safeParse(SafeNumber, canvas.id, 'assignment.id');
+  const assignmentName =
+    safeParse(SafeString, canvas.name, 'assignment.name') || `Assignment_${assignmentId}`;
+  const description = safeParse(
+    SafeNullableString,
+    canvas.description,
+    'assignment.description'
+  );
+  const dueAt = safeParse(SafeNullableString, canvas.due_at, 'assignment.due_at');
+  const pointsPossible = safeParse(
+    SafeNullableNumber,
+    canvas.points_possible,
+    'assignment.points_possible'
+  );
+  const submissionTypes = safeParse(
+    SafeStringArray,
+    canvas.submission_types,
+    'assignment.submission_types'
+  );
+
+  // Derive task_type from submission_types (reuse existing logic)
+  const taskType = deriveTaskType(submissionTypes);
+
+  return {
+    external_id: String(assignmentId),
+    canvas_data: JSON.stringify(canvas),
+    course_id: localCourseId,
+
+    // Denormalized UI fields
+    title: assignmentName,
+    description: description,
+    due_at: dueAt,
+    points_possible: pointsPossible,
+    task_type: taskType,
+
+    // Initial queue state
+    status: 'pending',
+
+    // User task matching (if provided)
+    matched_user_task_id: matchedUserTaskId ?? null,
+    match_confidence: matchConfidence ?? null,
+  };
 }
