@@ -147,18 +147,6 @@ function getMatchScoreColor(score: number): string {
   return 'var(--text-muted)';
 }
 
-// Strip HTML tags from a string for display
-function stripHtml(html: string): string {
-  if (!html) return '';
-  // Create a temporary element to parse HTML
-  const tmp = document.createElement('div');
-  tmp.innerHTML = html;
-  // Get text content, which strips all HTML
-  const text = tmp.textContent || tmp.innerText || '';
-  // Clean up whitespace
-  return text.replace(/\s+/g, ' ').trim();
-}
-
 const styles = {
   overlay: {
     position: 'fixed' as const,
@@ -433,7 +421,6 @@ interface FieldChoice {
   title: 'canvas' | 'user';
   dueAt: 'canvas' | 'user';
   taskType: 'canvas' | 'user';
-  notes: 'canvas' | 'user';
 }
 
 export function TaskLinkDialog({
@@ -449,7 +436,6 @@ export function TaskLinkDialog({
     title: 'canvas',
     dueAt: 'canvas',
     taskType: 'canvas',
-    notes: 'user',
   });
   const [isMerging, setIsMerging] = useState(false);
 
@@ -481,7 +467,6 @@ export function TaskLinkDialog({
         title: 'canvas',
         dueAt: 'canvas',
         taskType: 'canvas',
-        notes: selectedTask?.description ? 'user' : 'canvas',
       });
       setStep('resolve');
     }
@@ -500,7 +485,6 @@ export function TaskLinkDialog({
       title: 'canvas',
       dueAt: 'canvas',
       taskType: 'canvas',
-      notes: 'canvas',
     });
   };
 
@@ -509,16 +493,6 @@ export function TaskLinkDialog({
       title: 'user',
       dueAt: 'user',
       taskType: 'user',
-      notes: 'user',
-    });
-  };
-
-  const handleSmartMerge = () => {
-    setFieldChoices({
-      title: 'canvas', // Canvas title is usually more official
-      dueAt: 'canvas', // Canvas due date is authoritative
-      taskType: 'canvas', // Canvas type is accurate
-      notes: selectedTask?.description ? 'user' : 'canvas', // Keep user notes
     });
   };
 
@@ -531,7 +505,6 @@ export function TaskLinkDialog({
         queueId: queuedTask.id,
         userTaskId: selectedTaskId,
         keepFromUser: {
-          notes: fieldChoices.notes === 'user',
           dueAt: fieldChoices.dueAt === 'user',
           title: fieldChoices.title === 'user',
         },
@@ -694,19 +667,6 @@ export function TaskLinkDialog({
         canvasEmpty: !queuedTask.taskType,
         userEmpty: !selectedTask.taskType,
       },
-      {
-        key: 'notes',
-        label: 'Notes/Description',
-        icon: null,
-        canvasValue: queuedTask.description
-          ? stripHtml(queuedTask.description)
-          : '(none)',
-        userValue: selectedTask.description
-          ? stripHtml(selectedTask.description)
-          : '(none)',
-        canvasEmpty: !queuedTask.description,
-        userEmpty: !selectedTask.description,
-      },
     ];
 
     return (
@@ -772,9 +732,7 @@ export function TaskLinkDialog({
                           ...(field.canvasEmpty ? styles.fieldValueMuted : {}),
                         }}
                       >
-                        {field.key === 'notes' && field.canvasValue.length > 80
-                          ? `${field.canvasValue.substring(0, 80)}...`
-                          : field.canvasValue}
+                        {field.canvasValue}
                       </div>
                     </div>
                   </div>
@@ -824,9 +782,7 @@ export function TaskLinkDialog({
                           ...(field.userEmpty ? styles.fieldValueMuted : {}),
                         }}
                       >
-                        {field.key === 'notes' && field.userValue.length > 80
-                          ? `${field.userValue.substring(0, 80)}...`
-                          : field.userValue}
+                        {field.userValue}
                       </div>
                     </div>
                   </div>
@@ -870,23 +826,6 @@ export function TaskLinkDialog({
               }}
             >
               Use All Local
-            </button>
-            <button
-              style={styles.quickButton}
-              onClick={handleSmartMerge}
-              title="Use Canvas for title, due date, and type; keep your local notes"
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = 'var(--bg-tertiary)';
-                e.currentTarget.style.borderColor = 'var(--color-primary)';
-                e.currentTarget.style.color = 'var(--color-primary)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = 'var(--bg-card)';
-                e.currentTarget.style.borderColor = 'var(--border-default)';
-                e.currentTarget.style.color = 'var(--text-secondary)';
-              }}
-            >
-              Smart Merge
             </button>
           </div>
         </div>
