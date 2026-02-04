@@ -110,7 +110,7 @@ const styles = {
   } as React.CSSProperties,
   tableHeader: {
     display: 'grid',
-    gridTemplateColumns: '28px 2fr 1fr 1fr 1fr',
+    gridTemplateColumns: '28px 3fr 1.2fr 0.8fr 1fr',
     alignItems: 'center',
     gap: 'var(--space-3)',
     padding: 'var(--space-2) var(--space-3)',
