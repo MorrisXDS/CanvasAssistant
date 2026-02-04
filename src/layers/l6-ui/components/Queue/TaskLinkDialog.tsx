@@ -140,13 +140,6 @@ function getTaskTypeLabel(taskType: string | null | undefined): string {
   return type?.label || taskType;
 }
 
-// Get match score color
-function getMatchScoreColor(score: number): string {
-  if (score >= 70) return 'var(--color-success)';
-  if (score >= 40) return 'var(--color-warning)';
-  return 'var(--text-muted)';
-}
-
 const styles = {
   overlay: {
     position: 'fixed' as const,
@@ -298,15 +291,6 @@ const styles = {
     fontSize: 'var(--text-xs)',
     color: 'var(--text-muted)',
     marginTop: '2px',
-  } as React.CSSProperties,
-  matchScore: {
-    fontSize: 'var(--text-xs)',
-    fontWeight: 'var(--font-bold)',
-    padding: '2px 8px',
-    borderRadius: 'var(--radius-full)',
-    backgroundColor: 'var(--bg-tertiary)',
-    marginLeft: 'var(--space-2)',
-    flexShrink: 0,
   } as React.CSSProperties,
   emptyList: {
     padding: 'var(--space-6)',
@@ -567,14 +551,14 @@ export function TaskLinkDialog({
           <div style={styles.column}>
             <div style={{ ...styles.columnHeader, ...styles.userHeader }}>
               <User size={16} />
-              Your Tasks
+              Local Tasks
             </div>
             <div style={styles.columnContent}>
               {tasksWithScores.length === 0 ? (
                 <div style={styles.emptyList}>No linkable tasks found</div>
               ) : (
                 <div style={styles.taskList}>
-                  {tasksWithScores.map(({ task, score }) => (
+                  {tasksWithScores.map(({ task }) => (
                     <div
                       key={task.id}
                       style={{
@@ -589,14 +573,6 @@ export function TaskLinkDialog({
                           {getTaskTypeLabel(task.taskType)}
                           {task.dueAt && ` • ${formatDate(task.dueAt)}`}
                         </div>
-                      </div>
-                      <div
-                        style={{
-                          ...styles.matchScore,
-                          color: getMatchScoreColor(score),
-                        }}
-                      >
-                        {score}% match
                       </div>
                     </div>
                   ))}
