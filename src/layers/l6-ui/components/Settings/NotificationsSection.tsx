@@ -3,8 +3,7 @@
  *
  * Contains:
  * - Enable/disable notifications
- * - Alert types (priority, sync, due dates, grades)
- * - Intelligence alerts (workload, risk)
+ * - Alert types (sync, due dates, grades)
  * - Smart quiet mode settings
  */
 
