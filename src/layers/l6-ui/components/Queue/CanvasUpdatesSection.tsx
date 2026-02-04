@@ -125,21 +125,24 @@ const styles = {
   } as React.CSSProperties,
   colTitle: {
     flex: 1,
+    maxWidth: '50%',
     minWidth: 0,
   } as React.CSSProperties,
   colType: {
-    width: '120px',
+    width: '140px',
     flexShrink: 0,
+    textAlign: 'left' as const,
   } as React.CSSProperties,
   colDue: {
-    width: '70px',
+    width: '90px',
     flexShrink: 0,
-    textAlign: 'right' as const,
+    textAlign: 'left' as const,
   } as React.CSSProperties,
   colActions: {
-    width: '110px', // 3 buttons * 28px + 6px gaps
+    width: '120px',
     flexShrink: 0,
-    textAlign: 'center' as const,
+    textAlign: 'right' as const,
+    marginLeft: 'auto',
   } as React.CSSProperties,
   emptyState: {
     display: 'flex',
