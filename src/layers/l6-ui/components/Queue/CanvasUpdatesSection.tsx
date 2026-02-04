@@ -135,7 +135,7 @@ const styles = {
     textAlign: 'left' as const,
   } as React.CSSProperties,
   colActions: {
-    textAlign: 'right' as const,
+    textAlign: 'left' as const,
   } as React.CSSProperties,
   emptyState: {
     display: 'flex',
