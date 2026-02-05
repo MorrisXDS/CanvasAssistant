@@ -13,24 +13,25 @@ import {
   Megaphone,
   AlertTriangle,
   Check,
-  RefreshCw,
   BarChart2,
   CheckSquare,
   XSquare,
   ExternalLink,
   RefreshCcw,
+  ScrollText,
 } from 'lucide-react';
 import { useStore } from '../../../l5-presentation/store';
 import { formatTimeAgo, getCleanCourseName } from '../../constants';
 import type { SyncUpdate } from '../../../l5-presentation/types';
 
-type FilterType = 'all' | 'task' | 'grade' | 'file' | 'announcement';
+type FilterType = 'all' | 'task' | 'grade' | 'file' | 'page' | 'announcement';
 
 // Icons for different update types
 const UPDATE_ICONS: Record<string, typeof Bell> = {
   task: Bell,
   grade: BarChart2,
   file: FileText,
+  page: ScrollText,
   announcement: Megaphone,
   conflict: AlertTriangle,
 };
@@ -40,6 +41,7 @@ const UPDATE_LABELS: Record<string, string> = {
   task: 'Task',
   grade: 'Grade',
   file: 'File',
+  page: 'Page',
   announcement: 'Announcement',
   conflict: 'Conflict',
 };
@@ -51,8 +53,6 @@ export function UpdatesPage() {
     fetchSyncUpdates,
     markSyncUpdatesSeen,
     markAllSyncUpdatesSeen,
-    triggerSync,
-    syncStatus,
     lastSyncedAt,
     acceptQueuedTask,
     rejectQueuedTask,
@@ -143,13 +143,15 @@ export function UpdatesPage() {
     );
   }, [needsReviewByCourse]);
 
-  // Group informational by course
+  // Group informational by course with file/page counts
   const informationalByCourse = useMemo(() => {
     const grouped = new Map<
       number,
       {
         course: { id: number; code: string; name: string; color: string };
         items: SyncUpdate[];
+        fileCount: number;
+        pageCount: number;
       }
     >();
     for (const update of informationalUpdates) {
@@ -163,10 +165,17 @@ export function UpdatesPage() {
             color: update.courseColor || '#6B7280',
           },
           items: [],
+          fileCount: 0,
+          pageCount: 0,
         };
         grouped.set(update.courseId, group);
       }
       group.items.push(update);
+      if (update.entityType === 'file') {
+        group.fileCount++;
+      } else if (update.entityType === 'page') {
+        group.pageCount++;
+      }
     }
     return Array.from(grouped.values());
   }, [informationalUpdates]);
@@ -211,10 +220,6 @@ export function UpdatesPage() {
     [rejectQueuedTask, fetchSyncUpdates]
   );
 
-  const handleSync = useCallback(async () => {
-    await triggerSync('full');
-  }, [triggerSync]);
-
   const handleResolveConflict = useCallback(
     async (
       conflictId: string,
@@ -256,14 +261,6 @@ export function UpdatesPage() {
           </div>
           <h2 style={styles.emptyTitle}>All caught up!</h2>
           <p style={styles.emptySubtitle}>No new updates since your last sync.</p>
-          <button
-            style={styles.syncButton}
-            onClick={handleSync}
-            disabled={syncStatus === 'syncing'}
-          >
-            <RefreshCw size={16} className={syncStatus === 'syncing' ? 'spin' : ''} />
-            {syncStatus === 'syncing' ? 'Syncing...' : 'Sync Now'}
-          </button>
         </div>
       </div>
     );
@@ -362,26 +359,27 @@ export function UpdatesPage() {
 
           {/* Filter tabs */}
           <div style={styles.filterRow}>
-            {(['all', 'task', 'grade', 'file', 'announcement'] as FilterType[]).map(
-              (type) => {
-                const count = countByType[type] || 0;
-                const isActive = filter === type;
-                const label = type === 'all' ? 'All' : UPDATE_LABELS[type] + 's';
+            {(
+              ['all', 'task', 'grade', 'file', 'page', 'announcement'] as FilterType[]
+            ).map((type) => {
+              const count = countByType[type] || 0;
+              const isActive = filter === type;
+              const label = type === 'all' ? 'All' : UPDATE_LABELS[type] + 's';
 
-                return (
-                  <button
-                    key={type}
-                    style={{
-                      ...styles.filterTab,
-                      ...(isActive ? styles.filterTabActive : {}),
-                    }}
-                    onClick={() => setFilter(type)}
-                  >
-                    {label} ({count})
-                  </button>
-                );
-              }
-            )}
+              return (
+                <button
+                  key={type}
+                  className="updates-filter-tab"
+                  style={{
+                    ...styles.filterTab,
+                    ...(isActive ? styles.filterTabActive : {}),
+                  }}
+                  onClick={() => setFilter(type)}
+                >
+                  {label} ({count})
+                </button>
+              );
+            })}
           </div>
 
           <div style={styles.columnContent}>
@@ -394,28 +392,48 @@ export function UpdatesPage() {
                 <span>No updates</span>
               </div>
             ) : (
-              informationalByCourse.map((group) => (
-                <div key={group.course.id} style={styles.courseSection}>
-                  <div style={styles.courseSectionHeader}>
-                    <div
-                      style={{
-                        ...styles.courseColor,
-                        backgroundColor: group.course.color,
-                      }}
-                    />
-                    <span style={styles.courseLabel}>
-                      {group.course.code || getCleanCourseName(group.course.name)}
-                    </span>
+              informationalByCourse.map((group) => {
+                // Build resource counts string
+                const resourceParts: string[] = [];
+                if (group.fileCount > 0) {
+                  resourceParts.push(
+                    `${group.fileCount} file${group.fileCount !== 1 ? 's' : ''}`
+                  );
+                }
+                if (group.pageCount > 0) {
+                  resourceParts.push(
+                    `${group.pageCount} page${group.pageCount !== 1 ? 's' : ''}`
+                  );
+                }
+                const resourceText =
+                  resourceParts.length > 0 ? resourceParts.join(', ') : null;
+
+                return (
+                  <div key={group.course.id} style={styles.courseSection}>
+                    <div style={styles.courseSectionHeader}>
+                      <div
+                        style={{
+                          ...styles.courseColor,
+                          backgroundColor: group.course.color,
+                        }}
+                      />
+                      <span style={styles.courseLabel}>
+                        {group.course.code || getCleanCourseName(group.course.name)}
+                      </span>
+                      {resourceText && (
+                        <span style={styles.resourceCount}>{resourceText}</span>
+                      )}
+                    </div>
+                    {group.items.map((update) => (
+                      <InformationalItem
+                        key={update.id}
+                        update={update}
+                        onMarkSeen={() => handleMarkSeen(update.id)}
+                      />
+                    ))}
                   </div>
-                  {group.items.map((update) => (
-                    <InformationalItem
-                      key={update.id}
-                      update={update}
-                      onMarkSeen={() => handleMarkSeen(update.id)}
-                    />
-                  ))}
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         </div>
@@ -715,6 +733,11 @@ function getIconStyle(entityType: string): React.CSSProperties {
         backgroundColor: 'var(--color-info-bg, #e0f2fe)',
         color: 'var(--color-info)',
       };
+    case 'page':
+      return {
+        backgroundColor: 'rgba(168, 85, 247, 0.15)',
+        color: '#a855f7',
+      };
     case 'announcement':
       return {
         backgroundColor: 'var(--color-warning-bg, #fef3c7)',
@@ -823,6 +846,7 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 'var(--radius-sm)',
     color: 'var(--text-secondary)',
     cursor: 'pointer',
+    outline: 'none',
   },
 
   filterTabActive: {
@@ -872,6 +896,13 @@ const styles: Record<string, React.CSSProperties> = {
     color: 'var(--text-secondary)',
     textTransform: 'uppercase',
     letterSpacing: '0.05em',
+  },
+
+  resourceCount: {
+    marginLeft: 'auto',
+    fontSize: 'var(--text-xs)',
+    color: 'var(--text-tertiary)',
+    fontWeight: 'var(--font-normal)',
   },
 
   courseSeparator: {
@@ -1067,20 +1098,6 @@ const styles: Record<string, React.CSSProperties> = {
     marginBottom: 'var(--space-4)',
   },
 
-  syncButton: {
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: 'var(--space-2)',
-    padding: 'var(--space-2) var(--space-4)',
-    backgroundColor: 'var(--color-primary)',
-    border: 'none',
-    borderRadius: 'var(--radius-md)',
-    color: 'white',
-    fontSize: 'var(--text-sm)',
-    fontWeight: 'var(--font-medium)',
-    cursor: 'pointer',
-  },
-
   // Conflict item styles
   conflictItem: {
     backgroundColor: 'rgba(251, 191, 36, 0.08)',
@@ -1208,8 +1225,8 @@ const styles: Record<string, React.CSSProperties> = {
   },
 };
 
-// Add CSS for select option styling in dark mode
-const selectStyleId = 'updates-page-select-styles';
+// Add CSS for select option styling and filter tab focus in dark mode
+const selectStyleId = 'updates-page-styles';
 if (typeof document !== 'undefined' && !document.getElementById(selectStyleId)) {
   const style = document.createElement('style');
   style.id = selectStyleId;
@@ -1227,6 +1244,11 @@ if (typeof document !== 'undefined' && !document.getElementById(selectStyleId)) 
     .expiration-select option:focus,
     .expiration-select option:checked {
       background-color: var(--bg-secondary, #374151);
+    }
+    .updates-filter-tab:focus,
+    .updates-filter-tab:focus-visible {
+      outline: none !important;
+      box-shadow: none !important;
     }
   `;
   document.head.appendChild(style);

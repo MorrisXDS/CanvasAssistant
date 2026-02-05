@@ -9,7 +9,7 @@ import { PartyPopper, CheckCircle, Circle } from 'lucide-react';
 import { Card, Badge, BadgeVariant } from '../shared';
 import { formatDueDate } from '../../constants';
 import { useStore } from '../../../l5-presentation/store';
-import { isDeadlineEvent, formatDurationDisplay } from '../Calendar/calendarUtils';
+import { isDeadlineEvent } from '../Calendar/calendarUtils';
 import type { PriorityItem, DisplayCalendarEvent } from '../../../l5-presentation/types';
 import type { Task } from '../../../l5-presentation/types';
 
@@ -57,7 +57,7 @@ export function PriorityList({
 
   /**
    * Format time display for a task:
-   * - Duration event: show time range
+   * - Duration event: show "Month Day HH:MM AM/PM - HH:MM AM/PM"
    * - Deadline event: show "Due [date] [time]"
    * - No due date: return null
    */
@@ -66,9 +66,46 @@ export function PriorityList({
       ? calendarEventMap.get(task.calendarEventId)
       : undefined;
 
-    if (calendarEvent && !isDeadlineEvent(calendarEvent)) {
-      // Duration event - show time range
-      return formatDurationDisplay(calendarEvent);
+    // Check if task has real unlockAt (not epoch = has duration)
+    const taskHasRealStart =
+      task.unlockAt && new Date(task.unlockAt).getTime() >= 86400000;
+
+    if (taskHasRealStart && task.dueAt) {
+      // Task has duration - format as "Month Day HH:MM AM/PM - HH:MM AM/PM"
+      const start = new Date(task.unlockAt!);
+      const end = new Date(task.dueAt);
+      const formatTime = (d: Date) => {
+        const h = d.getHours();
+        const m = d.getMinutes();
+        const ampm = h >= 12 ? 'PM' : 'AM';
+        const hour = h % 12 || 12;
+        return m === 0
+          ? `${hour}:00 ${ampm}`
+          : `${hour}:${m.toString().padStart(2, '0')} ${ampm}`;
+      };
+      const monthDay = start.toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+      });
+      return `${monthDay} ${formatTime(start)} - ${formatTime(end)}`;
+    } else if (calendarEvent && !isDeadlineEvent(calendarEvent)) {
+      // Duration event from calendar - format as "Month Day HH:MM AM/PM - HH:MM AM/PM"
+      const start = new Date(calendarEvent.startAt);
+      const end = calendarEvent.endAt ? new Date(calendarEvent.endAt) : start;
+      const formatTime = (d: Date) => {
+        const h = d.getHours();
+        const m = d.getMinutes();
+        const ampm = h >= 12 ? 'PM' : 'AM';
+        const hour = h % 12 || 12;
+        return m === 0
+          ? `${hour}:00 ${ampm}`
+          : `${hour}:${m.toString().padStart(2, '0')} ${ampm}`;
+      };
+      const monthDay = start.toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+      });
+      return `${monthDay} ${formatTime(start)} - ${formatTime(end)}`;
     } else if (task.dueAt) {
       // Deadline event - show relative deadline with time
       if (daysUntilDue !== null) {

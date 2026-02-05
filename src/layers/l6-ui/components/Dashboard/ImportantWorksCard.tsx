@@ -17,7 +17,7 @@ import {
   type DashboardSettings,
 } from '../../../l5-presentation/settings';
 import { formatDueDate, getCourseColor, CARD_TITLES } from '../../constants';
-import { isDeadlineEvent, formatDurationDisplay } from '../Calendar/calendarUtils';
+import { isDeadlineEvent } from '../Calendar/calendarUtils';
 import type { Task, Course, DisplayCalendarEvent } from '../../../l5-presentation/types';
 
 interface ImportantWorksCardProps {
@@ -52,11 +52,16 @@ export function ImportantWorksCard({ maxItems = 4 }: ImportantWorksCardProps) {
   // Get settings from storage
   const [dashboardSettings, setDashboardSettings] = useSetting(STORAGE_KEYS.DASHBOARD);
 
-  // Get the filter config (use default if not set)
-  const filter: FilterType = useMemo(
-    () => dashboardSettings?.importantWorksFilter ?? DEFAULT_IMPORTANT_WORKS_FILTER,
-    [dashboardSettings]
-  );
+  // Get the filter config (use default if not set, ensure all types selected by default)
+  const filter: FilterType = useMemo(() => {
+    const saved = dashboardSettings?.importantWorksFilter;
+    if (!saved) return DEFAULT_IMPORTANT_WORKS_FILTER;
+    // If enabledTypes is empty, use all types from defaults
+    if (!saved.enabledTypes || saved.enabledTypes.length === 0) {
+      return { ...saved, enabledTypes: DEFAULT_IMPORTANT_WORKS_FILTER.enabledTypes };
+    }
+    return saved;
+  }, [dashboardSettings]);
 
   // Handle filter changes
   const handleFilterChange = useCallback(
@@ -186,7 +191,7 @@ export function ImportantWorksCard({ maxItems = 4 }: ImportantWorksCardProps) {
               task.unlockAt && new Date(task.unlockAt).getTime() >= 86400000;
 
             if (taskHasRealStart && task.dueAt) {
-              // Task has duration - format time range from task's unlockAt and dueAt
+              // Task has duration - format as "Month Day HH:MM AM/PM - HH:MM AM/PM"
               const start = new Date(task.unlockAt!);
               const end = new Date(task.dueAt);
               const formatTime = (d: Date) => {
@@ -194,12 +199,33 @@ export function ImportantWorksCard({ maxItems = 4 }: ImportantWorksCardProps) {
                 const m = d.getMinutes();
                 const ampm = h >= 12 ? 'PM' : 'AM';
                 const hour = h % 12 || 12;
-                return m === 0 ? `${hour}:00 ${ampm}` : `${hour}:${m.toString().padStart(2, '0')} ${ampm}`;
+                return m === 0
+                  ? `${hour}:00 ${ampm}`
+                  : `${hour}:${m.toString().padStart(2, '0')} ${ampm}`;
               };
-              timeDisplay = `${formatTime(start)} - ${formatTime(end)}`;
+              const monthDay = start.toLocaleDateString('en-US', {
+                month: 'short',
+                day: 'numeric',
+              });
+              timeDisplay = `${monthDay} ${formatTime(start)} - ${formatTime(end)}`;
             } else if (calendarEvent && !isDeadlineEvent(calendarEvent)) {
-              // Duration event from calendar - show time range
-              timeDisplay = formatDurationDisplay(calendarEvent);
+              // Duration event from calendar - format as "Month Day HH:MM AM/PM - HH:MM AM/PM"
+              const start = new Date(calendarEvent.startAt);
+              const end = calendarEvent.endAt ? new Date(calendarEvent.endAt) : start;
+              const formatTimeLocal = (d: Date) => {
+                const h = d.getHours();
+                const m = d.getMinutes();
+                const ampm = h >= 12 ? 'PM' : 'AM';
+                const hour = h % 12 || 12;
+                return m === 0
+                  ? `${hour}:00 ${ampm}`
+                  : `${hour}:${m.toString().padStart(2, '0')} ${ampm}`;
+              };
+              const monthDay = start.toLocaleDateString('en-US', {
+                month: 'short',
+                day: 'numeric',
+              });
+              timeDisplay = `${monthDay} ${formatTimeLocal(start)} - ${formatTimeLocal(end)}`;
             } else if (task.dueAt) {
               // Deadline event - show relative deadline with time
               const daysUntilDue = getDaysUntilDue(task.dueAt);
