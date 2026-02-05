@@ -9,9 +9,17 @@ directories:
 files:
   - dist/**/*
   - package.json
+  - node_modules/**/*
+
+asarUnpack:
+  - node_modules/better-sqlite3/**/*
+  - node_modules/keytar/**/*
 
 extraMetadata:
   main: dist/main.js
+
+publish:
+  provider: github
 
 # Windows
 win:
