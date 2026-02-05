@@ -600,6 +600,7 @@ export const SyncUpdateEntityTypeSchema = z.enum([
   'announcement',
   'grade',
   'file',
+  'page',
   'conflict',
 ]);
 export type SyncUpdateEntityType = z.infer<typeof SyncUpdateEntityTypeSchema>;
