@@ -401,6 +401,28 @@ export const registerSyncUpdatesHandlers: IpcHandlerRegistrar = (ctx: IpcContext
           );
         }
 
+        // Mark informational updates for the SAME FIELD as seen
+        // Only clears updates related to the specific field that was in conflict
+        if (conflict.entity_id && conflict.conflict_field) {
+          const markRelatedSql = `
+            UPDATE sync_updates
+            SET seen_at = CURRENT_TIMESTAMP
+            WHERE entity_id = ?
+            AND changed_field = ?
+            AND entity_type != 'conflict'
+            AND seen_at IS NULL
+          `;
+          db.executeWrite(
+            markRelatedSql,
+            [conflict.entity_id, conflict.conflict_field],
+            'sync_updates'
+          );
+
+          logger.info(
+            `[syncUpdates:resolveConflict] Marked updates as seen for entity_id=${conflict.entity_id}, field=${conflict.conflict_field}`
+          );
+        }
+
         // Apply the resolution to the actual entity
         // This would need to call the appropriate sync resolution logic
         // For now, we just mark the conflict as resolved
@@ -450,4 +472,218 @@ export const registerSyncUpdatesHandlers: IpcHandlerRegistrar = (ctx: IpcContext
       }
     }
   );
+
+  // ============ Debug/Test Handlers ============
+
+  /**
+   * Create test sync updates for verifying notification dot system
+   * Only available in development mode
+   */
+  ipcMain.handle('syncUpdates:createTestData', async () => {
+    try {
+      // Get first visible course, task, and file for test data
+      const visibleDataProvider = ctx.getVisibleDataProvider();
+      const visibleCourseIds = visibleDataProvider?.getVisibleCourseIds() ?? [];
+
+      if (visibleCourseIds.length === 0) {
+        return { success: false, error: 'No visible courses found' };
+      }
+
+      const courseId = visibleCourseIds[0];
+
+      // Get a task from this course
+      const task = db.executeRead<{ id: number; title: string }>(
+        'SELECT id, title FROM tasks WHERE course_id = ? LIMIT 1',
+        [courseId]
+      )[0];
+
+      // Get a file from this course
+      const file = db.executeRead<{ id: number; title: string }>(
+        'SELECT id, title FROM resources WHERE course_id = ? LIMIT 1',
+        [courseId]
+      )[0];
+
+      if (!task) {
+        return { success: false, error: 'No tasks found in visible courses' };
+      }
+
+      const now = new Date().toISOString();
+
+      // Create a test sync session first (required by sync_updates.sync_session_id NOT NULL)
+      db.executeWrite(
+        `INSERT INTO sync_sessions (status, started_at, created_at)
+         VALUES ('completed', ?, ?)`,
+        [now, now],
+        'sync_sessions'
+      );
+      const sessionResult = db.executeRead<{ id: number }>(
+        'SELECT last_insert_rowid() as id'
+      );
+      const syncSessionId = sessionResult[0]?.id;
+
+      if (!syncSessionId) {
+        return { success: false, error: 'Failed to create test sync session' };
+      }
+
+      const testUpdates = [
+        // Blue dot: task field updated (due_at)
+        {
+          sync_session_id: syncSessionId,
+          course_id: courseId,
+          entity_type: 'task',
+          entity_id: task.id,
+          change_type: 'updated',
+          changed_field: 'due_at',
+          title: `[TEST] ${task.title}`,
+          subtitle: 'Due date changed',
+          old_value: '2025-02-10T23:59:00Z',
+          new_value: '2025-02-15T23:59:00Z',
+          created_at: now,
+        },
+        // Blue dot: task field updated (weight)
+        {
+          sync_session_id: syncSessionId,
+          course_id: courseId,
+          entity_type: 'task',
+          entity_id: task.id,
+          change_type: 'updated',
+          changed_field: 'weight',
+          title: `[TEST] ${task.title}`,
+          subtitle: 'Weight changed',
+          old_value: '10',
+          new_value: '15',
+          created_at: now,
+        },
+        // Orange dot: grade changed
+        {
+          sync_session_id: syncSessionId,
+          course_id: courseId,
+          entity_type: 'grade',
+          entity_id: task.id,
+          change_type: 'grade_changed',
+          changed_field: 'grade',
+          title: `[TEST] ${task.title}`,
+          subtitle: 'Grade: 85%',
+          old_value: '80',
+          new_value: '85',
+          created_at: now,
+        },
+      ];
+
+      // Add file update if file exists
+      if (file) {
+        testUpdates.push({
+          sync_session_id: syncSessionId,
+          course_id: courseId,
+          entity_type: 'file',
+          entity_id: file.id,
+          change_type: 'new',
+          changed_field: null as unknown as string,
+          title: `[TEST] ${file.title}`,
+          subtitle: 'New file',
+          old_value: null as unknown as string,
+          new_value: null as unknown as string,
+          created_at: now,
+        });
+      }
+
+      // Insert test updates
+      for (const update of testUpdates) {
+        db.executeWrite(
+          `INSERT INTO sync_updates (
+            sync_session_id, course_id, entity_type, entity_id, change_type, changed_field,
+            title, subtitle, old_value, new_value, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            update.sync_session_id,
+            update.course_id,
+            update.entity_type,
+            update.entity_id,
+            update.change_type,
+            update.changed_field,
+            update.title,
+            update.subtitle,
+            update.old_value,
+            update.new_value,
+            update.created_at,
+          ],
+          'sync_updates'
+        );
+      }
+
+      logger.info(
+        `[syncUpdates:createTestData] Created ${testUpdates.length} test updates`
+      );
+
+      return {
+        success: true,
+        data: {
+          created: testUpdates.length,
+          courseId,
+          taskId: task.id,
+          fileId: file?.id,
+          syncSessionId,
+        },
+      };
+    } catch (error) {
+      logger.error('Failed to create test sync updates', toError(error));
+      return { success: false, error: String(error) };
+    }
+  });
+
+  /**
+   * Clear test sync updates (those with [TEST] prefix)
+   */
+  ipcMain.handle('syncUpdates:clearTestData', async () => {
+    try {
+      const sql = `DELETE FROM sync_updates WHERE title LIKE '[TEST]%'`;
+      db.executeWrite(sql, [], 'sync_updates');
+
+      const result = db.executeRead<{ changes: number }>('SELECT changes() as changes');
+      const deleted = result[0]?.changes ?? 0;
+
+      logger.info(`[syncUpdates:clearTestData] Cleared ${deleted} test updates`);
+
+      return { success: true, data: { deleted } };
+    } catch (error) {
+      logger.error('Failed to clear test sync updates', toError(error));
+      return { success: false, error: String(error) };
+    }
+  });
+
+  /**
+   * Get sync updates status (for debugging)
+   */
+  ipcMain.handle('syncUpdates:getStatus', async () => {
+    try {
+      const stats = db.executeRead<{
+        change_type: string;
+        total: number;
+        unseen: number;
+      }>(`
+        SELECT
+          change_type,
+          COUNT(*) as total,
+          SUM(CASE WHEN seen_at IS NULL THEN 1 ELSE 0 END) as unseen
+        FROM sync_updates
+        GROUP BY change_type
+      `);
+
+      const totalUnseen =
+        db.executeRead<{ count: number }>(
+          'SELECT COUNT(*) as count FROM sync_updates WHERE seen_at IS NULL'
+        )[0]?.count ?? 0;
+
+      return {
+        success: true,
+        data: {
+          totalUnseen,
+          byType: stats,
+        },
+      };
+    } catch (error) {
+      logger.error('Failed to get sync updates status', toError(error));
+      return { success: false, error: String(error) };
+    }
+  });
 };

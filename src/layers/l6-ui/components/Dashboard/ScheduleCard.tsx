@@ -5,8 +5,9 @@
 import React, { useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CalendarCheck, MapPin } from 'lucide-react';
-import { Card } from '../shared';
+import { Card, NotificationDot } from '../shared';
 import { useStore } from '../../../l5-presentation/store';
+import { useTaskUpdates } from '../../hooks';
 import type { DisplayCalendarEvent, Task } from '../../../l5-presentation/types';
 import { getCourseColor } from '../../constants';
 
@@ -30,7 +31,7 @@ interface ScheduleItem {
 /**
  * Format time for display (e.g., "1:00 PM")
  */
-function formatTime(isoDate: string): string {
+function _formatTime(isoDate: string): string {
   const date = new Date(isoDate);
   const hours = date.getHours();
   const minutes = date.getMinutes();
@@ -42,7 +43,8 @@ function formatTime(isoDate: string): string {
 }
 
 /**
- * Format time range (e.g., "1:00 - 3:00 PM")
+ * Format time range (e.g., "1:00 PM - 3:00 PM")
+ * Always shows AM/PM for both times to avoid confusion
  */
 function formatTimeRange(startAt: string, endAt: string): string {
   const start = new Date(startAt);
@@ -59,21 +61,16 @@ function formatTimeRange(startAt: string, endAt: string): string {
   const startDisplayHours = startHours % 12 || 12;
   const endDisplayHours = endHours % 12 || 12;
 
-  const startTime = `${startDisplayHours}:${startMins.toString().padStart(2, '0')}`;
-  const endTime = `${endDisplayHours}:${endMins.toString().padStart(2, '0')}`;
+  const startTime = `${startDisplayHours}:${startMins.toString().padStart(2, '0')} ${startAmpm}`;
+  const endTime = `${endDisplayHours}:${endMins.toString().padStart(2, '0')} ${endAmpm}`;
 
-  // Only show AM/PM once if both are the same
-  if (startAmpm === endAmpm) {
-    return `${startTime} - ${endTime} ${endAmpm}`;
-  }
-
-  return `${startTime} ${startAmpm} - ${endTime} ${endAmpm}`;
+  return `${startTime} - ${endTime}`;
 }
 
 /**
  * Check if a date is today
  */
-function isToday(isoDate: string): boolean {
+function _isToday(isoDate: string): boolean {
   const date = new Date(isoDate);
   const today = new Date();
   return (
@@ -88,8 +85,22 @@ function isToday(isoDate: string): boolean {
  */
 function overlapsToday(startAt: string, endAt: string | null): boolean {
   const today = new Date();
-  const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 0, 0, 0);
-  const todayEnd = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59);
+  const todayStart = new Date(
+    today.getFullYear(),
+    today.getMonth(),
+    today.getDate(),
+    0,
+    0,
+    0
+  );
+  const todayEnd = new Date(
+    today.getFullYear(),
+    today.getMonth(),
+    today.getDate(),
+    23,
+    59,
+    59
+  );
 
   const start = new Date(startAt);
   const end = endAt ? new Date(endAt) : start;
@@ -106,8 +117,15 @@ function hasDuration(event: DisplayCalendarEvent): boolean {
   if (!event.startAt || !event.endAt) return false;
 
   const start = new Date(event.startAt);
+  const end = new Date(event.endAt);
+
+  // Exclude if end time is exactly midnight (00:00:00) - likely a placeholder
+  if (end.getHours() === 0 && end.getMinutes() === 0 && end.getSeconds() === 0) {
+    return false;
+  }
+
+  // Exclude all-day style events (start at midnight, end at midnight or 11:59 PM)
   if (start.getHours() === 0 && start.getMinutes() === 0) {
-    const end = new Date(event.endAt);
     if (end.getHours() === 0 || (end.getHours() === 23 && end.getMinutes() === 59)) {
       return false;
     }
@@ -125,11 +143,27 @@ function isEpoch(isoDate: string | null): boolean {
 }
 
 /**
- * Check if task has a real duration (real unlockAt, not epoch)
+ * Check if task has a real duration (both unlockAt and dueAt are real, valid times)
  */
 function taskHasDuration(task: Task): boolean {
+  // Must have both start and end
   if (!task.unlockAt || !task.dueAt) return false;
+
+  // Check for epoch/placeholder times
   if (isEpoch(task.unlockAt)) return false;
+  if (isEpoch(task.dueAt)) return false;
+
+  // Check for midnight as a placeholder (00:00:00) - often means "date only, no time"
+  const dueDate = new Date(task.dueAt);
+  if (
+    dueDate.getHours() === 0 &&
+    dueDate.getMinutes() === 0 &&
+    dueDate.getSeconds() === 0
+  ) {
+    // Midnight is likely a placeholder unless dueTimeKnown is explicitly true
+    if (task.dueTimeKnown !== true) return false;
+  }
+
   return true;
 }
 
@@ -157,12 +191,11 @@ export function ScheduleCard({ maxItems }: ScheduleCardProps) {
   const tasks = useStore((state) => state.tasks);
   const courses = useStore((state) => state.courses);
   const importedCalendars = useStore((state) => state.importedCalendars);
+  const taskUpdates = useTaskUpdates();
   const fetchCalendarEventsForRange = useStore(
     (state) => state.fetchCalendarEventsForRange
   );
-  const fetchImportedCalendars = useStore(
-    (state) => state.fetchImportedCalendars
-  );
+  const fetchImportedCalendars = useStore((state) => state.fetchImportedCalendars);
 
   // Build course color map
   const courseColorMap = useMemo(() => {
@@ -214,6 +247,9 @@ export function ScheduleCard({ maxItems }: ScheduleCardProps) {
     const items: ScheduleItem[] = [];
     const taskIdsFromEvents = new Set<number>();
 
+    // Build task lookup for checking linked tasks
+    const taskMap = new Map(tasks.map((t) => [t.id, t]));
+
     // 1. Add calendar events with duration (not deadline events)
     for (const event of calendarEvents) {
       // Skip deadline task events (start_at is epoch) - they go in Important Works
@@ -222,6 +258,13 @@ export function ScheduleCard({ maxItems }: ScheduleCardProps) {
 
       // Must have duration (both start and end, not all-day)
       if (!hasDuration(event)) continue;
+
+      // If event is linked to a task, verify the task actually has a due date
+      // (catches stale calendar events where due date was cleared)
+      if (event.taskId) {
+        const linkedTask = taskMap.get(event.taskId);
+        if (linkedTask && !linkedTask.dueAt) continue;
+      }
 
       // Check if event overlaps with today (starts today, ends today, or spans today)
       if (!event.startAt || !overlapsToday(event.startAt, event.endAt)) continue;
@@ -352,8 +395,24 @@ export function ScheduleCard({ maxItems }: ScheduleCardProps) {
 
                 {/* Title first, then time + location aligned */}
                 <div style={styles.content}>
-                  {/* Row 1: Event title */}
-                  <span style={styles.eventTitle}>{item.title}</span>
+                  {/* Row 1: Event title with optional notification dot */}
+                  <span
+                    style={{
+                      ...styles.eventTitle,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 'var(--space-2)',
+                    }}
+                  >
+                    {item.title}
+                    {item.taskId && taskUpdates.get(item.taskId) && (
+                      <NotificationDot
+                        updateType={taskUpdates.get(item.taskId)!.updateType}
+                        size="sm"
+                        style={{ flexShrink: 0 }}
+                      />
+                    )}
+                  </span>
                   {/* Row 2: Time + Location (locations align left-most) */}
                   <div style={styles.metaRow}>
                     <span

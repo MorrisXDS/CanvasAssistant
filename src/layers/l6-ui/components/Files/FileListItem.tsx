@@ -32,6 +32,7 @@ import {
 } from 'lucide-react';
 import styles from './FilesPage.module.css';
 import { formatFileSize } from '../../constants';
+import { NotificationDot, type UpdateType } from '../shared';
 
 // Types
 export interface FileAttachment {
@@ -438,6 +439,8 @@ export interface FileListItemProps {
   onOpen: () => void;
   onShowInFolder?: () => void;
   onContextMenu?: (e: React.MouseEvent) => void;
+  /** Optional update type for notification dot (null = no update) */
+  updateType?: UpdateType | null;
 }
 
 export function FileListItem({
@@ -450,6 +453,7 @@ export function FileListItem({
   onOpen,
   onShowInFolder,
   onContextMenu,
+  updateType,
 }: FileListItemProps) {
   const isAttachment = file.source === 'attachment';
   const isModuleItem = file.source === 'module';
@@ -526,7 +530,19 @@ export function FileListItem({
       <div className={`${styles.fileIcon} ${iconClass}`}>{getFileIcon(file, 16)}</div>
 
       <div className={styles.fileInfo}>
-        <div className={styles.fileName}>{filename}</div>
+        <div
+          className={styles.fileName}
+          style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+        >
+          {filename}
+          {updateType && (
+            <NotificationDot
+              updateType={updateType}
+              size="sm"
+              style={{ flexShrink: 0 }}
+            />
+          )}
+        </div>
         <div className={styles.fileMeta}>
           {/* Category badge */}
           <span

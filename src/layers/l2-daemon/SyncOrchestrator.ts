@@ -318,6 +318,7 @@ export class SyncOrchestrator {
       newAnnouncements: 0,
       gradeChanges: 0,
       newFiles: 0,
+      fieldUpdates: 0,
       conflicts: 0,
     };
 
@@ -614,8 +615,111 @@ export class SyncOrchestrator {
                     subtitle: `Grade: ${finalGrade}`,
                     oldValue: oldGrade != null ? String(oldGrade) : undefined,
                     newValue: finalGrade != null ? String(finalGrade) : undefined,
+                    changedField: 'grade',
                   });
                   updateCounts.gradeChanges++;
+                }
+
+                // Record field changes (Canvas updated but not a conflict)
+                // These are informational - local values are preserved
+                const fieldsToTrack: Array<{
+                  field: string;
+                  localKey: string;
+                  canvasKey: string;
+                  label: string;
+                }> = [
+                  {
+                    field: 'title',
+                    localKey: 'title',
+                    canvasKey: 'title',
+                    label: 'Title',
+                  },
+                  {
+                    field: 'due_at',
+                    localKey: 'due_at',
+                    canvasKey: 'due_at',
+                    label: 'Due date',
+                  },
+                  {
+                    field: 'points_possible',
+                    localKey: 'points_possible',
+                    canvasKey: 'points_possible',
+                    label: 'Points',
+                  },
+                  {
+                    field: 'weight',
+                    localKey: 'weight',
+                    canvasKey: 'weight',
+                    label: 'Weight',
+                  },
+                ];
+
+                const conflictFields = new Set(conflicts.map((c) => c.field));
+                const preservedSet = new Set(preservedFields);
+                const taskTitleForUpdate =
+                  (existingAccepted.title as string) || localTask.title || 'Task';
+
+                // Get existing field updates for this task (seen or unseen) to avoid duplicates
+                // We track (field, old_value, new_value) to only create new update if values changed
+                const existingFieldUpdates = this.db.executeRead<{
+                  changed_field: string;
+                  old_value: string | null;
+                  new_value: string | null;
+                }>(
+                  `SELECT changed_field, old_value, new_value FROM sync_updates
+                   WHERE entity_id = ? AND entity_type = 'task'
+                   AND change_type = 'updated'`,
+                  [acceptedTask.id]
+                );
+                // Map: field -> {oldValue, newValue} of most recent update
+                const existingFieldMap = new Map<
+                  string,
+                  { oldValue: string | null; newValue: string | null }
+                >();
+                for (const r of existingFieldUpdates) {
+                  existingFieldMap.set(r.changed_field, {
+                    oldValue: r.old_value,
+                    newValue: r.new_value,
+                  });
+                }
+
+                for (const { field, localKey, canvasKey, label } of fieldsToTrack) {
+                  // Skip if this field is already a conflict or was preserved (user edited)
+                  if (conflictFields.has(field) || preservedSet.has(field)) continue;
+
+                  const localValue = existingAccepted[localKey];
+                  const canvasValue = localTask[canvasKey as keyof typeof localTask];
+
+                  // Compare values (handle null/undefined)
+                  const localStr = localValue != null ? String(localValue) : null;
+                  const canvasStr = canvasValue != null ? String(canvasValue) : null;
+
+                  if (localStr !== canvasStr) {
+                    // Skip if we already have an update with the same old/new values
+                    const existing = existingFieldMap.get(field);
+                    if (
+                      existing &&
+                      existing.oldValue === localStr &&
+                      existing.newValue === canvasStr
+                    ) {
+                      continue; // Same difference already recorded
+                    }
+
+                    this.recordSyncUpdate({
+                      syncSessionId: syncId,
+                      courseId: localCourseId,
+                      entityType: 'task',
+                      entityId: acceptedTask.id,
+                      externalId: externalId,
+                      changeType: 'updated',
+                      title: taskTitleForUpdate,
+                      subtitle: `${label} changed`,
+                      oldValue: localStr ?? undefined,
+                      newValue: canvasStr ?? undefined,
+                      changedField: field,
+                    });
+                    updateCounts.fieldUpdates = (updateCounts.fieldUpdates || 0) + 1;
+                  }
                 }
               } else {
                 // Fallback if somehow we can't fetch the task (shouldn't happen)
@@ -1568,6 +1672,7 @@ export class SyncOrchestrator {
     oldValue?: string;
     newValue?: string;
     conflictField?: string;
+    changedField?: string;
     isActionRequired?: boolean;
   }): void {
     try {
@@ -1607,8 +1712,8 @@ export class SyncOrchestrator {
         `INSERT INTO sync_updates (
            sync_session_id, course_id, entity_type, entity_id, external_id,
            change_type, title, subtitle, old_value, new_value, conflict_field,
-           is_action_required, created_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+           changed_field, is_action_required, created_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
         [
           params.syncSessionId,
           params.courseId,
@@ -1621,6 +1726,7 @@ export class SyncOrchestrator {
           params.oldValue ?? null,
           params.newValue ?? null,
           params.conflictField ?? null,
+          params.changedField ?? null,
           params.isActionRequired ? 1 : 0,
         ],
         'sync_updates'

@@ -664,6 +664,8 @@ export interface SyncUpdateRow {
   created_at: string;
   /** When Canvas value changed on an unresolved conflict (if updated_at > created_at, item was modified) */
   updated_at: string | null;
+  /** Which specific field changed for 'updated' changeType (e.g., 'due_at', 'weight', 'grade') */
+  changed_field: string | null;
 }
 
 /**

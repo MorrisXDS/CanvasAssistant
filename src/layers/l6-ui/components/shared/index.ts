@@ -63,3 +63,20 @@ export { SyncUpdatesFAB } from './SyncUpdatesFAB';
 export type { SyncUpdatesFABProps } from './SyncUpdatesFAB';
 
 export { ErrorBoundary } from './ErrorBoundary';
+
+export {
+  NotificationDot,
+  NotificationDotGroup,
+  FieldNotificationDot,
+  UPDATE_TYPE_COLORS,
+  UPDATE_TYPE_LABELS,
+  FIELD_DISPLAY_LABELS,
+  getUpdateTypePriority,
+  getPriorityUpdateType,
+} from './NotificationDot';
+export type {
+  NotificationDotProps,
+  NotificationDotGroupProps,
+  FieldNotificationDotProps,
+  UpdateType,
+} from './NotificationDot';

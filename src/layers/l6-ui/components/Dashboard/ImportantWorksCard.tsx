@@ -5,9 +5,10 @@
 import React, { useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Star, Inbox, Calendar } from 'lucide-react';
-import { Card } from '../shared';
+import { Card, NotificationDot } from '../shared';
 import { ImportantWorksFilter } from './ImportantWorksFilter';
 import { useStore } from '../../../l5-presentation/store';
+import { useTaskUpdates } from '../../hooks';
 import {
   STORAGE_KEYS,
   useSetting,
@@ -16,7 +17,12 @@ import {
   type ImportantWorksFilter as FilterType,
   type DashboardSettings,
 } from '../../../l5-presentation/settings';
-import { formatDueDate, getCourseColor, CARD_TITLES } from '../../constants';
+import {
+  formatSmartDate,
+  formatSmartDateRange,
+  getCourseColor,
+  CARD_TITLES,
+} from '../../constants';
 import { isDeadlineEvent } from '../Calendar/calendarUtils';
 import type { Task, Course, DisplayCalendarEvent } from '../../../l5-presentation/types';
 
@@ -24,30 +30,12 @@ interface ImportantWorksCardProps {
   maxItems?: number;
 }
 
-/**
- * Calculate days until due
- */
-function getDaysUntilDue(dueAt: string): number | null {
-  if (!dueAt) return null;
-
-  const now = new Date();
-  const due = new Date(dueAt);
-
-  // Set both to start of day for accurate day calculation
-  now.setHours(0, 0, 0, 0);
-  due.setHours(0, 0, 0, 0);
-
-  const diffTime = due.getTime() - now.getTime();
-  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-  return diffDays;
-}
-
 export function ImportantWorksCard({ maxItems = 4 }: ImportantWorksCardProps) {
   const navigate = useNavigate();
   const tasks = useStore((state) => state.tasks);
   const courses = useStore((state) => state.courses);
   const calendarEvents = useStore((state) => state.calendarEvents);
+  const taskUpdates = useTaskUpdates();
 
   // Get settings from storage
   const [dashboardSettings, setDashboardSettings] = useSetting(STORAGE_KEYS.DASHBOARD);
@@ -191,57 +179,17 @@ export function ImportantWorksCard({ maxItems = 4 }: ImportantWorksCardProps) {
               task.unlockAt && new Date(task.unlockAt).getTime() >= 86400000;
 
             if (taskHasRealStart && task.dueAt) {
-              // Task has duration - format as "Month Day HH:MM AM/PM - HH:MM AM/PM"
-              const start = new Date(task.unlockAt!);
-              const end = new Date(task.dueAt);
-              const formatTime = (d: Date) => {
-                const h = d.getHours();
-                const m = d.getMinutes();
-                const ampm = h >= 12 ? 'PM' : 'AM';
-                const hour = h % 12 || 12;
-                return m === 0
-                  ? `${hour}:00 ${ampm}`
-                  : `${hour}:${m.toString().padStart(2, '0')} ${ampm}`;
-              };
-              const monthDay = start.toLocaleDateString('en-US', {
-                month: 'short',
-                day: 'numeric',
-              });
-              timeDisplay = `${monthDay} ${formatTime(start)} - ${formatTime(end)}`;
+              // Task has duration - use smart date range formatting
+              timeDisplay = formatSmartDateRange(task.unlockAt!, task.dueAt);
             } else if (calendarEvent && !isDeadlineEvent(calendarEvent)) {
-              // Duration event from calendar - format as "Month Day HH:MM AM/PM - HH:MM AM/PM"
-              const start = new Date(calendarEvent.startAt);
-              const end = calendarEvent.endAt ? new Date(calendarEvent.endAt) : start;
-              const formatTimeLocal = (d: Date) => {
-                const h = d.getHours();
-                const m = d.getMinutes();
-                const ampm = h >= 12 ? 'PM' : 'AM';
-                const hour = h % 12 || 12;
-                return m === 0
-                  ? `${hour}:00 ${ampm}`
-                  : `${hour}:${m.toString().padStart(2, '0')} ${ampm}`;
-              };
-              const monthDay = start.toLocaleDateString('en-US', {
-                month: 'short',
-                day: 'numeric',
-              });
-              timeDisplay = `${monthDay} ${formatTimeLocal(start)} - ${formatTimeLocal(end)}`;
+              // Duration event from calendar - use smart date range formatting
+              timeDisplay = formatSmartDateRange(
+                calendarEvent.startAt,
+                calendarEvent.endAt || calendarEvent.startAt
+              );
             } else if (task.dueAt) {
-              // Deadline event - show relative deadline with time
-              const daysUntilDue = getDaysUntilDue(task.dueAt);
-              if (daysUntilDue !== null) {
-                const deadlineDate = formatDueDate(task.dueAt, daysUntilDue);
-                const deadlineTime = new Date(task.dueAt).toLocaleTimeString('en-US', {
-                  hour: 'numeric',
-                  minute: '2-digit',
-                  hour12: true,
-                });
-                // Always prefix with "Due" if not already present
-                const duePrefix = deadlineDate.toLowerCase().startsWith('due')
-                  ? ''
-                  : 'Due ';
-                timeDisplay = `${duePrefix}${deadlineDate} ${deadlineTime}`;
-              }
+              // Deadline event - show "Due Today/Tomorrow/Date Time"
+              timeDisplay = `Due ${formatSmartDate(task.dueAt)}`;
             }
 
             return (
@@ -263,8 +211,24 @@ export function ImportantWorksCard({ maxItems = 4 }: ImportantWorksCardProps) {
               >
                 {/* Layout B: Title-first card style */}
                 <div style={styles.content}>
-                  {/* Row 1: Task title */}
-                  <span style={styles.taskTitle}>{task.title}</span>
+                  {/* Row 1: Task title with optional notification dot */}
+                  <span
+                    style={{
+                      ...styles.taskTitle,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 'var(--space-2)',
+                    }}
+                  >
+                    {task.title}
+                    {taskUpdates.get(task.id) && (
+                      <NotificationDot
+                        updateType={taskUpdates.get(task.id)!.updateType}
+                        size="sm"
+                        style={{ flexShrink: 0 }}
+                      />
+                    )}
+                  </span>
 
                   {/* Row 2: Metadata (weight • course • due date) */}
                   <div style={styles.metadataRow}>
@@ -380,7 +344,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
 
   separator: {
-    color: 'var(--text-muted)',
+    color: 'var(--text-secondary)',
     fontSize: 'var(--text-xs)',
   },
 

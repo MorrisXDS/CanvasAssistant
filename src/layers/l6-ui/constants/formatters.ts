@@ -140,6 +140,145 @@ export function formatCalendarDate(dateStr: string): string {
 }
 
 /**
+ * Format a date with smart relative day labels
+ *
+ * Shows "Today" or "Tomorrow" with time for dates within those windows,
+ * otherwise shows the full date with time.
+ *
+ * @param dateStr - ISO date string
+ * @param options - Formatting options
+ * @returns Formatted date string
+ *
+ * @example
+ * formatSmartDate('2024-01-15T23:59:00Z') // "Today 11:59 PM" (if today is Jan 15)
+ * formatSmartDate('2024-01-16T14:00:00Z') // "Tomorrow 2:00 PM" (if today is Jan 15)
+ * formatSmartDate('2024-01-18T10:00:00Z') // "Jan 18 10:00 AM"
+ */
+export function formatSmartDate(
+  dateStr: string | null,
+  options?: { includeTime?: boolean }
+): string {
+  if (!dateStr) return 'No date';
+
+  const date = new Date(dateStr);
+  const now = new Date();
+  const includeTime = options?.includeTime ?? true;
+
+  // Get start of today and tomorrow
+  const today = new Date(now);
+  today.setHours(0, 0, 0, 0);
+
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+
+  const dayAfterTomorrow = new Date(today);
+  dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 2);
+
+  // Get start of the date's day
+  const dateDay = new Date(date);
+  dateDay.setHours(0, 0, 0, 0);
+
+  const timeStr = includeTime
+    ? date.toLocaleTimeString('en-US', {
+        hour: 'numeric',
+        minute: '2-digit',
+      })
+    : '';
+
+  if (dateDay.getTime() === today.getTime()) {
+    return includeTime ? `Today ${timeStr}` : 'Today';
+  }
+
+  if (dateDay.getTime() === tomorrow.getTime()) {
+    return includeTime ? `Tomorrow ${timeStr}` : 'Tomorrow';
+  }
+
+  // Full date format
+  const dateFormatOptions: Intl.DateTimeFormatOptions = {
+    month: 'short',
+    day: 'numeric',
+  };
+
+  if (includeTime) {
+    dateFormatOptions.hour = 'numeric';
+    dateFormatOptions.minute = '2-digit';
+  }
+
+  return date.toLocaleDateString('en-US', dateFormatOptions);
+}
+
+/**
+ * Format a date range with smart relative day labels
+ *
+ * For ranges where start and end are on the same day, shows single date.
+ * Uses "Today"/"Tomorrow" labels when applicable.
+ *
+ * @param startDateStr - Start date ISO string
+ * @param endDateStr - End date ISO string (optional)
+ * @returns Formatted date range string
+ *
+ * @example
+ * formatSmartDateRange('2024-01-15T09:00:00Z', '2024-01-15T17:00:00Z')
+ * // "Today 9:00 AM - 5:00 PM" (if today is Jan 15)
+ *
+ * formatSmartDateRange('2024-01-15T09:00:00Z', '2024-01-16T17:00:00Z')
+ * // "Today 9:00 AM - Tomorrow 5:00 PM" (if today is Jan 15)
+ *
+ * formatSmartDateRange('2024-01-18T09:00:00Z', '2024-01-19T17:00:00Z')
+ * // "Jan 18 9:00 AM - Jan 19 5:00 PM"
+ */
+export function formatSmartDateRange(
+  startDateStr: string | null,
+  endDateStr: string | null
+): string {
+  if (!startDateStr) return formatSmartDate(endDateStr);
+  if (!endDateStr) return formatSmartDate(startDateStr);
+
+  const start = new Date(startDateStr);
+  const end = new Date(endDateStr);
+
+  // Check if same day
+  const startDay = new Date(start);
+  startDay.setHours(0, 0, 0, 0);
+  const endDay = new Date(end);
+  endDay.setHours(0, 0, 0, 0);
+
+  const now = new Date();
+  const today = new Date(now);
+  today.setHours(0, 0, 0, 0);
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+
+  const startTimeStr = start.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+  const endTimeStr = end.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+
+  // Same day - show single date label with time range
+  if (startDay.getTime() === endDay.getTime()) {
+    let dayLabel: string;
+    if (startDay.getTime() === today.getTime()) {
+      dayLabel = 'Today';
+    } else if (startDay.getTime() === tomorrow.getTime()) {
+      dayLabel = 'Tomorrow';
+    } else {
+      dayLabel = start.toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+      });
+    }
+    return `${dayLabel} ${startTimeStr} - ${endTimeStr}`;
+  }
+
+  // Different days - show full range
+  return `${formatSmartDate(startDateStr)} - ${formatSmartDate(endDateStr)}`;
+}
+
+/**
  * Format a time for display (12-hour format)
  *
  * @param dateStr - ISO date string

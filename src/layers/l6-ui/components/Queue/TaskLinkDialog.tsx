@@ -17,7 +17,7 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 import type { QueuedTask, Task } from '../../../l5-presentation/types';
-import { TASK_TYPES } from '../../constants';
+import { TASK_TYPES, formatSmartDate } from '../../constants';
 
 interface TaskLinkDialogProps {
   isOpen: boolean;
@@ -124,13 +124,7 @@ function areRelatedTypes(type1: string, type2: string): boolean {
 // Format date for display
 function formatDate(dateStr: string | null): string {
   if (!dateStr) return 'Not set';
-  const date = new Date(dateStr);
-  return date.toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  });
+  return formatSmartDate(dateStr);
 }
 
 // Get task type label

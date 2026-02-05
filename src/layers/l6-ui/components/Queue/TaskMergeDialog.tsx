@@ -6,7 +6,7 @@
 import React, { useState } from 'react';
 import { X, GitMerge, Calendar, FileText, Cloud, User } from 'lucide-react';
 import type { QueuedTask, Task } from '../../../l5-presentation/types';
-import { TASK_TYPES } from '../../constants';
+import { TASK_TYPES, formatSmartDate } from '../../constants';
 
 interface TaskMergeDialogProps {
   isOpen: boolean;
@@ -23,14 +23,7 @@ interface TaskMergeDialogProps {
 // Format date for display
 function formatDate(dateStr: string | null): string {
   if (!dateStr) return 'Not set';
-  const date = new Date(dateStr);
-  return date.toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  });
+  return formatSmartDate(dateStr);
 }
 
 // Get task type label

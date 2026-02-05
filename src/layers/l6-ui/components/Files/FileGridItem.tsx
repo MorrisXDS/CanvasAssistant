@@ -27,6 +27,7 @@ import {
   getFileIconType,
   getFileIconClass,
 } from './FileListItem';
+import { NotificationDot, type UpdateType } from '../shared';
 
 export interface FileGridItemProps {
   file: FileItem;
@@ -38,6 +39,8 @@ export interface FileGridItemProps {
   onOpen: () => void;
   onShowInFolder?: () => void;
   onContextMenu?: (e: React.MouseEvent) => void;
+  /** Optional update type for notification dot (null = no update) */
+  updateType?: UpdateType | null;
 }
 
 export function FileGridItem({
@@ -50,6 +53,7 @@ export function FileGridItem({
   onOpen,
   onShowInFolder,
   onContextMenu,
+  updateType,
 }: FileGridItemProps) {
   const isDownloaded = isFileDownloaded(file);
   const isModuleItem = file.source === 'module';
@@ -120,7 +124,20 @@ export function FileGridItem({
       </div>
 
       {/* File name */}
-      <div className={styles.fileGridName}>{filename}</div>
+      <div
+        className={styles.fileGridName}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '4px',
+        }}
+      >
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{filename}</span>
+        {updateType && (
+          <NotificationDot updateType={updateType} size="sm" style={{ flexShrink: 0 }} />
+        )}
+      </div>
 
       {/* Metadata row */}
       <div className={styles.fileGridMeta}>

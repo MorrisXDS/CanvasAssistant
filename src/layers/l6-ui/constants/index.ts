@@ -32,6 +32,8 @@ export {
   formatCalendarDate,
   formatTime,
   formatDateRange,
+  formatSmartDate,
+  formatSmartDateRange,
   // Grades
   getLetterGrade,
   formatGrade,

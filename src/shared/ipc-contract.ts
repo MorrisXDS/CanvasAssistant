@@ -634,6 +634,8 @@ export const SyncUpdateSchema = z.object({
   createdAt: z.string(),
   // When Canvas value changed on unresolved item (if updatedAt > createdAt, item was modified)
   updatedAt: z.string().nullable().optional(),
+  // Which specific field changed for 'updated' changeType (e.g., 'due_at', 'weight', 'grade')
+  changedField: z.string().nullable().optional(),
   // Joined course info
   courseCode: z.string().optional(),
   courseName: z.string().optional(),

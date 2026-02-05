@@ -619,6 +619,11 @@ const api = {
   cleanupSyncUpdates: (olderThanDays?: number) =>
     ipcRenderer.invoke('syncUpdates:cleanup', { olderThanDays }),
 
+  // Debug/Test methods for notification dot system
+  createTestSyncUpdates: () => ipcRenderer.invoke('syncUpdates:createTestData'),
+  clearTestSyncUpdates: () => ipcRenderer.invoke('syncUpdates:clearTestData'),
+  getSyncUpdatesStatus: () => ipcRenderer.invoke('syncUpdates:getStatus'),
+
   // Subscribe to sync updates push events
   onSyncUpdates: (
     callback: (event: {

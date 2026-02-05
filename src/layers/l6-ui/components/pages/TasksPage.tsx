@@ -6,9 +6,10 @@
 import React, { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Clock, AlertTriangle, CheckCircle, Circle, Plus } from 'lucide-react';
-import { Card, Badge, BadgeVariant, RichTextEditor } from '../shared';
+import { Card, Badge, BadgeVariant, RichTextEditor, NotificationDot } from '../shared';
 import { useStore } from '../../../l5-presentation/store';
-import { formatDueDate, getBadgeUrgency, getCleanCourseName } from '../../constants';
+import { useTaskUpdates } from '../../hooks';
+import { formatSmartDate, getBadgeUrgency, getCleanCourseName } from '../../constants';
 import type { Task, Course } from '../../../l5-presentation/types';
 import { TaskContextMenu } from '../Course/TaskContextMenu';
 import { styles } from './TasksPage.styles';
@@ -38,6 +39,7 @@ function getDaysUntilDue(dueAt: string | null): number | null {
 export function TasksPage() {
   const navigate = useNavigate();
   const { tasks, courses } = useStore();
+  const taskUpdates = useTaskUpdates();
   const [filter, setFilter] = useState<FilterType>('all');
   const [_showFilterDropdown, _setShowFilterDropdown] = useState(false);
 
@@ -336,7 +338,7 @@ export function TasksPage() {
                     </span>
                     {!item.task.isCompleted && item.task.dueAt && (
                       <Badge variant={item.urgencyLevel as BadgeVariant} size="sm">
-                        {formatDueDate(item.task.dueAt, item.daysUntilDue)}
+                        {formatSmartDate(item.task.dueAt)}
                       </Badge>
                     )}
                   </div>
@@ -344,9 +346,19 @@ export function TasksPage() {
                     style={{
                       ...styles.taskTitle,
                       textDecoration: item.task.isCompleted ? 'line-through' : 'none',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 'var(--space-2)',
                     }}
                   >
                     {item.task.title}
+                    {taskUpdates.get(item.task.id) && (
+                      <NotificationDot
+                        updateType={taskUpdates.get(item.task.id)!.updateType}
+                        size="sm"
+                        style={{ flexShrink: 0 }}
+                      />
+                    )}
                   </div>
                   <div style={styles.taskMeta}>
                     {item.task.weight > 0 && (

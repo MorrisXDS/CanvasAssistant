@@ -6,10 +6,11 @@
 import React, { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PartyPopper, CheckCircle, Circle } from 'lucide-react';
-import { Card, Badge, BadgeVariant } from '../shared';
-import { formatDueDate } from '../../constants';
+import { Card, Badge, BadgeVariant, NotificationDot } from '../shared';
+import { formatSmartDate, formatSmartDateRange } from '../../constants';
 import { useStore } from '../../../l5-presentation/store';
 import { isDeadlineEvent } from '../Calendar/calendarUtils';
+import { useTaskUpdates } from '../../hooks';
 import type { PriorityItem, DisplayCalendarEvent } from '../../../l5-presentation/types';
 import type { Task } from '../../../l5-presentation/types';
 
@@ -41,6 +42,7 @@ export function PriorityList({
 }: PriorityListProps) {
   const navigate = useNavigate();
   const calendarEvents = useStore((state) => state.calendarEvents);
+  const taskUpdates = useTaskUpdates();
   const displayItems = items.slice(0, maxItems);
   // Use totalPendingTasks if provided, otherwise fall back to items length
   const hasPendingTasks =
@@ -57,11 +59,11 @@ export function PriorityList({
 
   /**
    * Format time display for a task:
-   * - Duration event: show "Month Day HH:MM AM/PM - HH:MM AM/PM"
-   * - Deadline event: show "Due [date] [time]"
+   * - Duration event: show smart date range (e.g., "Today 9:00 AM - 5:00 PM")
+   * - Deadline event: show "Due Today/Tomorrow/Date Time"
    * - No due date: return null
    */
-  const formatTimeDisplay = (task: Task, daysUntilDue: number | null): string | null => {
+  const formatTimeDisplay = (task: Task, _daysUntilDue: number | null): string | null => {
     const calendarEvent = task.calendarEventId
       ? calendarEventMap.get(task.calendarEventId)
       : undefined;
@@ -71,54 +73,17 @@ export function PriorityList({
       task.unlockAt && new Date(task.unlockAt).getTime() >= 86400000;
 
     if (taskHasRealStart && task.dueAt) {
-      // Task has duration - format as "Month Day HH:MM AM/PM - HH:MM AM/PM"
-      const start = new Date(task.unlockAt!);
-      const end = new Date(task.dueAt);
-      const formatTime = (d: Date) => {
-        const h = d.getHours();
-        const m = d.getMinutes();
-        const ampm = h >= 12 ? 'PM' : 'AM';
-        const hour = h % 12 || 12;
-        return m === 0
-          ? `${hour}:00 ${ampm}`
-          : `${hour}:${m.toString().padStart(2, '0')} ${ampm}`;
-      };
-      const monthDay = start.toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
-      });
-      return `${monthDay} ${formatTime(start)} - ${formatTime(end)}`;
+      // Task has duration - use smart date range formatting
+      return formatSmartDateRange(task.unlockAt!, task.dueAt);
     } else if (calendarEvent && !isDeadlineEvent(calendarEvent)) {
-      // Duration event from calendar - format as "Month Day HH:MM AM/PM - HH:MM AM/PM"
-      const start = new Date(calendarEvent.startAt);
-      const end = calendarEvent.endAt ? new Date(calendarEvent.endAt) : start;
-      const formatTime = (d: Date) => {
-        const h = d.getHours();
-        const m = d.getMinutes();
-        const ampm = h >= 12 ? 'PM' : 'AM';
-        const hour = h % 12 || 12;
-        return m === 0
-          ? `${hour}:00 ${ampm}`
-          : `${hour}:${m.toString().padStart(2, '0')} ${ampm}`;
-      };
-      const monthDay = start.toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
-      });
-      return `${monthDay} ${formatTime(start)} - ${formatTime(end)}`;
+      // Duration event from calendar - use smart date range formatting
+      return formatSmartDateRange(
+        calendarEvent.startAt,
+        calendarEvent.endAt || calendarEvent.startAt
+      );
     } else if (task.dueAt) {
-      // Deadline event - show relative deadline with time
-      if (daysUntilDue !== null) {
-        const deadlineDate = formatDueDate(task.dueAt, daysUntilDue);
-        const deadlineTime = new Date(task.dueAt).toLocaleTimeString('en-US', {
-          hour: 'numeric',
-          minute: '2-digit',
-          hour12: true,
-        });
-        // Always prefix with "Due" if not already present
-        const duePrefix = deadlineDate.toLowerCase().startsWith('due') ? '' : 'Due ';
-        return `${duePrefix}${deadlineDate} ${deadlineTime}`;
-      }
+      // Deadline event - show "Due Today/Tomorrow/Date Time"
+      return `Due ${formatSmartDate(task.dueAt)}`;
     }
     return null;
   };
@@ -213,7 +178,23 @@ export function PriorityList({
                     </Badge>
                   )}
                 </div>
-                <div style={styles.title}>{item.task.title}</div>
+                <div
+                  style={{
+                    ...styles.title,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 'var(--space-2)',
+                  }}
+                >
+                  {item.task.title}
+                  {taskUpdates.get(item.task.id) && (
+                    <NotificationDot
+                      updateType={taskUpdates.get(item.task.id)!.updateType}
+                      size="sm"
+                      style={{ flexShrink: 0 }}
+                    />
+                  )}
+                </div>
                 <div style={styles.bottomRow}>
                   {formatTimeDisplay(item.task, item.daysUntilDue) && (
                     <span style={styles.dueDate}>

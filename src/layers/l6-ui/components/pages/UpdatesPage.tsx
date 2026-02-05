@@ -46,6 +46,96 @@ const UPDATE_LABELS: Record<string, string> = {
   conflict: 'Conflict',
 };
 
+// Field labels for display
+const FIELD_LABELS: Record<string, string> = {
+  title: 'Title',
+  due_at: 'Due date',
+  points_possible: 'Points',
+  weight: 'Weight',
+  grade: 'Grade',
+  is_completed: 'Completed status',
+  submission_status: 'Submission status',
+  description: 'Description',
+};
+
+/**
+ * Format a field value for display based on field type
+ */
+function formatFieldValue(field: string, value: string | null | undefined): string {
+  if (value === null || value === undefined || value === '') {
+    return 'Created';
+  }
+
+  switch (field) {
+    case 'due_at': {
+      // Parse and format date
+      try {
+        const date = new Date(value);
+        if (isNaN(date.getTime())) return value;
+        return date.toLocaleDateString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          hour: 'numeric',
+          minute: '2-digit',
+        });
+      } catch {
+        return value;
+      }
+    }
+    case 'weight':
+    case 'grade':
+      return `${value}%`;
+    case 'points_possible':
+      return `${value} pts`;
+    case 'is_completed':
+      return value === '1' || value === 'true' ? 'Completed' : 'Not completed';
+    case 'submission_status':
+      return value.charAt(0).toUpperCase() + value.slice(1).replace(/_/g, ' ');
+    case 'title':
+      // Truncate long titles
+      return value.length > 30 ? `"${value.substring(0, 30)}..."` : `"${value}"`;
+    default:
+      return value;
+  }
+}
+
+/**
+ * Format the change subtitle showing old → new values
+ */
+function formatChangeSubtitle(update: SyncUpdate): string {
+  const field = update.changedField;
+
+  // If no field info, fall back to original subtitle
+  if (!field) {
+    return update.subtitle || UPDATE_LABELS[update.entityType];
+  }
+
+  const fieldLabel = FIELD_LABELS[field] || field;
+  const newFormatted = formatFieldValue(field, update.newValue);
+
+  // Handle created (no old value) - no arrow needed
+  if (
+    update.oldValue === null ||
+    update.oldValue === undefined ||
+    update.oldValue === ''
+  ) {
+    return `${fieldLabel}: Created ${newFormatted}`;
+  }
+
+  const oldFormatted = formatFieldValue(field, update.oldValue);
+
+  // Handle removed value
+  if (
+    update.newValue === null ||
+    update.newValue === undefined ||
+    update.newValue === ''
+  ) {
+    return `${fieldLabel}: ${oldFormatted} → (removed)`;
+  }
+
+  return `${fieldLabel}: ${oldFormatted} → ${newFormatted}`;
+}
+
 export function UpdatesPage() {
   const navigate = useNavigate();
   const {
@@ -64,10 +154,22 @@ export function UpdatesPage() {
   const totalUnseen = syncUpdates.totalUnseen ?? 0;
   const [filter, setFilter] = useState<FilterType>('all');
 
+  // Timer tick to force re-render of relative times every 30 seconds
+  const [timeTick, setTimeTick] = useState(0);
+
   // Fetch updates on mount
   useEffect(() => {
     fetchSyncUpdates();
   }, [fetchSyncUpdates]);
+
+  // Update relative times every 30 seconds
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setTimeTick((tick) => tick + 1);
+    }, 30000); // 30 seconds
+
+    return () => clearInterval(interval);
+  }, []);
 
   // Separate informational from action-required (conflicts + queued tasks)
   const informationalUpdates = useMemo(() => {
@@ -429,6 +531,7 @@ export function UpdatesPage() {
                         key={update.id}
                         update={update}
                         onMarkSeen={() => handleMarkSeen(update.id)}
+                        timeTick={timeTick}
                       />
                     ))}
                   </div>
@@ -688,11 +791,19 @@ function ConflictItem({
 function InformationalItem({
   update,
   onMarkSeen,
+  timeTick: _timeTick, // Used to trigger re-render for time updates
 }: {
   update: SyncUpdate;
   onMarkSeen: () => void;
+  timeTick: number;
 }) {
   const Icon = UPDATE_ICONS[update.entityType] || Bell;
+
+  // Use formatted subtitle for task/grade updates with field changes
+  const subtitle =
+    (update.entityType === 'task' || update.entityType === 'grade') && update.changedField
+      ? formatChangeSubtitle(update)
+      : update.subtitle || UPDATE_LABELS[update.entityType];
 
   return (
     <div style={styles.infoItem}>
@@ -701,9 +812,7 @@ function InformationalItem({
       </div>
       <div style={styles.infoContent}>
         <div style={styles.infoTitle}>{update.title}</div>
-        <div style={styles.infoSubtitle}>
-          {update.subtitle || UPDATE_LABELS[update.entityType]}
-        </div>
+        <div style={styles.infoSubtitle}>{subtitle}</div>
       </div>
       <div style={styles.infoMeta}>
         <span style={styles.infoTime}>{formatTimeAgo(update.createdAt)}</span>
@@ -831,7 +940,7 @@ const styles: Record<string, React.CSSProperties> = {
 
   filterRow: {
     display: 'flex',
-    gap: 'var(--space-1)',
+    gap: 'var(--space-2)',
     padding: 'var(--space-2) var(--space-3)',
     borderBottom: '1px solid var(--border-subtle)',
     flexWrap: 'wrap',
@@ -839,19 +948,21 @@ const styles: Record<string, React.CSSProperties> = {
   },
 
   filterTab: {
-    padding: 'var(--space-1) var(--space-2)',
+    padding: '6px 12px',
     fontSize: 'var(--text-xs)',
-    backgroundColor: 'transparent',
+    backgroundColor: 'var(--bg-card)',
     border: '1px solid var(--border-default)',
-    borderRadius: 'var(--radius-sm)',
+    borderRadius: '9999px',
     color: 'var(--text-secondary)',
     cursor: 'pointer',
     outline: 'none',
+    fontWeight: 'var(--font-medium)',
+    transition: 'all 0.15s ease',
   },
 
   filterTabActive: {
-    backgroundColor: 'var(--color-primary)',
-    borderColor: 'var(--color-primary)',
+    backgroundColor: 'var(--color-primary-dark, #1e3a5f)',
+    borderColor: 'var(--color-primary-dark, #1e3a5f)',
     color: 'white',
   },
 

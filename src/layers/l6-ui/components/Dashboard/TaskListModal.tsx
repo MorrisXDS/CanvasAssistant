@@ -8,7 +8,7 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { X, AlertTriangle, Clock, ExternalLink } from 'lucide-react';
 import { Badge } from '../shared';
-import { formatDueDate, getBadgeUrgency } from '../../constants';
+import { formatSmartDate, getBadgeUrgency } from '../../constants';
 import type { Task, Course } from '../../../l5-presentation/types';
 
 export interface TaskWithCourse {
@@ -112,7 +112,7 @@ export function TaskListModal({
                     <div style={styles.taskTopRow}>
                       <span style={styles.courseCode}>{item.course.code}</span>
                       <Badge variant={getBadgeUrgency(item.daysUntilDue)} size="sm">
-                        {formatDueDate(item.task.dueAt, item.daysUntilDue)}
+                        {formatSmartDate(item.task.dueAt)}
                       </Badge>
                     </div>
                     <div style={styles.taskTitle}>{item.task.title}</div>

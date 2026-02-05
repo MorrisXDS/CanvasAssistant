@@ -38,7 +38,7 @@ const HOLD_DURATION = 150;
 const EDGE_THRESHOLD = 20;
 
 // How much of the FAB to show when hidden at edge
-const VISIBLE_SLIVER = 16;
+const VISIBLE_SLIVER = 28;
 
 export interface SyncUpdatesFABProps {
   /** Optional class name for styling */
@@ -104,10 +104,6 @@ export function SyncUpdatesFAB({ className = '' }: SyncUpdatesFABProps) {
     };
   }, []);
 
-  // Get current position from settings or default
-  const position = settings.position ?? getDefaultPosition();
-  const currentPos = dragPos ?? position;
-
   // Clamp position to viewport bounds
   const clampPosition = useCallback((x: number, y: number) => {
     const maxX = window.innerWidth - FAB_SIZE - 8;
@@ -117,6 +113,12 @@ export function SyncUpdatesFAB({ className = '' }: SyncUpdatesFABProps) {
       y: Math.max(8, Math.min(y, maxY)),
     };
   }, []);
+
+  // Get current position from settings or default, always clamped to viewport
+  const position = settings.position
+    ? clampPosition(settings.position.x, settings.position.y)
+    : getDefaultPosition();
+  const currentPos = dragPos ?? position;
 
   // Detect which edges the FAB is near and calculate hide transform
   const getEdgeState = useCallback((pos: { x: number; y: number }) => {
@@ -325,8 +327,8 @@ export function SyncUpdatesFAB({ className = '' }: SyncUpdatesFABProps) {
     borderRadius: '50%',
     border: hasActionRequired
       ? '3px solid var(--color-warning)'
-      : '2px solid rgba(255,255,255,0.3)',
-    backgroundColor: 'var(--color-primary)',
+      : '2px solid rgba(0, 0, 0, 0.15)',
+    backgroundColor: '#3b82f6', // Fixed blue color for visibility in all themes
     color: 'white',
     display: 'flex',
     flexDirection: 'column',
@@ -335,12 +337,12 @@ export function SyncUpdatesFAB({ className = '' }: SyncUpdatesFABProps) {
     gap: '1px',
     cursor: isDragging ? 'grabbing' : 'pointer',
     boxShadow: hasActionRequired
-      ? '0 4px 16px rgba(251, 191, 36, 0.4), 0 2px 8px rgba(0, 0, 0, 0.2)'
-      : '0 4px 16px rgba(59, 130, 246, 0.4), 0 2px 8px rgba(0, 0, 0, 0.2)',
+      ? '0 4px 16px rgba(251, 191, 36, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(0,0,0,0.1)'
+      : '0 4px 16px rgba(59, 130, 246, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(0,0,0,0.1)',
     transition: isDragging
       ? 'none'
       : 'opacity 0.2s ease, box-shadow 0.2s ease, transform 0.25s ease',
-    opacity: isDragging ? 0.9 : shouldHide ? 0.7 : baseOpacity,
+    opacity: isDragging ? 0.95 : shouldHide ? 0.9 : baseOpacity,
     userSelect: 'none',
     touchAction: 'none',
     outline: 'none',

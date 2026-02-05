@@ -10,3 +10,22 @@ export {
   useSetFeatureFlag,
   useResetFeatureFlag,
 } from './useFeatureFlag';
+export {
+  useUpdatesByCourse,
+  useUpdatesByFolder,
+  useUpdateCountByType,
+  useSidebarDots,
+  useCourseHasUpdates,
+  useFileUpdateDots,
+  useTaskUpdates,
+  useFileUpdates,
+  useTaskFieldUpdates,
+  useTaskHasUpdates,
+  useFileHasUpdates,
+} from './useUpdatesByEntity';
+export type {
+  CourseUpdateSummary,
+  FolderUpdateSummary,
+  TaskUpdateSummary,
+  FieldUpdateInfo,
+} from './useUpdatesByEntity';

@@ -79,7 +79,7 @@ export class WindowManager {
     this.logger.info('Creating main window...');
 
     this.mainWindow = new BrowserWindow({
-      width: 1600,
+      width: 1420,
       height: 1080,
       minWidth: 1080,
       minHeight: 720,

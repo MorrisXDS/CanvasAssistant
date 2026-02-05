@@ -2303,4 +2303,23 @@ export const coreMigrations: Migration[] = [
       SELECT 1;
     `,
   },
+  // Migration 101: Add changed_field column for tracking which field changed in sync updates
+  {
+    version: 101,
+    description:
+      'Add changed_field column to sync_updates for field-level update tracking',
+    up: `
+      -- Add changed_field column to track which specific field changed for 'updated' changeType
+      -- This complements existing conflict_field which is for conflicts
+      ALTER TABLE sync_updates ADD COLUMN changed_field TEXT;
+
+      -- Create index for efficient querying by entity + field
+      CREATE INDEX idx_sync_updates_changed ON sync_updates(entity_type, entity_id, changed_field);
+    `,
+    down: `
+      DROP INDEX IF EXISTS idx_sync_updates_changed;
+      -- SQLite doesn't support DROP COLUMN, column will remain but be unused
+      SELECT 1;
+    `,
+  },
 ];

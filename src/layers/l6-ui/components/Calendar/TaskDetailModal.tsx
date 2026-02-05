@@ -22,6 +22,7 @@ import type { CalendarEvent } from './CalendarGrid';
 import { HtmlContent } from '../shared';
 import { useStore } from '../../../l5-presentation/store';
 import { styles } from './TaskDetailModal.styles';
+import { formatSmartDate } from '../../constants';
 
 interface TaskDetailModalProps {
   isOpen: boolean;
@@ -30,18 +31,6 @@ interface TaskDetailModalProps {
   onToggleComplete?: (task: Task) => void;
   onEdit?: () => void;
   onDelete?: () => void;
-}
-
-function formatDate(dateStr: string | null): string {
-  if (!dateStr) return 'No due date';
-  const date = new Date(dateStr);
-  return date.toLocaleDateString('en-US', {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  });
 }
 
 function getTimeUntilDue(dueAt: string | null): {
@@ -168,13 +157,13 @@ export function TaskDetailModal({
                   <div style={styles.row}>
                     <Clock size={16} color="var(--text-muted)" />
                     <span style={styles.label}>Start:</span>
-                    <span style={styles.value}>{formatDate(task.unlockAt)}</span>
+                    <span style={styles.value}>{formatSmartDate(task.unlockAt)}</span>
                   </div>
                 )}
                 <div style={styles.row}>
                   <Calendar size={16} color="var(--text-muted)" />
                   <span style={styles.label}>Due:</span>
-                  <span style={styles.value}>{formatDate(task.dueAt)}</span>
+                  <span style={styles.value}>{formatSmartDate(task.dueAt)}</span>
                 </div>
                 {/* Location */}
                 {task.location && (
@@ -291,7 +280,7 @@ export function TaskDetailModal({
                         <span style={styles.label}>Due:</span>
                         <span style={styles.value}>
                           {importedEvent.endAt
-                            ? formatDate(importedEvent.endAt)
+                            ? formatSmartDate(importedEvent.endAt)
                             : 'No due date'}
                         </span>
                       </div>
@@ -306,7 +295,7 @@ export function TaskDetailModal({
                           <span style={styles.value}>
                             {importedEvent.allDay
                               ? new Date(importedEvent.startAt).toLocaleDateString()
-                              : formatDate(importedEvent.startAt)}
+                              : formatSmartDate(importedEvent.startAt)}
                           </span>
                         </div>
                         <div style={styles.row}>
@@ -315,7 +304,7 @@ export function TaskDetailModal({
                           <span style={styles.value}>
                             {importedEvent.allDay
                               ? new Date(importedEvent.endAt!).toLocaleDateString()
-                              : formatDate(importedEvent.endAt)}
+                              : formatSmartDate(importedEvent.endAt)}
                           </span>
                         </div>
                       </>
@@ -329,7 +318,7 @@ export function TaskDetailModal({
                         <span style={styles.value}>
                           {importedEvent.allDay
                             ? new Date(importedEvent.startAt).toLocaleDateString()
-                            : formatDate(importedEvent.startAt)}
+                            : formatSmartDate(importedEvent.startAt)}
                         </span>
                       </div>
                     );

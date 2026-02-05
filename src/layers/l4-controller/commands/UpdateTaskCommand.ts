@@ -200,8 +200,8 @@ export class UpdateTaskCommand implements Command<UpdateTaskParams, { taskId: nu
             );
           }
 
-          // Sync due_at to calendar event's end_at
-          if (params.dueAt !== undefined && params.dueAt) {
+          // Sync due_at to calendar event's end_at (including clearing it)
+          if (params.dueAt !== undefined) {
             context.db.executeWrite(
               `UPDATE calendar_events
                SET end_at = ?, updated_at = CURRENT_TIMESTAMP

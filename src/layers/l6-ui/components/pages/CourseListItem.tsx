@@ -6,6 +6,7 @@
 import React from 'react';
 import { Pin, PinOff, Eye, EyeOff, ChevronRight } from 'lucide-react';
 import { ColorPickerPopup } from '../primitives';
+import { NotificationDot } from '../shared';
 import { COURSE_COLORS, getCourseColor } from '../../constants';
 import { getShortCode } from './coursesPageUtils';
 import { styles } from './coursesPageStyles';
@@ -31,6 +32,8 @@ function CourseListItemComponent({
   onColorChange,
   onColorInputChange: _onColorInputChange,
   onColorPickerClose,
+  hasUpdates,
+  hasActionRequired,
 }: CourseListItemProps) {
   const color = getCourseColor(course.id, course.color);
 
@@ -73,6 +76,16 @@ function CourseListItemComponent({
             {getShortCode(course.code)}
           </span>
           <span style={styles.listFullCode}>{course.code}</span>
+          {/* Notification dot for unseen updates */}
+          {hasUpdates && (
+            <NotificationDot
+              color={color}
+              size="sm"
+              pulse={hasActionRequired}
+              title="New updates available"
+              style={{ marginLeft: 'var(--space-2)' }}
+            />
+          )}
         </div>
         <h3 style={styles.listCourseName}>{course.nickname || course.name}</h3>
       </div>

@@ -29,8 +29,15 @@ import {
   GripVertical,
   FileText,
 } from 'lucide-react';
-import { Card, ConfirmDialog, Dropdown } from '../shared';
+import {
+  Card,
+  ConfirmDialog,
+  Dropdown,
+  NotificationDot,
+  type UpdateType,
+} from '../shared';
 import { useStore } from '../../../l5-presentation/store';
+import { useUpdatesByCourse, useFileUpdates } from '../../hooks';
 import styles from './FilesPage.module.css';
 
 // Import extracted components
@@ -207,7 +214,13 @@ function getFolderIcon(type: FolderTypeConfig, size: number = 14) {
 }
 
 export function FilesPage() {
-  const { courses, syncStatus, triggerSync } = useStore();
+  const { courses, syncStatus, triggerSync, syncUpdates, markAllSyncUpdatesSeen } =
+    useStore();
+
+  // Notification dots for courses with file updates
+  const _updatesByCourse = useUpdatesByCourse();
+  const fileUpdates = useFileUpdates();
+
   const [files, setFiles] = useState<FilesData>({
     resources: [],
     attachments: [],
@@ -731,6 +744,8 @@ export function FilesPage() {
 
   // Toggle helpers
   const toggleCourse = (courseId: number) => {
+    const isExpanding = !expandedCourses.has(courseId);
+
     setExpandedCourses((prev) => {
       const next = new Set(prev);
       if (next.has(courseId)) {
@@ -743,6 +758,20 @@ export function FilesPage() {
       }
       return next;
     });
+
+    // Mark all file/page updates for this course as seen when expanding
+    if (isExpanding) {
+      markAllSyncUpdatesSeen({
+        courseId,
+        entityType: 'file',
+        excludeActionRequired: true,
+      });
+      markAllSyncUpdatesSeen({
+        courseId,
+        entityType: 'page',
+        excludeActionRequired: true,
+      });
+    }
   };
 
   const getFolderKey = (courseId: number, folderPath: string) =>
@@ -780,11 +809,101 @@ export function FilesPage() {
           console.error('Failed to sync folder files:', error);
         });
     }
+
+    // Mark file updates in this folder as seen when expanding
+    if (isExpanding) {
+      // Find update IDs for this folder and mark them as seen
+      const updateIdsToMark = syncUpdates.updates
+        .filter((u) => {
+          if (u.courseId !== courseId) return false;
+          if (u.entityType !== 'file' && u.entityType !== 'page') return false;
+          if (u.seenAt !== null) return false;
+          // Match folder path (subtitle is folder path for file updates)
+          const updateFolderPath = u.subtitle || '';
+          return updateFolderPath === folderPath;
+        })
+        .map((u) => u.id);
+
+      if (updateIdsToMark.length > 0 && window.api?.markSyncUpdatesSeen) {
+        window.api.markSyncUpdatesSeen(updateIdsToMark).catch((error) => {
+          console.error('Failed to mark folder updates as seen:', error);
+        });
+      }
+    }
   };
 
   const isFolderExpanded = (courseId: number, folderPath: string) => {
     return expandedFolders.has(getFolderKey(courseId, folderPath));
   };
+
+  // Calculate folder updates for notification dots
+  // Groups file/page updates by folder path for each course
+  const folderUpdates = useMemo(() => {
+    const map = new Map<string, { count: number; hasActionRequired: boolean }>();
+
+    for (const update of syncUpdates.updates) {
+      // Only file and page updates
+      if (update.entityType !== 'file' && update.entityType !== 'page') continue;
+      if (update.seenAt !== null) continue;
+
+      // Use subtitle as folder path (may be empty for root)
+      const folderPath = update.subtitle || '';
+      const key = getFolderKey(update.courseId, folderPath);
+
+      const existing = map.get(key);
+      if (existing) {
+        existing.count++;
+        if (update.isActionRequired) {
+          existing.hasActionRequired = true;
+        }
+      } else {
+        map.set(key, {
+          count: 1,
+          hasActionRequired: update.isActionRequired || false,
+        });
+      }
+    }
+
+    return map;
+  }, [syncUpdates.updates]);
+
+  // Check if a folder has unseen updates
+  const getFolderUpdateInfo = (courseId: number, folderPath: string) => {
+    return folderUpdates.get(getFolderKey(courseId, folderPath));
+  };
+
+  // Check if a course has any file/page updates (for course header dot)
+  const courseHasFileUpdates = (courseId: number) => {
+    for (const update of syncUpdates.updates) {
+      if (update.courseId !== courseId) continue;
+      if (update.entityType !== 'file' && update.entityType !== 'page') continue;
+      if (update.seenAt !== null) continue;
+      return true;
+    }
+    return false;
+  };
+
+  // Get update type for a file (for notification dot coloring)
+  const getFileUpdateType = useCallback(
+    (file: FileItem): UpdateType | null => {
+      const update = fileUpdates.get(file.id);
+      return update?.updateType ?? null;
+    },
+    [fileUpdates]
+  );
+
+  // Mark file update as seen (for auto-dismiss when file is opened/downloaded)
+  const markFileUpdateSeen = useCallback(
+    (file: FileItem) => {
+      const update = fileUpdates.get(file.id);
+      if (update && update.updateIds.length > 0) {
+        window.api?.markSyncUpdatesSeen?.(update.updateIds).catch((err: unknown) => {
+          console.error('Failed to mark file update as seen:', err);
+        });
+      }
+    },
+    [fileUpdates]
+  );
 
   // Filter toggles
   const togglePrefix = (prefix: string) => {
@@ -943,6 +1062,8 @@ export function FilesPage() {
       }
       if (result?.success) {
         await fetchFiles();
+        // Mark file update as seen after successful download
+        markFileUpdateSeen(file);
       }
     } catch (error) {
       console.error('Download failed:', error);
@@ -1060,6 +1181,9 @@ export function FilesPage() {
     if (!api) return;
 
     console.log('[FilesPage] handleOpen called');
+
+    // Mark file update as seen when opened
+    markFileUpdateSeen(file);
 
     // Fire-and-forget: don't block UI while file opens in external app
     if (file.source === 'attachment') {
@@ -1992,6 +2116,15 @@ export function FilesPage() {
                     <span className={styles.courseFileCount}>
                       {downloadedInCourse}/{totalInCourse} downloaded
                     </span>
+                    {/* Notification dot for courses with file updates */}
+                    {courseHasFileUpdates(courseId) && (
+                      <NotificationDot
+                        color={courseColor}
+                        size="md"
+                        title="New file updates"
+                        style={{ marginLeft: 'var(--space-2)' }}
+                      />
+                    )}
                   </button>
 
                   {/* Folders and Files */}
@@ -2075,6 +2208,22 @@ export function FilesPage() {
                               <span className={styles.folderFileCount}>
                                 {folderDownloaded}/{folderFiles.length}
                               </span>
+                              {/* Notification dot for unseen file updates */}
+                              {(() => {
+                                const updateInfo = getFolderUpdateInfo(
+                                  courseId,
+                                  folderPath
+                                );
+                                return updateInfo ? (
+                                  <NotificationDot
+                                    color={courseColor}
+                                    size="sm"
+                                    pulse={updateInfo.hasActionRequired}
+                                    title={`${updateInfo.count} new update${updateInfo.count > 1 ? 's' : ''}`}
+                                    style={{ marginLeft: 'var(--space-2)' }}
+                                  />
+                                ) : null;
+                              })()}
                             </button>
 
                             {/* Files in Folder */}
@@ -2106,6 +2255,7 @@ export function FilesPage() {
                                           : undefined
                                       }
                                       onContextMenu={(e) => handleContextMenu(file, e)}
+                                      updateType={getFileUpdateType(file)}
                                     />
                                   ))}
                                 </div>
@@ -2136,6 +2286,7 @@ export function FilesPage() {
                                           : undefined
                                       }
                                       onContextMenu={(e) => handleContextMenu(file, e)}
+                                      updateType={getFileUpdateType(file)}
                                     />
                                   ))}
                                 </div>

@@ -7,7 +7,7 @@
 import React, { useState } from 'react';
 import { Check, X, Link2, ChevronDown, ChevronRight } from 'lucide-react';
 import type { QueuedTask } from '../../../l5-presentation/types';
-import { TASK_TYPES } from '../../constants';
+import { TASK_TYPES, formatSmartDate } from '../../constants';
 
 export interface QueuedTaskEdits {
   title?: string;
@@ -39,14 +39,10 @@ function formatDateForInput(dateStr: string | null | undefined): string {
   return `${year}-${month}-${day}T${hours}:${minutes}`;
 }
 
-// Format date for display (compact)
+// Format date for display (compact, but still uses smart Today/Tomorrow)
 function formatDateCompact(dateStr: string | null | undefined): string {
   if (!dateStr) return '–'; // en-dash for empty
-  const date = new Date(dateStr);
-  return date.toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-  });
+  return formatSmartDate(dateStr, { includeTime: false });
 }
 
 // Get task type label (short version)

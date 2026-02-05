@@ -4,13 +4,14 @@
  * Layout Option E: Compact, unified list with status filters
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { CheckCircle, Clock, Plus, FileText, ListFilter } from 'lucide-react';
 import { Card } from '../../shared';
 import type { Task } from '../../../../l5-presentation/types';
 import { courseDetailStyles as styles } from '../../pages/CourseDetail.styles';
 import { TaskItem } from './TaskItem';
 import { AddTaskForm } from './AddTaskForm';
+import { useTaskUpdates } from '../../../hooks';
 
 type TaskFilter = 'all' | 'pending' | 'submitted' | 'graded' | 'info';
 
@@ -194,6 +195,22 @@ export function UnifiedTaskList({
   onFileDownloadRequest,
 }: UnifiedTaskListProps) {
   const [activeFilter, setActiveFilter] = useState<TaskFilter>('all');
+
+  // Notification dot hooks
+  const taskUpdates = useTaskUpdates();
+
+  // Create callback to mark task updates as seen
+  const handleMarkUpdatesSeen = useCallback(
+    (taskId: number) => {
+      const update = taskUpdates.get(taskId);
+      if (update && update.updateIds.length > 0) {
+        window.api?.markSyncUpdatesSeen?.(update.updateIds).catch((err: Error) => {
+          console.error('Failed to mark task updates as seen:', err);
+        });
+      }
+    },
+    [taskUpdates]
+  );
 
   // Combine all tasks with their category for display
   const allTasks = useMemo(() => {
@@ -383,6 +400,8 @@ export function UnifiedTaskList({
                 if (el) taskRefs.current.set(task.id, el);
               }}
               onFileDownloadRequest={onFileDownloadRequest}
+              updateType={taskUpdates.get(task.id)?.updateType}
+              onMarkUpdatesSeen={() => handleMarkUpdatesSeen(task.id)}
             />
           ))}
         </div>

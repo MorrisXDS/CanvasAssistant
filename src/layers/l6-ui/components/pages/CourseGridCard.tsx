@@ -6,7 +6,13 @@
 import React from 'react';
 import { Pin, PinOff, Target, Eye, EyeOff, GripVertical } from 'lucide-react';
 import { ColorPickerPopup } from '../primitives';
-import { formatTimeAgo, formatGrade, COURSE_COLORS, getCourseColor } from '../../constants';
+import { NotificationDot } from '../shared';
+import {
+  formatTimeAgo,
+  formatGrade,
+  COURSE_COLORS,
+  getCourseColor,
+} from '../../constants';
 import { getShortCode } from './coursesPageUtils';
 import { styles } from './coursesPageStyles';
 import type { Course } from '../../../l5-presentation/types';
@@ -26,6 +32,10 @@ export interface CourseCardProps {
   onColorChange?: (courseId: number, color: string) => void;
   onColorInputChange?: (value: string) => void;
   onColorPickerClose?: () => void;
+  // Notification dot props
+  hasUpdates?: boolean;
+  updateCount?: number;
+  hasActionRequired?: boolean;
   // Drag-and-drop props
   isDragging?: boolean;
   isDragOver?: boolean;
@@ -51,6 +61,8 @@ function CourseGridCardComponent({
   onColorChange,
   onColorInputChange: _onColorInputChange,
   onColorPickerClose,
+  hasUpdates,
+  hasActionRequired,
   isDragging,
   isDragOver,
   onDragStart,
@@ -68,6 +80,7 @@ function CourseGridCardComponent({
         opacity: isDragging ? 0.5 : 1,
         boxShadow: isDragOver ? '0 0 0 2px var(--color-blue)' : 'var(--shadow-card)',
         transition: 'box-shadow 150ms ease, opacity 150ms ease',
+        position: 'relative',
       }}
       onClick={onClick}
       draggable
@@ -77,6 +90,21 @@ function CourseGridCardComponent({
       onDragLeave={onDragLeave}
       onDrop={onDrop}
     >
+      {/* Notification dot for unseen updates */}
+      {hasUpdates && (
+        <NotificationDot
+          color={color}
+          size="md"
+          pulse={hasActionRequired}
+          title="New updates available"
+          style={{
+            position: 'absolute',
+            top: 8,
+            right: 8,
+            zIndex: 1,
+          }}
+        />
+      )}
       {/* Color accent bar - click to change color */}
       <div
         style={{

@@ -33,6 +33,8 @@ import {
 } from '../../l5-presentation/settings';
 import { formatTimeAgo } from '../constants';
 import { layoutStyles as styles } from './layoutStyles';
+import { NotificationDotGroup } from './shared';
+import { useSidebarDots, useFileUpdateDots } from '../hooks';
 
 /** Navigation item configuration */
 interface NavItem {
@@ -82,6 +84,10 @@ interface SidebarProps {
 export function Sidebar({ onToggle }: SidebarProps) {
   const { syncStatus, courses, lastSyncedAt, syncUpdates } = useStore();
   const { totalUnseen: updatesBadgeCount } = syncUpdates;
+
+  // Notification dots for sidebar nav items
+  const sidebarDots = useSidebarDots();
+  const fileUpdateDots = useFileUpdateDots();
 
   // Sidebar collapse state from settings
   const { collapsed: isCollapsed, setCollapsed } = useSidebarState();
@@ -437,7 +443,25 @@ export function Sidebar({ onToggle }: SidebarProps) {
                       </span>
                     )}
                   </div>
-                  {!isCollapsed && <span>{item.label}</span>}
+                  {!isCollapsed && (
+                    <span style={{ display: 'flex', alignItems: 'center', flex: 1 }}>
+                      {item.label}
+                      {/* Notification dots for nav items with updates */}
+                      {item.id === 'dashboard' && sidebarDots.length > 0 && (
+                        <NotificationDotGroup dots={sidebarDots} maxDots={5} size="sm" />
+                      )}
+                      {item.id === 'courses' && sidebarDots.length > 0 && (
+                        <NotificationDotGroup dots={sidebarDots} maxDots={5} size="sm" />
+                      )}
+                      {item.id === 'files' && fileUpdateDots.length > 0 && (
+                        <NotificationDotGroup
+                          dots={fileUpdateDots}
+                          maxDots={3}
+                          size="sm"
+                        />
+                      )}
+                    </span>
+                  )}
                 </NavLink>
               </div>
             );

@@ -14,27 +14,22 @@ import {
   Trash2,
   MapPin,
 } from 'lucide-react';
-import { RichTextEditor, TaskCheckIcon } from '../../shared';
+import {
+  RichTextEditor,
+  TaskCheckIcon,
+  NotificationDot,
+  FieldNotificationDot,
+  type UpdateType,
+} from '../../shared';
 import type { Task } from '../../../../l5-presentation/types';
 import {
   STORAGE_KEYS,
   LINK_BEHAVIOR,
   type LinkBehavior,
 } from '../../../../l5-presentation/settings';
-import { TASK_TYPES, formatGrade } from '../../../constants';
+import { TASK_TYPES, formatGrade, formatSmartDate } from '../../../constants';
 import { courseDetailStyles as styles } from '../../pages/CourseDetail.styles';
-
-// Format date for display
-function formatDate(dateStr: string | null): string {
-  if (!dateStr) return 'No date';
-  const date = new Date(dateStr);
-  return date.toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  });
-}
+import { useTaskFieldUpdates } from '../../../hooks';
 
 // Get urgency color based on due date
 function getUrgencyColor(dueAt: string | null): string {
@@ -48,6 +43,18 @@ function getUrgencyColor(dueAt: string | null): string {
   if (hoursUntil < 72) return 'var(--color-medium)';
   return 'var(--text-secondary)';
 }
+
+// Map field keys to display labels
+const FIELD_LABELS: Record<string, string> = {
+  title: 'Title',
+  due_at: 'Due date',
+  points_possible: 'Points',
+  weight: 'Weight',
+  grade: 'Grade',
+  is_completed: 'Completed status',
+  submission_status: 'Submission status',
+  description: 'Description',
+};
 
 /**
  * Get the user's link behavior preference from localStorage
@@ -108,6 +115,10 @@ export interface TaskItemProps {
   onContextMenu?: (e: React.MouseEvent) => void;
   taskRef?: (el: HTMLDivElement | null) => void;
   onFileDownloadRequest?: (file: { id: number; title: string }, href: string) => void;
+  /** Update type for this task (null = no updates) */
+  updateType?: UpdateType | null;
+  /** Callback to mark updates as seen */
+  onMarkUpdatesSeen?: () => void;
 }
 
 export function TaskItem({
@@ -145,9 +156,21 @@ export function TaskItem({
   onContextMenu,
   taskRef,
   onFileDownloadRequest,
+  updateType,
+  onMarkUpdatesSeen,
 }: TaskItemProps) {
   const [isHovered, setIsHovered] = React.useState(false);
   const wrapperRef = React.useRef<HTMLDivElement | null>(null);
+
+  // Get field-level updates for this task (returns null for 'new' tasks)
+  const fieldUpdates = useTaskFieldUpdates(task.id);
+
+  // Auto-dismiss: mark updates as seen when task is expanded
+  React.useEffect(() => {
+    if (isExpanded && updateType && onMarkUpdatesSeen) {
+      onMarkUpdatesSeen();
+    }
+  }, [isExpanded, updateType, onMarkUpdatesSeen]);
 
   // Double-click outside to close edit mode
   React.useEffect(() => {
@@ -238,10 +261,32 @@ export function TaskItem({
           <div
             style={{
               ...styles.taskTitle,
-              textDecoration: isCompleted ? 'line-through' : 'none',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 'var(--space-2)',
             }}
           >
-            {task.title}
+            <span style={{ textDecoration: isCompleted ? 'line-through' : 'none' }}>
+              {task.title}
+            </span>
+            {updateType && (
+              <>
+                <NotificationDot updateType={updateType} size="sm" />
+                {fieldUpdates && fieldUpdates.size > 0 && (
+                  <span
+                    style={{
+                      fontSize: '12px',
+                      color: 'var(--text-secondary)',
+                      fontWeight: 500,
+                    }}
+                  >
+                    {Array.from(fieldUpdates.keys())
+                      .map((field) => FIELD_LABELS[field] || field)
+                      .join(', ')}
+                  </span>
+                )}
+              </>
+            )}
           </div>
           <div style={styles.taskMeta}>
             {task.dueAt && (
@@ -251,7 +296,7 @@ export function TaskItem({
                 }}
               >
                 <Calendar size={12} />
-                {formatDate(task.dueAt)}
+                {formatSmartDate(task.dueAt)}
                 {task.fieldSources?.due_at === 'guessed' && (
                   <span style={styles.guessedBadge} title="Auto-assigned date">
                     (est.)
@@ -389,27 +434,99 @@ export function TaskItem({
               )}
               {task.dueAt && (
                 <div style={styles.taskDetailItem}>
-                  <span style={styles.taskDetailLabel}>Due Date</span>
+                  <span
+                    style={{
+                      ...styles.taskDetailLabel,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                    }}
+                  >
+                    Due Date
+                    {fieldUpdates?.get('due_at') && (
+                      <FieldNotificationDot
+                        updateType={fieldUpdates.get('due_at')!.updateType}
+                        fieldName="due_at"
+                        oldValue={fieldUpdates.get('due_at')!.oldValue}
+                        newValue={fieldUpdates.get('due_at')!.newValue}
+                        size="sm"
+                      />
+                    )}
+                  </span>
                   <span style={styles.taskDetailValue}>
-                    {new Date(task.dueAt).toLocaleString()}
+                    {formatSmartDate(task.dueAt)}
                   </span>
                 </div>
               )}
               {task.weight > 0 && (
                 <div style={styles.taskDetailItem}>
-                  <span style={styles.taskDetailLabel}>Weight</span>
+                  <span
+                    style={{
+                      ...styles.taskDetailLabel,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                    }}
+                  >
+                    Weight
+                    {fieldUpdates?.get('weight') && (
+                      <FieldNotificationDot
+                        updateType={fieldUpdates.get('weight')!.updateType}
+                        fieldName="weight"
+                        oldValue={fieldUpdates.get('weight')!.oldValue}
+                        newValue={fieldUpdates.get('weight')!.newValue}
+                        size="sm"
+                      />
+                    )}
+                  </span>
                   <span style={styles.taskDetailValue}>{task.weight}%</span>
                 </div>
               )}
               {task.grade !== null && (
                 <div style={styles.taskDetailItem}>
-                  <span style={styles.taskDetailLabel}>Score</span>
+                  <span
+                    style={{
+                      ...styles.taskDetailLabel,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                    }}
+                  >
+                    Score
+                    {fieldUpdates?.get('grade') && (
+                      <FieldNotificationDot
+                        updateType={fieldUpdates.get('grade')!.updateType}
+                        fieldName="grade"
+                        oldValue={fieldUpdates.get('grade')!.oldValue}
+                        newValue={fieldUpdates.get('grade')!.newValue}
+                        size="sm"
+                      />
+                    )}
+                  </span>
                   <span style={styles.taskDetailValue}>{task.grade}%</span>
                 </div>
               )}
               {task.pointsPossible !== null && (
                 <div style={styles.taskDetailItem}>
-                  <span style={styles.taskDetailLabel}>Points</span>
+                  <span
+                    style={{
+                      ...styles.taskDetailLabel,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                    }}
+                  >
+                    Points
+                    {fieldUpdates?.get('points_possible') && (
+                      <FieldNotificationDot
+                        updateType={fieldUpdates.get('points_possible')!.updateType}
+                        fieldName="points_possible"
+                        oldValue={fieldUpdates.get('points_possible')!.oldValue}
+                        newValue={fieldUpdates.get('points_possible')!.newValue}
+                        size="sm"
+                      />
+                    )}
+                  </span>
                   <span style={styles.taskDetailValue}>{task.pointsPossible}</span>
                 </div>
               )}

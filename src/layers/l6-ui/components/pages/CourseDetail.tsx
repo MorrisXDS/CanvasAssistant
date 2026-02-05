@@ -63,7 +63,7 @@ export function CourseDetail() {
   const { id } = useParams<{ id: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { tasks: storeTasks } = useStore();
+  const { tasks: storeTasks, markAllSyncUpdatesSeen } = useStore();
   const courseId = Number(id);
 
   // Task highlight/edit from URL params
@@ -370,6 +370,19 @@ export function CourseDetail() {
       fetchData();
     }
   }, [courseId]);
+
+  // Mark sync updates as seen when visiting this course
+  // This auto-dismisses the notification dots for this course
+  useEffect(() => {
+    if (courseId && !loading) {
+      // Mark informational updates (not action-required) as seen for this course
+      // Action-required items (queued tasks) are marked seen when the user takes action
+      markAllSyncUpdatesSeen({
+        courseId,
+        excludeActionRequired: true,
+      });
+    }
+  }, [courseId, loading, markAllSyncUpdatesSeen]);
 
   // Handle task highlight/edit from URL params
   useEffect(() => {

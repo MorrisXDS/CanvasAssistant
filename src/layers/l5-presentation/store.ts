@@ -548,6 +548,7 @@ export const useStore = create<Store>()(
           fetchImportedCalendars,
           fetchTaskQueueCount,
           fetchSyncUpdatesCount,
+          fetchSyncUpdates,
         } = get();
         try {
           // Fetch courses FIRST since tasks filtering depends on courses being loaded
@@ -559,6 +560,7 @@ export const useStore = create<Store>()(
             fetchImportedCalendars(),
             fetchTaskQueueCount(),
             fetchSyncUpdatesCount(),
+            fetchSyncUpdates(),
           ]);
 
           // Log any unexpected failures (individual fetch methods already handle their own errors)

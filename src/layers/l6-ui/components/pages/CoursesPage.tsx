@@ -20,6 +20,7 @@ import { useStore, getCachedCourseGrades } from '../../../l5-presentation/store'
 import { Card } from '../shared';
 import { useShallow } from 'zustand/react/shallow';
 import { useCourseDragDrop } from './useCourseDragDrop';
+import { useUpdatesByCourse } from '../../hooks';
 import { getCourseColor, formatGrade } from '../../constants';
 import type { Course } from '../../../l5-presentation/types';
 
@@ -80,6 +81,9 @@ export function CoursesPage() {
     handleDragEnd,
     handleDrop,
   } = useCourseDragDrop(courseIds);
+
+  // Course updates for notification dots
+  const updatesByCourse = useUpdatesByCourse();
 
   // Color picker state
   const [colorPickerCourseId, setColorPickerCourseId] = useState<number | null>(null);
@@ -497,6 +501,7 @@ export function CoursesPage() {
         <div style={styles.grid}>
           {filteredCourses.map((course) => {
             const grades = getCachedCourseGrades(course.id, tasks);
+            const updateInfo = updatesByCourse.get(course.id);
             return (
               <CourseGridCard
                 key={course.id}
@@ -516,6 +521,9 @@ export function CoursesPage() {
                 onColorChange={handleColorChange}
                 onColorInputChange={setCustomColor}
                 onColorPickerClose={closeColorPicker}
+                hasUpdates={!!updateInfo}
+                updateCount={updateInfo?.count}
+                hasActionRequired={updateInfo?.hasActionRequired}
                 isDragging={draggedCourseId === course.id}
                 isDragOver={dragOverCourseId === course.id}
                 onDragStart={(e) => handleDragStart(e, course.id)}
@@ -534,6 +542,7 @@ export function CoursesPage() {
             // For small lists, render directly
             filteredCourses.map((course, index) => {
               const grades = getCachedCourseGrades(course.id, tasks);
+              const updateInfo = updatesByCourse.get(course.id);
               return (
                 <CourseListItem
                   key={course.id}
@@ -554,6 +563,9 @@ export function CoursesPage() {
                   onColorChange={handleColorChange}
                   onColorInputChange={setCustomColor}
                   onColorPickerClose={closeColorPicker}
+                  hasUpdates={!!updateInfo}
+                  updateCount={updateInfo?.count}
+                  hasActionRequired={updateInfo?.hasActionRequired}
                 />
               );
             })
@@ -577,6 +589,7 @@ export function CoursesPage() {
                 handleColorChange,
                 setCustomColor,
                 closeColorPicker,
+                updatesByCourse,
               }}
             >
               {VirtualizedListItem}
@@ -611,6 +624,10 @@ interface VirtualizedListItemData {
   handleColorChange: (courseId: number, color: string) => Promise<void>;
   setCustomColor: (value: string) => void;
   closeColorPicker: () => void;
+  updatesByCourse: Map<
+    number,
+    { color: string; count: number; hasActionRequired: boolean }
+  >;
 }
 
 function VirtualizedListItem({
@@ -624,6 +641,7 @@ function VirtualizedListItem({
 }) {
   const course = data.courses[index];
   const grades = getCachedCourseGrades(course.id, data.tasks);
+  const updateInfo = data.updatesByCourse.get(course.id);
 
   return (
     <div style={style}>
@@ -645,6 +663,9 @@ function VirtualizedListItem({
         onColorChange={data.handleColorChange}
         onColorInputChange={data.setCustomColor}
         onColorPickerClose={data.closeColorPicker}
+        hasUpdates={!!updateInfo}
+        updateCount={updateInfo?.count}
+        hasActionRequired={updateInfo?.hasActionRequired}
       />
     </div>
   );
