@@ -107,6 +107,12 @@ export const STORAGE_KEYS = {
 
   // Timezone settings
   TIMEZONE: 'timezoneSettings',
+
+  // Sync Updates FAB settings
+  SYNC_UPDATES_FAB: 'syncUpdatesFabSettings',
+
+  // Updates page visibility in sidebar
+  SHOW_UPDATES_IN_SIDEBAR: 'showUpdatesInSidebar',
 } as const;
 
 export type StorageKey = (typeof STORAGE_KEYS)[keyof typeof STORAGE_KEYS];
@@ -311,6 +317,25 @@ export const TimezoneSettingsSchema = z.object({
   lastSyncedAt: z.string().nullable().default(null),
 });
 
+/**
+ * Sync Updates FAB Settings Schema
+ *
+ * Controls the appearance and position of the floating action button
+ * that shows sync update notifications.
+ */
+export const SyncUpdatesFabSettingsSchema = z.object({
+  // Custom position (null = use default bottom-right)
+  position: z
+    .object({
+      x: z.number(),
+      y: z.number(),
+    })
+    .nullable()
+    .default(null),
+  // Opacity (0.3 to 1.0, default 0.7)
+  opacity: z.number().min(0.3).max(1.0).default(0.7),
+});
+
 // =============================================================================
 // TYPESCRIPT TYPES - Inferred from Zod schemas
 // =============================================================================
@@ -330,6 +355,7 @@ export type LocalHtmlPathsSettings = z.infer<typeof LocalHtmlPathsSettingsSchema
 export type ExportSchedule = z.infer<typeof ExportScheduleSchema>;
 export type SettingsPageSettings = z.infer<typeof SettingsPageSettingsSchema>;
 export type TimezoneSettings = z.infer<typeof TimezoneSettingsSchema>;
+export type SyncUpdatesFabSettings = z.infer<typeof SyncUpdatesFabSettingsSchema>;
 
 // Union type for all settings objects
 export type SettingsValue =
@@ -348,6 +374,7 @@ export type SettingsValue =
   | ExportSchedule
   | SettingsPageSettings
   | TimezoneSettings
+  | SyncUpdatesFabSettings
   | string
   | boolean
   | string[];
@@ -496,6 +523,11 @@ export const DEFAULT_TIMEZONE_SETTINGS: TimezoneSettings = {
   lastSyncedAt: null,
 };
 
+export const DEFAULT_SYNC_UPDATES_FAB_SETTINGS: SyncUpdatesFabSettings = {
+  position: null, // null = use default bottom-right position
+  opacity: 0.7, // 70% opacity by default
+};
+
 // Dashboard section order
 export const DEFAULT_DASHBOARD_ORDER = ['notifications', 'schedule', 'importantWorks'];
 
@@ -521,6 +553,7 @@ export interface SettingsTypeMap {
   [STORAGE_KEYS.LOCAL_HTML_PATHS]: LocalHtmlPathsSettings;
   [STORAGE_KEYS.EXPORT_SCHEDULE]: ExportSchedule;
   [STORAGE_KEYS.TIMEZONE]: TimezoneSettings;
+  [STORAGE_KEYS.SYNC_UPDATES_FAB]: SyncUpdatesFabSettings;
   [STORAGE_KEYS.CANVAS_URL]: string;
   [STORAGE_KEYS.LANDING_PAGE]: string;
   [STORAGE_KEYS.SIDEBAR_COLLAPSED]: boolean;
@@ -554,6 +587,7 @@ export interface SettingsTypeMap {
   [STORAGE_KEYS.ONBOARDING_COMPLETED]: boolean;
   [STORAGE_KEYS.ARCHIVED_COURSE_WARNING_DISMISSED]: string;
   [STORAGE_KEYS.ARCHIVED_COURSE_WARNING_DISMISSED_IDS]: string;
+  [STORAGE_KEYS.SHOW_UPDATES_IN_SIDEBAR]: boolean;
 }
 
 // Default order for settings sections
@@ -580,6 +614,7 @@ export const SETTINGS_DEFAULTS: Partial<SettingsTypeMap> = {
   [STORAGE_KEYS.LOCAL_HTML_PATHS]: DEFAULT_LOCAL_HTML_PATHS_SETTINGS,
   [STORAGE_KEYS.EXPORT_SCHEDULE]: DEFAULT_EXPORT_SCHEDULE,
   [STORAGE_KEYS.TIMEZONE]: DEFAULT_TIMEZONE_SETTINGS,
+  [STORAGE_KEYS.SYNC_UPDATES_FAB]: DEFAULT_SYNC_UPDATES_FAB_SETTINGS,
   [STORAGE_KEYS.CANVAS_URL]: '',
   [STORAGE_KEYS.LANDING_PAGE]: '/',
   [STORAGE_KEYS.SIDEBAR_COLLAPSED]: false,
@@ -589,6 +624,7 @@ export const SETTINGS_DEFAULTS: Partial<SettingsTypeMap> = {
   [STORAGE_KEYS.FILES_DEFAULT_STATE]: 'remember',
   [STORAGE_KEYS.SETTINGS_SECTION_ORDER]: DEFAULT_SETTINGS_SECTION_ORDER,
   [STORAGE_KEYS.QUEUE_DEFAULT_EXPANDED]: false, // Collapsed by default
+  [STORAGE_KEYS.SHOW_UPDATES_IN_SIDEBAR]: false, // Hidden by default - use FAB
 };
 
 // Schema map for validation
@@ -607,6 +643,7 @@ export const SETTINGS_SCHEMAS: Partial<Record<string, z.ZodType>> = {
   [STORAGE_KEYS.LOCAL_HTML_PATHS]: LocalHtmlPathsSettingsSchema,
   [STORAGE_KEYS.EXPORT_SCHEDULE]: ExportScheduleSchema,
   [STORAGE_KEYS.TIMEZONE]: TimezoneSettingsSchema,
+  [STORAGE_KEYS.SYNC_UPDATES_FAB]: SyncUpdatesFabSettingsSchema,
 };
 
 // Settings metadata (SETTINGS_METADATA, SETTINGS_CATEGORIES, getSettingsByCategory,

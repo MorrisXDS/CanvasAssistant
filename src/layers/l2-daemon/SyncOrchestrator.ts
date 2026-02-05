@@ -311,8 +311,21 @@ export class SyncOrchestrator {
       assignmentGroups: 0,
     };
 
+    // Track sync updates for the FAB notification
+    const updateCounts = {
+      newTasks: 0,
+      updatedTasks: 0,
+      newAnnouncements: 0,
+      gradeChanges: 0,
+      newFiles: 0,
+      conflicts: 0,
+    };
+
     this.emitter.emit('sync-phase', { phase: 'commit', status: 'started' });
     this.checkpointManager.markCheckpointCommitting(syncId);
+
+    // Create sync session for tracking updates
+    this.createSyncSession(syncId);
 
     const baseUrl = this.client.getBaseUrl();
 
@@ -339,7 +352,7 @@ export class SyncOrchestrator {
             );
 
           if (conflicts.length > 0) {
-            this.emitter.emit('sync-conflicts', { entity: 'course', conflicts });
+            // Don't emit sync-conflicts event - conflicts now go to Updates page
             for (const conflict of conflicts) {
               const conflictData = { ...localCourse, id: existing?.id };
               this.pendingConflictData.set(conflict.id, {
@@ -347,6 +360,24 @@ export class SyncOrchestrator {
                 data: conflictData,
               });
               this.persistConflictData(conflict.id, 'courses', conflictData);
+
+              // Record conflict to sync_updates for notification system
+              const courseId = (existing?.id as number) || 0;
+              this.recordSyncUpdate({
+                syncSessionId: syncId,
+                courseId: courseId,
+                entityType: 'conflict',
+                entityId: courseId,
+                externalId: conflict.id,
+                changeType: 'conflict',
+                title: conflict.entityName,
+                subtitle: `${conflict.fieldLabel}: local vs Canvas`,
+                oldValue: JSON.stringify(conflict.localValue),
+                newValue: JSON.stringify(conflict.canvasValue),
+                conflictField: conflict.field,
+                isActionRequired: true,
+              });
+              updateCounts.conflicts = (updateCounts.conflicts || 0) + 1;
             }
           }
 
@@ -493,7 +524,7 @@ export class SyncOrchestrator {
                   );
 
                 if (conflicts.length > 0) {
-                  this.emitter.emit('sync-conflicts', { entity: 'task', conflicts });
+                  // Don't emit sync-conflicts event - conflicts now go to Updates page
                   for (const conflict of conflicts) {
                     const conflictData = { ...localTask, id: acceptedTask.id };
                     this.pendingConflictData.set(conflict.id, {
@@ -501,6 +532,24 @@ export class SyncOrchestrator {
                       data: conflictData,
                     });
                     this.persistConflictData(conflict.id, 'tasks', conflictData);
+
+                    // Record conflict to sync_updates for notification system
+                    // Store conflict.id in externalId so resolution can find the right conflict
+                    this.recordSyncUpdate({
+                      syncSessionId: syncId,
+                      courseId: localCourseId,
+                      entityType: 'conflict',
+                      entityId: acceptedTask.id,
+                      externalId: conflict.id, // Use conflict ID for resolution lookup
+                      changeType: 'conflict',
+                      title: conflict.entityName,
+                      subtitle: `${conflict.fieldLabel}: local vs Canvas`,
+                      oldValue: JSON.stringify(conflict.localValue),
+                      newValue: JSON.stringify(conflict.canvasValue),
+                      conflictField: conflict.field,
+                      isActionRequired: true,
+                    });
+                    updateCounts.conflicts = (updateCounts.conflicts || 0) + 1;
                   }
                 }
 
@@ -508,6 +557,13 @@ export class SyncOrchestrator {
                 const finalGrade = autoResolved.grade ?? localTask.grade;
                 const finalSubmissionStatus =
                   autoResolved.submission_status ?? localTask.submission_status;
+
+                // Check if grade changed for recording sync update
+                const oldGrade = existingAccepted.grade as string | null;
+                const gradeChanged =
+                  oldGrade !== finalGrade &&
+                  finalGrade !== null &&
+                  finalGrade !== undefined;
 
                 // For is_completed: use preserved value if in conflict, otherwise use auto-resolved or Canvas value
                 let finalIsCompleted = existingAccepted.is_completed;
@@ -542,6 +598,25 @@ export class SyncOrchestrator {
                   ],
                   'tasks'
                 );
+
+                // Record grade change as sync update
+                if (gradeChanged) {
+                  const taskTitle =
+                    (existingAccepted.title as string) || localTask.title || 'Task';
+                  this.recordSyncUpdate({
+                    syncSessionId: syncId,
+                    courseId: localCourseId,
+                    entityType: 'grade',
+                    entityId: acceptedTask.id,
+                    externalId: externalId,
+                    changeType: 'grade_changed',
+                    title: taskTitle,
+                    subtitle: `Grade: ${finalGrade}`,
+                    oldValue: oldGrade != null ? String(oldGrade) : undefined,
+                    newValue: finalGrade != null ? String(finalGrade) : undefined,
+                  });
+                  updateCounts.gradeChanges++;
+                }
               } else {
                 // Fallback if somehow we can't fetch the task (shouldn't happen)
                 this.db.executeWrite(
@@ -621,7 +696,7 @@ export class SyncOrchestrator {
                 );
 
               if (conflicts.length > 0) {
-                this.emitter.emit('sync-conflicts', { entity: 'task', conflicts });
+                // Don't emit sync-conflicts event - conflicts now go to Updates page
                 for (const conflict of conflicts) {
                   const conflictData = { ...localTask, id: existing.id };
                   this.pendingConflictData.set(conflict.id, {
@@ -629,6 +704,23 @@ export class SyncOrchestrator {
                     data: conflictData,
                   });
                   this.persistConflictData(conflict.id, 'tasks', conflictData);
+
+                  // Record conflict to sync_updates for notification system
+                  this.recordSyncUpdate({
+                    syncSessionId: syncId,
+                    courseId: localCourseId,
+                    entityType: 'conflict',
+                    entityId: existing.id as number,
+                    externalId: conflict.id,
+                    changeType: 'conflict',
+                    title: conflict.entityName,
+                    subtitle: `${conflict.fieldLabel}: local vs Canvas`,
+                    oldValue: JSON.stringify(conflict.localValue),
+                    newValue: JSON.stringify(conflict.canvasValue),
+                    conflictField: conflict.field,
+                    isActionRequired: true,
+                  });
+                  updateCounts.conflicts = (updateCounts.conflicts || 0) + 1;
                 }
               }
 
@@ -717,6 +809,29 @@ export class SyncOrchestrator {
               // Insert new queue entry
               this.db.upsert('canvas_task_queue', queueData, 'external_id', true);
               queuedTaskCount++;
+
+              // Get the queue entry ID for recording sync update
+              const newQueueEntry = this.db.executeReadOne<{ id: number }>(
+                'SELECT id FROM canvas_task_queue WHERE external_id = ?',
+                [externalId]
+              );
+              if (newQueueEntry) {
+                // Record sync update for new queued task (action required - needs accept/dismiss)
+                this.recordSyncUpdate({
+                  syncSessionId: syncId,
+                  courseId: localCourseId,
+                  entityType: 'task',
+                  entityId: newQueueEntry.id,
+                  externalId: externalId,
+                  changeType: 'new',
+                  title: queueData.title || 'New Task',
+                  subtitle: queueData.due_at
+                    ? `Due: ${new Date(queueData.due_at).toLocaleDateString()}`
+                    : 'Needs review',
+                  isActionRequired: true, // Queued tasks need accept/dismiss
+                });
+                updateCounts.newTasks++;
+              }
             }
 
             counts.tasks++;
@@ -740,6 +855,12 @@ export class SyncOrchestrator {
 
         for (const announcement of announcements) {
           try {
+            // Check if announcement already exists
+            const existingAnn = this.db.executeReadOne<{ id: number }>(
+              `SELECT id FROM notifications WHERE source_type = 'announcement' AND source_id = ?`,
+              [String(announcement.id)]
+            );
+
             const mapped = mapAnnouncement(
               announcement,
               localCourseId,
@@ -752,6 +873,30 @@ export class SyncOrchestrator {
               ['source_type', 'source_id'],
               false
             );
+
+            // Record sync update for new announcements only
+            if (!existingAnn) {
+              const insertedAnn = this.db.executeReadOne<{ id: number }>(
+                `SELECT id FROM notifications WHERE source_type = 'announcement' AND source_id = ?`,
+                [String(announcement.id)]
+              );
+              if (insertedAnn) {
+                this.recordSyncUpdate({
+                  syncSessionId: syncId,
+                  courseId: localCourseId,
+                  entityType: 'announcement',
+                  entityId: insertedAnn.id,
+                  externalId: String(announcement.id),
+                  changeType: 'new',
+                  title: announcement.title || 'New Announcement',
+                  subtitle: announcement.posted_at
+                    ? `Posted: ${new Date(announcement.posted_at).toLocaleDateString()}`
+                    : undefined,
+                });
+                updateCounts.newAnnouncements++;
+              }
+            }
+
             counts.announcements++;
           } catch (error) {
             errors.push(
@@ -848,6 +993,12 @@ export class SyncOrchestrator {
 
         for (const file of files) {
           try {
+            // Check if file already exists
+            const existingFile = this.db.executeReadOne<{ id: number }>(
+              `SELECT id FROM resources WHERE external_id = ?`,
+              [String(file.id)]
+            );
+
             const folderPath = folderPathMap.get(file.folder_id) ?? null;
             const localFile = mapFile(file, localCourseId, null, folderPath);
             this.db.upsert(
@@ -856,6 +1007,34 @@ export class SyncOrchestrator {
               'external_id',
               true
             );
+
+            // Record sync update for new files only
+            if (!existingFile) {
+              const insertedFile = this.db.executeReadOne<{ id: number }>(
+                `SELECT id FROM resources WHERE external_id = ?`,
+                [String(file.id)]
+              );
+              if (insertedFile) {
+                // Format file size for subtitle
+                const sizeStr = file.size
+                  ? file.size >= 1024 * 1024
+                    ? `${(file.size / (1024 * 1024)).toFixed(1)} MB`
+                    : `${Math.round(file.size / 1024)} KB`
+                  : undefined;
+                this.recordSyncUpdate({
+                  syncSessionId: syncId,
+                  courseId: localCourseId,
+                  entityType: 'file',
+                  entityId: insertedFile.id,
+                  externalId: String(file.id),
+                  changeType: 'new',
+                  title: file.display_name || 'New File',
+                  subtitle: sizeStr,
+                });
+                updateCounts.newFiles++;
+              }
+            }
+
             counts.files++;
           } catch (error) {
             errors.push(
@@ -865,6 +1044,34 @@ export class SyncOrchestrator {
         }
       }
     });
+
+    // Complete sync session with counts
+    this.completeSyncSession(syncId, updateCounts);
+
+    // Emit sync-updates event for the renderer to refresh
+    const totalUpdates =
+      updateCounts.newTasks +
+      updateCounts.updatedTasks +
+      updateCounts.newAnnouncements +
+      updateCounts.gradeChanges +
+      updateCounts.newFiles;
+
+    // Debug logging
+    this.log?.info(
+      `[SyncOrchestrator] Sync update counts: newTasks=${updateCounts.newTasks}, newAnnouncements=${updateCounts.newAnnouncements}, gradeChanges=${updateCounts.gradeChanges}, newFiles=${updateCounts.newFiles}, total=${totalUpdates}`
+    );
+
+    if (totalUpdates > 0) {
+      this.log?.info(
+        `[SyncOrchestrator] Emitting sync-updates event with total: ${totalUpdates}`
+      );
+      this.emitter.emit('sync-updates', {
+        total: totalUpdates,
+        ...updateCounts,
+      });
+    } else {
+      this.log?.info('[SyncOrchestrator] No sync updates to emit (total=0)');
+    }
 
     this.emitter.emit('sync-phase', { phase: 'commit', status: 'complete' });
 
@@ -1317,6 +1524,139 @@ export class SyncOrchestrator {
         [userTaskId, canvasTaskId, confidence],
         'link_suggestions'
       );
+    }
+  }
+
+  // ============ Sync Update Recording ============
+
+  /**
+   * Create a sync session for tracking updates
+   */
+  createSyncSession(syncId: string): void {
+    try {
+      this.db.executeWrite(
+        `INSERT OR IGNORE INTO sync_sessions (id, started_at, created_at)
+         VALUES (?, datetime('now'), datetime('now'))`,
+        [syncId],
+        'sync_sessions'
+      );
+    } catch (error) {
+      this.log?.debug('Failed to create sync session', { error });
+    }
+  }
+
+  /**
+   * Complete a sync session with counts
+   */
+  completeSyncSession(
+    syncId: string,
+    counts: {
+      newTasks: number;
+      updatedTasks: number;
+      newAnnouncements: number;
+      gradeChanges: number;
+      newFiles: number;
+    }
+  ): void {
+    try {
+      this.db.executeWrite(
+        `UPDATE sync_sessions SET
+           completed_at = datetime('now'),
+           total_new_tasks = ?,
+           total_updated_tasks = ?,
+           total_new_announcements = ?,
+           total_grade_changes = ?,
+           total_new_files = ?
+         WHERE id = ?`,
+        [
+          counts.newTasks,
+          counts.updatedTasks,
+          counts.newAnnouncements,
+          counts.gradeChanges,
+          counts.newFiles,
+          syncId,
+        ],
+        'sync_sessions'
+      );
+    } catch (error) {
+      this.log?.debug('Failed to complete sync session', { error });
+    }
+  }
+
+  /**
+   * Record a sync update (new item, update, grade change, etc.)
+   */
+  recordSyncUpdate(params: {
+    syncSessionId: string;
+    courseId: number;
+    entityType: 'task' | 'announcement' | 'grade' | 'file' | 'conflict';
+    entityId: number;
+    externalId?: string;
+    changeType: 'new' | 'updated' | 'grade_changed' | 'conflict';
+    title: string;
+    subtitle?: string;
+    oldValue?: string;
+    newValue?: string;
+    conflictField?: string;
+    isActionRequired?: boolean;
+  }): void {
+    try {
+      // For conflicts, check if an unresolved conflict for same entity/field already exists
+      if (params.entityType === 'conflict' && params.conflictField) {
+        const existing = this.db.executeReadOne<{ id: number; new_value: string | null }>(
+          `SELECT id, new_value FROM sync_updates
+           WHERE entity_type = 'conflict'
+           AND entity_id = ?
+           AND conflict_field = ?
+           AND resolved_at IS NULL`,
+          [params.entityId, params.conflictField]
+        );
+        if (existing) {
+          // Update existing conflict instead of creating duplicate
+          // Set updated_at if the Canvas value (new_value) actually changed
+          const canvasValueChanged = existing.new_value !== (params.newValue ?? null);
+          this.db.executeWrite(
+            `UPDATE sync_updates SET
+               old_value = ?,
+               new_value = ?,
+               sync_session_id = ?${canvasValueChanged ? ", updated_at = datetime('now')" : ''}
+             WHERE id = ?`,
+            [
+              params.oldValue ?? null,
+              params.newValue ?? null,
+              params.syncSessionId,
+              existing.id,
+            ],
+            'sync_updates'
+          );
+          return;
+        }
+      }
+
+      this.db.executeWrite(
+        `INSERT INTO sync_updates (
+           sync_session_id, course_id, entity_type, entity_id, external_id,
+           change_type, title, subtitle, old_value, new_value, conflict_field,
+           is_action_required, created_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+        [
+          params.syncSessionId,
+          params.courseId,
+          params.entityType,
+          params.entityId,
+          params.externalId ?? null,
+          params.changeType,
+          params.title,
+          params.subtitle ?? null,
+          params.oldValue ?? null,
+          params.newValue ?? null,
+          params.conflictField ?? null,
+          params.isActionRequired ? 1 : 0,
+        ],
+        'sync_updates'
+      );
+    } catch (error) {
+      this.log?.debug('Failed to record sync update', { error, params });
     }
   }
 }

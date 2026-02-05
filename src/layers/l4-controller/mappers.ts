@@ -89,25 +89,14 @@ export function mapCourseRowToDetail(row: {
     ...mapCourseRowToEntity(row),
     totalWeight: row.total_weight,
     syllabusBody: row.syllabus_body,
+    gradeCurveAdjustment:
+      (row as { grade_curve_adjustment?: number }).grade_curve_adjustment ?? 0,
   };
 }
 
 /**
  * Map a task database row to a Task entity.
  */
-/**
- * Calculate effective submission status using OR logic.
- * If either Canvas or user status is 'graded' or 'submitted', use that.
- */
-function getEffectiveSubmissionStatus(
-  canvasStatus: string | null,
-  userStatus: string | null
-): string | null {
-  if (canvasStatus === 'graded' || userStatus === 'graded') return 'graded';
-  if (canvasStatus === 'submitted' || userStatus === 'submitted') return 'submitted';
-  return canvasStatus ?? userStatus ?? 'pending';
-}
-
 export function mapTaskRowToEntity(row: {
   id: number;
   external_id: string;
@@ -127,7 +116,6 @@ export function mapTaskRowToEntity(row: {
   is_optional?: number | boolean;
   completed_at: string | null;
   submission_status: string | null;
-  user_submission_status?: string | null;
   task_type?: string | null;
   task_group_id?: number | null;
   calendar_event_id?: number | null;
@@ -135,11 +123,6 @@ export function mapTaskRowToEntity(row: {
   field_sources?: string | null;
 }): Task {
   const fieldSources = row.field_sources ? JSON.parse(row.field_sources) : undefined;
-  const userSubmissionStatus = row.user_submission_status ?? null;
-  const effectiveStatus = getEffectiveSubmissionStatus(
-    row.submission_status,
-    userSubmissionStatus
-  );
 
   // Determine source type: explicitly from row, or infer from external_id pattern
   const sourceType =
@@ -168,8 +151,6 @@ export function mapTaskRowToEntity(row: {
     isOptional: Boolean(row.is_optional),
     completedAt: row.completed_at,
     submissionStatus: row.submission_status,
-    userSubmissionStatus,
-    effectiveSubmissionStatus: effectiveStatus,
     taskType: row.task_type ?? null,
     taskGroupId: row.task_group_id ?? null,
     calendarEventId: row.calendar_event_id ?? null,

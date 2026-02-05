@@ -64,6 +64,8 @@ export class UpdateTaskCommand implements Command<UpdateTaskParams, { taskId: nu
       if (params.title !== undefined) {
         updates.push('title = ?');
         values.push(params.title.trim());
+        // Mark title as user-modified so sync will trigger conflict if Canvas differs
+        this.markFieldAsUserModified(context, params.taskId, 'title');
       }
 
       if (params.description !== undefined) {
@@ -84,6 +86,8 @@ export class UpdateTaskCommand implements Command<UpdateTaskParams, { taskId: nu
       if (params.dueAt !== undefined) {
         updates.push('due_at = ?');
         values.push(params.dueAt || null);
+        // Mark due_at as user-modified so sync will trigger conflict if Canvas differs
+        this.markFieldAsUserModified(context, params.taskId, 'due_at');
       }
 
       if (params.weight !== undefined) {
@@ -111,11 +115,6 @@ export class UpdateTaskCommand implements Command<UpdateTaskParams, { taskId: nu
         values.push(params.taskType);
         // Mark task_type as user-modified so sync will trigger conflict if Canvas differs
         this.markFieldAsUserModified(context, params.taskId, 'task_type');
-      }
-
-      if (params.userSubmissionStatus !== undefined) {
-        updates.push('user_submission_status = ?');
-        values.push(params.userSubmissionStatus);
       }
 
       if (params.location !== undefined) {

@@ -55,3 +55,11 @@ export type { RichTextEditorProps } from './RichTextEditor';
 
 export { HtmlContent, extractCanvasFileId } from './HtmlContent';
 export type { HtmlContentProps } from './HtmlContent';
+
+export { TaskCheckIcon } from './TaskCheckIcon';
+export type { TaskCheckIconProps } from './TaskCheckIcon';
+
+export { SyncUpdatesFAB } from './SyncUpdatesFAB';
+export type { SyncUpdatesFABProps } from './SyncUpdatesFAB';
+
+export { ErrorBoundary } from './ErrorBoundary';

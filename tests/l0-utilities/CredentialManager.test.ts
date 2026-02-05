@@ -27,10 +27,12 @@ describe('CredentialManager', () => {
   let manager: CredentialManager;
 
   // Helper to wait for async initialization
-  const waitForInit = () => new Promise(resolve => setTimeout(resolve, 300));
+  const waitForInit = () => new Promise((resolve) => setTimeout(resolve, 300));
 
   // Helper to create manager and wait for initialization
-  const createManager = async (options: ConstructorParameters<typeof CredentialManager>[0]): Promise<CredentialManager> => {
+  const createManager = async (
+    options: ConstructorParameters<typeof CredentialManager>[0]
+  ): Promise<CredentialManager> => {
     const mgr = new CredentialManager(options);
     // Add error handler to prevent unhandled error crashes
     mgr.on('error', () => {}); // Silently handle errors in tests
@@ -46,10 +48,27 @@ describe('CredentialManager', () => {
     logger = new Logger({ enableConsole: false, logDir: TEST_DIR });
   });
 
-  afterAll(() => {
-    // Cleanup test directory
+  afterAll(async () => {
+    // Close logger first to release file handles
+    if (logger) {
+      logger.close();
+    }
+
+    // Wait a bit for file handles to be fully released (Windows needs this)
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    // Cleanup test directory with retry logic for Windows
     if (fs.existsSync(TEST_DIR)) {
-      fs.rmSync(TEST_DIR, { recursive: true, force: true });
+      try {
+        fs.rmSync(TEST_DIR, {
+          recursive: true,
+          force: true,
+          maxRetries: 3,
+          retryDelay: 100,
+        });
+      } catch {
+        // Ignore cleanup errors in CI - directory will be cleaned up on next run
+      }
     }
   });
 

@@ -9,23 +9,16 @@ import { useStore } from '../../l5-presentation/store';
 import type { EnrollmentTerm } from '../../../shared/ipc-contract';
 import { useSidebarState, useLandingPage } from '../../l5-presentation/settings';
 import { TitleBar } from './TitleBar';
-import { SyncResultToast, SyncConflictModal, CloseBehaviorDialog } from './shared';
+import { SyncResultToast, CloseBehaviorDialog, SyncUpdatesFAB } from './shared';
 import { useScrollbarVisibility } from '../hooks/useScrollbarVisibility';
 import { Sidebar } from './Sidebar';
-import { layoutStyles as styles, TITLE_BAR_HEIGHT } from './layoutStyles';
+import { layoutStyles as styles } from './layoutStyles';
 
 // Debug flag - set to true only when debugging layout issues
 const DEBUG_LAYOUT = false;
 
 export function Layout() {
-  const {
-    lastSyncResult,
-    clearSyncResult,
-    syncConflicts,
-    resolveSyncConflict,
-    resolveAllSyncConflicts,
-    clearSyncConflicts,
-  } = useStore();
+  const { lastSyncResult, clearSyncResult, syncConflicts } = useStore();
   const containerRef = useRef<HTMLDivElement>(null);
   const mainRef = useRef<HTMLElement>(null);
   const navigate = useNavigate();
@@ -221,8 +214,8 @@ export function Layout() {
         autoHideDuration={6000}
       />
 
-      {/* Sync Conflict Modal */}
-      <SyncConflictModal
+      {/* Sync Conflict Modal - DISABLED: conflicts now handled in Updates page */}
+      {/* <SyncConflictModal
         isOpen={syncConflicts.length > 0}
         conflicts={syncConflicts}
         termEndDate={termEndDate}
@@ -239,13 +232,16 @@ export function Layout() {
           resolveAllSyncConflicts(useCanvasValues);
         }}
         onClose={clearSyncConflicts}
-      />
+      /> */}
 
       {/* Close Behavior Dialog */}
       <CloseBehaviorDialog
         isOpen={showCloseBehaviorDialog}
         onChoice={handleCloseBehaviorChoice}
       />
+
+      {/* Sync Updates Floating Action Button */}
+      <SyncUpdatesFAB />
     </>
   );
 }

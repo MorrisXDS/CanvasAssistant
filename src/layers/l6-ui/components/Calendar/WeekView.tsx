@@ -68,6 +68,7 @@ function WeekPanel({ weekSunday, events, isCurrentWeek, scrollRef }: WeekPanelPr
   const {
     currentTime,
     hoveredEventId,
+    highlightedTaskId,
     courseMatches,
     getEffectiveEventColor,
     showPopup,
@@ -258,6 +259,8 @@ function WeekPanel({ weekSunday, events, isCurrentWeek, scrollRef }: WeekPanelPr
                     const isInProgress =
                       isEventInProgress(pe.event, currentTime) &&
                       isSameDay(date, new Date());
+                    const isHighlighted =
+                      pe.event.type === 'task' && highlightedTaskId === pe.event.task.id;
                     const match =
                       pe.event.type === 'imported' ? courseMatches.get(eventId) : null;
                     const effectiveColor = getEffectiveEventColor(pe.event);
@@ -297,6 +300,9 @@ function WeekPanel({ weekSunday, events, isCurrentWeek, scrollRef }: WeekPanelPr
                     return (
                       <div
                         key={eventId}
+                        data-task-id={
+                          pe.event.type === 'task' ? pe.event.task.id : undefined
+                        }
                         style={{
                           ...styles.weekPositionedEvent,
                           top,
@@ -305,13 +311,17 @@ function WeekPanel({ weekSunday, events, isCurrentWeek, scrollRef }: WeekPanelPr
                           width,
                           backgroundColor: effectiveColor,
                           transform: isHovered ? 'scale(1.02)' : 'none',
-                          zIndex: isHovered ? 10 : isInProgress ? 5 : 1,
-                          boxShadow: isInProgress
-                            ? `0 0 0 2px white, 0 0 12px ${effectiveColor}`
-                            : isHovered
-                              ? '0 4px 12px rgba(0,0,0,0.25)'
-                              : '0 1px 3px rgba(0,0,0,0.12)',
+                          zIndex: isHovered ? 10 : isInProgress || isHighlighted ? 5 : 1,
+                          boxShadow:
+                            isInProgress || isHighlighted
+                              ? `0 0 0 2px white, 0 0 12px ${effectiveColor}`
+                              : isHovered
+                                ? '0 4px 12px rgba(0,0,0,0.25)'
+                                : '0 1px 3px rgba(0,0,0,0.12)',
                           opacity: isCompleted ? 0.5 : 1,
+                          animation: isHighlighted
+                            ? 'pulse 1.5s ease-in-out infinite'
+                            : undefined,
                         }}
                         onClick={() => handleEventClick(pe.event)}
                         onMouseEnter={(e) => handleEventHover(e, pe.event)}

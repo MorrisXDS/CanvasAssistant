@@ -46,9 +46,6 @@ function mapTaskRowToResponse(row: TaskRow) {
     isCompleted: Boolean(row.is_completed),
     completedAt: row.completed_at,
     submissionStatus: row.submission_status,
-    userSubmissionStatus: row.user_submission_status,
-    effectiveSubmissionStatus:
-      row.submission_status || row.user_submission_status || null,
     taskType: row.task_type,
     taskGroupId: row.task_group_id,
     calendarEventId: row.calendar_event_id,

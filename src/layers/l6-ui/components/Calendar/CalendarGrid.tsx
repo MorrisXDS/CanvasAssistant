@@ -44,6 +44,7 @@ export interface CalendarGridProps {
   onEventClick?: (event: CalendarEvent) => void;
   onDateClick?: (date: Date) => void;
   onCourseClick?: (courseId: number) => void;
+  highlightedTaskId?: number | null;
 }
 
 /**
@@ -182,6 +183,7 @@ export function CalendarGrid({
   onEventClick,
   onDateClick,
   onCourseClick,
+  highlightedTaskId,
 }: CalendarGridProps) {
   return (
     <CalendarGridProvider
@@ -192,6 +194,7 @@ export function CalendarGrid({
       onEventClick={onEventClick}
       onDateClick={onDateClick}
       onCourseClick={onCourseClick}
+      highlightedTaskId={highlightedTaskId}
     >
       <CalendarGridInner />
     </CalendarGridProvider>

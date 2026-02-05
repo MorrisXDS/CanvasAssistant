@@ -7,7 +7,6 @@ import React from 'react';
 import DOMPurify from 'dompurify';
 import {
   Calendar,
-  CheckCircle,
   ChevronRight,
   ChevronDown,
   Edit3,
@@ -15,7 +14,7 @@ import {
   Trash2,
   MapPin,
 } from 'lucide-react';
-import { RichTextEditor } from '../../shared';
+import { RichTextEditor, TaskCheckIcon } from '../../shared';
 import type { Task } from '../../../../l5-presentation/types';
 import {
   STORAGE_KEYS,
@@ -128,7 +127,7 @@ export function TaskItem({
   editTaskType,
   editLocation,
   onToggleExpand,
-  onToggleComplete: _onToggleComplete,
+  onToggleComplete,
   onDuplicate: _onDuplicate,
   onStartEdit,
   onCancelEdit,
@@ -175,8 +174,9 @@ export function TaskItem({
   const isSubmitted =
     task.submissionStatus === 'submitted' || task.submissionStatus === 'graded';
 
-  // Show checkmark for submitted tasks OR completed user-created tasks
-  const showCheckmark = isSubmitted || (isCompleted && !isSubmitted);
+  // Use isCompleted prop directly - parent already computes the correct value
+  // This allows user to toggle completion even for submitted/graded tasks
+  const showCheckmark = Boolean(isCompleted);
 
   // Handle double-click to toggle expand/collapse
   const handleDoubleClick = () => {
@@ -227,18 +227,12 @@ export function TaskItem({
             marginRight: 'var(--space-2)',
           }}
         >
-          {showCheckmark && (
-            <span title={isSubmitted ? 'Submitted' : 'Completed'}>
-              <CheckCircle
-                size={18}
-                color="var(--color-success)"
-                className="task-submitted-icon"
-                style={{
-                  animation: 'fadeIn 0.3s ease-out',
-                }}
-              />
-            </span>
-          )}
+          <TaskCheckIcon
+            isCompleted={Boolean(showCheckmark)}
+            isSubmitted={isSubmitted}
+            onToggle={onToggleComplete}
+            size={18}
+          />
         </div>
         <div style={styles.taskInfo}>
           <div

@@ -230,6 +230,24 @@ export class TaskSyncStrategy extends BaseSyncStrategy {
             );
 
             if (queueEntry) {
+              // Check if actual values changed (for values_changed_at tracking)
+              const existingEntry = this.db.executeReadOne<{
+                title: string | null;
+                due_at: string | null;
+                points_possible: number | null;
+                description: string | null;
+              }>(
+                'SELECT title, due_at, points_possible, description FROM canvas_task_queue WHERE id = ?',
+                [queueEntry.id]
+              );
+
+              const valuesChanged =
+                existingEntry &&
+                (existingEntry.title !== queueData.title ||
+                  existingEntry.due_at !== queueData.due_at ||
+                  existingEntry.points_possible !== queueData.points_possible ||
+                  existingEntry.description !== queueData.description);
+
               // Update existing pending queue entry
               this.db.executeWrite(
                 `UPDATE canvas_task_queue SET
@@ -242,7 +260,7 @@ export class TaskSyncStrategy extends BaseSyncStrategy {
                   matched_user_task_id = ?,
                   match_confidence = ?,
                   last_synced_at = CURRENT_TIMESTAMP,
-                  updated_at = CURRENT_TIMESTAMP
+                  updated_at = CURRENT_TIMESTAMP${valuesChanged ? ', values_changed_at = CURRENT_TIMESTAMP' : ''}
                 WHERE id = ?`,
                 [
                   queueData.canvas_data,
@@ -257,6 +275,26 @@ export class TaskSyncStrategy extends BaseSyncStrategy {
                 ],
                 'canvas_task_queue'
               );
+
+              // Also update the corresponding sync_updates entry if values changed
+              if (valuesChanged) {
+                this.db.executeWrite(
+                  `UPDATE sync_updates SET
+                    updated_at = CURRENT_TIMESTAMP,
+                    subtitle = ?
+                  WHERE entity_type = 'task'
+                    AND entity_id = ?
+                    AND is_action_required = 1
+                    AND seen_at IS NULL`,
+                  [
+                    queueData.due_at
+                      ? `Due: ${new Date(queueData.due_at).toLocaleDateString()}`
+                      : 'Needs review',
+                    queueEntry.id,
+                  ],
+                  'sync_updates'
+                );
+              }
             } else {
               // Insert new queue entry
               this.db.upsert('canvas_task_queue', queueData, 'external_id', true);
@@ -289,13 +327,28 @@ export class TaskSyncStrategy extends BaseSyncStrategy {
   }
 
   /**
-   * Auto-complete tasks that have grades set
+   * Auto-complete tasks that have grades set.
+   * Respects local_modified_fields - if user explicitly marked a task as incomplete,
+   * we don't auto-complete it even if it has a grade.
    */
   private autoCompleteGradedTasks(localCourseId: number): void {
+    // Only auto-complete tasks where user hasn't explicitly modified is_completed
+    // Check via JSON - if local_modified_fields contains 'is_completed', skip that task
     this.db.executeWrite(
       `UPDATE tasks
        SET is_completed = 1, completed_at = CURRENT_TIMESTAMP
-       WHERE course_id = ? AND weight > 0 AND grade IS NOT NULL AND is_completed = 0`,
+       WHERE course_id = ?
+         AND weight > 0
+         AND grade IS NOT NULL
+         AND is_completed = 0
+         AND (
+           local_modified_fields IS NULL
+           OR NOT json_valid(local_modified_fields)
+           OR NOT EXISTS (
+             SELECT 1 FROM json_each(local_modified_fields)
+             WHERE value = 'is_completed'
+           )
+         )`,
       [localCourseId],
       'tasks'
     );
@@ -384,40 +437,151 @@ export class TaskSyncStrategy extends BaseSyncStrategy {
   }
 
   /**
-   * Update only grade/status fields for an already-accepted task
+   * Update an already-accepted task with Canvas data.
+   * Uses conflict resolver for conflict-eligible fields (title, is_completed, due_at, task_type).
+   * Authoritative fields (grade, submission_status, etc.) are always updated from Canvas.
    */
   private updateAcceptedTaskGrades(assignment: CanvasAssignment, taskId: number): void {
-    const localTask = mapAssignment(assignment, 0); // courseId not needed for grade fields
+    // Get the course info for conflict display
+    const taskInfo = this.db.executeReadOne<{
+      course_id: number;
+      title: string;
+    }>('SELECT course_id, title FROM tasks WHERE id = ?', [taskId]);
 
-    this.db.executeWrite(
-      `UPDATE tasks SET
-        grade = ?,
-        submission_status = ?,
-        is_completed = ?,
-        completed_at = COALESCE(completed_at, ?),
-        entered_grade = ?,
-        points_deducted = ?,
-        late_policy_status = ?,
-        seconds_late = ?,
-        is_excused = ?,
-        is_missing = ?,
-        updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?`,
-      [
-        localTask.grade,
-        localTask.submission_status,
-        localTask.is_completed,
-        localTask.completed_at,
-        localTask.entered_grade,
-        localTask.points_deducted,
-        localTask.late_policy_status,
-        localTask.seconds_late,
-        localTask.is_excused,
-        localTask.is_missing,
-        taskId,
-      ],
-      'tasks'
+    if (!taskInfo) {
+      this.log?.warn('[TaskSync] Task not found for id:', { taskId });
+      return;
+    }
+
+    const courseRow = this.db.executeReadOne<{ name: string }>(
+      'SELECT name FROM courses WHERE id = ?',
+      [taskInfo.course_id]
     );
+
+    // Get the full existing task for conflict detection
+    const existing = this.db.executeReadOne<Record<string, unknown>>(
+      'SELECT * FROM tasks WHERE id = ?',
+      [taskId]
+    );
+
+    if (!existing) {
+      this.log?.warn('[TaskSync] Existing task record not found for id:', { taskId });
+      return;
+    }
+
+    const canvasTask = mapAssignment(assignment, taskInfo.course_id);
+
+    // DEBUG: Log sync comparison for conflict-eligible fields
+    const debugInfo = {
+      taskId,
+      taskTitle: taskInfo.title,
+      localModifiedFields: existing.local_modified_fields,
+      fieldSources: existing.field_sources,
+      comparison: {
+        title: { local: existing.title, canvas: canvasTask.title },
+        is_completed: { local: existing.is_completed, canvas: canvasTask.is_completed },
+        due_at: { local: existing.due_at, canvas: canvasTask.due_at },
+        task_type: { local: existing.task_type, canvas: canvasTask.task_type },
+      },
+    };
+    this.log?.info('[TaskSync] Syncing accepted task', debugInfo);
+    // Also emit to event emitter for UI debugging
+    this.emitter.emit('sync-debug', { type: 'task-sync', data: debugInfo });
+
+    // Use conflict resolver to detect conflicts on editable fields
+    const { autoResolved, conflicts, preservedFields } =
+      this.conflictResolver.detectConflicts(
+        'task',
+        'tasks',
+        taskId,
+        canvasTask.external_id,
+        canvasTask.title,
+        existing,
+        canvasTask,
+        { courseName: courseRow?.name, courseId: taskInfo.course_id }
+      );
+
+    // DEBUG: Log conflict detection results
+    const conflictDebugInfo = {
+      taskId,
+      conflictsFound: conflicts.length,
+      conflicts: conflicts.map((c) => ({
+        field: (c as { field: string }).field,
+        localValue: (c as { localValue: unknown }).localValue,
+        canvasValue: (c as { canvasValue: unknown }).canvasValue,
+      })),
+      preservedFields,
+      autoResolvedFields: Object.keys(autoResolved),
+    };
+    this.log?.info('[TaskSync] Conflict detection result', conflictDebugInfo);
+    this.emitter.emit('sync-debug', { type: 'conflict-result', data: conflictDebugInfo });
+
+    // Emit conflicts if any
+    if (conflicts.length > 0) {
+      this.log?.info('[TaskSync] Emitting conflicts', { count: conflicts.length });
+      this.onConflicts?.(conflicts);
+      if (this.pendingConflictData) {
+        for (const conflict of conflicts) {
+          this.pendingConflictData.set((conflict as { id: string }).id, {
+            tableName: 'tasks',
+            data: { ...canvasTask, id: taskId },
+          });
+        }
+      }
+    }
+
+    // Build the final values - start with auto-resolved values from conflict resolver
+    const finalValues: Record<string, unknown> = { ...autoResolved };
+
+    // Preserve locally modified fields (conflict resolver marks these)
+    for (const field of preservedFields) {
+      if (existing[field] !== undefined) {
+        finalValues[field] = existing[field];
+      }
+    }
+
+    // Build dynamic UPDATE query
+    const updateFields = [
+      'title',
+      'description',
+      'due_at',
+      'unlock_at',
+      'lock_at',
+      'points_possible',
+      'submission_types',
+      'task_type',
+      'grade',
+      'submission_status',
+      'is_completed',
+      'completed_at',
+      'entered_grade',
+      'points_deducted',
+      'late_policy_status',
+      'seconds_late',
+      'is_excused',
+      'is_missing',
+    ];
+
+    const setClauses: string[] = [];
+    const values: unknown[] = [];
+
+    for (const field of updateFields) {
+      if (finalValues[field] !== undefined) {
+        setClauses.push(`${field} = ?`);
+        values.push(finalValues[field]);
+      }
+    }
+
+    if (setClauses.length > 0) {
+      setClauses.push('updated_at = CURRENT_TIMESTAMP');
+      values.push(taskId);
+
+      this.db.executeWrite(
+        `UPDATE tasks SET ${setClauses.join(', ')} WHERE id = ?`,
+        values,
+        'tasks'
+      );
+    }
   }
 
   /**

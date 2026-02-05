@@ -4,15 +4,7 @@
  */
 
 import React from 'react';
-import {
-  Target,
-  TrendingUp,
-  FileText,
-  Edit3,
-  Save,
-  X,
-  Settings,
-} from 'lucide-react';
+import { Target, TrendingUp, FileText, Edit3, Save, X, Settings } from 'lucide-react';
 import { SettingsPanel } from './SettingsPanel';
 import type { CourseSyllabus } from '../../Course';
 import { formatGrade } from '../../../constants';
@@ -32,6 +24,7 @@ export interface CourseHeaderProps {
     archivedAt: string | null;
     archiveSource: 'manual' | 'auto' | null;
     credits: number;
+    gradeCurveAdjustment: number;
   };
   courseColor: string;
 
@@ -59,10 +52,12 @@ export interface CourseHeaderProps {
   showSettings: boolean;
   nicknameInput: string;
   creditsInput: string;
+  curveAdjustmentInput: string;
   selectedColor: string | null;
   onToggleSettings: () => void;
   onNicknameChange: (value: string) => void;
   onCreditsChange: (value: string) => void;
+  onCurveAdjustmentChange: (value: string) => void;
   onColorChange: (value: string | null) => void;
   onToggleHidden: () => void;
   onArchive: () => void;
@@ -106,10 +101,12 @@ export function CourseHeader({
   showSettings,
   nicknameInput,
   creditsInput,
+  curveAdjustmentInput,
   selectedColor,
   onToggleSettings,
   onNicknameChange,
   onCreditsChange,
+  onCurveAdjustmentChange,
   onColorChange,
   onToggleHidden,
   onArchive,
@@ -127,7 +124,9 @@ export function CourseHeader({
             <span style={{ ...styles.courseCodeBadge, backgroundColor: courseColor }}>
               {getShortCode(course.code)}
             </span>
-            <h1 style={styles.courseName}>{course.nickname || `${course.code} - ${course.name}`}</h1>
+            <h1 style={styles.courseName}>
+              {course.nickname || `${course.code} - ${course.name}`}
+            </h1>
             <span style={styles.fullCode}>{course.code}</span>
             {course.archivedAt && (
               <span style={styles.archivedBadge}>
@@ -170,7 +169,11 @@ export function CourseHeader({
               ) : (
                 <div style={styles.editableValue} onClick={onStartEditTarget}>
                   <span style={styles.gradeValue}>{targetPercent}%</span>
-                  <Edit3 size={12} color="var(--text-muted)" style={{ marginLeft: '4px' }} />
+                  <Edit3
+                    size={12}
+                    color="var(--text-muted)"
+                    style={{ marginLeft: '4px' }}
+                  />
                 </div>
               )}
               <div style={styles.gradeSubtext}>
@@ -204,10 +207,28 @@ export function CourseHeader({
                       : 'var(--text-muted)',
                 }}
               >
-                {completedWeight > 0 ? formatGrade(earnedContribution) : '—'}
+                {completedWeight > 0
+                  ? formatGrade(earnedContribution + (course.gradeCurveAdjustment ?? 0))
+                  : '—'}
+                {completedWeight > 0 && course.gradeCurveAdjustment !== 0 && (
+                  <span
+                    style={{
+                      fontSize: '10px',
+                      marginLeft: '4px',
+                      color:
+                        course.gradeCurveAdjustment > 0
+                          ? 'var(--color-success)'
+                          : 'var(--color-high)',
+                    }}
+                  >
+                    (curved {course.gradeCurveAdjustment > 0 ? 'up' : 'down'})
+                  </span>
+                )}
               </div>
               <div style={styles.gradeSubtext}>
-                {completedWeight > 0 ? `of ${completedWeight.toFixed(0)}% assessed` : '\u00A0'}
+                {completedWeight > 0
+                  ? `of ${completedWeight.toFixed(0)}% assessed`
+                  : '\u00A0'}
               </div>
             </div>
             <div style={styles.gradeDivider} />
@@ -293,10 +314,12 @@ export function CourseHeader({
             nicknameInput={nicknameInput}
             targetGradeInput={targetGradeInput}
             creditsInput={creditsInput}
+            curveAdjustmentInput={curveAdjustmentInput}
             selectedColor={selectedColor}
             onNicknameChange={onNicknameChange}
             onTargetGradeChange={onTargetGradeInputChange}
             onCreditsChange={onCreditsChange}
+            onCurveAdjustmentChange={onCurveAdjustmentChange}
             onColorChange={onColorChange}
             onToggleHidden={onToggleHidden}
             onArchive={onArchive}
@@ -378,13 +401,17 @@ export function CourseHeader({
           </div>
         ) : (
           <div style={styles.noProgressSection}>
-            <span style={styles.noProgressText}>No graded coursework with weight yet</span>
+            <span style={styles.noProgressText}>
+              No graded coursework with weight yet
+            </span>
           </div>
         )}
 
         {/* Last Synced */}
         {course.lastSyncedAt && (
-          <div style={styles.syncInfo}>Last synced: {formatDate(course.lastSyncedAt)}</div>
+          <div style={styles.syncInfo}>
+            Last synced: {formatDate(course.lastSyncedAt)}
+          </div>
         )}
       </div>
     </div>

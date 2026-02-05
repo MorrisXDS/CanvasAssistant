@@ -24,6 +24,7 @@ interface QueuedTaskCardProps {
   onAccept: (queueId: number, edits?: QueuedTaskEdits) => void;
   onReject: (queueId: number) => void;
   onLink: (queueId: number) => void;
+  isHighlighted?: boolean;
 }
 
 // Format date for input (YYYY-MM-DDTHH:mm format for datetime-local)
@@ -71,6 +72,10 @@ const styles = {
   } as React.CSSProperties,
   rowHover: {
     backgroundColor: 'var(--bg-secondary)',
+  } as React.CSSProperties,
+  rowHighlighted: {
+    backgroundColor: 'rgba(251, 191, 36, 0.15)',
+    boxShadow: 'inset 0 0 0 2px var(--color-warning)',
   } as React.CSSProperties,
   expandToggle: {
     padding: '4px',
@@ -262,9 +267,18 @@ export function QueuedTaskCard({
   onAccept,
   onReject,
   onLink,
+  isHighlighted = false,
 }: QueuedTaskCardProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
+  const rowRef = React.useRef<HTMLDivElement>(null);
+
+  // Scroll to row when highlighted
+  React.useEffect(() => {
+    if (isHighlighted && rowRef.current) {
+      rowRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [isHighlighted]);
 
   // Form state - populated from Canvas data
   const [editTitle, setEditTitle] = useState(queuedTask.title);
@@ -332,9 +346,11 @@ export function QueuedTaskCard({
     <>
       {/* Main Row */}
       <div
+        ref={rowRef}
         style={{
           ...styles.row,
           ...(isHovered ? styles.rowHover : {}),
+          ...(isHighlighted ? styles.rowHighlighted : {}),
         }}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}

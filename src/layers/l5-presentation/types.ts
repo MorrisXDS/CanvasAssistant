@@ -38,6 +38,10 @@ export type {
   DbCommitEvent,
   SyncResultSummary,
   ApiResult,
+  SyncUpdate,
+  SyncUpdatesCount,
+  SyncUpdateEntityType,
+  SyncUpdateChangeType,
 } from '../../shared/ipc-contract';
 
 // Re-export schemas for runtime validation if needed
@@ -94,6 +98,16 @@ export interface StoreState {
 
   // Sync conflicts
   syncConflicts: SyncConflictItem[];
+
+  // Sync updates notification system
+  syncUpdates: {
+    totalUnseen: number;
+    conflictCount: number;
+    informationalCount: number;
+    actionRequiredCount: number;
+    updates: import('../../shared/ipc-contract').SyncUpdate[];
+    lastFetchedAt: string | null;
+  };
 }
 
 export interface SyncConflictItem {
@@ -254,6 +268,23 @@ export interface StoreActions {
   ) => Promise<void>;
   resolveAllSyncConflicts: (useCanvasValues: boolean) => Promise<void>;
   clearSyncConflicts: () => void;
+
+  // Sync updates notification system
+  fetchSyncUpdates: () => Promise<void>;
+  fetchSyncUpdatesCount: () => Promise<void>;
+  markSyncUpdatesSeen: (ids: number[]) => Promise<void>;
+  markAllSyncUpdatesSeen: (options?: {
+    courseId?: number;
+    entityType?: string;
+    excludeConflicts?: boolean;
+    excludeActionRequired?: boolean;
+  }) => Promise<void>;
+  markSyncUpdateSeenByEntity: (entityType: string, entityId: number) => Promise<void>;
+  handleSyncUpdatesEvent: (event: {
+    type: string;
+    totalUnseen: number;
+    conflictCount: number;
+  }) => void;
 }
 
 export type Store = StoreState & StoreActions;

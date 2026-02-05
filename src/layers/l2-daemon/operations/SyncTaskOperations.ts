@@ -124,11 +124,15 @@ export class SyncTaskOperations {
                 );
 
               if (conflicts.length > 0) {
-                this.ctx.log?.info(`[SyncTaskOps] EMITTING conflicts`, {
-                  count: conflicts.length,
-                  taskId: existing?.id,
-                });
-                this.ctx.emitter.emit('sync-conflicts', { entity: 'task', conflicts });
+                this.ctx.log?.info(
+                  `[SyncTaskOps] Conflicts detected (deferred to Updates page)`,
+                  {
+                    count: conflicts.length,
+                    taskId: existing?.id,
+                  }
+                );
+                // Don't emit sync-conflicts - conflicts now shown in Updates page
+                // TODO: Record to sync_updates table when this code path is used
 
                 for (const conflict of conflicts) {
                   const conflictData = { ...localTask, id: existing?.id };

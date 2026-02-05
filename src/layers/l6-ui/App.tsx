@@ -21,6 +21,7 @@ import {
   CorruptionDialog,
   type CorruptionInfo,
 } from './components/shared/CorruptionDialog';
+import { ErrorBoundary } from './components/shared/ErrorBoundary';
 
 // Lazy load Dashboard and Onboarding
 const Dashboard = lazy(() => import('./components/Dashboard/Dashboard'));
@@ -35,6 +36,7 @@ const CoursesPage = lazy(() => import('./components/pages/CoursesPage'));
 const FilesPage = lazy(() => import('./components/pages/FilesPage'));
 const SettingsPage = lazy(() => import('./components/pages/SettingsPage'));
 const TasksPage = lazy(() => import('./components/pages/TasksPage'));
+const UpdatesPage = lazy(() => import('./components/pages/UpdatesPage'));
 
 import './styles/global.css';
 
@@ -296,22 +298,25 @@ function AppContent() {
         />
       )}
 
-      <Suspense fallback={<PageLoadingFallback />}>
-        <Routes>
-          <Route element={<Layout />}>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/announcement/:id" element={<AnnouncementDetail />} />
-            <Route path="/announcements" element={<AnnouncementsPage />} />
-            <Route path="/calendar" element={<CalendarPage />} />
-            <Route path="/courses" element={<CoursesPage />} />
-            <Route path="/course/:id" element={<CourseDetail />} />
-            <Route path="/files" element={<FilesPage />} />
-            <Route path="/settings" element={<SettingsPage />} />
-            <Route path="/tasks" element={<TasksPage />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Route>
-        </Routes>
-      </Suspense>
+      <ErrorBoundary>
+        <Suspense fallback={<PageLoadingFallback />}>
+          <Routes>
+            <Route element={<Layout />}>
+              <Route path="/" element={<Dashboard />} />
+              <Route path="/announcement/:id" element={<AnnouncementDetail />} />
+              <Route path="/announcements" element={<AnnouncementsPage />} />
+              <Route path="/calendar" element={<CalendarPage />} />
+              <Route path="/courses" element={<CoursesPage />} />
+              <Route path="/course/:id" element={<CourseDetail />} />
+              <Route path="/files" element={<FilesPage />} />
+              <Route path="/settings" element={<SettingsPage />} />
+              <Route path="/tasks" element={<TasksPage />} />
+              <Route path="/updates" element={<UpdatesPage />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Route>
+          </Routes>
+        </Suspense>
+      </ErrorBoundary>
     </>
   );
 }

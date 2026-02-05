@@ -21,6 +21,7 @@ import {
   DbCommitEvent,
   DisplayCalendarEvent,
   SyncResultSummary,
+  SyncUpdate,
 } from './types';
 import {
   markOptimisticUpdate,
@@ -65,6 +66,14 @@ const initialState: StoreState = {
   authError: null,
   lastError: null,
   syncConflicts: [],
+  syncUpdates: {
+    totalUnseen: 0,
+    conflictCount: 0,
+    informationalCount: 0,
+    actionRequiredCount: 0,
+    updates: [],
+    lastFetchedAt: null,
+  },
 };
 
 /**
@@ -125,6 +134,9 @@ export const useStore = create<Store>()(
             if (lastSyncTime) {
               set({ lastSyncedAt: lastSyncTime });
             }
+
+            // Fetch sync updates count for FAB badge
+            await get().fetchSyncUpdatesCount();
           }
 
           // Get system state
@@ -407,6 +419,8 @@ export const useStore = create<Store>()(
               taskQueue: state.taskQueue.filter((q) => q.id !== queueId),
               taskQueueCount: Math.max(0, state.taskQueueCount - 1),
             }));
+            // Cross-page communication: mark related sync update as seen
+            await get().markSyncUpdateSeenByEntity('task', queueId);
             // Refresh tasks to include the newly accepted task
             await get().fetchTasks();
           }
@@ -434,6 +448,8 @@ export const useStore = create<Store>()(
               taskQueue: state.taskQueue.filter((q) => q.id !== queueId),
               taskQueueCount: Math.max(0, state.taskQueueCount - 1),
             }));
+            // Cross-page communication: mark related sync update as seen
+            await get().markSyncUpdateSeenByEntity('task', queueId);
           }
           return result.success;
         } catch (error) {
@@ -459,8 +475,19 @@ export const useStore = create<Store>()(
               set((state) => ({
                 taskQueue: state.taskQueue.filter((q) => q.courseId !== options.courseId),
               }));
+              // Mark all task sync updates for this course as seen (including action-required items)
+              await get().markAllSyncUpdatesSeen({
+                courseId: options.courseId,
+                entityType: 'task',
+                excludeActionRequired: false, // Include action-required items since we're accepting them
+              });
             } else {
               set({ taskQueue: [], taskQueueCount: 0 });
+              // Mark all task sync updates as seen (including action-required items)
+              await get().markAllSyncUpdatesSeen({
+                entityType: 'task',
+                excludeActionRequired: false, // Include action-required items since we're accepting them
+              });
             }
             // Refresh tasks to include newly accepted tasks
             await get().fetchTasks();
@@ -495,6 +522,8 @@ export const useStore = create<Store>()(
               taskQueue: state.taskQueue.filter((q) => q.id !== params.queueId),
               taskQueueCount: Math.max(0, state.taskQueueCount - 1),
             }));
+            // Cross-page communication: mark related sync update as seen
+            await get().markSyncUpdateSeenByEntity('task', params.queueId);
             // Refresh tasks to show updated merged task
             await get().fetchTasks();
           }
@@ -518,6 +547,7 @@ export const useStore = create<Store>()(
           fetchNotifications,
           fetchImportedCalendars,
           fetchTaskQueueCount,
+          fetchSyncUpdatesCount,
         } = get();
         try {
           // Fetch courses FIRST since tasks filtering depends on courses being loaded
@@ -528,6 +558,7 @@ export const useStore = create<Store>()(
             fetchNotifications(),
             fetchImportedCalendars(),
             fetchTaskQueueCount(),
+            fetchSyncUpdatesCount(),
           ]);
 
           // Log any unexpected failures (individual fetch methods already handle their own errors)
@@ -1415,6 +1446,165 @@ export const useStore = create<Store>()(
        */
       clearSyncConflicts: () => {
         set({ syncConflicts: [] });
+      },
+
+      // =========================================================================
+      // Sync Updates Notification System
+      // =========================================================================
+
+      /**
+       * Fetch all sync updates (for Updates page)
+       */
+      fetchSyncUpdates: async () => {
+        const api = getApi();
+        if (!api?.getSyncUpdates) return;
+
+        try {
+          const updates = (await api.getSyncUpdates()) as SyncUpdate[];
+          set((state) => ({
+            syncUpdates: {
+              ...state.syncUpdates,
+              updates,
+              lastFetchedAt: new Date().toISOString(),
+            },
+          }));
+        } catch (error) {
+          console.error('Failed to fetch sync updates:', error);
+        }
+      },
+
+      /**
+       * Fetch sync updates count (for FAB badge)
+       */
+      fetchSyncUpdatesCount: async () => {
+        const api = getApi();
+        console.log(
+          '[store] fetchSyncUpdatesCount called, api available:',
+          !!api?.getSyncUpdatesCount
+        );
+        if (!api?.getSyncUpdatesCount) return;
+
+        try {
+          const counts = await api.getSyncUpdatesCount();
+          console.log('[store] fetchSyncUpdatesCount received:', counts);
+          set((state) => ({
+            syncUpdates: {
+              ...state.syncUpdates,
+              totalUnseen: counts.total,
+              conflictCount: counts.conflicts,
+              informationalCount: counts.informational,
+              actionRequiredCount: counts.actionRequired ?? 0,
+            },
+          }));
+        } catch (error) {
+          console.error('Failed to fetch sync updates count:', error);
+        }
+      },
+
+      /**
+       * Mark specific updates as seen
+       */
+      markSyncUpdatesSeen: async (ids: number[]) => {
+        const api = getApi();
+        if (!api?.markSyncUpdatesSeen) return;
+
+        try {
+          await api.markSyncUpdatesSeen(ids);
+
+          // Optimistic update - remove from updates list and decrement count
+          set((state) => ({
+            syncUpdates: {
+              ...state.syncUpdates,
+              updates: state.syncUpdates.updates.filter((u) => !ids.includes(u.id)),
+              totalUnseen: Math.max(0, state.syncUpdates.totalUnseen - ids.length),
+              informationalCount: Math.max(
+                0,
+                state.syncUpdates.informationalCount - ids.length
+              ),
+            },
+          }));
+        } catch (error) {
+          console.error('Failed to mark sync updates as seen:', error);
+        }
+      },
+
+      /**
+       * Mark all updates as seen (with optional filters)
+       */
+      markAllSyncUpdatesSeen: async (options?: {
+        courseId?: number;
+        entityType?: string;
+        excludeConflicts?: boolean;
+      }) => {
+        const api = getApi();
+        if (!api?.markAllSyncUpdatesSeen) return;
+
+        try {
+          await api.markAllSyncUpdatesSeen(options);
+
+          // Refresh counts after bulk update
+          await get().fetchSyncUpdatesCount();
+          await get().fetchSyncUpdates();
+        } catch (error) {
+          console.error('Failed to mark all sync updates as seen:', error);
+        }
+      },
+
+      /**
+       * Mark update seen by entity (for cross-page communication)
+       */
+      markSyncUpdateSeenByEntity: async (entityType: string, entityId: number) => {
+        const api = getApi();
+        if (!api?.markSyncUpdateSeenByEntity) return;
+
+        try {
+          await api.markSyncUpdateSeenByEntity(entityType, entityId);
+
+          // Optimistic update
+          set((state) => {
+            const updates = state.syncUpdates.updates.filter(
+              (u) => !(u.entityType === entityType && u.entityId === entityId)
+            );
+            const removed = state.syncUpdates.updates.length - updates.length;
+
+            return {
+              syncUpdates: {
+                ...state.syncUpdates,
+                updates,
+                totalUnseen: Math.max(0, state.syncUpdates.totalUnseen - removed),
+                informationalCount: Math.max(
+                  0,
+                  state.syncUpdates.informationalCount - removed
+                ),
+              },
+            };
+          });
+        } catch (error) {
+          console.error('Failed to mark sync update by entity:', error);
+        }
+      },
+
+      /**
+       * Handle sync updates push event from main process
+       */
+      handleSyncUpdatesEvent: (event: {
+        type: string;
+        totalUnseen: number;
+        conflictCount: number;
+      }) => {
+        console.log('[store] handleSyncUpdatesEvent called with:', event);
+        set((state) => {
+          const newState = {
+            syncUpdates: {
+              ...state.syncUpdates,
+              totalUnseen: event.totalUnseen,
+              conflictCount: event.conflictCount,
+              informationalCount: event.totalUnseen - event.conflictCount,
+            },
+          };
+          console.log('[store] Setting syncUpdates to:', newState.syncUpdates);
+          return newState;
+        });
       },
     })),
     { name: 'canvas-store' }

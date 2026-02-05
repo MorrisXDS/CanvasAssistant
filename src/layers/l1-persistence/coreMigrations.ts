@@ -2081,4 +2081,130 @@ export const coreMigrations: Migration[] = [
       SELECT 1;
     `,
   },
+  {
+    version: 93,
+    description: 'Add grade_curve_adjustment column to courses',
+    up: (db) => {
+      // Check if column exists using PRAGMA table_info
+      const columns = db.executeRead<{ name: string }>(
+        "SELECT name FROM pragma_table_info('courses') WHERE name = 'grade_curve_adjustment'"
+      );
+
+      if (columns.length === 0) {
+        // Column doesn't exist, add it
+        db.exec('ALTER TABLE courses ADD COLUMN grade_curve_adjustment REAL DEFAULT 0.0');
+      }
+      // If column exists, do nothing - migration is just ensuring consistency
+    },
+    down: `
+      -- SQLite doesn't support DROP COLUMN easily
+      SELECT 1;
+    `,
+  },
+  {
+    version: 94,
+    description:
+      'Create sync_sessions and sync_updates tables for sync notification system',
+    up: `
+      -- Table: sync_sessions (tracks each sync operation)
+      CREATE TABLE IF NOT EXISTS sync_sessions (
+        id TEXT PRIMARY KEY,                    -- UUID
+        started_at DATETIME NOT NULL,
+        completed_at DATETIME,
+        total_new_tasks INTEGER DEFAULT 0,
+        total_updated_tasks INTEGER DEFAULT 0,
+        total_new_announcements INTEGER DEFAULT 0,
+        total_grade_changes INTEGER DEFAULT 0,
+        total_new_files INTEGER DEFAULT 0,
+        dismissed_at DATETIME,                  -- NULL = active session
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
+      -- Table: sync_updates (individual change records + conflicts)
+      CREATE TABLE IF NOT EXISTS sync_updates (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        sync_session_id TEXT NOT NULL,
+        course_id INTEGER NOT NULL,
+        entity_type TEXT CHECK(entity_type IN ('task', 'announcement', 'grade', 'file', 'conflict')) NOT NULL,
+        entity_id INTEGER NOT NULL,
+        external_id TEXT,
+        change_type TEXT CHECK(change_type IN ('new', 'updated', 'grade_changed', 'conflict')) NOT NULL,
+        title TEXT NOT NULL,
+        subtitle TEXT,                          -- Due date, score, file size, field name for conflicts
+        old_value TEXT,                         -- Previous value / local value for conflicts
+        new_value TEXT,                         -- New value / canvas value for conflicts
+        conflict_field TEXT,                    -- For conflicts: which field (is_completed, due_at, etc.)
+        conflict_resolution TEXT,               -- NULL = unresolved, 'local' or 'canvas'
+        remember_choice INTEGER DEFAULT 0,      -- For conflicts: remember preference
+        seen_at DATETIME,                       -- NULL = unseen (for non-conflicts)
+        resolved_at DATETIME,                   -- For conflicts: when resolved
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(course_id) REFERENCES courses(id) ON DELETE CASCADE,
+        FOREIGN KEY(sync_session_id) REFERENCES sync_sessions(id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_sync_updates_course ON sync_updates(course_id);
+      CREATE INDEX IF NOT EXISTS idx_sync_updates_seen ON sync_updates(seen_at);
+      CREATE INDEX IF NOT EXISTS idx_sync_updates_session ON sync_updates(sync_session_id);
+      CREATE INDEX IF NOT EXISTS idx_sync_updates_type ON sync_updates(entity_type);
+      CREATE INDEX IF NOT EXISTS idx_sync_updates_entity ON sync_updates(entity_type, entity_id);
+      CREATE INDEX IF NOT EXISTS idx_sync_sessions_started ON sync_sessions(started_at);
+    `,
+    down: `
+      DROP INDEX IF EXISTS idx_sync_sessions_started;
+      DROP INDEX IF EXISTS idx_sync_updates_entity;
+      DROP INDEX IF EXISTS idx_sync_updates_type;
+      DROP INDEX IF EXISTS idx_sync_updates_session;
+      DROP INDEX IF EXISTS idx_sync_updates_seen;
+      DROP INDEX IF EXISTS idx_sync_updates_course;
+      DROP TABLE IF EXISTS sync_updates;
+      DROP TABLE IF EXISTS sync_sessions;
+    `,
+  },
+
+  // Migration 96: Add is_action_required to sync_updates for queued tasks
+  {
+    version: 96,
+    description: 'Add is_action_required column to sync_updates for queued tasks',
+    up: `
+      ALTER TABLE sync_updates ADD COLUMN is_action_required INTEGER DEFAULT 0;
+      CREATE INDEX IF NOT EXISTS idx_sync_updates_action_required ON sync_updates(is_action_required);
+    `,
+    down: `
+      DROP INDEX IF EXISTS idx_sync_updates_action_required;
+      -- SQLite doesn't support DROP COLUMN, column will remain but be unused
+    `,
+  },
+
+  // Migration 97: Add updated_at to sync_updates for tracking value changes on unresolved conflicts
+  {
+    version: 97,
+    description:
+      'Add updated_at column to sync_updates for tracking Canvas value changes',
+    up: `
+      -- Track when Canvas value changed on an unresolved conflict
+      -- If updated_at > created_at, the item was modified by Canvas after initial detection
+      ALTER TABLE sync_updates ADD COLUMN updated_at DATETIME;
+    `,
+    down: `
+      -- SQLite doesn't support DROP COLUMN, column will remain but be unused
+      SELECT 1;
+    `,
+  },
+
+  // Migration 98: Add values_changed_at to canvas_task_queue for tracking queued task updates
+  {
+    version: 98,
+    description:
+      'Add values_changed_at column to canvas_task_queue for tracking value changes',
+    up: `
+      -- Track when queued task values actually changed (vs just metadata refresh)
+      -- If values_changed_at IS NOT NULL, the task preview changed since first seen
+      ALTER TABLE canvas_task_queue ADD COLUMN values_changed_at DATETIME;
+    `,
+    down: `
+      -- SQLite doesn't support DROP COLUMN, column will remain but be unused
+      SELECT 1;
+    `,
+  },
 ];

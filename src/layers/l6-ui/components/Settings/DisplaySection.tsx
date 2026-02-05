@@ -19,6 +19,7 @@ import {
   Calendar,
   BookOpen,
   FolderOpen,
+  RotateCcw,
 } from 'lucide-react';
 import { useSettings } from './SettingsContext';
 import {
@@ -39,6 +40,9 @@ import {
   DEFAULT_CALENDAR_SETTINGS,
   DEFAULT_FILE_EXPLORER_SETTINGS,
   DEFAULT_SETTINGS_PAGE_SETTINGS,
+  DEFAULT_SYNC_UPDATES_FAB_SETTINGS,
+  STORAGE_KEYS,
+  useSetting,
   type AppearanceSettings,
   type FileExplorerSettings,
   type SettingsPageSettings,
@@ -434,9 +438,139 @@ export function DisplaySection({ sectionRef }: DisplaySectionProps) {
                 />
               </SettingRow>
             )}
+
+            {!isSearching && <div style={styles.divider} />}
+
+            {/* Updates FAB Settings */}
+            <FabSettings shouldShowSetting={shouldShowSetting} />
           </div>
         </Accordion.Content>
       </Accordion.Item>
     </div>
+  );
+}
+
+/**
+ * FAB Settings sub-component
+ * Uses useSetting hook directly to manage FAB settings
+ */
+function FabSettings({
+  shouldShowSetting,
+}: {
+  shouldShowSetting: (key: string) => boolean;
+}) {
+  const [fabSettings, setFabSettings] = useSetting(STORAGE_KEYS.SYNC_UPDATES_FAB);
+
+  // Show Updates in sidebar setting (direct localStorage access for simplicity)
+  const [showInSidebar, setShowInSidebar] = React.useState(() => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEYS.SHOW_UPDATES_IN_SIDEBAR);
+      return stored ? JSON.parse(stored) === true : false;
+    } catch {
+      return false;
+    }
+  });
+
+  const handleShowInSidebarChange = (checked: boolean) => {
+    setShowInSidebar(checked);
+    localStorage.setItem(STORAGE_KEYS.SHOW_UPDATES_IN_SIDEBAR, JSON.stringify(checked));
+    // Trigger a storage event so Sidebar can update
+    window.dispatchEvent(
+      new StorageEvent('storage', {
+        key: STORAGE_KEYS.SHOW_UPDATES_IN_SIDEBAR,
+        newValue: JSON.stringify(checked),
+      })
+    );
+  };
+
+  const handleOpacityChange = (opacity: number) => {
+    setFabSettings({
+      ...fabSettings,
+      opacity: opacity / 100, // Convert percentage to decimal
+    });
+  };
+
+  const handleResetPosition = () => {
+    setFabSettings({
+      ...fabSettings,
+      position: null, // Reset to default bottom-right
+    });
+  };
+
+  const isOpacityModified =
+    fabSettings.opacity !== DEFAULT_SYNC_UPDATES_FAB_SETTINGS.opacity;
+  const isPositionModified = fabSettings.position !== null;
+
+  return (
+    <>
+      {shouldShowSetting('updates.showInSidebar') && (
+        <SettingRow
+          settingKey="updates.showInSidebar"
+          label="Show Updates in sidebar"
+          description="Display Updates navigation item in the sidebar (otherwise use the floating button)"
+          isModified={showInSidebar !== false}
+          onReset={() => handleShowInSidebarChange(false)}
+        >
+          <ToggleSwitch checked={showInSidebar} onChange={handleShowInSidebarChange} />
+        </SettingRow>
+      )}
+
+      {shouldShowSetting('fab.opacity') && (
+        <SettingRow
+          settingKey="fab.opacity"
+          label="Updates button opacity"
+          description="Transparency of the floating updates notification button"
+          isModified={isOpacityModified}
+          onReset={() =>
+            setFabSettings({
+              ...fabSettings,
+              opacity: DEFAULT_SYNC_UPDATES_FAB_SETTINGS.opacity,
+            })
+          }
+        >
+          <SettingSlider
+            value={Math.round(fabSettings.opacity * 100)}
+            onChange={handleOpacityChange}
+            min={30}
+            max={100}
+            step={5}
+            formatValue={(v) => `${v}%`}
+          />
+        </SettingRow>
+      )}
+
+      {shouldShowSetting('fab.position') && (
+        <SettingRow
+          settingKey="fab.position"
+          label="Updates button position"
+          description="Drag the button on any page to reposition, or reset to default"
+          isModified={isPositionModified}
+          onReset={handleResetPosition}
+        >
+          <button
+            onClick={handleResetPosition}
+            disabled={!isPositionModified}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 'var(--space-2)',
+              padding: 'var(--space-2) var(--space-3)',
+              fontSize: 'var(--text-sm)',
+              backgroundColor: isPositionModified
+                ? 'var(--color-primary)'
+                : 'var(--bg-tertiary)',
+              color: isPositionModified ? 'white' : 'var(--text-secondary)',
+              border: 'none',
+              borderRadius: 'var(--radius-md)',
+              cursor: isPositionModified ? 'pointer' : 'not-allowed',
+              opacity: isPositionModified ? 1 : 0.6,
+            }}
+          >
+            <RotateCcw size={14} />
+            Reset to default
+          </button>
+        </SettingRow>
+      )}
+    </>
   );
 }

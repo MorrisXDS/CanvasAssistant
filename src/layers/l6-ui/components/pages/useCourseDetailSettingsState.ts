@@ -13,6 +13,7 @@ export interface CourseSettingsData {
   color: string | null;
   isHidden: boolean;
   credits: number;
+  gradeCurveAdjustment?: number;
 }
 
 export interface UseCourseDetailSettingsStateProps<T extends CourseSettingsData> {
@@ -38,6 +39,8 @@ export interface UseCourseDetailSettingsStateReturn {
   setSelectedColor: (color: string | null) => void;
   creditsInput: string;
   setCreditsInput: (value: string) => void;
+  curveAdjustmentInput: string;
+  setCurveAdjustmentInput: (value: string) => void;
 
   // Handlers
   handleSaveTargetGrade: () => Promise<void>;
@@ -63,6 +66,7 @@ export function useCourseDetailSettingsState<T extends CourseSettingsData>({
   const [nicknameInput, setNicknameInput] = useState('');
   const [selectedColor, setSelectedColor] = useState<string | null>(null);
   const [creditsInput, setCreditsInput] = useState('');
+  const [curveAdjustmentInput, setCurveAdjustmentInput] = useState('');
 
   // Save target grade
   const handleSaveTargetGrade = useCallback(async () => {
@@ -94,16 +98,30 @@ export function useCourseDetailSettingsState<T extends CourseSettingsData>({
       const newCredits = parseFloat(creditsInput);
       const validCredits = !isNaN(newCredits) && newCredits >= 0 && newCredits <= 10;
 
-      // Save course preferences (nickname, color, credits)
+      // Parse curve adjustment (empty = 0)
+      const newCurveAdjustment =
+        curveAdjustmentInput.trim() === '' ? 0 : parseFloat(curveAdjustmentInput);
+      const validCurve =
+        !isNaN(newCurveAdjustment) &&
+        newCurveAdjustment >= -50 &&
+        newCurveAdjustment <= 50;
+
+      // Save course preferences (nickname, color, credits, curve adjustment)
       // Use null to explicitly clear nickname/color, undefined to skip update
-      await api.dispatch('UpdateCoursePreferences', {
+      const prefsResult = await api.dispatch('UpdateCoursePreferences', {
         courseId,
         preferences: {
           nickname: nicknameInput === '' ? null : nicknameInput || undefined,
           color: selectedColor === '' ? null : selectedColor || undefined,
           credits: validCredits ? newCredits : undefined,
+          gradeCurveAdjustment: validCurve ? newCurveAdjustment : undefined,
         },
       });
+
+      if (!prefsResult.success) {
+        console.error('Failed to save course preferences:', prefsResult.error);
+        throw new Error(prefsResult.error || 'Failed to save preferences');
+      }
 
       // Save target grade if changed (marks as 'manual')
       const newTarget = parseFloat(targetGradeInput);
@@ -123,6 +141,9 @@ export function useCourseDetailSettingsState<T extends CourseSettingsData>({
                 targetGrade: newTarget,
                 targetGradeSource: 'manual',
                 credits: validCredits ? newCredits : prev.credits,
+                gradeCurveAdjustment: validCurve
+                  ? newCurveAdjustment
+                  : prev.gradeCurveAdjustment,
               }
             : null
         );
@@ -134,6 +155,9 @@ export function useCourseDetailSettingsState<T extends CourseSettingsData>({
                 nickname: nicknameInput || null,
                 color: selectedColor,
                 credits: validCredits ? newCredits : prev.credits,
+                gradeCurveAdjustment: validCurve
+                  ? newCurveAdjustment
+                  : prev.gradeCurveAdjustment,
               }
             : null
         );
@@ -150,6 +174,7 @@ export function useCourseDetailSettingsState<T extends CourseSettingsData>({
     selectedColor,
     targetGradeInput,
     creditsInput,
+    curveAdjustmentInput,
     setCourse,
   ]);
 
@@ -193,6 +218,7 @@ export function useCourseDetailSettingsState<T extends CourseSettingsData>({
     setSelectedColor(course.color);
     setTargetGradeInput(course.targetGrade.toString());
     setCreditsInput(course.credits?.toString() || '1.0');
+    setCurveAdjustmentInput((course.gradeCurveAdjustment ?? 0).toString());
     setShowSettings(!showSettings);
   }, [course, showSettings]);
 
@@ -219,6 +245,8 @@ export function useCourseDetailSettingsState<T extends CourseSettingsData>({
     setSelectedColor,
     creditsInput,
     setCreditsInput,
+    curveAdjustmentInput,
+    setCurveAdjustmentInput,
 
     // Handlers
     handleSaveTargetGrade,

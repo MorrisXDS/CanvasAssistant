@@ -30,6 +30,7 @@ export {
   LocalHtmlPathsSettingsSchema,
   ImportantWorksFilterSchema,
   TimezoneSettingsSchema,
+  SyncUpdatesFabSettingsSchema,
   // TypeScript types
   type StorageKey,
   type SyncPreferences,
@@ -46,6 +47,7 @@ export {
   type SettingsPageSettings,
   type LocalHtmlPathsSettings,
   type TimezoneSettings,
+  type SyncUpdatesFabSettings,
   type SettingsValue,
   type SettingsTypeMap,
   type ImportantWorksFilter,
@@ -64,6 +66,7 @@ export {
   DEFAULT_SETTINGS_PAGE_SETTINGS,
   DEFAULT_LOCAL_HTML_PATHS_SETTINGS,
   DEFAULT_TIMEZONE_SETTINGS,
+  DEFAULT_SYNC_UPDATES_FAB_SETTINGS,
   DEFAULT_SETTINGS_SECTION_ORDER,
   DEFAULT_DASHBOARD_ORDER,
   DEFAULT_NAV_ORDER,

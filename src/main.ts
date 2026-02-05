@@ -54,6 +54,7 @@ import {
   registerFileDataHandlers,
   registerFileHandlers,
   registerSyncHandlers,
+  registerSyncUpdatesHandlers,
   registerTaskTypesHandlers,
   registerSystemHandlers,
   registerWindowHandlers,
@@ -1085,6 +1086,7 @@ app.whenReady().then(async () => {
   registerFileDataHandlers(ipcContext);
   registerFileHandlers(ipcContext);
   registerSyncHandlers(ipcContext);
+  registerSyncUpdatesHandlers(ipcContext);
   registerTaskTypesHandlers(ipcContext);
   registerSystemHandlers(ipcContext);
   registerWindowHandlers(ipcContext);

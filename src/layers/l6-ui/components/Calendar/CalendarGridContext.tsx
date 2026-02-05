@@ -188,7 +188,10 @@ export function getEventDurationHours(event: CalendarEvent): number {
   if (!end) return 1;
 
   // Check if it's a deadline task event (has task_id, start is epoch sentinel = no user-set start)
-  if (importedEvent.event.taskId && new Date(importedEvent.event.startAt).getTime() < 86400000) {
+  if (
+    importedEvent.event.taskId &&
+    new Date(importedEvent.event.startAt).getTime() < 86400000
+  ) {
     // No user-set start time → default 1 hour
     return 1;
   }
@@ -508,7 +511,10 @@ export function getEarliestEventHour(events: CalendarEvent[]): number | null {
       }
     }
 
-    if (effectiveStartHour !== null && (earliest === null || effectiveStartHour < earliest)) {
+    if (
+      effectiveStartHour !== null &&
+      (earliest === null || effectiveStartHour < earliest)
+    ) {
       earliest = effectiveStartHour;
     }
   }
@@ -535,6 +541,7 @@ interface CalendarGridContextType {
   onEventClick?: (event: CalendarEvent) => void;
   onDateClick?: (date: Date) => void;
   onCourseClick?: (courseId: number) => void;
+  highlightedTaskId: number | null;
 
   // State
   popup: PopupState | null;
@@ -601,6 +608,7 @@ interface CalendarGridProviderProps {
   onEventClick?: (event: CalendarEvent) => void;
   onDateClick?: (date: Date) => void;
   onCourseClick?: (courseId: number) => void;
+  highlightedTaskId?: number | null;
 }
 
 export function CalendarGridProvider({
@@ -612,6 +620,7 @@ export function CalendarGridProvider({
   onEventClick,
   onDateClick,
   onCourseClick,
+  highlightedTaskId = null,
 }: CalendarGridProviderProps) {
   // State
   const [popup, setPopup] = useState<PopupState | null>(null);
@@ -996,6 +1005,7 @@ export function CalendarGridProvider({
     onEventClick,
     onDateClick,
     onCourseClick,
+    highlightedTaskId,
     popup,
     setPopup,
     hoveredEventId,

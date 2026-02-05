@@ -4,6 +4,7 @@
  */
 
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   CheckCircle,
   X,
@@ -13,7 +14,9 @@ import {
   ClipboardList,
   Bell,
   FolderOpen,
+  AlertTriangle,
 } from 'lucide-react';
+import { useStore } from '../../../l5-presentation/store';
 
 export interface SyncResultData {
   courses?: { synced: number; new: number };
@@ -36,6 +39,9 @@ export function SyncResultToast({
   autoHideDuration = 5000,
 }: SyncResultToastProps) {
   const [isVisible, setIsVisible] = useState(false);
+  const navigate = useNavigate();
+  const syncUpdates = useStore((state) => state.syncUpdates);
+  const { totalUnseen, conflictCount, actionRequiredCount } = syncUpdates;
 
   useEffect(() => {
     if (result) {
@@ -57,6 +63,10 @@ export function SyncResultToast({
       (result.announcements?.new || 0) +
       (result.files?.new || 0) >
     0;
+
+  // Calculate action-required count (conflicts + queued tasks)
+  const totalActionRequired = conflictCount + actionRequiredCount;
+  const hasUpdates = totalUnseen > 0;
 
   const formatCount = (
     data: { synced: number; new: number } | undefined,
@@ -138,6 +148,41 @@ export function SyncResultToast({
           <div style={styles.item}>
             <RefreshCw size={14} />
             <span style={styles.itemText}>Everything is up to date</span>
+          </div>
+        </div>
+      )}
+
+      {/* Sync Updates Section */}
+      {hasUpdates && (
+        <div
+          style={styles.updatesSection}
+          onClick={() => {
+            onClose();
+            navigate('/updates');
+          }}
+        >
+          <div style={styles.updatesContent}>
+            {totalActionRequired > 0 ? (
+              <>
+                <AlertTriangle size={14} color="var(--color-warning)" />
+                <span style={styles.updatesText}>
+                  {totalUnseen} update{totalUnseen !== 1 ? 's' : ''}
+                  <span style={styles.updatesHighlight}>
+                    {' '}
+                    ({totalActionRequired} need{totalActionRequired === 1 ? 's' : ''}{' '}
+                    review)
+                  </span>
+                </span>
+              </>
+            ) : (
+              <>
+                <Bell size={14} color="var(--color-primary)" />
+                <span style={styles.updatesText}>
+                  {totalUnseen} new update{totalUnseen !== 1 ? 's' : ''}
+                </span>
+              </>
+            )}
+            <span style={styles.updatesLink}>View →</span>
           </div>
         </div>
       )}
@@ -254,6 +299,37 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 'var(--text-xs)',
     color: 'var(--text-muted)',
     fontStyle: 'italic',
+  },
+
+  updatesSection: {
+    padding: 'var(--space-2) var(--space-4)',
+    borderTop: '1px solid var(--border-light)',
+    backgroundColor: 'rgba(59, 130, 246, 0.05)',
+    cursor: 'pointer',
+    transition: 'background-color 0.15s',
+  },
+
+  updatesContent: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-2)',
+  },
+
+  updatesText: {
+    flex: 1,
+    fontSize: 'var(--text-sm)',
+    color: 'var(--text-primary)',
+  },
+
+  updatesHighlight: {
+    color: 'var(--color-warning)',
+    fontWeight: 'var(--font-semibold)',
+  },
+
+  updatesLink: {
+    fontSize: 'var(--text-xs)',
+    color: 'var(--color-primary)',
+    fontWeight: 'var(--font-medium)',
   },
 };
 

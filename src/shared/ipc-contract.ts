@@ -44,6 +44,8 @@ export type Course = z.infer<typeof CourseSchema>;
 export const CourseDetailSchema = CourseSchema.extend({
   totalWeight: z.number(),
   syllabusBody: z.string().nullable(),
+  /** Grade curve adjustment in percentage points (e.g., +5.0 or -3.0) */
+  gradeCurveAdjustment: z.number(),
 });
 export type CourseDetail = z.infer<typeof CourseDetailSchema>;
 
@@ -79,10 +81,6 @@ export const TaskSchema = z.object({
   isOptional: z.boolean(),
   completedAt: z.string().nullable(),
   submissionStatus: z.string().nullable(),
-  /** User-set submission status, independent of Canvas */
-  userSubmissionStatus: z.string().nullable(),
-  /** Effective status: OR of submissionStatus and userSubmissionStatus */
-  effectiveSubmissionStatus: z.string().nullable(),
   taskType: z.string().nullable(),
   taskGroupId: z.number().nullable(),
   /** FK to calendar event for task-calendar linking */
@@ -594,6 +592,69 @@ export const DbCommitEventSchema = z.object({
   table: z.string(),
 });
 export type DbCommitEvent = z.infer<typeof DbCommitEventSchema>;
+
+// ============ Sync Updates Schemas ============
+
+export const SyncUpdateEntityTypeSchema = z.enum([
+  'task',
+  'announcement',
+  'grade',
+  'file',
+  'conflict',
+]);
+export type SyncUpdateEntityType = z.infer<typeof SyncUpdateEntityTypeSchema>;
+
+export const SyncUpdateChangeTypeSchema = z.enum([
+  'new',
+  'updated',
+  'grade_changed',
+  'conflict',
+]);
+export type SyncUpdateChangeType = z.infer<typeof SyncUpdateChangeTypeSchema>;
+
+export const SyncUpdateSchema = z.object({
+  id: z.number(),
+  syncSessionId: z.string(),
+  courseId: z.number(),
+  entityType: SyncUpdateEntityTypeSchema,
+  entityId: z.number(),
+  externalId: z.string().nullable(),
+  changeType: SyncUpdateChangeTypeSchema,
+  title: z.string(),
+  subtitle: z.string().nullable(),
+  oldValue: z.string().nullable(),
+  newValue: z.string().nullable(),
+  conflictField: z.string().nullable(),
+  conflictResolution: z.enum(['local', 'canvas']).nullable(),
+  rememberChoice: z.boolean(),
+  isActionRequired: z.boolean().optional(), // Queued tasks that need accept/dismiss
+  seenAt: z.string().nullable(),
+  resolvedAt: z.string().nullable(),
+  createdAt: z.string(),
+  // When Canvas value changed on unresolved item (if updatedAt > createdAt, item was modified)
+  updatedAt: z.string().nullable().optional(),
+  // Joined course info
+  courseCode: z.string().optional(),
+  courseName: z.string().optional(),
+  courseColor: z.string().nullable().optional(),
+});
+export type SyncUpdate = z.infer<typeof SyncUpdateSchema>;
+
+export const SyncUpdatesCountSchema = z.object({
+  total: z.number(),
+  conflicts: z.number(),
+  informational: z.number(),
+  actionRequired: z.number().optional(), // Queued tasks count
+  byCourse: z.record(z.string(), z.number()),
+  byType: z.record(z.string(), z.number()),
+});
+export type SyncUpdatesCount = z.infer<typeof SyncUpdatesCountSchema>;
+
+export const SyncUpdatesPushEventSchema = z.object({
+  type: z.enum(['new', 'cleared', 'updated']),
+  totalUnseen: z.number(),
+  conflictCount: z.number(),
+});
 
 export const SyncResultSummarySchema = z.object({
   courses: z.object({ synced: z.number(), new: z.number() }).optional(),
@@ -1494,6 +1555,58 @@ export const IpcContract = {
     params: z.number(),
     result: ApiResultSchema(z.void()),
   },
+
+  // ============ Sync Updates ============
+  'syncUpdates:getAll': {
+    params: z
+      .object({
+        includeResolved: z.boolean().optional(),
+        limit: z.number().optional(),
+      })
+      .optional(),
+    result: z.array(SyncUpdateSchema),
+  },
+  'syncUpdates:getCount': {
+    params: z.void(),
+    result: SyncUpdatesCountSchema,
+  },
+  'syncUpdates:markSeen': {
+    params: z.object({
+      ids: z.array(z.number()),
+    }),
+    result: ApiResultSchema(z.object({ marked: z.number() })),
+  },
+  'syncUpdates:markAllSeen': {
+    params: z
+      .object({
+        courseId: z.number().optional(),
+        entityType: SyncUpdateEntityTypeSchema.optional(),
+        excludeConflicts: z.boolean().optional(),
+      })
+      .optional(),
+    result: ApiResultSchema(z.object({ marked: z.number() })),
+  },
+  'syncUpdates:markSeenByEntity': {
+    params: z.object({
+      entityType: SyncUpdateEntityTypeSchema,
+      entityId: z.number(),
+    }),
+    result: ApiResultSchema(z.object({ marked: z.number() })),
+  },
+  'syncUpdates:resolveConflict': {
+    params: z.object({
+      updateId: z.number(),
+      resolution: z.enum(['local', 'canvas']),
+      rememberChoice: z.boolean().optional(),
+    }),
+    result: ApiResultSchema(z.void()),
+  },
+  'syncUpdates:cleanup': {
+    params: z.object({
+      olderThanDays: z.number().optional(),
+    }),
+    result: ApiResultSchema(z.object({ deleted: z.number() })),
+  },
 } as const;
 
 // ============ Type Utilities ============
@@ -1509,6 +1622,7 @@ export const PushEventContract = {
   'simulation:changed': SimulationChangeEventSchema,
   'db:commit': DbCommitEventSchema,
   'sync:status': SyncStatusSchema,
+  'sync:updates': SyncUpdatesPushEventSchema,
 } as const;
 
 export type PushEventChannel = keyof typeof PushEventContract;

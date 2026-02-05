@@ -131,8 +131,8 @@ export class SyncBackoffManager extends EventEmitter {
     errorCode: string,
     errorMessage: string
   ): void {
-    // Skip if database is locked (non-critical operation)
-    if (this.db.isWriteLocked()) return;
+    // Skip if database is closed or locked (non-critical operation)
+    if (!this.db.isOpen || this.db.isWriteLocked()) return;
 
     const existing = this.db.executeReadOne<{ failure_count: number }>(
       `SELECT failure_count FROM endpoint_backoff
@@ -194,8 +194,8 @@ export class SyncBackoffManager extends EventEmitter {
    * Record a successful endpoint access (clears backoff)
    */
   recordEndpointSuccess(endpoint: string, courseId: number | null): void {
-    // Skip if database is locked (non-critical operation)
-    if (this.db.isWriteLocked()) return;
+    // Skip if database is closed or locked (non-critical operation)
+    if (!this.db.isOpen || this.db.isWriteLocked()) return;
 
     try {
       this.db.executeWrite(
@@ -208,8 +208,9 @@ export class SyncBackoffManager extends EventEmitter {
         'endpoint_backoff'
       );
     } catch (err) {
-      // Silently ignore lock errors - backoff tracking is non-critical
-      if (!(err instanceof Error && err.message.includes('locked'))) throw err;
+      // Silently ignore lock/closed errors - backoff tracking is non-critical
+      const msg = err instanceof Error ? err.message : '';
+      if (!msg.includes('locked') && !msg.includes('not open')) throw err;
     }
   }
 
@@ -217,8 +218,8 @@ export class SyncBackoffManager extends EventEmitter {
    * Reset backoff for an endpoint (called after 2+ days of waiting)
    */
   resetEndpointBackoff(endpoint: string, courseId: number | null): void {
-    // Skip if database is locked (non-critical operation)
-    if (this.db.isWriteLocked()) return;
+    // Skip if database is closed or locked (non-critical operation)
+    if (!this.db.isOpen || this.db.isWriteLocked()) return;
 
     try {
       this.db.executeWrite(
@@ -230,8 +231,9 @@ export class SyncBackoffManager extends EventEmitter {
 
       this.emit('endpoint-backoff-reset', { endpoint, courseId });
     } catch (err) {
-      // Silently ignore lock errors - backoff tracking is non-critical
-      if (!(err instanceof Error && err.message.includes('locked'))) throw err;
+      // Silently ignore lock/closed errors - backoff tracking is non-critical
+      const msg = err instanceof Error ? err.message : '';
+      if (!msg.includes('locked') && !msg.includes('not open')) throw err;
     }
   }
 

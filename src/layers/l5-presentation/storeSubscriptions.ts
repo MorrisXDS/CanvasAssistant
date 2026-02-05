@@ -121,6 +121,15 @@ export function subscribeToIpcEvents(): () => void {
       }
     ) || (() => {});
 
+  // Listen for sync updates push events (for FAB badge updates)
+  const unsubSyncUpdates =
+    api.onSyncUpdates?.(
+      (event: { type: string; totalUnseen: number; conflictCount: number }) => {
+        console.log('[storeSubscriptions] Received sync:updates event:', event);
+        useStore.getState().handleSyncUpdatesEvent(event);
+      }
+    ) || (() => {});
+
   return () => {
     unsubSimulation();
     unsubDbCommit();
@@ -131,5 +140,6 @@ export function subscribeToIpcEvents(): () => void {
     unsubFileStatus();
     unsubSyncPhase();
     unsubSyncProgress();
+    unsubSyncUpdates();
   };
 }

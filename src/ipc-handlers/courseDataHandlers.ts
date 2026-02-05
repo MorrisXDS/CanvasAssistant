@@ -86,7 +86,7 @@ export function registerCourseDataHandlers(ctx: IpcContext): void {
     }
   });
 
-  // Get a single course by ID
+  // Get a single course by ID (returns CourseDetail with extended fields)
   ipcMain.handle('data:getCourse', (_event, courseId: number) => {
     try {
       const row = database.executeReadOne<{
@@ -106,6 +106,9 @@ export function registerCourseDataHandlers(ctx: IpcContext): void {
         credits: number | null;
         archived_at: string | null;
         archive_source: string | null;
+        total_weight: number | null;
+        syllabus_body: string | null;
+        grade_curve_adjustment: number | null;
       }>('SELECT * FROM courses WHERE id = ?', [courseId]);
 
       if (!row) {
@@ -129,6 +132,9 @@ export function registerCourseDataHandlers(ctx: IpcContext): void {
         credits: row.credits ?? 1.0,
         archivedAt: row.archived_at,
         archiveSource: row.archive_source,
+        totalWeight: row.total_weight ?? 0,
+        syllabusBody: row.syllabus_body,
+        gradeCurveAdjustment: row.grade_curve_adjustment ?? 0,
       };
     } catch (error) {
       logger.error(`Failed to get course: ${error}`);

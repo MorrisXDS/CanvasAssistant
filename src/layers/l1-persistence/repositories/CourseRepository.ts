@@ -113,6 +113,7 @@ export class CourseRepository extends BaseRepository<Course, CourseRow> {
       ...this.mapRowToEntity(row),
       totalWeight: row.total_weight,
       syllabusBody: row.syllabus_body,
+      gradeCurveAdjustment: row.grade_curve_adjustment ?? 0,
     };
   }
 

@@ -259,5 +259,26 @@ export class CanvasClientManager {
         metricsCollector.increment(`sync.conflicts.${entity}`);
       }
     });
+
+    this.syncEngine.on('sync-updates', (updates) => {
+      logger.info(
+        `[CanvasClientManager] Received sync-updates event: ${JSON.stringify(updates)}`
+      );
+      const mainWindow = getMainWindow();
+      if (mainWindow && !mainWindow.isDestroyed() && updates.total > 0) {
+        logger.info(
+          `[CanvasClientManager] Sending sync:updates to renderer with total: ${updates.total}`
+        );
+        mainWindow.webContents.send('sync:updates', {
+          type: 'sync-complete',
+          totalUnseen: updates.total,
+          conflictCount: 0, // Conflicts handled separately
+        });
+      } else {
+        logger.info(
+          `[CanvasClientManager] Not sending to renderer - window: ${!!mainWindow}, total: ${updates.total}`
+        );
+      }
+    });
   }
 }

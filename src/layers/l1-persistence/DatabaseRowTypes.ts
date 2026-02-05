@@ -28,6 +28,8 @@ export interface CourseRow {
   assessed_grade: number | null;
   current_grade: number | null;
   total_weight: number;
+  /** Grade curve adjustment in percentage points (e.g., +5.0 or -3.0) */
+  grade_curve_adjustment: number;
   color: string | null;
   nickname: string | null;
   is_hidden: number;
@@ -103,8 +105,6 @@ export interface TaskRow {
   is_optional: number;
   completed_at: string | null;
   submission_status: string | null;
-  /** User-set submission status, independent of Canvas. Used for OR logic with submission_status */
-  user_submission_status: string | null;
   task_type: string | null;
   task_group_id: number | null;
   /** FK to calendar_events.id for task-calendar linking. ON DELETE SET NULL */
@@ -589,6 +589,8 @@ export interface CanvasTaskQueueRow {
   resolved_at: string | null;
   /** How the entry was resolved: 'user' | 'auto' | 'bulk' */
   resolved_by: string | null;
+  /** When queued task values actually changed (vs just metadata refresh) */
+  values_changed_at: string | null;
 
   created_at: string;
   updated_at: string;
@@ -608,4 +610,63 @@ export interface CanvasTaskQueueRowMinimal {
   matched_user_task_id: number | null;
   match_confidence: number | null;
   first_seen_at: string;
+  /** When queued task values actually changed (vs just metadata refresh) */
+  values_changed_at: string | null;
+}
+
+// =============================================================================
+// Sync Updates Rows (v94)
+// =============================================================================
+
+/**
+ * Sync session row from sync_sessions table
+ * Tracks each sync operation for grouping updates
+ */
+export interface SyncSessionRow {
+  id: string;
+  started_at: string;
+  completed_at: string | null;
+  total_new_tasks: number;
+  total_updated_tasks: number;
+  total_new_announcements: number;
+  total_grade_changes: number;
+  total_new_files: number;
+  dismissed_at: string | null;
+  created_at: string;
+}
+
+/**
+ * Sync update row from sync_updates table
+ * Individual change records and conflicts from sync operations
+ */
+export interface SyncUpdateRow {
+  id: number;
+  sync_session_id: string;
+  course_id: number;
+  entity_type: 'task' | 'announcement' | 'grade' | 'file' | 'conflict';
+  entity_id: number;
+  external_id: string | null;
+  change_type: 'new' | 'updated' | 'grade_changed' | 'conflict';
+  title: string;
+  subtitle: string | null;
+  old_value: string | null;
+  new_value: string | null;
+  conflict_field: string | null;
+  conflict_resolution: 'local' | 'canvas' | null;
+  remember_choice: number;
+  is_action_required: number;
+  seen_at: string | null;
+  resolved_at: string | null;
+  created_at: string;
+  /** When Canvas value changed on an unresolved conflict (if updated_at > created_at, item was modified) */
+  updated_at: string | null;
+}
+
+/**
+ * Sync update row with course info for UI display
+ */
+export interface SyncUpdateRowWithCourse extends SyncUpdateRow {
+  course_code: string;
+  course_name: string;
+  course_color: string | null;
 }

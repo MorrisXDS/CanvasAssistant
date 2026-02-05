@@ -56,6 +56,7 @@ interface CourseDetailData {
   credits: number;
   archivedAt: string | null;
   archiveSource: 'manual' | 'auto' | null;
+  gradeCurveAdjustment: number;
 }
 
 export function CourseDetail() {
@@ -68,6 +69,7 @@ export function CourseDetail() {
   // Task highlight/edit from URL params
   const highlightTaskId = searchParams.get('highlightTask');
   const editTaskId = searchParams.get('editTask');
+  const highlightQueueId = searchParams.get('highlightQueue');
 
   // Course and related data state
   const [course, setCourse] = useState<CourseDetailData | null>(null);
@@ -128,6 +130,8 @@ export function CourseDetail() {
     setSelectedColor,
     creditsInput,
     setCreditsInput,
+    curveAdjustmentInput,
+    setCurveAdjustmentInput,
     handleSaveTargetGrade,
     handleSaveSettings,
     handleToggleHidden,
@@ -659,6 +663,7 @@ export function CourseDetail() {
             archivedAt: course.archivedAt,
             archiveSource: course.archiveSource,
             credits: course.credits,
+            gradeCurveAdjustment: course.gradeCurveAdjustment,
           }}
           courseColor={courseColor}
           completedWeight={completedWeight}
@@ -678,13 +683,24 @@ export function CourseDetail() {
           showSettings={showSettings}
           nicknameInput={nicknameInput}
           creditsInput={creditsInput}
+          curveAdjustmentInput={curveAdjustmentInput}
           selectedColor={selectedColor}
           onToggleSettings={handleToggleSettings}
           onNicknameChange={setNicknameInput}
           onCreditsChange={setCreditsInput}
+          onCurveAdjustmentChange={setCurveAdjustmentInput}
           onColorChange={setSelectedColor}
           onToggleHidden={handleToggleHidden}
-          onArchive={handleArchiveCourse}
+          onArchive={() => {
+            setConfirmDialog({
+              isOpen: true,
+              title: 'Archive Course',
+              message: `Are you sure you want to archive "${course.nickname || course.name}"? Archived courses are hidden from the main view but can be restored later.`,
+              type: 'warning',
+              confirmText: 'Archive',
+              onConfirm: handleArchiveCourse,
+            });
+          }}
           onSaveSettings={handleSaveSettings}
           onCancelSettings={() => setShowSettings(false)}
         />
@@ -750,6 +766,10 @@ export function CourseDetail() {
             onBulkAccept={handleQueueBulkAccept}
             onLink={handleOpenLinkDialog}
             defaultExpanded={queueDefaultExpanded}
+            highlightedQueueId={
+              highlightQueueId ? parseInt(highlightQueueId, 10) : undefined
+            }
+            onHighlightClear={() => setSearchParams({}, { replace: true })}
           />
         )}
 

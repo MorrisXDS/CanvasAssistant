@@ -30,7 +30,20 @@ export class UpdateCoursePreferencesCommand implements Command<
       return { valid: false, error: 'No preferences provided' };
     }
 
-    const { targetGrade, color, nickname, credits } = params.preferences;
+    const { targetGrade, color, nickname, credits, gradeCurveAdjustment } =
+      params.preferences;
+
+    if (gradeCurveAdjustment !== undefined) {
+      if (typeof gradeCurveAdjustment !== 'number' || isNaN(gradeCurveAdjustment)) {
+        return { valid: false, error: 'Grade curve adjustment must be a number' };
+      }
+      if (gradeCurveAdjustment < -50 || gradeCurveAdjustment > 50) {
+        return {
+          valid: false,
+          error: 'Grade curve adjustment must be between -50 and 50',
+        };
+      }
+    }
 
     if (targetGrade !== undefined) {
       if (typeof targetGrade !== 'number' || isNaN(targetGrade)) {
@@ -84,9 +97,11 @@ export class UpdateCoursePreferencesCommand implements Command<
         nickname: string | null;
         is_hidden: boolean;
         credits: number;
-      }>('SELECT target_grade, color, nickname, is_hidden, credits FROM courses WHERE id = ?', [
-        params.courseId,
-      ]);
+        grade_curve_adjustment: number;
+      }>(
+        'SELECT target_grade, color, nickname, is_hidden, credits, grade_curve_adjustment FROM courses WHERE id = ?',
+        [params.courseId]
+      );
 
       if (!course) {
         return { success: false, error: 'Course not found' };
@@ -98,6 +113,7 @@ export class UpdateCoursePreferencesCommand implements Command<
         nickname: course.nickname ?? undefined,
         isHidden: Boolean(course.is_hidden),
         credits: course.credits,
+        gradeCurveAdjustment: course.grade_curve_adjustment ?? 0,
       };
 
       // Build update query dynamically
@@ -127,6 +143,11 @@ export class UpdateCoursePreferencesCommand implements Command<
       if (params.preferences.credits !== undefined) {
         updates.push('credits = ?');
         values.push(params.preferences.credits);
+      }
+
+      if (params.preferences.gradeCurveAdjustment !== undefined) {
+        updates.push('grade_curve_adjustment = ?');
+        values.push(params.preferences.gradeCurveAdjustment);
       }
 
       if (updates.length > 0) {

@@ -3,7 +3,7 @@
  * Collapsible section showing queued Canvas tasks awaiting user review
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ChevronDown, ChevronRight, CloudDownload, CheckCircle2 } from 'lucide-react';
 import { QueuedTaskCard, type QueuedTaskEdits } from './QueuedTaskCard';
 import { ConfirmDialog } from '../shared';
@@ -19,6 +19,8 @@ interface CanvasUpdatesSectionProps {
   onBulkAccept: () => Promise<{ success: boolean; acceptedCount?: number }>;
   onLink: (queueId: number) => void;
   defaultExpanded?: boolean;
+  highlightedQueueId?: number;
+  onHighlightClear?: () => void;
 }
 
 const styles = {
@@ -162,11 +164,31 @@ export function CanvasUpdatesSection({
   onBulkAccept,
   onLink,
   defaultExpanded = false,
+  highlightedQueueId,
+  onHighlightClear,
 }: CanvasUpdatesSectionProps) {
   // Collapsed by default (can be changed via settings)
-  const [isExpanded, setIsExpanded] = useState(defaultExpanded);
+  // Force expand if there's a highlighted queue item
+  const [isExpanded, setIsExpanded] = useState(
+    defaultExpanded || highlightedQueueId != null
+  );
   const [isAcceptingAll, setIsAcceptingAll] = useState(false);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+
+  // Auto-expand when highlight is set
+  useEffect(() => {
+    if (highlightedQueueId != null) {
+      // Force expand - QueuedTaskCard handles its own scroll
+      setIsExpanded(true);
+
+      // Clear highlight after 3 seconds
+      const timer = setTimeout(() => {
+        onHighlightClear?.();
+      }, 3000);
+
+      return () => clearTimeout(timer);
+    }
+  }, [highlightedQueueId, onHighlightClear]);
 
   // Show confirmation dialog for bulk accept
   const handleBulkAcceptClick = (e: React.MouseEvent) => {
@@ -243,6 +265,7 @@ export function CanvasUpdatesSection({
               onAccept={onAccept}
               onReject={onReject}
               onLink={onLink}
+              isHighlighted={queuedTask.id === highlightedQueueId}
             />
           ))}
         </div>

@@ -18,10 +18,12 @@ export interface SettingsPanelProps {
   nicknameInput: string;
   targetGradeInput: string;
   creditsInput: string;
+  curveAdjustmentInput: string;
   selectedColor: string | null;
   onNicknameChange: (value: string) => void;
   onTargetGradeChange: (value: string) => void;
   onCreditsChange: (value: string) => void;
+  onCurveAdjustmentChange: (value: string) => void;
   onColorChange: (value: string | null) => void;
   onToggleHidden: () => void;
   onArchive: () => void;
@@ -38,10 +40,12 @@ export function SettingsPanel({
   nicknameInput,
   targetGradeInput,
   creditsInput,
+  curveAdjustmentInput,
   selectedColor,
   onNicknameChange,
   onTargetGradeChange,
   onCreditsChange,
+  onCurveAdjustmentChange,
   onColorChange,
   onToggleHidden,
   onArchive,
@@ -50,6 +54,7 @@ export function SettingsPanel({
 }: SettingsPanelProps) {
   return (
     <div style={styles.settingsPanel}>
+      {/* Row 1: Basic course info - 3 fields */}
       <div style={styles.settingsGrid}>
         <div style={styles.settingsField}>
           <label style={styles.settingsLabel}>Nickname</label>
@@ -87,15 +92,20 @@ export function SettingsPanel({
           />
         </div>
       </div>
+      {/* Row 2: Grade curve, visibility, archive - 3 fields */}
       <div style={styles.settingsGrid}>
         <div style={styles.settingsField}>
-          <label style={styles.settingsLabel}>Color</label>
-          <ColorPicker
-            value={selectedColor || getCourseColor(courseId, courseColor)}
-            onChange={onColorChange}
-            presets={COURSE_COLORS}
-            allowCustom={true}
-            swatchSize={24}
+          <label style={styles.settingsLabel}>Grade Curve (±%)</label>
+          <input
+            type="number"
+            value={curveAdjustmentInput}
+            onChange={(e) => onCurveAdjustmentChange(e.target.value)}
+            style={styles.settingsInput}
+            min="-50"
+            max="50"
+            step="0.5"
+            placeholder="0"
+            title="Adjust your earned grade by this percentage (e.g., +5 for a curve up)"
           />
         </div>
         <div style={styles.settingsField}>
@@ -124,6 +134,19 @@ export function SettingsPanel({
             <Archive size={16} />
             Archive Course
           </button>
+        </div>
+      </div>
+      {/* Row 3: Color picker */}
+      <div style={styles.settingsGrid}>
+        <div style={styles.settingsField}>
+          <label style={styles.settingsLabel}>Color</label>
+          <ColorPicker
+            value={selectedColor || getCourseColor(courseId, courseColor)}
+            onChange={onColorChange}
+            presets={COURSE_COLORS}
+            allowCustom={true}
+            swatchSize={24}
+          />
         </div>
       </div>
 

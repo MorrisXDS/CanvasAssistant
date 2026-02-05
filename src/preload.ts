@@ -591,6 +591,50 @@ const api = {
     syncAnnouncements?: boolean;
   }) => ipcRenderer.invoke('sync:setAutoSyncPreferences', prefs),
 
+  // ============ Sync Updates Notifications ============
+
+  getSyncUpdates: (options?: { includeResolved?: boolean; limit?: number }) =>
+    ipcRenderer.invoke('syncUpdates:getAll', options),
+
+  getSyncUpdatesCount: () => ipcRenderer.invoke('syncUpdates:getCount'),
+
+  markSyncUpdatesSeen: (ids: number[]) =>
+    ipcRenderer.invoke('syncUpdates:markSeen', { ids }),
+
+  markAllSyncUpdatesSeen: (options?: {
+    courseId?: number;
+    entityType?: string;
+    excludeConflicts?: boolean;
+  }) => ipcRenderer.invoke('syncUpdates:markAllSeen', options),
+
+  markSyncUpdateSeenByEntity: (entityType: string, entityId: number) =>
+    ipcRenderer.invoke('syncUpdates:markSeenByEntity', { entityType, entityId }),
+
+  resolveSyncUpdateConflict: (params: {
+    updateId: number;
+    resolution: 'local' | 'canvas';
+    rememberChoice?: boolean;
+  }) => ipcRenderer.invoke('syncUpdates:resolveConflict', params),
+
+  cleanupSyncUpdates: (olderThanDays?: number) =>
+    ipcRenderer.invoke('syncUpdates:cleanup', { olderThanDays }),
+
+  // Subscribe to sync updates push events
+  onSyncUpdates: (
+    callback: (event: {
+      type: string;
+      totalUnseen: number;
+      conflictCount: number;
+    }) => void
+  ) => {
+    const listener = (
+      _event: unknown,
+      data: { type: string; totalUnseen: number; conflictCount: number }
+    ) => callback(data);
+    ipcRenderer.on('sync:updates', listener);
+    return () => ipcRenderer.removeListener('sync:updates', listener);
+  },
+
   // ============ Local HTML Paths Settings ============
 
   getLocalHtmlPathsSettings: () =>

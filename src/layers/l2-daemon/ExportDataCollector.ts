@@ -116,7 +116,6 @@ export function sanitizeTaskForExport(task: TaskRow): Record<string, unknown> {
     isOptional: task.is_optional,
     completedAt: task.completed_at,
     submissionStatus: task.submission_status,
-    userSubmissionStatus: task.user_submission_status,
     taskType: task.task_type,
     taskGroupId: task.task_group_id,
     fieldSources: task.field_sources,

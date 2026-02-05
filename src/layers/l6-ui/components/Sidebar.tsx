@@ -21,10 +21,16 @@ import {
   LogOut,
   ChevronDown,
   GripVertical,
+  Bell,
   type LucideIcon,
 } from 'lucide-react';
 import { useStore } from '../../l5-presentation/store';
-import { useSidebarState, useNavOrder } from '../../l5-presentation/settings';
+import {
+  useSidebarState,
+  useNavOrder,
+  STORAGE_KEYS,
+  SETTINGS_DEFAULTS,
+} from '../../l5-presentation/settings';
 import { formatTimeAgo } from '../constants';
 import { layoutStyles as styles } from './layoutStyles';
 
@@ -41,6 +47,7 @@ const defaultNavItems: NavItem[] = [
   { id: 'calendar', path: '/calendar', label: 'Calendar', icon: Calendar },
   { id: 'courses', path: '/courses', label: 'Courses', icon: BookOpen },
   { id: 'files', path: '/files', label: 'Files', icon: FolderOpen },
+  { id: 'updates', path: '/updates', label: 'Updates', icon: Bell },
   { id: 'settings', path: '/settings', label: 'Settings', icon: Settings },
 ];
 
@@ -73,7 +80,8 @@ interface SidebarProps {
 }
 
 export function Sidebar({ onToggle }: SidebarProps) {
-  const { syncStatus, courses, lastSyncedAt } = useStore();
+  const { syncStatus, courses, lastSyncedAt, syncUpdates } = useStore();
+  const { totalUnseen: updatesBadgeCount } = syncUpdates;
 
   // Sidebar collapse state from settings
   const { collapsed: isCollapsed, setCollapsed } = useSidebarState();
@@ -81,7 +89,43 @@ export function Sidebar({ onToggle }: SidebarProps) {
 
   // Nav items with drag and drop - use settings hook
   const { order: savedNavOrder, setOrder: saveNavOrder } = useNavOrder();
-  const navItems = useMemo(() => getOrderedNavItems(savedNavOrder), [savedNavOrder]);
+
+  // Check if Updates should be shown in sidebar (default: hidden)
+  const [showUpdatesInSidebar, setShowUpdatesInSidebar] = useState(() => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEYS.SHOW_UPDATES_IN_SIDEBAR);
+      if (stored !== null) {
+        return JSON.parse(stored) === true;
+      }
+    } catch {
+      // Ignore parse errors
+    }
+    return SETTINGS_DEFAULTS[STORAGE_KEYS.SHOW_UPDATES_IN_SIDEBAR] ?? false;
+  });
+
+  // Listen for storage events to update showUpdatesInSidebar
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === STORAGE_KEYS.SHOW_UPDATES_IN_SIDEBAR) {
+        try {
+          setShowUpdatesInSidebar(e.newValue ? JSON.parse(e.newValue) === true : false);
+        } catch {
+          setShowUpdatesInSidebar(false);
+        }
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, []);
+
+  // Filter nav items - hide 'updates' if setting is false
+  const navItems = useMemo(() => {
+    const ordered = getOrderedNavItems(savedNavOrder);
+    if (!showUpdatesInSidebar) {
+      return ordered.filter((item) => item.id !== 'updates');
+    }
+    return ordered;
+  }, [savedNavOrder, showUpdatesInSidebar]);
   const [draggedItem, setDraggedItem] = useState<string | null>(null);
   const [dragOverItem, setDragOverItem] = useState<string | null>(null);
 
@@ -240,11 +284,14 @@ export function Sidebar({ onToggle }: SidebarProps) {
     // Use store's lastSyncedAt, or fall back to most recent course sync time
     const effectiveLastSync =
       lastSyncedAt ||
-      syncedCourses.reduce((latest, c) => {
-        if (!c.lastSyncedAt) return latest;
-        if (!latest) return c.lastSyncedAt;
-        return c.lastSyncedAt > latest ? c.lastSyncedAt : latest;
-      }, null as string | null);
+      syncedCourses.reduce(
+        (latest, c) => {
+          if (!c.lastSyncedAt) return latest;
+          if (!latest) return c.lastSyncedAt;
+          return c.lastSyncedAt > latest ? c.lastSyncedAt : latest;
+        },
+        null as string | null
+      );
 
     return {
       icon: <CheckCircle size={14} color="var(--color-success)" />,
@@ -358,7 +405,38 @@ export function Sidebar({ onToggle }: SidebarProps) {
                       }}
                     />
                   )}
-                  <Icon size={18} style={{ flexShrink: 0 }} />
+                  <div
+                    style={{
+                      position: 'relative',
+                      display: 'flex',
+                      alignItems: 'center',
+                    }}
+                  >
+                    <Icon size={18} style={{ flexShrink: 0 }} />
+                    {item.id === 'updates' && updatesBadgeCount > 0 && (
+                      <span
+                        style={{
+                          position: 'absolute',
+                          top: '-6px',
+                          right: '-8px',
+                          minWidth: '16px',
+                          height: '16px',
+                          padding: '0 4px',
+                          backgroundColor: 'var(--color-primary)',
+                          color: 'white',
+                          fontSize: '10px',
+                          fontWeight: 600,
+                          borderRadius: '8px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          lineHeight: 1,
+                        }}
+                      >
+                        {updatesBadgeCount > 99 ? '99+' : updatesBadgeCount}
+                      </span>
+                    )}
+                  </div>
                   {!isCollapsed && <span>{item.label}</span>}
                 </NavLink>
               </div>

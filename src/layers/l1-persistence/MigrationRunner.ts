@@ -5,7 +5,8 @@ import path from 'path';
 export interface Migration {
   version: number;
   description: string;
-  up: string;
+  /** SQL string to run, or a function for complex migrations */
+  up: string | ((db: Database) => void);
   down?: string;
 }
 
@@ -91,12 +92,17 @@ export class MigrationRunner {
   /**
    * Run a single migration
    * Handles common SQLite errors like duplicate columns gracefully
+   * Supports both SQL string and function-based migrations
    */
   private runMigration(migration: Migration): void {
     this.db.transaction(() => {
       try {
-        // Execute migration SQL
-        this.db.exec(migration.up);
+        // Execute migration - either SQL string or function
+        if (typeof migration.up === 'function') {
+          migration.up(this.db);
+        } else {
+          this.db.exec(migration.up);
+        }
       } catch (error) {
         // Handle "duplicate column name" errors gracefully
         // This happens when a column was manually added or migration was partially applied

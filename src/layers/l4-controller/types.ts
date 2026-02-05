@@ -80,6 +80,8 @@ export interface CoursePreferences {
   isHidden?: boolean;
   /** Course credits/units for weighted GPA calculation */
   credits?: number;
+  /** Grade curve adjustment in percentage points (e.g., +5.0 or -3.0) */
+  gradeCurveAdjustment?: number;
 }
 
 /**
@@ -156,8 +158,6 @@ export interface UpdateTaskParams {
   pointsPossible?: number | null;
   isOptional?: boolean;
   taskType?: string | null;
-  /** User-set submission status, independent of Canvas */
-  userSubmissionStatus?: string | null;
   /** Location for the task (e.g., room, building) */
   location?: string | null;
 }

@@ -229,6 +229,7 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
     transition: 'background-color var(--transition-fast)',
     position: 'relative',
+    userSelect: 'none',
   },
 
   checkbox: {

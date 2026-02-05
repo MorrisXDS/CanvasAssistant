@@ -706,6 +706,7 @@ export const courseDetailStyles: Record<string, React.CSSProperties> = {
     padding: 'var(--space-3) var(--space-4)',
     cursor: 'pointer',
     transition: 'background-color var(--transition-fast)',
+    userSelect: 'none',
   },
 
   taskIcon: {

@@ -99,7 +99,6 @@ export const TASK_CANVAS_FIELDS = [
  * ## Field Explanations
  *
  * @field submission_status - Canvas workflow_state (pending, submitted, graded).
- *        User can set `user_submission_status` independently for OR logic.
  *
  * @field completed_at - Timestamp from Canvas submission.submitted_at.
  *        Represents when the student actually submitted.
@@ -145,7 +144,6 @@ export const TASK_LOCAL_FIELDS = [
   'local_modified_fields',
   'is_optional', // User-marked optional (moves to "Not for Grade")
   'calendar_event_id', // Link to calendar event (bidirectional sync)
-  'user_submission_status', // User-set submission status (OR logic with Canvas)
   'start_at', // User-defined start date (independent of Canvas unlock_at)
   'location', // User-defined location (room, building, etc.)
 ] as const;

@@ -249,43 +249,133 @@ export function registerSyncHandlers(ctx: IpcContext): void {
       }
     ) => {
       const syncEngine = getSyncEngine();
-      if (!syncEngine) {
-        return { success: false, error: 'Sync engine not initialized' };
-      }
 
       try {
-        // Get the conflict BEFORE resolving (since resolving removes it from pending list)
-        const conflict = syncEngine
-          .getConflictResolver()
+        // First try to find conflict in memory (SyncConflictResolver)
+        let conflict = syncEngine
+          ?.getConflictResolver()
           .getPendingConflicts()
           .find((c) => c.id === resolution.conflictId);
 
+        // If not in memory, load from sync_updates table
         if (!conflict) {
-          return { success: false, error: 'Conflict not found' };
+          const syncUpdate = database.executeReadOne<{
+            id: number;
+            entity_id: number;
+            conflict_field: string;
+            old_value: string | null;
+            new_value: string | null;
+            external_id: string | null;
+          }>(
+            `SELECT id, entity_id, conflict_field, old_value, new_value, external_id
+             FROM sync_updates
+             WHERE external_id = ? AND entity_type = 'conflict' AND resolved_at IS NULL`,
+            [resolution.conflictId]
+          );
+
+          if (!syncUpdate) {
+            return { success: false, error: 'Conflict not found in database' };
+          }
+
+          // Determine entity type by checking which table has this ID
+          let entityType: 'course' | 'task' | 'notification' = 'task';
+          const taskCheck = database.executeReadOne<{ id: number }>(
+            'SELECT id FROM tasks WHERE id = ?',
+            [syncUpdate.entity_id]
+          );
+          if (!taskCheck) {
+            const courseCheck = database.executeReadOne<{ id: number }>(
+              'SELECT id FROM courses WHERE id = ?',
+              [syncUpdate.entity_id]
+            );
+            entityType = courseCheck ? 'course' : 'notification';
+          }
+
+          // Build conflict object from sync_updates data
+          conflict = {
+            id: resolution.conflictId,
+            entity: entityType,
+            entityId: syncUpdate.entity_id,
+            field: syncUpdate.conflict_field,
+            fieldLabel: syncUpdate.conflict_field,
+            localValue: syncUpdate.old_value ? JSON.parse(syncUpdate.old_value) : null,
+            canvasValue: syncUpdate.new_value ? JSON.parse(syncUpdate.new_value) : null,
+            entityName: '',
+            externalId: syncUpdate.external_id || '',
+            timestamp: new Date().toISOString(),
+          };
         }
 
-        const result = syncEngine.getConflictResolver().resolveConflict(resolution);
-        if (result) {
-          // Apply the resolution to the database
-          const tableName =
-            conflict.entity === 'course'
-              ? 'courses'
-              : conflict.entity === 'task'
-                ? 'tasks'
-                : 'notifications';
-          database.executeWrite(
-            `UPDATE ${tableName} SET ${result.field} = ? WHERE id = ?`,
-            [result.value, conflict.entityId],
-            tableName
-          );
+        // At this point conflict is guaranteed to be defined
+        const resolvedConflict = conflict;
+
+        // Determine table name
+        const tableName =
+          resolvedConflict.entity === 'course'
+            ? 'courses'
+            : resolvedConflict.entity === 'task'
+              ? 'tasks'
+              : 'notifications';
+
+        // Apply the resolution to the database
+        const resolvedValue = resolution.useCanvasValue
+          ? resolvedConflict.canvasValue
+          : resolvedConflict.localValue;
+
+        database.executeWrite(
+          `UPDATE ${tableName} SET ${resolvedConflict.field} = ? WHERE id = ?`,
+          [resolvedValue, resolvedConflict.entityId],
+          tableName
+        );
+
+        // Try to resolve via SyncConflictResolver if available (handles preferences)
+        if (syncEngine) {
+          try {
+            syncEngine.getConflictResolver().resolveConflict(resolution);
+          } catch {
+            // If conflict not in memory, just save preference manually if needed
+            if (resolution.rememberChoice) {
+              database.executeWrite(
+                `INSERT INTO sync_preferences (entity, entity_id, field, prefer_canvas, created_at, expires_at)
+                 VALUES (?, ?, ?, ?, datetime('now'), ?)
+                 ON CONFLICT(entity, entity_id, field) DO UPDATE SET
+                   prefer_canvas = excluded.prefer_canvas,
+                   expires_at = excluded.expires_at`,
+                [
+                  resolvedConflict.entity,
+                  resolution.rememberForAll ? null : resolvedConflict.entityId,
+                  resolvedConflict.field,
+                  resolution.useCanvasValue ? 1 : 0,
+                  resolution.expiresAt ?? null,
+                ],
+                'sync_preferences'
+              );
+            }
+          }
 
           // Clear the modified flag if using Canvas value
           if (resolution.useCanvasValue) {
             syncEngine
               .getConflictResolver()
-              .clearFieldModified(tableName, conflict.entityId, result.field);
+              .clearFieldModified(
+                tableName,
+                resolvedConflict.entityId,
+                resolvedConflict.field
+              );
           }
         }
+
+        // Mark the sync_update entry as resolved
+        database.executeWrite(
+          `UPDATE sync_updates
+           SET seen_at = datetime('now'),
+               resolved_at = datetime('now'),
+               conflict_resolution = ?
+           WHERE external_id = ? AND entity_type = 'conflict'`,
+          [resolution.useCanvasValue ? 'canvas' : 'local', resolution.conflictId],
+          'sync_updates'
+        );
+
         return { success: true };
       } catch (error) {
         logger.error(`Failed to resolve sync conflict: ${error}`);
@@ -331,6 +421,19 @@ export function registerSyncHandlers(ctx: IpcContext): void {
                 result.field
               );
             }
+
+            // Mark the sync_update entry as resolved
+            database.executeWrite(
+              `UPDATE sync_updates
+               SET seen_at = datetime('now'),
+                   conflict_resolution = ?
+               WHERE entity_type = 'conflict'
+                 AND entity_id = ?
+                 AND conflict_field = ?
+                 AND seen_at IS NULL`,
+              [useCanvasValues ? 'canvas' : 'local', conflict.entityId, conflict.field],
+              'sync_updates'
+            );
           }
         }
       });

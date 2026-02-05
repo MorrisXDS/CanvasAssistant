@@ -107,7 +107,8 @@ export class SyncCourseOperations {
               );
 
             if (conflicts.length > 0) {
-              this.ctx.emitter.emit('sync-conflicts', { entity: 'course', conflicts });
+              // Don't emit sync-conflicts - conflicts now shown in Updates page
+              // TODO: Record to sync_updates table when this code path is used
 
               for (const conflict of conflicts) {
                 const conflictData = { ...localCourse, id: existing?.id };
