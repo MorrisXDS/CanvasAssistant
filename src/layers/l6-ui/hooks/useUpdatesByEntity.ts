@@ -357,18 +357,28 @@ export function useTaskUpdates(): Map<number, TaskUpdateSummary> {
   }, [syncUpdates.updates]);
 }
 
+/** File update info with update type and IDs */
+export interface FileUpdateInfo {
+  updateType: UpdateType;
+  updateIds: number[];
+}
+
 /**
- * Get file updates grouped by file ID
- * Returns a Map of fileId -> { updateType, updateIds }
+ * Get file updates grouped by file ID and external ID
+ * Returns Maps for both internal ID and external ID lookups
+ *
+ * - byId: Map of resourceId -> FileUpdateInfo (for FileResource items)
+ * - byExternalId: Map of externalId -> FileUpdateInfo (for matching module items via contentId)
  */
-export function useFileUpdates(): Map<
-  number,
-  { updateType: UpdateType; updateIds: number[] }
-> {
+export function useFileUpdates(): {
+  byId: Map<number, FileUpdateInfo>;
+  byExternalId: Map<string, FileUpdateInfo>;
+} {
   const { syncUpdates } = useStore();
 
   return useMemo(() => {
-    const map = new Map<number, { updateType: UpdateType; updateIds: number[] }>();
+    const byId = new Map<number, FileUpdateInfo>();
+    const byExternalId = new Map<string, FileUpdateInfo>();
 
     for (const update of syncUpdates.updates) {
       // Only unseen file/page updates
@@ -376,21 +386,43 @@ export function useFileUpdates(): Map<
       if (update.entityType !== 'file' && update.entityType !== 'page') continue;
 
       const fileId = update.entityId;
+      const externalId = update.externalId;
       const updateType = changeTypeToUpdateType(update.changeType);
 
-      const existing = map.get(fileId);
-      if (existing) {
-        existing.updateType = getPriorityUpdateType(existing.updateType, updateType);
-        existing.updateIds.push(update.id);
+      // Index by internal ID
+      const existingById = byId.get(fileId);
+      if (existingById) {
+        existingById.updateType = getPriorityUpdateType(
+          existingById.updateType,
+          updateType
+        );
+        existingById.updateIds.push(update.id);
       } else {
-        map.set(fileId, {
+        byId.set(fileId, {
           updateType,
           updateIds: [update.id],
         });
       }
+
+      // Also index by external ID (for matching module items)
+      if (externalId) {
+        const existingByExternal = byExternalId.get(externalId);
+        if (existingByExternal) {
+          existingByExternal.updateType = getPriorityUpdateType(
+            existingByExternal.updateType,
+            updateType
+          );
+          existingByExternal.updateIds.push(update.id);
+        } else {
+          byExternalId.set(externalId, {
+            updateType,
+            updateIds: [update.id],
+          });
+        }
+      }
     }
 
-    return map;
+    return { byId, byExternalId };
   }, [syncUpdates.updates]);
 }
 
@@ -495,17 +527,17 @@ export function useTaskHasUpdates(taskId: number): {
 }
 
 /**
- * Check if a specific file has unseen updates
+ * Check if a specific file has unseen updates (by internal ID)
  */
 export function useFileHasUpdates(fileId: number): {
   hasUpdates: boolean;
   updateType: UpdateType | null;
   updateIds: number[];
 } {
-  const fileUpdates = useFileUpdates();
+  const { byId } = useFileUpdates();
 
   return useMemo(() => {
-    const summary = fileUpdates.get(fileId);
+    const summary = byId.get(fileId);
     if (!summary) {
       return { hasUpdates: false, updateType: null, updateIds: [] };
     }
@@ -514,5 +546,5 @@ export function useFileHasUpdates(fileId: number): {
       updateType: summary.updateType,
       updateIds: summary.updateIds,
     };
-  }, [fileUpdates, fileId]);
+  }, [byId, fileId]);
 }

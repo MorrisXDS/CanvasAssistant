@@ -21,6 +21,7 @@ export interface CanvasUser {
   login_id: string;
   avatar_url: string;
   email?: string;
+  time_zone?: string;
 }
 
 export interface CanvasApiError {

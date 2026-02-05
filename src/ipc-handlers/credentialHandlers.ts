@@ -3,12 +3,43 @@
  * Handlers for credential and Canvas client management:
  * - Credential get/store/delete
  * - Canvas connection and validation
- * - User profile fetching
+ * - User profile fetching (with daily caching)
  */
 
 import { ipcMain } from 'electron';
 import { CanvasClient } from '../layers/l2-daemon';
 import type { IpcContext } from './IpcContext';
+
+// ============ Profile Cache ============
+// Cache user profile (including avatar) for 3 hours to avoid repeated API calls
+
+const PROFILE_CACHE_DURATION_MS = 3 * 60 * 60 * 1000; // 3 hours in milliseconds
+
+interface CachedProfile {
+  name: string;
+  email: string | null;
+  avatarUrl: string | null;
+  time_zone?: string;
+  cachedAt: number; // Timestamp in milliseconds
+}
+
+let profileCache: CachedProfile | null = null;
+
+/**
+ * Check if cached profile is still valid (within 3 hours)
+ */
+function isCacheValid(): boolean {
+  if (!profileCache) return false;
+  const now = Date.now();
+  return now - profileCache.cachedAt < PROFILE_CACHE_DURATION_MS;
+}
+
+/**
+ * Clear the profile cache (call when credentials change)
+ */
+export function clearProfileCache(): void {
+  profileCache = null;
+}
 
 /**
  * Register all credential-related IPC handlers
@@ -41,6 +72,7 @@ export function registerCredentialHandlers(ctx: IpcContext): void {
     const success = await credentialManager.delete();
     if (success) {
       clearCanvasClient();
+      clearProfileCache(); // Clear cached profile when credentials are deleted
       credentialManager.stopBackgroundValidation();
       metricsCollector.increment('credentials.deleted');
     }
@@ -78,11 +110,22 @@ export function registerCredentialHandlers(ctx: IpcContext): void {
     }
   );
 
-  // ============ User Profile ============
+  // ============ User Profile (with daily caching) ============
 
   ipcMain.handle('canvas:getUserProfile', async () => {
     const canvasClient = getCanvasClient();
     logger.debug(`getUserProfile called, canvasClient available: ${!!canvasClient}`);
+
+    // Return cached profile if valid (fetched today)
+    if (isCacheValid()) {
+      logger.debug('Returning cached user profile (fetched today)');
+      return {
+        name: profileCache!.name,
+        email: profileCache!.email,
+        avatarUrl: profileCache!.avatarUrl,
+        time_zone: profileCache!.time_zone,
+      };
+    }
 
     if (!canvasClient) {
       logger.warn('getUserProfile: Canvas client not initialized');
@@ -90,7 +133,7 @@ export function registerCredentialHandlers(ctx: IpcContext): void {
     }
 
     try {
-      logger.debug('Fetching user profile from Canvas API...');
+      logger.debug('Fetching user profile from Canvas API (daily fetch)...');
       const profile = await canvasClient.getUserProfile();
       logger.debug(
         `User profile received: name=${profile.name}, hasAvatar=${!!profile.avatar_url}`
@@ -119,10 +162,21 @@ export function registerCredentialHandlers(ctx: IpcContext): void {
         }
       }
 
-      return {
+      // Cache the profile for 3 hours
+      profileCache = {
         name: profile.name,
         email: profile.email || profile.login_id || null,
         avatarUrl: avatarDataUrl,
+        time_zone: profile.time_zone,
+        cachedAt: Date.now(),
+      };
+      logger.debug(`User profile cached (valid for 3 hours)`);
+
+      return {
+        name: profileCache.name,
+        email: profileCache.email,
+        avatarUrl: profileCache.avatarUrl,
+        time_zone: profileCache.time_zone,
       };
     } catch (error) {
       logger.error(`Failed to get user profile: ${error}`);

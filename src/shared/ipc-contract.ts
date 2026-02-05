@@ -434,6 +434,7 @@ export const UserProfileSchema = z.object({
   name: z.string(),
   email: z.string().nullable(),
   avatarUrl: z.string().nullable(),
+  time_zone: z.string().optional(),
 });
 export type UserProfile = z.infer<typeof UserProfileSchema>;
 

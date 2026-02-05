@@ -217,8 +217,9 @@ export function FilesPage() {
   const { courses, syncStatus, triggerSync, syncUpdates, markAllSyncUpdatesSeen } =
     useStore();
 
-  // Notification dots for files
-  const fileUpdates = useFileUpdates();
+  // Notification dots for files - get both maps for ID and externalId lookups
+  const { byId: fileUpdatesById, byExternalId: fileUpdatesByExternalId } =
+    useFileUpdates();
 
   const [files, setFiles] = useState<FilesData>({
     resources: [],
@@ -835,20 +836,48 @@ export function FilesPage() {
     return expandedFolders.has(getFolderKey(courseId, folderPath));
   };
 
+  // Helper to get file update by checking both ID and externalId
+  const getFileUpdate = useCallback(
+    (file: FileItem) => {
+      // First try by internal ID (for FileResource items)
+      const byId = fileUpdatesById.get(file.id);
+      if (byId) return byId;
+
+      // For module items, try matching by contentId against externalId
+      if (file.source === 'module') {
+        const moduleItem = file as FileModuleItem;
+        if (moduleItem.contentId) {
+          return fileUpdatesByExternalId.get(moduleItem.contentId) ?? null;
+        }
+      }
+
+      // For resources, also try by externalId
+      if (file.source === 'resource') {
+        const resource = file as FileResource;
+        if (resource.externalId) {
+          return fileUpdatesByExternalId.get(resource.externalId) ?? null;
+        }
+      }
+
+      return null;
+    },
+    [fileUpdatesById, fileUpdatesByExternalId]
+  );
+
   // Get individual file updates in a folder (for showing multiple dots)
   // Returns array of { fileId, updateType } for files with updates
   const getFolderFileUpdates = useCallback(
     (courseId: number, folderPath: string, folderFiles: FileItem[]) => {
       const updates: Array<{ fileId: number; updateType: UpdateType }> = [];
       for (const file of folderFiles) {
-        const update = fileUpdates.get(file.id);
+        const update = getFileUpdate(file);
         if (update) {
           updates.push({ fileId: file.id, updateType: update.updateType });
         }
       }
       return updates;
     },
-    [fileUpdates]
+    [getFileUpdate]
   );
 
   // Check if a course has any file/page updates (for course header dot)
@@ -865,23 +894,23 @@ export function FilesPage() {
   // Get update type for a file (for notification dot coloring)
   const getFileUpdateType = useCallback(
     (file: FileItem): UpdateType | null => {
-      const update = fileUpdates.get(file.id);
+      const update = getFileUpdate(file);
       return update?.updateType ?? null;
     },
-    [fileUpdates]
+    [getFileUpdate]
   );
 
   // Mark file update as seen (for auto-dismiss when file is opened/downloaded)
   const markFileUpdateSeen = useCallback(
     (file: FileItem) => {
-      const update = fileUpdates.get(file.id);
+      const update = getFileUpdate(file);
       if (update && update.updateIds.length > 0) {
         window.api?.markSyncUpdatesSeen?.(update.updateIds).catch((err: unknown) => {
           console.error('Failed to mark file update as seen:', err);
         });
       }
     },
-    [fileUpdates]
+    [getFileUpdate]
   );
 
   // Filter toggles
@@ -2092,18 +2121,19 @@ export function FilesPage() {
                         {course?.nickname || course?.name || 'Unknown Course'}
                       </span>
                     </div>
-                    <span className={styles.courseFileCount}>
-                      {downloadedInCourse}/{totalInCourse} downloaded
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      {/* Notification dot for courses with file updates - before count */}
+                      {courseHasFileUpdates(courseId) && (
+                        <NotificationDot
+                          color={courseColor}
+                          size="md"
+                          title="New file updates"
+                        />
+                      )}
+                      <span className={styles.courseFileCount}>
+                        {downloadedInCourse}/{totalInCourse} downloaded
+                      </span>
                     </span>
-                    {/* Notification dot for courses with file updates */}
-                    {courseHasFileUpdates(courseId) && (
-                      <NotificationDot
-                        color={courseColor}
-                        size="md"
-                        title="New file updates"
-                        style={{ marginLeft: 'var(--space-2)' }}
-                      />
-                    )}
                   </button>
 
                   {/* Folders and Files */}
@@ -2184,53 +2214,60 @@ export function FilesPage() {
                                   {folderType.label}
                                 </span>
                               </div>
-                              <span className={styles.folderFileCount}>
-                                {folderDownloaded}/{folderFiles.length}
+                              <span
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '6px',
+                                }}
+                              >
+                                {/* Notification dots for unseen file updates (up to 3, then ellipsis) - before count */}
+                                {(() => {
+                                  const folderFileUpdates = getFolderFileUpdates(
+                                    courseId,
+                                    folderPath,
+                                    folderFiles
+                                  );
+                                  if (folderFileUpdates.length === 0) return null;
+
+                                  const maxDots = 3;
+                                  const dotsToShow = folderFileUpdates.slice(0, maxDots);
+                                  const hasMore = folderFileUpdates.length > maxDots;
+
+                                  return (
+                                    <span
+                                      style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '2px',
+                                      }}
+                                      title={`${folderFileUpdates.length} file${folderFileUpdates.length > 1 ? 's' : ''} with updates`}
+                                    >
+                                      {dotsToShow.map((update) => (
+                                        <NotificationDot
+                                          key={update.fileId}
+                                          color={courseColor}
+                                          size="sm"
+                                        />
+                                      ))}
+                                      {hasMore && (
+                                        <span
+                                          style={{
+                                            fontSize: '10px',
+                                            color: 'var(--text-muted)',
+                                            marginLeft: '2px',
+                                          }}
+                                        >
+                                          ...
+                                        </span>
+                                      )}
+                                    </span>
+                                  );
+                                })()}
+                                <span className={styles.folderFileCount}>
+                                  {folderDownloaded}/{folderFiles.length}
+                                </span>
                               </span>
-                              {/* Notification dots for unseen file updates (up to 3, then ellipsis) */}
-                              {(() => {
-                                const folderFileUpdates = getFolderFileUpdates(
-                                  courseId,
-                                  folderPath,
-                                  folderFiles
-                                );
-                                if (folderFileUpdates.length === 0) return null;
-
-                                const maxDots = 3;
-                                const dotsToShow = folderFileUpdates.slice(0, maxDots);
-                                const hasMore = folderFileUpdates.length > maxDots;
-
-                                return (
-                                  <span
-                                    style={{
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      gap: '2px',
-                                      marginLeft: 'var(--space-2)',
-                                    }}
-                                    title={`${folderFileUpdates.length} file${folderFileUpdates.length > 1 ? 's' : ''} with updates`}
-                                  >
-                                    {dotsToShow.map((update) => (
-                                      <NotificationDot
-                                        key={update.fileId}
-                                        color={courseColor}
-                                        size="sm"
-                                      />
-                                    ))}
-                                    {hasMore && (
-                                      <span
-                                        style={{
-                                          fontSize: '10px',
-                                          color: 'var(--text-muted)',
-                                          marginLeft: '2px',
-                                        }}
-                                      >
-                                        ...
-                                      </span>
-                                    )}
-                                  </span>
-                                );
-                              })()}
                             </button>
 
                             {/* Files in Folder */}

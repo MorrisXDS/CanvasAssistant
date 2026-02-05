@@ -28,4 +28,5 @@ export type {
   FolderUpdateSummary,
   TaskUpdateSummary,
   FieldUpdateInfo,
+  FileUpdateInfo,
 } from './useUpdatesByEntity';
