@@ -37,7 +37,7 @@ import {
   type UpdateType,
 } from '../shared';
 import { useStore } from '../../../l5-presentation/store';
-import { useUpdatesByCourse, useFileUpdates } from '../../hooks';
+import { useFileUpdates } from '../../hooks';
 import styles from './FilesPage.module.css';
 
 // Import extracted components
@@ -217,8 +217,7 @@ export function FilesPage() {
   const { courses, syncStatus, triggerSync, syncUpdates, markAllSyncUpdatesSeen } =
     useStore();
 
-  // Notification dots for courses with file updates
-  const _updatesByCourse = useUpdatesByCourse();
+  // Notification dots for files
   const fileUpdates = useFileUpdates();
 
   const [files, setFiles] = useState<FilesData>({
@@ -836,41 +835,21 @@ export function FilesPage() {
     return expandedFolders.has(getFolderKey(courseId, folderPath));
   };
 
-  // Calculate folder updates for notification dots
-  // Groups file/page updates by folder path for each course
-  const folderUpdates = useMemo(() => {
-    const map = new Map<string, { count: number; hasActionRequired: boolean }>();
-
-    for (const update of syncUpdates.updates) {
-      // Only file and page updates
-      if (update.entityType !== 'file' && update.entityType !== 'page') continue;
-      if (update.seenAt !== null) continue;
-
-      // Use subtitle as folder path (may be empty for root)
-      const folderPath = update.subtitle || '';
-      const key = getFolderKey(update.courseId, folderPath);
-
-      const existing = map.get(key);
-      if (existing) {
-        existing.count++;
-        if (update.isActionRequired) {
-          existing.hasActionRequired = true;
+  // Get individual file updates in a folder (for showing multiple dots)
+  // Returns array of { fileId, updateType } for files with updates
+  const getFolderFileUpdates = useCallback(
+    (courseId: number, folderPath: string, folderFiles: FileItem[]) => {
+      const updates: Array<{ fileId: number; updateType: UpdateType }> = [];
+      for (const file of folderFiles) {
+        const update = fileUpdates.get(file.id);
+        if (update) {
+          updates.push({ fileId: file.id, updateType: update.updateType });
         }
-      } else {
-        map.set(key, {
-          count: 1,
-          hasActionRequired: update.isActionRequired || false,
-        });
       }
-    }
-
-    return map;
-  }, [syncUpdates.updates]);
-
-  // Check if a folder has unseen updates
-  const getFolderUpdateInfo = (courseId: number, folderPath: string) => {
-    return folderUpdates.get(getFolderKey(courseId, folderPath));
-  };
+      return updates;
+    },
+    [fileUpdates]
+  );
 
   // Check if a course has any file/page updates (for course header dot)
   const courseHasFileUpdates = (courseId: number) => {
@@ -2208,21 +2187,49 @@ export function FilesPage() {
                               <span className={styles.folderFileCount}>
                                 {folderDownloaded}/{folderFiles.length}
                               </span>
-                              {/* Notification dot for unseen file updates */}
+                              {/* Notification dots for unseen file updates (up to 3, then ellipsis) */}
                               {(() => {
-                                const updateInfo = getFolderUpdateInfo(
+                                const folderFileUpdates = getFolderFileUpdates(
                                   courseId,
-                                  folderPath
+                                  folderPath,
+                                  folderFiles
                                 );
-                                return updateInfo ? (
-                                  <NotificationDot
-                                    color={courseColor}
-                                    size="sm"
-                                    pulse={updateInfo.hasActionRequired}
-                                    title={`${updateInfo.count} new update${updateInfo.count > 1 ? 's' : ''}`}
-                                    style={{ marginLeft: 'var(--space-2)' }}
-                                  />
-                                ) : null;
+                                if (folderFileUpdates.length === 0) return null;
+
+                                const maxDots = 3;
+                                const dotsToShow = folderFileUpdates.slice(0, maxDots);
+                                const hasMore = folderFileUpdates.length > maxDots;
+
+                                return (
+                                  <span
+                                    style={{
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: '2px',
+                                      marginLeft: 'var(--space-2)',
+                                    }}
+                                    title={`${folderFileUpdates.length} file${folderFileUpdates.length > 1 ? 's' : ''} with updates`}
+                                  >
+                                    {dotsToShow.map((update) => (
+                                      <NotificationDot
+                                        key={update.fileId}
+                                        color={courseColor}
+                                        size="sm"
+                                      />
+                                    ))}
+                                    {hasMore && (
+                                      <span
+                                        style={{
+                                          fontSize: '10px',
+                                          color: 'var(--text-muted)',
+                                          marginLeft: '2px',
+                                        }}
+                                      >
+                                        ...
+                                      </span>
+                                    )}
+                                  </span>
+                                );
                               })()}
                             </button>
 
