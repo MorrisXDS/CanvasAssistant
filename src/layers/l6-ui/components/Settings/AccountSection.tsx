@@ -1,22 +1,17 @@
 /**
- * AccountSection - Account & Connection settings
+ * AccountSection - Account settings
  *
  * Contains:
- * - Canvas connection management
- * - Sync preferences
- * - Window behavior settings
+ * - Canvas connection management (URL, token, test, disconnect)
  */
 
 import React from 'react';
 import { Link, Check, AlertCircle, Loader2, ShieldCheck, Key } from 'lucide-react';
 import { useSettings } from './SettingsContext';
-import { Accordion, SettingRow, ToggleSwitch, SettingSelect } from '../primitives';
+import { Accordion } from '../primitives';
 import { styles } from '../SettingsModalStyles';
 import { SETTINGS_LABELS } from '../../constants';
-import {
-  SETTINGS_CATEGORIES,
-  DEFAULT_SYNC_PREFERENCES,
-} from '../../../l5-presentation/settings';
+import { SETTINGS_CATEGORIES } from '../../../l5-presentation/settings';
 
 // Category icon for account
 const ACCOUNT_ICON = <Link size={18} />;
@@ -29,10 +24,10 @@ export function AccountSection({ sectionRef }: AccountSectionProps) {
   const {
     // Search
     isSearching,
-    shouldShowSetting,
 
     // Drag and drop
     sectionOrder,
+    handleMouseDown,
     handleDragStart,
     handleDragEnd,
     handleDragOver,
@@ -57,14 +52,6 @@ export function AccountSection({ sectionRef }: AccountSectionProps) {
     // Confirmation
     setShowDisconnectConfirm,
 
-    // Sync preferences
-    syncPrefs,
-    updateSyncPrefs,
-
-    // Window behavior
-    windowBehavior,
-    updateWindowBehavior,
-
     // Modified count
     accountModifiedCount,
   } = useSettings();
@@ -76,6 +63,7 @@ export function AccountSection({ sectionRef }: AccountSectionProps) {
     <div
       ref={sectionRef}
       draggable
+      onMouseDown={handleMouseDown}
       onDragStart={(e) => handleDragStart(e, 'account')}
       onDragEnd={handleDragEnd}
       onDragOver={(e) => handleDragOver(e, 'account')}
@@ -236,119 +224,6 @@ export function AccountSection({ sectionRef }: AccountSectionProps) {
                 )}
               </div>
             </div>
-
-            {!isSearching && <div style={styles.divider} />}
-
-            {/* Sync Settings */}
-            {shouldShowSetting('syncPrefs.autoSyncInterval') && (
-              <SettingRow
-                settingKey="syncPrefs.autoSyncInterval"
-                label="Auto-sync interval"
-                description="How often to automatically sync data from Canvas"
-                isModified={
-                  syncPrefs.autoSyncInterval !== DEFAULT_SYNC_PREFERENCES.autoSyncInterval
-                }
-                onReset={() =>
-                  updateSyncPrefs({
-                    autoSyncInterval: DEFAULT_SYNC_PREFERENCES.autoSyncInterval,
-                    autoSyncEnabled: DEFAULT_SYNC_PREFERENCES.autoSyncEnabled,
-                  })
-                }
-              >
-                <SettingSelect
-                  value={String(syncPrefs.autoSyncInterval)}
-                  onChange={(v) => {
-                    const interval = Number(v);
-                    updateSyncPrefs({
-                      autoSyncInterval: interval,
-                      autoSyncEnabled: interval > 0,
-                    });
-                  }}
-                  options={[
-                    { value: '0', label: SETTINGS_LABELS.options.syncInterval.never },
-                    {
-                      value: '15',
-                      label: SETTINGS_LABELS.options.syncInterval.minutes15,
-                    },
-                    {
-                      value: '30',
-                      label: SETTINGS_LABELS.options.syncInterval.minutes30,
-                    },
-                    { value: '60', label: SETTINGS_LABELS.options.syncInterval.hour1 },
-                    { value: '120', label: SETTINGS_LABELS.options.syncInterval.hours2 },
-                  ]}
-                />
-              </SettingRow>
-            )}
-
-            {shouldShowSetting('syncPrefs.syncFiles') && (
-              <SettingRow
-                settingKey="syncPrefs.syncFiles"
-                label="Sync files"
-                description="Include course files and folders in sync"
-                isModified={syncPrefs.syncFiles !== DEFAULT_SYNC_PREFERENCES.syncFiles}
-                onReset={() =>
-                  updateSyncPrefs({ syncFiles: DEFAULT_SYNC_PREFERENCES.syncFiles })
-                }
-              >
-                <ToggleSwitch
-                  checked={syncPrefs.syncFiles}
-                  onChange={(checked) => updateSyncPrefs({ syncFiles: checked })}
-                />
-              </SettingRow>
-            )}
-
-            {shouldShowSetting('syncPrefs.syncAnnouncements') && (
-              <SettingRow
-                settingKey="syncPrefs.syncAnnouncements"
-                label="Sync announcements"
-                description="Include course announcements in sync"
-                isModified={
-                  syncPrefs.syncAnnouncements !==
-                  DEFAULT_SYNC_PREFERENCES.syncAnnouncements
-                }
-                onReset={() =>
-                  updateSyncPrefs({
-                    syncAnnouncements: DEFAULT_SYNC_PREFERENCES.syncAnnouncements,
-                  })
-                }
-              >
-                <ToggleSwitch
-                  checked={syncPrefs.syncAnnouncements}
-                  onChange={(checked) => updateSyncPrefs({ syncAnnouncements: checked })}
-                />
-              </SettingRow>
-            )}
-
-            {!isSearching && <div style={styles.divider} />}
-
-            {/* Window Behavior */}
-            {shouldShowSetting('windowBehavior.closeAction') && (
-              <SettingRow
-                settingKey="windowBehavior.closeAction"
-                label="Close button behavior"
-                description="What happens when you click the close button"
-                isModified={windowBehavior.closeAction !== null}
-                onReset={() => updateWindowBehavior({ closeAction: null })}
-              >
-                <SettingSelect
-                  value={windowBehavior.closeAction ?? ''}
-                  onChange={(v) =>
-                    updateWindowBehavior({
-                      closeAction: v === '' ? null : (v as 'quit' | 'minimize-to-tray'),
-                    })
-                  }
-                  options={[
-                    { value: '', label: SETTINGS_LABELS.options.closeAction.ask },
-                    {
-                      value: 'minimize-to-tray',
-                      label: SETTINGS_LABELS.options.closeAction.minimize,
-                    },
-                    { value: 'quit', label: SETTINGS_LABELS.options.closeAction.quit },
-                  ]}
-                />
-              </SettingRow>
-            )}
           </div>
         </Accordion.Content>
       </Accordion.Item>

@@ -71,6 +71,7 @@ export function DisplaySection({ sectionRef }: DisplaySectionProps) {
 
     // Drag and drop
     sectionOrder,
+    handleMouseDown,
     handleDragStart,
     handleDragEnd,
     handleDragOver,
@@ -124,6 +125,7 @@ export function DisplaySection({ sectionRef }: DisplaySectionProps) {
     <div
       ref={sectionRef}
       draggable
+      onMouseDown={handleMouseDown}
       onDragStart={(e) => handleDragStart(e, 'display')}
       onDragEnd={handleDragEnd}
       onDragOver={(e) => handleDragOver(e, 'display')}
@@ -234,8 +236,8 @@ export function DisplaySection({ sectionRef }: DisplaySectionProps) {
             {shouldShowSetting('dashboard.importantWorksThreshold') && (
               <SettingRow
                 settingKey="dashboard.importantWorksThreshold"
-                label="Important works threshold"
-                description="Show tasks with grade weight above this percentage"
+                label="High-weight task threshold"
+                description="Only show tasks worth more than this percentage of your grade"
                 isModified={
                   dashboardSettings.importantWorksThreshold !==
                   DEFAULT_DASHBOARD_SETTINGS.importantWorksThreshold
@@ -427,8 +429,8 @@ export function DisplaySection({ sectionRef }: DisplaySectionProps) {
             {shouldShowSetting('settingsDockAutoHide') && (
               <SettingRow
                 settingKey="settingsDockAutoHide"
-                label="Dock auto-hide"
-                description="Hide the section navigation dock until mouse is near bottom"
+                label="Settings dock auto-hide"
+                description="Auto-hide the quick navigation bar at the bottom of settings"
                 isModified={!dockAutoHide}
                 onReset={() => updateDockAutoHide(true)}
               >

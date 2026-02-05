@@ -33,6 +33,7 @@ export function NotificationsSection({ sectionRef }: NotificationsSectionProps) 
 
     // Drag and drop
     sectionOrder,
+    handleMouseDown,
     handleDragStart,
     handleDragEnd,
     handleDragOver,
@@ -55,6 +56,7 @@ export function NotificationsSection({ sectionRef }: NotificationsSectionProps) 
     <div
       ref={sectionRef}
       draggable
+      onMouseDown={handleMouseDown}
       onDragStart={(e) => handleDragStart(e, 'notifications')}
       onDragEnd={handleDragEnd}
       onDragOver={(e) => handleDragOver(e, 'notifications')}
@@ -113,8 +115,8 @@ export function NotificationsSection({ sectionRef }: NotificationsSectionProps) 
                 {shouldShowSetting('notifications.syncStatus') && (
                   <SettingRow
                     settingKey="notifications.syncStatus"
-                    label="Sync status"
-                    description="Notify on sync success or failure"
+                    label="Sync notifications"
+                    description="Show notification when sync completes or fails"
                     isModified={
                       notifications.syncStatus !==
                       DEFAULT_NOTIFICATION_SETTINGS.syncStatus
@@ -136,7 +138,7 @@ export function NotificationsSection({ sectionRef }: NotificationsSectionProps) 
                   <SettingRow
                     settingKey="notifications.dueDateReminders"
                     label="Due date reminders"
-                    description="Smart reminders before assignments are due"
+                    description="Get notified before assignments are due"
                     isModified={
                       notifications.dueDateReminders !==
                       DEFAULT_NOTIFICATION_SETTINGS.dueDateReminders
@@ -221,7 +223,7 @@ export function NotificationsSection({ sectionRef }: NotificationsSectionProps) 
                   <SettingRow
                     settingKey="notifications.quietWhenUnplugged"
                     label="On battery power"
-                    description="Pause when device is unplugged"
+                    description="Pause notifications when running on battery power"
                     isModified={
                       notifications.quietWhenUnplugged !==
                       DEFAULT_NOTIFICATION_SETTINGS.quietWhenUnplugged
@@ -237,30 +239,6 @@ export function NotificationsSection({ sectionRef }: NotificationsSectionProps) 
                       checked={notifications.quietWhenUnplugged}
                       onChange={(checked) =>
                         updateNotifications({ quietWhenUnplugged: checked })
-                      }
-                    />
-                  </SettingRow>
-                )}
-
-                {shouldShowSetting('notifications.quietWhenBusy') && (
-                  <SettingRow
-                    settingKey="notifications.quietWhenBusy"
-                    label="Busy or Exam status"
-                    description="Pause when inferred status is Busy or Exam"
-                    isModified={
-                      notifications.quietWhenBusy !==
-                      DEFAULT_NOTIFICATION_SETTINGS.quietWhenBusy
-                    }
-                    onReset={() =>
-                      updateNotifications({
-                        quietWhenBusy: DEFAULT_NOTIFICATION_SETTINGS.quietWhenBusy,
-                      })
-                    }
-                  >
-                    <ToggleSwitch
-                      checked={notifications.quietWhenBusy}
-                      onChange={(checked) =>
-                        updateNotifications({ quietWhenBusy: checked })
                       }
                     />
                   </SettingRow>

@@ -106,6 +106,8 @@ export interface TaskRow {
   completed_at: string | null;
   submission_status: string | null;
   task_type: string | null;
+  /** Subtype for more specific task categorization (e.g., 'numbered', 'webwork', 'final') */
+  task_subtype: string | null;
   task_group_id: number | null;
   /** FK to calendar_events.id for task-calendar linking. ON DELETE SET NULL */
   calendar_event_id: number | null;
@@ -179,6 +181,8 @@ export interface TaskRowMinimal {
   grade: number | null;
   completed_at?: string | null;
   task_type: string | null;
+  /** Subtype for more specific task categorization */
+  task_subtype?: string | null;
   task_group_id: number | null;
   submission_status: string | null;
 }
@@ -669,4 +673,39 @@ export interface SyncUpdateRowWithCourse extends SyncUpdateRow {
   course_code: string;
   course_name: string;
   course_color: string | null;
+}
+
+// =============================================================================
+// Task Type Classification (v100)
+// =============================================================================
+
+/**
+ * Extended field_sources format for task_type classification metadata
+ * Stored in tasks.field_sources JSON under the 'task_type' key
+ *
+ * Example:
+ * {
+ *   "task_type": {
+ *     "source": "canvas",
+ *     "tier": 1,
+ *     "confidence": 100,
+ *     "detectedType": "quiz",
+ *     "detectedSubtype": "numbered",
+ *     "patternsMatched": ["tier1:/^quiz\\s*#?\\d+/i"]
+ *   }
+ * }
+ */
+export interface TaskTypeFieldSource {
+  /** Who set this value: 'canvas' (from classification), 'user' (manually set), 'guessed' (legacy) */
+  source: 'canvas' | 'user' | 'guessed';
+  /** Detection tier (1=exact regex, 2=keyword, 3=submission type, 4=context) */
+  tier: 1 | 2 | 3 | 4;
+  /** Confidence score 0-100 */
+  confidence: number;
+  /** The detected type value */
+  detectedType: string;
+  /** The detected subtype value (null if none) */
+  detectedSubtype: string | null;
+  /** Patterns/indicators that matched during classification */
+  patternsMatched: string[];
 }

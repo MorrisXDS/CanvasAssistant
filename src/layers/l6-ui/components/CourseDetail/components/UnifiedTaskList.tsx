@@ -113,15 +113,17 @@ const filterBarStyles: React.CSSProperties = {
   flexWrap: 'nowrap',
 };
 
+const TASK_LIST_MIN_HEIGHT = '300px';
+
 const emptyStateStyles: React.CSSProperties = {
   display: 'flex',
   flexDirection: 'column',
   alignItems: 'center',
   justifyContent: 'center',
-  padding: '96px 24px',
-  gap: '20px',
+  padding: '24px',
+  gap: '12px',
   color: 'var(--text-muted)',
-  minHeight: '300px',
+  minHeight: TASK_LIST_MIN_HEIGHT,
 };
 
 const countBadgeStyles: React.CSSProperties = {
@@ -336,7 +338,7 @@ export function UnifiedTaskList({
           <div style={{ fontSize: '13px' }}>{currentEmpty.subtitle}</div>
         </div>
       ) : (
-        <div style={{ ...styles.taskList, minHeight: '300px' }}>
+        <div style={{ ...styles.taskList, minHeight: TASK_LIST_MIN_HEIGHT }}>
           {filteredTasks.map((task, index) => (
             <TaskItem
               key={task.id}

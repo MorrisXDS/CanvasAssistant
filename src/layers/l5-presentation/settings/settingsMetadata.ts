@@ -9,7 +9,15 @@
 // SETTINGS METADATA TYPES
 // =============================================================================
 
-export type SettingsCategory = 'account' | 'display' | 'academic' | 'notifications';
+export type SettingsCategory =
+  | 'display'
+  | 'academic'
+  | 'files'
+  | 'sync'
+  | 'account'
+  | 'behavior'
+  | 'notifications'
+  | 'data';
 
 export type SettingComponentType =
   | 'toggle'
@@ -47,66 +55,6 @@ export interface SettingMetadata {
  */
 export const SETTINGS_METADATA: SettingMetadata[] = [
   // =================================
-  // ACCOUNT & CONNECTION
-  // =================================
-  {
-    key: 'canvasUrl',
-    label: 'Canvas URL',
-    description: "Your institution's Canvas LMS URL",
-    category: 'account',
-    component: 'input',
-    keywords: ['institution', 'instructure', 'connection', 'api'],
-  },
-  {
-    key: 'canvasToken',
-    label: 'Canvas API Token',
-    description: 'Access token for Canvas API authentication',
-    category: 'account',
-    component: 'custom',
-    keywords: ['api', 'key', 'authentication', 'credentials'],
-  },
-  {
-    key: 'syncPrefs.autoSyncEnabled',
-    label: 'Auto-sync',
-    description: 'Automatically sync data from Canvas in the background',
-    category: 'account',
-    component: 'toggle',
-    keywords: ['automatic', 'background', 'refresh'],
-  },
-  {
-    key: 'syncPrefs.autoSyncInterval',
-    label: 'Sync interval',
-    description: 'How often to automatically sync data from Canvas',
-    category: 'account',
-    component: 'select',
-    keywords: ['frequency', 'minutes', 'schedule'],
-  },
-  {
-    key: 'syncPrefs.syncFiles',
-    label: 'Sync files',
-    description: 'Include course files and folders in sync',
-    category: 'account',
-    component: 'toggle',
-    keywords: ['documents', 'downloads', 'attachments'],
-  },
-  {
-    key: 'syncPrefs.syncAnnouncements',
-    label: 'Sync announcements',
-    description: 'Include course announcements in sync',
-    category: 'account',
-    component: 'toggle',
-    keywords: ['news', 'updates', 'messages'],
-  },
-  {
-    key: 'windowBehavior.closeAction',
-    label: 'Close button behavior',
-    description: 'What happens when you click the close button',
-    category: 'account',
-    component: 'select',
-    keywords: ['quit', 'minimize', 'tray', 'exit'],
-  },
-
-  // =================================
   // DISPLAY & LAYOUT
   // =================================
   {
@@ -135,11 +83,11 @@ export const SETTINGS_METADATA: SettingMetadata[] = [
   },
   {
     key: 'dashboard.importantWorksThreshold',
-    label: 'Important works threshold',
-    description: 'Show tasks with grade weight above this percentage in Important Works',
+    label: 'High-weight task threshold',
+    description: 'Only show tasks worth more than this percentage of your grade',
     category: 'display',
     component: 'slider',
-    keywords: ['weight', 'percent', 'significant'],
+    keywords: ['weight', 'percent', 'significant', 'important', 'priority'],
   },
   {
     key: 'courses.defaultViewMode',
@@ -183,11 +131,11 @@ export const SETTINGS_METADATA: SettingMetadata[] = [
   },
   {
     key: 'settingsDockAutoHide',
-    label: 'Dock auto-hide',
-    description: 'Hide the section navigation dock until mouse is near bottom',
+    label: 'Settings dock auto-hide',
+    description: 'Auto-hide the quick navigation bar at the bottom of settings',
     category: 'display',
     component: 'toggle',
-    keywords: ['dock', 'navigation', 'hide', 'macOS'],
+    keywords: ['dock', 'navigation', 'hide', 'bar', 'bottom'],
   },
 
   // =================================
@@ -220,52 +168,106 @@ export const SETTINGS_METADATA: SettingMetadata[] = [
   {
     key: 'syncPrefs.autoAssignDueDate',
     label: 'Auto-fill due dates',
-    description: 'Set today 23:59 as due date for coursework without one',
+    description: 'Set today at 11:59 PM as due date for coursework without one',
     category: 'academic',
     component: 'toggle',
     keywords: ['deadline', 'missing', 'guess'],
   },
-  {
-    key: 'content.linkBehavior',
-    label: 'Link click behavior',
-    description: 'How to handle clicks on links in announcements and course content',
-    category: 'academic',
-    component: 'select',
-    keywords: ['external', 'browser', 'local'],
-  },
+
+  // =================================
+  // FILES & CONTENT
+  // =================================
   {
     key: 'fileExplorer.downloadLocation',
     label: 'Download location',
     description: 'Where downloaded files are stored on your computer',
-    category: 'academic',
+    category: 'files',
     component: 'custom',
     keywords: ['folder', 'path', 'directory'],
   },
   {
-    key: 'syncPrefs.saveHtmlContent',
-    label: 'Save HTML content',
-    description:
-      'Download pages, assignments, and announcements as HTML for offline viewing',
-    category: 'academic',
-    component: 'toggle',
-    keywords: ['offline', 'download', 'local'],
+    key: 'content.linkBehavior',
+    label: 'Link click behavior',
+    description: 'How to handle clicks on links in course content',
+    category: 'files',
+    component: 'select',
+    keywords: ['external', 'browser', 'local'],
   },
   {
     key: 'localHtmlPathsSettings.enabled',
-    label: 'Offline HTML files',
-    description:
-      'Prompt to download missing images and linked files when opening HTML content',
-    category: 'academic',
+    label: 'Download for offline',
+    description: 'Download linked images when viewing HTML content offline',
+    category: 'files',
     component: 'toggle',
-    keywords: ['offline', 'local', 'images', 'dependencies'],
+    keywords: ['offline', 'local', 'images', 'dependencies', 'html'],
   },
   {
     key: 'fileExplorer.skipExternalLinkWarning',
     label: 'Skip external link warning',
     description: 'Open external links from modules without showing a confirmation dialog',
-    category: 'academic',
+    category: 'files',
     component: 'toggle',
     keywords: ['external', 'url', 'link', 'warning', 'confirm', 'dialog'],
+  },
+
+  // =================================
+  // SYNC
+  // =================================
+  {
+    key: 'syncPrefs.autoSyncInterval',
+    label: 'Auto-sync interval',
+    description: 'How often to automatically sync data from Canvas',
+    category: 'sync',
+    component: 'select',
+    keywords: ['frequency', 'minutes', 'schedule', 'automatic', 'background'],
+  },
+  {
+    key: 'syncPrefs.syncFiles',
+    label: 'Sync files',
+    description: 'Download course files and folders (uses more storage)',
+    category: 'sync',
+    component: 'toggle',
+    keywords: ['documents', 'downloads', 'attachments'],
+  },
+  {
+    key: 'syncPrefs.syncAnnouncements',
+    label: 'Sync announcements',
+    description: 'Include course announcements in sync',
+    category: 'sync',
+    component: 'toggle',
+    keywords: ['news', 'updates', 'messages'],
+  },
+
+  // =================================
+  // ACCOUNT & CONNECTION
+  // =================================
+  {
+    key: 'canvasUrl',
+    label: 'Canvas URL',
+    description: "Your institution's Canvas LMS URL",
+    category: 'account',
+    component: 'input',
+    keywords: ['institution', 'instructure', 'connection', 'api'],
+  },
+  {
+    key: 'canvasToken',
+    label: 'Canvas API Token',
+    description: 'Access token for Canvas API authentication',
+    category: 'account',
+    component: 'custom',
+    keywords: ['api', 'key', 'authentication', 'credentials'],
+  },
+
+  // =================================
+  // APP BEHAVIOR
+  // =================================
+  {
+    key: 'windowBehavior.closeAction',
+    label: 'Close button behavior',
+    description: 'What happens when you click the close button',
+    category: 'behavior',
+    component: 'select',
+    keywords: ['quit', 'minimize', 'tray', 'exit', 'window'],
   },
 
   // =================================
@@ -281,16 +283,16 @@ export const SETTINGS_METADATA: SettingMetadata[] = [
   },
   {
     key: 'notifications.syncStatus',
-    label: 'Sync status',
-    description: 'Notify on sync success or failure',
+    label: 'Sync notifications',
+    description: 'Show notification when sync completes or fails',
     category: 'notifications',
     component: 'toggle',
-    keywords: ['update', 'refresh', 'complete'],
+    keywords: ['update', 'refresh', 'complete', 'status'],
   },
   {
     key: 'notifications.dueDateReminders',
     label: 'Due date reminders',
-    description: 'Smart reminders before assignments are due',
+    description: 'Get notified before assignments are due',
     category: 'notifications',
     component: 'toggle',
     keywords: ['deadline', 'upcoming', 'alert'],
@@ -305,7 +307,7 @@ export const SETTINGS_METADATA: SettingMetadata[] = [
   },
   {
     key: 'notifications.quietWhenFullscreen',
-    label: 'Quiet in fullscreen',
+    label: 'Fullscreen mode',
     description: 'Pause notifications during presentations or focus sessions',
     category: 'notifications',
     component: 'toggle',
@@ -313,19 +315,11 @@ export const SETTINGS_METADATA: SettingMetadata[] = [
   },
   {
     key: 'notifications.quietWhenUnplugged',
-    label: 'Quiet on battery',
-    description: 'Pause notifications when on battery power',
+    label: 'On battery power',
+    description: 'Pause notifications when running on battery power',
     category: 'notifications',
     component: 'toggle',
     keywords: ['power', 'laptop', 'save'],
-  },
-  {
-    key: 'notifications.quietWhenBusy',
-    label: 'Quiet when busy',
-    description: 'Pause when inferred status is Busy or Exam',
-    category: 'notifications',
-    component: 'toggle',
-    keywords: ['status', 'exam', 'studying'],
   },
 ];
 
@@ -340,21 +334,37 @@ export const SETTINGS_CATEGORIES: Record<
   SettingsCategory,
   { label: string; description: string }
 > = {
-  account: {
-    label: 'Account & Connection',
-    description: 'Canvas connection, sync settings, and app behavior',
-  },
   display: {
     label: 'Display & Layout',
     description: 'Theme, views, and dashboard customization',
   },
   academic: {
-    label: 'Academic & Courses',
-    description: 'Grades, terms, course visibility, and file management',
+    label: 'Academic',
+    description: 'Grades, terms, and course preferences',
+  },
+  files: {
+    label: 'Files & Content',
+    description: 'Downloads, links, and offline content',
+  },
+  sync: {
+    label: 'Sync',
+    description: 'Automatic sync and data updates',
+  },
+  account: {
+    label: 'Account',
+    description: 'Canvas LMS connection',
+  },
+  behavior: {
+    label: 'App Behavior',
+    description: 'Window and system tray settings',
   },
   notifications: {
     label: 'Notifications',
-    description: 'Alerts, reminders, and quiet mode settings',
+    description: 'Alerts, reminders, and quiet mode',
+  },
+  data: {
+    label: 'Data',
+    description: 'Export, import, and reset options',
   },
 };
 

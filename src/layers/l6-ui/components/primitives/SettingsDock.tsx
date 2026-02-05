@@ -9,7 +9,16 @@
  */
 
 import React, { useState, useRef, useCallback } from 'react';
-import { Link, Palette, GraduationCap, Bell, HardDrive } from 'lucide-react';
+import {
+  Link,
+  Palette,
+  GraduationCap,
+  Bell,
+  HardDrive,
+  FolderOpen,
+  RefreshCw,
+  AppWindow,
+} from 'lucide-react';
 
 // =============================================================================
 // TYPES
@@ -49,9 +58,12 @@ const TRIGGER_ZONE_WIDTH = 280;
 const TRIGGER_ZONE_HEIGHT = 20;
 
 const SECTION_ITEMS: DockItem[] = [
-  { id: 'account', label: 'Account', icon: <Link size={18} /> },
   { id: 'display', label: 'Display', icon: <Palette size={18} /> },
   { id: 'academic', label: 'Academic', icon: <GraduationCap size={18} /> },
+  { id: 'files', label: 'Files', icon: <FolderOpen size={18} /> },
+  { id: 'sync', label: 'Sync', icon: <RefreshCw size={18} /> },
+  { id: 'account', label: 'Account', icon: <Link size={18} /> },
+  { id: 'behavior', label: 'Behavior', icon: <AppWindow size={18} /> },
   { id: 'notifications', label: 'Notifications', icon: <Bell size={18} /> },
   { id: 'data', label: 'Data', icon: <HardDrive size={18} /> },
 ];

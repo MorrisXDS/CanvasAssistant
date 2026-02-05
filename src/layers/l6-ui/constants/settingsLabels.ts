@@ -26,12 +26,11 @@ export const SETTINGS_LABELS = {
     updateToken: 'Update Token',
     removeConnection: 'Remove Connection',
     change: 'Change',
-    quickBackup: 'Quick Backup',
+    backupDatabase: 'Backup Database',
     backupData: 'Backup Data',
     exportCsv: 'Export CSV',
-    customExport: 'Custom Export...',
+    exportWithOptions: 'Export with Options...',
     importBackup: 'Import Backup...',
-    importSettings: 'Import Settings...',
     exportSettings: 'Export Settings',
     resetAll: 'Reset All',
     validateToken: 'Validate Token',
@@ -58,7 +57,7 @@ export const SETTINGS_LABELS = {
     folderState: {
       collapsed: 'All Collapsed',
       expanded: 'All Expanded',
-      remember: 'Remember State',
+      remember: 'Remember last state',
     },
     termSelection: {
       autoDetect: 'Auto-detect current',
@@ -67,7 +66,7 @@ export const SETTINGS_LABELS = {
     },
     linkBehavior: {
       browser: 'Open in browser',
-      local: 'Prefer local',
+      local: 'Open local copy',
     },
     viewMode: {
       grid: 'Grid',

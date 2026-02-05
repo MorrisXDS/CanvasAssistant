@@ -198,7 +198,8 @@ export interface LocalTask {
   submission_types: string | null;
   weight: number;
   grade: number | null; // Percentage grade from Canvas (score / points_possible * 100)
-  task_type: string; // Derived from Canvas submission_types: 'assignment' | 'quiz' | 'discussion' | 'reading' | 'external'
+  task_type: string; // Classified from title/submission_types using TaskTypeClassifier
+  task_subtype: string | null; // Subtype for more specific categorization (e.g., 'numbered', 'webwork')
   is_completed: number; // SQLite boolean: 0 or 1
   submission_status: 'pending' | 'submitted' | 'graded'; // Canvas workflow state mapped
   completed_at: string | null;
@@ -211,6 +212,8 @@ export interface LocalTask {
   is_missing: number; // SQLite boolean: 0 or 1
   // Task linking fields
   assignment_group_id: number | null; // FK to canvas_assignment_groups
+  // Classification metadata stored in field_sources JSON
+  field_sources?: string | null; // JSON string with TaskTypeFieldSource for task_type
 }
 
 export interface LocalNotification {

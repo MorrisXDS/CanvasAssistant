@@ -973,7 +973,7 @@ export class SyncOrchestrator {
         }
       }
 
-      // Commit files
+      // Commit files (sync_updates for files recorded later via recordFileUpdates)
       for (const [canvasCourseId, files] of fetched.files) {
         const localCourseId = courseLookup.get(canvasCourseId);
         if (!localCourseId) continue;
@@ -993,12 +993,6 @@ export class SyncOrchestrator {
 
         for (const file of files) {
           try {
-            // Check if file already exists
-            const existingFile = this.db.executeReadOne<{ id: number }>(
-              `SELECT id FROM resources WHERE external_id = ?`,
-              [String(file.id)]
-            );
-
             const folderPath = folderPathMap.get(file.folder_id) ?? null;
             const localFile = mapFile(file, localCourseId, null, folderPath);
             this.db.upsert(
@@ -1007,34 +1001,6 @@ export class SyncOrchestrator {
               'external_id',
               true
             );
-
-            // Record sync update for new files only
-            if (!existingFile) {
-              const insertedFile = this.db.executeReadOne<{ id: number }>(
-                `SELECT id FROM resources WHERE external_id = ?`,
-                [String(file.id)]
-              );
-              if (insertedFile) {
-                // Format file size for subtitle
-                const sizeStr = file.size
-                  ? file.size >= 1024 * 1024
-                    ? `${(file.size / (1024 * 1024)).toFixed(1)} MB`
-                    : `${Math.round(file.size / 1024)} KB`
-                  : undefined;
-                this.recordSyncUpdate({
-                  syncSessionId: syncId,
-                  courseId: localCourseId,
-                  entityType: 'file',
-                  entityId: insertedFile.id,
-                  externalId: String(file.id),
-                  changeType: 'new',
-                  title: file.display_name || 'New File',
-                  subtitle: sizeStr,
-                });
-                updateCounts.newFiles++;
-              }
-            }
-
             counts.files++;
           } catch (error) {
             errors.push(
@@ -1049,16 +1015,16 @@ export class SyncOrchestrator {
     this.completeSyncSession(syncId, updateCounts);
 
     // Emit sync-updates event for the renderer to refresh
+    // NOTE: File updates are tracked separately via recordFileUpdates() after all file processing
     const totalUpdates =
       updateCounts.newTasks +
       updateCounts.updatedTasks +
       updateCounts.newAnnouncements +
-      updateCounts.gradeChanges +
-      updateCounts.newFiles;
+      updateCounts.gradeChanges;
 
     // Debug logging
     this.log?.info(
-      `[SyncOrchestrator] Sync update counts: newTasks=${updateCounts.newTasks}, newAnnouncements=${updateCounts.newAnnouncements}, gradeChanges=${updateCounts.gradeChanges}, newFiles=${updateCounts.newFiles}, total=${totalUpdates}`
+      `[SyncOrchestrator] Sync update counts: newTasks=${updateCounts.newTasks}, newAnnouncements=${updateCounts.newAnnouncements}, gradeChanges=${updateCounts.gradeChanges}, total=${totalUpdates} (files tracked separately)`
     );
 
     if (totalUpdates > 0) {
@@ -1355,6 +1321,10 @@ export class SyncOrchestrator {
             () =>
               this.rateLimiter.enqueue(() => this.client.getAll<CanvasFile>(endpoint), 2)
           );
+          const fileCount = result.data?.length ?? 0;
+          this.log?.info(
+            `[SyncOrchestrator] Fetch files for course ${canvasCourseId}: ${fileCount} files, skipped=${result.skipped}, error=${result.error || 'none'}`
+          );
           fetched.files.set(canvasCourseId, result.data || []);
         })()
       );
@@ -1589,7 +1559,7 @@ export class SyncOrchestrator {
   recordSyncUpdate(params: {
     syncSessionId: string;
     courseId: number;
-    entityType: 'task' | 'announcement' | 'grade' | 'file' | 'conflict';
+    entityType: 'task' | 'announcement' | 'grade' | 'file' | 'page' | 'conflict';
     entityId: number;
     externalId?: string;
     changeType: 'new' | 'updated' | 'grade_changed' | 'conflict';
@@ -1658,5 +1628,154 @@ export class SyncOrchestrator {
     } catch (error) {
       this.log?.debug('Failed to record sync update', { error, params });
     }
+  }
+
+  /**
+   * Snapshot current file and page state before sync for comparison later
+   * Returns a map of external_id -> { id, remote_updated_at, course_id, title, type }
+   */
+  snapshotFileState(): Map<
+    string,
+    {
+      id: number;
+      remote_updated_at: string | null;
+      course_id: number;
+      title: string;
+      type: 'file' | 'page';
+    }
+  > {
+    const resources = this.db.executeRead<{
+      id: number;
+      external_id: string;
+      remote_updated_at: string | null;
+      course_id: number;
+      title: string;
+      type: string;
+    }>(
+      `SELECT id, external_id, remote_updated_at, course_id, title, type
+       FROM resources WHERE type IN ('file', 'page')`
+    );
+
+    const snapshot = new Map<
+      string,
+      {
+        id: number;
+        remote_updated_at: string | null;
+        course_id: number;
+        title: string;
+        type: 'file' | 'page';
+      }
+    >();
+    for (const resource of resources) {
+      snapshot.set(resource.external_id, {
+        id: resource.id,
+        remote_updated_at: resource.remote_updated_at,
+        course_id: resource.course_id,
+        title: resource.title,
+        type: resource.type as 'file' | 'page',
+      });
+    }
+
+    const fileCount = [...snapshot.values()].filter((r) => r.type === 'file').length;
+    const pageCount = [...snapshot.values()].filter((r) => r.type === 'page').length;
+    this.log?.info(
+      `[SyncOrchestrator] Resource snapshot: ${fileCount} files, ${pageCount} pages`
+    );
+    return snapshot;
+  }
+
+  /**
+   * Record file and page sync_updates by comparing current state with snapshot
+   * Call this AFTER all file processing (commit, file refs, HTML sync) is complete
+   */
+  recordFileUpdates(
+    syncSessionId: string,
+    snapshot: Map<
+      string,
+      {
+        id: number;
+        remote_updated_at: string | null;
+        course_id: number;
+        title: string;
+        type: 'file' | 'page';
+      }
+    >
+  ): { newFiles: number; updatedFiles: number; newPages: number; updatedPages: number } {
+    const counts = { newFiles: 0, updatedFiles: 0, newPages: 0, updatedPages: 0 };
+
+    // Get current file and page state
+    const currentResources = this.db.executeRead<{
+      id: number;
+      external_id: string;
+      remote_updated_at: string | null;
+      course_id: number;
+      title: string;
+      size_bytes: number | null;
+      type: string;
+    }>(
+      `SELECT id, external_id, remote_updated_at, course_id, title, size_bytes, type
+       FROM resources WHERE type IN ('file', 'page')`
+    );
+
+    for (const resource of currentResources) {
+      const previous = snapshot.get(resource.external_id);
+      const isFile = resource.type === 'file';
+      const entityType = isFile ? 'file' : 'page';
+
+      // Format size for subtitle (files only)
+      const sizeStr =
+        isFile && resource.size_bytes
+          ? resource.size_bytes >= 1024 * 1024
+            ? `${(resource.size_bytes / (1024 * 1024)).toFixed(1)} MB`
+            : `${Math.round(resource.size_bytes / 1024)} KB`
+          : undefined;
+
+      if (!previous) {
+        // New resource - didn't exist before sync
+        this.recordSyncUpdate({
+          syncSessionId,
+          courseId: resource.course_id,
+          entityType,
+          entityId: resource.id,
+          externalId: resource.external_id,
+          changeType: 'new',
+          title: resource.title || (isFile ? 'New File' : 'New Page'),
+          subtitle: sizeStr,
+        });
+        if (isFile) {
+          counts.newFiles++;
+        } else {
+          counts.newPages++;
+        }
+      } else if (
+        resource.remote_updated_at &&
+        previous.remote_updated_at &&
+        resource.remote_updated_at !== previous.remote_updated_at
+      ) {
+        // Updated resource - remote_updated_at changed
+        this.recordSyncUpdate({
+          syncSessionId,
+          courseId: resource.course_id,
+          entityType,
+          entityId: resource.id,
+          externalId: resource.external_id,
+          changeType: 'updated',
+          title: resource.title || (isFile ? 'Updated File' : 'Updated Page'),
+          subtitle: sizeStr,
+          oldValue: previous.remote_updated_at,
+          newValue: resource.remote_updated_at,
+        });
+        if (isFile) {
+          counts.updatedFiles++;
+        } else {
+          counts.updatedPages++;
+        }
+      }
+    }
+
+    this.log?.info(
+      `[SyncOrchestrator] Resource updates recorded: ${counts.newFiles} new files, ${counts.updatedFiles} updated files, ${counts.newPages} new pages, ${counts.updatedPages} updated pages`
+    );
+    return counts;
   }
 }

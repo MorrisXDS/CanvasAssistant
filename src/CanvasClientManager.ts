@@ -3,7 +3,7 @@
  * Handles Canvas API client and sync engine initialization and event forwarding
  */
 
-import type { BrowserWindow } from 'electron';
+import { Notification, type BrowserWindow } from 'electron';
 import type { Database } from './layers/l1-persistence';
 import type { VisibleDataProvider } from './layers/l1-persistence';
 import type { Logger } from './layers/l0-utilities/Logger';
@@ -17,6 +17,29 @@ import {
   RateLimiter,
   CircuitBreaker,
 } from './layers/l2-daemon';
+
+interface NotificationSettings {
+  enabled: boolean;
+  syncStatus: boolean;
+  // other fields exist but not needed for sync notifications
+}
+
+/**
+ * Get notification settings from user_preferences in the database
+ */
+function getNotificationSettings(db: Database): NotificationSettings | null {
+  try {
+    const prefs = db.executeReadOne<{ value: string }>(
+      "SELECT value FROM user_preferences WHERE key = 'notificationSettings'"
+    );
+    if (prefs?.value) {
+      return JSON.parse(prefs.value);
+    }
+  } catch {
+    // Fall through
+  }
+  return null;
+}
 
 export interface CanvasClientManagerConfig {
   database: Database;
@@ -199,6 +222,17 @@ export class CanvasClientManager {
         visibleDataProvider.invalidateCache();
         logger.debug('VisibleDataProvider cache invalidated after sync');
       }
+
+      // Desktop notification for sync complete
+      const notifSettings = getNotificationSettings(this.config.database);
+      if (notifSettings?.enabled && notifSettings?.syncStatus) {
+        const coursesCount = result.courses?.count ?? 0;
+        const tasksCount = result.tasks?.count ?? 0;
+        new Notification({
+          title: 'Sync Complete',
+          body: `Updated ${coursesCount} courses, ${tasksCount} tasks`,
+        }).show();
+      }
     });
 
     this.syncEngine.on('sync-error', ({ type, error }) => {
@@ -207,6 +241,17 @@ export class CanvasClientManager {
       const mainWindow = getMainWindow();
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('sync:error', { type, error });
+      }
+
+      // Desktop notification for sync error
+      const notifSettings = getNotificationSettings(this.config.database);
+      if (notifSettings?.enabled && notifSettings?.syncStatus) {
+        const errorMessage =
+          typeof error === 'string' ? error : (error?.message ?? 'Unknown error');
+        new Notification({
+          title: 'Sync Failed',
+          body: `Error during ${type}: ${errorMessage}`,
+        }).show();
       }
     });
 

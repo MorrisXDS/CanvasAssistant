@@ -82,9 +82,12 @@ interface ExportMessage {
 }
 
 interface SectionRefs {
-  account: RefObject<HTMLDivElement>;
   display: RefObject<HTMLDivElement>;
   academic: RefObject<HTMLDivElement>;
+  files: RefObject<HTMLDivElement>;
+  sync: RefObject<HTMLDivElement>;
+  account: RefObject<HTMLDivElement>;
+  behavior: RefObject<HTMLDivElement>;
   notifications: RefObject<HTMLDivElement>;
   data: RefObject<HTMLDivElement>;
 }
@@ -240,6 +243,7 @@ interface SettingsContextType {
   sectionOrder: string[];
   draggedSection: string | null;
   dragOverSection: string | null;
+  handleMouseDown: () => void;
   handleDragStart: (e: React.DragEvent, sectionId: string) => void;
   handleDragEnd: (e: React.DragEvent) => void;
   handleDragOver: (e: React.DragEvent, sectionId: string) => void;
@@ -253,9 +257,12 @@ interface SettingsContextType {
   sectionRefs: SectionRefs;
 
   // Modified counts
-  accountModifiedCount: number;
   displayModifiedCount: number;
   academicModifiedCount: number;
+  filesModifiedCount: number;
+  syncModifiedCount: number;
+  accountModifiedCount: number;
+  behaviorModifiedCount: number;
   notificationsModifiedCount: number;
 }
 
@@ -314,7 +321,7 @@ export function SettingsProvider({
   );
 
   // Accordion state
-  const [openSections, setOpenSections] = useState<string[]>(() => {
+  const [openSections, setOpenSectionsInternal] = useState<string[]>(() => {
     const storedDefaultState = localStorage.getItem(STORAGE_KEYS.SETTINGS_DEFAULT_STATE);
     const defaultState =
       storedDefaultState ?? DEFAULT_SETTINGS_PAGE_SETTINGS.defaultState;
@@ -407,17 +414,28 @@ export function SettingsProvider({
     const stored = localStorage.getItem(STORAGE_KEYS.SETTINGS_SECTION_ORDER);
     if (stored) {
       try {
-        return JSON.parse(stored);
+        const parsed = JSON.parse(stored);
+        // Migrate old section order to include new sections if needed
+        const newSections = ['files', 'sync', 'behavior'];
+        const hasNewSections = newSections.some((s) => parsed.includes(s));
+        if (!hasNewSections) {
+          // Old section order, return default
+          return DEFAULT_SETTINGS_SECTION_ORDER;
+        }
+        return parsed;
       } catch {
-        return ['account', 'display', 'academic', 'notifications', 'data'];
+        return DEFAULT_SETTINGS_SECTION_ORDER;
       }
     }
-    return ['account', 'display', 'academic', 'notifications', 'data'];
+    return DEFAULT_SETTINGS_SECTION_ORDER;
   });
 
   // Drag state
   const [draggedSection, setDraggedSection] = useState<string | null>(null);
   const [dragOverSection, setDragOverSection] = useState<string | null>(null);
+  const lastDragEndTimeRef = useRef<number>(0);
+  const isDraggingRef = useRef<boolean>(false);
+  const mouseDownTimeRef = useRef<number>(0);
 
   // Window behavior
   const [windowBehavior, setWindowBehavior] = useState<WindowBehavior>({
@@ -454,9 +472,12 @@ export function SettingsProvider({
 
   // Section refs
   const sectionRefs: SectionRefs = {
-    account: useRef<HTMLDivElement>(null),
     display: useRef<HTMLDivElement>(null),
     academic: useRef<HTMLDivElement>(null),
+    files: useRef<HTMLDivElement>(null),
+    sync: useRef<HTMLDivElement>(null),
+    account: useRef<HTMLDivElement>(null),
+    behavior: useRef<HTMLDivElement>(null),
     notifications: useRef<HTMLDivElement>(null),
     data: useRef<HTMLDivElement>(null),
   };
@@ -511,7 +532,7 @@ export function SettingsProvider({
     JSON.stringify(academic) !== JSON.stringify(DEFAULT_ACADEMIC_SETTINGS);
   const isDashboardModified =
     JSON.stringify(dashboardSettings) !== JSON.stringify(DEFAULT_DASHBOARD_SETTINGS);
-  const isFileExplorerModified =
+  const _isFileExplorerModified =
     JSON.stringify(fileExplorer) !== JSON.stringify(DEFAULT_FILE_EXPLORER_SETTINGS);
   const isCalendarModified =
     JSON.stringify(calendarSettings) !== JSON.stringify(DEFAULT_CALENDAR_SETTINGS);
@@ -520,17 +541,40 @@ export function SettingsProvider({
   const isSettingsPageSettingsModified =
     settingsPageSettings.defaultState !== DEFAULT_SETTINGS_PAGE_SETTINGS.defaultState;
 
-  const accountModifiedCount =
-    (isSyncModified ? 1 : 0) + (windowBehavior.closeAction !== null ? 1 : 0);
+  // Compute modified counts for each section
   const displayModifiedCount =
     (isAppearanceModified ? 1 : 0) +
     (isDashboardModified ? 1 : 0) +
     (landingPage !== '/' ? 1 : 0) +
-    (isFileExplorerModified ? 1 : 0) +
     (isCalendarModified ? 1 : 0) +
     (isCourseSettingsModified ? 1 : 0) +
-    (isSettingsPageSettingsModified ? 1 : 0);
+    (isSettingsPageSettingsModified ? 1 : 0) +
+    (!dockAutoHide ? 1 : 0);
+
   const academicModifiedCount = isAcademicModified ? 1 : 0;
+
+  const isContentModified =
+    JSON.stringify(contentSettings) !== JSON.stringify(DEFAULT_CONTENT_SETTINGS);
+  const isLocalHtmlPathsModified =
+    JSON.stringify(localHtmlPathsSettings) !==
+    JSON.stringify(DEFAULT_LOCAL_HTML_PATHS_SETTINGS);
+  const filesModifiedCount =
+    (isContentModified ? 1 : 0) +
+    (isLocalHtmlPathsModified ? 1 : 0) +
+    (fileExplorer.skipExternalLinkWarning !==
+    DEFAULT_FILE_EXPLORER_SETTINGS.skipExternalLinkWarning
+      ? 1
+      : 0) +
+    (fileExplorer.downloadLocation !== DEFAULT_FILE_EXPLORER_SETTINGS.downloadLocation
+      ? 1
+      : 0);
+
+  const syncModifiedCount = isSyncModified ? 1 : 0;
+
+  const accountModifiedCount = 0; // Account section only has connection card now
+
+  const behaviorModifiedCount = windowBehavior.closeAction !== null ? 1 : 0;
+
   const notificationsModifiedCount = isNotificationsModified ? 1 : 0;
 
   // =========================================================================
@@ -914,9 +958,9 @@ export function SettingsProvider({
     settingsManager.set(STORAGE_KEYS.SETTINGS_DEFAULT_STATE, newSettings.defaultState);
 
     if (updates.defaultState === 'collapsed') {
-      setOpenSections([]);
+      setOpenSectionsInternal([]);
     } else if (updates.defaultState === 'expanded') {
-      setOpenSections(DEFAULT_SETTINGS_SECTION_ORDER);
+      setOpenSectionsInternal(DEFAULT_SETTINGS_SECTION_ORDER);
     }
   };
 
@@ -1118,7 +1162,12 @@ export function SettingsProvider({
   // HANDLERS - Drag and Drop
   // =========================================================================
 
+  const handleMouseDown = () => {
+    mouseDownTimeRef.current = Date.now();
+  };
+
   const handleDragStart = (e: React.DragEvent, sectionId: string) => {
+    isDraggingRef.current = true;
     setDraggedSection(sectionId);
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', sectionId);
@@ -1129,8 +1178,10 @@ export function SettingsProvider({
   };
 
   const handleDragEnd = (e: React.DragEvent) => {
+    isDraggingRef.current = false;
     setDraggedSection(null);
     setDragOverSection(null);
+    lastDragEndTimeRef.current = Date.now();
     const target = e.target as HTMLElement;
     target.style.opacity = '1';
   };
@@ -1181,6 +1232,30 @@ export function SettingsProvider({
         boxShadow: '0 0 0 2px var(--color-primary)',
       }),
   });
+
+  // Wrapper for setOpenSections that ignores toggle requests during drag operations
+  const setOpenSections: React.Dispatch<React.SetStateAction<string[]>> = useCallback(
+    (action) => {
+      // Ignore accordion toggle if we're currently dragging
+      if (isDraggingRef.current) {
+        return;
+      }
+      // Ignore toggle if we just finished dragging
+      const timeSinceDragEnd = Date.now() - lastDragEndTimeRef.current;
+      if (timeSinceDragEnd < 200) {
+        return;
+      }
+      // Ignore toggle if mousedown was very recent (drag initiation)
+      // Click events fire ~100-200ms after mousedown
+      const timeSinceMouseDown = Date.now() - mouseDownTimeRef.current;
+      if (timeSinceMouseDown < 50) {
+        // Very recent mousedown - likely starting a drag, wait to see
+        return;
+      }
+      setOpenSectionsInternal(action);
+    },
+    []
+  );
 
   // =========================================================================
   // CONTEXT VALUE
@@ -1328,6 +1403,7 @@ export function SettingsProvider({
     sectionOrder,
     draggedSection,
     dragOverSection,
+    handleMouseDown,
     handleDragStart,
     handleDragEnd,
     handleDragOver,
@@ -1341,9 +1417,12 @@ export function SettingsProvider({
     sectionRefs,
 
     // Modified counts
-    accountModifiedCount,
     displayModifiedCount,
     academicModifiedCount,
+    filesModifiedCount,
+    syncModifiedCount,
+    accountModifiedCount,
+    behaviorModifiedCount,
     notificationsModifiedCount,
   };
 

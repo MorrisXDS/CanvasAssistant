@@ -98,6 +98,19 @@ export class SyncEngine extends EventEmitter {
   private log: ComponentLogger | null;
   // Store courses from last sync for deferred file processing
   private lastSyncedCourses: CanvasCourse[] = [];
+  // Store file snapshot for deferred file processing
+  private lastFileSnapshot: Map<
+    string,
+    {
+      id: number;
+      remote_updated_at: string | null;
+      course_id: number;
+      title: string;
+      type: 'file' | 'page';
+    }
+  > | null = null;
+  // Store syncId for deferred file processing
+  private lastSyncId: string | null = null;
   // Visible data provider for filtering courses
   private visibleDataProvider: VisibleDataProvider | null = null;
   // Operation coordinator for sync/download conflict prevention
@@ -490,22 +503,22 @@ export class SyncEngine extends EventEmitter {
   /**
    * Get the user's default target grade from user_preferences.
    * Used when creating new courses to apply the correct default.
-   * @returns Default target grade (80 if not set)
+   * @returns Default target grade (85 if not set)
    */
   private getDefaultTargetGrade(): number {
-    if (!this.db.isOpen) return 80;
+    if (!this.db.isOpen) return 85;
     try {
       const prefs = this.db.executeReadOne<{ value: string }>(
         "SELECT value FROM user_preferences WHERE key = 'academicSettings'"
       );
       if (prefs?.value) {
         const settings = JSON.parse(prefs.value);
-        return settings.defaultTargetGrade ?? 80;
+        return settings.defaultTargetGrade ?? 85;
       }
     } catch {
       // Fall through to default
     }
-    return 80;
+    return 85;
   }
 
   /**
@@ -856,6 +869,9 @@ export class SyncEngine extends EventEmitter {
     // ============ PHASE 2: COMMIT ALL DATA ============
     let counts: Record<string, number>;
 
+    // Snapshot file state BEFORE commit for comparison after all file processing
+    const fileSnapshot = this.syncOrchestrator.snapshotFileState();
+
     try {
       // Check if database was locked during fetch phase (e.g., app reset occurred)
       if (this.db.isWriteLocked()) {
@@ -913,12 +929,36 @@ export class SyncEngine extends EventEmitter {
         counts,
         errors,
         syncId,
-        startTime
+        startTime,
+        fileSnapshot
       );
     }
 
     // Execute file processing phases
     await this.executeFileProcessingPhases(fetched.courses, errors, options);
+
+    // Record file and page sync_updates AFTER all file processing is complete
+    // This captures files/pages from: direct API, module items, HTML content sync
+    const resourceCounts = this.syncOrchestrator.recordFileUpdates(syncId, fileSnapshot);
+
+    // Emit sync-updates event with file and page counts
+    const totalResourceUpdates =
+      resourceCounts.newFiles +
+      resourceCounts.updatedFiles +
+      resourceCounts.newPages +
+      resourceCounts.updatedPages;
+    if (totalResourceUpdates > 0) {
+      this.log?.info(
+        `[SyncEngine] Emitting resource updates: ${resourceCounts.newFiles} new files, ${resourceCounts.updatedFiles} updated files, ${resourceCounts.newPages} new pages, ${resourceCounts.updatedPages} updated pages`
+      );
+      this.emit('sync-updates', {
+        total: totalResourceUpdates,
+        newFiles: resourceCounts.newFiles,
+        updatedFiles: resourceCounts.updatedFiles,
+        newPages: resourceCounts.newPages,
+        updatedPages: resourceCounts.updatedPages,
+      });
+    }
 
     // ============ SUCCESS ============
     const result = this.createSuccessResult(counts, errors, startTime);
@@ -1096,7 +1136,17 @@ export class SyncEngine extends EventEmitter {
     counts: Record<string, number>,
     errors: string[],
     syncId: string,
-    startTime: number
+    startTime: number,
+    fileSnapshot: Map<
+      string,
+      {
+        id: number;
+        remote_updated_at: string | null;
+        course_id: number;
+        title: string;
+        type: 'file' | 'page';
+      }
+    >
   ): FullSyncResult {
     this.log?.info(
       'File processing deferred - call processFileReferencesBackground() to complete'
@@ -1104,8 +1154,10 @@ export class SyncEngine extends EventEmitter {
     this.emit('sync-phase', { phase: 'file-refs', status: 'deferred' });
     this.emit('sync-phase', { phase: 'html-content', status: 'deferred' });
 
-    // Store synced courses for deferred processing
+    // Store synced courses and file snapshot for deferred processing
     this.lastSyncedCourses = courses;
+    this.lastFileSnapshot = fileSnapshot;
+    this.lastSyncId = syncId;
 
     const deferredResult = this.createSuccessResult(counts, errors, startTime);
 
@@ -1801,8 +1853,37 @@ export class SyncEngine extends EventEmitter {
       });
     }
 
-    // Clear stored courses
+    // Record file and page sync_updates AFTER all file processing is complete
+    if (this.lastFileSnapshot && this.lastSyncId) {
+      const resourceCounts = this.syncOrchestrator.recordFileUpdates(
+        this.lastSyncId,
+        this.lastFileSnapshot
+      );
+
+      // Emit sync-updates event with file and page counts
+      const totalResourceUpdates =
+        resourceCounts.newFiles +
+        resourceCounts.updatedFiles +
+        resourceCounts.newPages +
+        resourceCounts.updatedPages;
+      if (totalResourceUpdates > 0) {
+        this.log?.info(
+          `[SyncEngine] Background: Emitting resource updates: ${resourceCounts.newFiles} new files, ${resourceCounts.updatedFiles} updated files, ${resourceCounts.newPages} new pages, ${resourceCounts.updatedPages} updated pages`
+        );
+        this.emit('sync-updates', {
+          total: totalResourceUpdates,
+          newFiles: resourceCounts.newFiles,
+          updatedFiles: resourceCounts.updatedFiles,
+          newPages: resourceCounts.newPages,
+          updatedPages: resourceCounts.updatedPages,
+        });
+      }
+    }
+
+    // Clear stored data for deferred processing
     this.lastSyncedCourses = [];
+    this.lastFileSnapshot = null;
+    this.lastSyncId = null;
 
     // Check for syllabus changes
     await this.checkSyllabusChanges();

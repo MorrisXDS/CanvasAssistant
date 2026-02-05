@@ -9,6 +9,7 @@
  */
 
 import { z } from 'zod';
+import { TASK_TYPES } from '../../l6-ui/constants/taskTypes';
 
 // Re-export settings metadata from extracted module
 export {
@@ -462,34 +463,21 @@ export const DEFAULT_WINDOW_BEHAVIOR_SETTINGS: WindowBehaviorSettings = {
 /**
  * Default filter for Important Works section
  * All task types enabled by default
+ *
+ * Uses a for loop to build enabledTypes from TASK_TYPES to ensure
+ * the defaults always include all available task types.
  */
+function buildDefaultEnabledTypes(): string[] {
+  const types: string[] = [];
+  for (const taskType of TASK_TYPES) {
+    types.push(taskType.value);
+  }
+  return types;
+}
+
 export const DEFAULT_IMPORTANT_WORKS_FILTER: ImportantWorksFilter = {
   globalThreshold: 10,
-  enabledTypes: [
-    'assignment',
-    'problem_set',
-    'quiz',
-    'homework',
-    'lab',
-    'essay',
-    'writing',
-    'attendance',
-    'participation',
-    'project',
-    'presentation',
-    'performing',
-    'midterm',
-    'termtest',
-    'final_exam',
-    'tutorial',
-    'lab_report',
-    'reading_response',
-    'discussion',
-    'meeting',
-    'reading',
-    'external',
-    'info',
-  ],
+  enabledTypes: buildDefaultEnabledTypes(),
   perTypeEnabled: false,
   perTypeThresholds: {},
 };
@@ -592,9 +580,12 @@ export interface SettingsTypeMap {
 
 // Default order for settings sections
 export const DEFAULT_SETTINGS_SECTION_ORDER = [
-  'account',
   'display',
   'academic',
+  'files',
+  'sync',
+  'account',
+  'behavior',
   'notifications',
   'data',
 ];

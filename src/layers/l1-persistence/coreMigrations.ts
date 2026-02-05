@@ -2207,4 +2207,100 @@ export const coreMigrations: Migration[] = [
       SELECT 1;
     `,
   },
+  // Migration 99: Add 'page' to sync_updates entity_type for tracking page updates
+  {
+    version: 99,
+    description: 'Add page to sync_updates entity_type check constraint',
+    up: `
+      -- SQLite doesn't support ALTER CHECK, so recreate table
+      CREATE TABLE sync_updates_v99 (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        sync_session_id TEXT NOT NULL,
+        course_id INTEGER NOT NULL,
+        entity_type TEXT CHECK(entity_type IN ('task', 'announcement', 'grade', 'file', 'page', 'conflict')) NOT NULL,
+        entity_id INTEGER NOT NULL,
+        external_id TEXT,
+        change_type TEXT CHECK(change_type IN ('new', 'updated', 'grade_changed', 'conflict')) NOT NULL,
+        title TEXT NOT NULL,
+        subtitle TEXT,
+        old_value TEXT,
+        new_value TEXT,
+        conflict_field TEXT,
+        conflict_resolution TEXT,
+        remember_choice INTEGER DEFAULT 0,
+        seen_at DATETIME,
+        resolved_at DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME,
+        is_action_required INTEGER DEFAULT 0,
+        FOREIGN KEY(course_id) REFERENCES courses(id) ON DELETE CASCADE,
+        FOREIGN KEY(sync_session_id) REFERENCES sync_sessions(id) ON DELETE CASCADE
+      );
+
+      INSERT INTO sync_updates_v99 SELECT * FROM sync_updates;
+      DROP TABLE sync_updates;
+      ALTER TABLE sync_updates_v99 RENAME TO sync_updates;
+
+      CREATE INDEX idx_sync_updates_course ON sync_updates(course_id);
+      CREATE INDEX idx_sync_updates_seen ON sync_updates(seen_at);
+      CREATE INDEX idx_sync_updates_session ON sync_updates(sync_session_id);
+      CREATE INDEX idx_sync_updates_type ON sync_updates(entity_type);
+      CREATE INDEX idx_sync_updates_entity ON sync_updates(entity_type, entity_id);
+    `,
+    down: `
+      -- Recreate without 'page' type (data loss for page entries)
+      CREATE TABLE sync_updates_old (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        sync_session_id TEXT NOT NULL,
+        course_id INTEGER NOT NULL,
+        entity_type TEXT CHECK(entity_type IN ('task', 'announcement', 'grade', 'file', 'conflict')) NOT NULL,
+        entity_id INTEGER NOT NULL,
+        external_id TEXT,
+        change_type TEXT CHECK(change_type IN ('new', 'updated', 'grade_changed', 'conflict')) NOT NULL,
+        title TEXT NOT NULL,
+        subtitle TEXT,
+        old_value TEXT,
+        new_value TEXT,
+        conflict_field TEXT,
+        conflict_resolution TEXT,
+        remember_choice INTEGER DEFAULT 0,
+        seen_at DATETIME,
+        resolved_at DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME,
+        is_action_required INTEGER DEFAULT 0,
+        FOREIGN KEY(course_id) REFERENCES courses(id) ON DELETE CASCADE,
+        FOREIGN KEY(sync_session_id) REFERENCES sync_sessions(id) ON DELETE CASCADE
+      );
+
+      INSERT INTO sync_updates_old SELECT * FROM sync_updates WHERE entity_type != 'page';
+      DROP TABLE sync_updates;
+      ALTER TABLE sync_updates_old RENAME TO sync_updates;
+
+      CREATE INDEX idx_sync_updates_course ON sync_updates(course_id);
+      CREATE INDEX idx_sync_updates_seen ON sync_updates(seen_at);
+      CREATE INDEX idx_sync_updates_session ON sync_updates(sync_session_id);
+      CREATE INDEX idx_sync_updates_type ON sync_updates(entity_type);
+      CREATE INDEX idx_sync_updates_entity ON sync_updates(entity_type, entity_id);
+    `,
+  },
+  // Migration 100: Add task_subtype column for tiered task type classification
+  {
+    version: 100,
+    description:
+      'Add task_subtype column for tiered task type classification with confidence tracking',
+    up: `
+      -- Add task_subtype column to store subtype classification
+      -- Examples: 'numbered', 'webwork', 'final', 'midterm', 'problem_set'
+      ALTER TABLE tasks ADD COLUMN task_subtype TEXT;
+
+      -- Create composite index for type + subtype queries
+      CREATE INDEX idx_tasks_type_subtype ON tasks(task_type, task_subtype);
+    `,
+    down: `
+      -- SQLite doesn't support DROP COLUMN, column will remain but be unused
+      DROP INDEX IF EXISTS idx_tasks_type_subtype;
+      SELECT 1;
+    `,
+  },
 ];

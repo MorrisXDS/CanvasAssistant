@@ -40,6 +40,7 @@ export function DataSection({ sectionRef }: DataSectionProps) {
 
     // Drag and drop
     sectionOrder,
+    handleMouseDown,
     handleDragStart,
     handleDragEnd,
     handleDragOver,
@@ -55,7 +56,6 @@ export function DataSection({ sectionRef }: DataSectionProps) {
     setShowExportDialog,
     handleExportDatabase,
     handleImportDatabase,
-    handleImportSettings,
 
     // Confirmation
     setShowClearDataConfirm,
@@ -65,6 +65,7 @@ export function DataSection({ sectionRef }: DataSectionProps) {
     <div
       ref={sectionRef}
       draggable
+      onMouseDown={handleMouseDown}
       onDragStart={(e) => handleDragStart(e, 'data')}
       onDragEnd={handleDragEnd}
       onDragOver={(e) => handleDragOver(e, 'data')}
@@ -88,7 +89,7 @@ export function DataSection({ sectionRef }: DataSectionProps) {
                 disabled={isExporting}
               >
                 <Database size={16} />
-                {SETTINGS_LABELS.buttons.quickBackup}
+                {SETTINGS_LABELS.buttons.backupDatabase}
               </button>
 
               <div style={{ position: 'relative' }}>
@@ -165,7 +166,7 @@ export function DataSection({ sectionRef }: DataSectionProps) {
                 onClick={() => setShowExportDialog(true)}
               >
                 <Settings2 size={16} />
-                {SETTINGS_LABELS.buttons.customExport}
+                {SETTINGS_LABELS.buttons.exportWithOptions}
               </button>
             </div>
 
@@ -177,10 +178,6 @@ export function DataSection({ sectionRef }: DataSectionProps) {
               <button style={styles.exportActionButton} onClick={handleImportDatabase}>
                 <Download size={16} />
                 {SETTINGS_LABELS.buttons.importBackup}
-              </button>
-              <button style={styles.exportActionButton} onClick={handleImportSettings}>
-                <Download size={16} />
-                {SETTINGS_LABELS.buttons.importSettings}
               </button>
             </div>
 
@@ -195,7 +192,8 @@ export function DataSection({ sectionRef }: DataSectionProps) {
                 <div>
                   <strong>{SETTINGS_LABELS.data.resetAllData}</strong>
                   <p style={styles.dangerZoneDesc}>
-                    {SETTINGS_LABELS.data.resetAllDescription}
+                    Deletes all courses, tasks, grades, and settings. Your Canvas account
+                    is not affected.
                   </p>
                 </div>
                 <button
@@ -214,7 +212,8 @@ export function DataSection({ sectionRef }: DataSectionProps) {
                 <div>
                   <strong>Uninstall Canvas Assistant</strong>
                   <p style={styles.dangerZoneDesc}>
-                    Remove app data and uninstall the application
+                    Removes all app data, downloaded files, settings, and the application
+                    itself
                   </p>
                 </div>
                 <button

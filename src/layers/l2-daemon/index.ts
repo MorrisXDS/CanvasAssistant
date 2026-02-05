@@ -122,3 +122,10 @@ export {
   type ActiveOperation,
   type OperationCoordinatorConfig,
 } from './OperationCoordinator';
+export {
+  TaskTypeClassifier,
+  taskTypeClassifier,
+  type ClassificationInput,
+  type ClassificationResult,
+  type TaskTypeFieldSource,
+} from './TaskTypeClassifier';

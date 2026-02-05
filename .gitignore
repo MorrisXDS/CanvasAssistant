@@ -59,3 +59,9 @@ logs-test/
 
 # Miscellaneous artifacts
 \${match}
+nul
+result.txt
+tools/
+scripts/fix-*.js
+docs/VERIFICATION_RESULTS.md
+docs/SETTINGS_VERIFICATION_RESULTS.md

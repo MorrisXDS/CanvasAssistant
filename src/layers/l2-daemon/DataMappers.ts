@@ -11,6 +11,7 @@
 
 import { convert } from 'html-to-text';
 import { z } from 'zod';
+import { taskTypeClassifier } from './TaskTypeClassifier';
 
 // Re-export all types from DataMapperTypes for backward compatibility
 export type {
@@ -281,8 +282,18 @@ export function mapAssignment(
     enteredGrade = (enteredScore / pointsPossible) * 100;
   }
 
-  // Derive task_type from submission_types
-  const taskType = deriveTaskType(submissionTypes);
+  // Classify task_type using tiered classification system
+  const classification = taskTypeClassifier.classify({
+    title: assignmentName,
+    submissionTypes,
+    // Note: assignmentGroupName is passed in enhanced mapAssignment call from TaskSyncStrategy
+    description: description ?? undefined,
+  });
+
+  // Build field_sources with classification metadata
+  const fieldSources = JSON.stringify({
+    task_type: taskTypeClassifier.toFieldSource(classification),
+  });
 
   // Detect if due time is known or only date
   // Midnight (00:00:00) timestamps often indicate "date only" from Canvas
@@ -327,7 +338,8 @@ export function mapAssignment(
     submission_types: submissionTypes.length > 0 ? submissionTypes.join(',') : null,
     weight: 0, // Will be calculated by L3 Intelligence
     grade,
-    task_type: taskType,
+    task_type: classification.type,
+    task_subtype: classification.subtype,
     is_completed: submissionStatus !== 'pending' ? 1 : 0,
     submission_status: submissionStatus,
     completed_at:
@@ -341,14 +353,29 @@ export function mapAssignment(
     is_missing: isMissing ? 1 : 0,
     // Assignment group linking (will be resolved in TaskSyncStrategy)
     assignment_group_id: null,
+    // Classification metadata
+    field_sources: fieldSources,
   };
 }
 
 /**
  * Derive task_type from Canvas submission_types array
  * Maps Canvas submission types to our task categories
+ *
+ * @deprecated Use TaskTypeClassifier.classify() for full classification with tier/confidence
+ * This function is kept for backward compatibility with mapAssignmentToQueueEntry
  */
-function deriveTaskType(submissionTypes: string[]): string {
+function _deriveTaskType(submissionTypes: string[], title?: string): string {
+  // Use the classifier if title is available
+  if (title) {
+    const result = taskTypeClassifier.classify({
+      title,
+      submissionTypes,
+    });
+    return result.type;
+  }
+
+  // Fallback to simple submission type mapping (tier 3 only)
   // Check for not graded first (info items)
   if (submissionTypes.includes('not_graded')) {
     return 'info';
@@ -366,7 +393,7 @@ function deriveTaskType(submissionTypes: string[]): string {
 
   // Check for no submission required (but graded - like attendance)
   if (submissionTypes.includes('none')) {
-    return 'attendance';
+    return 'participation';
   }
 
   // Check for external tool (could be exam proctoring, etc.)
@@ -962,8 +989,12 @@ export function mapAssignmentToQueueEntry(
     'assignment.submission_types'
   );
 
-  // Derive task_type from submission_types (reuse existing logic)
-  const taskType = deriveTaskType(submissionTypes);
+  // Classify task_type using tiered classification (full system for queue entries too)
+  const classification = taskTypeClassifier.classify({
+    title: assignmentName,
+    submissionTypes,
+    description: description ?? undefined,
+  });
 
   return {
     external_id: String(assignmentId),
@@ -975,7 +1006,7 @@ export function mapAssignmentToQueueEntry(
     description: description,
     due_at: dueAt,
     points_possible: pointsPossible,
-    task_type: taskType,
+    task_type: classification.type,
 
     // Initial queue state
     status: 'pending',

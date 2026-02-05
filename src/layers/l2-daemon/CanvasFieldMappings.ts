@@ -90,6 +90,7 @@ export const TASK_CANVAS_FIELDS = [
   'completed_at', // From Canvas submission.submitted_at
   'grade', // From Canvas submission.score / points_possible * 100
   'task_type', // Derived from Canvas submission_types - user can override with conflict UI
+  'task_subtype', // Subtype for more specific categorization (e.g., 'numbered', 'webwork')
 ] as const;
 
 /**
@@ -146,6 +147,7 @@ export const TASK_LOCAL_FIELDS = [
   'calendar_event_id', // Link to calendar event (bidirectional sync)
   'start_at', // User-defined start date (independent of Canvas unlock_at)
   'location', // User-defined location (room, building, etc.)
+  'user_submission_status', // User-override for Canvas submission_status (v68)
 ] as const;
 
 /**

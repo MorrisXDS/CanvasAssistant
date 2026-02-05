@@ -17,7 +17,6 @@ import {
   Database,
   RotateCcw,
   Upload,
-  Download,
   ShieldCheck,
   Key,
   Settings2,
@@ -25,9 +24,12 @@ import {
 } from 'lucide-react';
 import { useStore } from '../../../l5-presentation/store';
 import { useSettings } from './SettingsContext';
-import { AccountSection } from './AccountSection';
 import { DisplaySection } from './DisplaySection';
 import { AcademicSection } from './AcademicSection';
+import { FilesContentSection } from './FilesContentSection';
+import { SyncSection } from './SyncSection';
+import { AccountSection } from './AccountSection';
+import { AppBehaviorSection } from './AppBehaviorSection';
 import { NotificationsSection } from './NotificationsSection';
 import { DataSection } from './DataSection';
 import { ConfirmDialog } from '../shared/ConfirmDialog';
@@ -35,7 +37,7 @@ import { ExportDialog } from '../shared/ExportDialog';
 import { Accordion, SearchInput, SettingsDock } from '../primitives';
 import { SETTINGS_LABELS, MENU_LABELS } from '../../constants';
 import { styles } from '../SettingsModalStyles';
-import { STORAGE_KEYS } from '../../../l5-presentation/settings';
+import { STORAGE_KEYS, SettingsCategory } from '../../../l5-presentation/settings';
 
 export function SettingsModalContent() {
   const { setAuthenticated } = useStore();
@@ -89,7 +91,6 @@ export function SettingsModalContent() {
     setShowExportDialog,
     handleExportDatabase,
     handleExportSettings,
-    handleImportSettings,
 
     // Password modal for encrypted imports
     showPasswordModal,
@@ -107,9 +108,7 @@ export function SettingsModalContent() {
     filteredSettings,
   } = useSettings();
 
-  const shouldShowSection = (
-    category: 'account' | 'display' | 'academic' | 'notifications'
-  ): boolean => {
+  const shouldShowSection = (category: SettingsCategory): boolean => {
     if (!hasSearchResults) return true;
     return matchingCategories.has(category);
   };
@@ -142,19 +141,26 @@ export function SettingsModalContent() {
       {/* Content */}
       <div style={{ ...styles.content, flex: isSearching ? 'none' : 1 }}>
         <Accordion type="multiple" value={openSections} onChange={setOpenSections}>
-          {shouldShowSection('account') && (
-            <AccountSection sectionRef={sectionRefs.account} />
-          )}
           {shouldShowSection('display') && (
             <DisplaySection sectionRef={sectionRefs.display} />
           )}
           {shouldShowSection('academic') && (
             <AcademicSection sectionRef={sectionRefs.academic} />
           )}
+          {shouldShowSection('files') && (
+            <FilesContentSection sectionRef={sectionRefs.files} />
+          )}
+          {shouldShowSection('sync') && <SyncSection sectionRef={sectionRefs.sync} />}
+          {shouldShowSection('account') && (
+            <AccountSection sectionRef={sectionRefs.account} />
+          )}
+          {shouldShowSection('behavior') && (
+            <AppBehaviorSection sectionRef={sectionRefs.behavior} />
+          )}
           {shouldShowSection('notifications') && (
             <NotificationsSection sectionRef={sectionRefs.notifications} />
           )}
-          <DataSection sectionRef={sectionRefs.data} />
+          {shouldShowSection('data') && <DataSection sectionRef={sectionRefs.data} />}
         </Accordion>
 
         {/* No search results message */}
@@ -185,9 +191,6 @@ export function SettingsModalContent() {
         <div style={styles.footerLeft}>
           <button style={styles.footerButton} onClick={handleExportSettings}>
             <Upload size={14} /> {SETTINGS_LABELS.buttons.exportSettings}
-          </button>
-          <button style={styles.footerButton} onClick={handleImportSettings}>
-            <Download size={14} /> {SETTINGS_LABELS.buttons.importSettings}
           </button>
         </div>
         <div style={styles.footerRight}>

@@ -9,6 +9,7 @@
 import { EventEmitter } from 'events';
 import { Database } from '../l1-persistence/Database';
 import { isCanvasField, isAuthoritativeField } from './CanvasFieldMappings';
+import type { TaskTypeFieldSource } from '../l1-persistence/DatabaseRowTypes';
 
 export interface SyncConflict {
   id: string;
@@ -363,10 +364,17 @@ export class SyncConflictResolver extends EventEmitter {
       localModifiedStr ? JSON.parse(localModifiedStr) : []
     );
 
-    // Get field sources (new tracking)
+    // Get field sources (new tracking) - may contain extended TaskTypeFieldSource objects
     const fieldSourcesStr = localRecord.field_sources as string | null;
-    const fieldSources: Record<string, 'canvas' | 'user' | 'guessed'> = fieldSourcesStr
-      ? JSON.parse(fieldSourcesStr)
+    const fieldSources: Record<
+      string,
+      'canvas' | 'user' | 'guessed' | TaskTypeFieldSource
+    > = fieldSourcesStr ? JSON.parse(fieldSourcesStr) : {};
+
+    // Extract canvas field sources for task_type comparison
+    const canvasFieldSourcesStr = canvasData.field_sources as string | null;
+    const canvasFieldSources: Record<string, TaskTypeFieldSource> = canvasFieldSourcesStr
+      ? JSON.parse(canvasFieldSourcesStr)
       : {};
 
     // Check if guessed override is allowed (default true)
@@ -396,6 +404,32 @@ export class SyncConflictResolver extends EventEmitter {
       if (isAuthoritativeField(tableName, field)) {
         autoResolved[field] = canvasValue;
         continue;
+      }
+
+      // Special handling for task_type with tiered classification system
+      if (field === 'task_type' && tableName === 'tasks') {
+        const taskTypeResult = this.handleTaskTypeConflict(
+          localValue as string,
+          canvasValue as string,
+          fieldSources.task_type,
+          canvasFieldSources.task_type
+        );
+
+        if (taskTypeResult.action === 'use_canvas') {
+          autoResolved[field] = canvasValue;
+          // Also update task_subtype if present
+          if (canvasData.task_subtype !== undefined) {
+            autoResolved['task_subtype'] = canvasData.task_subtype;
+          }
+          continue;
+        } else if (taskTypeResult.action === 'preserve_local') {
+          preservedFields.push(field);
+          if (localRecord.task_subtype !== undefined) {
+            preservedFields.push('task_subtype');
+          }
+          continue;
+        }
+        // If action === 'conflict', fall through to normal conflict handling
       }
 
       // Check field source first (new system)
@@ -874,5 +908,96 @@ export class SyncConflictResolver extends EventEmitter {
     );
 
     return record?.field_sources ? JSON.parse(record.field_sources) : {};
+  }
+
+  // =========================================================================
+  // Task Type Conflict Resolution (Confidence-Aware)
+  // =========================================================================
+
+  /**
+   * Handle task_type conflicts with tiered classification confidence
+   *
+   * Decision logic:
+   * | Local Source | Canvas Tier vs Local | Action |
+   * |--------------|---------------------|--------|
+   * | `user` (explicitly set) | Any | NEVER overwrite - preserve user's choice |
+   * | `canvas` | Canvas tier BETTER (lower number) | Silently upgrade |
+   * | `canvas` | Canvas tier SAME/WORSE AND lower confidence | Preserve local |
+   * | `canvas` | Canvas MORE confident AND values differ | Create conflict |
+   *
+   * @returns action: 'use_canvas' | 'preserve_local' | 'conflict'
+   */
+  private handleTaskTypeConflict(
+    localValue: string,
+    canvasValue: string,
+    localMeta: 'canvas' | 'user' | 'guessed' | TaskTypeFieldSource | undefined,
+    canvasMeta: TaskTypeFieldSource | undefined
+  ): { action: 'use_canvas' | 'preserve_local' | 'conflict' } {
+    // If values are the same, no conflict needed
+    if (localValue === canvasValue) {
+      return { action: 'use_canvas' };
+    }
+
+    // Extract source from potentially extended metadata
+    const localSource = this.getSimpleSource(localMeta);
+
+    // Rule 1: User explicitly set → NEVER overwrite
+    if (localSource === 'user') {
+      return { action: 'preserve_local' };
+    }
+
+    // If no extended metadata, fall back to simple comparison
+    const localExtended = this.getExtendedMeta(localMeta);
+
+    // If local has no tier info (legacy), allow Canvas to upgrade
+    if (!localExtended || !localExtended.tier) {
+      return { action: 'use_canvas' };
+    }
+
+    // If Canvas has no tier info (shouldn't happen), preserve local
+    if (!canvasMeta || !canvasMeta.tier) {
+      return { action: 'preserve_local' };
+    }
+
+    // Rule 2: Canvas tier BETTER (lower number) → Silently upgrade
+    if (canvasMeta.tier < localExtended.tier) {
+      return { action: 'use_canvas' };
+    }
+
+    // Rule 3: Canvas tier SAME or WORSE
+    if (canvasMeta.tier >= localExtended.tier) {
+      // Canvas same/worse tier AND lower/equal confidence → Preserve local
+      if (canvasMeta.confidence <= localExtended.confidence) {
+        return { action: 'preserve_local' };
+      }
+
+      // Canvas more confident AND values differ → Create conflict
+      return { action: 'conflict' };
+    }
+
+    // Fallback (shouldn't reach here)
+    return { action: 'conflict' };
+  }
+
+  /**
+   * Get simple source from potentially extended metadata
+   */
+  private getSimpleSource(
+    meta: 'canvas' | 'user' | 'guessed' | TaskTypeFieldSource | undefined
+  ): 'canvas' | 'user' | 'guessed' | undefined {
+    if (!meta) return undefined;
+    if (typeof meta === 'string') return meta;
+    return meta.source;
+  }
+
+  /**
+   * Get extended metadata if available
+   */
+  private getExtendedMeta(
+    meta: 'canvas' | 'user' | 'guessed' | TaskTypeFieldSource | undefined
+  ): TaskTypeFieldSource | null {
+    if (!meta) return null;
+    if (typeof meta === 'string') return null;
+    return meta;
   }
 }
