@@ -46,6 +46,12 @@ Var DeleteDownloads
     ; Clean up temp file
     Delete "$TEMP\canvas-cleanup.ps1"
 
+    ; NSIS fallback: directly remove app data directories if PowerShell missed them
+    ${If} $DeleteAppData == "1"
+        RMDir /r "$APPDATA\canvas-integration-dashboard"
+        RMDir /r "$LOCALAPPDATA\canvas-integration-dashboard"
+    ${EndIf}
+
     skip_cleanup:
 
     ; Remove all installed app files (default behavior we replaced by defining this macro)
