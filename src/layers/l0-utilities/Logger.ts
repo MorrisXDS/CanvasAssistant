@@ -298,8 +298,8 @@ export class Logger {
         winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
         winston.format.errors({ stack: true }),
         winston.format.printf(({ timestamp, level, message, stack, component }) => {
-          const componentTag = component ? `[${component}]` : '';
-          const logMessage = `${timestamp} [${level.toUpperCase()}]${componentTag}: ${message}`;
+          const componentTag = component ? `[${component}] ` : '';
+          const logMessage = `${timestamp} [${level.toUpperCase()}]: ${componentTag}${message}`;
           return stack ? `${logMessage}\n${stack}` : logMessage;
         })
       );
@@ -380,8 +380,8 @@ export class Logger {
             winston.format.colorize(),
             winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
             winston.format.printf(({ timestamp, level, message, component }) => {
-              const componentTag = component ? `[${component}]` : '';
-              return `${timestamp} [${level}]${componentTag}: ${message}`;
+              const componentTag = component ? `[${component}] ` : '';
+              return `${timestamp} [${level}]: ${componentTag}${message}`;
             })
           ),
         })
@@ -390,7 +390,6 @@ export class Logger {
 
     this.logger = winston.createLogger({
       level: this.defaultLevel,
-      format: fileFormat,
       transports,
     });
   }

@@ -288,7 +288,11 @@ export class CanvasClientManager {
     });
 
     this.syncEngine.on('sync-aborted', ({ reason, error }) => {
-      logger.error(`Sync aborted: ${reason} - ${error}`);
+      if (reason === 'manual_abort') {
+        logger.info(`Sync cancelled by user`);
+      } else {
+        logger.error(`Sync aborted: ${reason} - ${error}`);
+      }
       metricsCollector.increment('sync.aborted');
       const mainWindow = getMainWindow();
       if (mainWindow && !mainWindow.isDestroyed()) {

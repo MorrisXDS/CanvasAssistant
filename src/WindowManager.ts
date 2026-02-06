@@ -289,6 +289,8 @@ export class WindowManager {
       );
     }
 
+    const isMac = process.platform === 'darwin';
+
     this.mainWindow = new BrowserWindow({
       x: bounds.x,
       y: bounds.y,
@@ -296,10 +298,19 @@ export class WindowManager {
       height: bounds.height,
       minWidth: MIN_WIDTH,
       minHeight: MIN_HEIGHT,
-      frame: false,
+      // macOS: native traffic lights with custom content area
+      // Windows/Linux: fully frameless with custom-drawn controls
+      ...(isMac
+        ? {
+            titleBarStyle: 'hidden' as const,
+            trafficLightPosition: { x: 12, y: 10 },
+          }
+        : {
+            frame: false,
+            accentColor: false, // Disable Windows accent color border on frameless window
+          }),
       show: false, // Don't show until ready to prevent white flash
       backgroundColor: nativeTheme.shouldUseDarkColors ? '#0f172a' : '#F5F7FA',
-      accentColor: false, // Disable Windows accent color border on frameless window
       webPreferences: {
         preload: this.preloadPath,
         nodeIntegration: false,

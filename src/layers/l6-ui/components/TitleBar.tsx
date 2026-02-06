@@ -1,10 +1,16 @@
 /**
  * TitleBar Component
  * Custom title bar for frameless window
+ *
+ * macOS: Native traffic light buttons via titleBarStyle:'hidden' — no custom controls rendered.
+ * Windows/Linux: Fully custom min/max/close buttons (Windows-native style).
  */
 
 import React from 'react';
 import { Minus, Square, X } from 'lucide-react';
+
+const isMac = window.api?.platform === 'darwin';
+const MAC_TRAFFIC_LIGHT_WIDTH = 70; // px clearance for native close/minimize/fullscreen buttons
 
 interface TitleBarProps {
   sidebarWidth?: number;
@@ -22,50 +28,56 @@ export function TitleBar({ sidebarWidth = 220, onSidebarToggle }: TitleBarProps)
     <div style={styles.titleBar}>
       {/* Empty drag region over sidebar area - width synced with sidebar, double-click to toggle */}
       <div
-        style={{ ...styles.sidebarSpacer, width: `${sidebarWidth}px` }}
+        style={{
+          ...styles.sidebarSpacer,
+          width: `${sidebarWidth}px`,
+          ...(isMac ? { paddingLeft: `${MAC_TRAFFIC_LIGHT_WIDTH}px` } : {}),
+        }}
         onDoubleClick={onSidebarToggle}
       />
       {/* Main drag region */}
       <div style={styles.dragRegion} />
-      <div style={styles.controls}>
-        <button
-          style={{
-            ...styles.controlButton,
-            backgroundColor: hovered === 'min' ? 'rgba(0,0,0,0.05)' : 'transparent',
-          }}
-          onClick={handleMinimize}
-          onMouseEnter={() => setHovered('min')}
-          onMouseLeave={() => setHovered(null)}
-          aria-label="Minimize"
-        >
-          <Minus size={16} />
-        </button>
-        <button
-          style={{
-            ...styles.controlButton,
-            backgroundColor: hovered === 'max' ? 'rgba(0,0,0,0.05)' : 'transparent',
-          }}
-          onClick={handleMaximize}
-          onMouseEnter={() => setHovered('max')}
-          onMouseLeave={() => setHovered(null)}
-          aria-label="Maximize"
-        >
-          <Square size={14} />
-        </button>
-        <button
-          style={{
-            ...styles.controlButton,
-            backgroundColor: hovered === 'close' ? '#e81123' : 'transparent',
-            color: hovered === 'close' ? '#fff' : 'var(--text-secondary)',
-          }}
-          onClick={handleClose}
-          onMouseEnter={() => setHovered('close')}
-          onMouseLeave={() => setHovered(null)}
-          aria-label="Close"
-        >
-          <X size={16} />
-        </button>
-      </div>
+      {!isMac && (
+        <div style={styles.controls}>
+          <button
+            style={{
+              ...styles.controlButton,
+              backgroundColor: hovered === 'min' ? 'rgba(0,0,0,0.05)' : 'transparent',
+            }}
+            onClick={handleMinimize}
+            onMouseEnter={() => setHovered('min')}
+            onMouseLeave={() => setHovered(null)}
+            aria-label="Minimize"
+          >
+            <Minus size={16} />
+          </button>
+          <button
+            style={{
+              ...styles.controlButton,
+              backgroundColor: hovered === 'max' ? 'rgba(0,0,0,0.05)' : 'transparent',
+            }}
+            onClick={handleMaximize}
+            onMouseEnter={() => setHovered('max')}
+            onMouseLeave={() => setHovered(null)}
+            aria-label="Maximize"
+          >
+            <Square size={14} />
+          </button>
+          <button
+            style={{
+              ...styles.controlButton,
+              backgroundColor: hovered === 'close' ? '#e81123' : 'transparent',
+              color: hovered === 'close' ? '#fff' : 'var(--text-secondary)',
+            }}
+            onClick={handleClose}
+            onMouseEnter={() => setHovered('close')}
+            onMouseLeave={() => setHovered(null)}
+            aria-label="Close"
+          >
+            <X size={16} />
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -84,7 +96,8 @@ const styles: Record<string, React.CSSProperties> = {
 
   sidebarSpacer: {
     height: '100%',
-    backgroundColor: 'var(--bg-sidebar)',
+    backgroundColor: 'var(--bg-app)',
+    borderBottom: '1px solid var(--border-default)',
     transition: 'width 250ms cubic-bezier(0.33, 1, 0.68, 1)',
     // @ts-expect-error - webkit property for electron
     WebkitAppRegion: 'drag',

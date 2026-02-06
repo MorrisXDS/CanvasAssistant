@@ -194,7 +194,7 @@ export class SystemMonitor extends EventEmitter {
       parts.push('Fullscreen');
     }
 
-    parts.push(this.state.canSync ? 'Sync: ✓' : 'Sync: ✗');
+    parts.push(this.state.canSync ? 'Sync: allowed' : 'Sync: paused');
 
     return parts.join(' | ');
   }

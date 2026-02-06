@@ -20,6 +20,10 @@ import type {
  * Methods map to IPC channels defined in the contract.
  */
 const api = {
+  // ============ Platform ============
+  /** Synchronous platform identifier — available on first render, no async flicker */
+  platform: process.platform as 'win32' | 'darwin' | 'linux',
+
   // ============ Data Fetching ============
 
   getEnrollmentTerms: () => ipcRenderer.invoke('data:getEnrollmentTerms'),
