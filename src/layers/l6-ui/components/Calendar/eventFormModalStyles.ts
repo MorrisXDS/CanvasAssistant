@@ -94,6 +94,7 @@ export const eventFormModalStyles: Record<string, React.CSSProperties> = {
     display: 'flex',
     flexDirection: 'column',
     gap: 'var(--space-3)',
+    minHeight: '520px',
   },
 
   typeSelector: {

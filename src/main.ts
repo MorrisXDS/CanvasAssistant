@@ -18,6 +18,7 @@ import {
   MigrationRunner,
   coreMigrations,
   VisibleDataProvider,
+  runPostImportRepairs,
 } from './layers/l1-persistence';
 import type { PendingDownloadRow } from './layers/l1-persistence/DatabaseRowTypes';
 
@@ -68,24 +69,34 @@ import {
   registerResourceHandlers,
   registerHtmlDependencyHandlers,
   registerCommandHandlers,
+  registerBackupScheduleHandlers,
 } from './ipc-handlers';
 import type { IpcContext } from './ipc-handlers';
 
-// Application paths
-const APP_DATA_DIR = path.join(app.getPath('userData'), 'CanvasAssistant');
-// Database in project folder for easier development access
-const PROJECT_DB_DIR = path.join(process.cwd(), 'database');
+// Application paths - consolidated to project root for portability
+const CONFIG_DIR = path.join(process.cwd(), '.config'); // Hidden - internal config
+const LOG_DIR = path.join(process.cwd(), '.logs'); // Hidden - application logs
+const PROJECT_DB_DIR = path.join(process.cwd(), 'database'); // Visible - user data
+const BACKUP_DIR = path.join(process.cwd(), 'backups'); // Visible - user backups
+const FILES_DIR = path.join(process.cwd(), 'Downloads'); // Visible - downloaded files
+
 const DB_PATH = path.join(PROJECT_DB_DIR, 'canvas.db');
 const METRICS_DB_PATH = path.join(PROJECT_DB_DIR, 'metrics.db');
-// Logs in project folder for easier development access
-const LOG_DIR = path.join(process.cwd(), 'logs');
-// Default files directory is in project root's Downloads folder
-const FILES_DIR = path.join(process.cwd(), 'Downloads');
+
+// Security-critical paths - must remain in secure location (OS keychain fallback)
+const APP_DATA_DIR = path.join(app.getPath('userData'), 'CanvasAssistant');
 const CREDENTIAL_FILE = path.join(APP_DATA_DIR, '.credentials');
+
+// Ensure hidden and user-visible directories exist on startup
+for (const dir of [CONFIG_DIR, LOG_DIR, BACKUP_DIR]) {
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+}
 
 // Initialize crash protection manager (must be early, before other services)
 const crashProtectionManager = new CrashProtectionManager({
-  appDataDir: APP_DATA_DIR,
+  configDir: CONFIG_DIR,
 });
 
 // Database corruption state
@@ -136,7 +147,7 @@ const healthCheck = new HealthCheck({
 const housekeepingManager = new HousekeepingManager({
   enabled: true,
   logDir: LOG_DIR,
-  dataDir: APP_DATA_DIR,
+  dataDir: CONFIG_DIR,
   metricsCollector,
   schedule: {
     runOnStartup: false,
@@ -239,9 +250,9 @@ const DEFAULT_WINDOW_BEHAVIOR: WindowBehaviorSettings = {
   showTrayIcon: true,
 };
 
-// Get window behavior settings from a simple JSON file in app data
+// Get window behavior settings from config directory
 function getWindowBehavior(): WindowBehaviorSettings {
-  const settingsPath = path.join(APP_DATA_DIR, 'window-behavior.json');
+  const settingsPath = path.join(CONFIG_DIR, 'window-behavior.json');
   try {
     if (fs.existsSync(settingsPath)) {
       const data = fs.readFileSync(settingsPath, 'utf-8');
@@ -255,11 +266,11 @@ function getWindowBehavior(): WindowBehaviorSettings {
 
 // Save window behavior settings
 function setWindowBehavior(settings: WindowBehaviorSettings): void {
-  const settingsPath = path.join(APP_DATA_DIR, 'window-behavior.json');
+  const settingsPath = path.join(CONFIG_DIR, 'window-behavior.json');
   try {
     // Ensure directory exists
-    if (!fs.existsSync(APP_DATA_DIR)) {
-      fs.mkdirSync(APP_DATA_DIR, { recursive: true });
+    if (!fs.existsSync(CONFIG_DIR)) {
+      fs.mkdirSync(CONFIG_DIR, { recursive: true });
     }
     fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
   } catch (error) {
@@ -515,13 +526,24 @@ async function resetAppState(options: { deleteToken: boolean }): Promise<void> {
   fileWatcher.start();
 
   // 3b. Reset window behavior settings (clear minimize-to-tray preference)
-  const windowBehaviorPath = path.join(APP_DATA_DIR, 'window-behavior.json');
+  const windowBehaviorPath = path.join(CONFIG_DIR, 'window-behavior.json');
   if (fs.existsSync(windowBehaviorPath)) {
     try {
       fs.unlinkSync(windowBehaviorPath);
       logger.info('Window behavior settings reset');
     } catch (err) {
       logger.error(`Failed to delete window behavior settings: ${err}`);
+    }
+  }
+
+  // 3c. Reset window state (clear saved window size/position)
+  const windowStatePath = path.join(CONFIG_DIR, 'window-state.json');
+  if (fs.existsSync(windowStatePath)) {
+    try {
+      fs.unlinkSync(windowStatePath);
+      logger.info('Window state reset');
+    } catch (err) {
+      logger.error(`Failed to delete window state: ${err}`);
     }
   }
 
@@ -844,6 +866,19 @@ app.whenReady().then(async () => {
       }
     }
 
+    // Run post-import repairs (safe to run every startup, only repairs if needed)
+    const repairResult = runPostImportRepairs(database, logger);
+    if (repairResult.calendarRepair.calendarEventsCreated > 0) {
+      logger.info(
+        `Post-import repair: Created ${repairResult.calendarRepair.calendarEventsCreated} missing calendar events`
+      );
+    }
+    if (repairResult.calendarVerification.issues.length > 0) {
+      logger.info(
+        `Calendar verification issues: ${repairResult.calendarVerification.issues.join('; ')}`
+      );
+    }
+
     // Clean HTML from all notification messages to ensure layer isolation
     // htmlToPlainText is safe on already-plain text
     const allNotifications = database.executeRead<{ id: number; message: string }>(
@@ -1003,6 +1038,7 @@ app.whenReady().then(async () => {
     systemMonitor,
     crashProtectionManager,
     preloadPath: path.join(__dirname, 'preload.js'),
+    configDir: CONFIG_DIR,
     getAutoSyncManager: () => autoSyncManager,
     getWindowBehavior,
     getDatabaseCorruptionDetected: () => databaseCorruptionDetected,
@@ -1025,6 +1061,7 @@ app.whenReady().then(async () => {
   backupManager = new BackupManager({
     database,
     dbPath: DB_PATH,
+    backupDir: BACKUP_DIR,
     logger,
     metricsCollector,
     getMainWindow,
@@ -1061,6 +1098,7 @@ app.whenReady().then(async () => {
     },
     getFilesDir: () => FILES_DIR,
     getDbPath: () => DB_PATH,
+    getBackupDir: () => BACKUP_DIR,
     getAppVersion: () => app.getVersion(),
     getSyncPreferences,
     startAutoSync: () => autoSyncManager?.start(),
@@ -1073,6 +1111,7 @@ app.whenReady().then(async () => {
     ) => {
       databaseCorruptionDetected = value;
     },
+    resetWindowSize: () => windowManager?.resetWindowSize(),
     resetAppState,
   };
 
@@ -1100,6 +1139,7 @@ app.whenReady().then(async () => {
   registerResourceHandlers(ipcContext);
   registerHtmlDependencyHandlers(ipcContext);
   registerCommandHandlers(ipcContext);
+  registerBackupScheduleHandlers(ipcContext);
 
   // Start background services
   healthCheck.start();
@@ -1282,6 +1322,9 @@ app.on('window-all-closed', () => {
 
 app.on('quit', () => {
   logger.info('Application quitting...');
+
+  // Flush window state before cleanup
+  windowManager?.flushWindowState();
 
   // Clean up tray
   windowManager?.destroyTray();

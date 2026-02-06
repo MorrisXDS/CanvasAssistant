@@ -65,6 +65,7 @@ export interface IpcContext {
   // Path and app info getters
   getFilesDir: () => string;
   getDbPath: () => string;
+  getBackupDir: () => string;
   getAppVersion: () => string;
 
   // Sync preferences
@@ -92,6 +93,9 @@ export interface IpcContext {
   setDatabaseCorruptionDetected: (
     value: { errors: string[]; canContinue: boolean } | null
   ) => void;
+
+  // Window management
+  resetWindowSize: () => void;
 
   // App state management
   resetAppState: (options: { deleteToken: boolean }) => Promise<void>;

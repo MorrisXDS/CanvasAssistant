@@ -90,12 +90,16 @@ src/layers/
 
 ### Application Paths (defined in `main.ts`)
 
-| Path         | Location                      | Purpose                                           |
-| ------------ | ----------------------------- | ------------------------------------------------- |
-| APP_DATA_DIR | `{userData}/CanvasAssistant`  | App configuration and data                        |
-| DB_PATH      | `{APP_DATA_DIR}/canvas.db`    | Main SQLite database                              |
-| LOG_DIR      | `{APP_DATA_DIR}/logs`         | Application logs                                  |
-| FILES_DIR    | `{downloads}/CanvasAssistant` | Downloaded course files (user's Downloads folder) |
+All paths consolidated to project root for portability. Hidden (dot-prefix) folders for internal files.
+
+| Path           | Location                     | Visibility | Purpose                                        |
+| -------------- | ---------------------------- | ---------- | ---------------------------------------------- |
+| CONFIG_DIR     | `{cwd}/.config`              | Hidden     | Internal config (window behavior, crash flags) |
+| LOG_DIR        | `{cwd}/.logs`                | Hidden     | Application logs                               |
+| PROJECT_DB_DIR | `{cwd}/database`             | Visible    | SQLite databases (canvas.db, metrics.db)       |
+| BACKUP_DIR     | `{cwd}/backups`              | Visible    | Scheduled database backups                     |
+| FILES_DIR      | `{cwd}/Downloads`            | Visible    | Downloaded course files                        |
+| APP_DATA_DIR   | `{userData}/CanvasAssistant` | External   | **Security only** - credential fallback file   |
 
 ### Index Export Convention
 

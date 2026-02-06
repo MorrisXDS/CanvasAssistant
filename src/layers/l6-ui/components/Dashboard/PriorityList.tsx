@@ -7,7 +7,7 @@ import React, { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PartyPopper, CheckCircle, Circle } from 'lucide-react';
 import { Card, Badge, BadgeVariant, NotificationDot } from '../shared';
-import { formatSmartDate, formatSmartDateRange } from '../../constants';
+import { formatSmartDate, formatSmartDateRange, CARD_TITLES } from '../../constants';
 import { useStore } from '../../../l5-presentation/store';
 import { isDeadlineEvent } from '../Calendar/calendarUtils';
 import { useTaskUpdates } from '../../hooks';
@@ -108,7 +108,7 @@ export function PriorityList({
   return (
     <Card
       padding="md"
-      title="Upcoming Courseworks"
+      title={CARD_TITLES.dashboard.upcomingCoursework}
       headerAction={
         items.length > 0 && (
           <button style={styles.viewAll} onClick={() => navigate('/tasks')}>

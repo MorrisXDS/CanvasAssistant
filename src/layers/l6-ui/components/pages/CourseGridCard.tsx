@@ -178,7 +178,7 @@ function CourseGridCardComponent({
             <span style={styles.gridStatValue}>{course.targetGrade}%</span>
           </div>
           <div style={styles.gridStatItem}>
-            <span style={styles.gridStatLabel}>Credit</span>
+            <span style={styles.gridStatLabel}>Credits</span>
             <span style={styles.gridStatValue}>{course.credits ?? 1.0}</span>
           </div>
           {assessed > 0 && (

@@ -15,6 +15,11 @@
 export { Database, DatabaseConfig, CommitEvent } from './Database';
 export { MigrationRunner, Migration, coreMigrations } from './MigrationRunner';
 export {
+  runPostImportRepairs,
+  repairMissingCalendarEvents,
+  verifyImportedCalendars,
+} from './DatabaseRepair';
+export {
   VisibleDataProvider,
   VisibleDataProviderConfig,
   TermSelection,

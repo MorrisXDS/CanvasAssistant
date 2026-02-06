@@ -29,3 +29,4 @@ export { registerResourceHandlers } from './resourceHandlers';
 export { registerHtmlDependencyHandlers } from './htmlDependencyHandlers';
 export { registerCommandHandlers } from './commandHandlers';
 export { registerSyncUpdatesHandlers } from './syncUpdatesHandlers';
+export { registerBackupScheduleHandlers } from './backupScheduleHandlers';

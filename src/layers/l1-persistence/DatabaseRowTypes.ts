@@ -55,6 +55,10 @@ export interface CourseRow {
   // Queue acceptance settings (v91)
   /** Per-course auto-accept setting: 0=queue all, 1=auto-accept all, 2=auto-accept if matching user task */
   auto_accept_canvas_tasks: number;
+
+  // Syllabus prompt dismissal (v102)
+  /** ISO timestamp when user permanently dismissed the syllabus prompt, null if not dismissed */
+  syllabus_prompt_dismissed_at: string | null;
 }
 
 /**

@@ -98,8 +98,9 @@ export class UpdateCoursePreferencesCommand implements Command<
         is_hidden: boolean;
         credits: number;
         grade_curve_adjustment: number;
+        syllabus_prompt_dismissed_at: string | null;
       }>(
-        'SELECT target_grade, color, nickname, is_hidden, credits, grade_curve_adjustment FROM courses WHERE id = ?',
+        'SELECT target_grade, color, nickname, is_hidden, credits, grade_curve_adjustment, syllabus_prompt_dismissed_at FROM courses WHERE id = ?',
         [params.courseId]
       );
 
@@ -114,6 +115,7 @@ export class UpdateCoursePreferencesCommand implements Command<
         isHidden: Boolean(course.is_hidden),
         credits: course.credits,
         gradeCurveAdjustment: course.grade_curve_adjustment ?? 0,
+        syllabusPromptDismissed: course.syllabus_prompt_dismissed_at !== null,
       };
 
       // Build update query dynamically
@@ -148,6 +150,14 @@ export class UpdateCoursePreferencesCommand implements Command<
       if (params.preferences.gradeCurveAdjustment !== undefined) {
         updates.push('grade_curve_adjustment = ?');
         values.push(params.preferences.gradeCurveAdjustment);
+      }
+
+      if (params.preferences.syllabusPromptDismissed !== undefined) {
+        if (params.preferences.syllabusPromptDismissed) {
+          updates.push('syllabus_prompt_dismissed_at = CURRENT_TIMESTAMP');
+        } else {
+          updates.push('syllabus_prompt_dismissed_at = NULL');
+        }
       }
 
       if (updates.length > 0) {

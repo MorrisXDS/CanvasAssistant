@@ -33,6 +33,11 @@ export function registerWindowHandlers(ctx: IpcContext): void {
     getMainWindow()?.close();
   });
 
+  // Reset window size to adaptive defaults
+  ipcMain.handle('window:resetSize', () => {
+    ctx.resetWindowSize();
+  });
+
   // Shell operations
   ipcMain.on('shell:openExternal', async (_event, url: string) => {
     try {

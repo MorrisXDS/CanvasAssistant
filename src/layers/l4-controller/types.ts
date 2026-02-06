@@ -82,6 +82,8 @@ export interface CoursePreferences {
   credits?: number;
   /** Grade curve adjustment in percentage points (e.g., +5.0 or -3.0) */
   gradeCurveAdjustment?: number;
+  /** Permanently dismiss the syllabus prompt for this course */
+  syllabusPromptDismissed?: boolean;
 }
 
 /**

@@ -59,7 +59,7 @@ export function NotificationsFeed({
 
   return (
     <Card
-      title={CARD_TITLES.dashboard.recentUpdates}
+      title={CARD_TITLES.dashboard.announcements}
       headerAction={
         notifications.length > maxItems && (
           <button style={styles.viewAll} onClick={() => navigate('/announcements')}>
@@ -77,7 +77,7 @@ export function NotificationsFeed({
             color="var(--text-muted)"
             style={{ marginBottom: 'var(--space-2)' }}
           />
-          <span style={styles.emptyText}>No new notifications</span>
+          <span style={styles.emptyText}>No new announcements</span>
         </div>
       ) : (
         <div style={styles.list}>

@@ -7,7 +7,7 @@ import React from 'react';
 import { Pin, PinOff, Eye, EyeOff, ChevronRight } from 'lucide-react';
 import { ColorPickerPopup } from '../primitives';
 import { NotificationDot } from '../shared';
-import { COURSE_COLORS, getCourseColor } from '../../constants';
+import { COURSE_COLORS, getCourseColor, formatGrade } from '../../constants';
 import { getShortCode } from './coursesPageUtils';
 import { styles } from './coursesPageStyles';
 import type { CourseCardProps } from './CourseGridCard';
@@ -111,7 +111,7 @@ function CourseListItemComponent({
                         : 'var(--color-high)',
                 }}
               >
-                {earned.toFixed(1)}%
+                {formatGrade(earned)}
               </span>
             </div>
             <div style={styles.listGradeItem}>
@@ -127,7 +127,7 @@ function CourseListItemComponent({
                         : 'var(--color-high)',
                 }}
               >
-                {trend.toFixed(1)}%
+                {formatGrade(trend)}
               </span>
             </div>
           </>

@@ -7,12 +7,16 @@ dist/
 build/
 out/
 
-# Logs
+# Logs (hidden directory)
+.logs/
 logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# Config (hidden directory - window behavior, crash flags)
+.config/
 
 # Database files
 database/

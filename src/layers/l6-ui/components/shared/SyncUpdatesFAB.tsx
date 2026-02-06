@@ -58,6 +58,22 @@ function useFabSettings(): [
       const stored = settingsManager.get(STORAGE_KEYS.SYNC_UPDATES_FAB) as
         | SyncUpdatesFabSettings
         | undefined;
+      if (stored?.position) {
+        // Migrate old absolute pixel values to ratios (0-1)
+        if (stored.position.x > 1 || stored.position.y > 1) {
+          const maxX = window.innerWidth - FAB_SIZE;
+          const maxY = window.innerHeight - FAB_SIZE;
+          const migrated: SyncUpdatesFabSettings = {
+            ...stored,
+            position: {
+              x: maxX > 0 ? Math.max(0, Math.min(1, stored.position.x / maxX)) : 0,
+              y: maxY > 0 ? Math.max(0, Math.min(1, stored.position.y / maxY)) : 1,
+            },
+          };
+          settingsManager.set(STORAGE_KEYS.SYNC_UPDATES_FAB, migrated);
+          return migrated;
+        }
+      }
       return stored ?? DEFAULT_SYNC_UPDATES_FAB_SETTINGS;
     } catch {
       return DEFAULT_SYNC_UPDATES_FAB_SETTINGS;
@@ -96,15 +112,43 @@ export function SyncUpdatesFAB({ className = '' }: SyncUpdatesFABProps) {
   // Hover state for edge auto-hide
   const [isHovered, setIsHovered] = useState(false);
 
-  // Calculate default position (bottom-right)
+  // Re-render on window resize so ratio→pixel conversion stays current
+  const [, setResizeTick] = useState(0);
+  useEffect(() => {
+    const handleResize = () => setResizeTick((t) => t + 1);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // Convert stored ratio (0-1) to pixel position
+  const ratioToPixels = useCallback((rx: number, ry: number) => {
+    const maxX = window.innerWidth - FAB_SIZE;
+    const maxY = window.innerHeight - FAB_SIZE;
+    return {
+      x: Math.max(8, Math.min(maxX - 8, rx * maxX)),
+      y: Math.max(8, Math.min(maxY - 8, ry * maxY)),
+    };
+  }, []);
+
+  // Convert pixel position to ratio (0-1) for storage
+  const pixelsToRatio = useCallback((px: number, py: number) => {
+    const maxX = window.innerWidth - FAB_SIZE;
+    const maxY = window.innerHeight - FAB_SIZE;
+    return {
+      x: maxX > 0 ? Math.max(0, Math.min(1, px / maxX)) : 0,
+      y: maxY > 0 ? Math.max(0, Math.min(1, py / maxY)) : 1,
+    };
+  }, []);
+
+  // Calculate default position (bottom-left)
   const getDefaultPosition = useCallback(() => {
     return {
-      x: window.innerWidth - FAB_SIZE - DEFAULT_MARGIN,
+      x: DEFAULT_MARGIN,
       y: window.innerHeight - FAB_SIZE - DEFAULT_MARGIN,
     };
   }, []);
 
-  // Clamp position to viewport bounds
+  // Clamp position to viewport bounds (used during drag)
   const clampPosition = useCallback((x: number, y: number) => {
     const maxX = window.innerWidth - FAB_SIZE - 8;
     const maxY = window.innerHeight - FAB_SIZE - 8;
@@ -114,9 +158,9 @@ export function SyncUpdatesFAB({ className = '' }: SyncUpdatesFABProps) {
     };
   }, []);
 
-  // Get current position from settings or default, always clamped to viewport
+  // Get current position: convert stored ratios to pixels, or use default
   const position = settings.position
-    ? clampPosition(settings.position.x, settings.position.y)
+    ? ratioToPixels(settings.position.x, settings.position.y)
     : getDefaultPosition();
   const currentPos = dragPos ?? position;
 
@@ -198,10 +242,10 @@ export function SyncUpdatesFAB({ className = '' }: SyncUpdatesFABProps) {
       (e.target as HTMLElement).releasePointerCapture(e.pointerId);
 
       if (isDragging && dragPos) {
-        // Save the new position
+        // Save position as ratio for window-size-independent storage
         setSettings({
           ...settings,
-          position: dragPos,
+          position: pixelsToRatio(dragPos.x, dragPos.y),
         });
       }
 
@@ -216,26 +260,8 @@ export function SyncUpdatesFAB({ className = '' }: SyncUpdatesFABProps) {
 
       dragStartRef.current = null;
     },
-    [isDragging, dragPos, settings, setSettings, navigate]
+    [isDragging, dragPos, settings, setSettings, navigate, pixelsToRatio]
   );
-
-  // Update position on window resize
-  useEffect(() => {
-    const handleResize = () => {
-      if (settings.position) {
-        const clamped = clampPosition(settings.position.x, settings.position.y);
-        if (clamped.x !== settings.position.x || clamped.y !== settings.position.y) {
-          setSettings({
-            ...settings,
-            position: clamped,
-          });
-        }
-      }
-    };
-
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, [settings, setSettings, clampPosition]);
 
   // Handle hover for edge auto-show (MUST be before any early return)
   const handleMouseEnter = useCallback(() => {

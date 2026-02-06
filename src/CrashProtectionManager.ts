@@ -44,7 +44,7 @@ export interface CrashLoopResult {
 }
 
 export interface CrashProtectionConfig {
-  appDataDir: string;
+  configDir: string;
   crashLoopThreshold?: number;
   crashLoopWindowMs?: number;
   safeModeClearDelayMs?: number;
@@ -56,7 +56,7 @@ const DEFAULT_CRASH_LOOP_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
 const DEFAULT_SAFE_MODE_CLEAR_DELAY_MS = 5 * 60 * 1000; // 5 minutes
 
 export class CrashProtectionManager {
-  private readonly appDataDir: string;
+  private readonly configDir: string;
   private readonly crashFlagFile: string;
   private readonly crashHistoryFile: string;
   private readonly crashLoopThreshold: number;
@@ -73,9 +73,9 @@ export class CrashProtectionManager {
   private getMainWindow: (() => BrowserWindow | null) | null = null;
 
   constructor(config: CrashProtectionConfig) {
-    this.appDataDir = config.appDataDir;
-    this.crashFlagFile = path.join(config.appDataDir, '.crash_flag');
-    this.crashHistoryFile = path.join(config.appDataDir, '.crash_history');
+    this.configDir = config.configDir;
+    this.crashFlagFile = path.join(config.configDir, 'crash-flag.json');
+    this.crashHistoryFile = path.join(config.configDir, 'crash-history.json');
     this.crashLoopThreshold = config.crashLoopThreshold ?? DEFAULT_CRASH_LOOP_THRESHOLD;
     this.crashLoopWindowMs = config.crashLoopWindowMs ?? DEFAULT_CRASH_LOOP_WINDOW_MS;
     this.safeModeClearDelayMs =
@@ -142,8 +142,8 @@ export class CrashProtectionManager {
    */
   saveCrashHistory(history: CrashHistory): void {
     try {
-      if (!fs.existsSync(this.appDataDir)) {
-        fs.mkdirSync(this.appDataDir, { recursive: true });
+      if (!fs.existsSync(this.configDir)) {
+        fs.mkdirSync(this.configDir, { recursive: true });
       }
       fs.writeFileSync(this.crashHistoryFile, JSON.stringify(history, null, 2));
     } catch (_e) {
@@ -212,8 +212,8 @@ export class CrashProtectionManager {
         platform: process.platform,
       };
 
-      if (!fs.existsSync(this.appDataDir)) {
-        fs.mkdirSync(this.appDataDir, { recursive: true });
+      if (!fs.existsSync(this.configDir)) {
+        fs.mkdirSync(this.configDir, { recursive: true });
       }
 
       // Write immediate crash flag

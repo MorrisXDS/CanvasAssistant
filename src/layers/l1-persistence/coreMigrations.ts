@@ -2322,4 +2322,17 @@ export const coreMigrations: Migration[] = [
       SELECT 1;
     `,
   },
+  // Migration 102: Add syllabus_prompt_dismissed_at for persistent syllabus prompt dismissal
+  {
+    version: 102,
+    description:
+      'Add syllabus_prompt_dismissed_at column to courses for persistent prompt dismissal',
+    up: `
+      ALTER TABLE courses ADD COLUMN syllabus_prompt_dismissed_at DATETIME;
+    `,
+    down: `
+      -- SQLite doesn't support DROP COLUMN, column will remain but be unused
+      SELECT 1;
+    `,
+  },
 ];

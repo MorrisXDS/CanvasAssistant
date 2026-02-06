@@ -38,8 +38,6 @@ export interface UseCourseDetailSyllabusStateReturn {
   setCourseFiles: React.Dispatch<React.SetStateAction<FileResource[]>>;
   showSyllabusSelector: boolean;
   setShowSyllabusSelector: (show: boolean) => void;
-  syllabusWarningDismissed: boolean;
-  setSyllabusWarningDismissed: (dismissed: boolean) => void;
   syllabusContextMenu: { x: number; y: number } | null;
   setSyllabusContextMenu: (menu: { x: number; y: number } | null) => void;
 
@@ -70,8 +68,10 @@ export function useCourseDetailSyllabusState({
   const [courseFiles, setCourseFiles] = useState<FileResource[]>([]);
   const [syllabusLoading, setSyllabusLoading] = useState(false);
   const [showSyllabusSelector, setShowSyllabusSelector] = useState(false);
-  const [syllabusWarningDismissed, setSyllabusWarningDismissed] = useState(false);
-  const [syllabusContextMenu, setSyllabusContextMenu] = useState<{ x: number; y: number } | null>(null);
+  const [syllabusContextMenu, setSyllabusContextMenu] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
   const syllabusClickTimeout = useRef<NodeJS.Timeout | null>(null);
 
   // Missing dependencies dialog state
@@ -84,32 +84,35 @@ export function useCourseDetailSyllabusState({
   });
 
   // Set syllabus
-  const handleSetSyllabus = useCallback(async (resourceId: number) => {
-    const api = window.api;
-    if (!api?.dispatch) return;
+  const handleSetSyllabus = useCallback(
+    async (resourceId: number) => {
+      const api = window.api;
+      if (!api?.dispatch) return;
 
-    setSyllabusLoading(true);
-    try {
-      const result = await api.dispatch('SetCourseSyllabus', { courseId, resourceId });
-      if (result.success && result.data) {
-        const file = courseFiles.find((f) => f.id === resourceId);
-        setSyllabus({
-          id: result.data.syllabusId,
-          courseId,
-          resourceId,
-          resourceTitle: file?.title ?? 'Unknown file',
-          resourceUpdatedAt: null,
-          lastReviewedAt: result.data.lastReviewedAt,
-          changeDetectedAt: null,
-          markedAt: result.data.lastReviewedAt,
-        });
+      setSyllabusLoading(true);
+      try {
+        const result = await api.dispatch('SetCourseSyllabus', { courseId, resourceId });
+        if (result.success && result.data) {
+          const file = courseFiles.find((f) => f.id === resourceId);
+          setSyllabus({
+            id: result.data.syllabusId,
+            courseId,
+            resourceId,
+            resourceTitle: file?.title ?? 'Unknown file',
+            resourceUpdatedAt: null,
+            lastReviewedAt: result.data.lastReviewedAt,
+            changeDetectedAt: null,
+            markedAt: result.data.lastReviewedAt,
+          });
+        }
+      } catch (error) {
+        console.error('Failed to set syllabus:', error);
+      } finally {
+        setSyllabusLoading(false);
       }
-    } catch (error) {
-      console.error('Failed to set syllabus:', error);
-    } finally {
-      setSyllabusLoading(false);
-    }
-  }, [courseId, courseFiles]);
+    },
+    [courseId, courseFiles]
+  );
 
   // Mark syllabus as reviewed
   const handleMarkSyllabusReviewed = useCallback(async () => {
@@ -219,15 +222,20 @@ export function useCourseDetailSyllabusState({
         const result = await api?.openResource(syllabus.resourceId);
 
         // Check if result indicates missing dependencies
-        const typedResult = result as {
-          success?: boolean;
-          hasMissingDependencies?: boolean;
-          missingDependencies?: MissingDependency[];
-          totalMissingSize?: number;
-        } | undefined;
+        const typedResult = result as
+          | {
+              success?: boolean;
+              hasMissingDependencies?: boolean;
+              missingDependencies?: MissingDependency[];
+              totalMissingSize?: number;
+            }
+          | undefined;
 
         if (typedResult?.hasMissingDependencies && typedResult.missingDependencies) {
-          console.log('[Syllabus] HTML has missing dependencies:', typedResult.missingDependencies);
+          console.log(
+            '[Syllabus] HTML has missing dependencies:',
+            typedResult.missingDependencies
+          );
           setMissingDepsDialog({
             isOpen: true,
             dependencies: typedResult.missingDependencies,
@@ -341,8 +349,6 @@ export function useCourseDetailSyllabusState({
     setCourseFiles,
     showSyllabusSelector,
     setShowSyllabusSelector,
-    syllabusWarningDismissed,
-    setSyllabusWarningDismissed,
     syllabusContextMenu,
     setSyllabusContextMenu,
 

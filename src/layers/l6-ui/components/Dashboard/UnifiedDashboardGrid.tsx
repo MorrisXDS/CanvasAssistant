@@ -10,6 +10,7 @@ import { PriorityList } from './PriorityList';
 import { NotificationsFeed } from './NotificationsFeed';
 import { ScheduleCard } from './ScheduleCard';
 import { ImportantWorksCard } from './ImportantWorksCard';
+import { CARD_TITLES } from '../../constants';
 import type { PriorityItem, Task } from '../../../l5-presentation/types';
 import type { Notification } from '../../../l5-presentation/types';
 
@@ -20,10 +21,10 @@ interface SectionConfig {
 }
 
 const SECTIONS: SectionConfig[] = [
-  { id: 'priority', title: 'Upcoming Assignments' },
-  { id: 'notifications', title: 'Recent Updates' },
-  { id: 'schedule', title: "Today's Schedule" },
-  { id: 'importantWorks', title: 'Important Works' },
+  { id: 'priority', title: CARD_TITLES.dashboard.upcomingCoursework },
+  { id: 'notifications', title: CARD_TITLES.dashboard.announcements },
+  { id: 'schedule', title: CARD_TITLES.dashboard.todaySchedule },
+  { id: 'importantWorks', title: CARD_TITLES.dashboard.importantWorks },
 ];
 
 export interface UnifiedDashboardGridProps {

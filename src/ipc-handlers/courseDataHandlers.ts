@@ -109,6 +109,7 @@ export function registerCourseDataHandlers(ctx: IpcContext): void {
         total_weight: number | null;
         syllabus_body: string | null;
         grade_curve_adjustment: number | null;
+        syllabus_prompt_dismissed_at: string | null;
       }>('SELECT * FROM courses WHERE id = ?', [courseId]);
 
       if (!row) {
@@ -135,6 +136,7 @@ export function registerCourseDataHandlers(ctx: IpcContext): void {
         totalWeight: row.total_weight ?? 0,
         syllabusBody: row.syllabus_body,
         gradeCurveAdjustment: row.grade_curve_adjustment ?? 0,
+        syllabusPromptDismissedAt: row.syllabus_prompt_dismissed_at,
       };
     } catch (error) {
       logger.error(`Failed to get course: ${error}`);

@@ -525,7 +525,7 @@ export function getEarliestEventHour(events: CalendarEvent[]): number | null {
 // Constants
 export const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 export const HOURS = Array.from({ length: 24 }, (_, i) => i);
-export const HOUR_HEIGHT = 60;
+export const HOUR_HEIGHT = 64;
 export const WEEK_HOUR_HEIGHT = 48;
 
 // =============================================================================

@@ -12,9 +12,9 @@ export const CARD_TITLES = {
   // Dashboard card titles
   dashboard: {
     importantWorks: 'Important Works',
-    recentUpdates: 'Recent Updates',
+    announcements: 'Announcements',
     todaySchedule: "Today's Schedule",
-    upcomingCourseworks: 'Upcoming Courseworks',
+    upcomingCoursework: 'Upcoming Coursework',
     insights: 'Insights',
     priorityTasks: 'Priority Tasks',
     recommendations: 'Recommendations',

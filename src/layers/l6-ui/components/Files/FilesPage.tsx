@@ -1820,15 +1820,15 @@ export function FilesPage() {
         </div>
 
         <div className={styles.headerActions}>
-          {/* Sync Settings Dropdown */}
+          {/* File Management Dropdown */}
           <Dropdown
             trigger={
               <button
                 className={`${styles.actionButton} ${showSyncConfig ? styles.actionButtonActive : ''}`}
-                title="Sync settings"
+                title="File management"
               >
                 <Settings size={16} />
-                Sync Settings
+                File Management
                 <ChevronDown size={14} />
               </button>
             }

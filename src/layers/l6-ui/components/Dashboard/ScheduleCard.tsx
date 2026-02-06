@@ -9,7 +9,7 @@ import { Card, NotificationDot } from '../shared';
 import { useStore } from '../../../l5-presentation/store';
 import { useTaskUpdates } from '../../hooks';
 import type { DisplayCalendarEvent, Task } from '../../../l5-presentation/types';
-import { getCourseColor } from '../../constants';
+import { getCourseColor, CARD_TITLES } from '../../constants';
 
 interface ScheduleCardProps {
   /** Maximum items to show. If not specified, shows all items. */
@@ -350,7 +350,7 @@ export function ScheduleCard({ maxItems }: ScheduleCardProps) {
 
   return (
     <Card
-      title="Today's Schedule"
+      title={CARD_TITLES.dashboard.todaySchedule}
       padding="md"
       style={{ display: 'flex', flexDirection: 'column', height: '100%' }}
     >

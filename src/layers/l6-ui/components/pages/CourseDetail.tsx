@@ -57,6 +57,7 @@ interface CourseDetailData {
   archivedAt: string | null;
   archiveSource: 'manual' | 'auto' | null;
   gradeCurveAdjustment: number;
+  syllabusPromptDismissedAt: string | null;
 }
 
 export function CourseDetail() {
@@ -170,8 +171,6 @@ export function CourseDetail() {
     setCourseFiles,
     showSyllabusSelector,
     setShowSyllabusSelector,
-    syllabusWarningDismissed,
-    setSyllabusWarningDismissed,
     syllabusContextMenu,
     setSyllabusContextMenu,
     missingDepsDialog,
@@ -690,6 +689,7 @@ export function CourseDetail() {
           onSaveTargetGrade={handleSaveTargetGrade}
           onCancelEditTarget={() => setEditingTarget(false)}
           syllabus={syllabus}
+          syllabusPromptDismissed={course.syllabusPromptDismissedAt !== null}
           onSyllabusClick={handleSyllabusClick}
           onSyllabusDoubleClick={handleSyllabusDoubleClick}
           onSyllabusContextMenu={handleSyllabusContextMenu}
@@ -719,11 +719,35 @@ export function CourseDetail() {
         />
 
         {/* Missing Syllabus Warning */}
-        {!syllabusWarningDismissed && (
+        {!course.syllabusPromptDismissedAt && (
           <MissingSyllabusWarning
             hasSyllabusFile={syllabus !== null}
             hasCanvasSyllabus={Boolean(course.syllabusBody)}
-            onDismiss={() => setSyllabusWarningDismissed(true)}
+            onDismiss={() => {
+              setConfirmDialog({
+                isOpen: true,
+                title: 'Dismiss Syllabus Prompt',
+                message:
+                  'Permanently dismiss the syllabus prompt for this course? You can re-enable it later in course settings.',
+                type: 'info',
+                confirmText: 'Dismiss',
+                onConfirm: async () => {
+                  try {
+                    await window.api?.dispatch('UpdateCoursePreferences', {
+                      courseId: course.id,
+                      preferences: { syllabusPromptDismissed: true },
+                    });
+                    setCourse((prev) =>
+                      prev
+                        ? { ...prev, syllabusPromptDismissedAt: new Date().toISOString() }
+                        : prev
+                    );
+                  } catch (error) {
+                    console.error('Failed to dismiss syllabus prompt:', error);
+                  }
+                },
+              });
+            }}
             onSetSyllabus={() => setShowSyllabusSelector(true)}
           />
         )}

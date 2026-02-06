@@ -545,7 +545,7 @@ export function EventFormModal({
                 onClick={() => setEventType('event')}
               >
                 <Calendar size={16} />
-                Event
+                Regular
               </button>
               <button
                 type="button"
@@ -780,21 +780,6 @@ export function EventFormModal({
                   ))}
                 </select>
               </div>
-
-              {/* Notes (calendar-specific, doesn't affect task) */}
-              <div style={styles.field}>
-                <label style={styles.label}>
-                  <StickyNote size={14} />
-                  Notes
-                  {isTaskEvent && <span style={styles.noteHint}>(calendar only)</span>}
-                </label>
-                <textarea
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  placeholder="Add notes"
-                  style={styles.textareaSmall}
-                />
-              </div>
             </>
           )}
 
@@ -886,6 +871,23 @@ export function EventFormModal({
               onChange={setDescription}
               placeholder="Event description..."
               minHeight={80}
+            />
+          </div>
+
+          {/* Notes (calendar-specific, doesn't affect task) */}
+          <div style={styles.field}>
+            <label style={styles.label}>
+              <StickyNote size={14} />
+              Notes
+              {isTaskEvent && eventType === 'event' && (
+                <span style={styles.noteHint}>(calendar only)</span>
+              )}
+            </label>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Add notes"
+              style={styles.textareaSmall}
             />
           </div>
 

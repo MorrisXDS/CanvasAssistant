@@ -44,6 +44,7 @@ export interface CourseHeaderProps {
 
   // Syllabus
   syllabus: CourseSyllabus | null;
+  syllabusPromptDismissed?: boolean;
   onSyllabusClick: () => void;
   onSyllabusDoubleClick: () => void;
   onSyllabusContextMenu: (e: React.MouseEvent) => void;
@@ -95,6 +96,7 @@ export function CourseHeader({
   onSaveTargetGrade,
   onCancelEditTarget,
   syllabus,
+  syllabusPromptDismissed,
   onSyllabusClick,
   onSyllabusDoubleClick,
   onSyllabusContextMenu,
@@ -287,11 +289,13 @@ export function CourseHeader({
               </div>
               <div style={styles.gradeSubtext}>
                 {syllabus?.changeDetectedAt ? (
-                  <span style={{ color: 'var(--color-warning)' }}>file updated</span>
+                  <span style={{ color: 'var(--color-warning)' }}>Updated</span>
                 ) : syllabus ? (
-                  'up to date'
+                  'Current'
+                ) : syllabusPromptDismissed ? (
+                  '\u2014'
                 ) : (
-                  'click to select'
+                  'Select a syllabus'
                 )}
               </div>
             </div>
@@ -401,9 +405,7 @@ export function CourseHeader({
           </div>
         ) : (
           <div style={styles.noProgressSection}>
-            <span style={styles.noProgressText}>
-              No graded coursework with weight yet
-            </span>
+            <span style={styles.noProgressText}>No graded coursework yet</span>
           </div>
         )}
 

@@ -6,7 +6,7 @@
  */
 
 import React from 'react';
-import { AppWindow } from 'lucide-react';
+import { AppWindow, Maximize2 } from 'lucide-react';
 import { useSettings } from './SettingsContext';
 import { Accordion, SettingRow, SettingSelect } from '../primitives';
 import { styles } from '../SettingsModalStyles';
@@ -101,6 +101,26 @@ export function AppBehaviorSection({ sectionRef }: AppBehaviorSectionProps) {
                   ]}
                 />
               </SettingRow>
+            )}
+
+            {/* Reset window size */}
+            {shouldShowSetting('windowBehavior.resetSize') && (
+              <>
+                <div style={styles.divider} />
+                <SettingRow
+                  settingKey="windowBehavior.resetSize"
+                  label="Reset window size"
+                  description="Restore the window to its default adaptive size and position"
+                >
+                  <button
+                    style={styles.exportActionButton}
+                    onClick={() => window.api.resetWindowSize()}
+                  >
+                    <Maximize2 size={14} />
+                    {SETTINGS_LABELS.buttons.resetWindowSize}
+                  </button>
+                </SettingRow>
+              </>
             )}
           </div>
         </Accordion.Content>

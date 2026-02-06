@@ -44,7 +44,7 @@ export function CoursesFilterPanel({
       {/* Prefix Filter */}
       {availablePrefixes.length > 1 && (
         <div style={styles.filterGroup}>
-          <label style={styles.filterLabel}>Prefix</label>
+          <label style={styles.filterLabel}>Subject</label>
           <select
             style={styles.filterSelect}
             value={prefixFilter}

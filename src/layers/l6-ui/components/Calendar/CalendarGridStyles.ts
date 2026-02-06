@@ -348,10 +348,14 @@ export const styles: Record<string, React.CSSProperties> = {
 
   // Day view
   dayContainer: {
+    display: 'flex',
+    flexDirection: 'column',
     border: '1px solid var(--border-light)',
     borderRadius: '12px',
     overflow: 'hidden',
     boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+    height: '100%',
+    minHeight: 0,
   },
 
   dayHeader: {
@@ -489,9 +493,11 @@ export const styles: Record<string, React.CSSProperties> = {
     flexShrink: 0,
   },
 
-  // Day view wrapper
+  // Day view wrapper - matches weekWrapper viewport height
   dayWrapper: {
     position: 'relative',
+    height: 'calc(100vh - 280px)',
+    minHeight: '400px',
   },
 
   dayAllDayEvent: {
@@ -507,8 +513,8 @@ export const styles: Record<string, React.CSSProperties> = {
   // Day grid with positioned events - scales with viewport
   dayGridContainer: {
     position: 'relative',
-    height: 'calc(100vh - 300px)',
-    minHeight: '300px',
+    flex: 1,
+    minHeight: 0,
     overflowY: 'auto',
   },
 

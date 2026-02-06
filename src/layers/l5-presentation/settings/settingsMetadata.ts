@@ -269,6 +269,14 @@ export const SETTINGS_METADATA: SettingMetadata[] = [
     component: 'select',
     keywords: ['quit', 'minimize', 'tray', 'exit', 'window'],
   },
+  {
+    key: 'windowBehavior.resetSize',
+    label: 'Reset window size',
+    description: 'Restore the window to its default adaptive size and position',
+    category: 'behavior',
+    component: 'custom',
+    keywords: ['window', 'size', 'position', 'reset', 'default', 'resize'],
+  },
 
   // =================================
   // NOTIFICATIONS
@@ -321,6 +329,96 @@ export const SETTINGS_METADATA: SettingMetadata[] = [
     component: 'toggle',
     keywords: ['power', 'laptop', 'save'],
   },
+
+  // =================================
+  // DATA & BACKUP
+  // =================================
+  {
+    key: 'exportSchedule.enabled',
+    label: 'Automatic backups',
+    description: 'Automatically back up your database on a schedule',
+    category: 'data',
+    component: 'toggle',
+    keywords: ['backup', 'scheduled', 'automatic', 'database', 'scheduled backups'],
+  },
+  {
+    key: 'exportSchedule.frequency',
+    label: 'Backup frequency',
+    description: 'How often to create automatic backups',
+    category: 'data',
+    component: 'select',
+    keywords: ['daily', 'weekly', 'monthly', 'schedule', 'scheduled backups'],
+  },
+  {
+    key: 'exportSchedule.time',
+    label: 'Backup time',
+    description: 'Time of day to run the automatic backup',
+    category: 'data',
+    component: 'select',
+    keywords: ['hour', 'schedule', 'when', 'scheduled backups'],
+  },
+  {
+    key: 'exportSchedule.maxBackups',
+    label: 'Keep backups',
+    description: 'Maximum number of backups to keep before rotating old ones',
+    category: 'data',
+    component: 'slider',
+    keywords: ['rotate', 'retention', 'limit', 'storage', 'scheduled backups'],
+  },
+  {
+    key: 'exportSchedule.encrypt',
+    label: 'Encrypt backups',
+    description: 'Password-protect backup files with AES-256 encryption',
+    category: 'data',
+    component: 'toggle',
+    keywords: ['password', 'security', 'protection', 'secure', 'scheduled backups'],
+  },
+  {
+    key: 'data.backup',
+    label: 'Create backup',
+    description: 'Create a full database backup for app recovery',
+    category: 'data',
+    component: 'custom',
+    keywords: [
+      'backup',
+      'save',
+      'download',
+      'database',
+      'backup & restore',
+      'backup and restore',
+    ],
+  },
+  {
+    key: 'data.restore',
+    label: 'Restore backup',
+    description: 'Restore data from a database backup file',
+    category: 'data',
+    component: 'custom',
+    keywords: [
+      'restore',
+      'upload',
+      'load',
+      'import',
+      'backup & restore',
+      'backup and restore',
+    ],
+  },
+  {
+    key: 'data.csvExport',
+    label: 'Export as CSV',
+    description: 'Export tasks or grades to CSV for spreadsheets',
+    category: 'data',
+    component: 'custom',
+    keywords: ['csv', 'spreadsheet', 'excel', 'export', 'tasks', 'grades', 'data export'],
+  },
+  {
+    key: 'data.reset',
+    label: 'Reset all data',
+    description: 'Delete all courses, tasks, grades, and settings',
+    category: 'data',
+    component: 'custom',
+    keywords: ['clear', 'delete', 'remove', 'wipe'],
+  },
 ];
 
 // =============================================================================
@@ -363,8 +461,8 @@ export const SETTINGS_CATEGORIES: Record<
     description: 'Alerts, reminders, and quiet mode',
   },
   data: {
-    label: 'Data',
-    description: 'Export, import, and reset options',
+    label: 'Data Management',
+    description: 'Backup, restore, export, and reset options',
   },
 };
 
@@ -380,7 +478,7 @@ export function getSettingsByCategory(category: SettingsCategory): SettingMetada
 }
 
 /**
- * Search settings by query (fuzzy match on label, description, and keywords)
+ * Search settings by query (fuzzy match on label, description, keywords, and category label)
  */
 export function searchSettings(query: string): SettingMetadata[] {
   if (!query.trim()) return SETTINGS_METADATA;
@@ -389,9 +487,12 @@ export function searchSettings(query: string): SettingMetadata[] {
   const terms = normalizedQuery.split(/\s+/);
 
   return SETTINGS_METADATA.filter((setting) => {
+    // Include category label (but NOT description - that would match too broadly)
+    const categoryInfo = SETTINGS_CATEGORIES[setting.category];
     const searchableText = [
       setting.label,
       setting.description,
+      categoryInfo.label,
       ...(setting.keywords || []),
     ]
       .join(' ')

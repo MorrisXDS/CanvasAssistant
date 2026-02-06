@@ -79,7 +79,7 @@ export function SettingsPanel({
           />
         </div>
         <div style={styles.settingsField}>
-          <label style={styles.settingsLabel}>Credit</label>
+          <label style={styles.settingsLabel}>Credits</label>
           <input
             type="number"
             value={creditsInput}
@@ -95,7 +95,7 @@ export function SettingsPanel({
       {/* Row 2: Grade curve, visibility, archive - 3 fields */}
       <div style={styles.settingsGrid}>
         <div style={styles.settingsField}>
-          <label style={styles.settingsLabel}>Grade Curve (±%)</label>
+          <label style={styles.settingsLabel}>Grade Adjustment (±%)</label>
           <input
             type="number"
             value={curveAdjustmentInput}

@@ -157,7 +157,7 @@ export function ImportantWorksCard({ maxItems = 4 }: ImportantWorksCardProps) {
             style={{ marginBottom: 'var(--space-2)' }}
           />
           <span style={styles.emptyText}>
-            No matching tasks above {filter.globalThreshold}% weight
+            No coursework above {filter.globalThreshold}% weight
           </span>
         </div>
       ) : (

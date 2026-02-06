@@ -476,7 +476,7 @@ function buildDefaultEnabledTypes(): string[] {
 }
 
 export const DEFAULT_IMPORTANT_WORKS_FILTER: ImportantWorksFilter = {
-  globalThreshold: 10,
+  globalThreshold: 5,
   enabledTypes: buildDefaultEnabledTypes(),
   perTypeEnabled: false,
   perTypeThresholds: {},
@@ -512,7 +512,7 @@ export const DEFAULT_TIMEZONE_SETTINGS: TimezoneSettings = {
 };
 
 export const DEFAULT_SYNC_UPDATES_FAB_SETTINGS: SyncUpdatesFabSettings = {
-  position: null, // null = use default bottom-right position
+  position: null, // null = use default bottom-left position; stored as ratios (0-1)
   opacity: 0.7, // 70% opacity by default
 };
 

@@ -1,18 +1,20 @@
 /**
  * Backup Manager
- * Handles scheduled database backups with rotation
+ * Handles scheduled database backups with rotation and optional encryption
  */
 
-import { app, BrowserWindow } from 'electron';
+import { BrowserWindow } from 'electron';
 import fs from 'fs';
 import path from 'path';
 import type { Database } from './layers/l1-persistence';
 import type { Logger } from './layers/l0-utilities/Logger';
 import type { MetricsCollector } from './layers/l0-utilities/MetricsCollector';
+import { encryptBackup } from './layers/l0-utilities/BackupEncryption';
 
 export interface BackupManagerConfig {
   database: Database;
   dbPath: string;
+  backupDir: string;
   logger: Logger;
   metricsCollector: MetricsCollector;
   getMainWindow: () => BrowserWindow | null;
@@ -25,12 +27,14 @@ interface BackupSchedule {
   dayOfWeek?: number;
   dayOfMonth?: number;
   maxBackups: number;
+  encrypt: boolean;
   lastRun?: string;
 }
 
 export class BackupManager {
   private database: Database;
   private dbPath: string;
+  private backupDir: string;
   private logger: Logger;
   private metricsCollector: MetricsCollector;
   private getMainWindow: () => BrowserWindow | null;
@@ -40,6 +44,7 @@ export class BackupManager {
   constructor(config: BackupManagerConfig) {
     this.database = config.database;
     this.dbPath = config.dbPath;
+    this.backupDir = config.backupDir;
     this.logger = config.logger;
     this.metricsCollector = config.metricsCollector;
     this.getMainWindow = config.getMainWindow;
@@ -144,14 +149,12 @@ export class BackupManager {
       this.lastBackupCheck = now;
 
       // Run the backup
-      const backupDir = path.join(app.getPath('documents'), 'CanvasAssistant', 'backups');
-
-      if (!fs.existsSync(backupDir)) {
-        fs.mkdirSync(backupDir, { recursive: true });
+      if (!fs.existsSync(this.backupDir)) {
+        fs.mkdirSync(this.backupDir, { recursive: true });
       }
 
-      const backupPath = path.join(
-        backupDir,
+      let backupPath = path.join(
+        this.backupDir,
         `scheduled-backup-${now.toISOString().replace(/[:.]/g, '-')}.db`
       );
 
@@ -160,6 +163,39 @@ export class BackupManager {
 
       // Copy database file
       fs.copyFileSync(this.dbPath, backupPath);
+
+      // Handle encryption if enabled
+      let isEncrypted = false;
+      if (schedule.encrypt) {
+        // Get encryption password from app_settings
+        const passwordRow = this.database.executeReadOne<{ value: string }>(
+          "SELECT value FROM app_settings WHERE key = 'backupEncryptionPassword'"
+        );
+
+        if (passwordRow?.value) {
+          const encryptedPath = backupPath.replace('.db', '.db.enc');
+          const encryptResult = encryptBackup(
+            backupPath,
+            encryptedPath,
+            passwordRow.value
+          );
+
+          if (encryptResult.success) {
+            // Remove unencrypted version
+            fs.unlinkSync(backupPath);
+            backupPath = encryptedPath;
+            isEncrypted = true;
+            this.logger.info('Backup encrypted successfully');
+          } else {
+            this.logger.error(`Backup encryption failed: ${encryptResult.error}`);
+            // Continue with unencrypted backup
+          }
+        } else {
+          this.logger.warn(
+            'Encryption enabled but no password found, creating unencrypted backup'
+          );
+        }
+      }
 
       const fileStats = fs.statSync(backupPath);
 
@@ -180,10 +216,15 @@ export class BackupManager {
       );
 
       // Rotate old backups (keep maxBackups most recent)
-      this.rotateBackups(backupDir, schedule.maxBackups);
+      this.rotateBackups(this.backupDir, schedule.maxBackups);
 
-      this.logger.info(`Scheduled backup completed: ${backupPath}`);
+      this.logger.info(
+        `Scheduled backup completed: ${backupPath} (encrypted: ${isEncrypted})`
+      );
       this.metricsCollector.increment('backup.scheduled.success');
+      if (isEncrypted) {
+        this.metricsCollector.increment('backup.scheduled.encrypted');
+      }
 
       // Notify renderer
       const mainWindow = this.getMainWindow();
@@ -192,6 +233,7 @@ export class BackupManager {
           type: 'scheduled',
           path: backupPath,
           size: fileStats.size,
+          encrypted: isEncrypted,
         });
       }
     } catch (error) {
@@ -217,12 +259,17 @@ export class BackupManager {
 
   /**
    * Rotate old backups, keeping only the most recent N files
+   * Handles both encrypted (.db.enc) and unencrypted (.db) backups
    */
   private rotateBackups(backupDir: string, maxBackups: number): void {
     try {
       const files = fs
         .readdirSync(backupDir)
-        .filter((f) => f.startsWith('scheduled-backup-') && f.endsWith('.db'))
+        .filter(
+          (f) =>
+            f.startsWith('scheduled-backup-') &&
+            (f.endsWith('.db') || f.endsWith('.db.enc'))
+        )
         .map((f) => ({
           name: f,
           path: path.join(backupDir, f),

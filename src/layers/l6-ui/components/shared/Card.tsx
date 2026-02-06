@@ -72,6 +72,7 @@ export function Card({
     padding: title || headerAction ? '0 24px 24px 24px' : paddingStyles[padding],
     flex: 1,
     overflow: 'auto',
+    scrollbarGutter: 'stable',
     display: 'flex',
     flexDirection: 'column',
   };

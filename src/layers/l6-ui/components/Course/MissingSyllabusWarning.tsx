@@ -10,7 +10,7 @@ export interface MissingSyllabusWarningProps {
   hasSyllabusFile: boolean;
   /** Whether the course has a Canvas syllabus body */
   hasCanvasSyllabus: boolean;
-  /** Callback when user clicks dismiss (session only) */
+  /** Callback when user clicks dismiss */
   onDismiss: () => void;
   /** Callback when user wants to set a syllabus */
   onSetSyllabus: () => void;
@@ -18,7 +18,7 @@ export interface MissingSyllabusWarningProps {
 
 /**
  * Displays a warning banner when a course has no syllabus set.
- * Session-dismissible (not persisted).
+ * Dismissal is handled by the parent (persisted to database).
  */
 export function MissingSyllabusWarning({
   hasSyllabusFile,
@@ -57,7 +57,7 @@ export function MissingSyllabusWarning({
         <button
           style={styles.dismissButton}
           onClick={onDismiss}
-          title="Dismiss for this session"
+          title="Dismiss permanently"
           aria-label="Dismiss warning"
         >
           <X size={16} />

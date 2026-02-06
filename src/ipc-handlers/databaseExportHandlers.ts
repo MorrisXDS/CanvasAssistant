@@ -254,4 +254,58 @@ export function registerDatabaseExportHandlers(ctx: IpcContext): void {
       }
     }
   );
+
+  // Diagnostic handler to verify database contents after import
+  ipcMain.handle('data:getDatabaseDiagnostics', () => {
+    try {
+      const diagnostics: Record<string, unknown> = {};
+
+      // Count rows in key tables
+      const tables = [
+        'courses',
+        'tasks',
+        'calendar_events',
+        'imported_calendars',
+        'notifications',
+        'resources',
+      ];
+
+      for (const table of tables) {
+        try {
+          const result = database.executeReadOne<{ count: number }>(
+            `SELECT COUNT(*) as count FROM ${table}`
+          );
+          diagnostics[table] = result?.count ?? 0;
+        } catch {
+          diagnostics[table] = 'error';
+        }
+      }
+
+      // Get schema version
+      diagnostics.schemaVersion = database.getSchemaVersion();
+
+      // Check imported calendars detail
+      const calendars = database.executeRead<{
+        id: number;
+        name: string;
+        event_count: number;
+      }>('SELECT id, name, event_count FROM imported_calendars');
+      diagnostics.importedCalendarsDetail = calendars;
+
+      // Count calendar events by source type
+      const eventsByType = database.executeRead<{
+        source_type: string;
+        count: number;
+      }>(
+        `SELECT source_type, COUNT(*) as count FROM calendar_events GROUP BY source_type`
+      );
+      diagnostics.calendarEventsByType = eventsByType;
+
+      logger.info(`Database diagnostics: ${JSON.stringify(diagnostics)}`);
+      return { success: true, data: diagnostics };
+    } catch (error) {
+      logger.error('Failed to get database diagnostics:', error as Error);
+      return { success: false, error: String(error) };
+    }
+  });
 }

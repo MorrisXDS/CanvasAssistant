@@ -26,10 +26,11 @@ export const SETTINGS_LABELS = {
     updateToken: 'Update Token',
     removeConnection: 'Remove Connection',
     change: 'Change',
-    backupDatabase: 'Backup Database',
+    backupDatabase: 'Create Backup',
     backupData: 'Backup Data',
-    exportCsv: 'Export CSV',
-    exportWithOptions: 'Export with Options...',
+    restoreBackup: 'Restore Backup',
+    exportCsv: 'Export as CSV',
+    exportWithOptions: 'Custom Export...',
     importBackup: 'Import Backup...',
     exportSettings: 'Export Settings',
     resetAll: 'Reset All',
@@ -38,6 +39,7 @@ export const SETTINGS_LABELS = {
     replaceToken: 'Replace Token',
     replacing: 'Replacing...',
     keepConnected: 'Keep Connected',
+    resetWindowSize: 'Reset Window Size',
   },
 
   // Dropdown option labels
@@ -91,6 +93,9 @@ export const SETTINGS_LABELS = {
     dangerZone: 'Danger Zone',
     export: 'Export',
     import: 'Import',
+    backupRestore: 'Backup & Restore',
+    dataExport: 'Data Export',
+    scheduledBackups: 'Scheduled Backups',
   },
 
   // Placeholders

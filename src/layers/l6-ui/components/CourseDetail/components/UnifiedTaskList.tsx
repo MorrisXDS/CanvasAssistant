@@ -276,8 +276,8 @@ export function UnifiedTaskList({
     },
     info: {
       icon: <FileText size={32} color="var(--text-muted)" />,
-      title: 'No informational items',
-      subtitle: 'No non-graded items for this course',
+      title: 'No non-graded items',
+      subtitle: 'No ungraded coursework for this course',
     },
   };
 
@@ -305,7 +305,7 @@ export function UnifiedTaskList({
             { key: 'pending', label: 'Pending' },
             { key: 'submitted', label: 'Submitted' },
             { key: 'graded', label: 'Graded' },
-            { key: 'info', label: 'Info' },
+            { key: 'info', label: 'Non Graded' },
           ] as const
         ).map(({ key, label }) => (
           <button

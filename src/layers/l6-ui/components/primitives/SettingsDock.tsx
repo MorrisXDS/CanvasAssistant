@@ -8,7 +8,7 @@
  * - Click to navigate to section
  */
 
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   Link,
   Palette,
@@ -56,6 +56,8 @@ const HINT_LINE_HEIGHT = 3;
 // Trigger zone dimensions - rectangular area that activates the dock
 const TRIGGER_ZONE_WIDTH = 280;
 const TRIGGER_ZONE_HEIGHT = 20;
+// Delay before hiding dock to prevent flicker on edge hover
+const HIDE_DELAY_MS = 150;
 
 const SECTION_ITEMS: DockItem[] = [
   { id: 'display', label: 'Display', icon: <Palette size={18} /> },
@@ -96,11 +98,21 @@ export function SettingsDock({
   sectionOrder,
 }: SettingsDockProps) {
   const dockRef = useRef<HTMLDivElement>(null);
+  const hideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [mouseX, setMouseX] = useState<number | null>(null);
   const [isDockHovered, setIsDockHovered] = useState(false);
   const [isWrapperHovered, setIsWrapperHovered] = useState(false);
   const [hoveredItem, setHoveredItem] = useState<string | null>(null);
   const [itemCenters, setItemCenters] = useState<Record<string, number>>({});
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (hideTimeoutRef.current) {
+        clearTimeout(hideTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // Dock is visible when: auto-hide is off, OR wrapper is hovered
   const isVisible = !autoHide || isWrapperHovered;
@@ -151,13 +163,21 @@ export function SettingsDock({
     setHoveredItem(null);
   }, []);
 
-  // Handle wrapper hover (controls visibility)
+  // Handle wrapper hover (controls visibility) with debounced hide
   const handleWrapperMouseEnter = useCallback(() => {
+    // Cancel any pending hide
+    if (hideTimeoutRef.current) {
+      clearTimeout(hideTimeoutRef.current);
+      hideTimeoutRef.current = null;
+    }
     setIsWrapperHovered(true);
   }, []);
 
   const handleWrapperMouseLeave = useCallback(() => {
-    setIsWrapperHovered(false);
+    // Debounce hide to prevent flicker when hovering near edge
+    hideTimeoutRef.current = setTimeout(() => {
+      setIsWrapperHovered(false);
+    }, HIDE_DELAY_MS);
   }, []);
 
   // Handle click on dock item

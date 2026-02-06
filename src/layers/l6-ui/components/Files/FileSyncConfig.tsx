@@ -29,8 +29,10 @@ export function FileSyncConfig({
     <div className={styles.syncConfigPanel}>
       {/* Header */}
       <div className={styles.syncConfigHeader}>
-        <h3 className={styles.syncConfigTitle}>Sync Settings</h3>
-        <p className={styles.syncConfigSubtitle}>Manage file sync location and data</p>
+        <h3 className={styles.syncConfigTitle}>File Management</h3>
+        <p className={styles.syncConfigSubtitle}>
+          Manage download location and synced data
+        </p>
       </div>
 
       {/* Download Location */}

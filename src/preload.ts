@@ -689,6 +689,8 @@ const api = {
   importEncryptedBackup: (params: { filePath: string; password: string }) =>
     ipcRenderer.invoke('data:importEncryptedBackup', params),
 
+  getDatabaseDiagnostics: () => ipcRenderer.invoke('data:getDatabaseDiagnostics'),
+
   exportCourseData: (params?: { courseIds?: number[]; includeFiles?: boolean }) =>
     ipcRenderer.invoke('data:exportCourseData', params),
 
@@ -722,6 +724,91 @@ const api = {
   getExportHistory: () => ipcRenderer.invoke('data:getExportHistory'),
 
   runScheduledBackup: () => ipcRenderer.invoke('data:runScheduledBackup'),
+
+  // ============ Backup Schedule ============
+
+  getBackupSchedule: () =>
+    ipcRenderer.invoke('backup:getSchedule') as Promise<{
+      success: boolean;
+      error?: string;
+      data?: {
+        enabled: boolean;
+        frequency: 'never' | 'daily' | 'weekly' | 'monthly';
+        time?: string;
+        dayOfWeek?: number;
+        dayOfMonth?: number;
+        destination: string;
+        maxBackups: number;
+        encrypt: boolean;
+        lastRun?: string;
+        nextRun?: string;
+      };
+    }>,
+
+  setBackupSchedule: (schedule: {
+    enabled: boolean;
+    frequency: 'never' | 'daily' | 'weekly' | 'monthly';
+    time?: string;
+    dayOfWeek?: number;
+    dayOfMonth?: number;
+    destination: string;
+    maxBackups: number;
+    encrypt: boolean;
+    encryptionPassword?: string;
+  }) =>
+    ipcRenderer.invoke('backup:setSchedule', schedule) as Promise<{
+      success: boolean;
+      error?: string;
+      data?: unknown;
+    }>,
+
+  getBackupHistory: (limit?: number) =>
+    ipcRenderer.invoke('backup:getHistory', limit) as Promise<{
+      success: boolean;
+      error?: string;
+      data?: Array<{
+        id: number;
+        file_path: string | null;
+        file_size: number | null;
+        status: string;
+        error_message: string | null;
+        created_at: string;
+        exists: boolean;
+        encrypted: boolean;
+      }>;
+    }>,
+
+  getBackupDirectoryInfo: () =>
+    ipcRenderer.invoke('backup:getDirectoryInfo') as Promise<{
+      success: boolean;
+      error?: string;
+      data?: {
+        path: string;
+        totalSize: number;
+        fileCount: number;
+      };
+    }>,
+
+  runBackupNow: () =>
+    ipcRenderer.invoke('backup:runNow') as Promise<{
+      success: boolean;
+      error?: string;
+      message?: string;
+    }>,
+
+  // Listen for backup completion events
+  onBackupCompleted: (
+    callback: (data: { type: string; path: string; size: number }) => void
+  ): (() => void) => {
+    const handler = (
+      _event: IpcRendererEvent,
+      data: { type: string; path: string; size: number }
+    ) => {
+      callback(data);
+    };
+    ipcRenderer.on('backup:completed', handler);
+    return () => ipcRenderer.removeListener('backup:completed', handler);
+  },
 
   // ============ Custom Task Types ============
 
@@ -825,6 +912,8 @@ const api = {
   windowClose: () => ipcRenderer.send('window:close'),
 
   windowHide: () => ipcRenderer.send('window:hide'),
+
+  resetWindowSize: () => ipcRenderer.invoke('window:resetSize'),
 
   // ============ Window Behavior Settings ============
 
