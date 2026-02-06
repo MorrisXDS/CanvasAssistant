@@ -15,6 +15,16 @@ asarUnpack:
   - node_modules/better-sqlite3/**/*
   - node_modules/keytar/**/*
 
+extraResources:
+  - from: assets/app.ico
+    to: icons/app.ico
+  - from: assets/app.iconset/icon_16x16.png
+    to: icons/icon_16x16.png
+  - from: assets/app.iconset/icon_32x32.png
+    to: icons/icon_32x32.png
+  - from: build/uninstall/cleanup.ps1
+    to: cleanup.ps1
+
 extraMetadata:
   main: dist/main.js
 

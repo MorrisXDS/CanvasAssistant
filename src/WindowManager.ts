@@ -479,49 +479,21 @@ export class WindowManager {
     // Skip if tray already exists
     if (this.tray) return;
 
-    // Create tray icon - use the app icon
-    // Platform-specific icon sizes are required for proper display on each OS
-    let iconPath: string;
-    // Platform-specific icon sizes for optimal display:
-    // - macOS: requires 16x16 template images for menu bar icons
-    // - Windows: system tray works best with 32x32 icons
-    // - Linux: 32x32 (universal fallback)
-    if (process.platform === 'darwin') {
-      iconPath = path.join(
-        path.dirname(this.preloadPath),
-        '../assets/app.iconset/icon_16x16.png'
-      );
-      // eslint-disable-next-line cross-platform/require-platform-check -- Windows requires 32x32 icons for system tray display
-    } else if (process.platform === 'win32') {
-      iconPath = path.join(
-        path.dirname(this.preloadPath),
-        '../assets/app.iconset/icon_32x32.png'
-      );
-    } else {
-      iconPath = path.join(
-        path.dirname(this.preloadPath),
-        '../assets/app.iconset/icon_32x32.png'
-      );
-    }
+    // Create tray icon from extraResources (shipped outside asar)
+    const iconName = process.platform === 'darwin' ? 'icon_16x16.png' : 'icon_32x32.png';
 
-    // Fallback to a simpler path structure for packaged app
-    if (!fs.existsSync(iconPath)) {
-      iconPath = path.join(
-        process.resourcesPath || '',
-        'assets/app.iconset/icon_32x32.png'
-      );
-    }
+    // In packaged app: resources/icons/; in dev: assets/app.iconset/
+    const iconPath = app.isPackaged
+      ? path.join(process.resourcesPath, 'icons', iconName)
+      : path.join(path.dirname(this.preloadPath), '../assets/app.iconset', iconName);
 
-    // If still not found, create a default icon
     let icon: Electron.NativeImage;
     if (fs.existsSync(iconPath)) {
       icon = nativeImage.createFromPath(iconPath);
-      // On macOS, set as template image for proper menu bar appearance
       if (process.platform === 'darwin') {
         icon.setTemplateImage(true);
       }
     } else {
-      // Create a simple default icon (small colored square)
       this.logger.warn(`Tray icon not found at ${iconPath}, using default`);
       icon = nativeImage.createEmpty();
     }

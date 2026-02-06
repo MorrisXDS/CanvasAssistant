@@ -72,7 +72,7 @@ Function un.RunCleanupScript
     ${EndIf}
 
     ${If} $DeleteDownloads == "1"
-        StrCpy $0 "$0 -DeleteDownloads"
+        StrCpy $0 "$0 -DeleteDownloads -InstallDir $\"$INSTDIR$\""
     ${EndIf}
 
     StrCpy $0 "$0 -Silent"
@@ -83,7 +83,7 @@ Function un.RunCleanupScript
 
     ; If cleanup had issues, show a message (non-blocking)
     ${If} $1 != 0
-        MessageBox MB_OK|MB_ICONINFORMATION "Some data could not be fully removed. You may need to manually delete:$\n$\n%APPDATA%\CanvasAssistant"
+        MessageBox MB_OK|MB_ICONINFORMATION "Some data could not be fully removed. You may need to manually delete:$\n$\n%APPDATA%\canvas-integration-dashboard"
     ${EndIf}
 
 cleanup_done:
