@@ -256,6 +256,9 @@ export function Onboarding({ onComplete }: OnboardingProps) {
     // Set landing page to Dashboard
     settingsManager.set(STORAGE_KEYS.LANDING_PAGE, '/');
 
+    // Mark that the welcome guide hasn't been shown yet
+    settingsManager.set(STORAGE_KEYS.ONBOARDING_COMPLETED, false);
+
     // Propagate settings via IPC
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

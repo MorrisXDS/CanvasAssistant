@@ -23,9 +23,10 @@ import {
 } from './components/shared/CorruptionDialog';
 import { ErrorBoundary } from './components/shared/ErrorBoundary';
 
-// Lazy load Dashboard and Onboarding
+// Lazy load Dashboard, Onboarding, and WelcomeGuide
 const Dashboard = lazy(() => import('./components/Dashboard/Dashboard'));
 const Onboarding = lazy(() => import('./components/Onboarding'));
+const WelcomeGuide = lazy(() => import('./components/WelcomeGuide'));
 
 // Lazy load heavy page components for code-splitting
 const AnnouncementDetail = lazy(() => import('./components/pages/AnnouncementDetail'));
@@ -146,6 +147,11 @@ function AppContent() {
   // Recovery and corruption state
   const [recoveryStatus, setRecoveryStatus] = useState<RecoveryStatus | null>(null);
   const [corruptionInfo, setCorruptionInfo] = useState<CorruptionInfo | null>(null);
+
+  // Welcome guide state - show once after first onboarding
+  const [onboardingCompleted, setOnboardingCompleted] = useState(
+    () => settingsManager.get(STORAGE_KEYS.ONBOARDING_COMPLETED) === true
+  );
 
   // Listen for system theme changes with proper cleanup
   useSystemThemeListener();
@@ -317,6 +323,18 @@ function AppContent() {
           </Routes>
         </Suspense>
       </ErrorBoundary>
+
+      {/* Welcome guide overlay on first launch */}
+      {!onboardingCompleted && (
+        <Suspense fallback={null}>
+          <WelcomeGuide
+            onComplete={() => {
+              settingsManager.set(STORAGE_KEYS.ONBOARDING_COMPLETED, true);
+              setOnboardingCompleted(true);
+            }}
+          />
+        </Suspense>
+      )}
     </>
   );
 }
