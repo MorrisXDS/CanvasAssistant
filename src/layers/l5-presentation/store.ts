@@ -29,6 +29,7 @@ import {
   queueCommitRefresh,
   addPendingCommit,
   processPendingCommits,
+  getCurrentTermIds,
 } from './storeHelpers';
 import { getEffectiveTimezone } from './settings';
 
@@ -211,57 +212,15 @@ export const useStore = create<Store>()(
           if (semesterSelection !== 'all') {
             if (semesterSelection === 'auto') {
               // Auto-detect: show courses where semester is currently active
-              // Canvas end_at is usually ~1 month after actual course end, so we subtract 30 days
               const terms = await api.getEnrollmentTerms();
-              const now = new Date();
-              const DAYS_BUFFER = 30; // Canvas end_at is ~1 month after actual course end
-
-              // Debug logging disabled for production
-
-              // Find terms that are currently active
-              const currentTermIds = new Set<number>();
-              for (const term of terms) {
-                const termIdNum = parseInt(term.externalId, 10);
-
-                // Skip "Default Term" - these are non-academic courses
-                if (term.name === 'Default Term' || termIdNum === 1) {
-                  // console.debug(`[Store] Term "${term.name}" (${termIdNum}): skipping Default Term`);
-                  continue;
-                }
-
-                if (!term.endAt) {
-                  // No end date and not Default Term - skip (shouldn't happen for real terms)
-                  // console.debug(`[Store] Term "${term.name}" (${termIdNum}): no end_at, skipping`);
-                  continue;
-                }
-
-                // Subtract buffer days from end_at to get actual course end
-                const endDate = new Date(term.endAt);
-                const adjustedEndDate = new Date(
-                  endDate.getTime() - DAYS_BUFFER * 24 * 60 * 60 * 1000
-                );
-                const isCurrent = adjustedEndDate > now;
-
-                // console.debug(`[Store] Term "${term.name}" (${termIdNum}): end_at=${term.endAt}, adjusted=${adjustedEndDate.toISOString()}, isCurrent=${isCurrent}`);
-
-                if (isCurrent) {
-                  currentTermIds.add(termIdNum);
-                }
-              }
-
-              // console.debug('[Store] Current semester IDs:', Array.from(currentTermIds));
+              const currentTermIds = getCurrentTermIds(terms);
 
               if (currentTermIds.size > 0) {
-                const _beforeCount = courses.length;
                 courses = courses.filter(
                   (c: Course) =>
                     c.enrollmentTermId !== null && currentTermIds.has(c.enrollmentTermId)
                 );
-                // console.debug(`[Store] Filtered ${beforeCount} -> ${courses.length} courses`);
-              } else {
-                // console.debug('[Store] No current semesters found, showing all courses');
               }
-              // console.debug('[Store] Courses after auto-filter:', courses.map((c: Course) => c.code));
             } else {
               // Specific semester selected - filter by term external_id
               const selectedTermId = parseInt(semesterSelection, 10);

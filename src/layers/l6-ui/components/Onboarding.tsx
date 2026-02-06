@@ -3,13 +3,13 @@
  * First-run experience with horizontal stepper and smooth animations
  *
  * Steps:
+ * Welcome: App branding + "Get Started"
  * 1: Connection - Canvas URL + API token
  * 2: Appearance - Theme selection
  * 3: Storage - Download location
- * 4: Notifications - Alert preferences
- * 5: Academic - Target grade
- * 6: Sync - Auto-sync preferences
- * 7: Congratulations - Success screen with slide-out
+ * 4: Academic - Target grade
+ * 5: Courses - Select visible courses
+ * Complete: Success screen with slide-out
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -28,6 +28,9 @@ import {
   Check,
   Sparkles,
   Rocket,
+  BookOpen,
+  Eye,
+  EyeOff,
   LucideIcon,
 } from 'lucide-react';
 import {
@@ -37,25 +40,108 @@ import {
   DEFAULT_NOTIFICATION_SETTINGS,
   DEFAULT_CONTENT_SETTINGS,
 } from '../../l5-presentation/settings';
+import type { Course } from '../../l5-presentation/types';
+import { getCurrentTermIds } from '../../l5-presentation/storeHelpers';
 import { getLetterGrade } from '../constants';
+import { Button } from './primitives/Button';
 import { onboardingStyles as styles, onboardingAnimations } from './onboardingStyles';
 
 export interface OnboardingProps {
   onComplete: () => void;
 }
 
-type Step = 'connection' | 'appearance' | 'storage' | 'academic' | 'complete';
+type Step =
+  | 'welcome'
+  | 'connection'
+  | 'appearance'
+  | 'storage'
+  | 'academic'
+  | 'courses'
+  | 'complete';
 
 const STEPS: { id: Step; label: string; icon: LucideIcon }[] = [
   { id: 'connection', label: 'Connect', icon: GraduationCap },
   { id: 'appearance', label: 'Theme', icon: Palette },
   { id: 'storage', label: 'Files', icon: FolderOpen },
   { id: 'academic', label: 'Goal', icon: Target },
+  { id: 'courses', label: 'Courses', icon: BookOpen },
 ];
+
+// =============================================================================
+// ONBOARDING FOOTER
+// =============================================================================
+
+interface OnboardingFooterProps {
+  onBack?: () => void;
+  onPrimary: () => void;
+  primaryLabel: string;
+  primaryLoading?: boolean;
+  primaryDisabled?: boolean;
+  primaryIcon?: React.ReactNode;
+  showSkip?: boolean;
+  onSkip?: () => void;
+}
+
+function OnboardingFooter({
+  onBack,
+  onPrimary,
+  primaryLabel,
+  primaryLoading = false,
+  primaryDisabled = false,
+  primaryIcon,
+  showSkip = false,
+  onSkip,
+}: OnboardingFooterProps) {
+  return (
+    <div style={styles.footer}>
+      {/* Left cell - always present, pinned to left */}
+      <div style={styles.footerLeft}>
+        {onBack && (
+          <Button
+            variant="secondary"
+            size="md"
+            onClick={onBack}
+            leftIcon={<ChevronLeft size={16} />}
+          >
+            Back
+          </Button>
+        )}
+      </div>
+
+      {/* Center cell - skip button or empty */}
+      <div style={styles.footerCenter}>
+        {showSkip && onSkip && (
+          <Button variant="ghost" size="sm" onClick={onSkip}>
+            Skip Setup
+          </Button>
+        )}
+      </div>
+
+      {/* Right cell - primary button, always pinned to right, fixed width */}
+      <div style={styles.footerRight}>
+        <Button
+          variant="primary"
+          size="md"
+          onClick={onPrimary}
+          loading={primaryLoading}
+          disabled={primaryDisabled}
+          rightIcon={primaryIcon}
+          style={{ minWidth: '140px' }}
+        >
+          {primaryLabel}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// =============================================================================
+// MAIN COMPONENT
+// =============================================================================
 
 export function Onboarding({ onComplete }: OnboardingProps) {
   // Step management
-  const [currentStep, setCurrentStep] = useState<Step>('connection');
+  const [currentStep, setCurrentStep] = useState<Step>('welcome');
   const [completedSteps, setCompletedSteps] = useState<Set<Step>>(new Set());
   const [direction, setDirection] = useState<'forward' | 'backward'>('forward');
   const [isAnimating, setIsAnimating] = useState(false);
@@ -68,6 +154,7 @@ export function Onboarding({ onComplete }: OnboardingProps) {
   const [error, setError] = useState<string | null>(null);
   const [userName, setUserName] = useState<string | null>(null);
   const [isConnected, setIsConnected] = useState(false);
+  const [showToken, setShowToken] = useState(false);
 
   // Appearance settings
   const [theme, setTheme] = useState<'light' | 'dark' | 'system'>('system');
@@ -77,6 +164,13 @@ export function Onboarding({ onComplete }: OnboardingProps) {
 
   // Academic settings
   const [targetGrade, setTargetGrade] = useState(85);
+
+  // Course selection state
+  const [coursesSyncing, setCoursesSyncing] = useState(false);
+  const [coursesSynced, setCoursesSynced] = useState(false);
+  const [syncedCourses, setSyncedCourses] = useState<Course[]>([]);
+  const [selectedCourseIds, setSelectedCourseIds] = useState<Set<number>>(new Set());
+  const [courseSyncError, setCourseSyncError] = useState(false);
 
   // Prevent page refresh during setup
   useEffect(() => {
@@ -180,8 +274,9 @@ export function Onboarding({ onComplete }: OnboardingProps) {
     }
   }, [targetGrade, theme]);
 
-  // Get step index
+  // Get step index - welcome is -1, complete is STEPS.length
   const getStepIndex = (step: Step): number => {
+    if (step === 'welcome') return -1;
     if (step === 'complete') return STEPS.length;
     return STEPS.findIndex((s) => s.id === step);
   };
@@ -204,6 +299,56 @@ export function Onboarding({ onComplete }: OnboardingProps) {
     },
     [currentStep, isAnimating]
   );
+
+  // Start background course sync
+  const startCourseSync = useCallback(async () => {
+    setCoursesSyncing(true);
+    setCourseSyncError(false);
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const api = (window as any).api;
+      if (api?.syncCourses) {
+        await api.syncCourses();
+      }
+      // Fetch the synced courses
+      if (api?.getCourses) {
+        const courses: Course[] = await api.getCourses();
+        // Filter to non-archived, non-hidden courses
+        const activeCourses = courses.filter((c) => !c.archivedAt && !c.isHidden);
+        setSyncedCourses(activeCourses);
+
+        // Pre-select only current-term courses using shared term detection
+        let termIds = new Set<number>();
+        try {
+          if (api.getEnrollmentTerms) {
+            termIds = getCurrentTermIds(await api.getEnrollmentTerms());
+          }
+        } catch {
+          // Fall back to selecting all
+        }
+
+        if (termIds.size > 0) {
+          setSelectedCourseIds(
+            new Set(
+              activeCourses
+                .filter(
+                  (c) => c.enrollmentTermId !== null && termIds.has(c.enrollmentTermId)
+                )
+                .map((c) => c.id)
+            )
+          );
+        } else {
+          setSelectedCourseIds(new Set(activeCourses.map((c) => c.id)));
+        }
+
+        setCoursesSynced(true);
+      }
+    } catch {
+      setCourseSyncError(true);
+    } finally {
+      setCoursesSyncing(false);
+    }
+  }, []);
 
   // Handle token validation
   const handleConnect = async () => {
@@ -247,6 +392,10 @@ export function Onboarding({ onComplete }: OnboardingProps) {
         setUserName(result.user?.name ?? null);
         setIsConnected(true);
         setCompletedSteps((prev) => new Set([...prev, 'connection']));
+
+        // Start background course sync (don't await)
+        startCourseSync();
+
         goToStep('appearance');
       } else {
         setError(result.error || 'Invalid token. Please check and try again.');
@@ -283,7 +432,8 @@ export function Onboarding({ onComplete }: OnboardingProps) {
     if (currentIndex < STEPS.length - 1) {
       goToStep(STEPS[currentIndex + 1].id);
     } else {
-      // Last step - save and show completion
+      // Last step (courses) - hide unselected courses, save, and show completion
+      await hideUnselectedCourses();
       await saveAllSettings();
       goToStep('complete');
     }
@@ -312,8 +462,56 @@ export function Onboarding({ onComplete }: OnboardingProps) {
     }, 600);
   };
 
+  // Hide courses the user deselected
+  const hideUnselectedCourses = async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const api = (window as any).api;
+    if (!api?.dispatch) return;
+
+    const unselectedCourses = syncedCourses.filter((c) => !selectedCourseIds.has(c.id));
+
+    for (const course of unselectedCourses) {
+      try {
+        await api.dispatch('UpdateCoursePreferences', {
+          courseId: course.id,
+          preferences: { isHidden: true },
+        });
+      } catch {
+        // Best effort - continue with remaining courses
+      }
+    }
+  };
+
+  // Course selection helpers
+  const toggleCourse = (courseId: number) => {
+    setSelectedCourseIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(courseId)) {
+        next.delete(courseId);
+      } else {
+        next.add(courseId);
+      }
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedCourseIds.size === syncedCourses.length) {
+      setSelectedCourseIds(new Set());
+    } else {
+      setSelectedCourseIds(new Set(syncedCourses.map((c) => c.id)));
+    }
+  };
+
+  // Enter key handler for connection form
+  const handleConnectionKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !isValidating) {
+      handleConnect();
+    }
+  };
+
   const currentIndex = getStepIndex(currentStep);
-  const isComplete = currentStep === 'complete';
+  const showProgressDots = currentStep !== 'welcome' && currentStep !== 'complete';
 
   return (
     <div
@@ -325,8 +523,8 @@ export function Onboarding({ onComplete }: OnboardingProps) {
       {/* Main Content Area */}
       <div style={styles.contentWrapper}>
         <div style={styles.contentInner}>
-          {/* Progress Bar - above content */}
-          {!isComplete && (
+          {/* Progress Bar - above content, hidden on Welcome and Complete */}
+          {showProgressDots && (
             <div style={styles.progressBar}>
               <div style={styles.progressDots}>
                 {STEPS.map((step, idx) => {
@@ -367,6 +565,31 @@ export function Onboarding({ onComplete }: OnboardingProps) {
               ...(isAnimating && direction === 'backward' ? styles.contentExitRight : {}),
             }}
           >
+            {/* Welcome Step */}
+            {currentStep === 'welcome' && (
+              <div style={styles.stepContent}>
+                <div style={styles.stepBody}>
+                  <div style={styles.welcomeIcon}>
+                    <GraduationCap size={32} />
+                  </div>
+                  <h2 style={styles.welcomeTitle}>Canvas Assistant</h2>
+                  <p style={styles.welcomeTagline}>
+                    Your offline-first academic command center
+                  </p>
+                  <p style={styles.welcomeDescription}>
+                    Track assignments, monitor grades, download files, and stay on top of
+                    your coursework — all synced from Canvas and available offline.
+                  </p>
+                </div>
+
+                <OnboardingFooter
+                  onPrimary={() => goToStep('connection')}
+                  primaryLabel="Get Started"
+                  primaryIcon={<ChevronRight size={16} />}
+                />
+              </div>
+            )}
+
             {/* Connection Step */}
             {currentStep === 'connection' && (
               <div style={styles.stepContent}>
@@ -390,6 +613,7 @@ export function Onboarding({ onComplete }: OnboardingProps) {
                         type="text"
                         value={canvasUrl}
                         onChange={(e) => setCanvasUrl(e.target.value)}
+                        onKeyDown={handleConnectionKeyDown}
                         placeholder="e.g., canvas.university.edu"
                         style={styles.input}
                       />
@@ -397,43 +621,42 @@ export function Onboarding({ onComplete }: OnboardingProps) {
 
                     <div style={styles.inputGroup}>
                       <label style={styles.label}>Access Token</label>
-                      <input
-                        type="password"
-                        value={token}
-                        onChange={(e) => setToken(e.target.value)}
-                        placeholder="Paste your Canvas token here..."
-                        style={styles.input}
-                      />
+                      <div style={styles.inputWrapper as React.CSSProperties}>
+                        <input
+                          type={showToken ? 'text' : 'password'}
+                          value={token}
+                          onChange={(e) => setToken(e.target.value)}
+                          onKeyDown={handleConnectionKeyDown}
+                          placeholder="Paste your Canvas token here..."
+                          style={{
+                            ...styles.input,
+                            paddingRight: '36px',
+                          }}
+                        />
+                        <button
+                          type="button"
+                          style={styles.tokenToggle as React.CSSProperties}
+                          onClick={() => setShowToken((prev) => !prev)}
+                          tabIndex={-1}
+                          aria-label={showToken ? 'Hide token' : 'Show token'}
+                        >
+                          {showToken ? <EyeOff size={16} /> : <Eye size={16} />}
+                        </button>
+                      </div>
                       <div style={styles.helpText}>
-                        Canvas → Account → Settings → New Access Token
+                        Canvas &rarr; Account &rarr; Settings &rarr; New Access Token
                       </div>
                     </div>
                   </div>
                 </div>
 
-                <div style={styles.stepFooter}>
-                  <div /> {/* Spacer for alignment */}
-                  <button
-                    style={{
-                      ...styles.primaryButton,
-                      ...(isValidating ? styles.buttonDisabled : {}),
-                    }}
-                    onClick={handleConnect}
-                    disabled={isValidating}
-                  >
-                    {isValidating ? (
-                      <>
-                        <Loader2 size={16} style={styles.spinner} />
-                        Connecting...
-                      </>
-                    ) : (
-                      <>
-                        Connect
-                        <ChevronRight size={16} />
-                      </>
-                    )}
-                  </button>
-                </div>
+                <OnboardingFooter
+                  onPrimary={handleConnect}
+                  primaryLabel={isValidating ? 'Connecting...' : 'Connect'}
+                  primaryLoading={isValidating}
+                  primaryDisabled={isValidating}
+                  primaryIcon={!isValidating ? <ChevronRight size={16} /> : undefined}
+                />
               </div>
             )}
 
@@ -468,15 +691,13 @@ export function Onboarding({ onComplete }: OnboardingProps) {
                   </div>
                 </div>
 
-                <div style={styles.stepFooter}>
-                  <button style={styles.skipButton} onClick={handleSkipToEnd}>
-                    Skip Setup
-                  </button>
-                  <button style={styles.primaryButton} onClick={handleNext}>
-                    Continue
-                    <ChevronRight size={16} />
-                  </button>
-                </div>
+                <OnboardingFooter
+                  onPrimary={handleNext}
+                  primaryLabel="Continue"
+                  primaryIcon={<ChevronRight size={16} />}
+                  showSkip
+                  onSkip={handleSkipToEnd}
+                />
               </div>
             )}
 
@@ -498,16 +719,12 @@ export function Onboarding({ onComplete }: OnboardingProps) {
                   </div>
                 </div>
 
-                <div style={styles.stepFooter}>
-                  <button style={styles.secondaryButton} onClick={handleBack}>
-                    <ChevronLeft size={16} />
-                    Back
-                  </button>
-                  <button style={styles.primaryButton} onClick={handleNext}>
-                    Continue
-                    <ChevronRight size={16} />
-                  </button>
-                </div>
+                <OnboardingFooter
+                  onBack={handleBack}
+                  onPrimary={handleNext}
+                  primaryLabel="Continue"
+                  primaryIcon={<ChevronRight size={16} />}
+                />
               </div>
             )}
 
@@ -544,32 +761,126 @@ export function Onboarding({ onComplete }: OnboardingProps) {
                   </div>
                 </div>
 
-                <div style={styles.stepFooter}>
-                  <button style={styles.secondaryButton} onClick={handleBack}>
-                    <ChevronLeft size={16} />
-                    Back
-                  </button>
-                  <button style={styles.primaryButton} onClick={handleNext}>
-                    Finish
-                    <Check size={16} />
-                  </button>
+                <OnboardingFooter
+                  onBack={handleBack}
+                  onPrimary={handleNext}
+                  primaryLabel="Continue"
+                  primaryIcon={<ChevronRight size={16} />}
+                />
+              </div>
+            )}
+
+            {/* Course Selection Step */}
+            {currentStep === 'courses' && (
+              <div style={styles.stepContent}>
+                <div style={styles.stepBody}>
+                  <h2 style={styles.title}>Your Courses</h2>
+                  <p style={styles.subtitle}>
+                    Choose which courses to show in your dashboard
+                  </p>
+
+                  {coursesSyncing && (
+                    <div style={styles.courseSyncingState as React.CSSProperties}>
+                      <Loader2
+                        size={24}
+                        style={styles.spinner}
+                        color="var(--color-navy)"
+                      />
+                      <span style={styles.syncingText}>Syncing your courses...</span>
+                    </div>
+                  )}
+
+                  {courseSyncError && !coursesSyncing && (
+                    <div style={styles.errorBox}>
+                      <AlertTriangle size={14} />
+                      <span>
+                        Could not load courses. You can manage them later in Settings.
+                      </span>
+                    </div>
+                  )}
+
+                  {coursesSynced && syncedCourses.length === 0 && (
+                    <div style={styles.courseSyncingState as React.CSSProperties}>
+                      <BookOpen size={24} color="var(--text-muted)" />
+                      <span style={styles.syncingText}>No active courses found</span>
+                    </div>
+                  )}
+
+                  {coursesSynced && syncedCourses.length > 0 && (
+                    <div style={styles.courseList}>
+                      <div style={styles.courseListHeader}>
+                        <span style={styles.courseCount}>
+                          {selectedCourseIds.size} of {syncedCourses.length} selected
+                        </span>
+                        <button style={styles.selectAllButton} onClick={toggleSelectAll}>
+                          {selectedCourseIds.size === syncedCourses.length
+                            ? 'Deselect All'
+                            : 'Select All'}
+                        </button>
+                      </div>
+                      <div style={styles.courseItems as React.CSSProperties}>
+                        {syncedCourses.map((course) => (
+                          <div
+                            key={course.id}
+                            style={styles.courseItem}
+                            onClick={() => toggleCourse(course.id)}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={selectedCourseIds.has(course.id)}
+                              onChange={() => toggleCourse(course.id)}
+                              onClick={(e) => e.stopPropagation()}
+                              style={styles.courseCheckbox as React.CSSProperties}
+                            />
+                            <div style={styles.courseInfo}>
+                              <div style={styles.courseName}>{course.code}</div>
+                              <div style={styles.courseTerm}>{course.name}</div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
+
+                <OnboardingFooter
+                  onBack={handleBack}
+                  onPrimary={handleNext}
+                  primaryLabel="Finish"
+                  primaryIcon={<Check size={16} />}
+                  primaryDisabled={coursesSyncing}
+                />
               </div>
             )}
 
             {/* Completion Screen */}
             {currentStep === 'complete' && (
               <div style={styles.stepContent}>
-                <div style={styles.completeIcon}>
-                  <Sparkles size={32} />
+                <div style={styles.stepBody}>
+                  <div style={styles.completeIcon}>
+                    <Sparkles size={32} />
+                  </div>
+                  <h2 style={styles.completeTitle}>All Set!</h2>
+                  <p style={styles.subtitle}>Your setup is complete</p>
                 </div>
-                <h2 style={styles.completeTitle}>All Set!</h2>
-                <p style={styles.subtitle}>Your setup is complete</p>
 
-                <button style={styles.launchButton} onClick={handleFinish}>
-                  <Rocket size={16} />
-                  Open Dashboard
-                </button>
+                <div
+                  style={{
+                    textAlign: 'center',
+                    marginTop: 'auto',
+                    paddingTop: 'var(--space-4)',
+                  }}
+                >
+                  <Button
+                    variant="primary"
+                    size="md"
+                    onClick={handleFinish}
+                    leftIcon={<Rocket size={16} />}
+                    style={{ minWidth: '140px' }}
+                  >
+                    Open Dashboard
+                  </Button>
+                </div>
               </div>
             )}
           </div>

@@ -1,7 +1,29 @@
 /**
  * Store Helpers
- * Optimistic update tracking and commit debouncing utilities
+ * Optimistic update tracking, commit debouncing, and term detection utilities
  */
+
+import type { EnrollmentTerm } from './types';
+
+/**
+ * Get IDs of currently active enrollment terms.
+ * Skips "Default Term" (non-academic) and terms with no end date.
+ * Canvas end_at is ~1 month after actual course end, so we subtract 30 days.
+ */
+export function getCurrentTermIds(terms: EnrollmentTerm[]): Set<number> {
+  const now = new Date();
+  const DAYS_BUFFER = 30;
+  const ids = new Set<number>();
+  for (const term of terms) {
+    const termIdNum = parseInt(term.externalId, 10);
+    if (term.name === 'Default Term' || termIdNum === 1) continue;
+    if (!term.endAt) continue;
+    const endDate = new Date(term.endAt);
+    const adjustedEnd = new Date(endDate.getTime() - DAYS_BUFFER * 24 * 60 * 60 * 1000);
+    if (adjustedEnd > now) ids.add(termIdNum);
+  }
+  return ids;
+}
 
 /**
  * Track recent optimistic updates to skip unnecessary db:commit refreshes.

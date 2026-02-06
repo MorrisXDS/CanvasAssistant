@@ -32,7 +32,7 @@ export const onboardingStyles: Record<string, React.CSSProperties> = {
 
   contentInner: {
     width: '100%',
-    maxWidth: '360px',
+    maxWidth: '480px',
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
@@ -102,20 +102,34 @@ export const onboardingStyles: Record<string, React.CSSProperties> = {
     display: 'flex',
     flexDirection: 'column',
     height: '100%',
-    minHeight: '280px',
+    minHeight: '380px',
   },
 
   stepBody: {
     flex: 1,
   },
 
-  stepFooter: {
-    display: 'flex',
-    justifyContent: 'space-between',
+  // Footer - 3-column grid so buttons are always in exact same position
+  footer: {
+    display: 'grid',
+    gridTemplateColumns: '1fr auto 1fr',
     alignItems: 'center',
-    marginTop: 'var(--space-5)',
+    width: '100%',
+    marginTop: 'auto',
     paddingTop: 'var(--space-4)',
     borderTop: '1px solid var(--border-subtle)',
+  },
+
+  footerLeft: {
+    justifySelf: 'start',
+  },
+
+  footerCenter: {
+    justifySelf: 'center',
+  },
+
+  footerRight: {
+    justifySelf: 'end',
   },
 
   title: {
@@ -131,6 +145,40 @@ export const onboardingStyles: Record<string, React.CSSProperties> = {
     margin: '0 0 var(--space-5) 0',
   },
 
+  // Welcome screen styles
+  welcomeIcon: {
+    width: '64px',
+    height: '64px',
+    borderRadius: '16px',
+    backgroundColor: 'var(--color-navy)',
+    color: 'white',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    margin: '0 auto var(--space-4)',
+  },
+
+  welcomeTitle: {
+    fontSize: 'var(--text-2xl)',
+    fontWeight: 'var(--font-bold)',
+    color: 'var(--text-primary)',
+    margin: '0 0 var(--space-2) 0',
+  },
+
+  welcomeTagline: {
+    fontSize: 'var(--text-base)',
+    color: 'var(--text-secondary)',
+    margin: '0 0 var(--space-3) 0',
+    fontWeight: 'var(--font-medium)',
+  },
+
+  welcomeDescription: {
+    fontSize: 'var(--text-sm)',
+    color: 'var(--text-muted)',
+    margin: '0 0 var(--space-5) 0',
+    lineHeight: '1.6',
+  },
+
   // Form styles
   form: {
     marginBottom: 'var(--space-5)',
@@ -139,6 +187,10 @@ export const onboardingStyles: Record<string, React.CSSProperties> = {
   inputGroup: {
     marginBottom: 'var(--space-3)',
     textAlign: 'left',
+  },
+
+  inputWrapper: {
+    position: 'relative',
   },
 
   label: {
@@ -179,56 +231,20 @@ export const onboardingStyles: Record<string, React.CSSProperties> = {
     fontSize: 'var(--text-xs)',
   },
 
-  // Button styles
-  buttonRow: {
-    display: 'flex',
-    gap: 'var(--space-2)',
-    justifyContent: 'center',
-    marginTop: 'var(--space-5)',
-  },
-
-  primaryButton: {
+  // Token toggle (eye icon)
+  tokenToggle: {
+    position: 'absolute',
+    right: '8px',
+    top: '50%',
+    transform: 'translateY(-50%)',
+    background: 'none',
+    border: 'none',
+    cursor: 'pointer',
+    color: 'var(--text-muted)',
+    padding: '4px',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 'var(--space-2)',
-    padding: 'var(--space-2) var(--space-5)',
-    backgroundColor: 'var(--color-navy)',
-    color: 'white',
-    border: 'none',
-    borderRadius: 'var(--radius-md)',
-    fontSize: 'var(--text-sm)',
-    fontWeight: 'var(--font-medium)',
-    cursor: 'pointer',
-    transition: 'opacity 0.2s ease',
-  },
-
-  secondaryButton: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 'var(--space-1)',
-    padding: 'var(--space-2) var(--space-3)',
-    backgroundColor: 'transparent',
-    color: 'var(--text-muted)',
-    border: '1px solid var(--border-default)',
-    borderRadius: 'var(--radius-md)',
-    fontSize: 'var(--text-sm)',
-    cursor: 'pointer',
-  },
-
-  skipButton: {
-    padding: 'var(--space-2) var(--space-3)',
-    backgroundColor: 'transparent',
-    color: 'var(--text-muted)',
-    border: 'none',
-    fontSize: 'var(--text-xs)',
-    cursor: 'pointer',
-  },
-
-  buttonDisabled: {
-    opacity: 0.5,
-    cursor: 'not-allowed',
   },
 
   spinner: {
@@ -327,6 +343,96 @@ export const onboardingStyles: Record<string, React.CSSProperties> = {
     color: 'var(--text-muted)',
   },
 
+  // Course selection styles
+  courseList: {
+    textAlign: 'left',
+  },
+
+  courseListHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 'var(--space-3)',
+  },
+
+  courseCount: {
+    fontSize: 'var(--text-sm)',
+    color: 'var(--text-secondary)',
+    fontWeight: 'var(--font-medium)',
+  },
+
+  selectAllButton: {
+    background: 'none',
+    border: 'none',
+    cursor: 'pointer',
+    fontSize: 'var(--text-xs)',
+    color: 'var(--color-navy)',
+    fontWeight: 'var(--font-medium)',
+    padding: '2px 4px',
+  },
+
+  courseItems: {
+    maxHeight: '240px',
+    overflowY: 'auto',
+    border: '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-md)',
+  },
+
+  courseItem: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-3)',
+    padding: 'var(--space-2) var(--space-3)',
+    cursor: 'pointer',
+    borderBottom: '1px solid var(--border-subtle)',
+    transition: 'background-color 0.15s ease',
+  },
+
+  courseCheckbox: {
+    width: '16px',
+    height: '16px',
+    accentColor: 'var(--color-navy)',
+    cursor: 'pointer',
+    flexShrink: 0,
+  },
+
+  courseInfo: {
+    flex: 1,
+    minWidth: 0,
+  },
+
+  courseName: {
+    fontSize: 'var(--text-sm)',
+    color: 'var(--text-primary)',
+    fontWeight: 'var(--font-medium)',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  },
+
+  courseTerm: {
+    fontSize: 'var(--text-xs)',
+    color: 'var(--text-muted)',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  },
+
+  // Course syncing state
+  courseSyncingState: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 'var(--space-6) 0',
+    gap: 'var(--space-3)',
+  },
+
+  syncingText: {
+    fontSize: 'var(--text-sm)',
+    color: 'var(--text-muted)',
+  },
+
   // Completion screen
   completeIcon: {
     width: '56px',
@@ -346,21 +452,6 @@ export const onboardingStyles: Record<string, React.CSSProperties> = {
     fontWeight: 'var(--font-semibold)',
     color: 'var(--text-primary)',
     margin: '0 0 var(--space-1) 0',
-  },
-
-  launchButton: {
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: 'var(--space-2)',
-    padding: 'var(--space-3) var(--space-6)',
-    backgroundColor: 'var(--color-navy)',
-    color: 'white',
-    border: 'none',
-    borderRadius: 'var(--radius-md)',
-    fontSize: 'var(--text-sm)',
-    fontWeight: 'var(--font-medium)',
-    cursor: 'pointer',
-    marginTop: 'var(--space-4)',
   },
 };
 
