@@ -805,14 +805,33 @@ app.whenReady().then(async () => {
       {
         name: 'visibility_settings table',
         sql: "SELECT 1 FROM sqlite_master WHERE type='table' AND name='visibility_settings'",
+        repair: `
+          CREATE TABLE IF NOT EXISTS visibility_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+          );
+          INSERT OR IGNORE INTO visibility_settings (key, value) VALUES ('term_selection', 'auto');
+        `,
       },
       {
         name: 'courses.archived_at column',
         sql: "SELECT 1 FROM pragma_table_info('courses') WHERE name='archived_at'",
+        repair: `
+          ALTER TABLE courses ADD COLUMN archived_at DATETIME DEFAULT NULL;
+          CREATE INDEX IF NOT EXISTS idx_courses_archived ON courses(archived_at);
+        `,
       },
       {
         name: 'calendar_events.task_id column',
         sql: "SELECT 1 FROM pragma_table_info('calendar_events') WHERE name='task_id'",
+        repair: `
+          ALTER TABLE calendar_events ADD COLUMN task_id INTEGER REFERENCES tasks(id) ON DELETE CASCADE;
+          ALTER TABLE calendar_events ADD COLUMN color TEXT;
+          ALTER TABLE calendar_events ADD COLUMN notes TEXT;
+          ALTER TABLE calendar_events ADD COLUMN reminder_minutes INTEGER;
+          CREATE INDEX IF NOT EXISTS idx_calendar_events_task ON calendar_events(task_id);
+        `,
       },
     ];
 
@@ -828,24 +847,48 @@ app.whenReady().then(async () => {
       }
     }
 
+    // Attempt self-healing repair if schema elements are missing
     if (missingSchema.length > 0) {
-      logger.error(
-        `Missing schema elements: ${missingSchema.join(', ')}. Database version: ${currentVersion}, expected: 75`
-      );
-      logger.error(
-        'Database may need to be reset. Delete canvas.db and restart the app.'
+      logger.warn(
+        `Missing schema elements: ${missingSchema.join(', ')}. DB version: ${currentVersion}. Attempting repair...`
       );
 
-      // Show dialog after app is ready
-      app.whenReady().then(() => {
-        dialog.showMessageBoxSync({
-          type: 'error',
-          title: 'Database Migration Required',
-          message: 'Your database is missing required schema updates.',
-          detail: `Missing: ${missingSchema.join(', ')}\n\nPlease delete the database file and restart:\n${DB_PATH}\n\nYour data will re-sync from Canvas.`,
-          buttons: ['OK'],
+      const repairFailed: string[] = [];
+      for (const check of schemaChecks) {
+        if (!missingSchema.includes(check.name)) continue;
+        try {
+          database.exec(check.repair);
+          logger.info(`Repaired: ${check.name}`);
+        } catch (repairErr) {
+          const msg = repairErr instanceof Error ? repairErr.message : String(repairErr);
+          // Ignore "duplicate column" — means the column exists despite check failing
+          if (!msg.includes('duplicate column name')) {
+            logger.error(`Failed to repair ${check.name}: ${msg}`);
+            repairFailed.push(check.name);
+          } else {
+            logger.info(`Repair skipped (already exists): ${check.name}`);
+          }
+        }
+      }
+
+      if (repairFailed.length > 0) {
+        logger.error(
+          `Schema repair failed for: ${repairFailed.join(', ')}. Database may need reset.`
+        );
+
+        // Show dialog after app is ready
+        app.whenReady().then(() => {
+          dialog.showMessageBoxSync({
+            type: 'error',
+            title: 'Database Migration Required',
+            message: 'Your database is missing required schema updates.',
+            detail: `Could not auto-repair: ${repairFailed.join(', ')}\n\nPlease delete the database file and restart:\n${DB_PATH}\n\nYour data will re-sync from Canvas.`,
+            buttons: ['OK'],
+          });
         });
-      });
+      } else {
+        logger.info('Schema repair completed successfully');
+      }
     }
 
     metricsCollector.increment('database.initialized');
