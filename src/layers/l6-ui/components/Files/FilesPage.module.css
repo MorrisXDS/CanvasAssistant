@@ -211,7 +211,7 @@
   gap: var(--space-4);
   padding: var(--space-3);
   max-height: 60vh;
-  overflow-y: auto;
+  overflow-y: scroll;
 }
 
 .filterSection {
@@ -612,7 +612,7 @@
   gap: var(--space-4);
   padding: var(--space-3);
   max-height: 60vh;
-  overflow-y: auto;
+  overflow-y: scroll;
 }
 
 .syncConfigHeader {

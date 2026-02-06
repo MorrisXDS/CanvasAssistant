@@ -266,7 +266,7 @@ export const styles: Record<string, React.CSSProperties> = {
 
   archiveDropdownList: {
     maxHeight: '280px',
-    overflowY: 'auto' as const,
+    overflowY: 'scroll' as const,
   },
 
   archiveDropdownItem: {

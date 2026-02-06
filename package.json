@@ -39,7 +39,7 @@
     "name": "Morris Sun",
     "email": "mcl211204@gmail.com"
   },
-  "license": "MIT",
+  "license": "PolyForm-Noncommercial-1.0.0",
   "dependencies": {
     "@tiptap/extension-link": "^3.18.0",
     "@tiptap/extension-placeholder": "^3.18.0",

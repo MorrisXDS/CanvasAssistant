@@ -129,19 +129,18 @@ export function UnifiedDashboardGrid({
 const styles: Record<string, React.CSSProperties> = {
   wrapper: {
     position: 'relative',
+    height: '100%',
   },
 
   grid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(2, 1fr)',
-    gridTemplateRows: 'repeat(2, 1fr)',
+    gridTemplateRows: 'repeat(2, minmax(0, 1fr))',
     columnGap: 'var(--space-4)',
     rowGap: 'var(--space-4)',
-    alignItems: 'stretch', // Ensure cards stretch to fill cells
+    alignItems: 'stretch',
     width: '100%',
-    // Fill available vertical space: viewport - header(~80px) - stats(~100px) - spacing(~120px)
-    height: 'calc(100vh - 300px)',
-    minHeight: '400px',
+    height: '100%',
   },
 };
 

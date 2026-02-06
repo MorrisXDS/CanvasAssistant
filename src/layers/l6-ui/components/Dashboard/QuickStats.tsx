@@ -105,6 +105,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
     gap: 'var(--space-4)',
+    minHeight: '90px', // Fixed height prevents layout shift when stat badges appear/disappear
   },
 
   clickableCard: {

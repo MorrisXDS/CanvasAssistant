@@ -94,9 +94,9 @@ function OnboardingFooter({
 }: OnboardingFooterProps) {
   return (
     <div style={styles.footer}>
-      {/* Left cell - always present, pinned to left */}
+      {/* Left cell - Back button or Skip Setup, pinned to left */}
       <div style={styles.footerLeft}>
-        {onBack && (
+        {onBack ? (
           <Button
             variant="secondary"
             size="md"
@@ -105,17 +105,20 @@ function OnboardingFooter({
           >
             Back
           </Button>
-        )}
-      </div>
-
-      {/* Center cell - skip button or empty */}
-      <div style={styles.footerCenter}>
-        {showSkip && onSkip && (
-          <Button variant="ghost" size="sm" onClick={onSkip}>
+        ) : showSkip && onSkip ? (
+          <Button
+            variant="secondary"
+            size="md"
+            onClick={onSkip}
+            style={{ minWidth: '140px' }}
+          >
             Skip Setup
           </Button>
-        )}
+        ) : null}
       </div>
+
+      {/* Center cell - empty */}
+      <div style={styles.footerCenter} />
 
       {/* Right cell - primary button, always pinned to right, fixed width */}
       <div style={styles.footerRight}>

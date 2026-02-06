@@ -200,7 +200,7 @@ export const layoutStyles: Record<string, React.CSSProperties> = {
     backgroundColor: 'var(--bg-app)',
     height: `calc(100vh - ${TITLE_BAR_HEIGHT}px)`,
     padding: 'var(--space-4) var(--space-6) var(--space-6) var(--space-6)',
-    overflowY: 'auto',
+    overflowY: 'scroll',
     overflowX: 'hidden',
     transition: 'margin-left 250ms cubic-bezier(0.33, 1, 0.68, 1)',
     display: 'flex',

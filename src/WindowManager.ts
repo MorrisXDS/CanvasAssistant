@@ -47,9 +47,9 @@ interface WindowState {
   isMaximized: boolean;
 }
 
-const MIN_WIDTH = 864;
+const MIN_WIDTH = 900;
 const MIN_HEIGHT = 720;
-const TARGET_WIDTH_RATIO = 0.55;
+const TARGET_WIDTH_RATIO = 0.65;
 const TARGET_HEIGHT_RATIO = 0.85;
 const MAX_INITIAL_WIDTH = 1920;
 const MAX_INITIAL_HEIGHT = 1200;

@@ -857,7 +857,7 @@ export const courseDetailStyles: Record<string, React.CSSProperties> = {
     lineHeight: 1.5,
     margin: 0,
     maxHeight: '200px',
-    overflowY: 'auto',
+    overflowY: 'scroll',
     wordBreak: 'break-word' as const,
   },
 

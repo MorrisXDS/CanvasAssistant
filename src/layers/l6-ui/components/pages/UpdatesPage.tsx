@@ -968,7 +968,7 @@ const styles: Record<string, React.CSSProperties> = {
 
   columnContent: {
     flex: 1,
-    overflowY: 'auto',
+    overflowY: 'scroll',
     overflowX: 'hidden',
     padding: 'var(--space-2)',
   },

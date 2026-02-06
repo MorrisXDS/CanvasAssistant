@@ -230,7 +230,7 @@ const styles = {
   } as React.CSSProperties,
   descriptionViewport: {
     maxHeight: '120px',
-    overflowY: 'auto' as const,
+    overflowY: 'scroll' as const,
     padding: 'var(--space-3)',
     fontSize: 'var(--text-sm)',
     border: '1px solid var(--border-default)',

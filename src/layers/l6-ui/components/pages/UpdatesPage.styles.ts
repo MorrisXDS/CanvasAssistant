@@ -253,7 +253,7 @@ export const styles: Record<string, React.CSSProperties> = {
 
   categoryViewport: {
     maxHeight: '280px',
-    overflowY: 'auto',
+    overflowY: 'scroll',
     overflowX: 'hidden',
     border: 'none',
     borderRadius: '0',

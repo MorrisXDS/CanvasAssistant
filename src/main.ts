@@ -79,12 +79,17 @@ import type { IpcContext } from './ipc-handlers';
 // app.getPath('userData') is always writable and the Electron convention
 const APP_ROOT = app.isPackaged ? app.getPath('userData') : process.cwd();
 
-// Application paths - consolidated to app root for portability
+// Install directory - where the .exe lives (user-chosen, visible location)
+const INSTALL_DIR = app.isPackaged ? path.dirname(app.getPath('exe')) : process.cwd();
+
+// Application paths
+// Internal data (db, logs, config) → APP_ROOT (userData) - always writable
+// User-visible files (downloads) → INSTALL_DIR - next to the app, easy to find
 const CONFIG_DIR = path.join(APP_ROOT, '.config'); // Hidden - internal config
 const LOG_DIR = path.join(APP_ROOT, '.logs'); // Hidden - application logs
-const PROJECT_DB_DIR = path.join(APP_ROOT, 'database'); // Visible - user data
-const BACKUP_DIR = path.join(APP_ROOT, 'backups'); // Visible - user backups
-const FILES_DIR = path.join(APP_ROOT, 'Downloads'); // Visible - downloaded files
+const PROJECT_DB_DIR = path.join(APP_ROOT, 'database'); // Internal - database
+const BACKUP_DIR = path.join(APP_ROOT, 'backups'); // Internal - backups
+const FILES_DIR = path.join(INSTALL_DIR, 'Downloads'); // Visible - next to app
 
 const DB_PATH = path.join(PROJECT_DB_DIR, 'canvas.db');
 const METRICS_DB_PATH = path.join(PROJECT_DB_DIR, 'metrics.db');

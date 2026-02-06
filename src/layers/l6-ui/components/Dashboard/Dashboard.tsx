@@ -379,7 +379,7 @@ export function Dashboard() {
         </section>
 
         {/* Unified Dashboard Grid - 2x2 draggable sections */}
-        <section ref={mainRowRef}>
+        <section ref={mainRowRef} style={{ minHeight: 0, height: '100%' }}>
           <UnifiedDashboardGrid
             priorityItems={viewModel.priorityQueue}
             totalPendingTasks={
@@ -463,9 +463,10 @@ export function Dashboard() {
 const styles: Record<string, React.CSSProperties> = {
   page: {
     width: '100%',
+    height: '100%',
     display: 'flex',
     flexDirection: 'column',
-    paddingBottom: 'var(--space-6)',
+    overflow: 'hidden',
   },
 
   autoSyncBanner: {
@@ -556,9 +557,11 @@ const styles: Record<string, React.CSSProperties> = {
   },
 
   grid: {
-    display: 'flex',
-    flexDirection: 'column',
+    display: 'grid',
+    gridTemplateRows: 'auto minmax(0, 1fr)',
     gap: 'var(--space-3)',
+    flex: 1,
+    minHeight: 0,
   },
 
   statsRow: {
