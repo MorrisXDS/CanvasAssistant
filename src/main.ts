@@ -73,9 +73,11 @@ import {
 } from './ipc-handlers';
 import type { IpcContext } from './ipc-handlers';
 
-// Application root - use exe directory in packaged mode, cwd in dev mode
+// Application root - use userData in packaged mode, cwd in dev mode
 // process.cwd() is unreliable in packaged apps (often C:\Windows\System32)
-const APP_ROOT = app.isPackaged ? path.dirname(app.getPath('exe')) : process.cwd();
+// path.dirname(exe) fails when installed to Program Files (no write access)
+// app.getPath('userData') is always writable and the Electron convention
+const APP_ROOT = app.isPackaged ? app.getPath('userData') : process.cwd();
 
 // Application paths - consolidated to app root for portability
 const CONFIG_DIR = path.join(APP_ROOT, '.config'); // Hidden - internal config
