@@ -47,6 +47,9 @@ Var DeleteDownloads
     Delete "$TEMP\canvas-cleanup.ps1"
 
     skip_cleanup:
+
+    ; Remove all installed app files (default behavior we replaced by defining this macro)
+    RMDir /r $INSTDIR
 !macroend
 
 ; ============================================================================

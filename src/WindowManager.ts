@@ -47,10 +47,10 @@ interface WindowState {
   isMaximized: boolean;
 }
 
-const MIN_WIDTH = 900;
-const MIN_HEIGHT = 720;
-const TARGET_WIDTH_RATIO = 0.65;
-const TARGET_HEIGHT_RATIO = 0.85;
+const MIN_WIDTH = 1300;
+const MIN_HEIGHT = 900;
+const TARGET_WIDTH_RATIO = 0.5;
+const TARGET_HEIGHT_RATIO = 0.5;
 const MAX_INITIAL_WIDTH = 1920;
 const MAX_INITIAL_HEIGHT = 1200;
 const STATE_SAVE_DEBOUNCE_MS = 500;

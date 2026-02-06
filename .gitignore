@@ -37,6 +37,12 @@ Thumbs.db
 .idea/
 *.sublime-project
 *.sublime-workspace
+.claude/
+
+# Internal docs
+CLAUDE.md
+DevDocs/
+ARCHITECTURE_ANALYSIS.md
 
 # Environment
 .env
