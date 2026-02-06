@@ -10,6 +10,7 @@
 ; electron-builder's uninstaller build pass doesn't call WriteUninstaller
 ; because the output IS the uninstaller. The installer pass does call it.
 !pragma warning disable 6020
+!pragma warning disable 6001
 
 !include "LogicLib.nsh"
 
