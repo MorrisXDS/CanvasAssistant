@@ -73,12 +73,16 @@ import {
 } from './ipc-handlers';
 import type { IpcContext } from './ipc-handlers';
 
-// Application paths - consolidated to project root for portability
-const CONFIG_DIR = path.join(process.cwd(), '.config'); // Hidden - internal config
-const LOG_DIR = path.join(process.cwd(), '.logs'); // Hidden - application logs
-const PROJECT_DB_DIR = path.join(process.cwd(), 'database'); // Visible - user data
-const BACKUP_DIR = path.join(process.cwd(), 'backups'); // Visible - user backups
-const FILES_DIR = path.join(process.cwd(), 'Downloads'); // Visible - downloaded files
+// Application root - use exe directory in packaged mode, cwd in dev mode
+// process.cwd() is unreliable in packaged apps (often C:\Windows\System32)
+const APP_ROOT = app.isPackaged ? path.dirname(app.getPath('exe')) : process.cwd();
+
+// Application paths - consolidated to app root for portability
+const CONFIG_DIR = path.join(APP_ROOT, '.config'); // Hidden - internal config
+const LOG_DIR = path.join(APP_ROOT, '.logs'); // Hidden - application logs
+const PROJECT_DB_DIR = path.join(APP_ROOT, 'database'); // Visible - user data
+const BACKUP_DIR = path.join(APP_ROOT, 'backups'); // Visible - user backups
+const FILES_DIR = path.join(APP_ROOT, 'Downloads'); // Visible - downloaded files
 
 const DB_PATH = path.join(PROJECT_DB_DIR, 'canvas.db');
 const METRICS_DB_PATH = path.join(PROJECT_DB_DIR, 'metrics.db');

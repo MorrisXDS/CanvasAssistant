@@ -249,13 +249,22 @@ export function registerAppHandlers(ctx: IpcContext): void {
 
     try {
       // Find uninstaller in the app's installation directory
+      // electron-builder NSIS names it "Uninstall <Product Name>.exe"
       const exePath = app.getPath('exe');
       const installDir = path.dirname(exePath);
-      const uninstallerPath = path.join(installDir, 'unins000.exe');
+      const productName = app.getName();
+      const candidates = [
+        path.join(installDir, `Uninstall ${productName}.exe`),
+        path.join(installDir, 'Uninstall Canvas Assistant.exe'),
+        path.join(installDir, 'unins000.exe'),
+      ];
 
-      if (!fs.existsSync(uninstallerPath)) {
-        // Try alternative location for portable builds
-        logger.warn(`Uninstaller not found at: ${uninstallerPath}`);
+      const uninstallerPath = candidates.find((p) => fs.existsSync(p));
+
+      if (!uninstallerPath) {
+        logger.warn(
+          `Uninstaller not found. Checked: ${candidates.map((c) => path.basename(c)).join(', ')}`
+        );
         return {
           success: false,
           error: 'Uninstaller not found. This may be a portable installation.',
