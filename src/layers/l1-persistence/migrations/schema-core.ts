@@ -446,34 +446,4 @@ export const schemaCoreMigrations: Migration[] = [
       SELECT 1;
     `,
   },
-  {
-    version: 21,
-    description: 'Add grade curve adjustment to courses',
-    up: `
-      ALTER TABLE courses ADD COLUMN grade_curve_adjustment REAL DEFAULT 0.0;
-    `,
-    down: `
-      -- SQLite doesn't support DROP COLUMN easily
-      SELECT 1;
-    `,
-  },
-  {
-    version: 22,
-    description: 'Ensure grade curve adjustment column exists (fix for v21)',
-    up: (db) => {
-      // Check if column exists using PRAGMA table_info
-      const columns = db.executeRead<{ name: string }>(
-        "SELECT name FROM pragma_table_info('courses') WHERE name = 'grade_curve_adjustment'"
-      );
-
-      if (columns.length === 0) {
-        // Column doesn't exist, add it
-        db.exec('ALTER TABLE courses ADD COLUMN grade_curve_adjustment REAL DEFAULT 0.0');
-      }
-      // If column exists, do nothing - migration is just ensuring consistency
-    },
-    down: `
-      SELECT 1;
-    `,
-  },
 ];
