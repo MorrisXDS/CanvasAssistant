@@ -17,7 +17,8 @@ export const layoutStyles: Record<string, React.CSSProperties> = {
     backgroundColor: 'var(--bg-app)',
   },
 
-  // Sidebar - extends full height, title bar overlays the top portion
+  // Sidebar - extends full height; no app-region set so the TitleBar's
+  // drag region (z-9999) works unobstructed over the top padding area
   sidebar: {
     backgroundColor: 'var(--bg-sidebar)',
     color: 'var(--text-inverse)',
@@ -33,8 +34,6 @@ export const layoutStyles: Record<string, React.CSSProperties> = {
     overflow: 'hidden',
     minWidth: 64, // Prevent sidebar from shrinking below minimum
     userSelect: 'none', // Prevent text selection on double-click
-    // @ts-expect-error - webkit property for electron
-    WebkitAppRegion: 'no-drag', // Ensure sidebar is clickable
   },
 
   profileSection: {

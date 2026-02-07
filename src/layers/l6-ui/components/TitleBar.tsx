@@ -30,7 +30,7 @@ export function TitleBar({ sidebarWidth = 220, onSidebarToggle }: TitleBarProps)
       <div
         style={{
           ...styles.sidebarSpacer,
-          width: `${sidebarWidth}px`,
+          width: `${isMac ? Math.max(sidebarWidth, MAC_TRAFFIC_LIGHT_WIDTH) : sidebarWidth}px`,
           ...(isMac ? { paddingLeft: `${MAC_TRAFFIC_LIGHT_WIDTH}px` } : {}),
         }}
         onDoubleClick={onSidebarToggle}
@@ -96,8 +96,8 @@ const styles: Record<string, React.CSSProperties> = {
 
   sidebarSpacer: {
     height: '100%',
-    backgroundColor: 'var(--bg-app)',
-    borderBottom: '1px solid var(--border-default)',
+    backgroundColor: 'var(--bg-sidebar)',
+    borderBottom: '1px solid rgba(255, 255, 255, 0.2)',
     transition: 'width 250ms cubic-bezier(0.33, 1, 0.68, 1)',
     // @ts-expect-error - webkit property for electron
     WebkitAppRegion: 'drag',

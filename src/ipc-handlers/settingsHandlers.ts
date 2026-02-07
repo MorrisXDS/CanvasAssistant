@@ -23,6 +23,8 @@ export function registerSettingsHandlers(ctx: IpcContext): void {
   const getMainWindow = ctx.getMainWindow;
   const getWindowBehavior = ctx.getWindowBehavior;
   const setWindowBehavior = ctx.setWindowBehavior;
+  const createTray = ctx.createTray;
+  const destroyTray = ctx.destroyTray;
   const getLocalHtmlPathsSettings = ctx.getLocalHtmlPathsSettings;
   const _getIsQuitting = ctx.getIsQuitting;
   const setIsQuitting = ctx.setIsQuitting;
@@ -174,10 +176,21 @@ export function registerSettingsHandlers(ctx: IpcContext): void {
       settings: { closeAction: 'quit' | 'minimize-to-tray' | null; showTrayIcon: boolean }
     ) => {
       try {
+        const previous = getWindowBehavior();
         setWindowBehavior(settings);
         logger.info(
           `Window behavior updated: closeAction=${settings.closeAction}, showTrayIcon=${settings.showTrayIcon}`
         );
+
+        // Toggle tray when showTrayIcon changes
+        if (settings.showTrayIcon !== previous.showTrayIcon) {
+          if (settings.showTrayIcon) {
+            createTray();
+          } else {
+            destroyTray();
+          }
+        }
+
         return { success: true };
       } catch (error) {
         logger.error('Failed to set window behavior settings:', error as Error);

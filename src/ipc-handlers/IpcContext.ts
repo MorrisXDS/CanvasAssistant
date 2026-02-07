@@ -97,6 +97,10 @@ export interface IpcContext {
   // Window management
   resetWindowSize: () => void;
 
+  // Tray management
+  createTray: () => void;
+  destroyTray: () => void;
+
   // App state management
   resetAppState: (options: { deleteToken: boolean }) => Promise<void>;
 }

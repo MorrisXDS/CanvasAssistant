@@ -310,7 +310,7 @@ export class WindowManager {
             accentColor: false, // Disable Windows accent color border on frameless window
           }),
       show: false, // Don't show until ready to prevent white flash
-      backgroundColor: nativeTheme.shouldUseDarkColors ? '#0f172a' : '#F5F7FA',
+      backgroundColor: nativeTheme.shouldUseDarkColors ? '#0f172a' : '#F5F3EF',
       webPreferences: {
         preload: this.preloadPath,
         nodeIntegration: false,
@@ -442,9 +442,20 @@ export class WindowManager {
       this.mainWindow = null;
     });
 
+    // Intercept Alt+F4 at the keyboard level — force quit, bypassing behavior settings.
+    // All other close triggers (X button, Alt+Tab close, taskbar close) go through
+    // the behavior settings in the 'close' handler below.
+    this.mainWindow.webContents.on('before-input-event', (_event, input) => {
+      if (input.alt && input.key === 'F4' && input.type === 'keyDown') {
+        _event.preventDefault();
+        this.setIsQuitting(true);
+        app.quit();
+      }
+    });
+
     // Handle window close with minimize-to-tray option
     this.mainWindow.on('close', (event) => {
-      // If we're quitting, allow the close
+      // If we're quitting (Alt+F4, tray quit, etc.), allow the close
       if (this.isQuitting()) {
         return;
       }
@@ -480,16 +491,50 @@ export class WindowManager {
     if (this.tray) return;
 
     // Create tray icon from extraResources (shipped outside asar)
-    const iconName = process.platform === 'darwin' ? 'icon_16x16.png' : 'icon_32x32.png';
-
-    // In packaged app: resources/icons/; in dev: assets/app.iconset/
-    const iconPath = app.isPackaged
-      ? path.join(process.resourcesPath, 'icons', iconName)
-      : path.join(path.dirname(this.preloadPath), '../assets/app.iconset', iconName);
+    // Windows requires .ico for proper tray display; macOS uses 16x16 template PNG
+    let iconPath: string;
+    if (app.isPackaged) {
+      iconPath =
+        process.platform === 'win32'
+          ? path.join(process.resourcesPath, 'icons', 'app.ico')
+          : path.join(
+              process.resourcesPath,
+              'icons',
+              process.platform === 'darwin' ? 'icon_16x16.png' : 'icon_32x32.png'
+            );
+    } else {
+      iconPath =
+        process.platform === 'win32'
+          ? path.join(path.dirname(this.preloadPath), '../assets/app.ico')
+          : path.join(
+              path.dirname(this.preloadPath),
+              '../assets/app.iconset',
+              process.platform === 'darwin' ? 'icon_16x16.png' : 'icon_32x32.png'
+            );
+    }
 
     let icon: Electron.NativeImage;
     if (fs.existsSync(iconPath)) {
       icon = nativeImage.createFromPath(iconPath);
+
+      // Validate the image actually loaded (ICO files can silently fail)
+      if (icon.isEmpty()) {
+        this.logger.warn(
+          `Tray icon loaded but empty from ${iconPath}, trying PNG fallback`
+        );
+        // Fallback to PNG which nativeImage handles more reliably
+        const pngFallback = app.isPackaged
+          ? path.join(process.resourcesPath, 'icons', 'icon_32x32.png')
+          : path.join(
+              path.dirname(this.preloadPath),
+              '../assets/app.iconset',
+              'icon_32x32.png'
+            );
+        if (fs.existsSync(pngFallback)) {
+          icon = nativeImage.createFromPath(pngFallback);
+        }
+      }
+
       if (process.platform === 'darwin') {
         icon.setTemplateImage(true);
       }

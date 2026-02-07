@@ -117,6 +117,11 @@ interface DatabaseCorruptionInfo {
 }
 let databaseCorruptionDetected: DatabaseCorruptionInfo | null = null;
 
+// Windows: set app user model ID for proper taskbar grouping and tray icon display
+if (process.platform === 'win32') {
+  app.setAppUserModelId('com.canvasassistant.app');
+}
+
 // ============================================================================
 // SINGLE INSTANCE LOCK - Must be checked before any service initialization
 // ============================================================================
@@ -1166,6 +1171,8 @@ app.whenReady().then(async () => {
       databaseCorruptionDetected = value;
     },
     resetWindowSize: () => windowManager?.resetWindowSize(),
+    createTray: () => windowManager?.createTray(),
+    destroyTray: () => windowManager?.destroyTray(),
     resetAppState,
   };
 
@@ -1226,8 +1233,10 @@ app.whenReady().then(async () => {
 
   windowManager?.createWindow();
 
-  // Create system tray icon
-  windowManager?.createTray();
+  // Create system tray icon if enabled in settings (default: true)
+  if (getWindowBehavior().showTrayIcon) {
+    windowManager?.createTray();
+  }
 
   // Start FileWatcher to monitor downloads directory for external changes
   fileWatcher.start();
@@ -1364,8 +1373,14 @@ app.on('window-all-closed', () => {
   // On macOS, apps typically stay active until explicitly quit
   // For other platforms, check if we should stay in tray
   if (process.platform !== 'darwin') {
+    // Force quit (Alt+F4) or explicit quit always exits
+    if (isQuitting) {
+      app.quit();
+      return;
+    }
+
     const settings = getWindowBehavior();
-    // Only quit if not set to minimize-to-tray
+    // Only stay in tray if explicitly configured
     if (settings.closeAction !== 'minimize-to-tray') {
       app.quit();
     } else {
