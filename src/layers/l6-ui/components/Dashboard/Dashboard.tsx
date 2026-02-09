@@ -526,7 +526,7 @@ const styles: Record<string, React.CSSProperties> = {
 
   subtitle: {
     fontSize: 'var(--text-sm)',
-    color: 'var(--color-gray-600)',
+    color: 'var(--text-secondary)',
   },
 
   simulationBadge: {

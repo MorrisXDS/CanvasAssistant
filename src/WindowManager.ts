@@ -491,51 +491,27 @@ export class WindowManager {
     if (this.tray) return;
 
     // Create tray icon from extraResources (shipped outside asar)
-    // Windows requires .ico for proper tray display; macOS uses 16x16 template PNG
-    let iconPath: string;
-    if (app.isPackaged) {
-      iconPath =
-        process.platform === 'win32'
-          ? path.join(process.resourcesPath, 'icons', 'app.ico')
-          : path.join(
-              process.resourcesPath,
-              'icons',
-              process.platform === 'darwin' ? 'icon_16x16.png' : 'icon_32x32.png'
-            );
-    } else {
-      iconPath =
-        process.platform === 'win32'
-          ? path.join(path.dirname(this.preloadPath), '../assets/app.ico')
-          : path.join(
-              path.dirname(this.preloadPath),
-              '../assets/app.iconset',
-              process.platform === 'darwin' ? 'icon_16x16.png' : 'icon_32x32.png'
-            );
-    }
+    // Windows uses white monochrome PNG for dark taskbar visibility (like Discord/Slack)
+    // macOS uses template image (auto-adapts to menu bar color)
+    const isMac = process.platform === 'darwin';
+    const isWin = process.platform === 'win32';
+    const iconFile = isMac
+      ? 'icon_16x16.png'
+      : isWin
+        ? 'icon_32x32_white.png'
+        : 'icon_32x32.png';
+    const iconPath = app.isPackaged
+      ? path.join(process.resourcesPath, 'icons', iconFile)
+      : path.join(path.dirname(this.preloadPath), '../assets/app.iconset', iconFile);
 
     let icon: Electron.NativeImage;
     if (fs.existsSync(iconPath)) {
       icon = nativeImage.createFromPath(iconPath);
 
-      // Validate the image actually loaded (ICO files can silently fail)
       if (icon.isEmpty()) {
-        this.logger.warn(
-          `Tray icon loaded but empty from ${iconPath}, trying PNG fallback`
-        );
-        // Fallback to PNG which nativeImage handles more reliably
-        const pngFallback = app.isPackaged
-          ? path.join(process.resourcesPath, 'icons', 'icon_32x32.png')
-          : path.join(
-              path.dirname(this.preloadPath),
-              '../assets/app.iconset',
-              'icon_32x32.png'
-            );
-        if (fs.existsSync(pngFallback)) {
-          icon = nativeImage.createFromPath(pngFallback);
-        }
-      }
-
-      if (process.platform === 'darwin') {
+        this.logger.warn(`Tray icon empty from ${iconPath}`);
+        icon = nativeImage.createEmpty();
+      } else if (isMac) {
         icon.setTemplateImage(true);
       }
     } else {
