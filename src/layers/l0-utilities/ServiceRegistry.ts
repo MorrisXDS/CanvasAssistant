@@ -300,7 +300,7 @@ export class ServiceRegistry extends EventEmitter {
 
       const client = new CanvasClient({
         baseUrl:
-          baseUrl || this.config.canvasBaseUrl || 'https://utoronto.instructure.com',
+          baseUrl || this.config.canvasBaseUrl || '',
         accessToken: token,
         // Wire up rate limit feedback for adaptive throttling
         onRateLimit: (remaining: number) => rateLimiter?.updateRateLimit?.(remaining),

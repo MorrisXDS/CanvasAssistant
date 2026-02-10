@@ -7,6 +7,8 @@
  */
 
 import { ipcMain } from 'electron';
+import * as fs from 'fs';
+import * as path from 'path';
 import { CanvasClient } from '../layers/l2-daemon';
 import type { IpcContext } from './IpcContext';
 
@@ -94,6 +96,19 @@ export function registerCredentialHandlers(ctx: IpcContext): void {
     }
 
     const success = await initializeCanvasClient(token, baseUrl);
+
+    // Persist the Canvas base URL so it survives restarts
+    if (success) {
+      try {
+        const configDir = ctx.getConfigDir();
+        const connectionConfigPath = path.join(configDir, 'canvas-connection.json');
+        fs.writeFileSync(connectionConfigPath, JSON.stringify({ baseUrl }, null, 2), 'utf-8');
+        logger.info(`Canvas base URL persisted to ${connectionConfigPath}`);
+      } catch (error) {
+        logger.error('Failed to persist Canvas base URL', error as Error);
+      }
+    }
+
     return { success, error: success ? undefined : 'Token validation failed' };
   });
 

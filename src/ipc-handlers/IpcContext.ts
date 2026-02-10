@@ -63,6 +63,7 @@ export interface IpcContext {
   setIsQuitting: (value: boolean) => void;
 
   // Path and app info getters
+  getConfigDir: () => string;
   getFilesDir: () => string;
   getDbPath: () => string;
   getBackupDir: () => string;

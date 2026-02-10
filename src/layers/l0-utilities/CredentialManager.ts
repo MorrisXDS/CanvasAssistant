@@ -96,8 +96,7 @@ export class CredentialManager extends EventEmitter {
     this.fallbackFilePath = config?.fallbackFilePath ?? DEFAULT_PATHS.credentials;
     this.validateOnRetrieve = config?.validateOnRetrieve ?? true;
     this.baseUrl =
-      (config && 'baseUrl' in config ? config.baseUrl : undefined) ??
-      'https://utoronto.instructure.com';
+      (config && 'baseUrl' in config ? config.baseUrl : undefined) ?? '';
 
     // Check for options-specific properties
     if (config && 'tokenValidator' in config) {

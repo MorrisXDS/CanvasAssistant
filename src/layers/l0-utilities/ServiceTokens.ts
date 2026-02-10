@@ -112,7 +112,7 @@ export interface ServiceRegistryConfig {
  * Default configuration values.
  */
 export const DEFAULT_REGISTRY_CONFIG: Partial<ServiceRegistryConfig> = {
-  canvasBaseUrl: 'https://utoronto.instructure.com',
+  canvasBaseUrl: '',
   enableMetrics: true,
   enableHealthCheck: true,
   enableHousekeeping: true,

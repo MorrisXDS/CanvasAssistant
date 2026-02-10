@@ -1158,6 +1158,7 @@ app.whenReady().then(async () => {
     setIsQuitting: (value: boolean) => {
       isQuitting = value;
     },
+    getConfigDir: () => CONFIG_DIR,
     getFilesDir: () => FILES_DIR,
     getDbPath: () => DB_PATH,
     getBackupDir: () => BACKUP_DIR,
@@ -1215,12 +1216,26 @@ app.whenReady().then(async () => {
   if (hasCredentials) {
     const token = await credentialManager.retrieve();
     if (token) {
-      // Default Canvas URL - could be stored in config
-      const baseUrl = 'https://utoronto.instructure.com';
-      await initializeCanvasClient(token, baseUrl);
+      // Read persisted Canvas base URL from config
+      const connectionConfigPath = path.join(CONFIG_DIR, 'canvas-connection.json');
+      let baseUrl = '';
+      try {
+        if (fs.existsSync(connectionConfigPath)) {
+          const config = JSON.parse(fs.readFileSync(connectionConfigPath, 'utf-8'));
+          baseUrl = config.baseUrl || '';
+        }
+      } catch (error) {
+        logger.warn(`Failed to read canvas-connection.json: ${error}`);
+      }
 
-      // Start auto-sync scheduler after Canvas client is ready
-      autoSyncManager?.start();
+      if (baseUrl) {
+        await initializeCanvasClient(token, baseUrl);
+
+        // Start auto-sync scheduler after Canvas client is ready
+        autoSyncManager?.start();
+      } else {
+        logger.warn('No saved Canvas base URL found — user must reconnect via onboarding');
+      }
     }
   }
 
