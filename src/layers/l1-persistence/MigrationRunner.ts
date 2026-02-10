@@ -26,7 +26,7 @@ export class MigrationRunner {
 
   constructor(db: Database, migrationsPath?: string) {
     this.db = db;
-    this.migrationsPath = migrationsPath || path.join(process.cwd(), 'migrations');
+    this.migrationsPath = migrationsPath || '';
   }
 
   /**
@@ -39,7 +39,7 @@ export class MigrationRunner {
     }
 
     // Load from files if no programmatic migrations provided
-    if (!fs.existsSync(this.migrationsPath)) {
+    if (!this.migrationsPath || !fs.existsSync(this.migrationsPath)) {
       return;
     }
 

@@ -6,6 +6,7 @@
  */
 
 import { EventEmitter } from 'events';
+import { DEFAULT_PATHS } from './DefaultPaths';
 
 // ============================================================================
 // Common Types
@@ -405,7 +406,7 @@ export interface AppConfigData {
 export const DEFAULT_APP_CONFIG: AppConfigData = {
   utilities: {
     logger: {
-      logDir: 'logs',
+      logDir: DEFAULT_PATHS.logs,
       logFilename: 'cid',
       logLevel: 'info',
       maxFileSize: 10 * 1024 * 1024, // 10MB (legacy)
@@ -438,14 +439,14 @@ export const DEFAULT_APP_CONFIG: AppConfigData = {
       serviceName: 'CanvasIntegrationDashboard',
       accountName: 'canvas-api-token',
       enableFileFallback: true,
-      fallbackFilePath: 'data/.credentials',
+      fallbackFilePath: DEFAULT_PATHS.credentials,
       validateOnRetrieve: true,
     },
     metricsCollector: {
       enabled: true,
       aggregationIntervalMs: 60000, // 1 minute
       retentionDays: 90,
-      dbPath: 'data/metrics.db',
+      dbPath: DEFAULT_PATHS.metricsDb,
       emitEvents: true,
     },
     housekeeping: {

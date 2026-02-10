@@ -86,6 +86,7 @@ export {
   type SystemPowerState,
 } from './IdleStateManager';
 export { AppConfig, DEFAULT_APP_CONFIG } from './AppConfig';
+export { DEFAULT_PATHS } from './DefaultPaths';
 export {
   PathBuilder,
   createPathBuilder,

@@ -12,6 +12,7 @@ import path from 'path';
 import axios, { AxiosError } from 'axios';
 import { CredentialManagerConfig } from './AppConfig';
 import { ComponentLogger, Logger } from './Logger';
+import { DEFAULT_PATHS } from './DefaultPaths';
 
 // Storage backend types
 type StorageBackend = 'keychain' | 'file' | 'none';
@@ -92,7 +93,7 @@ export class CredentialManager extends EventEmitter {
     this.serviceName = config?.serviceName ?? 'CanvasIntegrationDashboard';
     this.accountName = config?.accountName ?? 'canvas-api-token';
     this.enableFileFallback = config?.enableFileFallback ?? true;
-    this.fallbackFilePath = config?.fallbackFilePath ?? 'data/.credentials';
+    this.fallbackFilePath = config?.fallbackFilePath ?? DEFAULT_PATHS.credentials;
     this.validateOnRetrieve = config?.validateOnRetrieve ?? true;
     this.baseUrl =
       (config && 'baseUrl' in config ? config.baseUrl : undefined) ??

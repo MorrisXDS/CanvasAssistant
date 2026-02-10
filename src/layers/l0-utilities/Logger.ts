@@ -3,6 +3,7 @@ import DailyRotateFile from 'winston-daily-rotate-file';
 import path from 'path';
 import fs from 'fs';
 import { LoggerConfig } from './AppConfig';
+import { DEFAULT_PATHS } from './DefaultPaths';
 
 export type LogLevel = 'error' | 'warn' | 'info' | 'debug';
 
@@ -186,7 +187,7 @@ const DEFAULT_LOGGER_OPTIONS: Required<
   rotation: RotationConfig;
   directoryStructure: DirectoryStructureConfig;
 } = {
-  logDir: 'logs',
+  logDir: DEFAULT_PATHS.logs,
   logFilename: 'cid',
   logLevel: 'info',
   maxFileSize: 10 * 1024 * 1024, // 10MB

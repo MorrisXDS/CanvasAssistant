@@ -11,6 +11,7 @@ import path from 'path';
 import fs from 'fs';
 import { MetricsCollectorConfig } from './AppConfig';
 import { ComponentLogger, Logger } from './Logger';
+import { DEFAULT_PATHS } from './DefaultPaths';
 
 export type MetricType = 'counter' | 'gauge' | 'timing';
 
@@ -92,7 +93,7 @@ export class MetricsCollector extends EventEmitter {
     this.enabled = config?.enabled ?? true;
     this.aggregationIntervalMs = config?.aggregationIntervalMs ?? 60000;
     this.retentionDays = config?.retentionDays ?? 90;
-    this.dbPath = config?.dbPath ?? 'data/metrics.db';
+    this.dbPath = config?.dbPath ?? DEFAULT_PATHS.metricsDb;
     this.emitEvents = config?.emitEvents ?? true;
 
     // Setup logger

@@ -160,19 +160,22 @@ const healthCheck = new HealthCheck({
   runOnStartup: true,
   logger,
 });
-const housekeepingManager = new HousekeepingManager({
-  enabled: true,
-  logDir: LOG_DIR,
-  dataDir: CONFIG_DIR,
-  metricsCollector,
-  schedule: {
-    runOnStartup: false,
+const housekeepingManager = new HousekeepingManager(
+  {
+    enabled: true,
+    logDir: LOG_DIR,
+    dataDir: CONFIG_DIR,
+    metricsCollector,
+    schedule: {
+      runOnStartup: false,
+    },
+    retention: {
+      logsDays: 30,
+      metricsDays: 90,
+    },
   },
-  retention: {
-    logsDays: 30,
-    metricsDays: 90,
-  },
-});
+  logger
+);
 const fileDownloadManager = new FileDownloadManager({
   baseDir: FILES_DIR,
   maxConcurrent: 10,

@@ -1,4 +1,5 @@
 import { AppConfig, DEFAULT_APP_CONFIG } from '../../src/layers/l0-utilities/AppConfig';
+import { DEFAULT_PATHS } from '../../src/layers/l0-utilities/DefaultPaths';
 
 describe('AppConfig', () => {
   const clearEnvVars = () => {
@@ -35,7 +36,7 @@ describe('AppConfig', () => {
   describe('constructor', () => {
     it('should use default config when no initial config provided', () => {
       const config = new AppConfig();
-      expect(config.getUtilities().logger.logDir).toBe('logs');
+      expect(config.getUtilities().logger.logDir).toBe(DEFAULT_PATHS.logs);
       expect(config.getPersistence().defaultTargetGrade).toBe(85.0);
     });
 
@@ -47,7 +48,7 @@ describe('AppConfig', () => {
         },
       });
       expect(config.getPersistence().defaultTargetGrade).toBe(90.0);
-      expect(config.getUtilities().logger.logDir).toBe('logs'); // From default
+      expect(config.getUtilities().logger.logDir).toBe(DEFAULT_PATHS.logs); // From default
     });
 
     it('should deep merge nested config', () => {
@@ -96,7 +97,7 @@ describe('AppConfig', () => {
     it('should get value by path', () => {
       const config = new AppConfig();
 
-      expect(config.get<string>('utilities.logger.logDir')).toBe('logs');
+      expect(config.get<string>('utilities.logger.logDir')).toBe(DEFAULT_PATHS.logs);
       expect(config.get<number>('daemon.rateLimiter.maxConcurrent')).toBe(3);
       expect(config.get<number>('intelligence.priority.urgencyCurve.criticalHours')).toBe(6);
     });
@@ -208,7 +209,7 @@ describe('AppConfig', () => {
       const json = config.exportConfig();
       const parsed = JSON.parse(json);
 
-      expect(parsed.utilities.logger.logDir).toBe('logs');
+      expect(parsed.utilities.logger.logDir).toBe(DEFAULT_PATHS.logs);
       expect(parsed.daemon.rateLimiter.maxConcurrent).toBe(3);
     });
 

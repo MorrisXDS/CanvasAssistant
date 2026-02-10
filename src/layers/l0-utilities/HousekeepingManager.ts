@@ -12,6 +12,7 @@ import zlib from 'zlib';
 import { HousekeepingConfig } from './AppConfig';
 import { ComponentLogger, Logger } from './Logger';
 import { MetricsCollector } from './MetricsCollector';
+import { DEFAULT_PATHS } from './DefaultPaths';
 
 export interface HousekeepingManagerOptions {
   enabled?: boolean;
@@ -101,8 +102,8 @@ export class HousekeepingManager extends EventEmitter {
 
     // Apply defaults
     this.enabled = config?.enabled ?? true;
-    this.logDir = (config && 'logDir' in config ? config.logDir : undefined) ?? 'logs';
-    this.dataDir = (config && 'dataDir' in config ? config.dataDir : undefined) ?? 'data';
+    this.logDir = (config && 'logDir' in config ? config.logDir : undefined) ?? DEFAULT_PATHS.logs;
+    this.dataDir = (config && 'dataDir' in config ? config.dataDir : undefined) ?? DEFAULT_PATHS.data;
     this.metricsCollector = metricsCollector ?? null;
 
     // Schedule settings
