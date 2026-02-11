@@ -51,6 +51,9 @@ ARCHITECTURE_ANALYSIS.md
 .env.production
 
 # Testing
+tests/
+test.ps1
+scripts/ensure-native-modules.js
 coverage/
 .nyc_output/
 
