@@ -4,8 +4,7 @@
  * Command pattern types for user actions.
  */
 
-import { Database } from '../l1-persistence/Database';
-import { VisibleDataProvider } from '../l1-persistence/VisibleDataProvider';
+import { Database, VisibleDataProvider } from '../l1-persistence';
 
 /**
  * Command execution context - provides access to lower layers

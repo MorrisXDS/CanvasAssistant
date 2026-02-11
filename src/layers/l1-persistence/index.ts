@@ -81,6 +81,20 @@ export type {
   DisplayHistoryRow,
   // Grace token usage rows
   TokenUsageRow,
+  // Sync tracking rows
+  SyncSessionRow,
+  SyncUpdateRow,
+  SyncUpdateRowWithCourse,
+  // Canvas task queue rows
+  CanvasTaskQueueRow,
+  CanvasTaskQueueRowMinimal,
+  // Module/assignment group rows
+  ModuleItemRow,
+  AssignmentGroupRow,
+  // Link suggestion rows
+  LinkSuggestionRow,
+  // Field source tracking
+  TaskTypeFieldSource,
 } from './DatabaseRowTypes';
 
 // Re-export types for convenience

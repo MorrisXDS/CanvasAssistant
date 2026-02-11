@@ -16,12 +16,7 @@ import type {
 } from '../../shared/ipc-contract';
 
 // Re-export types from centralized location for convenience
-export type {
-  CourseRow,
-  TaskRow,
-  PolicyRow,
-  NotificationRow,
-} from '../l1-persistence/DatabaseRowTypes';
+export type { CourseRow, TaskRow, PolicyRow, NotificationRow } from '../l1-persistence';
 
 /**
  * Map a course database row to a Course entity.

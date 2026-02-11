@@ -6,7 +6,7 @@
 import type { EventEmitter } from 'events';
 import type { CanvasClient } from './CanvasClient';
 import type { RateLimiter } from './RateLimiter';
-import type { Database } from '../l1-persistence/Database';
+import type { Database } from '../l1-persistence';
 import type { SyncConflictResolver } from './SyncConflictResolver';
 import type { SyncBackoffManager } from './SyncBackoffManager';
 import type { ComponentLogger } from '../l0-utilities/Logger';

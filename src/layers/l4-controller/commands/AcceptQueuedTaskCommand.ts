@@ -11,7 +11,7 @@
  */
 
 import { Command, CommandContext, CommandResult, AcceptQueuedTaskParams } from '../types';
-import type { CanvasTaskQueueRow } from '../../l1-persistence/DatabaseRowTypes';
+import type { CanvasTaskQueueRow } from '../../l1-persistence';
 import type { CanvasAssignment } from '../../l2-daemon/DataMapperTypes';
 import { mapAssignment } from '../../l2-daemon/DataMappers';
 

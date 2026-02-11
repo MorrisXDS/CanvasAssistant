@@ -3,7 +3,7 @@
  * Handles checkpoint creation, progress tracking, and resume functionality for sync operations.
  */
 
-import type { Database } from '../l1-persistence/Database';
+import type { Database } from '../l1-persistence';
 import type { ComponentLogger } from '../l0-utilities/Logger';
 import type { SyncOptions, SyncCheckpoint } from './SyncEngineTypes';
 import type {

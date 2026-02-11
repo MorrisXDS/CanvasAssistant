@@ -9,7 +9,7 @@
  * Uses session IDs to protect dependencies from deletion during downloads.
  */
 
-import { Database } from '../l1-persistence/Database';
+import { Database } from '../l1-persistence';
 import type { ComponentLogger } from '../l0-utilities/Logger';
 
 export type OperationType = 'sync' | 'download_html' | 'download_file';

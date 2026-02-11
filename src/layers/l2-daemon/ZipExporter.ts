@@ -7,7 +7,7 @@ import fs from 'fs';
 import path from 'path';
 import archiver from 'archiver';
 import type { CryptoManager } from '../l0-utilities/CryptoManager';
-import type { CourseRow } from '../l1-persistence/DatabaseRowTypes';
+import type { CourseRow } from '../l1-persistence';
 import type {
   ExportResult,
   ExportManifest,

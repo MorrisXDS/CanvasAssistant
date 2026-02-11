@@ -12,7 +12,7 @@ import {
   CommandResult,
   UpdateTargetGradeParams,
 } from '../types';
-import { CourseRepository } from '../../l1-persistence/repositories';
+import { CourseRepository } from '../../l1-persistence';
 
 export class UpdateTargetGradeCommand implements Command<
   UpdateTargetGradeParams,
@@ -22,7 +22,7 @@ export class UpdateTargetGradeCommand implements Command<
 
   validate(params: UpdateTargetGradeParams): { valid: boolean; error?: string } {
     if (!params.courseId || params.courseId <= 0) {
-      return { valid: false, error: 'Course not found or invalid' };
+      return { valid: false, error: 'Invalid course ID' };
     }
 
     if (typeof params.targetGrade !== 'number' || isNaN(params.targetGrade)) {

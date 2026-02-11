@@ -3,15 +3,15 @@
  * Handles data collection and sanitization for exports
  */
 
-import type { Database } from '../l1-persistence/Database';
-import type { VisibleDataProvider } from '../l1-persistence/VisibleDataProvider';
 import type {
+  Database,
+  VisibleDataProvider,
   CourseRow,
   TaskRow,
   NotificationRow,
   PolicyRow,
   GraceTokenRow,
-} from '../l1-persistence/DatabaseRowTypes';
+} from '../l1-persistence';
 import type { SelectiveExportOptions, SyncMetadataExport } from './ExportManagerTypes';
 
 export interface ExportDataCollectorDeps {
@@ -48,10 +48,15 @@ export function resolveCourseIds(
   let result: number[] = [];
 
   // Handle visible courses
-  if (courseIds && courseIds.length > 0) {
-    const visibleIds = new Set(visibleDataProvider.getVisibleCourseIds());
-    result = courseIds.filter((id) => visibleIds.has(id));
+  if (courseIds !== undefined) {
+    // Explicit selection: filter to only visible courses from the selection
+    if (courseIds.length > 0) {
+      const visibleIds = new Set(visibleDataProvider.getVisibleCourseIds());
+      result = courseIds.filter((id) => visibleIds.has(id));
+    }
+    // Empty array means no visible courses selected
   } else {
+    // No selection specified: include all visible courses
     result = visibleDataProvider.getVisibleCourseIds();
   }
 

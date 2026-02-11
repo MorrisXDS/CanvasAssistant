@@ -12,7 +12,7 @@ import {
   CommandResult,
   DismissNotificationParams,
 } from '../types';
-import { NotificationRepository } from '../../l1-persistence/repositories';
+import { NotificationRepository } from '../../l1-persistence';
 
 export class DismissNotificationCommand implements Command<
   DismissNotificationParams,

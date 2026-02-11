@@ -9,7 +9,7 @@
 import { EventEmitter } from 'events';
 import fs from 'fs';
 import path from 'path';
-import { Database } from '../l1-persistence/Database';
+import { Database } from '../l1-persistence';
 import {
   FileDownloadManager,
   DownloadRequest,

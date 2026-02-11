@@ -16,8 +16,7 @@ import {
   SimulationContext,
   createSimulationContext,
 } from './types';
-import { Database } from '../l1-persistence/Database';
-import { VisibleDataProvider } from '../l1-persistence/VisibleDataProvider';
+import { Database, VisibleDataProvider } from '../l1-persistence';
 import { SimulationManager } from './SimulationManager';
 import { ILogger, createTimer, createNoopLogger } from '../l0-utilities/Logger';
 

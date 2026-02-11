@@ -6,7 +6,7 @@
  */
 
 import { EventEmitter } from 'events';
-import type { Database } from '../../l1-persistence/Database';
+import type { Database } from '../../l1-persistence';
 import type { CanvasClient } from '../CanvasClient';
 import type { RateLimiter } from '../RateLimiter';
 import type { ComponentLogger } from '../../l0-utilities/Logger';

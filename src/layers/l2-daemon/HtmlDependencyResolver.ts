@@ -25,7 +25,7 @@
  * ```
  */
 
-import { Database } from '../l1-persistence/Database';
+import { Database } from '../l1-persistence';
 import {
   HtmlFileExtractor,
   ExtractedFileReference,

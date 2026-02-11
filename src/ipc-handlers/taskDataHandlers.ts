@@ -5,10 +5,7 @@
 
 import { ipcMain } from 'electron';
 import type { IpcContext } from './IpcContext';
-import type {
-  TaskRow,
-  CanvasTaskQueueRow,
-} from '../layers/l1-persistence/DatabaseRowTypes';
+import type { TaskRow, CanvasTaskQueueRow } from '../layers/l1-persistence';
 import {
   AcceptQueuedTaskCommand,
   RejectQueuedTaskCommand,

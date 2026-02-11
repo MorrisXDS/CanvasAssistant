@@ -6,8 +6,7 @@
 import { EventEmitter } from 'events';
 import { CanvasClient } from './CanvasClient';
 import { RateLimiter } from './RateLimiter';
-import { Database } from '../l1-persistence/Database';
-import { VisibleDataProvider } from '../l1-persistence/VisibleDataProvider';
+import { Database, VisibleDataProvider } from '../l1-persistence';
 import {
   CanvasCourse,
   CanvasAssignment,

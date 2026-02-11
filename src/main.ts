@@ -20,7 +20,7 @@ import {
   VisibleDataProvider,
   runPostImportRepairs,
 } from './layers/l1-persistence';
-import type { PendingDownloadRow } from './layers/l1-persistence/DatabaseRowTypes';
+import type { PendingDownloadRow } from './layers/l1-persistence';
 
 // L2 - Daemon
 import {

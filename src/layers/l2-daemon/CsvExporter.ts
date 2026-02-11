@@ -4,8 +4,7 @@
  */
 
 import fs from 'fs';
-import type { Database } from '../l1-persistence/Database';
-import type { TaskRow } from '../l1-persistence/DatabaseRowTypes';
+import type { Database, TaskRow } from '../l1-persistence';
 import type { CsvExportOptions, ExportResult } from './ExportManagerTypes';
 import { TASKS_CSV_HEADERS, GRADES_CSV_HEADERS } from './ExportManagerTypes';
 

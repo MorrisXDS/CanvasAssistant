@@ -7,9 +7,9 @@
  */
 
 import { EventEmitter } from 'events';
-import { Database } from '../l1-persistence/Database';
+import { Database } from '../l1-persistence';
 import { isCanvasField, isAuthoritativeField } from './CanvasFieldMappings';
-import type { TaskTypeFieldSource } from '../l1-persistence/DatabaseRowTypes';
+import type { TaskTypeFieldSource } from '../l1-persistence';
 
 export interface SyncConflict {
   id: string;

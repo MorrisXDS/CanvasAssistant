@@ -4,7 +4,7 @@
  */
 
 import { EventEmitter } from 'events';
-import type { Database } from '../l1-persistence/Database';
+import type { Database } from '../l1-persistence';
 import type { ComponentLogger } from '../l0-utilities/Logger';
 import { BACKOFF_CONFIG, EndpointBackoff } from './SyncEngineTypes';
 

@@ -23,7 +23,7 @@ export class UpdateCoursePreferencesCommand implements Command<
 
   validate(params: UpdateCoursePreferencesParams): { valid: boolean; error?: string } {
     if (!params.courseId || params.courseId <= 0) {
-      return { valid: false, error: 'Course not found or invalid' };
+      return { valid: false, error: 'Invalid course ID' };
     }
 
     if (!params.preferences || Object.keys(params.preferences).length === 0) {

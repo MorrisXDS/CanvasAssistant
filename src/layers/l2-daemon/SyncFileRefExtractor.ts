@@ -3,7 +3,7 @@
  * Extracts and manages file references from HTML content (pages, assignments, syllabus, announcements, modules).
  */
 
-import { Database } from '../l1-persistence/Database';
+import { Database } from '../l1-persistence';
 import { HtmlFileExtractor, ExtractedFileReference } from './HtmlFileExtractor';
 import { CanvasClient } from './CanvasClient';
 import { RateLimiter } from './RateLimiter';

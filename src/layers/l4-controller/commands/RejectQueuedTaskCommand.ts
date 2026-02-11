@@ -6,7 +6,7 @@
  */
 
 import { Command, CommandContext, CommandResult, RejectQueuedTaskParams } from '../types';
-import type { CanvasTaskQueueRow } from '../../l1-persistence/DatabaseRowTypes';
+import type { CanvasTaskQueueRow } from '../../l1-persistence';
 
 export class RejectQueuedTaskCommand implements Command<RejectQueuedTaskParams, void> {
   readonly name = 'RejectQueuedTask';

@@ -7,8 +7,7 @@
 
 import { EventEmitter } from 'events';
 import fs from 'fs';
-import { Database } from '../l1-persistence/Database';
-import { VisibleDataProvider } from '../l1-persistence/VisibleDataProvider';
+import { Database, VisibleDataProvider } from '../l1-persistence';
 import { CryptoManager, EncryptedData } from '../l0-utilities/CryptoManager';
 import { ComponentLogger, Logger } from '../l0-utilities/Logger';
 import type { SyncEngine } from './SyncEngine';
@@ -81,6 +80,11 @@ export class ExportManager extends EventEmitter {
       this.log = defaultLogger.child('exportManager');
       this.cryptoManager = new CryptoManager();
     }
+
+    // Prevent unhandled error events from CryptoManager (e.g. wrong password decryption)
+    this.cryptoManager.on('error', (err) => {
+      this.log.debug('CryptoManager error handled', err?.type ?? 'unknown');
+    });
   }
 
   /**

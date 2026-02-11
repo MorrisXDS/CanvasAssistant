@@ -9,8 +9,18 @@
  */
 
 import { EventEmitter } from 'events';
-import type { Database } from '../l1-persistence/Database';
 import { Logger, ComponentLogger } from './Logger';
+
+/**
+ * Minimal interface for SQLite-backed flag storage.
+ * Structurally compatible with Database from L1 without importing it,
+ * preserving the unidirectional layer flow (L0 cannot import from L1+).
+ */
+interface FlagStore {
+  exec(sql: string): void;
+  executeRead<T>(sql: string, params?: unknown[]): T[];
+  executeWrite(sql: string, params?: unknown[], tableName?: string): { changes: number };
+}
 
 /**
  * Flag types for different use cases.
@@ -183,7 +193,7 @@ export type FlagValue<K extends FlagKey> = (typeof FLAG_DEFINITIONS)[K]['default
  */
 export interface FeatureFlagsOptions {
   /** SQLite database for persistence */
-  db?: Database;
+  db?: FlagStore;
   /** Enable development mode (all experimental flags enabled) */
   devMode?: boolean;
   /** User ID for percentage-based rollouts */
@@ -216,7 +226,7 @@ interface FlagOverride {
  * ```
  */
 export class FeatureFlags extends EventEmitter {
-  private readonly db?: Database;
+  private readonly db?: FlagStore;
   private readonly devMode: boolean;
   private readonly userId: string;
   private readonly overrides: Map<string, unknown> = new Map();

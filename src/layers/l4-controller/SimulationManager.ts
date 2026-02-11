@@ -15,7 +15,7 @@ import {
   SimulationResult,
   createSimulationContext,
 } from './types';
-import { Database } from '../l1-persistence/Database';
+import { Database } from '../l1-persistence';
 
 export interface SimulationManagerOptions {
   db: Database;

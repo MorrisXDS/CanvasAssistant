@@ -5,7 +5,7 @@
  */
 
 import { Command, CommandContext, CommandResult, MarkTaskCompleteParams } from '../types';
-import { TaskRepository, CourseRepository } from '../../l1-persistence/repositories';
+import { TaskRepository, CourseRepository } from '../../l1-persistence';
 import { GradeCalculationService } from '../../l3-intelligence/domain';
 
 export class MarkTaskCompleteCommand implements Command<
