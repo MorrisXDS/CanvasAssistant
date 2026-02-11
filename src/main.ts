@@ -1211,30 +1211,37 @@ app.whenReady().then(async () => {
   metricsCollector.start();
   housekeepingManager.start();
 
+  // Read persisted Canvas base URL and set on credential manager before token retrieval
+  // (retrieve() validates the token, which requires the base URL)
+  const connectionConfigPath = path.join(CONFIG_DIR, 'canvas-connection.json');
+  let savedBaseUrl = '';
+  try {
+    if (fs.existsSync(connectionConfigPath)) {
+      const config = JSON.parse(fs.readFileSync(connectionConfigPath, 'utf-8'));
+      savedBaseUrl = config.baseUrl || '';
+    }
+  } catch (error) {
+    logger.warn(`Failed to read canvas-connection.json: ${error}`);
+  }
+
+  if (savedBaseUrl) {
+    credentialManager.setBaseUrl(savedBaseUrl);
+  }
+
   // Try to initialize Canvas client if credentials exist
   const hasCredentials = await credentialManager.exists();
   if (hasCredentials) {
     const token = await credentialManager.retrieve();
     if (token) {
-      // Read persisted Canvas base URL from config
-      const connectionConfigPath = path.join(CONFIG_DIR, 'canvas-connection.json');
-      let baseUrl = '';
-      try {
-        if (fs.existsSync(connectionConfigPath)) {
-          const config = JSON.parse(fs.readFileSync(connectionConfigPath, 'utf-8'));
-          baseUrl = config.baseUrl || '';
-        }
-      } catch (error) {
-        logger.warn(`Failed to read canvas-connection.json: ${error}`);
-      }
-
-      if (baseUrl) {
-        await initializeCanvasClient(token, baseUrl);
+      if (savedBaseUrl) {
+        await initializeCanvasClient(token, savedBaseUrl);
 
         // Start auto-sync scheduler after Canvas client is ready
         autoSyncManager?.start();
       } else {
-        logger.warn('No saved Canvas base URL found — user must reconnect via onboarding');
+        logger.warn(
+          'No saved Canvas base URL found — user must reconnect via onboarding'
+        );
       }
     }
   }

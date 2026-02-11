@@ -84,6 +84,9 @@ export function registerCredentialHandlers(ctx: IpcContext): void {
   // ============ Canvas Client Initialization ============
 
   ipcMain.handle('canvas:connect', async (_event, baseUrl: string) => {
+    // Set base URL before retrieve() so token validation uses the correct endpoint
+    credentialManager.setBaseUrl(baseUrl);
+
     const token = await credentialManager.retrieve();
     if (!token) {
       return { success: false, error: 'No credentials stored' };
@@ -102,7 +105,11 @@ export function registerCredentialHandlers(ctx: IpcContext): void {
       try {
         const configDir = ctx.getConfigDir();
         const connectionConfigPath = path.join(configDir, 'canvas-connection.json');
-        fs.writeFileSync(connectionConfigPath, JSON.stringify({ baseUrl }, null, 2), 'utf-8');
+        fs.writeFileSync(
+          connectionConfigPath,
+          JSON.stringify({ baseUrl }, null, 2),
+          'utf-8'
+        );
         logger.info(`Canvas base URL persisted to ${connectionConfigPath}`);
       } catch (error) {
         logger.error('Failed to persist Canvas base URL', error as Error);
