@@ -512,11 +512,17 @@ async function resetAppState(options: { deleteToken: boolean }): Promise<void> {
     database.executeWrite('DELETE FROM sync_metadata', [], 'sync_metadata');
     database.executeWrite('DELETE FROM endpoint_backoff', [], 'endpoint_backoff');
     database.executeWrite('DELETE FROM sync_preferences', [], 'sync_preferences');
-    database.executeWrite(
-      'DELETE FROM pending_sync_conflicts',
-      [],
-      'pending_sync_conflicts'
+    // pending_sync_conflicts is created at runtime by SyncConflictResolver, not via migrations
+    const hasConflictsTable = database.executeRead<{ name: string }>(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='pending_sync_conflicts'"
     );
+    if (hasConflictsTable.length > 0) {
+      database.executeWrite(
+        'DELETE FROM pending_sync_conflicts',
+        [],
+        'pending_sync_conflicts'
+      );
+    }
     database.executeWrite('DELETE FROM field_modifications', [], 'field_modifications');
   });
 
@@ -1231,6 +1237,22 @@ app.whenReady().then(async () => {
   // Try to initialize Canvas client if credentials exist
   const hasCredentials = await credentialManager.exists();
   if (hasCredentials) {
+    // Read persisted Canvas base URL BEFORE retrieve() so token validation has a valid URL
+    const connectionConfigPath = path.join(CONFIG_DIR, 'canvas-connection.json');
+    let baseUrl = '';
+    try {
+      if (fs.existsSync(connectionConfigPath)) {
+        const config = JSON.parse(fs.readFileSync(connectionConfigPath, 'utf-8'));
+        baseUrl = config.baseUrl || '';
+      }
+    } catch (error) {
+      logger.warn(`Failed to read canvas-connection.json: ${error}`);
+    }
+
+    if (baseUrl) {
+      credentialManager.setBaseUrl(baseUrl);
+    }
+
     const token = await credentialManager.retrieve();
     if (token) {
       if (savedBaseUrl) {
@@ -1459,6 +1481,7 @@ app.on('quit', () => {
 
   // Save pending downloads for recovery
   savePendingDownloads();
+  fileDownloadManager.stop();
 
   // Close database with timeout protection
   const closeTimeout = setTimeout(() => {

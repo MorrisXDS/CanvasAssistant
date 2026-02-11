@@ -5,13 +5,13 @@
  * Used for type-safe service resolution.
  */
 
-import type { Logger } from './Logger';
-import type { SystemMonitor } from './SystemMonitor';
-import type { CredentialManager } from './CredentialManager';
-import type { HealthCheck } from './HealthCheck';
-import type { MetricsCollector } from './MetricsCollector';
-import type { HousekeepingManager } from './HousekeepingManager';
-import type { FileDownloadManager } from './FileDownloadManager';
+import type { Logger } from '../l0-utilities/Logger';
+import type { SystemMonitor } from '../l0-utilities/SystemMonitor';
+import type { CredentialManager } from '../l0-utilities/CredentialManager';
+import type { HealthCheck } from '../l0-utilities/HealthCheck';
+import type { MetricsCollector } from '../l0-utilities/MetricsCollector';
+import type { HousekeepingManager } from '../l0-utilities/HousekeepingManager';
+import type { FileDownloadManager } from '../l0-utilities/FileDownloadManager';
 import type { Database } from '../l1-persistence/Database';
 import type { MigrationRunner } from '../l1-persistence/MigrationRunner';
 import type { VisibleDataProvider } from '../l1-persistence/VisibleDataProvider';

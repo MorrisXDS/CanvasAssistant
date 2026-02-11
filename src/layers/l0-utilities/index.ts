@@ -18,19 +18,6 @@ export {
   type SystemMonitorOptions,
 } from './SystemMonitor';
 
-// Dependency Injection
-export {
-  ServiceRegistry,
-  type ServiceFactory,
-  type ServiceCleanup,
-} from './ServiceRegistry';
-export type {
-  ServiceToken,
-  ServiceDefinitions,
-  ServiceRegistryConfig,
-} from './ServiceTokens';
-export { DEFAULT_REGISTRY_CONFIG } from './ServiceTokens';
-
 // Feature Flags
 export { FeatureFlags, FlagType, FlagCategory, FLAG_DEFINITIONS } from './FeatureFlags';
 export type {
@@ -50,6 +37,19 @@ export {
   type EncryptedData,
   type PasswordStrength,
 } from './CryptoManager';
+export {
+  CRYPTO_CONSTANTS,
+  deriveKey,
+  encryptBuffer,
+  decryptBuffer,
+} from './CryptoCore';
+export {
+  encryptBackup,
+  decryptBackup,
+  isEncryptedBackup,
+  verifyBackupPassword,
+  type EncryptionResult,
+} from './BackupEncryption';
 export {
   HealthCheck,
   type HealthCheckOptions,
@@ -86,7 +86,7 @@ export {
   type SystemPowerState,
 } from './IdleStateManager';
 export { AppConfig, DEFAULT_APP_CONFIG } from './AppConfig';
-export { DEFAULT_PATHS } from './DefaultPaths';
+export { DEFAULT_PATHS, ensureDirectory } from './DefaultPaths';
 export {
   PathBuilder,
   createPathBuilder,
@@ -126,25 +126,4 @@ export type {
   CredentialManagerConfig,
   MetricsCollectorConfig,
   HousekeepingConfig,
-  // Persistence
-  PersistenceConfig,
-  DatabaseConfig,
-  // Daemon
-  DaemonConfig,
-  CanvasApiConfig,
-  RateLimiterConfig,
-  CircuitBreakerConfig,
-  SyncConfig,
-  HtmlContentSyncConfig,
-  PolicyDetectionConfig,
-  InputValidatorConfig,
-  // Intelligence
-  IntelligenceConfig,
-  PriorityConfig as PriorityConfigData,
-  FactorWeightsConfig,
-  UrgencyCurveConfig,
-  RiskThresholdsConfig,
-  RiskMultipliersConfig,
-  RefreshTierConfig,
-  PolicyEvaluatorConfig,
 } from './AppConfig';

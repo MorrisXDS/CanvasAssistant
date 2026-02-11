@@ -11,7 +11,7 @@ import path from 'path';
 import fs from 'fs';
 import { MetricsCollectorConfig } from './AppConfig';
 import { ComponentLogger, Logger } from './Logger';
-import { DEFAULT_PATHS } from './DefaultPaths';
+import { DEFAULT_PATHS, ensureDirectory } from './DefaultPaths';
 
 export type MetricType = 'counter' | 'gauge' | 'timing';
 
@@ -117,10 +117,7 @@ export class MetricsCollector extends EventEmitter {
   private initializeDatabase(): void {
     try {
       // Ensure directory exists
-      const dbDir = path.dirname(this.dbPath);
-      if (!fs.existsSync(dbDir)) {
-        fs.mkdirSync(dbDir, { recursive: true });
-      }
+      ensureDirectory(path.dirname(this.dbPath));
 
       this.db = new BetterSqlite3(this.dbPath);
       this.db.pragma('journal_mode = WAL');

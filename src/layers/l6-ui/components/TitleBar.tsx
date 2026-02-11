@@ -31,7 +31,13 @@ export function TitleBar({ sidebarWidth = 220, onSidebarToggle }: TitleBarProps)
         style={{
           ...styles.sidebarSpacer,
           width: `${isMac ? Math.max(sidebarWidth, MAC_TRAFFIC_LIGHT_WIDTH) : sidebarWidth}px`,
-          ...(isMac ? { paddingLeft: `${MAC_TRAFFIC_LIGHT_WIDTH}px` } : {}),
+          ...(isMac
+            ? {
+                paddingLeft: `${MAC_TRAFFIC_LIGHT_WIDTH}px`,
+                backgroundColor: 'transparent',
+                borderBottom: 'none',
+              }
+            : {}),
         }}
         onDoubleClick={onSidebarToggle}
       />

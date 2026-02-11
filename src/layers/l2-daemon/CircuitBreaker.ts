@@ -6,7 +6,7 @@
  */
 
 import { EventEmitter } from 'events';
-import { CircuitBreakerConfig } from '../l0-utilities/AppConfig';
+import { CircuitBreakerConfig } from './DaemonConfig';
 import { ComponentLogger, Logger } from '../l0-utilities/Logger';
 
 export type CircuitState = 'closed' | 'open' | 'half-open';

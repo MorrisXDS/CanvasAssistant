@@ -3,7 +3,7 @@ import DailyRotateFile from 'winston-daily-rotate-file';
 import path from 'path';
 import fs from 'fs';
 import { LoggerConfig } from './AppConfig';
-import { DEFAULT_PATHS } from './DefaultPaths';
+import { DEFAULT_PATHS, ensureDirectory } from './DefaultPaths';
 
 export type LogLevel = 'error' | 'warn' | 'info' | 'debug';
 
@@ -246,9 +246,7 @@ export class Logger {
       options.directoryStructure || DEFAULT_LOGGER_OPTIONS.directoryStructure;
 
     // Ensure log directory exists
-    if (!fs.existsSync(this.logDir)) {
-      fs.mkdirSync(this.logDir, { recursive: true });
-    }
+    ensureDirectory(this.logDir);
 
     const rotation = options.rotation || DEFAULT_LOGGER_OPTIONS.rotation;
 
@@ -321,9 +319,7 @@ export class Logger {
       const week = getISOWeekNumber(now);
       const weekStr = week.toString().padStart(2, '0');
       const todayDir = path.join(this.logDir, year.toString(), `week-${weekStr}`);
-      if (!fs.existsSync(todayDir)) {
-        fs.mkdirSync(todayDir, { recursive: true });
-      }
+      ensureDirectory(todayDir);
 
       // DailyRotateFile supports directory patterns in the filename
       // We use %DATE% which gets replaced with the datePattern result
@@ -341,9 +337,7 @@ export class Logger {
       // Handle new file creation (creates directory for next day/week if needed)
       dailyRotateTransport.on('new', (newFilename: string) => {
         const dir = path.dirname(newFilename);
-        if (!fs.existsSync(dir)) {
-          fs.mkdirSync(dir, { recursive: true });
-        }
+        ensureDirectory(dir);
       });
 
       transports.push(dailyRotateTransport);

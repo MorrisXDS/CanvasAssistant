@@ -8,15 +8,7 @@
 import crypto from 'crypto';
 import { EventEmitter } from 'events';
 import { ComponentLogger, Logger } from './Logger';
-
-// Encryption constants
-const ALGORITHM = 'aes-256-gcm';
-const KEY_LENGTH = 32; // 256 bits
-const IV_LENGTH = 16; // 128 bits for GCM
-const AUTH_TAG_LENGTH = 16; // 128 bits
-const SALT_LENGTH = 32; // 256 bits
-const PBKDF2_ITERATIONS = 100000;
-const PBKDF2_DIGEST = 'sha256';
+import { CRYPTO_CONSTANTS, deriveKey, encryptBuffer, decryptBuffer } from './CryptoCore';
 
 // Version for format compatibility
 const CRYPTO_VERSION = '1.0';
@@ -57,7 +49,7 @@ export class CryptoManager extends EventEmitter {
   constructor(options: CryptoManagerOptions = {}) {
     super();
 
-    this.iterations = options.iterations ?? PBKDF2_ITERATIONS;
+    this.iterations = options.iterations ?? CRYPTO_CONSTANTS.PBKDF2_ITERATIONS;
 
     if (options.logger) {
       this.log = options.logger.child('cryptoManager');
@@ -80,33 +72,22 @@ export class CryptoManager extends EventEmitter {
         return null;
       }
 
-      // Generate random salt and IV
-      const salt = crypto.randomBytes(SALT_LENGTH);
-      const iv = crypto.randomBytes(IV_LENGTH);
+      // Generate random salt
+      const salt = crypto.randomBytes(CRYPTO_CONSTANTS.SALT_LENGTH);
 
       // Derive key from password using PBKDF2
-      const key = crypto.pbkdf2Sync(
-        password,
-        salt,
-        this.iterations,
-        KEY_LENGTH,
-        PBKDF2_DIGEST
-      );
-
-      // Create cipher
-      const cipher = crypto.createCipheriv(ALGORITHM, key, iv);
+      const key = deriveKey(password, salt, this.iterations);
 
       // Encrypt data
       const inputBuffer = typeof data === 'string' ? Buffer.from(data, 'utf8') : data;
-      const encrypted = Buffer.concat([cipher.update(inputBuffer), cipher.final()]);
-      const authTag = cipher.getAuthTag();
+      const { iv, authTag, ciphertext: encrypted } = encryptBuffer(key, inputBuffer);
 
       // Zero out the key for security
       key.fill(0);
 
       const result: EncryptedData = {
         version: CRYPTO_VERSION,
-        algorithm: ALGORITHM,
+        algorithm: CRYPTO_CONSTANTS.ALGORITHM,
         salt: salt.toString('base64'),
         iv: iv.toString('base64'),
         authTag: authTag.toString('base64'),
@@ -154,34 +135,24 @@ export class CryptoManager extends EventEmitter {
       const encrypted = Buffer.from(encryptedData.data, 'base64');
 
       // Validate sizes
-      if (salt.length !== SALT_LENGTH) {
+      if (salt.length !== CRYPTO_CONSTANTS.SALT_LENGTH) {
         this.log.error('Invalid salt length');
         return null;
       }
-      if (iv.length !== IV_LENGTH) {
+      if (iv.length !== CRYPTO_CONSTANTS.IV_LENGTH) {
         this.log.error('Invalid IV length');
         return null;
       }
-      if (authTag.length !== AUTH_TAG_LENGTH) {
+      if (authTag.length !== CRYPTO_CONSTANTS.AUTH_TAG_LENGTH) {
         this.log.error('Invalid auth tag length');
         return null;
       }
 
       // Derive key from password
-      const key = crypto.pbkdf2Sync(
-        password,
-        salt,
-        this.iterations,
-        KEY_LENGTH,
-        PBKDF2_DIGEST
-      );
-
-      // Create decipher
-      const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
-      decipher.setAuthTag(authTag);
+      const key = deriveKey(password, salt, this.iterations);
 
       // Decrypt data
-      const decrypted = Buffer.concat([decipher.update(encrypted), decipher.final()]);
+      const decrypted = decryptBuffer(key, iv, authTag, encrypted);
 
       // Zero out the key for security
       key.fill(0);

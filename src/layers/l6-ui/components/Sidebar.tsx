@@ -32,7 +32,7 @@ import {
   SETTINGS_DEFAULTS,
 } from '../../l5-presentation/settings';
 import { formatTimeAgo } from '../constants';
-import { layoutStyles as styles } from './layoutStyles';
+import { layoutStyles as styles, TITLE_BAR_HEIGHT } from './layoutStyles';
 import { NotificationDotGroup } from './shared';
 import { useSidebarDots, useFileUpdateDots } from '../hooks';
 
@@ -148,6 +148,7 @@ export function Sidebar({ onToggle }: SidebarProps) {
   const profileButtonRef = useRef<HTMLButtonElement>(null);
   const profileDropdownRef = useRef<HTMLDivElement>(null);
 
+  const isMac = window.api?.platform === 'darwin';
   const sidebarWidth = isCollapsed ? 64 : 220;
 
   // Close profile dropdown when clicking outside
@@ -313,6 +314,8 @@ export function Sidebar({ onToggle }: SidebarProps) {
         style={{
           ...styles.sidebar,
           width: `${sidebarWidth}px`,
+          // On macOS, start below the title bar so the navy doesn't bleed into the traffic light area
+          ...(isMac ? { top: `${TITLE_BAR_HEIGHT}px`, paddingTop: 0 } : {}),
         }}
         onDoubleClick={toggleSidebar}
       >

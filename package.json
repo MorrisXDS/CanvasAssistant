@@ -4,14 +4,13 @@
   "description": "Offline-first academic command center for Canvas LMS",
   "main": "dist/main.js",
   "engines": {
-    "node": ">=20.19.0"
+    "node": ">=24.0.0"
   },
   "scripts": {
-    "preinstall": "node scripts/check-node-version.js || exit 0",
-    "postinstall": "electron-builder install-app-deps",
+    "preinstall": "node scripts/check-node-version.js",
     "setup": "npm install && npm run rebuild",
     "rebuild": "electron-builder install-app-deps",
-    "predev": "node scripts/check-node-version.js",
+    "predev": "node scripts/check-node-version.js && electron-builder install-app-deps",
     "dev": "concurrently \"npm run dev:main\" \"npm run dev:renderer\" \"npm run dev:electron\"",
     "dev:main": "tsc -w",
     "dev:renderer": "vite",
@@ -41,6 +40,7 @@
   },
   "license": "PolyForm-Noncommercial-1.0.0",
   "dependencies": {
+    "@floating-ui/dom": "^1.7.5",
     "@tiptap/extension-link": "^3.18.0",
     "@tiptap/extension-placeholder": "^3.18.0",
     "@tiptap/pm": "^3.18.0",

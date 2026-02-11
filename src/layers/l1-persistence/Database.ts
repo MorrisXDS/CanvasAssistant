@@ -2,7 +2,7 @@ import BetterSqlite3, { Database as SQLiteDatabase } from 'better-sqlite3';
 import { EventEmitter } from 'events';
 import path from 'path';
 import fs from 'fs';
-import { DatabaseConfig as AppDatabaseConfig } from '../l0-utilities/AppConfig';
+import { DatabaseConfig as AppDatabaseConfig } from './PersistenceConfig';
 import { ILogger, createTimer, createNoopLogger } from '../l0-utilities/Logger';
 
 export interface DatabaseConfig {

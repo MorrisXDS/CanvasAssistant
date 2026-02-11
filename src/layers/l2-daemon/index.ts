@@ -13,6 +13,17 @@
  * - Policy-related announcement detection
  */
 
+export type {
+  DaemonConfig,
+  CanvasApiConfig,
+  RateLimiterConfig as DaemonRateLimiterConfig,
+  CircuitBreakerConfig as DaemonCircuitBreakerConfig,
+  SyncConfig,
+  HtmlContentSyncConfig,
+  PolicyDetectionConfig,
+  InputValidatorConfig as DaemonInputValidatorConfig,
+} from './DaemonConfig';
+export { DEFAULT_DAEMON_CONFIG } from './DaemonConfig';
 export {
   CanvasClient,
   CanvasClientConfig,

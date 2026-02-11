@@ -138,9 +138,7 @@ export const layoutStyles: Record<string, React.CSSProperties> = {
     fontSize: 'var(--text-sm)',
     fontWeight: 'var(--font-medium)',
     transition: 'all var(--transition-fast)',
-    borderLeftWidth: '3px',
-    borderLeftStyle: 'solid',
-    borderLeftColor: 'transparent',
+    boxShadow: 'inset 3px 0 0 transparent',
     whiteSpace: 'nowrap',
     overflow: 'hidden',
   },
@@ -148,7 +146,7 @@ export const layoutStyles: Record<string, React.CSSProperties> = {
   navLinkActive: {
     color: 'var(--text-inverse)',
     backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    borderLeftColor: 'var(--color-blue)',
+    boxShadow: 'inset 3px 0 0 var(--color-blue)',
   },
 
   dragHandle: {

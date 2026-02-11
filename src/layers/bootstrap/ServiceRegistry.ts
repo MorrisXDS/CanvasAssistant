@@ -143,7 +143,7 @@ export class ServiceRegistry extends EventEmitter {
 
     // L0 Utilities
     this.register('logger', () => {
-      const { Logger } = require('./Logger');
+      const { Logger } = require('../l0-utilities/Logger');
       return new Logger({
         logDir: config.logDir,
         enableConsole: config.verboseLogging,
@@ -151,12 +151,12 @@ export class ServiceRegistry extends EventEmitter {
     });
 
     this.register('systemMonitor', () => {
-      const { SystemMonitor } = require('./SystemMonitor');
+      const { SystemMonitor } = require('../l0-utilities/SystemMonitor');
       return new SystemMonitor({ pollIntervalMs: 30000 });
     });
 
     this.register('credentialManager', () => {
-      const { CredentialManager } = require('./CredentialManager');
+      const { CredentialManager } = require('../l0-utilities/CredentialManager');
       return new CredentialManager({
         serviceName: 'CanvasAssistant',
         accountName: 'canvas-api-token',
@@ -167,7 +167,7 @@ export class ServiceRegistry extends EventEmitter {
     });
 
     this.register('metricsCollector', () => {
-      const { MetricsCollector } = require('./MetricsCollector');
+      const { MetricsCollector } = require('../l0-utilities/MetricsCollector');
       return new MetricsCollector({
         enabled: config.enableMetrics ?? true,
         dbPath: config.metricsDbPath,
@@ -178,7 +178,7 @@ export class ServiceRegistry extends EventEmitter {
     });
 
     this.register('healthCheck', () => {
-      const { HealthCheck } = require('./HealthCheck');
+      const { HealthCheck } = require('../l0-utilities/HealthCheck');
       return new HealthCheck({
         enabled: config.enableHealthCheck ?? true,
         intervalMs: 60000,
@@ -188,7 +188,7 @@ export class ServiceRegistry extends EventEmitter {
     });
 
     this.register('housekeepingManager', () => {
-      const { HousekeepingManager } = require('./HousekeepingManager');
+      const { HousekeepingManager } = require('../l0-utilities/HousekeepingManager');
       return new HousekeepingManager({
         enabled: config.enableHousekeeping ?? true,
         logDir: config.logDir,
@@ -200,7 +200,7 @@ export class ServiceRegistry extends EventEmitter {
     });
 
     this.register('fileDownloadManager', () => {
-      const { FileDownloadManager } = require('./FileDownloadManager');
+      const { FileDownloadManager } = require('../l0-utilities/FileDownloadManager');
       return new FileDownloadManager({
         baseDir: config.filesDir,
         maxConcurrent: 10,

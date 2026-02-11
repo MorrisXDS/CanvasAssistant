@@ -1,5 +1,6 @@
 import path from 'path';
 import os from 'os';
+import fs from 'fs';
 
 /**
  * Safe fallback base directory for when no explicit config is provided.
@@ -21,3 +22,12 @@ export const DEFAULT_PATHS = {
   credentials: path.join(BASE, 'data', '.credentials'),
   metricsDb: path.join(BASE, 'data', 'metrics.db'),
 } as const;
+
+/**
+ * Ensure a directory exists, creating it recursively if necessary.
+ */
+export function ensureDirectory(dirPath: string): void {
+  if (!fs.existsSync(dirPath)) {
+    fs.mkdirSync(dirPath, { recursive: true });
+  }
+}

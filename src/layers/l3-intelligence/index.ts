@@ -11,6 +11,19 @@
  * - ML and LLM services (optional)
  */
 
+// Layer config
+export type {
+  IntelligenceConfig,
+  PriorityConfig,
+  FactorWeightsConfig,
+  UrgencyCurveConfig,
+  RiskThresholdsConfig,
+  RiskMultipliersConfig,
+  RefreshTierConfig,
+  PolicyEvaluatorConfig,
+} from './IntelligenceConfig';
+export { DEFAULT_INTELLIGENCE_CONFIG } from './IntelligenceConfig';
+
 // Domain Services (pure business logic)
 export {
   // Constants

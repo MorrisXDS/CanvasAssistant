@@ -13,6 +13,11 @@
  */
 
 export { Database, DatabaseConfig, CommitEvent } from './Database';
+export type {
+  PersistenceConfig,
+  DatabaseConfig as PersistenceDatabaseConfig,
+} from './PersistenceConfig';
+export { DEFAULT_PERSISTENCE_CONFIG } from './PersistenceConfig';
 export { MigrationRunner, Migration, coreMigrations } from './MigrationRunner';
 export {
   runPostImportRepairs,

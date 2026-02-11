@@ -33,7 +33,7 @@ import { HtmlFileExtractor } from './HtmlFileExtractor';
 import { HtmlContentSync } from './HtmlContentSync';
 import { OperationCoordinator } from './OperationCoordinator';
 import { FileDownloadManager } from '../l0-utilities/FileDownloadManager';
-import { HtmlContentSyncConfig } from '../l0-utilities/AppConfig';
+import { HtmlContentSyncConfig } from './DaemonConfig';
 import type { ComponentLogger } from '../l0-utilities/Logger';
 import crypto from 'crypto';
 

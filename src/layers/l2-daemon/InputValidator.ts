@@ -7,7 +7,7 @@
 
 import { z } from 'zod';
 import { EventEmitter } from 'events';
-import { InputValidatorConfig } from '../l0-utilities/AppConfig';
+import { InputValidatorConfig } from './DaemonConfig';
 import { ComponentLogger, Logger } from '../l0-utilities/Logger';
 
 export type ValidationStrictness = 'strict' | 'lenient';

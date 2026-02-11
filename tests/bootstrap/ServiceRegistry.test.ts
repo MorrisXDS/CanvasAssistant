@@ -5,8 +5,8 @@
  */
 
 import { EventEmitter } from 'events';
-import { ServiceRegistry } from '../../src/layers/l0-utilities/ServiceRegistry';
-import type { ServiceRegistryConfig, ServiceToken } from '../../src/layers/l0-utilities/ServiceTokens';
+import { ServiceRegistry } from '../../src/layers/bootstrap/ServiceRegistry';
+import type { ServiceRegistryConfig, ServiceToken } from '../../src/layers/bootstrap/ServiceTokens';
 
 // Mock services - minimal interfaces for testing
 class MockLogger {
@@ -274,7 +274,6 @@ describe('ServiceRegistry', () => {
       const config = reg.getConfig();
 
       // Should have default values
-      expect(config.canvasBaseUrl).toBe('https://utoronto.instructure.com');
       expect(config.enableMetrics).toBe(true);
     });
   });

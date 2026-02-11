@@ -16,6 +16,7 @@ import https from 'https';
 import http from 'http';
 import { Logger } from './Logger';
 import { sanitizeCourseCode, sanitizeFolderPath } from './PathBuilder';
+import { ensureDirectory as ensureDirectoryBase } from './DefaultPaths';
 
 export interface FileDownloadManagerConfig {
   /** Base directory for file storage */
@@ -106,27 +107,26 @@ export class FileDownloadManager extends EventEmitter {
   }
 
   /**
-   * Ensure a directory exists, creating it if necessary
+   * Ensure a directory exists, creating it if necessary.
+   * Wraps the shared ensureDirectory with permission-error guidance.
    */
   private ensureDirectory(dirPath: string): void {
-    if (!fs.existsSync(dirPath)) {
-      try {
-        fs.mkdirSync(dirPath, { recursive: true });
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        const isPermissionError =
-          errorMessage.includes('EPERM') ||
-          errorMessage.includes('EACCES') ||
-          errorMessage.includes('operation not permitted') ||
-          errorMessage.includes('permission denied');
+    try {
+      ensureDirectoryBase(dirPath);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const isPermissionError =
+        errorMessage.includes('EPERM') ||
+        errorMessage.includes('EACCES') ||
+        errorMessage.includes('operation not permitted') ||
+        errorMessage.includes('permission denied');
 
-        if (isPermissionError) {
-          throw new Error(
-            `Permission denied creating directory: ${dirPath}. Please run the application as Administrator (Windows) or with sudo (Mac/Linux).`
-          );
-        }
-        throw error;
+      if (isPermissionError) {
+        throw new Error(
+          `Permission denied creating directory: ${dirPath}. Please run the application as Administrator (Windows) or with sudo (Mac/Linux).`
+        );
       }
+      throw error;
     }
   }
 
@@ -435,6 +435,14 @@ export class FileDownloadManager extends EventEmitter {
     }
 
     return false;
+  }
+
+  /**
+   * Stop the download manager: cancel all active/queued downloads.
+   */
+  stop(): void {
+    this.cancelAll();
+    this.logger?.info('FileDownloadManager stopped');
   }
 
   /**

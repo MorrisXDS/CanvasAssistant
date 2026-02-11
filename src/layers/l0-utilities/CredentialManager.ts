@@ -12,7 +12,8 @@ import path from 'path';
 import axios, { AxiosError } from 'axios';
 import { CredentialManagerConfig } from './AppConfig';
 import { ComponentLogger, Logger } from './Logger';
-import { DEFAULT_PATHS } from './DefaultPaths';
+import { DEFAULT_PATHS, ensureDirectory } from './DefaultPaths';
+import { CRYPTO_CONSTANTS, deriveKey, encryptBuffer, decryptBuffer } from './CryptoCore';
 
 // Storage backend types
 type StorageBackend = 'keychain' | 'file' | 'none';
@@ -37,12 +38,6 @@ export interface CredentialStatus {
   isValid: boolean | null;
 }
 
-// Encryption constants for file fallback
-const ALGORITHM = 'aes-256-gcm';
-const KEY_LENGTH = 32;
-const IV_LENGTH = 16;
-const AUTH_TAG_LENGTH = 16;
-const SALT_LENGTH = 32;
 
 /**
  * Credential Manager for secure token storage
@@ -82,6 +77,7 @@ export class CredentialManager extends EventEmitter {
 
   // Background validation state
   private backgroundValidationTimer: NodeJS.Timeout | null = null;
+  private startupValidationTimer: NodeJS.Timeout | null = null;
 
   constructor(
     config?: CredentialManagerConfig | CredentialManagerOptions,
@@ -195,10 +191,7 @@ export class CredentialManager extends EventEmitter {
    */
   private initializeFileFallback(): void {
     // Ensure directory exists
-    const dir = path.dirname(this.fallbackFilePath);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
+    ensureDirectory(path.dirname(this.fallbackFilePath));
 
     // Derive encryption key from machine-specific data
     this.encryptionKey = this.deriveEncryptionKey();
@@ -219,7 +212,7 @@ export class CredentialManager extends EventEmitter {
 
     // Use PBKDF2 to derive a key
     const salt = Buffer.from('CID-CredentialManager-Salt-v1');
-    return crypto.pbkdf2Sync(machineId, salt, 100000, KEY_LENGTH, 'sha256');
+    return deriveKey(machineId, salt);
   }
 
   /**
@@ -527,20 +520,14 @@ export class CredentialManager extends EventEmitter {
       throw new Error('Encryption key not initialized');
     }
 
-    // Generate random IV and salt
-    const iv = crypto.randomBytes(IV_LENGTH);
-    const salt = crypto.randomBytes(SALT_LENGTH);
-
-    // Create cipher
-    const cipher = crypto.createCipheriv(ALGORITHM, this.encryptionKey, iv);
+    // Generate random salt
+    const salt = crypto.randomBytes(CRYPTO_CONSTANTS.SALT_LENGTH);
 
     // Encrypt token
-    let encrypted = cipher.update(token, 'utf8', 'hex');
-    encrypted += cipher.final('hex');
-    const authTag = cipher.getAuthTag();
+    const { iv, authTag, ciphertext } = encryptBuffer(this.encryptionKey, Buffer.from(token, 'utf8'));
 
     // Combine all parts: salt + iv + authTag + encrypted
-    const data = Buffer.concat([salt, iv, authTag, Buffer.from(encrypted, 'hex')]);
+    const data = Buffer.concat([salt, iv, authTag, ciphertext]);
 
     // Write to file with secure permissions (owner read/write only)
     fs.writeFileSync(this.fallbackFilePath, data, { mode: 0o600 });
@@ -583,28 +570,23 @@ export class CredentialManager extends EventEmitter {
       const data = fs.readFileSync(this.fallbackFilePath);
 
       // Verify minimum file size (salt + iv + authTag + at least 1 byte encrypted)
-      const minSize = SALT_LENGTH + IV_LENGTH + AUTH_TAG_LENGTH + 1;
+      const minSize = CRYPTO_CONSTANTS.SALT_LENGTH + CRYPTO_CONSTANTS.IV_LENGTH + CRYPTO_CONSTANTS.AUTH_TAG_LENGTH + 1;
       if (data.length < minSize) {
         this.log.error('Credential file corrupted: too small');
         return null;
       }
 
       // Extract parts
-      const _salt = data.subarray(0, SALT_LENGTH);
-      const iv = data.subarray(SALT_LENGTH, SALT_LENGTH + IV_LENGTH);
+      const _salt = data.subarray(0, CRYPTO_CONSTANTS.SALT_LENGTH);
+      const iv = data.subarray(CRYPTO_CONSTANTS.SALT_LENGTH, CRYPTO_CONSTANTS.SALT_LENGTH + CRYPTO_CONSTANTS.IV_LENGTH);
       const authTag = data.subarray(
-        SALT_LENGTH + IV_LENGTH,
-        SALT_LENGTH + IV_LENGTH + AUTH_TAG_LENGTH
+        CRYPTO_CONSTANTS.SALT_LENGTH + CRYPTO_CONSTANTS.IV_LENGTH,
+        CRYPTO_CONSTANTS.SALT_LENGTH + CRYPTO_CONSTANTS.IV_LENGTH + CRYPTO_CONSTANTS.AUTH_TAG_LENGTH
       );
-      const encrypted = data.subarray(SALT_LENGTH + IV_LENGTH + AUTH_TAG_LENGTH);
-
-      // Create decipher
-      const decipher = crypto.createDecipheriv(ALGORITHM, this.encryptionKey, iv);
-      decipher.setAuthTag(authTag);
+      const encrypted = data.subarray(CRYPTO_CONSTANTS.SALT_LENGTH + CRYPTO_CONSTANTS.IV_LENGTH + CRYPTO_CONSTANTS.AUTH_TAG_LENGTH);
 
       // Decrypt (GCM mode provides authentication - will throw on tampered data)
-      let decrypted = decipher.update(encrypted);
-      decrypted = Buffer.concat([decrypted, decipher.final()]);
+      const decrypted = decryptBuffer(this.encryptionKey, iv, authTag, encrypted);
 
       return decrypted.toString('utf8');
     } catch (error) {
@@ -650,13 +632,17 @@ export class CredentialManager extends EventEmitter {
     }, CredentialManager.BACKGROUND_VALIDATION_INTERVAL_MS);
 
     // Also run immediately on start (with small delay to avoid startup congestion)
-    setTimeout(() => this.performBackgroundValidation(), 5000);
+    this.startupValidationTimer = setTimeout(() => this.performBackgroundValidation(), 5000);
   }
 
   /**
    * Stop background token validation
    */
   stopBackgroundValidation(): void {
+    if (this.startupValidationTimer) {
+      clearTimeout(this.startupValidationTimer);
+      this.startupValidationTimer = null;
+    }
     if (this.backgroundValidationTimer) {
       clearInterval(this.backgroundValidationTimer);
       this.backgroundValidationTimer = null;

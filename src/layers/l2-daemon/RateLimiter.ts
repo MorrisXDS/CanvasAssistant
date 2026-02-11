@@ -1,5 +1,5 @@
 import { EventEmitter } from 'events';
-import { RateLimiterConfig as AppRateLimiterConfig } from '../l0-utilities/AppConfig';
+import { RateLimiterConfig as AppRateLimiterConfig } from './DaemonConfig';
 import type { ComponentLogger } from '../l0-utilities/Logger';
 
 export interface RateLimiterConfig {

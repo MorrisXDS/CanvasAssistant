@@ -7,18 +7,11 @@
 
 import crypto from 'crypto';
 import fs from 'fs';
-
-// Encryption constants
-const ALGORITHM = 'aes-256-gcm';
-const KEY_LENGTH = 32; // 256 bits
-const IV_LENGTH = 16; // 128 bits for GCM
-const SALT_LENGTH = 32; // 256 bits
-const AUTH_TAG_LENGTH = 16; // 128 bits
-const PBKDF2_ITERATIONS = 100000;
-const PBKDF2_DIGEST = 'sha256';
+import { CRYPTO_CONSTANTS, deriveKey, encryptBuffer, decryptBuffer } from './CryptoCore';
 
 // Header size for detecting encrypted files
-const HEADER_SIZE = SALT_LENGTH + IV_LENGTH + AUTH_TAG_LENGTH;
+const HEADER_SIZE =
+  CRYPTO_CONSTANTS.SALT_LENGTH + CRYPTO_CONSTANTS.IV_LENGTH + CRYPTO_CONSTANTS.AUTH_TAG_LENGTH;
 
 export interface EncryptionResult {
   success: boolean;
@@ -41,25 +34,14 @@ export function encryptBackup(
 ): EncryptionResult {
   try {
     // Generate random salt for key derivation
-    const salt = crypto.randomBytes(SALT_LENGTH);
+    const salt = crypto.randomBytes(CRYPTO_CONSTANTS.SALT_LENGTH);
 
     // Derive key from password using PBKDF2
-    const key = crypto.pbkdf2Sync(
-      password,
-      salt,
-      PBKDF2_ITERATIONS,
-      KEY_LENGTH,
-      PBKDF2_DIGEST
-    );
+    const key = deriveKey(password, salt);
 
-    // Generate random IV for encryption
-    const iv = crypto.randomBytes(IV_LENGTH);
-
-    // Create cipher and encrypt
-    const cipher = crypto.createCipheriv(ALGORITHM, key, iv);
+    // Encrypt file contents
     const input = fs.readFileSync(inputPath);
-    const encrypted = Buffer.concat([cipher.update(input), cipher.final()]);
-    const authTag = cipher.getAuthTag();
+    const { iv, authTag, ciphertext: encrypted } = encryptBuffer(key, input);
 
     // Write output: salt + iv + authTag + encrypted data
     const output = Buffer.concat([salt, iv, authTag, encrypted]);
@@ -96,28 +78,22 @@ export function decryptBackup(
     }
 
     // Extract header components
-    const salt = data.subarray(0, SALT_LENGTH);
-    const iv = data.subarray(SALT_LENGTH, SALT_LENGTH + IV_LENGTH);
+    const salt = data.subarray(0, CRYPTO_CONSTANTS.SALT_LENGTH);
+    const iv = data.subarray(
+      CRYPTO_CONSTANTS.SALT_LENGTH,
+      CRYPTO_CONSTANTS.SALT_LENGTH + CRYPTO_CONSTANTS.IV_LENGTH
+    );
     const authTag = data.subarray(
-      SALT_LENGTH + IV_LENGTH,
-      SALT_LENGTH + IV_LENGTH + AUTH_TAG_LENGTH
+      CRYPTO_CONSTANTS.SALT_LENGTH + CRYPTO_CONSTANTS.IV_LENGTH,
+      CRYPTO_CONSTANTS.SALT_LENGTH + CRYPTO_CONSTANTS.IV_LENGTH + CRYPTO_CONSTANTS.AUTH_TAG_LENGTH
     );
     const encrypted = data.subarray(HEADER_SIZE);
 
     // Derive key from password
-    const key = crypto.pbkdf2Sync(
-      password,
-      salt,
-      PBKDF2_ITERATIONS,
-      KEY_LENGTH,
-      PBKDF2_DIGEST
-    );
+    const key = deriveKey(password, salt);
 
-    // Create decipher and decrypt
-    const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
-    decipher.setAuthTag(authTag);
-
-    const decrypted = Buffer.concat([decipher.update(encrypted), decipher.final()]);
+    // Decrypt
+    const decrypted = decryptBuffer(key, iv, authTag, encrypted);
     fs.writeFileSync(outputPath, decrypted);
 
     return { success: true, outputPath };
@@ -191,28 +167,21 @@ export function verifyBackupPassword(filePath: string, password: string): boolea
       return false;
     }
 
-    const salt = data.subarray(0, SALT_LENGTH);
-    const iv = data.subarray(SALT_LENGTH, SALT_LENGTH + IV_LENGTH);
+    const salt = data.subarray(0, CRYPTO_CONSTANTS.SALT_LENGTH);
+    const iv = data.subarray(
+      CRYPTO_CONSTANTS.SALT_LENGTH,
+      CRYPTO_CONSTANTS.SALT_LENGTH + CRYPTO_CONSTANTS.IV_LENGTH
+    );
     const authTag = data.subarray(
-      SALT_LENGTH + IV_LENGTH,
-      SALT_LENGTH + IV_LENGTH + AUTH_TAG_LENGTH
+      CRYPTO_CONSTANTS.SALT_LENGTH + CRYPTO_CONSTANTS.IV_LENGTH,
+      CRYPTO_CONSTANTS.SALT_LENGTH + CRYPTO_CONSTANTS.IV_LENGTH + CRYPTO_CONSTANTS.AUTH_TAG_LENGTH
     );
     const encrypted = data.subarray(HEADER_SIZE);
 
-    const key = crypto.pbkdf2Sync(
-      password,
-      salt,
-      PBKDF2_ITERATIONS,
-      KEY_LENGTH,
-      PBKDF2_DIGEST
-    );
-
-    const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
-    decipher.setAuthTag(authTag);
+    const key = deriveKey(password, salt);
 
     // Try to decrypt - will throw if password is wrong
-    decipher.update(encrypted);
-    decipher.final();
+    decryptBuffer(key, iv, authTag, encrypted);
 
     return true;
   } catch {

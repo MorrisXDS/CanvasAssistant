@@ -8,7 +8,7 @@ import type { RateLimiter } from './RateLimiter';
 import type { Database } from '../l1-persistence/Database';
 import type { VisibleDataProvider } from '../l1-persistence/VisibleDataProvider';
 import type { FileDownloadManager } from '../l0-utilities/FileDownloadManager';
-import type { HtmlContentSyncConfig } from '../l0-utilities/AppConfig';
+import type { HtmlContentSyncConfig } from './DaemonConfig';
 import type { ComponentLogger } from '../l0-utilities/Logger';
 import type { OperationCoordinator } from './OperationCoordinator';
 import type {

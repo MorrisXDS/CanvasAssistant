@@ -14,7 +14,7 @@ import {
   FileDownloadManager,
   DownloadRequest,
 } from '../l0-utilities/FileDownloadManager';
-import { HtmlContentSyncConfig } from '../l0-utilities/AppConfig';
+import { HtmlContentSyncConfig } from './DaemonConfig';
 import type { ComponentLogger } from '../l0-utilities/Logger';
 
 /**

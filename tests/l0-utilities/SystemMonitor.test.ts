@@ -139,7 +139,7 @@ describe('SystemMonitor', () => {
       expect(state.canSync).toBe(true);
 
       const description = monitor.getStateDescription();
-      expect(description).toContain('Sync: ✓');
+      expect(description).toContain('Sync: allowed');
     });
 
     it('should show focused state in description', () => {
