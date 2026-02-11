@@ -148,9 +148,12 @@ describe('formatters', () => {
       expect(formatGrade(85.5)).toBe('85.5%');
     });
 
-    it('should format with specified decimals', () => {
-      expect(formatGrade(85.567, 2)).toBe('85.57%');
-      expect(formatGrade(85.5, 0)).toBe('86%');
+    it('should show 2 decimal places when hundredths are non-zero', () => {
+      expect(formatGrade(85.567)).toBe('85.57%');
+    });
+
+    it('should show 1 decimal place when hundredths are zero', () => {
+      expect(formatGrade(85.0)).toBe('85.0%');
     });
   });
 

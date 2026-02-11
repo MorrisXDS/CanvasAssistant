@@ -36,8 +36,12 @@ export function formatTimeAgo(dateStr: string | null): string {
   const diffDays = Math.floor(diffHours / 24);
   if (diffDays < 7) return `${diffDays}d ago`;
 
-  // More than a week, show date
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  // More than a week, show date — include year if not current year
+  const options: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' };
+  if (date.getFullYear() !== now.getFullYear()) {
+    options.year = 'numeric';
+  }
+  return date.toLocaleDateString('en-US', options);
 }
 
 /**
@@ -72,12 +76,16 @@ export function formatDueDate(
   if (daysUntilDue === 1) return 'Due tomorrow';
   if (daysUntilDue <= 7) return `Due in ${daysUntilDue} days`;
 
-  // More than a week, show date
+  // More than a week, show date — include year if not current year
   const date = new Date(dueAt);
   const formatOptions: Intl.DateTimeFormatOptions = {
     month: 'short',
     day: 'numeric',
   };
+
+  if (date.getFullYear() !== new Date().getFullYear()) {
+    formatOptions.year = 'numeric';
+  }
 
   // Only include time if requested AND time is known
   if (options?.includeTime && dueTimeKnown) {
@@ -133,10 +141,11 @@ export function formatCalendarDate(dateStr: string): string {
     });
   }
 
-  return date.toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-  });
+  const options: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' };
+  if (date.getFullYear() !== today.getFullYear()) {
+    options.year = 'numeric';
+  }
+  return date.toLocaleDateString('en-US', options);
 }
 
 /**
@@ -193,11 +202,15 @@ export function formatSmartDate(
     return includeTime ? `Tomorrow ${timeStr}` : 'Tomorrow';
   }
 
-  // Full date format
+  // Full date format — include year if not the current year
   const dateFormatOptions: Intl.DateTimeFormatOptions = {
     month: 'short',
     day: 'numeric',
   };
+
+  if (date.getFullYear() !== now.getFullYear()) {
+    dateFormatOptions.year = 'numeric';
+  }
 
   if (includeTime) {
     dateFormatOptions.hour = 'numeric';
@@ -300,28 +313,33 @@ export function formatTime(dateStr: string): string {
  * @returns Formatted date range
  */
 export function formatDateRange(startDate: string, endDate?: string): string {
+  const now = new Date();
   const start = new Date(startDate);
-  const startStr = start.toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-  });
+  const startOpts: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' };
+  if (start.getFullYear() !== now.getFullYear()) {
+    startOpts.year = 'numeric';
+  }
+  const startStr = start.toLocaleDateString('en-US', startOpts);
 
   if (!endDate) return startStr;
 
   const end = new Date(endDate);
-  const endStr = end.toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-  });
+  const endOpts: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' };
+  if (end.getFullYear() !== now.getFullYear()) {
+    endOpts.year = 'numeric';
+  }
+  const endStr = end.toLocaleDateString('en-US', endOpts);
 
   // Same day
   if (start.toDateString() === end.toDateString()) {
     return startStr;
   }
 
-  // Same month
+  // Same month and year
   if (start.getMonth() === end.getMonth() && start.getFullYear() === end.getFullYear()) {
-    return `${start.toLocaleDateString('en-US', { month: 'short' })} ${start.getDate()}-${end.getDate()}`;
+    const monthStr = start.toLocaleDateString('en-US', { month: 'short' });
+    const yearSuffix = start.getFullYear() !== now.getFullYear() ? `, ${start.getFullYear()}` : '';
+    return `${monthStr} ${start.getDate()}-${end.getDate()}${yearSuffix}`;
   }
 
   return `${startStr} - ${endStr}`;
