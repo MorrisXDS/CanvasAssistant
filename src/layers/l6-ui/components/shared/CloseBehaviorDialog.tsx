@@ -4,7 +4,7 @@
  */
 
 import React from 'react';
-import { X, Minus, Power } from 'lucide-react';
+import { Minus, Power } from 'lucide-react';
 
 interface CloseBehaviorDialogProps {
   isOpen: boolean;
@@ -12,7 +12,8 @@ interface CloseBehaviorDialogProps {
 }
 
 export function CloseBehaviorDialog({ isOpen, onChoice }: CloseBehaviorDialogProps) {
-  if (!isOpen) return null;
+  // Only show on Windows — macOS hides to Dock, Linux always quits
+  if (!isOpen || window.api?.platform !== 'win32') return null;
 
   return (
     <>

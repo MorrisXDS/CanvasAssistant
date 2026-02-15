@@ -182,8 +182,11 @@ export function registerSettingsHandlers(ctx: IpcContext): void {
           `Window behavior updated: closeAction=${settings.closeAction}, showTrayIcon=${settings.showTrayIcon}`
         );
 
-        // Toggle tray when showTrayIcon changes
-        if (settings.showTrayIcon !== previous.showTrayIcon) {
+        // Toggle tray when showTrayIcon changes (Windows only — macOS uses Dock, Linux tray unreliable)
+        if (
+          process.platform === 'win32' &&
+          settings.showTrayIcon !== previous.showTrayIcon
+        ) {
           if (settings.showTrayIcon) {
             createTray();
           } else {

@@ -453,13 +453,28 @@ export class WindowManager {
       }
     });
 
-    // Handle window close with minimize-to-tray option
+    // Handle window close with platform-appropriate behavior
     this.mainWindow.on('close', (event) => {
-      // If we're quitting (Alt+F4, tray quit, etc.), allow the close
+      // If we're quitting (Alt+F4, tray quit, Cmd+Q, etc.), allow the close
       if (this.isQuitting()) {
         return;
       }
 
+      // macOS: Standard behavior — hide window, keep app in Dock.
+      // No tray needed; clicking the Dock icon restores the window via 'activate' event.
+      if (process.platform === 'darwin') {
+        event.preventDefault();
+        this.mainWindow?.hide();
+        return;
+      }
+
+      // Linux: System tray support is unreliable (varies by DE/Wayland).
+      // Always quit on close — no tray option offered.
+      if (process.platform === 'linux') {
+        return; // Allow close → triggers window-all-closed → app.quit()
+      }
+
+      // Windows: Full tray support — use behavior settings
       const settings = this.getWindowBehavior();
 
       // If closeAction is null (not yet chosen), prompt the user via renderer UI

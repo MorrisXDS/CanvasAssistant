@@ -75,33 +75,34 @@ export function AppBehaviorSection({ sectionRef }: AppBehaviorSectionProps) {
               <p style={styles.sectionDesc}>{SETTINGS_CATEGORIES.behavior.description}</p>
             )}
 
-            {/* Close button behavior */}
-            {shouldShowSetting('windowBehavior.closeAction') && (
-              <SettingRow
-                settingKey="windowBehavior.closeAction"
-                label="Close button behavior"
-                description="What happens when you click the close button"
-                isModified={windowBehavior.closeAction !== null}
-                onReset={() => updateWindowBehavior({ closeAction: null })}
-              >
-                <SettingSelect
-                  value={windowBehavior.closeAction ?? ''}
-                  onChange={(v) =>
-                    updateWindowBehavior({
-                      closeAction: v === '' ? null : (v as 'quit' | 'minimize-to-tray'),
-                    })
-                  }
-                  options={[
-                    { value: '', label: SETTINGS_LABELS.options.closeAction.ask },
-                    {
-                      value: 'minimize-to-tray',
-                      label: SETTINGS_LABELS.options.closeAction.minimize,
-                    },
-                    { value: 'quit', label: SETTINGS_LABELS.options.closeAction.quit },
-                  ]}
-                />
-              </SettingRow>
-            )}
+            {/* Close button behavior — Windows only (macOS hides to Dock, Linux always quits) */}
+            {window.api?.platform === 'win32' &&
+              shouldShowSetting('windowBehavior.closeAction') && (
+                <SettingRow
+                  settingKey="windowBehavior.closeAction"
+                  label="Close button behavior"
+                  description="What happens when you click the close button"
+                  isModified={windowBehavior.closeAction !== null}
+                  onReset={() => updateWindowBehavior({ closeAction: null })}
+                >
+                  <SettingSelect
+                    value={windowBehavior.closeAction ?? ''}
+                    onChange={(v) =>
+                      updateWindowBehavior({
+                        closeAction: v === '' ? null : (v as 'quit' | 'minimize-to-tray'),
+                      })
+                    }
+                    options={[
+                      { value: '', label: SETTINGS_LABELS.options.closeAction.ask },
+                      {
+                        value: 'minimize-to-tray',
+                        label: SETTINGS_LABELS.options.closeAction.minimize,
+                      },
+                      { value: 'quit', label: SETTINGS_LABELS.options.closeAction.quit },
+                    ]}
+                  />
+                </SettingRow>
+              )}
 
             {/* Reset window size */}
             {shouldShowSetting('windowBehavior.resetSize') && (

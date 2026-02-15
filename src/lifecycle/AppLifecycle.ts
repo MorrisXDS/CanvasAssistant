@@ -592,8 +592,8 @@ export class AppLifecycle {
 
     this.windowManager?.createWindow();
 
-    // Create system tray icon if enabled
-    if (this.boundGetWindowBehavior().showTrayIcon) {
+    // Create system tray icon if enabled (Windows only — macOS uses Dock, Linux tray is unreliable)
+    if (process.platform === 'win32' && this.boundGetWindowBehavior().showTrayIcon) {
       this.windowManager?.createTray();
     }
 
@@ -647,18 +647,28 @@ export class AppLifecycle {
   onWindowAllClosed(): void {
     this.logger.info('All windows closed');
 
-    if (process.platform !== 'darwin') {
-      if (this.isQuitting) {
-        app.quit();
-        return;
-      }
+    // macOS: Never quit on window close — standard behavior, app stays in Dock
+    if (process.platform === 'darwin') {
+      return;
+    }
 
-      const settings = this.boundGetWindowBehavior();
-      if (settings.closeAction !== 'minimize-to-tray') {
-        app.quit();
-      } else {
-        this.logger.info('Staying in tray (minimize-to-tray enabled)');
-      }
+    // Linux: Always quit on window close — no tray support
+    if (process.platform === 'linux') {
+      app.quit();
+      return;
+    }
+
+    // Windows: Quit unless minimize-to-tray is active
+    if (this.isQuitting) {
+      app.quit();
+      return;
+    }
+
+    const settings = this.boundGetWindowBehavior();
+    if (settings.closeAction !== 'minimize-to-tray') {
+      app.quit();
+    } else {
+      this.logger.info('Staying in tray (minimize-to-tray enabled)');
     }
   }
 
