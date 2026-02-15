@@ -5,7 +5,7 @@
  * their staleness tracking capability.
  */
 
-import { Command, CommandContext, CommandResult } from '../types';
+import { Command, CommandContext, CommandResult } from '../../types';
 
 export interface RemoveCourseSyllabusParams {
   courseId: number;

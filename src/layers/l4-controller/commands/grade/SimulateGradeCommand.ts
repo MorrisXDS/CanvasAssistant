@@ -14,7 +14,7 @@ import {
   CommandResult,
   SimulateGradeParams,
   SimulationResult,
-} from '../types';
+} from '../../types';
 
 export class SimulateGradeCommand implements Command<
   SimulateGradeParams,

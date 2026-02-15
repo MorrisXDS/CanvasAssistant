@@ -11,7 +11,7 @@
  * - Retain all their data (tasks, grades, etc.)
  */
 
-import { Command, CommandContext, CommandResult } from '../types';
+import { Command, CommandContext, CommandResult } from '../../types';
 
 export interface ArchiveCourseParams {
   courseId: number;

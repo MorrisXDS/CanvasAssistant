@@ -5,7 +5,12 @@
  * Can optionally clear just a single task's simulation.
  */
 
-import { Command, CommandContext, CommandResult, ClearSimulationParams } from '../types';
+import {
+  Command,
+  CommandContext,
+  CommandResult,
+  ClearSimulationParams,
+} from '../../types';
 
 export interface ClearSimulationResult {
   clearedCount: number;

@@ -5,7 +5,7 @@
  * Canvas-synced tasks should not be deleted (they'll return on next sync).
  */
 
-import { Command, CommandContext, CommandResult, DeleteTaskParams } from '../types';
+import { Command, CommandContext, CommandResult, DeleteTaskParams } from '../../types';
 
 export class DeleteTaskCommand implements Command<
   DeleteTaskParams,

@@ -13,7 +13,7 @@ import {
   CommandResult,
   UpdateCoursePreferencesParams,
   CoursePreferences,
-} from '../types';
+} from '../../types';
 
 export class UpdateCoursePreferencesCommand implements Command<
   UpdateCoursePreferencesParams,

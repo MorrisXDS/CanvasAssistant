@@ -21,22 +21,27 @@ import { SimulationManager } from './SimulationManager';
 import { ILogger, createTimer, createNoopLogger } from '../l0-utilities/Logger';
 
 // Import all commands
-import { UpdateTargetGradeCommand } from './commands/UpdateTargetGradeCommand';
-import { UpdateCoursePreferencesCommand } from './commands/UpdateCoursePreferencesCommand';
-import { DismissNotificationCommand } from './commands/DismissNotificationCommand';
-import { MarkTaskCompleteCommand } from './commands/MarkTaskCompleteCommand';
-import { TriggerSyncCommand } from './commands/TriggerSyncCommand';
-import { SimulateGradeCommand } from './commands/SimulateGradeCommand';
-import { ClearSimulationCommand } from './commands/ClearSimulationCommand';
-import { CreateTaskCommand } from './commands/CreateTaskCommand';
-import { DuplicateTaskCommand } from './commands/DuplicateTaskCommand';
-import { UpdateTaskCommand } from './commands/UpdateTaskCommand';
-import { DeleteTaskCommand } from './commands/DeleteTaskCommand';
-import { SetCourseSyllabusCommand } from './commands/SetCourseSyllabusCommand';
-import { MarkSyllabusReviewedCommand } from './commands/MarkSyllabusReviewedCommand';
-import { RemoveCourseSyllabusCommand } from './commands/RemoveCourseSyllabusCommand';
-import { ArchiveCourseCommand } from './commands/ArchiveCourseCommand';
-import { UnarchiveCourseCommand } from './commands/UnarchiveCourseCommand';
+import {
+  ArchiveCourseCommand,
+  UnarchiveCourseCommand,
+  UpdateCoursePreferencesCommand,
+  UpdateTargetGradeCommand,
+} from './commands/course';
+import {
+  CreateTaskCommand,
+  DuplicateTaskCommand,
+  UpdateTaskCommand,
+  DeleteTaskCommand,
+  MarkTaskCompleteCommand,
+} from './commands/task';
+import { SimulateGradeCommand, ClearSimulationCommand } from './commands/grade';
+import { DismissNotificationCommand } from './commands/notification';
+import {
+  SetCourseSyllabusCommand,
+  MarkSyllabusReviewedCommand,
+  RemoveCourseSyllabusCommand,
+} from './commands/syllabus';
+import { TriggerSyncCommand } from './commands/sync';
 
 export interface CommandDispatcherOptions {
   db: Database;

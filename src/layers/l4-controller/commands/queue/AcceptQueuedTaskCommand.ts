@@ -10,10 +10,15 @@
  * 3. Set local_modified_fields to track which fields the user changed
  */
 
-import { Command, CommandContext, CommandResult, AcceptQueuedTaskParams } from '../types';
-import type { CanvasTaskQueueRow } from '../../l1-persistence';
-import type { CanvasAssignment } from '../../l2-daemon/data/DataMapperTypes';
-import { mapAssignment } from '../../l2-daemon/data/DataMappers';
+import {
+  Command,
+  CommandContext,
+  CommandResult,
+  AcceptQueuedTaskParams,
+} from '../../types';
+import type { CanvasTaskQueueRow } from '../../../l1-persistence';
+import type { CanvasAssignment } from '../../../l2-daemon/data/DataMapperTypes';
+import { mapAssignment } from '../../../l2-daemon/data/DataMappers';
 
 export class AcceptQueuedTaskCommand implements Command<
   AcceptQueuedTaskParams,

@@ -5,7 +5,7 @@
  * Useful for creating similar tasks quickly.
  */
 
-import { Command, CommandContext, CommandResult, DuplicateTaskParams } from '../types';
+import { Command, CommandContext, CommandResult, DuplicateTaskParams } from '../../types';
 
 interface TaskRecord {
   id: number;
@@ -129,14 +129,7 @@ export class DuplicateTaskCommand implements Command<
               source_type, course_id, task_id, title, description,
               start_at, end_at, all_day
             ) VALUES ('user', ?, ?, ?, ?, ?, ?, 0)`,
-            [
-              newCourseId,
-              taskId,
-              newTitle,
-              newDescription,
-              startAt,
-              newDueAt,
-            ],
+            [newCourseId, taskId, newTitle, newDescription, startAt, newDueAt],
             'calendar_events'
           );
 
@@ -147,9 +140,8 @@ export class DuplicateTaskCommand implements Command<
             [calendarEventId, taskId],
             'tasks'
           );
-        } catch (calendarError) {
-          // Log but don't fail - task was created successfully
-          console.warn('Failed to create calendar event for duplicated task:', calendarError);
+        } catch (_calendarError) {
+          // Non-critical: task was created successfully, calendar event is optional
         }
       }
 

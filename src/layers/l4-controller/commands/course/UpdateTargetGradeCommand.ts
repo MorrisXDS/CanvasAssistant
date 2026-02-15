@@ -11,8 +11,8 @@ import {
   CommandContext,
   CommandResult,
   UpdateTargetGradeParams,
-} from '../types';
-import { CourseRepository } from '../../l1-persistence';
+} from '../../types';
+import { CourseRepository } from '../../../l1-persistence';
 
 export class UpdateTargetGradeCommand implements Command<
   UpdateTargetGradeParams,

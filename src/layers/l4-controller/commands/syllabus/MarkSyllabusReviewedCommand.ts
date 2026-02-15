@@ -5,7 +5,7 @@
  * Called when user acknowledges they've reviewed the syllabus.
  */
 
-import { Command, CommandContext, CommandResult } from '../types';
+import { Command, CommandContext, CommandResult } from '../../types';
 
 export interface MarkSyllabusReviewedParams {
   courseId: number;

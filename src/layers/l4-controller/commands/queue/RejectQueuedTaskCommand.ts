@@ -5,8 +5,13 @@
  * though its metadata will still be updated in the queue table.
  */
 
-import { Command, CommandContext, CommandResult, RejectQueuedTaskParams } from '../types';
-import type { CanvasTaskQueueRow } from '../../l1-persistence';
+import {
+  Command,
+  CommandContext,
+  CommandResult,
+  RejectQueuedTaskParams,
+} from '../../types';
+import type { CanvasTaskQueueRow } from '../../../l1-persistence';
 
 export class RejectQueuedTaskCommand implements Command<RejectQueuedTaskParams, void> {
   readonly name = 'RejectQueuedTask';

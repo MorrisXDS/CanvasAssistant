@@ -9,7 +9,7 @@
  */
 
 import { EventEmitter } from 'events';
-import { Command, CommandContext, CommandResult, TriggerSyncParams } from '../types';
+import { Command, CommandContext, CommandResult, TriggerSyncParams } from '../../types';
 
 /**
  * Sync request event payload

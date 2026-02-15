@@ -6,10 +6,15 @@
  * (e.g., notes, personal due date, custom title).
  */
 
-import { Command, CommandContext, CommandResult, MergeQueuedTaskParams } from '../types';
-import type { CanvasTaskQueueRow, TaskRow } from '../../l1-persistence';
-import type { CanvasAssignment } from '../../l2-daemon/data/DataMapperTypes';
-import { mapAssignment } from '../../l2-daemon/data/DataMappers';
+import {
+  Command,
+  CommandContext,
+  CommandResult,
+  MergeQueuedTaskParams,
+} from '../../types';
+import type { CanvasTaskQueueRow, TaskRow } from '../../../l1-persistence';
+import type { CanvasAssignment } from '../../../l2-daemon/data/DataMapperTypes';
+import { mapAssignment } from '../../../l2-daemon/data/DataMappers';
 
 export class MergeQueuedTaskCommand implements Command<
   MergeQueuedTaskParams,

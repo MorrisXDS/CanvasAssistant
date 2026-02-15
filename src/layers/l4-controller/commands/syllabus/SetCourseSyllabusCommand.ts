@@ -6,7 +6,7 @@
  * This enables change detection and policy staleness tracking.
  */
 
-import { Command, CommandContext, CommandResult } from '../types';
+import { Command, CommandContext, CommandResult } from '../../types';
 
 export interface SetCourseSyllabusParams {
   courseId: number;

@@ -4,9 +4,14 @@
  * Uses repositories for data access and domain services for grade calculation.
  */
 
-import { Command, CommandContext, CommandResult, MarkTaskCompleteParams } from '../types';
-import { TaskRepository, CourseRepository } from '../../l1-persistence';
-import { GradeCalculationService } from '../../l3-intelligence/domain';
+import {
+  Command,
+  CommandContext,
+  CommandResult,
+  MarkTaskCompleteParams,
+} from '../../types';
+import { TaskRepository, CourseRepository } from '../../../l1-persistence';
+import { GradeCalculationService } from '../../../l3-intelligence/domain';
 
 export class MarkTaskCompleteCommand implements Command<
   MarkTaskCompleteParams,

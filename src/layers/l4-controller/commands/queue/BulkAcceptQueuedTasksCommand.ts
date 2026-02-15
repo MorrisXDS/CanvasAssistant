@@ -10,10 +10,10 @@ import {
   CommandContext,
   CommandResult,
   BulkAcceptQueuedTasksParams,
-} from '../types';
-import type { CanvasTaskQueueRow } from '../../l1-persistence';
-import type { CanvasAssignment } from '../../l2-daemon/data/DataMapperTypes';
-import { mapAssignment } from '../../l2-daemon/data/DataMappers';
+} from '../../types';
+import type { CanvasTaskQueueRow } from '../../../l1-persistence';
+import type { CanvasAssignment } from '../../../l2-daemon/data/DataMapperTypes';
+import { mapAssignment } from '../../../l2-daemon/data/DataMappers';
 
 export class BulkAcceptQueuedTasksCommand implements Command<
   BulkAcceptQueuedTasksParams,

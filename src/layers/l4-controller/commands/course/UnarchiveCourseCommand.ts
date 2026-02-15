@@ -6,7 +6,7 @@
  * (subject to term selection and hide settings).
  */
 
-import { Command, CommandContext, CommandResult } from '../types';
+import { Command, CommandContext, CommandResult } from '../../types';
 
 export interface UnarchiveCourseParams {
   courseId: number;

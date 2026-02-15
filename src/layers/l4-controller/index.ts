@@ -45,30 +45,39 @@ export {
   CommandName,
 } from './CommandDispatcher';
 
-// Individual commands (for direct use if needed)
-export { UpdateTargetGradeCommand } from './commands/UpdateTargetGradeCommand';
-export { UpdateCoursePreferencesCommand } from './commands/UpdateCoursePreferencesCommand';
-export { DismissNotificationCommand } from './commands/DismissNotificationCommand';
-export { MarkTaskCompleteCommand } from './commands/MarkTaskCompleteCommand';
-export { TriggerSyncCommand, SyncRequestEvent } from './commands/TriggerSyncCommand';
-export { SimulateGradeCommand } from './commands/SimulateGradeCommand';
+// All commands (re-exported via barrel)
 export {
-  ClearSimulationCommand,
-  ClearSimulationResult,
-} from './commands/ClearSimulationCommand';
-export {
+  // Course commands
   ArchiveCourseCommand,
   ArchiveCourseParams,
   ArchiveCourseResult,
-} from './commands/ArchiveCourseCommand';
-export {
   UnarchiveCourseCommand,
   UnarchiveCourseParams,
   UnarchiveCourseResult,
-} from './commands/UnarchiveCourseCommand';
-
-// Queue commands
-export { AcceptQueuedTaskCommand } from './commands/AcceptQueuedTaskCommand';
-export { RejectQueuedTaskCommand } from './commands/RejectQueuedTaskCommand';
-export { BulkAcceptQueuedTasksCommand } from './commands/BulkAcceptQueuedTasksCommand';
-export { MergeQueuedTaskCommand } from './commands/MergeQueuedTaskCommand';
+  UpdateCoursePreferencesCommand,
+  UpdateTargetGradeCommand,
+  // Task commands
+  CreateTaskCommand,
+  DuplicateTaskCommand,
+  UpdateTaskCommand,
+  DeleteTaskCommand,
+  MarkTaskCompleteCommand,
+  // Queue commands
+  AcceptQueuedTaskCommand,
+  RejectQueuedTaskCommand,
+  BulkAcceptQueuedTasksCommand,
+  MergeQueuedTaskCommand,
+  // Grade commands
+  SimulateGradeCommand,
+  ClearSimulationCommand,
+  ClearSimulationResult,
+  // Notification commands
+  DismissNotificationCommand,
+  // Syllabus commands
+  SetCourseSyllabusCommand,
+  MarkSyllabusReviewedCommand,
+  RemoveCourseSyllabusCommand,
+  // Sync commands
+  TriggerSyncCommand,
+  SyncRequestEvent,
+} from './commands';

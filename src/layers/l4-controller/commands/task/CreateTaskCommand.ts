@@ -4,7 +4,7 @@
  * Creates a user-defined task (not from Canvas) for a course.
  */
 
-import { Command, CommandContext, CommandResult, CreateTaskParams } from '../types';
+import { Command, CommandContext, CommandResult, CreateTaskParams } from '../../types';
 
 export class CreateTaskCommand implements Command<CreateTaskParams, { taskId: number }> {
   readonly name = 'CreateTask';

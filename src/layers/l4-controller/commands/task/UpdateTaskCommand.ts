@@ -4,7 +4,7 @@
  * Allows editing task title, description, due date, weight, and grade.
  */
 
-import { Command, CommandContext, CommandResult, UpdateTaskParams } from '../types';
+import { Command, CommandContext, CommandResult, UpdateTaskParams } from '../../types';
 
 export class UpdateTaskCommand implements Command<UpdateTaskParams, { taskId: number }> {
   readonly name = 'UpdateTask';
