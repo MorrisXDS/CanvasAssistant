@@ -73,6 +73,8 @@ export interface DependencyNode {
   isDownloaded: boolean;
   /** Reference to existing resource ID (if already in database) */
   resourceId?: number;
+  /** Whether the HTML content is missing from the local database (needs API fetch) */
+  contentMissing?: boolean;
 }
 
 /**
@@ -430,6 +432,9 @@ export class HtmlDependencyResolver {
         folderStructure,
         depth
       );
+    } else {
+      // Content not in local DB — will need API fetch during download
+      htmlNode.contentMissing = true;
     }
 
     return htmlNode;

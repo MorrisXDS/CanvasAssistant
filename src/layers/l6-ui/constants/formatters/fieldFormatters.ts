@@ -25,9 +25,11 @@ export function formatFieldValue(
     try {
       const date = new Date(value);
       if (!isNaN(date.getTime())) {
+        const isCurrentYear = date.getFullYear() === new Date().getFullYear();
         return date.toLocaleString('en-US', {
           month: 'short',
           day: 'numeric',
+          year: isCurrentYear ? undefined : 'numeric',
           hour: 'numeric',
           minute: '2-digit',
           hour12: true,
