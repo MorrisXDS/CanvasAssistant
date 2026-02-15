@@ -3,7 +3,7 @@
  * Reusable selectors for querying store state
  */
 
-import type { StoreState } from './types';
+import type { StoreState } from '../types';
 import { getCachedCourseGrades } from './courseGradesCache';
 
 /**

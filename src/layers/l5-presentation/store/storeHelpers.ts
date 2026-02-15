@@ -3,7 +3,7 @@
  * Optimistic update tracking, commit debouncing, and term detection utilities
  */
 
-import type { EnrollmentTerm } from './types';
+import type { EnrollmentTerm } from '../types';
 
 /**
  * Get IDs of currently active enrollment terms.

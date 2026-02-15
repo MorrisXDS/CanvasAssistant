@@ -3,7 +3,7 @@
  * IPC event subscriptions for the Zustand store
  */
 
-import type { SimulationChangeEvent, DbCommitEvent, SyncConflictItem } from './types';
+import type { SimulationChangeEvent, DbCommitEvent, SyncConflictItem } from '../types';
 import { useStore } from './store';
 
 /**

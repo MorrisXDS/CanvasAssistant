@@ -41,7 +41,7 @@ import {
   DEFAULT_CONTENT_SETTINGS,
 } from '../../l5-presentation/settings';
 import type { Course } from '../../l5-presentation/types';
-import { getCurrentTermIds } from '../../l5-presentation/storeHelpers';
+import { getCurrentTermIds } from '../../l5-presentation/store/storeHelpers';
 import { getLetterGrade } from '../constants';
 import { Button } from './primitives/Button';
 import { onboardingStyles as styles, onboardingAnimations } from './onboardingStyles';

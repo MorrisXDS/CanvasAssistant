@@ -22,7 +22,7 @@ import {
   DisplayCalendarEvent,
   SyncResultSummary,
   SyncUpdate,
-} from './types';
+} from '../types';
 import {
   markOptimisticUpdate,
   shouldSkipRefresh,
@@ -31,13 +31,7 @@ import {
   processPendingCommits,
   getCurrentTermIds,
 } from './storeHelpers';
-import { getEffectiveTimezone } from './settings';
-
-// Re-export for consumers
-export type { SyncResultSummary } from './types';
-export { subscribeToIpcEvents } from './storeSubscriptions';
-export { getCachedCourseGrades } from './courseGradesCache';
-export { selectors } from './storeSelectors';
+import { getEffectiveTimezone } from '../settings';
 
 /**
  * Initial state
