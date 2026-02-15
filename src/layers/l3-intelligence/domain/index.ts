@@ -26,14 +26,15 @@ export {
   GRADE_THRESHOLDS,
 } from './Constants';
 
-export { GradeCalculationService } from './GradeCalculationService';
+// Grade Calculation
+export { GradeCalculationService } from './grades';
 export type {
   GradeData,
   GradeCalculationResult,
   WhatIfScenario,
   WhatIfResult,
   GradeProjection,
-} from './GradeCalculationService';
+} from './grades';
 
 // Data Completeness Analyzer
 export {
@@ -41,63 +42,59 @@ export {
   analyzeTaskCompleteness,
   generateDataCompletenessInsights,
   getDataCompletenessSummary,
-} from './DataCompletenessAnalyzer';
-export type {
-  MissingFieldNotification,
-  DataCompletenessSummary,
-} from './DataCompletenessAnalyzer';
+} from './data-quality';
+export type { MissingFieldNotification, DataCompletenessSummary } from './data-quality';
 
-// Text Extraction (Layer 1 Content Analysis)
+// Content Analysis Pipeline
 export {
+  // Text Extraction (Layer 1)
   extractTextFromHtml,
   extractTextFromFile,
   extractTextFromPdf,
   normalizeText,
   detectDocumentType,
-} from './TextExtractor';
-export type { TextExtractionResult, TextExtractionOptions } from './TextExtractor';
-
-// Rule-Based Extraction (Layer 2 Content Analysis)
-export {
+  // Rule-Based Extraction (Layer 2)
   extractDates,
   extractPercentages,
   extractPolicies,
   extractKeywords,
   extractAssignmentWeights,
   runRuleBasedExtraction,
-} from './RuleBasedExtractor';
+  // Local ML Service (Layer 3 - Optional)
+  LocalMLService,
+  getLocalMLService,
+  // LLM Service (Layer 4 - Optional)
+  LLMService,
+  getLLMService,
+} from './content-analysis';
 export type {
+  // Text Extraction types
+  TextExtractionResult,
+  TextExtractionOptions,
+  // Rule-Based Extraction types
   ExtractedDate,
   ExtractedPercentage,
   ExtractedPolicy,
   RuleBasedExtractionResult,
-} from './RuleBasedExtractor';
-
-// Local ML Service (Layer 3 Content Analysis - Optional)
-export { LocalMLService, getLocalMLService } from './LocalMLService';
-export type {
+  // Local ML types
   DocumentClassification,
   NamedEntity,
   TextEmbedding,
   LocalMLResult,
   LocalMLConfig,
-} from './LocalMLService';
-
-// LLM Service (Layer 4 Content Analysis - Optional)
-export { LLMService, getLLMService } from './LLMService';
-export type {
+  // LLM types
   LLMProvider,
   LLMRequest,
   LLMResponse,
   LLMServiceConfig,
-} from './LLMService';
+} from './content-analysis';
 
-// Submission Status Service (OR logic for submission tracking)
+// Submission Status Service
 export {
   getEffectiveSubmissionStatus,
   isEffectivelySubmitted,
   isEffectivelyGraded,
   getSubmissionStatusLabel,
   getSubmissionStatusBadgeVariant,
-} from './SubmissionStatusService';
-export type { SubmissionStatus } from './SubmissionStatusService';
+} from './submission';
+export type { SubmissionStatus } from './submission';

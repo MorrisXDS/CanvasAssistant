@@ -500,8 +500,8 @@ export function extractAssignmentWeights(text: string): Map<string, number> {
 
   // Pattern: "Assignment 15%" or "Assignments: 15%" or "Assignment (15%)"
   const weightPatterns = [
-    /\b(assignment|exam|quiz|midterm|final|project|essay|paper|lab|homework|test|presentation|participation|attendance)s?\s*[:\(\[]?\s*(\d+(?:\.\d+)?)\s*%/gi,
-    /(\d+(?:\.\d+)?)\s*%\s*[:\-]?\s*(assignment|exam|quiz|midterm|final|project|essay|paper|lab|homework|test|presentation|participation|attendance)s?\b/gi,
+    /\b(assignment|exam|quiz|midterm|final|project|essay|paper|lab|homework|test|presentation|participation|attendance)s?\s*[:([]?\s*(\d+(?:\.\d+)?)\s*%/gi,
+    /(\d+(?:\.\d+)?)\s*%\s*[:-]?\s*(assignment|exam|quiz|midterm|final|project|essay|paper|lab|homework|test|presentation|participation|attendance)s?\b/gi,
   ];
 
   for (const pattern of weightPatterns) {

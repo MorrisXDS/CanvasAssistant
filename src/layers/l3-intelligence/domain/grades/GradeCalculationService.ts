@@ -5,7 +5,7 @@
  * It operates on pure data structures and returns calculated results.
  */
 
-import type { Task } from '../../../shared/ipc-contract';
+import type { Task } from '../../../../shared/ipc-contract';
 
 export interface GradeData {
   weightedSum: number;

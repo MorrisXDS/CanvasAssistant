@@ -22,7 +22,7 @@ import type { RateLimiter } from '../l2-daemon/resilience/RateLimiter';
 import type { CircuitBreaker } from '../l2-daemon/resilience/CircuitBreaker';
 import type { CanvasClient } from '../l2-daemon/client/CanvasClient';
 import type { SyncEngine } from '../l2-daemon/sync-engine/SyncEngine';
-import type { GradeCalculationService } from '../l3-intelligence/domain/GradeCalculationService';
+import type { GradeCalculationService } from '../l3-intelligence/domain/grades/GradeCalculationService';
 import type { CommandDispatcher } from '../l4-controller/CommandDispatcher';
 
 /**

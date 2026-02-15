@@ -431,7 +431,7 @@ Give me 3-5 specific study recommendations.`,
 
     // Try to parse as bullet points
     const lines = response.text.split('\n').filter((line) => line.trim());
-    return lines.map((line) => line.replace(/^[\d\.\-\*\•]\s*/, '').trim());
+    return lines.map((line) => line.replace(/^[\d.\-*•]\s*/, '').trim());
   }
 
   /**

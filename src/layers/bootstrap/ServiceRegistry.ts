@@ -274,7 +274,7 @@ export class ServiceRegistry extends EventEmitter {
     this.register('gradeCalculationService', () => {
       const {
         GradeCalculationService,
-      } = require('../l3-intelligence/domain/GradeCalculationService');
+      } = require('../l3-intelligence/domain/grades/GradeCalculationService');
       return new GradeCalculationService();
     });
 
@@ -299,8 +299,7 @@ export class ServiceRegistry extends EventEmitter {
       const rateLimiter = this.get('rateLimiter');
 
       const client = new CanvasClient({
-        baseUrl:
-          baseUrl || this.config.canvasBaseUrl || '',
+        baseUrl: baseUrl || this.config.canvasBaseUrl || '',
         accessToken: token,
         // Wire up rate limit feedback for adaptive throttling
         onRateLimit: (remaining: number) => rateLimiter?.updateRateLimit?.(remaining),
