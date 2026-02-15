@@ -1,5 +1,8 @@
 /**
  * CalendarGridContext - Shared state and handlers for calendar views
+ *
+ * FACADE: Types and helpers extracted to calendarTypes.ts and calendarHelpers.ts.
+ * This file keeps the React context provider and re-exports for backward compatibility.
  */
 
 import React, {
@@ -13,520 +16,73 @@ import React, {
   type ReactNode,
   type RefObject,
 } from 'react';
-import type { Task, Course, DisplayCalendarEvent } from '../../../l5-presentation/types';
+import type { Course } from '../../../l5-presentation/types';
 import { styles } from './CalendarGridStyles';
 import { getCourseColor } from '../../constants';
+
+// Re-export types
+export type {
+  PopupState,
+  DetailState,
+  CalendarView,
+  TaskCalendarEvent,
+  ImportedCalendarEvent,
+  CalendarEvent,
+  CourseMatch,
+  PositionedEvent,
+} from './calendarTypes';
+
+// Re-export helpers
+export {
+  isDeadlineTaskEvent,
+  getEventDate,
+  getEventTitle,
+  getEventShortLabel,
+  getEventFullLabel,
+  formatTimeAmPm,
+  getEventTimeRange,
+  getEventDescription,
+  isCompletedTask,
+  getEventEndDate,
+  getEventDurationHours,
+  getEventStartOffset,
+  getEventEndOffset,
+  getEventId,
+  isEventInProgress,
+  positionEvents,
+  getMonthDays,
+  getWeekDays,
+  isSameDay,
+  isToday,
+  matchEventToCourse,
+  getEarliestEventHour,
+  WEEKDAYS,
+  HOURS,
+  HOUR_HEIGHT,
+  WEEK_HOUR_HEIGHT,
+} from './calendarHelpers';
+
+// Import types and helpers for use in provider
+import type {
+  PopupState,
+  DetailState,
+  CalendarView,
+  CalendarEvent,
+  CourseMatch,
+} from './calendarTypes';
+
 import {
-  getHourInEffectiveTimezone,
-  getTimeInEffectiveTimezone,
-} from '../../../l5-presentation/settings';
-
-// =============================================================================
-// TYPES
-// =============================================================================
-
-// Popup state type
-export interface PopupState {
-  events: CalendarEvent[];
-  x: number;
-  y: number;
-  label: string;
-}
-
-// Detail modal state type
-export interface DetailState {
-  event: CalendarEvent;
-  courseMatch: CourseMatch | null;
-}
-
-export type CalendarView = 'month' | 'week' | 'day';
-
-// Task-based event (from Canvas assignments)
-export interface TaskCalendarEvent {
-  type: 'task';
-  task: Task;
-  course: Course;
-}
-
-// Imported calendar event
-export interface ImportedCalendarEvent {
-  type: 'imported';
-  event: DisplayCalendarEvent;
-}
-
-// Union type for all calendar events
-export type CalendarEvent = TaskCalendarEvent | ImportedCalendarEvent;
-
-export interface CourseMatch {
-  course: Course;
-  confidence: 'high' | 'medium' | 'low';
-}
-
-export interface PositionedEvent {
-  event: CalendarEvent;
-  column: number;
-  totalColumns: number;
-  // Overlap group info for visual stacking
-  overlapIndex: number;
-  overlapCount: number;
-}
-
-// =============================================================================
-// HELPER FUNCTIONS
-// =============================================================================
-
-// Helper to check if an imported event is a deadline task event
-export function isDeadlineTaskEvent(
-  event: CalendarEvent
-): event is ImportedCalendarEvent {
-  if (event.type !== 'imported') return false;
-  if (!event.event.taskId) return false;
-  return new Date(event.event.startAt).getTime() < 86400000;
-}
-
-// Helper to get event date
-export function getEventDate(event: CalendarEvent): Date | null {
-  if (event.type === 'task') {
-    return event.task.dueAt ? new Date(event.task.dueAt) : null;
-  }
-  if (isDeadlineTaskEvent(event) && event.event.endAt) {
-    const dueTime = new Date(event.event.endAt);
-    const dueMinutes = dueTime.getMinutes();
-    if (dueMinutes === 0) {
-      return new Date(dueTime.getTime() - 60 * 60 * 1000);
-    }
-    const floorHour = new Date(dueTime);
-    floorHour.setMinutes(0, 0, 0);
-    return floorHour;
-  }
-  return new Date(event.event.startAt);
-}
-
-// Helper to get event title
-export function getEventTitle(event: CalendarEvent): string {
-  if (event.type === 'task') {
-    return event.task.title;
-  }
-  return event.event.title;
-}
-
-// Helper to get short label
-export function getEventShortLabel(event: CalendarEvent): string {
-  if (event.type === 'task') {
-    return event.course.code.split(/[HY]\d|\s/)[0];
-  }
-  return '';
-}
-
-// Helper to get full label
-export function getEventFullLabel(event: CalendarEvent): string {
-  if (event.type === 'task') {
-    return event.course.code;
-  }
-  return event.event.calendarName || 'Calendar';
-}
-
-// Format time as AM/PM using effective timezone
-export function formatTimeAmPm(dateStr: string): string {
-  const { hour, minute } = getTimeInEffectiveTimezone(dateStr);
-  const ampm = hour >= 12 ? 'PM' : 'AM';
-  const displayHours = hour % 12 || 12;
-  if (minute === 0) {
-    return `${displayHours} ${ampm}`;
-  }
-  return `${displayHours}:${minute.toString().padStart(2, '0')} ${ampm}`;
-}
-
-// Get event time range
-export function getEventTimeRange(event: CalendarEvent): string | null {
-  if (event.type === 'task') {
-    const dueAt = event.task.dueAt;
-    if (!dueAt) return null;
-    return `Due ${formatTimeAmPm(dueAt)}`;
-  }
-  if (event.event.allDay) return null;
-  if (!event.event.endAt) return formatTimeAmPm(event.event.startAt);
-  return `${formatTimeAmPm(event.event.startAt)} - ${formatTimeAmPm(event.event.endAt)}`;
-}
-
-// Get event description
-export function getEventDescription(event: CalendarEvent): string | null {
-  if (event.type === 'task') {
-    return event.task.description || null;
-  }
-  return event.event.description || null;
-}
-
-// Check if task is completed
-export function isCompletedTask(event: CalendarEvent): boolean {
-  if (event.type === 'task') {
-    return event.task.isCompleted;
-  }
-  return false;
-}
-
-// Get event end date
-export function getEventEndDate(event: CalendarEvent): Date | null {
-  if (event.type === 'task') {
-    return event.task.dueAt ? new Date(event.task.dueAt) : null;
-  }
-  return event.event.endAt ? new Date(event.event.endAt) : null;
-}
-
-// Get event duration in hours
-// - Task events: default 1 hour (no duration field on tasks)
-// - Deadline task events: 1 hour if no user-set start, otherwise calculate from start to due
-// - Regular imported events: calculate from start to end
-export function getEventDurationHours(event: CalendarEvent): number {
-  if (event.type === 'task') {
-    return 1; // Tasks show as 1-hour blocks (no duration field)
-  }
-
-  // Now event is ImportedCalendarEvent
-  const importedEvent = event;
-  const end = importedEvent.event.endAt ? new Date(importedEvent.event.endAt) : null;
-  if (!end) return 1;
-
-  // Check if it's a deadline task event (has task_id, start is epoch sentinel = no user-set start)
-  if (
-    importedEvent.event.taskId &&
-    new Date(importedEvent.event.startAt).getTime() < 86400000
-  ) {
-    // No user-set start time → default 1 hour
-    return 1;
-  }
-
-  // Regular imported event or event with user-set start time
-  const start = new Date(importedEvent.event.startAt);
-  const durationMs = end.getTime() - start.getTime();
-  const hours = durationMs / (1000 * 60 * 60);
-  return Math.max(0.5, Math.min(hours, 24));
-}
-
-// Get event start offset within the hour (0-1)
-export function getEventStartOffset(event: CalendarEvent): number {
-  const date = getEventDate(event);
-  if (!date) return 0;
-  return date.getMinutes() / 60;
-}
-
-// Get event end offset
-export function getEventEndOffset(event: CalendarEvent): number {
-  const end = getEventEndDate(event);
-  if (!end) return 0;
-  return end.getMinutes() / 60;
-}
-
-// Get unique event ID
-export function getEventId(event: CalendarEvent): string {
-  if (event.type === 'task') {
-    return `task-${event.task.id}`;
-  }
-  return `imported-${event.event.id}`;
-}
-
-// Check if event is in progress
-export function isEventInProgress(event: CalendarEvent, now: Date): boolean {
-  const start = getEventDate(event);
-  if (!start) return false;
-  if (event.type === 'imported' && event.event.allDay) return false;
-  const end = getEventEndDate(event) || new Date(start.getTime() + 60 * 60 * 1000);
-  return now >= start && now < end;
-}
-
-// Check if two events overlap
-function eventsOverlap(a: CalendarEvent, b: CalendarEvent): boolean {
-  const aStart = getEventDate(a);
-  const bStart = getEventDate(b);
-  if (!aStart || !bStart) return false;
-  if (a.type === 'imported' && a.event.allDay) return false;
-  if (b.type === 'imported' && b.event.allDay) return false;
-  const aDuration = getEventDurationHours(a);
-  const bDuration = getEventDurationHours(b);
-  const aEnd = new Date(aStart.getTime() + aDuration * 60 * 60 * 1000);
-  const bEnd = new Date(bStart.getTime() + bDuration * 60 * 60 * 1000);
-  return aStart < bEnd && aEnd > bStart;
-}
-
-// Position events for overlap handling
-export function positionEvents(events: CalendarEvent[]): PositionedEvent[] {
-  const timedEvents = events.filter((e) => {
-    if (e.type === 'imported' && e.event.allDay) return false;
-    return getEventDate(e) !== null;
-  });
-
-  timedEvents.sort((a, b) => {
-    const aDate = getEventDate(a)!;
-    const bDate = getEventDate(b)!;
-    if (aDate.getTime() !== bDate.getTime()) {
-      return aDate.getTime() - bDate.getTime();
-    }
-    return getEventDurationHours(b) - getEventDurationHours(a);
-  });
-
-  const positioned: PositionedEvent[] = [];
-  const columns: CalendarEvent[][] = [];
-
-  for (const event of timedEvents) {
-    let placed = false;
-    for (let col = 0; col < columns.length; col++) {
-      const columnEvents = columns[col];
-      const hasOverlap = columnEvents.some((e) => eventsOverlap(e, event));
-      if (!hasOverlap) {
-        columnEvents.push(event);
-        positioned.push({
-          event,
-          column: col,
-          totalColumns: 0,
-          overlapIndex: 0,
-          overlapCount: 1,
-        });
-        placed = true;
-        break;
-      }
-    }
-    if (!placed) {
-      columns.push([event]);
-      positioned.push({
-        event,
-        column: columns.length - 1,
-        totalColumns: 0,
-        overlapIndex: 0,
-        overlapCount: 1,
-      });
-    }
-  }
-
-  // Update totalColumns
-  for (const pos of positioned) {
-    const overlapping = positioned.filter((p) => eventsOverlap(pos.event, p.event));
-    pos.totalColumns = Math.max(...overlapping.map((p) => p.column + 1));
-    pos.overlapCount = overlapping.length;
-    pos.overlapIndex = overlapping.findIndex(
-      (p) => getEventId(p.event) === getEventId(pos.event)
-    );
-  }
-
-  return positioned;
-}
-
-// Get month days
-export function getMonthDays(year: number, month: number): Date[] {
-  const firstDay = new Date(year, month, 1);
-  const lastDay = new Date(year, month + 1, 0);
-  const days: Date[] = [];
-
-  const startPadding = firstDay.getDay();
-  for (let i = startPadding - 1; i >= 0; i--) {
-    const d = new Date(year, month, -i);
-    days.push(d);
-  }
-
-  for (let d = 1; d <= lastDay.getDate(); d++) {
-    days.push(new Date(year, month, d));
-  }
-
-  const endPadding = 6 - lastDay.getDay();
-  for (let i = 1; i <= endPadding; i++) {
-    days.push(new Date(year, month + 1, i));
-  }
-
-  return days;
-}
-
-// Get week days
-export function getWeekDays(date: Date): Date[] {
-  const start = new Date(date);
-  start.setDate(start.getDate() - start.getDay());
-  const days: Date[] = [];
-  for (let i = 0; i < 7; i++) {
-    days.push(new Date(start.getFullYear(), start.getMonth(), start.getDate() + i));
-  }
-  return days;
-}
-
-// Check if same day
-export function isSameDay(a: Date, b: Date): boolean {
-  return (
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate()
-  );
-}
-
-// Check if today
-export function isToday(date: Date): boolean {
-  return isSameDay(date, new Date());
-}
-
-// Extract section type (LEC, PRA, TUT) from a string
-function extractSectionType(text: string): string | null {
-  const match = text.match(/\b(lec|pra|tut)\d*/i);
-  return match ? match[1].toLowerCase() : null;
-}
-
-// Match event to course
-// Uses OR logic: matches if event has courseId set OR if name/title contains course code.
-// IMPORTANT: Prioritize matching event TITLE first, then fall back to calendar name.
-// Also considers section types (LEC, PRA, TUT) to distinguish between different sections of same course.
-export function matchEventToCourse(
-  event: ImportedCalendarEvent,
-  courses: Course[]
-): CourseMatch | null {
-  // PASS 0: Direct courseId match (highest priority - user explicitly assigned course)
-  if (event.event.courseId) {
-    const matchedCourse = courses.find((c) => c.id === event.event.courseId);
-    if (matchedCourse) {
-      return { course: matchedCourse, confidence: 'high' };
-    }
-  }
-
-  const title = event.event.title.toLowerCase().trim();
-  const calendarName = event.event.calendarName?.toLowerCase().trim() || '';
-  const description = event.event.description?.toLowerCase().trim() || '';
-
-  // Extract section type from event title (e.g., "LEC" from "ECE342H1 LEC0102")
-  const eventSectionType = extractSectionType(title);
-
-  // Prepare course data for matching
-  const courseData = courses.map((course) => {
-    const code = course.code.toLowerCase().trim();
-    const name = course.name.toLowerCase().trim();
-    // Use lowercase regex since code is already lowercased (matches H1, Y1 suffixes)
-    const shortCode = code.split(/[hy]\d/)[0];
-    // Extract section type from course code (e.g., "LEC" from "ECE342H1 S LEC0101")
-    const sectionType = extractSectionType(code);
-    return { course, code, name, shortCode, sectionType };
-  });
-
-  // PASS 1: Match full course code in EVENT TITLE (highest priority)
-  for (const { course, code } of courseData) {
-    if (title.includes(code)) {
-      return { course, confidence: 'high' };
-    }
-  }
-
-  // PASS 2: Match short code + section type in EVENT TITLE
-  // First, try to match courses with the SAME section type
-  if (eventSectionType) {
-    for (const { course, shortCode, sectionType } of courseData) {
-      if (
-        shortCode &&
-        shortCode.length >= 3 &&
-        title.includes(shortCode) &&
-        sectionType === eventSectionType
-      ) {
-        return { course, confidence: 'high' };
-      }
-    }
-  }
-
-  // PASS 3: Match short code in EVENT TITLE (without section type constraint)
-  for (const { course, shortCode } of courseData) {
-    if (shortCode && shortCode.length >= 3 && title.includes(shortCode)) {
-      return { course, confidence: 'high' };
-    }
-  }
-
-  // PASS 4: Match full course code in CALENDAR NAME (fallback)
-  for (const { course, code } of courseData) {
-    if (calendarName.includes(code)) {
-      return { course, confidence: 'high' };
-    }
-  }
-
-  // PASS 5: Match short code + section type in CALENDAR NAME
-  const calendarSectionType = extractSectionType(calendarName);
-  if (calendarSectionType) {
-    for (const { course, shortCode, sectionType } of courseData) {
-      if (
-        shortCode &&
-        shortCode.length >= 3 &&
-        calendarName.includes(shortCode) &&
-        sectionType === calendarSectionType
-      ) {
-        return { course, confidence: 'high' };
-      }
-    }
-  }
-
-  // PASS 6: Match short code in CALENDAR NAME (without section type constraint)
-  for (const { course, shortCode } of courseData) {
-    if (shortCode && shortCode.length >= 3 && calendarName.includes(shortCode)) {
-      return { course, confidence: 'high' };
-    }
-  }
-
-  // PASS 7: Match course name in title or calendar name
-  for (const { course, name } of courseData) {
-    if (name.length > 3 && (title.includes(name) || calendarName.includes(name))) {
-      return { course, confidence: 'medium' };
-    }
-  }
-
-  // PASS 8: Match individual words from course name (lowest priority)
-  for (const { course, name } of courseData) {
-    const nameWords = name.split(/\s+/).filter((w) => w.length > 3);
-    for (const word of nameWords) {
-      if (title.includes(word) || description.includes(word)) {
-        return { course, confidence: 'low' };
-      }
-    }
-  }
-
-  return null;
-}
-
-// Get earliest event hour
-// Returns the hour where the earliest event visually starts so it appears at the top
-// - Imported events: use their actual start time
-// - Task/deadline events: use dueAt - duration (visual start of the block)
-// Returns null if no timed events found
-export function getEarliestEventHour(events: CalendarEvent[]): number | null {
-  let earliest: number | null = null;
-
-  for (const event of events) {
-    // Skip all-day events (no specific hour)
-    if (event.type === 'imported' && event.event.allDay) continue;
-
-    let effectiveStartHour: number | null = null;
-
-    if (event.type === 'task') {
-      // Task events: visual start is (due time - duration)
-      if (event.task.dueAt) {
-        const dueHour = getHourInEffectiveTimezone(event.task.dueAt);
-        const duration = getEventDurationHours(event);
-        effectiveStartHour = Math.max(0, dueHour - duration);
-      }
-    } else {
-      // Check if it's a deadline task event (linked to a task, starts at epoch)
-      if (isDeadlineTaskEvent(event) && event.event.endAt) {
-        // Deadline task event: visual start is (end/due time - duration)
-        const dueHour = getHourInEffectiveTimezone(event.event.endAt);
-        const duration = getEventDurationHours(event);
-        effectiveStartHour = Math.max(0, dueHour - duration);
-      } else {
-        // Regular imported events: use actual start time
-        effectiveStartHour = getHourInEffectiveTimezone(event.event.startAt);
-      }
-    }
-
-    if (
-      effectiveStartHour !== null &&
-      (earliest === null || effectiveStartHour < earliest)
-    ) {
-      earliest = effectiveStartHour;
-    }
-  }
-
-  return earliest;
-}
-
-// Constants
-export const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-export const HOURS = Array.from({ length: 24 }, (_, i) => i);
-export const HOUR_HEIGHT = 64;
-export const WEEK_HOUR_HEIGHT = 48;
+  getEventId,
+  getEventDate,
+  getEventTitle,
+  getEventFullLabel,
+  getEventTimeRange,
+  getEventDescription,
+  isCompletedTask,
+  isSameDay,
+  getWeekDays,
+  matchEventToCourse,
+} from './calendarHelpers';
 
 // =============================================================================
 // CONTEXT TYPE
@@ -656,21 +212,16 @@ export function CalendarGridProvider({
   }, [events, courses]);
 
   // Get effective event color
-  // Uses getCourseColor to ensure consistent colors between calendar and course cards
   const getEffectiveEventColor = useCallback(
     (event: CalendarEvent): string => {
       if (event.type === 'task') {
-        // For task events, use the course's color (generated if null)
         return getCourseColor(event.course.id, event.course.color);
       }
-      // For imported events, check if matched to a course
       const eventId = getEventId(event);
       const match = courseMatches.get(eventId);
       if (match) {
-        // Use matched course's color (generated if null)
         return getCourseColor(match.course.id, match.course.color);
       }
-      // No course match - use event's own color or default
       return event.event.color || '#6366F1';
     },
     [courseMatches]

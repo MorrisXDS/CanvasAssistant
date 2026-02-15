@@ -4,6 +4,9 @@
  * Extracts and saves HTML content from Canvas (pages, assignments, announcements)
  * along with embedded resources (images, files). Optionally rewrites URLs for
  * offline access.
+ *
+ * Facade: delegates to content-sync/ submodules for resource extraction,
+ * URL rewriting, and download coordination.
  */
 
 import { EventEmitter } from 'events';
@@ -16,22 +19,22 @@ import {
 } from '../../l0-utilities/FileDownloadManager';
 import { HtmlContentSyncConfig } from '../DaemonConfig';
 import type { ComponentLogger } from '../../l0-utilities/Logger';
+import {
+  extractResources as _extractResources,
+  resolveResourceFilenames as _resolveResourceFilenames,
+  sanitizeFilename,
+  sanitizePathComponent,
+  type ExtractedResource,
+} from './content-sync/resourceExtraction';
+import {
+  rewriteHtmlUrls,
+  getContentFolder,
+  escapeHtml,
+} from './content-sync/urlRewriting';
+import { createDownloadRequests as _createDownloadRequests } from './content-sync/downloadCoordinator';
 
-/**
- * Represents an extracted resource from HTML content
- */
-export interface ExtractedResource {
-  /** Original URL in the HTML */
-  originalUrl: string;
-  /** Canvas file ID if applicable */
-  canvasFileId?: string;
-  /** Resource type */
-  type: 'image' | 'file' | 'embed' | 'stylesheet' | 'script';
-  /** Suggested filename */
-  filename: string;
-  /** The HTML attribute that contained this URL (src, href, etc.) */
-  attribute: string;
-}
+// Re-export types for backward compatibility
+export type { ExtractedResource } from './content-sync/resourceExtraction';
 
 /**
  * Represents HTML content to be saved
@@ -79,64 +82,6 @@ export interface HtmlContentSyncOptions {
 }
 
 /**
- * Pattern definitions for extracting resources from HTML
- */
-const RESOURCE_PATTERNS: Array<{
-  name: ExtractedResource['type'];
-  regex: RegExp;
-  attribute: string;
-  urlGroup: number;
-}> = [
-  // Images with src attribute
-  {
-    name: 'image',
-    regex: /<img[^>]+src=["']([^"']+)["']/gi,
-    attribute: 'src',
-    urlGroup: 1,
-  },
-  // Images with data-src (lazy loading)
-  {
-    name: 'image',
-    regex: /<img[^>]+data-src=["']([^"']+)["']/gi,
-    attribute: 'data-src',
-    urlGroup: 1,
-  },
-  // Canvas file links via href
-  {
-    name: 'file',
-    regex: /<a[^>]+href=["']([^"']*\/files\/\d+[^"']*)["']/gi,
-    attribute: 'href',
-    urlGroup: 1,
-  },
-  // Embedded iframes
-  {
-    name: 'embed',
-    regex: /<iframe[^>]+src=["']([^"']+)["']/gi,
-    attribute: 'src',
-    urlGroup: 1,
-  },
-  // Stylesheets
-  {
-    name: 'stylesheet',
-    regex: /<link[^>]+rel=["']stylesheet["'][^>]+href=["']([^"']+)["']/gi,
-    attribute: 'href',
-    urlGroup: 1,
-  },
-  // Background images in style attributes
-  {
-    name: 'image',
-    regex: /style=["'][^"']*url\(["']?([^"')]+)["']?\)[^"']*["']/gi,
-    attribute: 'style',
-    urlGroup: 1,
-  },
-];
-
-/**
- * Pattern for extracting Canvas file IDs from URLs
- */
-const FILE_ID_PATTERN = /\/files\/(\d+)/;
-
-/**
  * HtmlContentSync service
  */
 export class HtmlContentSync extends EventEmitter {
@@ -161,218 +106,7 @@ export class HtmlContentSync extends EventEmitter {
    * Extract all resources from HTML content
    */
   extractResources(html: string): ExtractedResource[] {
-    if (!html || typeof html !== 'string') {
-      return [];
-    }
-
-    const resources: ExtractedResource[] = [];
-    const seenUrls = new Set<string>();
-
-    for (const pattern of RESOURCE_PATTERNS) {
-      pattern.regex.lastIndex = 0;
-
-      let match: RegExpExecArray | null;
-      while ((match = pattern.regex.exec(html)) !== null) {
-        const url = match[pattern.urlGroup];
-
-        // Skip empty, data URIs, or already seen URLs
-        if (!url || url.startsWith('data:') || seenUrls.has(url)) {
-          continue;
-        }
-
-        seenUrls.add(url);
-
-        // Extract Canvas file ID if present
-        const fileIdMatch = url.match(FILE_ID_PATTERN);
-        const canvasFileId = fileIdMatch ? fileIdMatch[1] : undefined;
-
-        // Generate filename from URL
-        const filename = this.extractFilename(url, pattern.name);
-
-        resources.push({
-          originalUrl: url,
-          canvasFileId,
-          type: pattern.name,
-          filename,
-          attribute: pattern.attribute,
-        });
-      }
-    }
-
-    return resources;
-  }
-
-  /**
-   * Extract a filename from a URL
-   * Note: For Canvas file URLs like /files/123/download, the filename is not in the URL.
-   * Use lookupFilenameByCanvasId() to get the actual filename after extraction.
-   */
-  private extractFilename(url: string, type: ExtractedResource['type']): string {
-    try {
-      // Try to get filename from URL path
-      const urlObj = new URL(url, this.baseUrl);
-      const pathname = urlObj.pathname;
-      // URL paths always use forward slashes regardless of platform
-      // eslint-disable-next-line cross-platform/no-hardcoded-path-separator
-      const segments = pathname.split('/').filter(Boolean);
-
-      if (segments.length > 0) {
-        let filename = segments[segments.length - 1];
-
-        // Remove query parameters from filename
-        filename = filename.split('?')[0];
-
-        this.log?.debug(`extractFilename: url="${url}" lastSegment="${filename}"`);
-
-        // Canvas URLs may end in:
-        // - 'download' or 'preview' (not real filenames)
-        // - A numeric ID like '41584900' (Canvas file ID, not actual filename)
-        // Use the file ID as a placeholder so we can look up the actual name later
-        const isCanvasPlaceholder =
-          filename === 'download' || filename === 'preview' || /^\d+$/.test(filename); // Pure numeric = likely Canvas file ID
-
-        if (isCanvasPlaceholder) {
-          // Find the file ID in the URL (e.g., /files/12345/download or /files/12345)
-          const fileIdMatch = pathname.match(/\/files\/(\d+)/);
-          if (fileIdMatch) {
-            // Return a placeholder with the file ID - we'll resolve the actual name later
-            this.log?.debug(
-              `extractFilename: Created placeholder canvas_file_${fileIdMatch[1]}`
-            );
-            return `canvas_file_${fileIdMatch[1]}`;
-          }
-        }
-
-        // If no extension, add one based on type
-        if (!path.extname(filename)) {
-          const ext = this.getDefaultExtension(type);
-          filename = `${filename}${ext}`;
-        }
-
-        return this.sanitizeFilename(filename);
-      }
-    } catch {
-      // URL parsing failed
-    }
-
-    // Fallback: generate filename based on type
-    const timestamp = Date.now();
-    const ext = this.getDefaultExtension(type);
-    return `resource_${timestamp}${ext}`;
-  }
-
-  /**
-   * Look up the actual filename for a Canvas file ID from the resources table
-   */
-  private lookupFilenameByCanvasId(canvasFileId: string): string | null {
-    this.log?.debug(`lookupFilenameByCanvasId: Looking up file ID "${canvasFileId}"`);
-
-    const resource = this.db.executeReadOne<{ title: string; local_path: string | null }>(
-      `SELECT title, local_path FROM resources WHERE external_id = ?`,
-      [canvasFileId]
-    );
-
-    if (resource) {
-      this.log?.debug(
-        `lookupFilenameByCanvasId: Found resource title="${resource.title}" local_path="${resource.local_path}"`
-      );
-      // Prefer local_path filename if available (it has the original extension)
-      if (resource.local_path) {
-        return path.basename(resource.local_path);
-      }
-      // Fall back to title
-      return this.sanitizeFilename(resource.title);
-    }
-
-    this.log?.debug(
-      `lookupFilenameByCanvasId: No resource found for file ID "${canvasFileId}"`
-    );
-    return null;
-  }
-
-  /**
-   * Resolve placeholder filenames to actual names from the database
-   */
-  private resolveResourceFilenames(resources: ExtractedResource[]): ExtractedResource[] {
-    this.log?.debug(`resolveResourceFilenames: Processing ${resources.length} resources`);
-
-    return resources.map((resource) => {
-      this.log?.debug(
-        `resolveResourceFilenames: filename="${resource.filename}" canvasFileId="${resource.canvasFileId}" originalUrl="${resource.originalUrl}"`
-      );
-
-      // Check if filename is a placeholder (canvas_file_12345)
-      const placeholderMatch = resource.filename.match(/^canvas_file_(\d+)$/);
-      if (placeholderMatch && resource.canvasFileId) {
-        const actualFilename = this.lookupFilenameByCanvasId(resource.canvasFileId);
-        if (actualFilename) {
-          this.log?.debug(`resolveResourceFilenames: Resolved to "${actualFilename}"`);
-          return { ...resource, filename: actualFilename };
-        }
-        // If not found in DB, keep the placeholder but add proper extension
-        const ext = this.getDefaultExtension(resource.type);
-        const fallbackFilename = `file_${resource.canvasFileId}${ext}`;
-        this.log?.debug(`resolveResourceFilenames: Using fallback "${fallbackFilename}"`);
-        return { ...resource, filename: fallbackFilename };
-      }
-      return resource;
-    });
-  }
-
-  /**
-   * Get default extension for resource type
-   */
-  private getDefaultExtension(type: ExtractedResource['type']): string {
-    switch (type) {
-      case 'image':
-        return '.png';
-      case 'file':
-        return '.pdf';
-      case 'embed':
-        return '.html';
-      case 'stylesheet':
-        return '.css';
-      case 'script':
-        return '.js';
-      default:
-        return '.bin';
-    }
-  }
-
-  /**
-   * Sanitize a filename for filesystem
-   */
-  private sanitizeFilename(filename: string): string {
-    return filename.replace(/[^a-zA-Z0-9._-]/g, '_').substring(0, 255);
-  }
-
-  /**
-   * Sanitize a path component
-   */
-  private sanitizePathComponent(component: string): string {
-    return component.replace(/[^a-zA-Z0-9_\-. ]/g, '_').replace(/\s+/g, '_');
-  }
-
-  /**
-   * Get the folder path for an HTML content item
-   */
-  private getContentFolder(item: HtmlContentItem): string {
-    if (item.moduleName) {
-      return this.sanitizePathComponent(item.moduleName);
-    }
-
-    switch (item.sourceType) {
-      case 'page':
-        return 'Pages';
-      case 'assignment':
-        return 'Assignments';
-      case 'announcement':
-        return 'Announcements';
-      case 'syllabus':
-        return 'Syllabus';
-      default:
-        return 'Other';
-    }
+    return _extractResources(html, this.baseUrl, this.log);
   }
 
   /**
@@ -384,117 +118,7 @@ export class HtmlContentSync extends EventEmitter {
    * @param htmlFolder - Folder where the HTML file is saved (e.g., "Pages", "Assignments")
    */
   rewriteUrls(html: string, resources: ExtractedResource[], htmlFolder: string): string {
-    let rewrittenHtml = html;
-
-    for (const resource of resources) {
-      if (!resource.canvasFileId) {
-        // No Canvas file ID - keep original URL
-        this.log?.debug(
-          `rewriteUrls: No Canvas file ID for ${resource.originalUrl}, keeping original`
-        );
-        continue;
-      }
-
-      // Look up the resource's local path and folder from the database
-      const existingResource = this.db.executeReadOne<{
-        local_path: string | null;
-        folder_path: string | null;
-      }>('SELECT local_path, folder_path FROM resources WHERE external_id = ?', [
-        resource.canvasFileId,
-      ]);
-
-      let newUrl: string;
-
-      if (existingResource?.local_path && fs.existsSync(existingResource.local_path)) {
-        // Resource is downloaded - use relative path
-        const resourceFolder = existingResource.folder_path || '';
-        const filename = path.basename(existingResource.local_path);
-        newUrl = this.calculateRelativePath(htmlFolder, resourceFolder, filename);
-        this.log?.debug(
-          `rewriteUrls: ${resource.originalUrl} -> ${newUrl} (local file exists)`
-        );
-      } else if (existingResource?.folder_path) {
-        // Resource not downloaded yet - use expected relative path based on folder_path
-        // This works if the user downloads the resource later to the expected location
-        newUrl = this.calculateRelativePath(
-          htmlFolder,
-          existingResource.folder_path,
-          resource.filename
-        );
-        this.log?.debug(
-          `rewriteUrls: ${resource.originalUrl} -> ${newUrl} (expected path)`
-        );
-      } else {
-        // No folder info - put in course root and use relative path
-        newUrl = this.calculateRelativePath(htmlFolder, '', resource.filename);
-        this.log?.debug(
-          `rewriteUrls: ${resource.originalUrl} -> ${newUrl} (fallback to root)`
-        );
-      }
-
-      // Replace all occurrences of the original URL
-      rewrittenHtml = rewrittenHtml.split(resource.originalUrl).join(newUrl);
-    }
-
-    return rewrittenHtml;
-  }
-
-  /**
-   * Calculate relative path from source folder to target folder + filename
-   * @param sourceFolder - Folder where the HTML is (e.g., "Pages")
-   * @param targetFolder - Folder where the file is (e.g., "Lecture Notes" or "" for root)
-   * @param filename - The filename
-   */
-  private calculateRelativePath(
-    sourceFolder: string,
-    targetFolder: string,
-    filename: string
-  ): string {
-    // Normalize folders (handle empty/null as root)
-    const source = sourceFolder || '';
-    const target = targetFolder || '';
-
-    if (source === target) {
-      // Same folder
-      return `./${filename}`;
-    }
-
-    // Split into path segments
-    const sourceParts = source ? source.split(/[/\\]/).filter(Boolean) : [];
-    const targetParts = target ? target.split(/[/\\]/).filter(Boolean) : [];
-
-    // Find common prefix
-    let commonLength = 0;
-    while (
-      commonLength < sourceParts.length &&
-      commonLength < targetParts.length &&
-      sourceParts[commonLength] === targetParts[commonLength]
-    ) {
-      commonLength++;
-    }
-
-    // Build relative path
-    // Go up for each remaining source segment
-    const upCount = sourceParts.length - commonLength;
-    const ups = Array(upCount).fill('..').join('/');
-
-    // Go down into remaining target segments
-    const downs = targetParts.slice(commonLength).join('/');
-
-    // Combine
-    let relativePath = '';
-    if (ups) {
-      relativePath = ups;
-      if (downs) {
-        relativePath += '/' + downs;
-      }
-    } else if (downs) {
-      relativePath = './' + downs;
-    } else {
-      relativePath = '.';
-    }
-
-    return relativePath + '/' + filename;
+    return rewriteHtmlUrls(html, resources, htmlFolder, this.db, this.log);
   }
 
   /**
@@ -506,8 +130,8 @@ export class HtmlContentSync extends EventEmitter {
     baseDir: string
   ): { success: boolean; localPath?: string; error?: string } {
     try {
-      const folder = this.getContentFolder(item);
-      const courseDir = path.join(baseDir, this.sanitizePathComponent(item.courseCode));
+      const folder = getContentFolder(item);
+      const courseDir = path.join(baseDir, sanitizePathComponent(item.courseCode));
       const contentDir = path.join(courseDir, folder);
 
       // Ensure directory exists
@@ -516,7 +140,7 @@ export class HtmlContentSync extends EventEmitter {
       }
 
       // Generate filename from title
-      const filename = `${this.sanitizeFilename(item.title)}.html`;
+      const filename = `${sanitizeFilename(item.title)}.html`;
       let localPath = path.join(contentDir, filename);
       let finalFilename = filename;
 
@@ -543,7 +167,7 @@ export class HtmlContentSync extends EventEmitter {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${this.escapeHtml(item.title)}</title>
+  <title>${escapeHtml(item.title)}</title>
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; padding: 20px; max-width: 800px; margin: 0 auto; }
     img { max-width: 100%; height: auto; }
@@ -553,7 +177,7 @@ export class HtmlContentSync extends EventEmitter {
   </style>
 </head>
 <body>
-  <h1>${this.escapeHtml(item.title)}</h1>
+  <h1>${escapeHtml(item.title)}</h1>
   ${html}
 </body>
 </html>`;
@@ -597,18 +221,6 @@ export class HtmlContentSync extends EventEmitter {
   }
 
   /**
-   * Escape HTML entities
-   */
-  private escapeHtml(text: string): string {
-    return text
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#039;');
-  }
-
-  /**
    * Create download requests for resources
    * Skips files that are already downloaded via normal sync
    */
@@ -616,87 +228,15 @@ export class HtmlContentSync extends EventEmitter {
     resources: ExtractedResource[],
     item: HtmlContentItem
   ): DownloadRequest[] {
-    const folder = this.getContentFolder(item);
-    const requests: DownloadRequest[] = [];
-
-    this.log?.info(
-      `createDownloadRequests: Processing ${resources.length} resources for ${item.sourceType}-${item.sourceId}`
+    return _createDownloadRequests(
+      resources,
+      item,
+      this.config,
+      this.baseUrl,
+      this.authToken,
+      this.db,
+      this.log
     );
-
-    for (const resource of resources) {
-      this.log?.info(
-        `createDownloadRequests: Checking resource: filename="${resource.filename}" canvasFileId="${resource.canvasFileId}" type="${resource.type}" url="${resource.originalUrl}"`
-      );
-
-      // Skip non-downloadable resources (external embeds, etc.)
-      if (resource.type === 'embed' && !resource.originalUrl.includes(this.baseUrl)) {
-        this.log?.info(`createDownloadRequests: Skipping - external embed`);
-        continue;
-      }
-
-      // Skip if not configured to download this type
-      if (resource.type === 'image' && !this.config.downloadImages) {
-        this.log?.info(`createDownloadRequests: Skipping - images disabled`);
-        continue;
-      }
-      if (resource.type === 'file' && !this.config.downloadLinkedFiles) {
-        this.log?.info(`createDownloadRequests: Skipping - linked files disabled`);
-        continue;
-      }
-
-      // Check if file is already downloaded via normal sync
-      if (resource.canvasFileId) {
-        this.log?.info(
-          `createDownloadRequests: Looking up canvasFileId="${resource.canvasFileId}" in DB`
-        );
-        const existingFile = this.db.executeReadOne<{ local_path: string | null }>(
-          'SELECT local_path FROM resources WHERE external_id = ?',
-          [resource.canvasFileId]
-        );
-
-        this.log?.info(
-          `createDownloadRequests: DB lookup result: ${JSON.stringify(existingFile)}`
-        );
-
-        if (existingFile?.local_path) {
-          const fileExists = fs.existsSync(existingFile.local_path);
-          this.log?.info(
-            `createDownloadRequests: local_path="${existingFile.local_path}" exists on disk: ${fileExists}`
-          );
-          if (fileExists) {
-            this.log?.info(
-              `createDownloadRequests: SKIPPING ${resource.filename} - already downloaded`
-            );
-            continue; // File already exists, skip download
-          }
-        }
-      } else {
-        this.log?.info(`createDownloadRequests: No canvasFileId for this resource`);
-      }
-
-      // Build full URL if relative
-      let url = resource.originalUrl;
-      if (!url.startsWith('http')) {
-        url = new URL(url, this.baseUrl).toString();
-      }
-
-      const requestId = `${item.sourceType}-${item.sourceId}-${resource.filename}`;
-      this.log?.info(
-        `createDownloadRequests: ADDING to download queue: id="${requestId}" filename="${resource.filename}" url="${url}"`
-      );
-
-      requests.push({
-        id: requestId,
-        url,
-        courseCode: item.courseCode,
-        filename: resource.filename,
-        authToken: this.authToken,
-        contextFolder: folder,
-      });
-    }
-
-    this.log?.info(`createDownloadRequests: Total requests queued: ${requests.length}`);
-    return requests;
   }
 
   /**
@@ -868,7 +408,7 @@ export class HtmlContentSync extends EventEmitter {
         // Register in resources table as downloadable item
         const externalId = `html-${item.sourceType}-${item.sourceId}`;
         // folder_path is relative to course folder (no course prefix needed)
-        const folderPath = this.getContentFolder(item);
+        const folderPath = getContentFolder(item);
 
         this.db.executeWrite(
           `INSERT INTO resources (external_id, course_id, type, title, folder_path, mime_type, context_type, context_id, synced_at)
@@ -998,12 +538,12 @@ export class HtmlContentSync extends EventEmitter {
     let resources = this.extractResources(htmlContent);
 
     // Resolve placeholder filenames (canvas_file_12345) to actual filenames from database
-    resources = this.resolveResourceFilenames(resources);
+    resources = _resolveResourceFilenames(resources, this.db, this.log);
 
     let htmlToSave = htmlContent;
 
     if (this.config.urlRewriting === 'local' && resources.length > 0) {
-      const folder = this.getContentFolder(item);
+      const folder = getContentFolder(item);
       htmlToSave = this.rewriteUrls(htmlContent, resources, folder);
     }
 
@@ -1029,39 +569,6 @@ export class HtmlContentSync extends EventEmitter {
     }
 
     return saveResult;
-  }
-
-  /**
-   * Get MIME type from file extension
-   */
-  private getMimeTypeFromExtension(ext: string): string {
-    const mimeTypes: Record<string, string> = {
-      '.pdf': 'application/pdf',
-      '.doc': 'application/msword',
-      '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      '.xls': 'application/vnd.ms-excel',
-      '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      '.ppt': 'application/vnd.ms-powerpoint',
-      '.pptx':
-        'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-      '.png': 'image/png',
-      '.jpg': 'image/jpeg',
-      '.jpeg': 'image/jpeg',
-      '.gif': 'image/gif',
-      '.svg': 'image/svg+xml',
-      '.webp': 'image/webp',
-      '.mp4': 'video/mp4',
-      '.mp3': 'audio/mpeg',
-      '.wav': 'audio/wav',
-      '.zip': 'application/zip',
-      '.txt': 'text/plain',
-      '.html': 'text/html',
-      '.css': 'text/css',
-      '.js': 'application/javascript',
-      '.json': 'application/json',
-      '.xml': 'application/xml',
-    };
-    return mimeTypes[ext] || 'application/octet-stream';
   }
 }
 

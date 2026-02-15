@@ -1,18 +1,23 @@
 /**
- * L0 Utilities - Housekeeping Manager
+ * L0 Utilities - Housekeeping Manager (Facade)
  *
- * Manages cleanup tasks for logs, metrics, database maintenance, and disk space.
- * Runs on a configurable schedule and provides cleanup warnings without forcing actions.
+ * Thin facade that delegates cleanup work to submodules in ./housekeeping/.
+ * Manages scheduling, configuration, and orchestration of cleanup tasks.
  */
 
 import { EventEmitter } from 'events';
 import path from 'path';
 import fs from 'fs';
-import zlib from 'zlib';
 import { HousekeepingConfig } from './AppConfig';
 import { ComponentLogger, Logger } from './Logger';
 import { MetricsCollector } from './MetricsCollector';
 import { DEFAULT_PATHS } from './DefaultPaths';
+
+// Import delegated functions from submodules
+import { cleanupOldLogs, clearAllLogs } from './housekeeping/logCleanup';
+import { compressOldWeekLogs } from './housekeeping/logCompression';
+import { runDatabaseMaintenance, shouldRunVacuum } from './housekeeping/dbMaintenance';
+import { checkDiskSpace } from './housekeeping/diskMonitor';
 
 export interface HousekeepingManagerOptions {
   enabled?: boolean;
@@ -102,8 +107,10 @@ export class HousekeepingManager extends EventEmitter {
 
     // Apply defaults
     this.enabled = config?.enabled ?? true;
-    this.logDir = (config && 'logDir' in config ? config.logDir : undefined) ?? DEFAULT_PATHS.logs;
-    this.dataDir = (config && 'dataDir' in config ? config.dataDir : undefined) ?? DEFAULT_PATHS.data;
+    this.logDir =
+      (config && 'logDir' in config ? config.logDir : undefined) ?? DEFAULT_PATHS.logs;
+    this.dataDir =
+      (config && 'dataDir' in config ? config.dataDir : undefined) ?? DEFAULT_PATHS.data;
     this.metricsCollector = metricsCollector ?? null;
 
     // Schedule settings
@@ -228,7 +235,7 @@ export class HousekeepingManager extends EventEmitter {
     const results: CleanupResult[] = [];
     const warnings: string[] = [];
 
-    // Check disk space first
+    // Check disk space first (delegated)
     const diskStatus = this.checkDiskSpace();
     if (diskStatus.isLow) {
       warnings.push(
@@ -238,19 +245,19 @@ export class HousekeepingManager extends EventEmitter {
       this.emit('disk-space-warning', diskStatus);
     }
 
-    // Run cleanup tasks
+    // Run cleanup tasks (delegated where submodules exist)
     results.push(await this.cleanupOldLogs());
     results.push(await this.cleanupMetrics());
     results.push(await this.cleanupTempFiles());
     results.push(await this.cleanupSyncCache());
 
-    // Compress old week logs if structured logging is enabled
+    // Compress old week logs if structured logging is enabled (delegated)
     if (this.compressStructuredLogs) {
       results.push(await this.compressOldWeekLogs());
     }
 
-    // Database maintenance (check frequency)
-    if (this.shouldRunVacuum()) {
+    // Database maintenance - check frequency (delegated)
+    if (shouldRunVacuum(this.lastVacuum, this.vacuumFrequency)) {
       results.push(await this.runDatabaseMaintenance());
     }
 
@@ -274,54 +281,10 @@ export class HousekeepingManager extends EventEmitter {
   }
 
   /**
-   * Cleanup old log files
+   * Cleanup old log files (delegated to housekeeping/logCleanup)
    */
   async cleanupOldLogs(): Promise<CleanupResult> {
-    const result: CleanupResult = {
-      task: 'cleanup-logs',
-      success: true,
-      itemsProcessed: 0,
-      bytesFreed: 0,
-      errors: [],
-    };
-
-    try {
-      if (!fs.existsSync(this.logDir)) {
-        return result;
-      }
-
-      const cutoffDate = new Date();
-      cutoffDate.setDate(cutoffDate.getDate() - this.retentionLogsDays);
-
-      const files = fs.readdirSync(this.logDir);
-      for (const file of files) {
-        // Only process log files (including compressed)
-        if (!file.endsWith('.log') && !file.endsWith('.log.gz')) {
-          continue;
-        }
-
-        const filePath = path.join(this.logDir, file);
-        const stats = fs.statSync(filePath);
-
-        if (stats.mtime < cutoffDate) {
-          result.bytesFreed += stats.size;
-          fs.unlinkSync(filePath);
-          result.itemsProcessed++;
-          this.log.debug(`Deleted old log: ${file}`);
-        }
-      }
-
-      this.log.info(`Cleaned up ${result.itemsProcessed} old log files`);
-    } catch (error) {
-      result.success = false;
-      result.errors!.push(error instanceof Error ? error.message : String(error));
-      this.log.error(
-        'Failed to cleanup logs',
-        error instanceof Error ? error : undefined
-      );
-    }
-
-    return result;
+    return cleanupOldLogs(this.logDir, this.retentionLogsDays, this.log);
   }
 
   /**
@@ -461,400 +424,40 @@ export class HousekeepingManager extends EventEmitter {
   }
 
   /**
-   * Compress old week log directories
-   *
-   * Directory structure expected:
-   * logs/
-   *   2026/
-   *     week-05/           # Current week - daily files (keep uncompressed)
-   *       2026-01-27.json
-   *       2026-01-28.json
-   *     week-04/           # Previous weeks - compress
-   *       week-04.json.gz  # Merged and compressed
-   *     week-03/
-   *       week-03.json.gz
+   * Compress old week log directories (delegated to housekeeping/logCompression)
    */
   async compressOldWeekLogs(): Promise<CleanupResult> {
-    const result: CleanupResult = {
-      task: 'compress-old-week-logs',
-      success: true,
-      itemsProcessed: 0,
-      bytesFreed: 0,
-      errors: [],
-    };
-
-    try {
-      if (!fs.existsSync(this.logDir)) {
-        return result;
-      }
-
-      const now = new Date();
-      const currentYear = now.getFullYear();
-      const currentWeek = this.getISOWeekNumber(now);
-
-      // Scan year directories
-      const yearDirs = fs
-        .readdirSync(this.logDir, { withFileTypes: true })
-        .filter((d) => d.isDirectory() && /^\d{4}$/.test(d.name))
-        .map((d) => d.name);
-
-      for (const yearDir of yearDirs) {
-        const year = parseInt(yearDir, 10);
-        const yearPath = path.join(this.logDir, yearDir);
-
-        // Scan week directories
-        const weekDirs = fs
-          .readdirSync(yearPath, { withFileTypes: true })
-          .filter((d) => d.isDirectory() && /^week-\d{2}$/.test(d.name))
-          .map((d) => d.name);
-
-        for (const weekDir of weekDirs) {
-          const weekNum = parseInt(weekDir.replace('week-', ''), 10);
-          const weekPath = path.join(yearPath, weekDir);
-
-          // Calculate age in weeks
-          const weeksAgo =
-            year === currentYear
-              ? currentWeek - weekNum
-              : (currentYear - year) * 52 + (currentWeek - weekNum);
-
-          // Skip current week (keep daily files)
-          if (weeksAgo <= 0) {
-            continue;
-          }
-
-          // Delete weeks older than retention period
-          if (weeksAgo > this.logRetentionWeeks) {
-            const deleteResult = this.deleteWeekDirectory(weekPath);
-            result.bytesFreed += deleteResult.bytesFreed;
-            result.itemsProcessed += deleteResult.filesDeleted;
-            this.log.debug(`Deleted old week logs: ${weekDir} (${weeksAgo} weeks old)`);
-            continue;
-          }
-
-          // Compress previous weeks (if not already compressed)
-          const archivePath = path.join(weekPath, `${weekDir}.json.gz`);
-
-          if (!fs.existsSync(archivePath)) {
-            const compressResult = await this.compressWeekDirectory(
-              weekPath,
-              archivePath,
-              weekDir
-            );
-            if (compressResult.success) {
-              result.bytesFreed += compressResult.bytesFreed;
-              result.itemsProcessed++;
-              this.log.debug(`Compressed week logs: ${weekDir}`);
-            } else if (compressResult.error) {
-              result.errors!.push(compressResult.error);
-            }
-          }
-        }
-
-        // Remove empty year directories
-        try {
-          const remaining = fs.readdirSync(yearPath);
-          if (remaining.length === 0) {
-            fs.rmdirSync(yearPath);
-          }
-        } catch {
-          // Ignore cleanup errors
-        }
-      }
-
-      if (result.itemsProcessed > 0 || result.bytesFreed > 0) {
-        this.log.info(
-          `Compressed ${result.itemsProcessed} week logs, freed ${result.bytesFreed} bytes`
-        );
-      }
-    } catch (error) {
-      result.success = false;
-      result.errors!.push(error instanceof Error ? error.message : String(error));
-      this.log.error(
-        'Failed to compress old week logs',
-        error instanceof Error ? error : undefined
-      );
-    }
-
-    return result;
+    return compressOldWeekLogs(this.logDir, this.logRetentionWeeks, this.log);
   }
 
   /**
-   * Get ISO week number for a date
-   */
-  private getISOWeekNumber(date: Date): number {
-    const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-    const dayNum = d.getUTCDay() || 7;
-    d.setUTCDate(d.getUTCDate() + 4 - dayNum);
-    const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-    return Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
-  }
-
-  /**
-   * Delete a week directory and all its contents
-   */
-  private deleteWeekDirectory(weekPath: string): {
-    filesDeleted: number;
-    bytesFreed: number;
-  } {
-    let filesDeleted = 0;
-    let bytesFreed = 0;
-
-    try {
-      const files = fs.readdirSync(weekPath);
-      for (const file of files) {
-        const filePath = path.join(weekPath, file);
-        try {
-          const stats = fs.statSync(filePath);
-          bytesFreed += stats.size;
-          fs.unlinkSync(filePath);
-          filesDeleted++;
-        } catch {
-          // Ignore individual file errors
-        }
-      }
-      fs.rmdirSync(weekPath);
-    } catch {
-      // Ignore directory errors
-    }
-
-    return { filesDeleted, bytesFreed };
-  }
-
-  /**
-   * Compress a week's daily log files into a single gzipped archive
-   */
-  private async compressWeekDirectory(
-    weekPath: string,
-    archivePath: string,
-    weekDir: string
-  ): Promise<{ success: boolean; bytesFreed: number; error?: string }> {
-    try {
-      // Find all daily log files (JSON or log)
-      const logFiles = fs
-        .readdirSync(weekPath)
-        .filter((f) => f.endsWith('.json') || f.endsWith('.log'))
-        .sort(); // Sort by date
-
-      if (logFiles.length === 0) {
-        return { success: true, bytesFreed: 0 };
-      }
-
-      // Merge all log files
-      const mergedLogs: string[] = [];
-
-      for (const logFile of logFiles) {
-        const filePath = path.join(weekPath, logFile);
-        try {
-          const content = fs.readFileSync(filePath, 'utf-8');
-          mergedLogs.push(content);
-        } catch {
-          // Skip unreadable files
-        }
-      }
-
-      if (mergedLogs.length === 0) {
-        return { success: true, bytesFreed: 0 };
-      }
-
-      // Compress and write
-      const mergedContent = mergedLogs.join('\n');
-      const compressed = await new Promise<Buffer>((resolve, reject) => {
-        zlib.gzip(mergedContent, (err, result) => {
-          if (err) reject(err);
-          else resolve(result);
-        });
-      });
-
-      fs.writeFileSync(archivePath, compressed);
-
-      // Delete original files
-      let bytesFreed = 0;
-      for (const logFile of logFiles) {
-        const filePath = path.join(weekPath, logFile);
-        try {
-          const stats = fs.statSync(filePath);
-          bytesFreed += stats.size;
-          fs.unlinkSync(filePath);
-        } catch {
-          // Ignore deletion errors
-        }
-      }
-
-      // Account for the archive size
-      const archiveStats = fs.statSync(archivePath);
-      bytesFreed -= archiveStats.size;
-
-      return { success: true, bytesFreed: Math.max(0, bytesFreed) };
-    } catch (error) {
-      return {
-        success: false,
-        bytesFreed: 0,
-        error: `Failed to compress ${weekDir}: ${error instanceof Error ? error.message : String(error)}`,
-      };
-    }
-  }
-
-  /**
-   * Clear ALL logs (for app reset)
+   * Clear ALL logs (for app reset) (delegated to housekeeping/logCleanup)
    * WARNING: This permanently deletes all log data
    */
   async clearAllLogs(): Promise<CleanupResult> {
-    const result: CleanupResult = {
-      task: 'clear-all-logs',
-      success: true,
-      itemsProcessed: 0,
-      bytesFreed: 0,
-      errors: [],
-    };
-
-    try {
-      if (!fs.existsSync(this.logDir)) {
-        return result;
-      }
-
-      // Recursively delete all files
-      const deleteRecursive = (dirPath: string): void => {
-        const entries = fs.readdirSync(dirPath, { withFileTypes: true });
-
-        for (const entry of entries) {
-          const fullPath = path.join(dirPath, entry.name);
-
-          if (entry.isDirectory()) {
-            deleteRecursive(fullPath);
-            try {
-              fs.rmdirSync(fullPath);
-            } catch {
-              // Ignore if not empty
-            }
-          } else {
-            try {
-              const stats = fs.statSync(fullPath);
-              result.bytesFreed += stats.size;
-              fs.unlinkSync(fullPath);
-              result.itemsProcessed++;
-            } catch {
-              // Ignore file errors
-            }
-          }
-        }
-      };
-
-      deleteRecursive(this.logDir);
-      this.log.info(
-        `Cleared all logs: ${result.itemsProcessed} files, ${result.bytesFreed} bytes freed`
-      );
-    } catch (error) {
-      result.success = false;
-      result.errors!.push(error instanceof Error ? error.message : String(error));
-      this.log.error(
-        'Failed to clear all logs',
-        error instanceof Error ? error : undefined
-      );
-    }
-
-    return result;
+    return clearAllLogs(this.logDir, this.log);
   }
 
   /**
-   * Run database maintenance (VACUUM)
+   * Run database maintenance (VACUUM) (delegated to housekeeping/dbMaintenance)
    */
   async runDatabaseMaintenance(): Promise<CleanupResult> {
-    const result: CleanupResult = {
-      task: 'database-maintenance',
-      success: true,
-      itemsProcessed: 0,
-      bytesFreed: 0,
-      errors: [],
-    };
-
-    const dbPath = path.join(this.dataDir, 'cid.db');
-
-    try {
-      if (!fs.existsSync(dbPath)) {
-        return result;
-      }
-
-      // Get size before VACUUM
-      const sizeBefore = fs.statSync(dbPath).size;
-
-      // Run VACUUM using better-sqlite3
-      const BetterSqlite3 = await import('better-sqlite3');
-      const db = new BetterSqlite3.default(dbPath);
-      if (this.walCheckpointOnClose) {
-        db.pragma('wal_checkpoint(TRUNCATE)');
-      }
-      db.exec('VACUUM');
-      db.close();
-
-      // Get size after VACUUM
-      const sizeAfter = fs.statSync(dbPath).size;
-      result.bytesFreed = Math.max(0, sizeBefore - sizeAfter);
-      result.itemsProcessed = 1;
-
+    const result = await runDatabaseMaintenance(
+      this.dataDir,
+      this.walCheckpointOnClose,
+      this.log
+    );
+    if (result.success && result.itemsProcessed > 0) {
       this.lastVacuum = new Date();
-      this.log.info(`Database VACUUM complete, freed ${result.bytesFreed} bytes`);
-    } catch (error) {
-      result.success = false;
-      result.errors!.push(error instanceof Error ? error.message : String(error));
-      this.log.error(
-        'Failed to run database maintenance',
-        error instanceof Error ? error : undefined
-      );
     }
-
     return result;
   }
 
   /**
-   * Check if VACUUM should run based on frequency
-   */
-  private shouldRunVacuum(): boolean {
-    if (!this.lastVacuum) {
-      return true;
-    }
-
-    const daysSinceVacuum = Math.floor(
-      (Date.now() - this.lastVacuum.getTime()) / (1000 * 60 * 60 * 24)
-    );
-
-    switch (this.vacuumFrequency) {
-      case 'daily':
-        return daysSinceVacuum >= 1;
-      case 'weekly':
-        return daysSinceVacuum >= 7;
-      case 'monthly':
-        return daysSinceVacuum >= 30;
-      default:
-        return false;
-    }
-  }
-
-  /**
-   * Check disk space
+   * Check disk space (delegated to housekeeping/diskMonitor)
    */
   checkDiskSpace(): { available: number; isLow: boolean; warningThreshold: number } {
-    try {
-      // Use different methods based on platform
-      const dataPath = path.resolve(this.dataDir);
-      const stats = fs.statfsSync(dataPath);
-
-      const available = stats.bavail * stats.bsize;
-      const warningThreshold = this.diskSpaceWarningMb * 1024 * 1024;
-
-      return {
-        available,
-        isLow: available < warningThreshold,
-        warningThreshold: this.diskSpaceWarningMb,
-      };
-    } catch {
-      // Fallback if statfs not available
-      return {
-        available: Number.MAX_SAFE_INTEGER,
-        isLow: false,
-        warningThreshold: this.diskSpaceWarningMb,
-      };
-    }
+    return checkDiskSpace(this.dataDir, this.diskSpaceWarningMb);
   }
 
   /**
