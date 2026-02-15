@@ -142,17 +142,28 @@ export class HtmlContentSync extends EventEmitter {
       // Generate filename from title
       const filename = `${sanitizeFilename(item.title)}.html`;
       let localPath = path.join(contentDir, filename);
-      let finalFilename = filename;
 
-      // Handle duplicates
-      if (fs.existsSync(localPath)) {
-        const ext = path.extname(filename);
-        const base = path.basename(filename, ext);
-        let counter = 1;
-        while (fs.existsSync(localPath)) {
-          finalFilename = `${base}_${counter}${ext}`;
-          localPath = path.join(contentDir, finalFilename);
-          counter++;
+      // Check if this resource already has a local file - overwrite it instead of creating duplicates
+      const resourceExternalId = `html-${item.sourceType}-${item.sourceId}`;
+      const existingResource = this.db.executeReadOne<{ local_path: string | null }>(
+        'SELECT local_path FROM resources WHERE external_id = ?',
+        [resourceExternalId]
+      );
+
+      if (existingResource?.local_path) {
+        // Overwrite at existing path
+        localPath = existingResource.local_path;
+      } else {
+        // New file - handle duplicates
+        if (fs.existsSync(localPath)) {
+          const ext = path.extname(filename);
+          const base = path.basename(filename, ext);
+          let counter = 1;
+          while (fs.existsSync(localPath)) {
+            const finalFilename = `${base}_${counter}${ext}`;
+            localPath = path.join(contentDir, finalFilename);
+            counter++;
+          }
         }
       }
 

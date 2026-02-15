@@ -184,6 +184,7 @@ export function mapPage(
   const body = safeParse(SafeNullableString, canvas.body, 'page.body');
   const isFrontPage = safeParse(SafeBoolean, canvas.front_page, 'page.front_page');
   const published = safeParse(SafeBoolean, canvas.published, 'page.published');
+  const updatedAt = safeParse(SafeNullableString, canvas.updated_at, 'page.updated_at');
 
   const bodyText = body
     ? body
@@ -202,5 +203,6 @@ export function mapPage(
     body_text: bodyText,
     is_front_page: isFrontPage ? 1 : 0,
     published: published ? 1 : 0,
+    remote_updated_at: updatedAt,
   };
 }

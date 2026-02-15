@@ -3,6 +3,7 @@
  * Handles folders and files synchronization from Canvas.
  */
 
+import fs from 'fs';
 import type { SyncOperationContext, SyncOperationHelpers } from '../SyncOperationContext';
 import { createSyncResult } from '../SyncOperationContext';
 import type { SyncResult } from '../SyncEngineTypes';
@@ -161,6 +162,21 @@ export class SyncFileOperations {
                 oldTimestamp: existing.remote_updated_at,
                 newTimestamp: localFile.remote_updated_at,
               });
+
+              // Clear local_path so UI shows file needs re-download
+              this.ctx.db.executeWrite(
+                'UPDATE resources SET local_path = NULL WHERE id = ?',
+                [existing.id],
+                'resources'
+              );
+              // Delete stale file from disk
+              try {
+                if (fs.existsSync(existing.local_path)) {
+                  fs.unlinkSync(existing.local_path);
+                }
+              } catch {
+                // Best-effort deletion
+              }
             }
 
             this.ctx.db.upsert(
@@ -334,6 +350,21 @@ export class SyncFileOperations {
                 oldTimestamp: existing.remote_updated_at,
                 newTimestamp: localFile.remote_updated_at,
               });
+
+              // Clear local_path so UI shows file needs re-download
+              this.ctx.db.executeWrite(
+                'UPDATE resources SET local_path = NULL WHERE id = ?',
+                [existing.id],
+                'resources'
+              );
+              // Delete stale file from disk
+              try {
+                if (fs.existsSync(existing.local_path)) {
+                  fs.unlinkSync(existing.local_path);
+                }
+              } catch {
+                // Best-effort deletion
+              }
             }
 
             this.ctx.db.upsert(

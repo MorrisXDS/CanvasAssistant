@@ -275,6 +275,9 @@ export class SyncEngine extends EventEmitter {
       logDiagnostic: (entry) => this.logDiagnostic(entry),
       persistConflictData: (conflictId, tableName, data) =>
         this.persistConflictData(conflictId, tableName, data),
+      computeContentHash: (content) => this.computeContentHash(content),
+      updateContentHashAndDependencies: (sourceType, sourceId, content, courseId) =>
+        this.updateContentHashAndDependencies(sourceType, sourceId, content, courseId),
     };
   }
 

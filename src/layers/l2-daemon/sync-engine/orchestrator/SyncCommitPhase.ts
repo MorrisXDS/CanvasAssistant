@@ -3,6 +3,7 @@
  * Writes all fetched Canvas data to the local database in a single transaction.
  */
 
+import fs from 'fs';
 import {
   mapCourse,
   mapAssignment,
@@ -476,7 +477,42 @@ export function executeCommitPhase(
         try {
           const pageType = page.front_page ? 'landing' : 'content';
           const localPage = mapPage(page, localCourseId, pageType);
+
+          // Read existing hash before upsert for change detection
+          const existingPage = ctx.db.executeReadOne<{
+            content_hash: string | null;
+          }>('SELECT content_hash FROM course_pages WHERE external_id = ?', [
+            localPage.external_id,
+          ]);
+
           ctx.db.upsert('course_pages', localPage);
+
+          // Hash-based change detection for page content
+          const newHash = ctx.computeContentHash(localPage.body_html as string | null);
+          if (newHash) {
+            const oldHash = existingPage?.content_hash ?? null;
+            if (oldHash !== newHash) {
+              // Content changed (or first sync) - update hash and dependencies
+              ctx.updateContentHashAndDependencies(
+                'page',
+                localPage.external_id as string,
+                localPage.body_html as string | null,
+                localCourseId
+              );
+
+              // If content changed (not first sync), invalidate local HTML file
+              if (oldHash !== null) {
+                const slug = localPage.url_slug || localPage.external_id;
+                ctx.db.executeWrite(
+                  `UPDATE resources SET local_path = NULL
+                   WHERE external_id = ? AND type = 'page'`,
+                  [`html-page-${slug}`],
+                  'resources'
+                );
+              }
+            }
+          }
+
           counts.pages++;
         } catch (error) {
           errors.push(
@@ -525,6 +561,39 @@ export function executeCommitPhase(
         try {
           const folderPath = folderPathMap.get(file.folder_id) ?? null;
           const localFile = mapFile(file, localCourseId, null, folderPath);
+
+          // Check if file was updated and has a local copy
+          const existingFile = ctx.db.executeReadOne<{
+            id: number;
+            local_path: string | null;
+            remote_updated_at: string | null;
+          }>(
+            'SELECT id, local_path, remote_updated_at FROM resources WHERE external_id = ?',
+            [String(file.id)]
+          );
+
+          const newTimestamp = file.modified_at || file.updated_at;
+          if (
+            existingFile?.local_path &&
+            existingFile.remote_updated_at &&
+            newTimestamp &&
+            existingFile.remote_updated_at !== newTimestamp
+          ) {
+            // File updated on Canvas - clear local_path and delete stale file
+            ctx.db.executeWrite(
+              'UPDATE resources SET local_path = NULL WHERE id = ?',
+              [existingFile.id],
+              'resources'
+            );
+            try {
+              if (fs.existsSync(existingFile.local_path)) {
+                fs.unlinkSync(existingFile.local_path);
+              }
+            } catch {
+              // Best-effort deletion
+            }
+          }
+
           ctx.db.upsert(
             'resources',
             localFile as Record<string, unknown>,

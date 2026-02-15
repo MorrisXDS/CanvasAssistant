@@ -567,4 +567,16 @@ export const migrationsV81toV102: Migration[] = [
       SELECT 1;
     `,
   },
+  // Migration 103: Add remote_updated_at to course_pages for change detection
+  {
+    version: 103,
+    description: 'Add remote_updated_at column to course_pages for page change detection',
+    up: `
+      ALTER TABLE course_pages ADD COLUMN remote_updated_at TEXT;
+    `,
+    down: `
+      -- SQLite doesn't support DROP COLUMN, column will remain but be unused
+      SELECT 1;
+    `,
+  },
 ];

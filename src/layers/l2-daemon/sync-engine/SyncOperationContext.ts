@@ -62,6 +62,15 @@ export interface SyncOperationHelpers {
     tableName: string,
     data: Record<string, unknown>
   ) => void;
+  /** Compute MD5 hash of content for change detection */
+  computeContentHash: (content: string | null | undefined) => string | null;
+  /** Update content hash and re-extract dependencies when HTML content changes */
+  updateContentHashAndDependencies: (
+    sourceType: 'page' | 'assignment' | 'syllabus' | 'announcement',
+    sourceId: string,
+    newContent: string | null,
+    courseId: number
+  ) => void;
 }
 
 /**

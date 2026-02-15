@@ -282,6 +282,7 @@ export interface LocalPage {
   body_text: string | null;
   is_front_page: number; // SQLite boolean: 0 or 1
   published: number; // SQLite boolean: 0 or 1
+  remote_updated_at?: string | null;
 }
 
 export interface LocalResource {

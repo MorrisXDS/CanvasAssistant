@@ -389,7 +389,44 @@ export class SyncContentOperations {
           try {
             const pageType = page.front_page ? 'landing' : 'content';
             const localPage = mapPage(page, localCourseId, pageType);
+
+            // Read existing hash before upsert for change detection
+            const existingPage = this.ctx.db.executeReadOne<{
+              content_hash: string | null;
+            }>('SELECT content_hash FROM course_pages WHERE external_id = ?', [
+              localPage.external_id,
+            ]);
+
             this.ctx.db.upsert('course_pages', localPage);
+
+            // Hash-based change detection for page content
+            const newHash = this.helpers.computeContentHash(
+              localPage.body_html as string | null
+            );
+            if (newHash) {
+              const oldHash = existingPage?.content_hash ?? null;
+              if (oldHash !== newHash) {
+                // Content changed (or first sync) - update hash and dependencies
+                this.helpers.updateContentHashAndDependencies(
+                  'page',
+                  localPage.external_id as string,
+                  localPage.body_html as string | null,
+                  localCourseId
+                );
+
+                // If content changed (not first sync), invalidate local HTML file
+                if (oldHash !== null) {
+                  const slug = localPage.url_slug || localPage.external_id;
+                  this.ctx.db.executeWrite(
+                    `UPDATE resources SET local_path = NULL
+                     WHERE external_id = ? AND type = 'page'`,
+                    [`html-page-${slug}`],
+                    'resources'
+                  );
+                }
+              }
+            }
+
             count++;
           } catch (error) {
             errors.push(
