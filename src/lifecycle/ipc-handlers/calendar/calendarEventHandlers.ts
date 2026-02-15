@@ -12,8 +12,8 @@
 import { ipcMain, dialog } from 'electron';
 import path from 'path';
 import type { IpcContext } from '../IpcContext';
-import { RRuleExpander } from '../../layers/l2-daemon';
-import type { CalendarEventRecord } from '../../layers/l2-daemon/calendar/RRuleExpander';
+import { RRuleExpander } from '../../../layers/l2-daemon';
+import type { CalendarEventRecord } from '../../../layers/l2-daemon/calendar/RRuleExpander';
 
 /**
  * Register calendar event IPC handlers

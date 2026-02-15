@@ -4,11 +4,11 @@
  */
 
 import type { BrowserWindow } from 'electron';
-import type { Database } from './layers/l1-persistence';
-import type { Logger } from './layers/l0-utilities/Logger';
-import type { MetricsCollector } from './layers/l0-utilities/MetricsCollector';
-import type { SystemMonitor } from './layers/l0-utilities/SystemMonitor';
-import type { SyncEngine } from './layers/l2-daemon';
+import type { Database } from '../layers/l1-persistence';
+import type { Logger } from '../layers/l0-utilities/Logger';
+import type { MetricsCollector } from '../layers/l0-utilities/MetricsCollector';
+import type { SystemMonitor } from '../layers/l0-utilities/SystemMonitor';
+import type { SyncEngine } from '../layers/l2-daemon';
 import type { CrashProtectionManager } from './CrashProtectionManager';
 
 export interface AutoSyncManagerConfig {

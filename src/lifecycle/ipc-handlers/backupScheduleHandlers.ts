@@ -8,8 +8,8 @@ import { ipcMain } from 'electron';
 import fs from 'fs';
 import path from 'path';
 import type { IpcContext } from './IpcContext';
-import type { ExportSchedule } from '../layers/l5-presentation/settings/settingsSchema';
-import { DEFAULT_EXPORT_SCHEDULE } from '../layers/l5-presentation/settings/settingsSchema';
+import type { ExportSchedule } from '../../layers/l5-presentation/settings/settingsSchema';
+import { DEFAULT_EXPORT_SCHEDULE } from '../../layers/l5-presentation/settings/settingsSchema';
 
 interface BackupHistoryRow {
   id: number;

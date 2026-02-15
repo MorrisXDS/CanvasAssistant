@@ -884,7 +884,7 @@ export function Onboarding({ onComplete }: OnboardingProps) {
                     leftIcon={<Rocket size={16} />}
                     style={{ minWidth: '140px' }}
                   >
-                    Open Dashboard
+                    Let's get started
                   </Button>
                 </div>
               </div>

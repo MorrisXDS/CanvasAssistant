@@ -67,7 +67,8 @@ export function registerHtmlExportHandlers(ctx: IpcContext): void {
         }
       } else {
         // Create new path: FILES_DIR/{courseCode}/{SourceType}/{Title}.html
-        const sourceTypeCapitalized = sourceType.charAt(0).toUpperCase() + sourceType.slice(1);
+        const sourceTypeCapitalized =
+          sourceType.charAt(0).toUpperCase() + sourceType.slice(1);
         const contextDir = path.join(FILES_DIR, courseCode, sourceTypeCapitalized);
         if (!fs.existsSync(contextDir)) {
           fs.mkdirSync(contextDir, { recursive: true });

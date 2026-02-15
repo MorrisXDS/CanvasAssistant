@@ -16,7 +16,7 @@ import {
   Upload,
 } from 'lucide-react';
 import { useStore } from '../../../l5-presentation/store';
-import { Card } from '../shared';
+import { Card, ConfirmDialog } from '../shared';
 import type { Task, Course } from '../../../l5-presentation/types';
 import { generateICS, parseICS, type ParsedEvent } from './CalendarPage.ics';
 import { styles } from './CalendarPage.styles';
@@ -97,6 +97,13 @@ export function CalendarPage() {
   const viewMode = viewModeState;
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [_importedEvents, setImportedEvents] = useState<ParsedEvent[]>([]);
+
+  // Alert dialog state (replaces native alert())
+  const [alertDialog, setAlertDialog] = useState<{
+    title: string;
+    message: string;
+    type: 'danger' | 'warning' | 'info' | 'success';
+  } | null>(null);
 
   // Filter state
   const [showFilters, setShowFilters] = useState(false);
@@ -261,7 +268,11 @@ export function CalendarPage() {
   const handleExportICS = () => {
     const tasksWithDates = tasks.filter((t) => t.dueAt);
     if (tasksWithDates.length === 0) {
-      alert('No tasks with due dates to export.');
+      setAlertDialog({
+        title: 'No Data',
+        message: 'No tasks with due dates to export.',
+        type: 'info',
+      });
       return;
     }
 
@@ -294,13 +305,25 @@ export function CalendarPage() {
 
         // Show summary
         if (events.length > 0) {
-          alert(`Successfully imported ${events.length} event(s) from ${file.name}`);
+          setAlertDialog({
+            title: 'Import Successful',
+            message: `Successfully imported ${events.length} event(s) from ${file.name}`,
+            type: 'success',
+          });
         } else {
-          alert('No events found in the ICS file.');
+          setAlertDialog({
+            title: 'No Events',
+            message: 'No events found in the ICS file.',
+            type: 'info',
+          });
         }
       } catch (err) {
         console.error('Failed to parse ICS file:', err);
-        alert('Failed to parse the ICS file. Please check the file format.');
+        setAlertDialog({
+          title: 'Import Failed',
+          message: 'Failed to parse the ICS file. Please check the file format.',
+          type: 'danger',
+        });
       }
     };
     reader.readAsText(file);
@@ -319,6 +342,18 @@ export function CalendarPage() {
 
   return (
     <div style={styles.page}>
+      {/* Alert Dialog (replaces native alert()) */}
+      <ConfirmDialog
+        isOpen={!!alertDialog}
+        title={alertDialog?.title ?? ''}
+        message={alertDialog?.message ?? ''}
+        type={alertDialog?.type ?? 'info'}
+        confirmText="OK"
+        hideCancel
+        onConfirm={() => setAlertDialog(null)}
+        onCancel={() => setAlertDialog(null)}
+      />
+
       {/* Header */}
       <header style={styles.header}>
         <div style={styles.headerLeft}>

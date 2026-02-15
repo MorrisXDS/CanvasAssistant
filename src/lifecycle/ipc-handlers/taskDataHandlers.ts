@@ -5,14 +5,14 @@
 
 import { ipcMain } from 'electron';
 import type { IpcContext } from './IpcContext';
-import type { TaskRow, CanvasTaskQueueRow } from '../layers/l1-persistence';
+import type { TaskRow, CanvasTaskQueueRow } from '../../layers/l1-persistence';
 import {
   AcceptQueuedTaskCommand,
   RejectQueuedTaskCommand,
   BulkAcceptQueuedTasksCommand,
   MergeQueuedTaskCommand,
-} from '../layers/l4-controller';
-import { createSimulationContext } from '../layers/l4-controller/types';
+} from '../../layers/l4-controller';
+import { createSimulationContext } from '../../layers/l4-controller/types';
 
 /**
  * Map TaskRow to API response format (camelCase with computed fields)

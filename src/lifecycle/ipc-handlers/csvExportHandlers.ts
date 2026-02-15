@@ -4,7 +4,7 @@
  */
 
 import { ipcMain, dialog } from 'electron';
-import { ExportManager } from '../layers/l2-daemon';
+import { ExportManager } from '../../layers/l2-daemon';
 import type { IpcContext } from './IpcContext';
 
 /**

@@ -9,7 +9,7 @@
 import { ipcMain } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
-import { CanvasClient } from '../layers/l2-daemon';
+import { CanvasClient } from '../../layers/l2-daemon';
 import type { IpcContext } from './IpcContext';
 
 // ============ Profile Cache ============

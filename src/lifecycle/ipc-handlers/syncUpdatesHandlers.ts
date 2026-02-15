@@ -5,7 +5,7 @@
 
 import { ipcMain } from 'electron';
 import type { IpcContext, IpcHandlerRegistrar } from './IpcContext';
-import type { SyncUpdateRowWithCourse, SyncUpdateRow } from '../layers/l1-persistence';
+import type { SyncUpdateRowWithCourse, SyncUpdateRow } from '../../layers/l1-persistence';
 
 /**
  * Map database row to API response format

@@ -17,7 +17,7 @@ import { Database, MigrationRunner } from './layers/l1-persistence';
 import { RateLimiter, CircuitBreaker } from './layers/l2-daemon';
 
 // Crash Protection
-import { CrashProtectionManager } from './CrashProtectionManager';
+import { CrashProtectionManager } from './lifecycle/CrashProtectionManager';
 
 // Lifecycle
 import {

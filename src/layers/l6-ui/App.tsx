@@ -274,6 +274,20 @@ function AppContent() {
     );
   }
 
+  // Show welcome guide before dashboard on first launch
+  if (!onboardingCompleted) {
+    return (
+      <Suspense fallback={<LoadingScreen />}>
+        <WelcomeGuide
+          onComplete={() => {
+            settingsManager.set(STORAGE_KEYS.ONBOARDING_COMPLETED, true);
+            setOnboardingCompleted(true);
+          }}
+        />
+      </Suspense>
+    );
+  }
+
   // Show main app with modals and overlays
   return (
     <>
@@ -323,18 +337,6 @@ function AppContent() {
           </Routes>
         </Suspense>
       </ErrorBoundary>
-
-      {/* Welcome guide overlay on first launch */}
-      {!onboardingCompleted && (
-        <Suspense fallback={null}>
-          <WelcomeGuide
-            onComplete={() => {
-              settingsManager.set(STORAGE_KEYS.ONBOARDING_COMPLETED, true);
-              setOnboardingCompleted(true);
-            }}
-          />
-        </Suspense>
-      )}
     </>
   );
 }

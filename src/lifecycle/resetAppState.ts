@@ -13,7 +13,7 @@ import type { MetricsCollector } from '../layers/l0-utilities/MetricsCollector';
 import type { CredentialManager } from '../layers/l0-utilities/CredentialManager';
 import type { FileWatcher } from '../layers/l0-utilities/FileWatcher';
 import type { SyncEngine } from '../layers/l2-daemon';
-import type { CanvasClientManager } from '../CanvasClientManager';
+import type { CanvasClientManager } from './CanvasClientManager';
 
 export interface ResetAppStateDeps {
   database: Database;

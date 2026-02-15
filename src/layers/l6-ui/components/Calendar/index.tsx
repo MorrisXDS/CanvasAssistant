@@ -31,6 +31,7 @@ import {
 import { ImportConfirmationModal } from './ImportConfirmationModal';
 import { DuplicateCalendarModal } from './DuplicateCalendarModal';
 import { CalendarManagerPanel } from './CalendarManagerPanel';
+import { ConfirmDialog } from '../shared/ConfirmDialog';
 import { TaskDetailModal } from './TaskDetailModal';
 import { EventFormModal } from './EventFormModal';
 import {
@@ -111,6 +112,13 @@ export function CalendarPage() {
     color: string;
     eventCount: number;
     importedAt: string;
+  } | null>(null);
+
+  // Alert dialog state (replaces native alert())
+  const [alertDialog, setAlertDialog] = useState<{
+    title: string;
+    message: string;
+    type: 'danger' | 'warning' | 'info' | 'success';
   } | null>(null);
 
   // Panel states
@@ -600,14 +608,22 @@ export function CalendarPage() {
         const success = await updateCalendarEvent(eventToEdit.id, data);
         if (!success) {
           console.error('Failed to update calendar event');
-          alert('Failed to update event. Please try again.');
+          setAlertDialog({
+            title: 'Error',
+            message: 'Failed to update event. Please try again.',
+            type: 'danger',
+          });
           return;
         }
       } else {
         const result = await createCalendarEvent(data);
         if (!result.success) {
           console.error('Failed to create calendar event');
-          alert('Failed to create event. Please try again.');
+          setAlertDialog({
+            title: 'Error',
+            message: 'Failed to create event. Please try again.',
+            type: 'danger',
+          });
           return;
         }
       }
@@ -616,7 +632,11 @@ export function CalendarPage() {
       fetchCalendarEventsForRange(prefetchRange.start, prefetchRange.end);
     } catch (error) {
       console.error('Error saving event:', error);
-      alert('An error occurred while saving the event.');
+      setAlertDialog({
+        title: 'Error',
+        message: 'An error occurred while saving the event.',
+        type: 'danger',
+      });
     }
   };
 
@@ -742,6 +762,18 @@ export function CalendarPage() {
           setShowEventFormModal(false);
           setEventToEdit(null);
         }}
+      />
+
+      {/* Alert Dialog (replaces native alert()) */}
+      <ConfirmDialog
+        isOpen={!!alertDialog}
+        title={alertDialog?.title ?? ''}
+        message={alertDialog?.message ?? ''}
+        type={alertDialog?.type ?? 'info'}
+        confirmText="OK"
+        hideCancel
+        onConfirm={() => setAlertDialog(null)}
+        onCancel={() => setAlertDialog(null)}
       />
 
       {/* Header */}

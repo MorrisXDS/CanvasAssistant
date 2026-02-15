@@ -7,16 +7,16 @@
 import { ipcMain, shell } from 'electron';
 import fs from 'fs';
 import path from 'path';
-import { mapPage, type CanvasPage } from '../layers/l2-daemon';
+import { mapPage, type CanvasPage } from '../../layers/l2-daemon';
 import {
   extractCanvasFileReferences,
   extractHtmlReferences,
-} from '../layers/l2-daemon/html/HtmlFileExtractor';
+} from '../../layers/l2-daemon/html/HtmlFileExtractor';
 import {
   createPathBuilder,
   sanitizeCourseCode,
   sanitizeTitle,
-} from '../layers/l0-utilities';
+} from '../../layers/l0-utilities';
 import type { IpcContext } from './IpcContext';
 
 /**

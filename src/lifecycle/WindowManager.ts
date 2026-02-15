@@ -14,9 +14,9 @@ import {
 } from 'electron';
 import fs from 'fs';
 import path from 'path';
-import type { Logger } from './layers/l0-utilities/Logger';
-import type { MetricsCollector } from './layers/l0-utilities/MetricsCollector';
-import type { SystemMonitor } from './layers/l0-utilities/SystemMonitor';
+import type { Logger } from '../layers/l0-utilities/Logger';
+import type { MetricsCollector } from '../layers/l0-utilities/MetricsCollector';
+import type { SystemMonitor } from '../layers/l0-utilities/SystemMonitor';
 import type { CrashProtectionManager } from './CrashProtectionManager';
 import type { AutoSyncManager } from './AutoSyncManager';
 

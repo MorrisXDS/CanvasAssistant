@@ -12,7 +12,7 @@
 
 import { ipcMain } from 'electron';
 import type { IpcContext } from '../IpcContext';
-import { ICSParser } from '../../layers/l2-daemon';
+import { ICSParser } from '../../../layers/l2-daemon';
 
 /**
  * Register calendar CRUD IPC handlers

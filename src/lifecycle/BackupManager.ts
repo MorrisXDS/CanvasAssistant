@@ -6,10 +6,10 @@
 import { BrowserWindow } from 'electron';
 import fs from 'fs';
 import path from 'path';
-import type { Database } from './layers/l1-persistence';
-import type { Logger } from './layers/l0-utilities/Logger';
-import type { MetricsCollector } from './layers/l0-utilities/MetricsCollector';
-import { encryptBackup } from './layers/l0-utilities/BackupEncryption';
+import type { Database } from '../layers/l1-persistence';
+import type { Logger } from '../layers/l0-utilities/Logger';
+import type { MetricsCollector } from '../layers/l0-utilities/MetricsCollector';
+import { encryptBackup } from '../layers/l0-utilities/BackupEncryption';
 
 export interface BackupManagerConfig {
   database: Database;

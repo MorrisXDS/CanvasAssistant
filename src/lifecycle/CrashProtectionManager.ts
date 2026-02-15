@@ -6,7 +6,7 @@
 import fs from 'fs';
 import path from 'path';
 import type { BrowserWindow } from 'electron';
-import type { Database } from './layers/l1-persistence';
+import type { Database } from '../layers/l1-persistence';
 
 // Minimal logger interface that works with both Logger and ComponentLogger
 interface MinimalLogger {

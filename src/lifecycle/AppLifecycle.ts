@@ -40,14 +40,14 @@ import { HtmlLocalPathManager } from '../layers/l2-daemon/html/HtmlLocalPathMana
 import { CommandDispatcher } from '../layers/l4-controller';
 
 // Crash Protection
-import type { CrashProtectionManager } from '../CrashProtectionManager';
+import type { CrashProtectionManager } from './CrashProtectionManager';
 
 // Managers
-import { BackupManager } from '../BackupManager';
-import { AutoSyncManager } from '../AutoSyncManager';
-import { WindowManager } from '../WindowManager';
-import { CanvasClientManager } from '../CanvasClientManager';
-import { registerCanvasFileProtocol } from '../canvasFileProtocol';
+import { BackupManager } from './BackupManager';
+import { AutoSyncManager } from './AutoSyncManager';
+import { WindowManager } from './WindowManager';
+import { CanvasClientManager } from './CanvasClientManager';
+import { registerCanvasFileProtocol } from './canvasFileProtocol';
 
 // IPC Handlers
 import {
@@ -75,8 +75,8 @@ import {
   registerHtmlDependencyHandlers,
   registerCommandHandlers,
   registerBackupScheduleHandlers,
-} from '../ipc-handlers';
-import type { IpcContext } from '../ipc-handlers';
+} from './ipc-handlers';
+import type { IpcContext } from './ipc-handlers';
 
 // Lifecycle utilities
 import { CONFIG_DIR, FILES_DIR, DB_PATH, BACKUP_DIR, APP_DATA_DIR } from './appPaths';

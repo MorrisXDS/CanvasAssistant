@@ -3,10 +3,10 @@
  * Recomputes content hashes for existing calendars (one-time migration)
  */
 
-import { ICSParser } from '../../layers/l2-daemon';
-import type { ParsedICSEvent } from '../../layers/l2-daemon/calendar/ICSParser';
-import type { Database } from '../../layers/l1-persistence';
-import type { Logger } from '../../layers/l0-utilities';
+import { ICSParser } from '../../../layers/l2-daemon';
+import type { ParsedICSEvent } from '../../../layers/l2-daemon/calendar/ICSParser';
+import type { Database } from '../../../layers/l1-persistence';
+import type { Logger } from '../../../layers/l0-utilities';
 
 /**
  * Recompute content hashes for existing calendars

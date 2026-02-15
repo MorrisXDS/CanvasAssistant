@@ -110,6 +110,7 @@ export function EventFormModal({
 
   const [isSaving, setIsSaving] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [validationAlert, setValidationAlert] = useState<string | null>(null);
 
   // Check if this is a task-generated event (has taskId)
   const isTaskEvent = Boolean(event?.taskId);
@@ -216,7 +217,7 @@ export function EventFormModal({
       if (eventType === 'coursework') {
         // Validate coursework fields
         if (!courseId) {
-          alert('Please select a course for this coursework.');
+          setValidationAlert('Please select a course for this coursework.');
           setIsSaving(false);
           return;
         }
@@ -734,6 +735,18 @@ export function EventFormModal({
             cancelText="Cancel"
             onConfirm={handleDelete}
             onCancel={() => setShowDeleteConfirm(false)}
+          />
+
+          {/* Validation Alert Dialog */}
+          <ConfirmDialog
+            isOpen={!!validationAlert}
+            title="Missing Information"
+            message={validationAlert ?? ''}
+            type="warning"
+            confirmText="OK"
+            hideCancel
+            onConfirm={() => setValidationAlert(null)}
+            onCancel={() => setValidationAlert(null)}
           />
 
           {/* Footer Actions */}

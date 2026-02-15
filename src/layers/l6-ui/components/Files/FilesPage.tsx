@@ -379,6 +379,18 @@ export function FilesPage() {
         )}
       </ConfirmDialog>
 
+      {/* Clear Files Sync Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={state.clearFilesSyncConfirmOpen}
+        title="Clear File Data"
+        message="Clear all synced file data? This will remove file information from the database but not delete downloaded files."
+        type="warning"
+        confirmText="Clear Data"
+        cancelText="Cancel"
+        onConfirm={state.confirmClearFilesSync}
+        onCancel={state.cancelClearFilesSync}
+      />
+
       {/* Missing Dependencies Dialog for HTML files */}
       <MissingDependenciesDialog
         isOpen={dialogs.missingDepsDialog.isOpen}

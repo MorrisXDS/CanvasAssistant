@@ -10,7 +10,7 @@
 import { ipcMain, dialog, app } from 'electron';
 import fs from 'fs';
 import path from 'path';
-import { ExportManager } from '../layers/l2-daemon';
+import { ExportManager } from '../../layers/l2-daemon';
 import type { IpcContext } from './IpcContext';
 
 /**

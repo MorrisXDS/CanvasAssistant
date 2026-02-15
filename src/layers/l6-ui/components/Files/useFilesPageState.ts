@@ -712,18 +712,24 @@ export function useFilesPageState() {
     }
   };
 
-  const handleClearFilesSync = async () => {
-    if (
-      window.confirm(
-        'Clear all synced file data? This will remove file information from the database but not delete downloaded files.'
-      )
-    ) {
-      const api = window.api;
-      if (api?.clearFilesSync) {
-        await api.clearFilesSync();
-        await fetchFiles();
-      }
+  // Clear files sync confirmation state
+  const [clearFilesSyncConfirmOpen, setClearFilesSyncConfirmOpen] = useState(false);
+
+  const handleClearFilesSync = () => {
+    setClearFilesSyncConfirmOpen(true);
+  };
+
+  const confirmClearFilesSync = async () => {
+    setClearFilesSyncConfirmOpen(false);
+    const api = window.api;
+    if (api?.clearFilesSync) {
+      await api.clearFilesSync();
+      await fetchFiles();
     }
+  };
+
+  const cancelClearFilesSync = () => {
+    setClearFilesSyncConfirmOpen(false);
   };
 
   return {
@@ -812,5 +818,10 @@ export function useFilesPageState() {
     handleSync,
     handleOpenFilesDirectory,
     handleClearFilesSync,
+
+    // Clear files sync confirmation
+    clearFilesSyncConfirmOpen,
+    confirmClearFilesSync,
+    cancelClearFilesSync,
   };
 }

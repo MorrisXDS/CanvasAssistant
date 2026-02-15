@@ -7,9 +7,9 @@
 import { net, protocol } from 'electron';
 import fs from 'fs';
 import path from 'path';
-import type { Database } from './layers/l1-persistence';
-import type { Logger } from './layers/l0-utilities/Logger';
-import type { CredentialManager } from './layers/l0-utilities/CredentialManager';
+import type { Database } from '../layers/l1-persistence';
+import type { Logger } from '../layers/l0-utilities/Logger';
+import type { CredentialManager } from '../layers/l0-utilities/CredentialManager';
 
 export interface CanvasFileProtocolConfig {
   database: Database;

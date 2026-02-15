@@ -52,8 +52,7 @@ mac:
     - zip
   icon: assets/app.iconset/icon_512x512.png
   category: public.app-category.education
-  hardenedRuntime: true
-  gatekeeperAssess: false
+  identity: null
 
 dmg:
   contents:
@@ -82,3 +81,5 @@ electronDownload:
   cache: .cache/electron
 
 npmRebuild: true
+
+afterPack: build/afterPack.cjs

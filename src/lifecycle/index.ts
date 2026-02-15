@@ -33,3 +33,15 @@ export { resetAppState } from './resetAppState';
 export type { ResetAppStateDeps } from './resetAppState';
 export { AppLifecycle } from './AppLifecycle';
 export type { AppLifecycleConfig } from './AppLifecycle';
+
+// Managers & Protocols
+export { WindowManager } from './WindowManager';
+export type { WindowManagerConfig } from './WindowManager';
+export { CrashProtectionManager } from './CrashProtectionManager';
+export { CanvasClientManager } from './CanvasClientManager';
+export { BackupManager } from './BackupManager';
+export { registerCanvasFileProtocol } from './canvasFileProtocol';
+export { AutoSyncManager } from './AutoSyncManager';
+
+// IPC Handlers
+export * from './ipc-handlers';

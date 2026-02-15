@@ -4,19 +4,19 @@
  */
 
 import { Notification, type BrowserWindow } from 'electron';
-import type { Database } from './layers/l1-persistence';
-import type { VisibleDataProvider } from './layers/l1-persistence';
-import type { Logger } from './layers/l0-utilities/Logger';
-import type { MetricsCollector } from './layers/l0-utilities/MetricsCollector';
-import type { CredentialManager } from './layers/l0-utilities/CredentialManager';
-import type { FileDownloadManager } from './layers/l0-utilities/FileDownloadManager';
-import type { OperationCoordinator } from './layers/l2-daemon';
+import type { Database } from '../layers/l1-persistence';
+import type { VisibleDataProvider } from '../layers/l1-persistence';
+import type { Logger } from '../layers/l0-utilities/Logger';
+import type { MetricsCollector } from '../layers/l0-utilities/MetricsCollector';
+import type { CredentialManager } from '../layers/l0-utilities/CredentialManager';
+import type { FileDownloadManager } from '../layers/l0-utilities/FileDownloadManager';
+import type { OperationCoordinator } from '../layers/l2-daemon';
 import {
   CanvasClient,
   SyncEngine,
   RateLimiter,
   CircuitBreaker,
-} from './layers/l2-daemon';
+} from '../layers/l2-daemon';
 
 interface NotificationSettings {
   enabled: boolean;
