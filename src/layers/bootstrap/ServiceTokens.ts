@@ -18,10 +18,10 @@ import type { VisibleDataProvider } from '../l1-persistence/VisibleDataProvider'
 import type { CourseRepository } from '../l1-persistence/repositories/CourseRepository';
 import type { TaskRepository } from '../l1-persistence/repositories/TaskRepository';
 import type { NotificationRepository } from '../l1-persistence/repositories/NotificationRepository';
-import type { RateLimiter } from '../l2-daemon/RateLimiter';
-import type { CircuitBreaker } from '../l2-daemon/CircuitBreaker';
-import type { CanvasClient } from '../l2-daemon/CanvasClient';
-import type { SyncEngine } from '../l2-daemon/SyncEngine';
+import type { RateLimiter } from '../l2-daemon/resilience/RateLimiter';
+import type { CircuitBreaker } from '../l2-daemon/resilience/CircuitBreaker';
+import type { CanvasClient } from '../l2-daemon/client/CanvasClient';
+import type { SyncEngine } from '../l2-daemon/sync-engine/SyncEngine';
 import type { GradeCalculationService } from '../l3-intelligence/domain/GradeCalculationService';
 import type { CommandDispatcher } from '../l4-controller/CommandDispatcher';
 

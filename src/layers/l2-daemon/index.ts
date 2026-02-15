@@ -13,6 +13,7 @@
  * - Policy-related announcement detection
  */
 
+// Config (stays at root - cross-layer config pattern)
 export type {
   DaemonConfig,
   CanvasApiConfig,
@@ -24,33 +25,14 @@ export type {
   InputValidatorConfig as DaemonInputValidatorConfig,
 } from './DaemonConfig';
 export { DEFAULT_DAEMON_CONFIG } from './DaemonConfig';
+
+// Client (Canvas API + validation + classification)
 export {
   CanvasClient,
   CanvasClientConfig,
   CanvasUser,
   CanvasApiError,
-} from './CanvasClient';
-export { RateLimiter, RateLimiterConfig, RateLimitStatus } from './RateLimiter';
-export {
-  SyncEngine,
-  SyncEngineConfig,
-  SyncResult,
-  FullSyncResult,
-  SyncDiagnosticEntry,
-} from './SyncEngine';
-export {
-  SyncConflictResolver,
-  type SyncConflict,
-  type ConflictResolution,
-  type SyncPreference,
-} from './SyncConflictResolver';
-export {
-  CircuitBreaker,
-  CircuitOpenError,
-  type CircuitState,
-  type CircuitStatus,
-  type CircuitBreakerOptions,
-} from './CircuitBreaker';
+} from './client/CanvasClient';
 export {
   InputValidator,
   Schemas,
@@ -63,24 +45,51 @@ export {
   type CanvasSubmission,
   type CanvasAnnouncement,
   type CanvasAssignmentGroup,
-} from './InputValidator';
-export * from './DataMappers';
+} from './client/InputValidator';
+export {
+  TaskTypeClassifier,
+  taskTypeClassifier,
+  type ClassificationInput,
+  type ClassificationResult,
+  type TaskTypeFieldSource,
+} from './client/TaskTypeClassifier';
+
+// Data (Canvas → local DB transformation)
+export * from './data/DataMappers';
+
+// Resilience (rate limiting + circuit breaking)
+export {
+  RateLimiter,
+  RateLimiterConfig,
+  RateLimitStatus,
+} from './resilience/RateLimiter';
+export {
+  CircuitBreaker,
+  CircuitOpenError,
+  type CircuitState,
+  type CircuitStatus,
+  type CircuitBreakerOptions,
+} from './resilience/CircuitBreaker';
+export {
+  ResilienceWrapper,
+  type ResilienceWrapperConfig,
+  type ResilienceStatus,
+} from './resilience/ResilienceWrapper';
+
+// Calendar (ICS parsing + recurrence expansion)
 export {
   ICSParser,
   type ParsedICSEvent,
   type ICSParserResult,
   type ICSImportPreview,
-} from './ICSParser';
+} from './calendar/ICSParser';
 export {
   RRuleExpander,
   type CalendarEventRecord,
   type ExpandedEvent,
-} from './RRuleExpander';
-export {
-  ResilienceWrapper,
-  type ResilienceWrapperConfig,
-  type ResilienceStatus,
-} from './ResilienceWrapper';
+} from './calendar/RRuleExpander';
+
+// HTML (content sync, extraction, rewriting)
 export {
   HtmlFileExtractor,
   extractCanvasFileIds,
@@ -90,34 +99,36 @@ export {
   type ExtractedFileReference,
   type ExtractedHtmlReference,
   type HtmlFileExtractorConfig,
-} from './HtmlFileExtractor';
+} from './html/HtmlFileExtractor';
 export {
   HtmlContentSync,
   type HtmlContentSyncOptions,
   type HtmlContentSyncResult,
   type HtmlContentItem,
   type ExtractedResource,
-} from './HtmlContentSync';
+} from './html/HtmlContentSync';
 export {
   HtmlDependencyResolver,
   type HtmlSourceType,
   type DependencyNode,
   type ResolutionResult,
   type HtmlDependencyResolverConfig,
-} from './HtmlDependencyResolver';
+} from './html/HtmlDependencyResolver';
 export {
   HtmlUrlRewriter,
   rewriteHtmlUrls,
   type ResolvedDependency,
   type RewriteOptions,
-} from './HtmlUrlRewriter';
+} from './html/HtmlUrlRewriter';
 export {
   HtmlLocalPathManager,
   type HtmlLocalPathManagerConfig,
   type HtmlDownloadRequest,
   type HtmlDownloadResult,
   type RegenerationInfo,
-} from './HtmlLocalPathManager';
+} from './html/HtmlLocalPathManager';
+
+// Export (JSON, CSV, ZIP)
 export {
   ExportManager,
   type SelectiveExportOptions,
@@ -126,17 +137,25 @@ export {
   type ExportProgress,
   type ExportManifest,
   type ExportManagerConfig,
-} from './ExportManager';
+} from './export/ExportManager';
+
+// Sync Engine (core sync orchestration)
+export {
+  SyncEngine,
+  SyncEngineConfig,
+  SyncResult,
+  FullSyncResult,
+  SyncDiagnosticEntry,
+} from './sync-engine/SyncEngine';
+export {
+  SyncConflictResolver,
+  type SyncConflict,
+  type ConflictResolution,
+  type SyncPreference,
+} from './sync-engine/SyncConflictResolver';
 export {
   OperationCoordinator,
   type OperationType,
   type ActiveOperation,
   type OperationCoordinatorConfig,
-} from './OperationCoordinator';
-export {
-  TaskTypeClassifier,
-  taskTypeClassifier,
-  type ClassificationInput,
-  type ClassificationResult,
-  type TaskTypeFieldSource,
-} from './TaskTypeClassifier';
+} from './sync-engine/OperationCoordinator';

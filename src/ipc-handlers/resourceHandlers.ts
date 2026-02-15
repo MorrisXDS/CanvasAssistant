@@ -10,7 +10,7 @@ import path from 'path';
 import {
   extractCanvasFileReferences,
   extractHtmlReferences,
-} from '../layers/l2-daemon/HtmlFileExtractor';
+} from '../layers/l2-daemon/html/HtmlFileExtractor';
 import type { IpcContext } from './IpcContext';
 
 /**
@@ -60,7 +60,7 @@ export function registerResourceHandlers(ctx: IpcContext): void {
 
       const htmlSync = syncEngine[
         'htmlContentSync'
-      ] as import('../layers/l2-daemon/HtmlContentSync').HtmlContentSync;
+      ] as import('../layers/l2-daemon/html/HtmlContentSync').HtmlContentSync;
       const result = await htmlSync.downloadHtmlItem(resource.external_id, getFilesDir());
       if (result.success) {
         metricsCollector.increment('resource.download.html.success');
@@ -169,7 +169,7 @@ export function registerResourceHandlers(ctx: IpcContext): void {
 
       const htmlSync = syncEngine[
         'htmlContentSync'
-      ] as import('../layers/l2-daemon/HtmlContentSync').HtmlContentSync;
+      ] as import('../layers/l2-daemon/html/HtmlContentSync').HtmlContentSync;
       const result = await htmlSync.downloadHtmlItem(resource.external_id, getFilesDir());
       if (result.success) {
         metricsCollector.increment('resource.download.html.success');

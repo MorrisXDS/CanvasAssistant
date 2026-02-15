@@ -8,6 +8,7 @@
 import React, { useState, useEffect } from 'react';
 import { AlertTriangle, X, Calendar, Clock } from 'lucide-react';
 import { styles } from './SyncConflictModal.styles';
+import { formatFieldValue } from '../../constants';
 
 /**
  * User-friendly field name mappings
@@ -53,52 +54,6 @@ const ENTITY_LABELS: Record<string, string> = {
   task: 'COURSEWORK',
   course: 'COURSE',
   notification: 'ANNOUNCEMENT',
-};
-
-/**
- * Format a date string for display
- */
-function formatDateValue(val: unknown): string {
-  if (val === null || val === undefined || val === '') return '(not set)';
-
-  try {
-    const date = new Date(val as string);
-    if (isNaN(date.getTime())) return String(val);
-
-    // Format as "Jan 24, 2026 at 11:59 PM"
-    return date.toLocaleString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true,
-    });
-  } catch {
-    return String(val);
-  }
-}
-
-/**
- * Field-specific value formatters for human-readable display
- */
-const VALUE_FORMATTERS: Record<string, Record<string, (val: unknown) => string>> = {
-  task: {
-    is_completed: (val) => (val ? 'Completed' : 'Not completed'),
-    is_optional: (val) => (val ? 'Optional' : 'Required'),
-    due_at: formatDateValue,
-    unlock_at: formatDateValue,
-    lock_at: formatDateValue,
-    completed_at: formatDateValue,
-  },
-  course: {
-    is_hidden: (val) => (val ? 'Hidden' : 'Visible'),
-  },
-  notification: {
-    is_read: (val) => (val ? 'Read' : 'Unread'),
-    published_at: formatDateValue,
-    dismissed_at: formatDateValue,
-  },
 };
 
 /**
@@ -250,20 +205,12 @@ export function SyncConflictModal({
   if (!currentConflict) return null;
   const isLast = currentIndex === conflicts.length - 1;
 
-  const formatValue = (entity: string, field: string, value: unknown): string => {
-    // Check for field-specific formatter first
-    const formatter = VALUE_FORMATTERS[entity]?.[field];
-    if (formatter) return formatter(value);
-
-    // Fallback formatting
+  const formatValue = (_entity: string, field: string, value: unknown): string => {
     if (value === null || value === undefined) return '(not set)';
     if (typeof value === 'boolean') return value ? 'Yes' : 'No';
-    if (typeof value === 'number') return value.toString();
-    if (typeof value === 'string') {
-      if (value.length > 100) return value.substring(0, 100) + '...';
-      return value || '(empty)';
-    }
-    return JSON.stringify(value);
+    // Use centralized field formatter for string/number values
+    const strValue = typeof value === 'number' ? value.toString() : String(value);
+    return formatFieldValue(field, strValue);
   };
 
   const handleResolve = (useCanvasValue: boolean) => {

@@ -21,7 +21,7 @@ import {
   ScrollText,
 } from 'lucide-react';
 import { useStore } from '../../../l5-presentation/store';
-import { formatTimeAgo, getCleanCourseName } from '../../constants';
+import { formatTimeAgo, getCleanCourseName, formatFieldValue } from '../../constants';
 import type { SyncUpdate } from '../../../l5-presentation/types';
 
 type FilterType = 'all' | 'task' | 'grade' | 'file' | 'page' | 'announcement';
@@ -57,47 +57,6 @@ const FIELD_LABELS: Record<string, string> = {
   submission_status: 'Submission status',
   description: 'Description',
 };
-
-/**
- * Format a field value for display based on field type
- */
-function formatFieldValue(field: string, value: string | null | undefined): string {
-  if (value === null || value === undefined || value === '') {
-    return 'Created';
-  }
-
-  switch (field) {
-    case 'due_at': {
-      // Parse and format date
-      try {
-        const date = new Date(value);
-        if (isNaN(date.getTime())) return value;
-        return date.toLocaleDateString('en-US', {
-          month: 'short',
-          day: 'numeric',
-          hour: 'numeric',
-          minute: '2-digit',
-        });
-      } catch {
-        return value;
-      }
-    }
-    case 'weight':
-    case 'grade':
-      return `${value}%`;
-    case 'points_possible':
-      return `${value} pts`;
-    case 'is_completed':
-      return value === '1' || value === 'true' ? 'Completed' : 'Not completed';
-    case 'submission_status':
-      return value.charAt(0).toUpperCase() + value.slice(1).replace(/_/g, ' ');
-    case 'title':
-      // Truncate long titles
-      return value.length > 30 ? `"${value.substring(0, 30)}..."` : `"${value}"`;
-    default:
-      return value;
-  }
-}
 
 /**
  * Format the change subtitle showing old → new values
@@ -697,6 +656,10 @@ function ConflictItem({
       } catch {
         return '[Object]';
       }
+    }
+    // Use field-aware formatting (handles dates, weights, etc.)
+    if (conflict.conflictField) {
+      return formatFieldValue(conflict.conflictField, String(val));
     }
     return String(val);
   };

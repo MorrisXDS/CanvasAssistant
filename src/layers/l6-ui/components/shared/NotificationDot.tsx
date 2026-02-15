@@ -5,6 +5,7 @@
  */
 
 import React from 'react';
+import { formatFieldValue } from '../../constants';
 
 /**
  * Update type for notification dots
@@ -234,8 +235,8 @@ export function FieldNotificationDot({
   let tooltip = `${fieldLabel}: ${UPDATE_TYPE_LABELS[updateType]}`;
 
   if (oldValue !== undefined && newValue !== undefined && oldValue !== newValue) {
-    const oldDisplay = oldValue || '(none)';
-    const newDisplay = newValue || '(none)';
+    const oldDisplay = formatFieldValue(fieldName, oldValue);
+    const newDisplay = formatFieldValue(fieldName, newValue);
     tooltip = `${fieldLabel}: ${oldDisplay} → ${newDisplay}`;
   }
 

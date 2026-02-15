@@ -29,7 +29,7 @@ import {
   htmlToPlainText,
   OperationCoordinator,
 } from './layers/l2-daemon';
-import { HtmlLocalPathManager } from './layers/l2-daemon/HtmlLocalPathManager';
+import { HtmlLocalPathManager } from './layers/l2-daemon/html/HtmlLocalPathManager';
 
 // L4 - Controller
 import { CommandDispatcher } from './layers/l4-controller';

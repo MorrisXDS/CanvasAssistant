@@ -44,6 +44,8 @@ export {
   truncateText,
   formatNumber,
   pluralize,
+  // Field values (sync updates, conflicts, tooltips)
+  formatFieldValue,
   // Urgency
   getUrgencyLevel,
   getUrgencyColor,

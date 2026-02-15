@@ -11,7 +11,7 @@ import { mapPage, type CanvasPage } from '../layers/l2-daemon';
 import {
   extractCanvasFileReferences,
   extractHtmlReferences,
-} from '../layers/l2-daemon/HtmlFileExtractor';
+} from '../layers/l2-daemon/html/HtmlFileExtractor';
 import {
   createPathBuilder,
   sanitizeCourseCode,

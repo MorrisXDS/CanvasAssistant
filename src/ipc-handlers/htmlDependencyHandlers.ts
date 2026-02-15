@@ -8,11 +8,11 @@ import { ipcMain } from 'electron';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
-import { HtmlDependencyResolver } from '../layers/l2-daemon/HtmlDependencyResolver';
+import { HtmlDependencyResolver } from '../layers/l2-daemon/html/HtmlDependencyResolver';
 import {
   extractCanvasFileReferences,
   extractHtmlReferences,
-} from '../layers/l2-daemon/HtmlFileExtractor';
+} from '../layers/l2-daemon/html/HtmlFileExtractor';
 import type { IpcContext } from './IpcContext';
 
 /**

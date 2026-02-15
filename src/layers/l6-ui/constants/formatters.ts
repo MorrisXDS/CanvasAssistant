@@ -338,7 +338,8 @@ export function formatDateRange(startDate: string, endDate?: string): string {
   // Same month and year
   if (start.getMonth() === end.getMonth() && start.getFullYear() === end.getFullYear()) {
     const monthStr = start.toLocaleDateString('en-US', { month: 'short' });
-    const yearSuffix = start.getFullYear() !== now.getFullYear() ? `, ${start.getFullYear()}` : '';
+    const yearSuffix =
+      start.getFullYear() !== now.getFullYear() ? `, ${start.getFullYear()}` : '';
     return `${monthStr} ${start.getDate()}-${end.getDate()}${yearSuffix}`;
   }
 
@@ -541,6 +542,82 @@ export function formatNumber(num: number): string {
 export function pluralize(count: number, singular: string, plural?: string): string {
   const word = count === 1 ? singular : (plural ?? `${singular}s`);
   return `${count} ${word}`;
+}
+
+// =============================================================================
+// FIELD VALUE FORMATTERS (for sync updates, conflicts, tooltips)
+// =============================================================================
+
+/** Date fields that need timestamp-aware formatting */
+const DATE_FIELDS = new Set([
+  'due_at',
+  'unlock_at',
+  'lock_at',
+  'completed_at',
+  'published_at',
+  'dismissed_at',
+]);
+
+/**
+ * Format a sync field value for human-readable display
+ *
+ * Handles date fields (ISO → readable), percentages, points, status fields, etc.
+ * Used in conflict dialogs, update notifications, and field change tooltips.
+ *
+ * @param field - Database field name (e.g., 'due_at', 'weight', 'grade')
+ * @param value - Raw field value (ISO string, number string, etc.)
+ * @returns Human-readable string
+ *
+ * @example
+ * formatFieldValue('due_at', '2026-02-14T23:59:00Z') // "Feb 14, 11:59 PM"
+ * formatFieldValue('weight', '10') // "10%"
+ * formatFieldValue('points_possible', '100') // "100 pts"
+ * formatFieldValue('is_completed', '1') // "Completed"
+ */
+export function formatFieldValue(
+  field: string,
+  value: string | null | undefined
+): string {
+  if (value === null || value === undefined || value === '') return '(none)';
+
+  if (DATE_FIELDS.has(field)) {
+    try {
+      const date = new Date(value);
+      if (!isNaN(date.getTime())) {
+        return date.toLocaleString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          hour: 'numeric',
+          minute: '2-digit',
+          hour12: true,
+        });
+      }
+    } catch {
+      /* fall through to raw value */
+    }
+  }
+
+  switch (field) {
+    case 'weight':
+    case 'grade':
+      return `${value}%`;
+    case 'points_possible':
+      return `${value} pts`;
+    case 'is_completed':
+      return value === '1' || value === 'true' ? 'Completed' : 'Not completed';
+    case 'is_optional':
+      return value === '1' || value === 'true' ? 'Optional' : 'Required';
+    case 'is_hidden':
+      return value === '1' || value === 'true' ? 'Hidden' : 'Visible';
+    case 'is_read':
+      return value === '1' || value === 'true' ? 'Read' : 'Unread';
+    case 'submission_status':
+      return value.charAt(0).toUpperCase() + value.slice(1).replace(/_/g, ' ');
+    case 'title':
+      return value.length > 30 ? `"${value.substring(0, 30)}..."` : `"${value}"`;
+    default:
+      return value;
+  }
 }
 
 // =============================================================================

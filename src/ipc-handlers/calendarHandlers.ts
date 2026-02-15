@@ -11,8 +11,8 @@ import { ipcMain, dialog } from 'electron';
 import path from 'path';
 import type { IpcContext } from './IpcContext';
 import { ICSParser, RRuleExpander } from '../layers/l2-daemon';
-import type { CalendarEventRecord } from '../layers/l2-daemon/RRuleExpander';
-import type { ParsedICSEvent } from '../layers/l2-daemon/ICSParser';
+import type { CalendarEventRecord } from '../layers/l2-daemon/calendar/RRuleExpander';
+import type { ParsedICSEvent } from '../layers/l2-daemon/calendar/ICSParser';
 import type { Database } from '../layers/l1-persistence';
 import type { Logger } from '../layers/l0-utilities';
 
