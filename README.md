@@ -69,9 +69,13 @@ Adjust theme and appearance, set your academic target grade, configure auto-sync
 
 ### Download a release (recommended)
 
-1. Go to [Releases](https://github.com/MorrisXDS/CanvasAssistant/releases)
-2. Download the installer for your platform (Windows `.exe`, macOS `.dmg`, Linux `.AppImage`)
-3. Run the installer and open the app
+Go to [Releases](https://github.com/MorrisXDS/CanvasAssistant/releases) and download the installer for your platform:
+
+| Platform | File                               | Notes                                                   |
+| -------- | ---------------------------------- | ------------------------------------------------------- |
+| Windows  | `Canvas Assistant Setup x.x.x.exe` | Installer with optional per-user or system-wide install |
+| macOS    | `Canvas Assistant-x.x.x.dmg`       | Drag to Applications. A `.zip` is also available        |
+| Linux    | `Canvas Assistant-x.x.x.AppImage`  | Run directly. A `.deb` package is also available        |
 
 ### Build from source
 
