@@ -68,11 +68,14 @@ export function subscribeToIpcEvents(): () => void {
 
   const unsubAppReset =
     api.onAppReset?.((data: { tokenDeleted: boolean; clearLocalStorage: boolean }) => {
-      // Handle app reset from main process - clear localStorage and reload
+      // Immediately de-auth so React unmounts lazy-loaded routes before reload
+      // This prevents "Failed to fetch dynamically imported module" errors
+      if (data.tokenDeleted) {
+        useStore.getState().setAuthenticated(false);
+      }
       if (data.clearLocalStorage) {
         localStorage.clear();
       }
-      // Reload to go back to login/onboarding
       window.location.reload();
     }) || (() => {});
 
