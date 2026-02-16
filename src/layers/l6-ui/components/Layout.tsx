@@ -3,7 +3,7 @@
  * Application shell with collapsible sidebar navigation
  */
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { Suspense, useEffect, useRef, useState } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useStore } from '../../l5-presentation/store';
 import type { EnrollmentTerm } from '../../../shared/ipc-contract';
@@ -203,7 +203,32 @@ export function Layout() {
             marginLeft: `${sidebarWidth}px`,
           }}
         >
-          <Outlet />
+          <Suspense
+            fallback={
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  minHeight: '200px',
+                  width: '100%',
+                }}
+              >
+                <div
+                  style={{
+                    width: '32px',
+                    height: '32px',
+                    border: '3px solid var(--border-default)',
+                    borderTopColor: 'var(--color-primary)',
+                    borderRadius: '50%',
+                    animation: 'spin 0.8s linear infinite',
+                  }}
+                />
+              </div>
+            }
+          >
+            <Outlet />
+          </Suspense>
         </main>
       </div>
 

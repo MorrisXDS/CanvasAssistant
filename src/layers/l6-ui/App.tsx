@@ -119,17 +119,6 @@ function LoadingScreen() {
 }
 
 /**
- * Page Loading Fallback (inline - for lazy-loaded pages)
- */
-function PageLoadingFallback() {
-  return (
-    <div style={styles.pageLoadingContainer}>
-      <div style={styles.pageLoadingSpinner} />
-    </div>
-  );
-}
-
-/**
  * Main App with auth routing
  */
 function AppContent() {
@@ -319,23 +308,21 @@ function AppContent() {
       )}
 
       <ErrorBoundary>
-        <Suspense fallback={<PageLoadingFallback />}>
-          <Routes>
-            <Route element={<Layout />}>
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/announcement/:id" element={<AnnouncementDetail />} />
-              <Route path="/announcements" element={<AnnouncementsPage />} />
-              <Route path="/calendar" element={<CalendarPage />} />
-              <Route path="/courses" element={<CoursesPage />} />
-              <Route path="/course/:id" element={<CourseDetail />} />
-              <Route path="/files" element={<FilesPage />} />
-              <Route path="/settings" element={<SettingsPage />} />
-              <Route path="/tasks" element={<TasksPage />} />
-              <Route path="/updates" element={<UpdatesPage />} />
-              <Route path="*" element={<Navigate to="/" replace />} />
-            </Route>
-          </Routes>
-        </Suspense>
+        <Routes>
+          <Route element={<Layout />}>
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/announcement/:id" element={<AnnouncementDetail />} />
+            <Route path="/announcements" element={<AnnouncementsPage />} />
+            <Route path="/calendar" element={<CalendarPage />} />
+            <Route path="/courses" element={<CoursesPage />} />
+            <Route path="/course/:id" element={<CourseDetail />} />
+            <Route path="/files" element={<FilesPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/tasks" element={<TasksPage />} />
+            <Route path="/updates" element={<UpdatesPage />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Route>
+        </Routes>
       </ErrorBoundary>
     </>
   );
@@ -378,22 +365,5 @@ const styles: Record<string, React.CSSProperties> = {
   loadingText: {
     fontSize: 'var(--text-sm)',
     color: 'var(--text-secondary)',
-  },
-
-  pageLoadingContainer: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: '200px',
-    width: '100%',
-  },
-
-  pageLoadingSpinner: {
-    width: '32px',
-    height: '32px',
-    border: '3px solid var(--border-default)',
-    borderTopColor: 'var(--color-primary)',
-    borderRadius: '50%',
-    animation: 'spin 0.8s linear infinite',
   },
 };

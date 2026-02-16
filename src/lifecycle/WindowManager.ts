@@ -506,15 +506,10 @@ export class WindowManager {
     if (this.tray) return;
 
     // Create tray icon from extraResources (shipped outside asar)
-    // Windows uses white monochrome PNG for dark taskbar visibility (like Discord/Slack)
+    // Windows/Linux use navy blue icon (visible on both light and dark taskbars)
     // macOS uses template image (auto-adapts to menu bar color)
     const isMac = process.platform === 'darwin';
-    const isWin = process.platform === 'win32';
-    const iconFile = isMac
-      ? 'icon_16x16.png'
-      : isWin
-        ? 'icon_32x32_white.png'
-        : 'icon_32x32.png';
+    const iconFile = isMac ? 'icon_16x16.png' : 'icon_32x32.png';
     const iconPath = app.isPackaged
       ? path.join(process.resourcesPath, 'icons', iconFile)
       : path.join(path.dirname(this.preloadPath), '../assets/app.iconset', iconFile);
