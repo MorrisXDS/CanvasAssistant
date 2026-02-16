@@ -13,6 +13,23 @@
 
 Canvas Integration Dashboard (CID) pulls all your Canvas LMS data into a single desktop app that works offline. Instead of jumping between browser tabs for assignments, grades, files, and announcements, you open one window and everything is there — synced from Canvas and stored locally on your machine.
 
+## Table of Contents
+
+- [Features](#features)
+  - [Dashboard](#dashboard--see-what-needs-your-attention)
+  - [Calendar](#calendar--plan-your-week-or-month)
+  - [Courses](#courses--manage-all-your-courses-in-one-place)
+  - [Files](#files--browse-and-download-course-materials)
+  - [Settings](#settings--configure-the-app-to-your-preferences)
+- [Installation](#installation)
+  - [Download a release](#download-a-release-recommended)
+  - [Build from source](#build-from-source)
+- [Getting Started](#getting-started)
+  - [First launch](#1-first-launch--onboarding-wizard)
+  - [Navigating the app](#2-navigating-the-app)
+  - [Typical workflows](#3-typical-workflows)
+- [License](#license)
+
 ---
 
 ## Features
