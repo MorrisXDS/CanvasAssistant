@@ -53,7 +53,6 @@ ARCHITECTURE_ANALYSIS.md
 # Testing
 tests/
 test.ps1
-scripts/ensure-native-modules.js
 coverage/
 .nyc_output/
 
