@@ -88,7 +88,6 @@ npm run dev
 | ----------------- | ----------------------------- |
 | `npm run dev`     | Run in development mode       |
 | `npm run build`   | Compile TypeScript + Vite     |
-| `npm test`        | Run all tests                 |
 | `npm run lint`    | Lint source files             |
 | `npm run package` | Package with electron-builder |
 

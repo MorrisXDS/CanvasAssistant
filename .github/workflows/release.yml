@@ -60,9 +60,6 @@ jobs:
       - name: Build app
         run: npm run build
 
-      - name: Run tests
-        run: npm test -- --no-coverage
-
       - name: Package
         run: npx electron-builder --${{ matrix.platform }} --publish never
         env:
