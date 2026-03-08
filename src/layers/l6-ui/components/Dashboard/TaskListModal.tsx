@@ -4,7 +4,7 @@
  * Clicking a task navigates to the course detail page with that task highlighted
  */
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { X, AlertTriangle, Clock, ExternalLink } from 'lucide-react';
 import { Badge } from '../shared';
@@ -34,6 +34,14 @@ export function TaskListModal({
 }: TaskListModalProps) {
   const navigate = useNavigate();
 
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [onClose]);
+
   if (!isOpen) return null;
 
   const handleTaskClick = (task: Task, course: Course) => {
@@ -50,7 +58,7 @@ export function TaskListModal({
 
   return (
     <div style={styles.overlay} onClick={handleBackdropClick}>
-      <div style={styles.modal}>
+      <div style={styles.modal} role="dialog" aria-modal="true">
         {/* Header */}
         <div style={styles.header}>
           <div style={styles.headerTitle}>

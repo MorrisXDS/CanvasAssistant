@@ -30,6 +30,9 @@ import { useMultiSelect } from '../../hooks/useMultiSelect';
 import { useUpdatesByCourse } from '../../hooks';
 import { getCourseColor, formatGrade } from '../../constants';
 import type { Course } from '../../../l5-presentation/types';
+import { createLogger } from '../../utils/rendererLogger';
+
+const logger = createLogger('CoursesPage');
 
 // Extracted modules
 import { styles, injectDragHandleStyles } from './coursesPageStyles';
@@ -171,7 +174,7 @@ export function CoursesPage() {
           setArchivedCourses(result);
         }
       } catch (error) {
-        console.error('Failed to fetch archived courses:', error);
+        logger.error('Failed to fetch archived courses', error instanceof Error ? error : undefined);
       } finally {
         setLoadingArchived(false);
       }
@@ -188,7 +191,7 @@ export function CoursesPage() {
         await refreshAll();
       }
     } catch (error) {
-      console.error('Failed to unarchive course:', error);
+      logger.error('Failed to unarchive course', error instanceof Error ? error : undefined);
     }
   };
 
@@ -205,7 +208,7 @@ export function CoursesPage() {
         }
       }
     } catch (error) {
-      console.error('Failed to archive course:', error);
+      logger.error('Failed to archive course', error instanceof Error ? error : undefined);
     }
   };
 

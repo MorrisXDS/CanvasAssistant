@@ -191,16 +191,16 @@ export function SettingsProvider({
     }
   }, [settingsSync.openSections, settingsSync.settingsPageSettings.defaultState]);
 
-  // Close on escape key
+  // Escape clears search if active, otherwise does nothing
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isOpen) {
-        onClose();
+      if (e.key === 'Escape' && isOpen && searchQuery) {
+        setSearchQuery('');
       }
     };
     window.addEventListener('keydown', handleEscape);
     return () => window.removeEventListener('keydown', handleEscape);
-  }, [isOpen, onClose]);
+  }, [isOpen, searchQuery, setSearchQuery]);
 
   // =========================================================================
   // CONTEXT VALUE

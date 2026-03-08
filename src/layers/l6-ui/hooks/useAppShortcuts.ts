@@ -1,9 +1,8 @@
 /**
- * useAppShortcuts - Global keyboard shortcuts for navigation and search
+ * useAppShortcuts - Global keyboard shortcuts for navigation
  *
  * Registered in Layout.tsx, active app-wide.
  * - Mod+1..5: Navigate to fixed page order (Dashboard, Calendar, Courses, Files, Settings)
- * - Mod+F: Focus search input on current page
  */
 
 import { useHotkeys } from 'react-hotkeys-hook';
@@ -21,13 +20,4 @@ export function useAppShortcuts(): void {
   useHotkeys('mod+3', () => navigate(NAV_ROUTES[2]), { preventDefault: true });
   useHotkeys('mod+4', () => navigate(NAV_ROUTES[3]), { preventDefault: true });
   useHotkeys('mod+5', () => navigate(NAV_ROUTES[4]), { preventDefault: true });
-
-  // Mod+F — focus search input on current page
-  useHotkeys('mod+f', () => {
-    const input = document.querySelector<HTMLInputElement>('[data-search-input]');
-    if (input) {
-      input.focus();
-      input.select();
-    }
-  }, { preventDefault: true });
 }

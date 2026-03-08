@@ -5,6 +5,9 @@
 
 import type { Task } from '../../../l5-presentation/types';
 import { STORAGE_KEYS } from '../../../l5-presentation/settings';
+import { createLogger } from '../../utils/rendererLogger';
+
+const logger = createLogger('CalendarPageUtils');
 
 // View modes
 export type ViewMode = 'month' | 'week';
@@ -134,7 +137,7 @@ export function loadCalendarSettings(): { defaultViewMode: ViewMode } {
       }
     }
   } catch (e) {
-    console.error('[CalendarPage] Failed to load calendar settings:', e);
+    logger.error('Failed to load calendar settings', e instanceof Error ? e : undefined);
   }
   return { defaultViewMode: 'month' };
 }
@@ -153,7 +156,7 @@ export function loadCalendarViewMode(): ViewMode {
     const settings = loadCalendarSettings();
     return settings.defaultViewMode;
   } catch (e) {
-    console.error('[CalendarPage] Failed to load calendar view mode:', e);
+    logger.error('Failed to load calendar view mode', e instanceof Error ? e : undefined);
   }
   return 'month';
 }
@@ -165,6 +168,6 @@ export function saveCalendarViewMode(mode: ViewMode): void {
   try {
     localStorage.setItem(STORAGE_KEYS.CALENDAR_VIEW_MODE, mode);
   } catch (e) {
-    console.error('[CalendarPage] Failed to save calendar view mode:', e);
+    logger.error('Failed to save calendar view mode', e instanceof Error ? e : undefined);
   }
 }

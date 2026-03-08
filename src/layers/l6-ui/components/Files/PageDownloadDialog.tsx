@@ -13,6 +13,9 @@
 import React from 'react';
 import { Download, ExternalLink, FileText } from 'lucide-react';
 import { Modal } from '../primitives/Modal';
+import { createLogger } from '../../utils/rendererLogger';
+
+const logger = createLogger('PageDownloadDialog');
 
 interface PageDownloadDialogProps {
   isOpen: boolean;
@@ -39,7 +42,7 @@ export function PageDownloadDialog({
     try {
       await onDownload();
     } catch (err) {
-      console.error('Download failed:', err);
+      logger.error('Download failed', err instanceof Error ? err : undefined);
     }
   };
 

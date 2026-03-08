@@ -12,7 +12,10 @@ import { useTaskUpdates } from '../../hooks';
 import { formatSmartDate, getBadgeUrgency, getCleanCourseName } from '../../constants';
 import type { Task, Course } from '../../../l5-presentation/types';
 import { TaskContextMenu } from '../Course/TaskContextMenu';
+import { createLogger } from '../../utils/rendererLogger';
 import { styles } from './TasksPage.styles';
+
+const logger = createLogger('TasksPage');
 
 type FilterType = 'all' | 'pending' | 'overdue' | 'completed';
 
@@ -154,7 +157,7 @@ export function TasksPage() {
     try {
       await markTaskComplete(id, !isCompleted);
     } catch (error) {
-      console.error('Failed to toggle task complete:', error);
+      logger.error('Failed to toggle task complete', error instanceof Error ? error : undefined);
     }
   };
 
@@ -165,7 +168,7 @@ export function TasksPage() {
     try {
       await api.dispatch('DuplicateTask', { taskId: contextMenu.task.id });
     } catch (error) {
-      console.error('Failed to duplicate task:', error);
+      logger.error('Failed to duplicate task', error instanceof Error ? error : undefined);
     }
   };
 
@@ -176,7 +179,7 @@ export function TasksPage() {
     try {
       await api.dispatch('DeleteTask', { taskId: contextMenu.task.id, force: true });
     } catch (error) {
-      console.error('Failed to delete task:', error);
+      logger.error('Failed to delete task', error instanceof Error ? error : undefined);
     }
   };
 
@@ -191,7 +194,7 @@ export function TasksPage() {
         api.openExternal(result.data.canvasUrl);
       }
     } catch (error) {
-      console.error('Failed to open task in Canvas:', error);
+      logger.error('Failed to open task in Canvas', error instanceof Error ? error : undefined);
     }
   };
 
@@ -218,7 +221,7 @@ export function TasksPage() {
       setNewTaskType('');
       setShowAddTask(false);
     } catch (error) {
-      console.error('Failed to create task:', error);
+      logger.error('Failed to create task', error instanceof Error ? error : undefined);
     }
   };
 
@@ -508,7 +511,7 @@ export function TasksPage() {
                 updates: { isOptional: !contextMenu.task.isOptional },
               });
             } catch (error) {
-              console.error('Failed to toggle optional:', error);
+              logger.error('Failed to toggle optional', error instanceof Error ? error : undefined);
             }
             setContextMenu(null);
           }}

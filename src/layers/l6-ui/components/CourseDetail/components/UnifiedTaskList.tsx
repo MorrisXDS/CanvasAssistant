@@ -12,6 +12,9 @@ import { courseDetailStyles as styles } from '../../pages/CourseDetail.styles';
 import { TaskItem } from './TaskItem';
 import { AddTaskForm } from './AddTaskForm';
 import { useTaskUpdates } from '../../../hooks';
+import { createLogger } from '../../../utils/rendererLogger';
+
+const logger = createLogger('UnifiedTaskList');
 
 type TaskFilter = 'all' | 'pending' | 'submitted' | 'graded' | 'info';
 
@@ -205,7 +208,7 @@ export function UnifiedTaskList({
       const update = taskUpdates.get(taskId);
       if (update && update.updateIds.length > 0) {
         window.api?.markSyncUpdatesSeen?.(update.updateIds).catch((err: Error) => {
-          console.error('Failed to mark task updates as seen:', err);
+          logger.error('Failed to mark task updates as seen', err instanceof Error ? err : undefined);
         });
       }
     },

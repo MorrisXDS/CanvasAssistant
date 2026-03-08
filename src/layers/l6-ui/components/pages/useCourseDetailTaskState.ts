@@ -6,6 +6,9 @@
 import { useState, useCallback, useRef } from 'react';
 import type { Task } from '../../../l5-presentation/types';
 import { useStore } from '../../../l5-presentation/store';
+import { createLogger } from '../../utils/rendererLogger';
+
+const logger = createLogger('CourseDetailTasks');
 
 export interface TaskListModalState {
   isOpen: boolean;
@@ -171,7 +174,7 @@ export function useCourseDetailTaskState({
         const tasks = await api.getTasksForArchivedCourse(courseId);
         setArchivedCourseTasks(tasks || []);
       } catch (error) {
-        console.error('Failed to refresh archived course tasks:', error);
+        logger.error('Failed to refresh archived course tasks', error instanceof Error ? error : undefined);
       }
     } else {
       // Non-archived courses use the store
@@ -211,7 +214,7 @@ export function useCourseDetailTaskState({
 
       await refreshTasks();
     } catch (error) {
-      console.error('Failed to create task:', error);
+      logger.error('Failed to create task', error instanceof Error ? error : undefined);
     }
   }, [
     courseId,
@@ -234,7 +237,7 @@ export function useCourseDetailTaskState({
         await api.dispatch('DuplicateTask', { taskId });
         await refreshTasks();
       } catch (error) {
-        console.error('Failed to duplicate task:', error);
+        logger.error('Failed to duplicate task', error instanceof Error ? error : undefined);
       }
     },
     [refreshTasks]
@@ -253,7 +256,7 @@ export function useCourseDetailTaskState({
           }
         }
       } catch (error) {
-        console.error('Failed to toggle task completion:', error);
+        logger.error('Failed to toggle task completion', error instanceof Error ? error : undefined);
       }
     },
     [markTaskComplete, courseArchivedAt, refreshTasks]
@@ -316,7 +319,7 @@ export function useCourseDetailTaskState({
       setEditingTaskId(null);
       await refreshTasks();
     } catch (error) {
-      console.error('Failed to update task:', error);
+      logger.error('Failed to update task', error instanceof Error ? error : undefined);
     }
   }, [
     editingTaskId,
@@ -354,7 +357,7 @@ export function useCourseDetailTaskState({
               await refreshTasks();
             }
           } catch (error) {
-            console.error('Failed to delete task:', error);
+            logger.error('Failed to delete task', error instanceof Error ? error : undefined);
           }
           setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
         },
@@ -380,7 +383,7 @@ export function useCourseDetailTaskState({
         api.openExternal(result.data.canvasUrl);
       }
     } catch (error) {
-      console.error('Failed to open task in Canvas:', error);
+      logger.error('Failed to open task in Canvas', error instanceof Error ? error : undefined);
     }
   }, []);
 
@@ -409,7 +412,7 @@ export function useCourseDetailTaskState({
               isOptional: !isCurrentlyOptional,
             });
           } catch (error) {
-            console.error(`Failed to ${action} task:`, error);
+            logger.error(`Failed to ${action} task`, error instanceof Error ? error : undefined);
           }
           setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
         },

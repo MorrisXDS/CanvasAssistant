@@ -105,6 +105,12 @@ textarea:focus-visible {
   outline-offset: 2px;
 }
 
+/* Search input focus ring — uses box-shadow to override inline outline:none */
+[data-search-input]:focus {
+  outline: none !important;
+  box-shadow: 0 0 0 2px var(--color-navy);
+}
+
 /* ============ Scrollbar Styling ============ */
 /* Auto-hide scrollbars - show on scroll, hide after idle timeout */
 

@@ -7,6 +7,9 @@ import { useState, useCallback, useRef } from 'react';
 import type { CourseSyllabus } from '../Course';
 import type { FileResource } from '../Files/FileListItem';
 import type { MissingDependency } from '../Files/MissingDependenciesDialog';
+import { createLogger } from '../../utils/rendererLogger';
+
+const logger = createLogger('CourseDetailSyllabus');
 
 export interface ConfirmDialogConfig {
   isOpen: boolean;
@@ -106,7 +109,7 @@ export function useCourseDetailSyllabusState({
           });
         }
       } catch (error) {
-        console.error('Failed to set syllabus:', error);
+        logger.error('Failed to set syllabus', error instanceof Error ? error : undefined);
       } finally {
         setSyllabusLoading(false);
       }
@@ -134,7 +137,7 @@ export function useCourseDetailSyllabusState({
         );
       }
     } catch (error) {
-      console.error('Failed to mark syllabus reviewed:', error);
+      logger.error('Failed to mark syllabus reviewed', error instanceof Error ? error : undefined);
     } finally {
       setSyllabusLoading(false);
     }
@@ -150,7 +153,7 @@ export function useCourseDetailSyllabusState({
       await api.dispatch('RemoveCourseSyllabus', { courseId });
       setSyllabus(null);
     } catch (error) {
-      console.error('Failed to remove syllabus:', error);
+      logger.error('Failed to remove syllabus', error instanceof Error ? error : undefined);
     } finally {
       setSyllabusLoading(false);
     }
@@ -204,7 +207,7 @@ export function useCourseDetailSyllabusState({
             const updatedFiles = await api?.getCourseFiles?.(courseId);
             if (updatedFiles) setCourseFiles(updatedFiles);
           } catch (error) {
-            console.error('Failed to download syllabus:', error);
+            logger.error('Failed to download syllabus', error instanceof Error ? error : undefined);
           }
           setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
         },
@@ -232,10 +235,7 @@ export function useCourseDetailSyllabusState({
           | undefined;
 
         if (typedResult?.hasMissingDependencies && typedResult.missingDependencies) {
-          console.log(
-            '[Syllabus] HTML has missing dependencies:',
-            typedResult.missingDependencies
-          );
+          logger.debug(`HTML has missing dependencies: ${JSON.stringify(typedResult.missingDependencies)}`);
           setMissingDepsDialog({
             isOpen: true,
             dependencies: typedResult.missingDependencies,
@@ -247,7 +247,7 @@ export function useCourseDetailSyllabusState({
         // If success or no missing deps, file was opened
       }
     } catch (error) {
-      console.error('Failed to open syllabus:', error);
+      logger.error('Failed to open syllabus', error instanceof Error ? error : undefined);
     }
   }, [syllabus, courseFiles, courseId, setConfirmDialog]);
 
@@ -299,7 +299,7 @@ export function useCourseDetailSyllabusState({
         throw new Error(result.error || 'Download failed');
       }
     } catch (error) {
-      console.error('Failed to download dependencies:', error);
+      logger.error('Failed to download dependencies', error instanceof Error ? error : undefined);
       setMissingDepsDialog((prev) => ({ ...prev, isDownloading: false }));
       throw error; // Re-throw so dialog shows error
     }

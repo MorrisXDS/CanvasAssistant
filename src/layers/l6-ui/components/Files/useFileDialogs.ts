@@ -15,6 +15,7 @@ import type {
 } from './FileListItem';
 import type { MissingDependency } from './MissingDependenciesDialog';
 import { STORAGE_KEYS } from '../../../l5-presentation/settings';
+import { createLogger } from '../../utils/rendererLogger';
 import type {
   MissingDepsDialogState,
   ExternalLinkDialogState,
@@ -23,6 +24,8 @@ import type {
   ContentChangedWarningState,
   FilesData,
 } from './filesPageTypes';
+
+const logger = createLogger('FileDialogs');
 
 export function useFileDialogs(
   files: FilesData,
@@ -95,7 +98,7 @@ export function useFileDialogs(
         } else if (moduleItem.itemType === 'File' && moduleItem.contentId) {
           result = await api.downloadResourceByExternalId(moduleItem.contentId);
         } else {
-          console.warn(`Cannot download module item of type: ${moduleItem.itemType}`);
+          logger.warn(`Cannot download module item of type: ${moduleItem.itemType}`);
           result = {
             success: false,
             error: `Cannot download ${moduleItem.itemType} items`,
@@ -109,7 +112,7 @@ export function useFileDialogs(
         markFileUpdateSeen(file);
       }
     } catch (error) {
-      console.error('Download failed:', error);
+      logger.error('Download failed', error instanceof Error ? error : undefined);
     } finally {
       setDownloadingIds((prev) => {
         const next = new Set(prev);
@@ -132,15 +135,15 @@ export function useFileDialogs(
     const api = window.api;
     if (!api) return;
 
-    console.log('[FilesPage] handleOpen called');
+    logger.debug('handleOpen called');
     markFileUpdateSeen(file);
 
     if (file.source === 'attachment') {
       api
         .openAttachment(file.id)
-        .then(() => console.log('[FilesPage] openAttachment resolved'))
+        .then(() => logger.debug('openAttachment resolved'))
         .catch((error) => {
-          console.error('Failed to open file:', error);
+          logger.error('Failed to open file', error instanceof Error ? error : undefined);
         });
     } else if (file.source === 'page') {
       const page = file as FilePage;
@@ -152,7 +155,7 @@ export function useFileDialogs(
           }
         })
         .catch((error) => {
-          console.error('Failed to open page:', error);
+          logger.error('Failed to open page', error instanceof Error ? error : undefined);
         });
     } else if (file.source === 'module') {
       const moduleItem = file as FileModuleItem;
@@ -161,7 +164,7 @@ export function useFileDialogs(
       if (moduleItem.itemType === 'ExternalUrl') {
         const externalLink = moduleItem.externalUrl || moduleItem.url;
         if (!externalLink) {
-          console.error('[FilesPage] ExternalUrl item has no URL');
+          logger.error('ExternalUrl item has no URL');
           return;
         }
 
@@ -173,7 +176,7 @@ export function useFileDialogs(
             skipWarning = settings.skipExternalLinkWarning === true;
           }
         } catch (e) {
-          console.error('Failed to read file explorer settings:', e);
+          logger.error('Failed to read file explorer settings', e instanceof Error ? e : undefined);
         }
 
         if (skipWarning) {
@@ -193,11 +196,11 @@ export function useFileDialogs(
         try {
           const openResult = await api.openPageFile?.(moduleItem.id);
           if (openResult?.success) {
-            console.log('[FilesPage] Opened module page file');
+            logger.debug('Opened module page file');
             return;
           }
           if ((openResult as { needsDownload?: boolean })?.needsDownload) {
-            console.log('[FilesPage] Page needs download, showing dialog');
+            logger.debug('Page needs download, showing dialog');
             setPageDownloadDialog({
               isOpen: true,
               moduleItem,
@@ -211,10 +214,7 @@ export function useFileDialogs(
             totalMissingSize?: number;
           };
           if (typedResult?.hasMissingDependencies && typedResult.missingDependencies) {
-            console.log(
-              '[FilesPage] Page has missing dependencies:',
-              typedResult.missingDependencies
-            );
+            logger.debug(`Page has missing dependencies: ${typedResult.missingDependencies.length} items`);
             setMissingDepsDialog({
               isOpen: true,
               file: moduleItem,
@@ -226,9 +226,7 @@ export function useFileDialogs(
             return;
           }
         } catch {
-          console.log(
-            '[FilesPage] Failed to open module page file, falling back to Canvas URL'
-          );
+          logger.debug('Failed to open module page file, falling back to Canvas URL');
         }
       }
 
@@ -237,16 +235,14 @@ export function useFileDialogs(
         try {
           const openResult = await api.openResourceByExternalId(moduleItem.contentId);
           if (openResult?.success) {
-            console.log('[FilesPage] Opened module file');
+            logger.debug('Opened module file');
             return;
           }
           if ((openResult as { needsDownload?: boolean })?.needsDownload) {
-            console.log('[FilesPage] Module file not downloaded, opening Canvas URL');
+            logger.debug('Module file not downloaded, opening Canvas URL');
           }
         } catch {
-          console.log(
-            '[FilesPage] Failed to open module file, falling back to Canvas URL'
-          );
+          logger.debug('Failed to open module file, falling back to Canvas URL');
         }
       }
 
@@ -261,10 +257,7 @@ export function useFileDialogs(
         const result = await api.openResource(file.id);
 
         if (result?.hasMissingDependencies && result.missingDependencies) {
-          console.log(
-            '[FilesPage] HTML has missing dependencies:',
-            result.missingDependencies
-          );
+          logger.debug(`HTML has missing dependencies: ${result.missingDependencies.length} items`);
           setMissingDepsDialog({
             isOpen: true,
             file,
@@ -276,9 +269,9 @@ export function useFileDialogs(
           return;
         }
 
-        console.log('[FilesPage] openResource resolved');
+        logger.debug('openResource resolved');
       } catch (error) {
-        console.error('Failed to open file:', error);
+        logger.error('Failed to open file', error instanceof Error ? error : undefined);
       }
     }
   };
@@ -359,7 +352,7 @@ export function useFileDialogs(
         throw new Error(result.error || 'Download failed');
       }
     } catch (error) {
-      console.error('Failed to download dependencies:', error);
+      logger.error('Failed to download dependencies', error instanceof Error ? error : undefined);
       setMissingDepsDialog((prev) => ({ ...prev, isDownloading: false }));
       throw error;
     }
@@ -441,7 +434,7 @@ export function useFileDialogs(
         settings.skipExternalLinkWarning = true;
         localStorage.setItem(STORAGE_KEYS.FILE_EXPLORER, JSON.stringify(settings));
       } catch (e) {
-        console.error('Failed to save file explorer settings:', e);
+        logger.error('Failed to save file explorer settings', e instanceof Error ? e : undefined);
       }
     }
 
@@ -471,17 +464,17 @@ export function useFileDialogs(
     try {
       const downloadResult = await api.downloadPageContent?.(moduleItem.id);
       if (downloadResult?.success && downloadResult.localPath) {
-        console.log('[FilesPage] Downloaded page, now opening');
+        logger.debug('Downloaded page, now opening');
         const openResult = await api.openPageFile?.(moduleItem.id);
         if (openResult?.success) {
-          console.log('[FilesPage] Opened downloaded page file');
+          logger.debug('Opened downloaded page file');
         }
         fetchFiles();
       } else {
-        console.error('[FilesPage] Failed to download page:', downloadResult?.error);
+        logger.error(`Failed to download page: ${downloadResult?.error}`);
       }
     } catch (error) {
-      console.error('[FilesPage] Error downloading page:', error);
+      logger.error('Error downloading page', error instanceof Error ? error : undefined);
     } finally {
       setDownloadingIds((prev) => {
         const next = new Set(prev);
@@ -526,18 +519,18 @@ export function useFileDialogs(
 
     if (file.source === 'attachment') {
       api.showAttachmentInFolder(file.id).catch((error) => {
-        console.error('Failed to show in folder:', error);
+        logger.error('Failed to show in folder', error instanceof Error ? error : undefined);
       });
     } else if (file.source === 'module') {
       const moduleItem = file as FileModuleItem;
       if (moduleItem.contentId) {
         api.showResourceInFolderByExternalId(moduleItem.contentId).catch((error) => {
-          console.error('Failed to show module file in folder:', error);
+          logger.error('Failed to show module file in folder', error instanceof Error ? error : undefined);
         });
       }
     } else {
       api.showResourceInFolder(file.id).catch((error) => {
-        console.error('Failed to show in folder:', error);
+        logger.error('Failed to show in folder', error instanceof Error ? error : undefined);
       });
     }
   };
@@ -573,7 +566,7 @@ export function useFileDialogs(
       try {
         await navigator.clipboard.writeText(localPath);
       } catch (err) {
-        console.error('Failed to copy path:', err);
+        logger.error('Failed to copy path', err instanceof Error ? err : undefined);
       }
     }
   };
@@ -603,10 +596,10 @@ export function useFileDialogs(
       if (result.success) {
         await fetchFiles();
       } else {
-        console.error('Delete failed:', result.error);
+        logger.error(`Delete failed: ${result.error}`);
       }
     } catch (error) {
-      console.error('Failed to delete local copy:', error);
+      logger.error('Failed to delete local copy', error instanceof Error ? error : undefined);
     }
   };
 
@@ -638,7 +631,7 @@ export function useFileDialogs(
         }
       }
     } catch (err) {
-      console.error('Failed to open in Canvas:', err);
+      logger.error('Failed to open in Canvas', err instanceof Error ? err : undefined);
     }
   };
 

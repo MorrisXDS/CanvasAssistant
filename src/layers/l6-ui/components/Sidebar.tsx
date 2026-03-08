@@ -35,6 +35,9 @@ import { formatTimeAgo } from '../constants';
 import { layoutStyles as styles, TITLE_BAR_HEIGHT } from './layoutStyles';
 import { NotificationDotGroup } from './shared';
 import { useSidebarDots, useFileUpdateDots } from '../hooks';
+import { createLogger } from '../utils/rendererLogger';
+
+const logger = createLogger('Sidebar');
 
 /** Navigation item configuration */
 interface NavItem {
@@ -197,17 +200,17 @@ export function Sidebar({ onToggle }: SidebarProps) {
   useEffect(() => {
     const fetchUserProfile = async () => {
       const api = window.api;
-      console.debug('[Sidebar] Fetching user profile, api available:', !!api);
+      logger.debug(`Fetching user profile, api available: ${!!api}`);
 
       if (api?.getUserProfile) {
         try {
           const profile = await api.getUserProfile();
           if (profile) {
             setUserProfile(profile);
-            console.debug('[Sidebar] User profile set:', profile.name);
+            logger.debug(`User profile set: ${profile.name}`);
           }
         } catch (error) {
-          console.error('[Sidebar] Failed to fetch user profile:', error);
+          logger.error('Failed to fetch user profile', error instanceof Error ? error : undefined);
         }
       }
     };

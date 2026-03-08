@@ -81,6 +81,14 @@ export function TaskDetailModal({
   const courses = useStore((state) => state.courses);
   const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false);
 
+  React.useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [onClose]);
+
   // Reset delete confirm state when modal closes
   React.useEffect(() => {
     if (!isOpen) {
@@ -122,7 +130,7 @@ export function TaskDetailModal({
 
   return (
     <div style={styles.overlay} onClick={onClose}>
-      <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+      <div style={styles.modal} role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div style={styles.header}>
           <div

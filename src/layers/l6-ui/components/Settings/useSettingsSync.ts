@@ -37,6 +37,9 @@ import {
   type LocalHtmlPathsSettings,
 } from '../../../l5-presentation/settings';
 import type { EnrollmentTerm, WindowBehavior } from './settingsContextTypes';
+import { createLogger } from '../../utils/rendererLogger';
+
+const logger = createLogger('SettingsSync');
 
 export function useSettingsSync() {
   const { fetchCourses } = useStore();
@@ -139,7 +142,7 @@ export function useSettingsSync() {
       const terms = await window.api.getEnrollmentTerms();
       setEnrollmentTerms(terms);
     } catch (error) {
-      console.error('[Settings] Failed to fetch enrollment terms:', error);
+      logger.error('Failed to fetch enrollment terms', error instanceof Error ? error : undefined);
     }
   };
 
@@ -148,7 +151,7 @@ export function useSettingsSync() {
       const result = await window.api.getFilesDirectory();
       setCurrentDownloadPath(result.path);
     } catch (error) {
-      console.error('[Settings] Failed to fetch download directory:', error);
+      logger.error('Failed to fetch download directory', error instanceof Error ? error : undefined);
     }
   };
 
@@ -157,7 +160,7 @@ export function useSettingsSync() {
       const settings = await window.api.getWindowBehavior();
       setWindowBehavior(settings);
     } catch (error) {
-      console.error('[Settings] Failed to fetch window behavior:', error);
+      logger.error('Failed to fetch window behavior', error instanceof Error ? error : undefined);
     }
   };
 
@@ -171,7 +174,7 @@ export function useSettingsSync() {
     try {
       await window.api.setWindowBehavior(newSettings);
     } catch (error) {
-      console.error('[Settings] Failed to update window behavior:', error);
+      logger.error('Failed to update window behavior', error instanceof Error ? error : undefined);
     }
   };
 
@@ -193,7 +196,7 @@ export function useSettingsSync() {
         syncAnnouncements: newPrefs.syncAnnouncements,
       });
     } catch (e) {
-      console.error('Failed to sync preferences to main process:', e);
+      logger.error('Failed to sync preferences to main process', e instanceof Error ? e : undefined);
     }
   };
 
@@ -218,7 +221,7 @@ export function useSettingsSync() {
       try {
         await window.api?.setDefaultTargetGrade(updates.defaultTargetGrade);
       } catch (error) {
-        console.error('[Settings] Failed to propagate default target grade:', error);
+        logger.error('Failed to propagate default target grade', error instanceof Error ? error : undefined);
       }
     }
 
@@ -231,7 +234,7 @@ export function useSettingsSync() {
         await window.api?.setTermSelection(value);
         useStore.getState().fetchCourses();
       } catch (error) {
-        console.error('[Settings] Failed to propagate term selection:', error);
+        logger.error('Failed to propagate term selection', error instanceof Error ? error : undefined);
       }
     }
   };
@@ -272,7 +275,7 @@ export function useSettingsSync() {
     try {
       await window.api.setLocalHtmlPathsSettings(newSettings);
     } catch (error) {
-      console.error('[Settings] Failed to save local HTML paths settings:', error);
+      logger.error('Failed to save local HTML paths settings', error instanceof Error ? error : undefined);
     }
   };
 
@@ -316,7 +319,7 @@ export function useSettingsSync() {
         }
       }
     } catch (error) {
-      console.error('[Settings] Failed to change download location:', error);
+      logger.error('Failed to change download location', error instanceof Error ? error : undefined);
     }
   };
 

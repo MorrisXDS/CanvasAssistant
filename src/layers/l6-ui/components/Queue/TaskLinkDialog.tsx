@@ -5,7 +5,7 @@
  * Step 2: Resolve which field values to keep
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   X,
   GitMerge,
@@ -432,6 +432,14 @@ export function TaskLinkDialog({
     return linkableTasks.find((t) => t.id === selectedTaskId) || null;
   }, [selectedTaskId, linkableTasks]);
 
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onCancel();
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [onCancel]);
+
   if (!isOpen) return null;
 
   const handleSelectTask = (taskId: number) => {
@@ -823,7 +831,7 @@ export function TaskLinkDialog({
 
   return (
     <div style={styles.overlay} onClick={onCancel}>
-      <div style={styles.dialog} onClick={(e) => e.stopPropagation()}>
+      <div style={styles.dialog} role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
         <div style={styles.header}>
           <span style={styles.headerTitle}>
             {step === 'select' ? (

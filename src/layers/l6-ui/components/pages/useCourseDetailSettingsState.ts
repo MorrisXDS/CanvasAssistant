@@ -4,6 +4,9 @@
  */
 
 import { useState, useCallback } from 'react';
+import { createLogger } from '../../utils/rendererLogger';
+
+const logger = createLogger('CourseDetailSettings');
 
 export interface CourseSettingsData {
   id: number;
@@ -84,7 +87,7 @@ export function useCourseDetailSettingsState<T extends CourseSettingsData>({
       );
       setEditingTarget(false);
     } catch (error) {
-      console.error('Failed to update target grade:', error);
+      logger.error('Failed to update target grade', error instanceof Error ? error : undefined);
     }
   }, [courseId, targetGradeInput, setCourse]);
 
@@ -119,7 +122,7 @@ export function useCourseDetailSettingsState<T extends CourseSettingsData>({
       });
 
       if (!prefsResult.success) {
-        console.error('Failed to save course preferences:', prefsResult.error);
+        logger.error(`Failed to save course preferences: ${prefsResult.error}`);
         throw new Error(prefsResult.error || 'Failed to save preferences');
       }
 
@@ -165,7 +168,7 @@ export function useCourseDetailSettingsState<T extends CourseSettingsData>({
 
       setShowSettings(false);
     } catch (error) {
-      console.error('Failed to update course settings:', error);
+      logger.error('Failed to update course settings', error instanceof Error ? error : undefined);
     }
   }, [
     courseId,
@@ -191,7 +194,7 @@ export function useCourseDetailSettingsState<T extends CourseSettingsData>({
       });
       setCourse((prev) => (prev ? { ...prev, isHidden: newHidden } : null));
     } catch (error) {
-      console.error('Failed to toggle course visibility:', error);
+      logger.error('Failed to toggle course visibility', error instanceof Error ? error : undefined);
     }
   }, [courseId, course, setCourse]);
 
@@ -207,7 +210,7 @@ export function useCourseDetailSettingsState<T extends CourseSettingsData>({
         navigate('/courses');
       }
     } catch (error) {
-      console.error('Failed to archive course:', error);
+      logger.error('Failed to archive course', error instanceof Error ? error : undefined);
     }
   }, [courseId, course, navigate]);
 

@@ -167,6 +167,15 @@ export function SyncConflictModal({
   const [customExpirationDate, setCustomExpirationDate] = useState('');
   const [showCustomDatePicker, setShowCustomDatePicker] = useState(false);
 
+  // Close on Escape key
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [onClose]);
+
   // Reset currentIndex when modal opens or clamp when conflicts array shrinks
   useEffect(() => {
     if (isOpen) {
@@ -240,7 +249,7 @@ export function SyncConflictModal({
 
   return (
     <div style={styles.overlay} onClick={onClose}>
-      <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+      <div style={styles.modal} role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div style={styles.header}>
           <div style={styles.headerLeft}>

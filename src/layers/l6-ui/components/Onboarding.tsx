@@ -45,6 +45,9 @@ import { getCurrentTermIds } from '../../l5-presentation/store/storeHelpers';
 import { getLetterGrade } from '../constants';
 import { Button } from './primitives/Button';
 import { onboardingStyles as styles, onboardingAnimations } from './onboardingStyles';
+import { createLogger } from '../utils/rendererLogger';
+
+const logger = createLogger('Onboarding');
 
 export interface OnboardingProps {
   onComplete: () => void;
@@ -276,7 +279,7 @@ export function Onboarding({ onComplete }: OnboardingProps) {
         });
       }
     } catch (error) {
-      console.error('[Onboarding] Failed to propagate settings via IPC:', error);
+      logger.error('Failed to propagate settings via IPC', error instanceof Error ? error : undefined);
     }
   }, [targetGrade, theme]);
 
@@ -426,7 +429,7 @@ export function Onboarding({ onComplete }: OnboardingProps) {
         }
       }
     } catch (error) {
-      console.error('[Onboarding] Failed to select directory:', error);
+      logger.error('Failed to select directory', error instanceof Error ? error : undefined);
     }
   };
 

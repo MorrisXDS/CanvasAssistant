@@ -25,6 +25,9 @@ import type {
   FileExplorerSettings,
 } from './filesPageTypes';
 import { STORAGE_KEYS } from '../../../l5-presentation/settings';
+import { createLogger } from '../../utils/rendererLogger';
+
+const logger = createLogger('FilesUtils');
 
 // Storage keys
 export const EXPANDED_STATE_KEY = 'fileExplorerExpandedState';
@@ -36,7 +39,7 @@ export function loadFileExplorerSettings(): FileExplorerSettings {
     const stored = localStorage.getItem(STORAGE_KEYS.FILE_EXPLORER);
     if (stored) return JSON.parse(stored);
   } catch (e) {
-    console.error('Failed to load file explorer settings:', e);
+    logger.error('Failed to load file explorer settings', e instanceof Error ? e : undefined);
   }
   return { defaultState: 'remember', defaultViewMode: 'list' };
 }
@@ -46,7 +49,7 @@ export function loadExpandedState(): ExpandedState {
     const stored = localStorage.getItem(EXPANDED_STATE_KEY);
     if (stored) return JSON.parse(stored);
   } catch (e) {
-    console.error('Failed to load expanded state:', e);
+    logger.error('Failed to load expanded state', e instanceof Error ? e : undefined);
   }
   return { courses: [], folders: [] };
 }
@@ -61,7 +64,7 @@ export function saveExpandedState(courses: Set<number>, folders: Set<string>): v
       })
     );
   } catch (e) {
-    console.error('Failed to save expanded state:', e);
+    logger.error('Failed to save expanded state', e instanceof Error ? e : undefined);
   }
 }
 
@@ -70,7 +73,7 @@ export function loadViewPrefs(): ViewPreferences {
     const stored = localStorage.getItem(VIEW_PREFS_KEY);
     if (stored) return JSON.parse(stored);
   } catch (e) {
-    console.error('Failed to load view preferences:', e);
+    logger.error('Failed to load view preferences', e instanceof Error ? e : undefined);
   }
   return { defaultExpandAll: false, viewMode: 'list' };
 }
@@ -79,7 +82,7 @@ export function saveViewPrefs(prefs: ViewPreferences): void {
   try {
     localStorage.setItem(VIEW_PREFS_KEY, JSON.stringify(prefs));
   } catch (e) {
-    console.error('Failed to save view preferences:', e);
+    logger.error('Failed to save view preferences', e instanceof Error ? e : undefined);
   }
 }
 

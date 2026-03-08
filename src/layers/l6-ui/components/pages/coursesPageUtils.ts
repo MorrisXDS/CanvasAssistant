@@ -5,6 +5,9 @@
 
 import type { Course } from '../../../l5-presentation/types';
 import { STORAGE_KEYS } from '../../../l5-presentation/settings';
+import { createLogger } from '../../utils/rendererLogger';
+
+const logger = createLogger('CoursesPageUtils');
 
 export type ViewMode = 'grid' | 'list';
 export type GradeFilter = 'all' | 'on-track' | 'at-risk' | 'behind';
@@ -61,7 +64,7 @@ export function loadPinnedCourses(): Set<number> {
       return new Set(JSON.parse(stored));
     }
   } catch (e) {
-    console.error('Failed to load pinned courses:', e);
+    logger.error('Failed to load pinned courses', e instanceof Error ? e : undefined);
   }
   return new Set();
 }
@@ -73,7 +76,7 @@ export function savePinnedCourses(pinned: Set<number>): void {
   try {
     localStorage.setItem(STORAGE_KEYS.PINNED_COURSES, JSON.stringify([...pinned]));
   } catch (e) {
-    console.error('Failed to save pinned courses:', e);
+    logger.error('Failed to save pinned courses', e instanceof Error ? e : undefined);
   }
 }
 
@@ -94,7 +97,7 @@ export function loadCourseSettings(): {
       };
     }
   } catch (e) {
-    console.error('Failed to load course settings:', e);
+    logger.error('Failed to load course settings', e instanceof Error ? e : undefined);
   }
   return { defaultViewMode: 'grid', showHiddenByDefault: false };
 }
@@ -109,7 +112,7 @@ export function loadViewMode(pageKey: string, defaultMode: ViewMode): ViewMode {
       return stored;
     }
   } catch (e) {
-    console.error('Failed to load view mode:', e);
+    logger.error('Failed to load view mode', e instanceof Error ? e : undefined);
   }
   return defaultMode;
 }
@@ -121,7 +124,7 @@ export function saveViewMode(pageKey: string, mode: ViewMode): void {
   try {
     localStorage.setItem(`viewMode:${pageKey}`, mode);
   } catch (e) {
-    console.error('Failed to save view mode:', e);
+    logger.error('Failed to save view mode', e instanceof Error ? e : undefined);
   }
 }
 

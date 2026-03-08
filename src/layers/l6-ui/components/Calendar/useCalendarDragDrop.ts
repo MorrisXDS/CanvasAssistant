@@ -5,6 +5,9 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import type { ICSImportPreview } from '../../../l5-presentation/types';
+import { createLogger } from '../../utils/rendererLogger';
+
+const logger = createLogger('CalendarDragDrop');
 
 export interface UseCalendarDragDropOptions {
   onImportReady: (content: string, preview: ICSImportPreview) => void;
@@ -34,7 +37,7 @@ export function useCalendarDragDrop({
           onImportReady(content, preview);
         }
       } catch (error) {
-        console.error('Failed to parse dropped ICS file:', error);
+        logger.error('Failed to parse dropped ICS file', error instanceof Error ? error : undefined);
       }
     };
 
@@ -111,7 +114,7 @@ export function useCalendarDragDrop({
           onImportReady(content, preview);
         }
       } catch (error) {
-        console.error('Failed to parse ICS file:', error);
+        logger.error('Failed to parse ICS file', error instanceof Error ? error : undefined);
       }
     },
     [onImportReady]

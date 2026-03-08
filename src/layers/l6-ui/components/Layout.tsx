@@ -9,11 +9,14 @@ import { useStore } from '../../l5-presentation/store';
 import type { EnrollmentTerm } from '../../../shared/ipc-contract';
 import { useSidebarState, useLandingPage } from '../../l5-presentation/settings';
 import { TitleBar } from './TitleBar';
-import { SyncResultToast, CloseBehaviorDialog, SyncUpdatesFAB } from './shared';
+import { SyncResultToast, CloseBehaviorDialog, SyncUpdatesFAB, KeyboardShortcutsModal } from './shared';
 import { useScrollbarVisibility } from '../hooks/useScrollbarVisibility';
 import { useAppShortcuts } from '../hooks/useAppShortcuts';
 import { Sidebar } from './Sidebar';
 import { layoutStyles as styles } from './layoutStyles';
+import { createLogger } from '../utils/rendererLogger';
+
+const logger = createLogger('Layout');
 
 // Debug flag - set to true only when debugging layout issues
 const DEBUG_LAYOUT = false;
@@ -28,8 +31,51 @@ export function Layout() {
   // Auto-hide scrollbar on main content area (show on scroll, hide after 1.5s)
   useScrollbarVisibility(mainRef, 1500);
 
-  // Global keyboard shortcuts (Mod+1-5 nav, Mod+F search)
+  // Global keyboard shortcuts (Mod+1-5 nav)
   useAppShortcuts();
+
+  // Mod+F — focus search input on current page
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key !== 'f' || !(e.ctrlKey || e.metaKey)) return;
+      e.preventDefault();
+      const input = document.querySelector<HTMLInputElement>('[data-search-input]');
+      if (input) {
+        input.focus();
+        input.select();
+      }
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, []);
+
+  // ? — show keyboard shortcuts help
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key !== '?') return;
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if ((e.target as HTMLElement)?.isContentEditable) return;
+      e.preventDefault();
+      setShowKeyboardShortcuts(true);
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, []);
+
+  // Escape — navigate back from sub-pages (course detail, announcement, etc.)
+  // Skips when a modal is open so ESC closes the modal instead
+  const TOP_LEVEL = ['/', '/calendar', '/courses', '/files', '/settings', '/tasks', '/updates', '/announcements'];
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      if (document.querySelector('[role="dialog"], [data-modal]')) return;
+      if (TOP_LEVEL.includes(location.pathname)) return;
+      navigate(-1);
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [location.pathname, navigate]);
 
   // Sidebar collapse state from settings
   const { collapsed: isCollapsed } = useSidebarState();
@@ -39,6 +85,9 @@ export function Layout() {
 
   // Close behavior dialog state (shown on first close when preference not set)
   const [showCloseBehaviorDialog, setShowCloseBehaviorDialog] = useState(false);
+
+  // Keyboard shortcuts help modal
+  const [showKeyboardShortcuts, setShowKeyboardShortcuts] = useState(false);
 
   // Listen for close behavior prompt from main process
   useEffect(() => {
@@ -127,23 +176,23 @@ export function Layout() {
     if (!DEBUG_LAYOUT) return;
 
     const timer = setTimeout(() => {
-      console.log(`[Layout Debug] Route changed to: ${location.pathname}`);
+      logger.debug(`Route changed to: ${location.pathname}`);
       if (mainRef.current) {
         const mainRect = mainRef.current.getBoundingClientRect();
         const mainStyle = getComputedStyle(mainRef.current);
         const firstChild = mainRef.current.firstElementChild;
 
-        console.log(`[Layout Debug] Page: ${location.pathname}`);
-        console.log(`[Layout Debug]   Main top: ${mainRect.top}px`);
-        console.log(`[Layout Debug]   Main paddingTop: ${mainStyle.paddingTop}`);
+        logger.debug(`Page: ${location.pathname}`);
+        logger.debug(`  Main top: ${mainRect.top}px`);
+        logger.debug(`  Main paddingTop: ${mainStyle.paddingTop}`);
 
         if (firstChild) {
           const childRect = firstChild.getBoundingClientRect();
           const childStyle = getComputedStyle(firstChild);
-          console.log(`[Layout Debug]   Page content top: ${childRect.top}px`);
-          console.log(`[Layout Debug]   Page content marginTop: ${childStyle.marginTop}`);
-          console.log(
-            `[Layout Debug]   GAP (content top - main top): ${childRect.top - mainRect.top}px`
+          logger.debug(`  Page content top: ${childRect.top}px`);
+          logger.debug(`  Page content marginTop: ${childStyle.marginTop}`);
+          logger.debug(
+            `  GAP (content top - main top): ${childRect.top - mainRect.top}px`
           );
         }
       }
@@ -267,6 +316,12 @@ export function Layout() {
       <CloseBehaviorDialog
         isOpen={showCloseBehaviorDialog}
         onChoice={handleCloseBehaviorChoice}
+      />
+
+      {/* Keyboard Shortcuts Help */}
+      <KeyboardShortcutsModal
+        isOpen={showKeyboardShortcuts}
+        onClose={() => setShowKeyboardShortcuts(false)}
       />
 
       {/* Sync Updates Floating Action Button */}

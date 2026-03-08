@@ -3,7 +3,7 @@
  * Side-by-side comparison dialog for merging a queued Canvas task with a user task
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, GitMerge, Calendar, FileText, Cloud, User } from 'lucide-react';
 import type { QueuedTask, Task } from '../../../l5-presentation/types';
 import { TASK_TYPES, formatSmartDate } from '../../constants';
@@ -221,6 +221,14 @@ export function TaskMergeDialog({
   const [keepTitle, setKeepTitle] = useState(false);
   const [isMerging, setIsMerging] = useState(false);
 
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onCancel();
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [onCancel]);
+
   if (!isOpen) return null;
 
   const handleMerge = async () => {
@@ -248,7 +256,7 @@ export function TaskMergeDialog({
 
   return (
     <div style={styles.overlay} onClick={onCancel}>
-      <div style={styles.dialog} onClick={(e) => e.stopPropagation()}>
+      <div style={styles.dialog} role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
         <div style={styles.header}>
           <span style={styles.headerTitle}>
             <GitMerge size={20} />

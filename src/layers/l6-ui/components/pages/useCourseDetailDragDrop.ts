@@ -5,6 +5,9 @@
  */
 
 import { useState, useCallback, useEffect } from 'react';
+import { createLogger } from '../../utils/rendererLogger';
+
+const logger = createLogger('CourseDetailDragDrop');
 
 // localStorage keys
 const TASK_SECTION_ORDER_KEY = 'courseDetailTaskSectionOrder';
@@ -61,7 +64,7 @@ function saveOrder(key: string, order: string[]): void {
   try {
     localStorage.setItem(key, JSON.stringify(order));
   } catch (e) {
-    console.error(`Failed to save order for ${key}:`, e);
+    logger.error(`Failed to save order for ${key}`, e instanceof Error ? e : undefined);
   }
 }
 

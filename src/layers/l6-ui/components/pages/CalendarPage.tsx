@@ -19,6 +19,7 @@ import { useStore } from '../../../l5-presentation/store';
 import { Card, ConfirmDialog } from '../shared';
 import type { Task, Course } from '../../../l5-presentation/types';
 import { generateICS, parseICS, type ParsedEvent } from './CalendarPage.ics';
+import { createLogger } from '../../utils/rendererLogger';
 import { styles } from './CalendarPage.styles';
 import {
   type ViewMode,
@@ -34,6 +35,9 @@ import {
   loadCalendarViewMode,
   saveCalendarViewMode,
 } from './CalendarPageUtils';
+
+const logger = createLogger('CalendarPage');
+
 import { CalendarFilterPanel } from './CalendarFilterPanel';
 import { CalendarMonthView } from './CalendarMonthView';
 import { CalendarWeekView } from './CalendarWeekView';
@@ -318,7 +322,7 @@ export function CalendarPage() {
           });
         }
       } catch (err) {
-        console.error('Failed to parse ICS file:', err);
+        logger.error('Failed to parse ICS file', err instanceof Error ? err : undefined);
         setAlertDialog({
           title: 'Import Failed',
           message: 'Failed to parse the ICS file. Please check the file format.',

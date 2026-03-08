@@ -25,6 +25,9 @@ import {
 } from 'lucide-react';
 import { useStore } from '../../../l5-presentation/store';
 import { styles } from './ExportDialog.styles';
+import { createLogger } from '../../utils/rendererLogger';
+
+const logger = createLogger('ExportDialog');
 
 // =============================================================================
 // TYPES
@@ -102,7 +105,7 @@ export function ExportDialog({ isOpen, onClose }: ExportDialogProps) {
           }
         })
         .catch((err) => {
-          console.error('Failed to fetch archived courses:', err);
+          logger.error('Failed to fetch archived courses', err instanceof Error ? err : undefined);
         });
     }
   }, [isOpen]);
@@ -116,6 +119,15 @@ export function ExportDialog({ isOpen, onClose }: ExportDialogProps) {
       }));
     }
   }, [isOpen, courses]);
+
+  // Close on Escape key
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [onClose]);
 
   // Clear result when closing
   useEffect(() => {
@@ -268,7 +280,7 @@ export function ExportDialog({ isOpen, onClose }: ExportDialogProps) {
 
   return (
     <div style={styles.overlay} onClick={onClose}>
-      <div style={styles.dialog} onClick={(e) => e.stopPropagation()}>
+      <div style={styles.dialog} role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div style={styles.header}>
           <h3 style={styles.title}>Custom Export</h3>

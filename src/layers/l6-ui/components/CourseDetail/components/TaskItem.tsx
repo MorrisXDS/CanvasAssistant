@@ -14,6 +14,9 @@ import {
   Trash2,
   MapPin,
 } from 'lucide-react';
+import { createLogger } from '../../../utils/rendererLogger';
+
+const logger = createLogger('TaskItem');
 import {
   RichTextEditor,
   TaskCheckIcon,
@@ -411,7 +414,7 @@ export function TaskItem({
                               }
                             }
                           } catch (err) {
-                            console.error('[TaskItem] Error handling link:', err);
+                            logger.error('Error handling link', err instanceof Error ? err : undefined);
                           }
                         }
                       }

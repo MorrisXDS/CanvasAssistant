@@ -11,6 +11,9 @@ import type { FileItem } from './FileListItem';
 import type { DownloadProgress } from './FileSelectionBar';
 import type { FileModuleItem, FilePage } from './filesPageTypes';
 import { useMultiSelect } from '../../hooks/useMultiSelect';
+import { createLogger } from '../../utils/rendererLogger';
+
+const logger = createLogger('FileSelection');
 
 export function useFileSelection(groupedFiles: Map<number, Map<string, FileItem[]>>) {
   const [downloadProgress, setDownloadProgress] = useState<DownloadProgress | null>(null);
@@ -106,7 +109,7 @@ export function useFileSelection(groupedFiles: Map<number, Map<string, FileItem[
           }
           completedCount++;
         } catch (error) {
-          console.error('Download failed:', error);
+          logger.error('Download failed', error instanceof Error ? error : undefined);
           completedCount++;
         }
         setDownloadingIds((prev) => {

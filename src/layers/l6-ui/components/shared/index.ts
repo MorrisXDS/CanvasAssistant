@@ -83,3 +83,6 @@ export type {
 
 export { SelectionBar } from './SelectionBar';
 export type { SelectionBarProps, SelectionBarAction } from './SelectionBar';
+
+export { KeyboardShortcutsModal } from './KeyboardShortcutsModal';
+export type { KeyboardShortcutsModalProps } from './KeyboardShortcutsModal';

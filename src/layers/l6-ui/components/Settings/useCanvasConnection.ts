@@ -8,6 +8,9 @@
 import { useState, useRef } from 'react';
 import { STORAGE_KEYS, settingsManager } from '../../../l5-presentation/settings';
 import type { TokenValidationResult, NewTokenValidation } from './settingsContextTypes';
+import { createLogger } from '../../utils/rendererLogger';
+
+const logger = createLogger('CanvasConnection');
 
 function normalizeUrl(url: string): string {
   let normalized = url.trim();
@@ -89,7 +92,7 @@ export function useCanvasConnection() {
       settingsManager.remove(STORAGE_KEYS.CANVAS_URL);
       setCanvasUrl('');
     } catch (e) {
-      console.error('Failed to disconnect:', e);
+      logger.error('Failed to disconnect', e instanceof Error ? e : undefined);
     }
   };
 

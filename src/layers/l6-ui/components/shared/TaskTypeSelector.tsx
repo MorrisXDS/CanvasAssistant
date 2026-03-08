@@ -5,6 +5,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Plus, X } from 'lucide-react';
 import { TASK_TYPES } from '../../constants';
+import { createLogger } from '../../utils/rendererLogger';
+
+const logger = createLogger('TaskTypeSelector');
 
 interface TaskType {
   id: number;
@@ -67,7 +70,7 @@ export function TaskTypeSelector({
         setTaskTypes([...DEFAULT_TASK_TYPES, ...uniqueCustomTypes]);
       }
     } catch (error) {
-      console.error('Failed to load custom task types:', error);
+      logger.error('Failed to load custom task types', error instanceof Error ? error : undefined);
     }
   }, [courseId]);
 
@@ -121,7 +124,7 @@ export function TaskTypeSelector({
         setShowAddForm(false);
       }
     } catch (error) {
-      console.error('Failed to create task type:', error);
+      logger.error('Failed to create task type', error instanceof Error ? error : undefined);
     } finally {
       setIsLoading(false);
     }

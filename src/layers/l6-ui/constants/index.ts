@@ -80,3 +80,10 @@ export { CARD_TITLES, type CardTitles } from './cardTitles';
 
 // Settings Labels
 export { SETTINGS_LABELS, type SettingsLabels } from './settingsLabels';
+
+// Keyboard Shortcuts
+export {
+  KEYBOARD_SHORTCUTS,
+  type ShortcutEntry,
+  type ShortcutCategory,
+} from './keyboardShortcuts';

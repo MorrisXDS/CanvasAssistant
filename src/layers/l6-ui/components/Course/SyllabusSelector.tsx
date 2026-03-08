@@ -9,6 +9,9 @@ import React, { useState, useMemo } from 'react';
 import { Search, X, CheckCircle, Download, Paperclip } from 'lucide-react';
 import { Modal } from '../primitives/Modal';
 import { Button } from '../primitives/Button';
+import { createLogger } from '../../utils/rendererLogger';
+
+const logger = createLogger('SyllabusSelector');
 import {
   FileResource,
   getFileIcon,
@@ -139,7 +142,7 @@ export function SyllabusSelector({
                 {folderFiles.map((file) => {
                   // Safety check for malformed file data
                   if (!file || !file.title) {
-                    console.warn('Skipping malformed file:', file);
+                    logger.warn(`Skipping malformed file: ${JSON.stringify(file)}`);
                     return null;
                   }
                   return (

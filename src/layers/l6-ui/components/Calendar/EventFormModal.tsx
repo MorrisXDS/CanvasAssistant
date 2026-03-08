@@ -18,6 +18,9 @@ import {
   StickyNote,
   AlertTriangle,
 } from 'lucide-react';
+import { createLogger } from '../../utils/rendererLogger';
+
+const logger = createLogger('EventFormModal');
 import type { DisplayCalendarEvent, Course } from '../../../l5-presentation/types';
 import { ConfirmDialog } from '../shared/ConfirmDialog';
 import { RichTextEditor } from '../shared/RichTextEditor';
@@ -82,6 +85,15 @@ export function EventFormModal({
   onClose,
 }: EventFormModalProps) {
   const isEditMode = Boolean(event);
+
+  // Close on Escape
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [onClose]);
 
   // Event type selection (only for create mode)
   const [eventType, setEventType] = useState<EventType>('event');
@@ -304,7 +316,7 @@ export function EventFormModal({
         onClose();
       }
     } catch (error) {
-      console.error('Failed to save:', error);
+      logger.error('Failed to save', error instanceof Error ? error : undefined);
     } finally {
       setIsSaving(false);
     }
@@ -317,7 +329,7 @@ export function EventFormModal({
       await onDelete();
       onClose();
     } catch (error) {
-      console.error('Failed to delete event:', error);
+      logger.error('Failed to delete event', error instanceof Error ? error : undefined);
     } finally {
       setIsSaving(false);
     }
@@ -333,7 +345,7 @@ export function EventFormModal({
 
   return (
     <div style={styles.overlay} onClick={onClose}>
-      <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+      <div role="dialog" aria-modal="true" style={styles.modal} onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div style={styles.header}>
           <h2 style={styles.title}>

@@ -152,6 +152,7 @@ export function SearchInput({
         onChange={(e) => handleChange(e.target.value)}
         onKeyDown={handleKeyDown}
         placeholder={placeholder}
+        data-search-input
         style={{
           ...styles.input,
           height: sizeStyles.height,

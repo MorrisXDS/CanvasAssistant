@@ -15,6 +15,9 @@ import {
   SettingsTypeMap,
   StorageKey,
 } from './settingsSchema';
+import { createLogger } from '../logger';
+
+const logger = createLogger('SettingsManager');
 
 // Browser-compatible event listener type
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -149,7 +152,7 @@ export class SettingsManager {
       if (schema) {
         const result = schema.safeParse(value);
         if (!result.success) {
-          console.error(`[SettingsManager] Validation failed for ${key}:`, result.error);
+          logger.error(`Validation failed for ${key}: ${result.error}`);
           return false;
         }
       }
@@ -174,7 +177,7 @@ export class SettingsManager {
 
       return true;
     } catch (error) {
-      console.error(`[SettingsManager] Failed to set ${key}:`, error);
+      logger.error(`Failed to set ${key}: ${error instanceof Error ? error.message : String(error)}`);
       return false;
     }
   }
@@ -346,7 +349,7 @@ export class SettingsManager {
         localStorage.setItem(key, JSON.stringify(value));
       }
     } catch (error) {
-      console.error(`[SettingsManager] Failed to save ${key}:`, error);
+      logger.error(`Failed to save ${key}: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 }

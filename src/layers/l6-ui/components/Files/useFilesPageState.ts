@@ -20,6 +20,7 @@ import type {
   FileExplorerSettings,
   ViewPreferences,
 } from './filesPageTypes';
+import { createLogger } from '../../utils/rendererLogger';
 import {
   loadFileExplorerSettings,
   loadExpandedState,
@@ -29,6 +30,8 @@ import {
   getFileExtension,
   matchesSizeFilter,
 } from './filesPageUtils';
+
+const logger = createLogger('FilesState');
 
 export function useFilesPageState() {
   const { courses, syncStatus, triggerSync, syncUpdates, markAllSyncUpdatesSeen } =
@@ -138,7 +141,7 @@ export function useFilesPageState() {
         moduleItems: moduleItemsData,
       });
     } catch (error) {
-      console.error('Failed to fetch files:', error);
+      logger.error('Failed to fetch files', error instanceof Error ? error : undefined);
     } finally {
       setLoading(false);
     }
@@ -151,7 +154,7 @@ export function useFilesPageState() {
   // Listen for file status changes from FileWatcher (via store)
   useEffect(() => {
     const handleFileStatusChanged = () => {
-      console.debug('[FilesPage] file-status-changed event received, refetching files');
+      logger.debug('file-status-changed event received, refetching files');
       fetchFiles();
     };
 
@@ -529,7 +532,7 @@ export function useFilesPageState() {
           }
         })
         .catch((error) => {
-          console.error('Failed to sync folder files:', error);
+          logger.error('Failed to sync folder files', error instanceof Error ? error : undefined);
         });
     }
 
@@ -547,7 +550,7 @@ export function useFilesPageState() {
 
       if (updateIdsToMark.length > 0 && window.api?.markSyncUpdatesSeen) {
         window.api.markSyncUpdatesSeen(updateIdsToMark).catch((error) => {
-          console.error('Failed to mark folder updates as seen:', error);
+          logger.error('Failed to mark folder updates as seen', error instanceof Error ? error : undefined);
         });
       }
     }
@@ -623,7 +626,7 @@ export function useFilesPageState() {
       const update = getFileUpdate(file);
       if (update && update.updateIds.length > 0) {
         window.api?.markSyncUpdatesSeen?.(update.updateIds).catch((err: unknown) => {
-          console.error('Failed to mark file update as seen:', err);
+          logger.error('Failed to mark file update as seen', err instanceof Error ? err : undefined);
         });
       }
     },
@@ -696,7 +699,7 @@ export function useFilesPageState() {
         termSelection = settings.termSelection || 'auto';
       }
     } catch (e) {
-      console.error('[FilesPage] Failed to parse academic settings:', e);
+      logger.error('Failed to parse academic settings', e instanceof Error ? e : undefined);
     }
 
     await triggerSync('full', { termSelection });
@@ -707,7 +710,7 @@ export function useFilesPageState() {
     const api = window.api;
     if (api?.openFilesDirectory) {
       api.openFilesDirectory().catch((error) => {
-        console.error('Failed to open files directory:', error);
+        logger.error('Failed to open files directory', error instanceof Error ? error : undefined);
       });
     }
   };

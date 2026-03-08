@@ -8,6 +8,9 @@
 import React, { useState } from 'react';
 import { AlertTriangle, Key, Loader2, Check, XCircle, LogOut } from 'lucide-react';
 import { STORAGE_KEYS } from '../../../l5-presentation/settings';
+import { createLogger } from '../../utils/rendererLogger';
+
+const logger = createLogger('ReAuthModal');
 
 interface ReAuthModalProps {
   reason?: string;
@@ -86,13 +89,13 @@ export function ReAuthModal({ reason, onReauthSuccess, onDisconnect }: ReAuthMod
       await window.api.deleteCredential();
       onDisconnect();
     } catch (e) {
-      console.error('Failed to disconnect:', e);
+      logger.error('Failed to disconnect', e instanceof Error ? e : undefined);
     }
   };
 
   return (
     <div style={styles.overlay}>
-      <div style={styles.modal}>
+      <div style={styles.modal} role="dialog" aria-modal="true">
         {/* Warning Icon */}
         <div style={styles.iconWrapper}>
           <AlertTriangle size={32} />

@@ -10,6 +10,9 @@ import { styles } from './updatesPageStyles';
 import { EXPIRATION_OPTIONS } from './updatesPageConstants';
 import { isUpdatedSinceCreation, UpdatedBadge } from './updatesHelpers';
 import type { SyncUpdate } from '../../../../l5-presentation/types';
+import { createLogger } from '../../../utils/rendererLogger';
+
+const logger = createLogger('ConflictItem');
 
 export interface ConflictItemProps {
   conflict: SyncUpdate;
@@ -78,7 +81,7 @@ export function ConflictItem({ conflict, onResolve }: ConflictItemProps) {
       // externalId contains the conflict ID from SyncConflictResolver
       const conflictId = conflict.externalId || '';
       if (!conflictId) {
-        console.error('Conflict has no ID, cannot resolve');
+        logger.error('Conflict has no ID, cannot resolve');
         return;
       }
       const expiresAt = rememberChoice ? getExpirationDate() : null;

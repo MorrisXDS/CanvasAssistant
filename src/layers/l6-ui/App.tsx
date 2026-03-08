@@ -16,6 +16,9 @@ import {
 } from '../l5-presentation/settings';
 import { Layout } from './components/Layout';
 import { ReAuthModal } from './components/shared/ReAuthModal';
+import { createLogger } from './utils/rendererLogger';
+
+const logger = createLogger('App');
 import { RecoveryBanner, type RecoveryStatus } from './components/shared/RecoveryBanner';
 import {
   CorruptionDialog,
@@ -75,7 +78,7 @@ function initializeSettings() {
   if (fileSettings?.downloadLocation) {
     // Async restore - don't block startup
     window.api?.setFilesDirectory?.(fileSettings.downloadLocation).catch((err: Error) => {
-      console.warn('[App] Failed to restore download location:', err);
+      logger.warn(`Failed to restore download location: ${err instanceof Error ? err.message : String(err)}`);
     });
   }
 }

@@ -3,7 +3,7 @@
  * Shows a preview of ICS events before importing
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X,
   Calendar,
@@ -43,6 +43,14 @@ export function ImportConfirmationModal({
     getNextCalendarColor(existingCount)
   );
 
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onCancel();
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [onCancel]);
+
   // Update name and color when preview changes (new import)
   React.useEffect(() => {
     if (preview) {
@@ -80,7 +88,7 @@ export function ImportConfirmationModal({
 
   return (
     <div style={styles.overlay} onClick={onCancel}>
-      <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+      <div style={styles.modal} role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div style={styles.header}>
           <div style={styles.headerLeft}>

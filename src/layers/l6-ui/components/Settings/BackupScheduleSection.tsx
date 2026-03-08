@@ -29,6 +29,9 @@ import {
   SettingInput,
 } from '../primitives/SettingRow';
 import { formatFileSize, formatTimeAgo } from '../../constants/formatters';
+import { createLogger } from '../../utils/rendererLogger';
+
+const logger = createLogger('BackupSchedule');
 
 // =============================================================================
 // TYPES
@@ -149,7 +152,7 @@ export function BackupScheduleSection() {
       }
     } catch (err) {
       setError('Failed to load backup settings');
-      console.error('Failed to load backup settings:', err);
+      logger.error('Failed to load backup settings', err instanceof Error ? err : undefined);
     } finally {
       setIsLoading(false);
     }
@@ -182,7 +185,7 @@ export function BackupScheduleSection() {
         }
       } catch (err) {
         setError('Failed to save schedule');
-        console.error('Failed to save backup schedule:', err);
+        logger.error('Failed to save backup schedule', err instanceof Error ? err : undefined);
         setSchedule(schedule);
       } finally {
         setIsSaving(false);

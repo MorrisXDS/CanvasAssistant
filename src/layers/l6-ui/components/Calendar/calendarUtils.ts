@@ -12,6 +12,9 @@ import {
   getMinuteOffsetInEffectiveTimezone,
   STORAGE_KEYS,
 } from '../../../l5-presentation/settings';
+import { createLogger } from '../../utils/rendererLogger';
+
+const logger = createLogger('CalendarUtils');
 
 // Re-export timezone utilities for convenience
 export {
@@ -39,7 +42,7 @@ export function loadCalendarSettings(): { defaultViewMode: CalendarView } {
       }
     }
   } catch (e) {
-    console.error('[Calendar] Failed to load calendar settings:', e);
+    logger.error('Failed to load calendar settings', e instanceof Error ? e : undefined);
   }
   return { defaultViewMode: 'month' };
 }
@@ -56,7 +59,7 @@ export function loadCalendarViewMode(): CalendarView {
     const settings = loadCalendarSettings();
     return settings.defaultViewMode;
   } catch (e) {
-    console.error('[Calendar] Failed to load view mode:', e);
+    logger.error('Failed to load view mode', e instanceof Error ? e : undefined);
   }
   return 'month';
 }
@@ -68,7 +71,7 @@ export function saveCalendarViewMode(mode: CalendarView): void {
   try {
     localStorage.setItem(STORAGE_KEYS.CALENDAR_VIEW_MODE, mode);
   } catch (e) {
-    console.error('[Calendar] Failed to save view mode:', e);
+    logger.error('Failed to save view mode', e instanceof Error ? e : undefined);
   }
 }
 

@@ -38,6 +38,9 @@ import { Accordion, SearchInput, SettingsDock } from '../primitives';
 import { SETTINGS_LABELS, MENU_LABELS } from '../../constants';
 import { styles } from '../SettingsModalStyles';
 import { STORAGE_KEYS, SettingsCategory } from '../../../l5-presentation/settings';
+import { createLogger } from '../../utils/rendererLogger';
+
+const logger = createLogger('SettingsModal');
 
 export function SettingsModalContent() {
   const { setAuthenticated } = useStore();
@@ -443,7 +446,7 @@ export function SettingsModalContent() {
             }
             setDeleteTokenOnClear(false);
           } catch (error) {
-            console.error('Failed to clear data:', error);
+            logger.error('Failed to clear data', error instanceof Error ? error : undefined);
           }
         }}
       >

@@ -6,7 +6,7 @@
  * separate components in the Settings/ folder.
  */
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { SettingsProvider, SettingsModalContent } from './Settings';
 import { styles } from './SettingsModalStyles';
 
@@ -21,6 +21,14 @@ export function SettingsModal({
   onClose,
   isFullPage = false,
 }: SettingsModalProps) {
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [onClose]);
+
   if (!isOpen) return null;
 
   const content = (
@@ -35,7 +43,7 @@ export function SettingsModal({
 
   return (
     <div style={styles.overlay} onClick={onClose}>
-      <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+      <div style={styles.modal} role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
         {content}
       </div>
     </div>
