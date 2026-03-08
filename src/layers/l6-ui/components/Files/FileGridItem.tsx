@@ -26,6 +26,7 @@ import {
   getFileIcon,
   getFileIconType,
   getFileIconClass,
+  getCanonicalFileId,
 } from './FileListItem';
 import { NotificationDot, type UpdateType } from '../shared';
 
@@ -95,6 +96,7 @@ export function FileGridItem({
   return (
     <div
       className={`${styles.fileGridItem} ${isSelected ? styles.fileGridItemSelected : ''}`}
+      data-file-key={getCanonicalFileId(file)}
       onClick={handleClick}
       onKeyDown={handleKeyDown}
       onContextMenu={onContextMenu}

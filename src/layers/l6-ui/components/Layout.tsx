@@ -11,6 +11,7 @@ import { useSidebarState, useLandingPage } from '../../l5-presentation/settings'
 import { TitleBar } from './TitleBar';
 import { SyncResultToast, CloseBehaviorDialog, SyncUpdatesFAB } from './shared';
 import { useScrollbarVisibility } from '../hooks/useScrollbarVisibility';
+import { useAppShortcuts } from '../hooks/useAppShortcuts';
 import { Sidebar } from './Sidebar';
 import { layoutStyles as styles } from './layoutStyles';
 
@@ -26,6 +27,9 @@ export function Layout() {
 
   // Auto-hide scrollbar on main content area (show on scroll, hide after 1.5s)
   useScrollbarVisibility(mainRef, 1500);
+
+  // Global keyboard shortcuts (Mod+1-5 nav, Mod+F search)
+  useAppShortcuts();
 
   // Sidebar collapse state from settings
   const { collapsed: isCollapsed } = useSidebarState();

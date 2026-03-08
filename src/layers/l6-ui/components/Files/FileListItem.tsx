@@ -497,6 +497,7 @@ export function FileListItem({
   return (
     <div
       className={styles.fileListItem}
+      data-file-key={getCanonicalFileId(file)}
       onDoubleClick={handleDoubleClick}
       onContextMenu={onContextMenu}
       title={getTooltip()}

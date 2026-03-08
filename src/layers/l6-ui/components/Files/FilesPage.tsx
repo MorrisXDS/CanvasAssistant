@@ -24,7 +24,8 @@ import { Card, ConfirmDialog, Dropdown } from '../shared';
 import styles from './FilesPage.module.css';
 
 // Extracted components
-import { getFileName, isFileDownloaded } from './FileListItem';
+import { getFileName, isFileDownloaded, getCanonicalFileId } from './FileListItem';
+import type { FileItem } from './FileListItem';
 import { FileFilterPanel } from './FileFilterPanel';
 import { FileSyncConfig } from './FileSyncConfig';
 import { FileSelectionBar } from './FileSelectionBar';
@@ -121,8 +122,11 @@ export function FilesPage() {
           <button
             className={`${styles.actionButton} ${selection.selectMode ? styles.actionButtonActive : ''}`}
             onClick={() => {
-              selection.setSelectMode(!selection.selectMode);
-              selection.setSelectedFiles(new Set());
+              if (selection.selectMode) {
+                selection.resetSelection();
+              } else {
+                selection.setSelectMode(true);
+              }
             }}
             title="Select files to download"
           >
@@ -196,6 +200,7 @@ export function FilesPage() {
               value={state.searchQuery}
               onChange={(e) => state.setSearchQuery(e.target.value)}
               className={styles.searchInput}
+              data-search-input
             />
             {state.searchQuery && (
               <button
@@ -230,13 +235,10 @@ export function FilesPage() {
       {/* Selection Bar */}
       {selection.selectMode && (
         <FileSelectionBar
-          selectedCount={selection.selectedFiles.size}
+          selectedCount={selection.selectedCount}
           onSelectAllPending={selection.selectAllVisible}
           onDeselectAll={selection.deselectAll}
-          onCancel={() => {
-            selection.setSelectMode(false);
-            selection.setSelectedFiles(new Set());
-          }}
+          onCancel={() => selection.resetSelection()}
           onDownloadSelected={() =>
             selection.handleDownloadSelected(
               state.downloadingIds,
@@ -284,32 +286,53 @@ export function FilesPage() {
           </div>
         </Card>
       ) : (
-        /* File Tree */
-        <FileTreeRenderer
-          groupedFiles={state.groupedFiles}
-          courseMap={state.courseMap}
-          expandedCourses={state.expandedCourses}
-          viewMode={state.viewMode}
-          selectMode={selection.selectMode}
-          selectedFiles={selection.selectedFiles}
-          downloadingIds={state.downloadingIds}
-          folderModulePositions={state.folderModulePositions}
-          folderDragDrop={state.folderDragDrop}
-          coursesDragDrop={state.coursesDragDrop}
-          toggleCourse={state.toggleCourse}
-          isFolderExpanded={state.isFolderExpanded}
-          toggleFolder={state.toggleFolder}
-          courseHasFileUpdates={state.courseHasFileUpdates}
-          getFolderFileUpdates={state.getFolderFileUpdates}
-          getFileUpdateType={state.getFileUpdateType}
-          getFileKey={selection.getFileKey}
-          toggleFileSelection={selection.toggleFileSelection}
-          handleDownload={dialogs.handleDownload}
-          handleOpen={dialogs.handleOpen}
-          canShowInFolder={dialogs.canShowInFolder}
-          handleShowInFolder={dialogs.handleShowInFolder}
-          handleContextMenu={dialogs.handleContextMenu}
-        />
+        /* File Tree - onClickCapture for Shift/Ctrl multi-select */
+        <div
+          onClickCapture={(e) => {
+            if (!selection.selectMode) return;
+            if (!e.shiftKey && !e.ctrlKey && !e.metaKey) return;
+            const fileEl = (e.target as HTMLElement).closest('[data-file-key]');
+            if (!fileEl) return;
+            const key = fileEl.getAttribute('data-file-key')!;
+            const allFiles: FileItem[] = [];
+            for (const folderMap of state.groupedFiles.values()) {
+              for (const fileList of folderMap.values()) {
+                allFiles.push(...fileList);
+              }
+            }
+            const file = allFiles.find((f) => getCanonicalFileId(f) === key);
+            if (file) {
+              e.stopPropagation();
+              selection.handleMultiSelectClick(file, e);
+            }
+          }}
+        >
+          <FileTreeRenderer
+            groupedFiles={state.groupedFiles}
+            courseMap={state.courseMap}
+            expandedCourses={state.expandedCourses}
+            viewMode={state.viewMode}
+            selectMode={selection.selectMode}
+            selectedFiles={selection.selectedFiles}
+            downloadingIds={state.downloadingIds}
+            folderModulePositions={state.folderModulePositions}
+            folderDragDrop={state.folderDragDrop}
+            coursesDragDrop={state.coursesDragDrop}
+            toggleCourse={state.toggleCourse}
+            isFolderExpanded={state.isFolderExpanded}
+            toggleFolder={state.toggleFolder}
+            courseHasFileUpdates={state.courseHasFileUpdates}
+            getFolderFileUpdates={state.getFolderFileUpdates}
+            getFileUpdateType={state.getFileUpdateType}
+            getFileKey={selection.getFileKey}
+            toggleFileSelection={selection.toggleFileSelection}
+            handleDownload={dialogs.handleDownload}
+            handleOpen={dialogs.handleOpen}
+            canShowInFolder={dialogs.canShowInFolder}
+            handleShowInFolder={dialogs.handleShowInFolder}
+            handleContextMenu={dialogs.handleContextMenu}
+          />
+        </div>
       )}
 
       {/* Download Confirmation Dialog */}

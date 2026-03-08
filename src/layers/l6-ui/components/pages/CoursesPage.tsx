@@ -15,11 +15,18 @@ import {
   X,
   Archive,
   ChevronDown,
+  Square,
+  CheckSquare,
+  Eye,
+  EyeOff,
+  Pin,
+  PinOff,
 } from 'lucide-react';
 import { useStore, getCachedCourseGrades } from '../../../l5-presentation/store';
-import { Card } from '../shared';
+import { Card, SelectionBar } from '../shared';
 import { useShallow } from 'zustand/react/shallow';
 import { useCourseDragDrop } from './useCourseDragDrop';
+import { useMultiSelect } from '../../hooks/useMultiSelect';
 import { useUpdatesByCourse } from '../../hooks';
 import { getCourseColor, formatGrade } from '../../constants';
 import type { Course } from '../../../l5-presentation/types';
@@ -305,6 +312,69 @@ export function CoursesPage() {
     return totalWeightedGrade / totalCredits;
   }, [courses, tasks]);
 
+  // Multi-select hook for bulk actions
+  const getCourseKey = useCallback((c: Course) => String(c.id), []);
+  const {
+    selectMode,
+    selectedKeys,
+    selectedCount,
+    setSelectMode,
+    handleItemClick: handleCourseSelectClick,
+    selectAll: selectAllCourses,
+    deselectAll: deselectAllCourses,
+    isSelected: isCourseSelected,
+    reset: resetCourseSelection,
+  } = useMultiSelect(filteredCourses, getCourseKey);
+
+  // Bulk action handlers
+  const handleBulkHide = async () => {
+    for (const course of filteredCourses) {
+      if (selectedKeys.has(String(course.id)) && !course.isHidden) {
+        await window.api.dispatch('UpdateCoursePreferences', {
+          courseId: course.id,
+          preferences: { isHidden: true },
+        });
+      }
+    }
+    await fetchCourses();
+    resetCourseSelection();
+  };
+
+  const handleBulkShow = async () => {
+    for (const course of filteredCourses) {
+      if (selectedKeys.has(String(course.id)) && course.isHidden) {
+        await window.api.dispatch('UpdateCoursePreferences', {
+          courseId: course.id,
+          preferences: { isHidden: false },
+        });
+      }
+    }
+    await fetchCourses();
+    resetCourseSelection();
+  };
+
+  const handleBulkPin = () => {
+    setPinnedCourses((prev) => {
+      const next = new Set(prev);
+      for (const key of selectedKeys) {
+        next.add(Number(key));
+      }
+      return next;
+    });
+    resetCourseSelection();
+  };
+
+  const handleBulkUnpin = () => {
+    setPinnedCourses((prev) => {
+      const next = new Set(prev);
+      for (const key of selectedKeys) {
+        next.delete(Number(key));
+      }
+      return next;
+    });
+    resetCourseSelection();
+  };
+
   // Clear all filters
   const clearFilters = () => {
     setSearchQuery('');
@@ -339,6 +409,7 @@ export function CoursesPage() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               style={styles.searchInput}
+              data-search-input
             />
             {searchQuery && (
               <button style={styles.clearSearch} onClick={() => setSearchQuery('')}>
@@ -363,6 +434,26 @@ export function CoursesPage() {
           >
             <Filter size={16} />
             {hasActiveFilters && <span style={styles.filterBadge} />}
+          </button>
+
+          {/* Select Mode Toggle */}
+          <button
+            style={{
+              ...styles.filterButton,
+              backgroundColor: selectMode ? 'var(--color-navy-light)' : 'var(--bg-card)',
+              borderColor: selectMode ? 'var(--color-navy)' : 'var(--border-default)',
+              color: selectMode ? 'var(--color-navy)' : 'var(--text-secondary)',
+            }}
+            onClick={() => {
+              if (selectMode) {
+                resetCourseSelection();
+              } else {
+                setSelectMode(true);
+              }
+            }}
+            title="Select courses for bulk actions"
+          >
+            {selectMode ? <CheckSquare size={16} /> : <Square size={16} />}
           </button>
 
           {/* View Toggle */}
@@ -446,6 +537,22 @@ export function CoursesPage() {
         </div>
       </header>
 
+      {/* Selection Bar */}
+      {selectMode && (
+        <SelectionBar
+          selectedCount={selectedCount}
+          onSelectAll={selectAllCourses}
+          onDeselectAll={deselectAllCourses}
+          onCancel={resetCourseSelection}
+          actions={[
+            { label: 'Hide', icon: <EyeOff size={14} />, onClick: handleBulkHide },
+            { label: 'Show', icon: <Eye size={14} />, onClick: handleBulkShow },
+            { label: 'Pin', icon: <Pin size={14} />, onClick: handleBulkPin },
+            { label: 'Unpin', icon: <PinOff size={14} />, onClick: handleBulkUnpin },
+          ]}
+        />
+      )}
+
       {/* Filter Panel */}
       {showFilters && (
         <CoursesFilterPanel
@@ -498,54 +605,41 @@ export function CoursesPage() {
         </Card>
       ) : viewMode === 'grid' ? (
         /* Grid View */
-        <div style={styles.grid}>
+        <div
+          style={styles.grid}
+          onClickCapture={(e) => {
+            if (!selectMode) return;
+            const cardEl = (e.target as HTMLElement).closest('[data-course-id]');
+            if (!cardEl) return;
+            const id = Number(cardEl.getAttribute('data-course-id'));
+            const course = filteredCourses.find(c => c.id === id);
+            if (course && (e.shiftKey || e.ctrlKey || e.metaKey)) {
+              e.stopPropagation();
+              handleCourseSelectClick(course, e);
+            }
+          }}
+        >
           {filteredCourses.map((course) => {
             const grades = getCachedCourseGrades(course.id, tasks);
             const updateInfo = updatesByCourse.get(course.id);
             return (
-              <CourseGridCard
-                key={course.id}
-                course={course}
-                isPinned={pinnedCourses.has(course.id)}
-                earned={grades.earned}
-                trend={grades.trend}
-                assessed={grades.assessed}
-                onTogglePin={togglePin}
-                onToggleHide={handleToggleHide}
-                onClick={() => handleCourseClick(course.id)}
-                onColorClick={openColorPicker}
-                showColorPicker={colorPickerCourseId === course.id}
-                colorPickerValue={
-                  colorPickerCourseId === course.id ? customColor : undefined
-                }
-                onColorChange={handleColorChange}
-                onColorInputChange={setCustomColor}
-                onColorPickerClose={closeColorPicker}
-                hasUpdates={!!updateInfo}
-                updateCount={updateInfo?.count}
-                hasActionRequired={updateInfo?.hasActionRequired}
-                isDragging={draggedCourseId === course.id}
-                isDragOver={dragOverCourseId === course.id}
-                onDragStart={(e) => handleDragStart(e, course.id)}
-                onDragEnd={handleDragEnd}
-                onDragOver={(e) => handleDragOver(e, course.id)}
-                onDragLeave={handleDragLeave}
-                onDrop={(e) => handleDrop(e, course.id)}
-              />
-            );
-          })}
-        </div>
-      ) : (
-        /* List View - Virtualized for performance */
-        <div style={styles.list}>
-          {filteredCourses.length <= 20 ? (
-            // For small lists, render directly
-            filteredCourses.map((course, index) => {
-              const grades = getCachedCourseGrades(course.id, tasks);
-              const updateInfo = updatesByCourse.get(course.id);
-              return (
-                <CourseListItem
-                  key={course.id}
+              <div key={course.id} data-course-id={course.id} style={{ position: 'relative' }}>
+                {selectMode && (
+                  <div
+                    style={courseSelectOverlayStyles.checkbox}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleCourseSelectClick(course, e);
+                    }}
+                  >
+                    {isCourseSelected(course) ? (
+                      <CheckSquare size={18} color="var(--color-navy)" />
+                    ) : (
+                      <Square size={18} color="var(--text-muted)" />
+                    )}
+                  </div>
+                )}
+                <CourseGridCard
                   course={course}
                   isPinned={pinnedCourses.has(course.id)}
                   earned={grades.earned}
@@ -553,10 +647,12 @@ export function CoursesPage() {
                   assessed={grades.assessed}
                   onTogglePin={togglePin}
                   onToggleHide={handleToggleHide}
-                  isFirst={index === 0}
-                  onClick={() => handleCourseClick(course.id)}
-                  onColorClick={openColorPicker}
-                  showColorPicker={colorPickerCourseId === course.id}
+                  onClick={selectMode
+                    ? () => handleCourseSelectClick(course, { shiftKey: false, ctrlKey: false, metaKey: false } as React.MouseEvent)
+                    : () => handleCourseClick(course.id)
+                  }
+                  onColorClick={selectMode ? undefined : openColorPicker}
+                  showColorPicker={!selectMode && colorPickerCourseId === course.id}
                   colorPickerValue={
                     colorPickerCourseId === course.id ? customColor : undefined
                   }
@@ -566,7 +662,82 @@ export function CoursesPage() {
                   hasUpdates={!!updateInfo}
                   updateCount={updateInfo?.count}
                   hasActionRequired={updateInfo?.hasActionRequired}
+                  isDragging={draggedCourseId === course.id}
+                  isDragOver={dragOverCourseId === course.id}
+                  onDragStart={selectMode ? undefined : (e) => handleDragStart(e, course.id)}
+                  onDragEnd={handleDragEnd}
+                  onDragOver={(e) => handleDragOver(e, course.id)}
+                  onDragLeave={handleDragLeave}
+                  onDrop={(e) => handleDrop(e, course.id)}
                 />
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        /* List View - Virtualized for performance */
+        <div
+          style={styles.list}
+          onClickCapture={(e) => {
+            if (!selectMode) return;
+            const itemEl = (e.target as HTMLElement).closest('[data-course-id]');
+            if (!itemEl) return;
+            const id = Number(itemEl.getAttribute('data-course-id'));
+            const course = filteredCourses.find(c => c.id === id);
+            if (course && (e.shiftKey || e.ctrlKey || e.metaKey)) {
+              e.stopPropagation();
+              handleCourseSelectClick(course, e);
+            }
+          }}
+        >
+          {filteredCourses.length <= 20 ? (
+            // For small lists, render directly (virtualization overhead not worth it)
+            filteredCourses.map((course, index) => {
+              const grades = getCachedCourseGrades(course.id, tasks);
+              const updateInfo = updatesByCourse.get(course.id);
+              return (
+                <div key={course.id} data-course-id={course.id} style={{ display: 'flex', alignItems: 'center' }}>
+                  {selectMode && (
+                    <div
+                      style={courseSelectOverlayStyles.listCheckbox}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleCourseSelectClick(course, e);
+                      }}
+                    >
+                      {isCourseSelected(course) ? (
+                        <CheckSquare size={16} color="var(--color-navy)" />
+                      ) : (
+                        <Square size={16} color="var(--text-muted)" />
+                      )}
+                    </div>
+                  )}
+                  <div style={{ flex: 1 }}>
+                    <CourseListItem
+                      course={course}
+                      isPinned={pinnedCourses.has(course.id)}
+                      earned={grades.earned}
+                      trend={grades.trend}
+                      assessed={grades.assessed}
+                      onTogglePin={togglePin}
+                      onToggleHide={handleToggleHide}
+                      isFirst={index === 0}
+                      onClick={selectMode
+                        ? () => handleCourseSelectClick(course, { shiftKey: false, ctrlKey: false, metaKey: false } as React.MouseEvent)
+                        : () => handleCourseClick(course.id)
+                      }
+                      onColorClick={selectMode ? undefined : openColorPicker}
+                      showColorPicker={!selectMode && colorPickerCourseId === course.id}
+                      colorPickerValue={colorPickerCourseId === course.id ? customColor : undefined}
+                      onColorChange={handleColorChange}
+                      onColorInputChange={setCustomColor}
+                      onColorPickerClose={closeColorPicker}
+                      hasUpdates={!!updateInfo}
+                      updateCount={updateInfo?.count}
+                      hasActionRequired={updateInfo?.hasActionRequired}
+                    />
+                  </div>
+                </div>
               );
             })
           ) : (
@@ -590,6 +761,9 @@ export function CoursesPage() {
                 setCustomColor,
                 closeColorPicker,
                 updatesByCourse,
+                selectMode,
+                isCourseSelected,
+                handleCourseSelectClick,
               }}
             >
               {VirtualizedListItem}
@@ -628,6 +802,9 @@ interface VirtualizedListItemData {
     number,
     { color: string; count: number; hasActionRequired: boolean }
   >;
+  selectMode: boolean;
+  isCourseSelected: (course: Course) => boolean;
+  handleCourseSelectClick: (course: Course, e: React.MouseEvent) => void;
 }
 
 function VirtualizedListItem({
@@ -644,31 +821,636 @@ function VirtualizedListItem({
   const updateInfo = data.updatesByCourse.get(course.id);
 
   return (
-    <div style={style}>
-      <CourseListItem
-        course={course}
-        isPinned={data.pinnedCourses.has(course.id)}
-        earned={grades.earned}
-        trend={grades.trend}
-        assessed={grades.assessed}
-        onTogglePin={data.togglePin}
-        onToggleHide={data.handleToggleHide}
-        isFirst={index === 0}
-        onClick={() => data.handleCourseClick(course.id)}
-        onColorClick={data.openColorPicker}
-        showColorPicker={data.colorPickerCourseId === course.id}
-        colorPickerValue={
-          data.colorPickerCourseId === course.id ? data.customColor : undefined
-        }
-        onColorChange={data.handleColorChange}
-        onColorInputChange={data.setCustomColor}
-        onColorPickerClose={data.closeColorPicker}
-        hasUpdates={!!updateInfo}
-        updateCount={updateInfo?.count}
-        hasActionRequired={updateInfo?.hasActionRequired}
-      />
+    <div style={style} data-course-id={course.id}>
+      <div style={{ display: 'flex', alignItems: 'center', height: '100%' }}>
+        {data.selectMode && (
+          <div
+            style={courseSelectOverlayStyles.listCheckbox}
+            onClick={(e) => {
+              e.stopPropagation();
+              data.handleCourseSelectClick(course, e);
+            }}
+          >
+            {data.isCourseSelected(course) ? (
+              <CheckSquare size={16} color="var(--color-navy)" />
+            ) : (
+              <Square size={16} color="var(--text-muted)" />
+            )}
+          </div>
+        )}
+        <div style={{ flex: 1 }}>
+          <CourseListItem
+            course={course}
+            isPinned={data.pinnedCourses.has(course.id)}
+            earned={grades.earned}
+            trend={grades.trend}
+            assessed={grades.assessed}
+            onTogglePin={data.togglePin}
+            onToggleHide={data.handleToggleHide}
+            isFirst={index === 0}
+            onClick={data.selectMode
+              ? () => data.handleCourseSelectClick(course, { shiftKey: false, ctrlKey: false, metaKey: false } as React.MouseEvent)
+              : () => data.handleCourseClick(course.id)
+            }
+            onColorClick={data.selectMode ? undefined : data.openColorPicker}
+            showColorPicker={!data.selectMode && data.colorPickerCourseId === course.id}
+            colorPickerValue={data.colorPickerCourseId === course.id ? data.customColor : undefined}
+            onColorChange={data.handleColorChange}
+            onColorInputChange={data.setCustomColor}
+            onColorPickerClose={data.closeColorPicker}
+            hasUpdates={!!updateInfo}
+            updateCount={updateInfo?.count}
+            hasActionRequired={updateInfo?.hasActionRequired}
+          />
+        </div>
+      </div>
     </div>
   );
+}
+
+/** Styles for selection checkbox overlays on course cards/list items */
+const courseSelectOverlayStyles: Record<string, React.CSSProperties> = {
+  checkbox: {
+    position: 'absolute',
+    top: '12px',
+    left: '12px',
+    zIndex: 10,
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '24px',
+    height: '24px',
+    borderRadius: 'var(--radius-sm)',
+    backgroundColor: 'var(--bg-card)',
+    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.2)',
+  },
+  listCheckbox: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '32px',
+    flexShrink: 0,
+    cursor: 'pointer',
+    paddingLeft: 'var(--space-3)',
+  },
+};
+
+/* REMOVED_OLD_STYLES_START
+const styles: Record<string, React.CSSProperties> = {
+  page: {
+    width: '100%',
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+  },
+
+  header: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    marginBottom: 'var(--space-6)',
+    flexWrap: 'wrap',
+    gap: 'var(--space-4)',
+  },
+
+  headerLeft: {
+    display: 'flex',
+    flexDirection: 'column',
+    flex: '1 1 auto',
+    minWidth: 0,
+  },
+
+  headerRight: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-2)',
+    flexWrap: 'wrap',
+  },
+
+  searchWrapper: {
+    position: 'relative',
+    display: 'flex',
+    alignItems: 'center',
+  },
+
+  searchIcon: {
+    position: 'absolute',
+    left: '12px',
+    pointerEvents: 'none',
+  },
+
+  searchInput: {
+    width: '220px',
+    height: '36px',
+    paddingLeft: '36px',
+    paddingRight: '32px',
+    fontSize: 'var(--text-sm)',
+    border: '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-md)',
+    backgroundColor: 'var(--bg-card)',
+    outline: 'none',
+    transition: 'border-color var(--transition-fast)',
+  },
+
+  clearSearch: {
+    position: 'absolute',
+    right: '8px',
+    width: '20px',
+    height: '20px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    background: 'var(--bg-app)',
+    border: 'none',
+    borderRadius: '50%',
+    cursor: 'pointer',
+    color: 'var(--text-muted)',
+  },
+
+  filterButton: {
+    width: '36px',
+    height: '36px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+    border: '1px solid',
+    borderRadius: 'var(--radius-md)',
+    cursor: 'pointer',
+    transition: 'all var(--transition-fast)',
+  },
+
+  filterBadge: {
+    position: 'absolute',
+    top: '6px',
+    right: '6px',
+    width: '8px',
+    height: '8px',
+    backgroundColor: 'var(--color-navy)',
+    borderRadius: '50%',
+  },
+
+  filterPanel: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 'var(--space-4)',
+    padding: 'var(--space-4)',
+    backgroundColor: 'var(--bg-card)',
+    borderRadius: 'var(--radius-lg)',
+    marginBottom: 'var(--space-4)',
+    boxShadow: 'var(--shadow-card)',
+  },
+
+  filterGroup: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-2)',
+  },
+
+  filterLabel: {
+    fontSize: 'var(--text-xs)',
+    fontWeight: 'var(--font-medium)',
+    color: 'var(--text-muted)',
+    marginRight: 'var(--space-1)',
+  },
+
+  filterChips: {
+    display: 'flex',
+    gap: 'var(--space-1)',
+    flexWrap: 'wrap',
+  },
+
+  filterSelect: {
+    height: '28px',
+    padding: '0 var(--space-3)',
+    fontSize: 'var(--text-xs)',
+    fontWeight: 'var(--font-medium)',
+    border: '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-md)',
+    backgroundColor: 'var(--bg-card)',
+    cursor: 'pointer',
+    outline: 'none',
+  },
+
+  filterChip: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-1)',
+    height: '28px',
+    padding: '0 var(--space-3)',
+    fontSize: 'var(--text-xs)',
+    fontWeight: 'var(--font-medium)',
+    border: '1px solid',
+    borderRadius: 'var(--radius-full)',
+    cursor: 'pointer',
+    transition: 'all var(--transition-fast)',
+    whiteSpace: 'nowrap',
+  },
+
+  clearFiltersBtn: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-1)',
+    height: '28px',
+    padding: '0 var(--space-3)',
+    fontSize: 'var(--text-xs)',
+    fontWeight: 'var(--font-medium)',
+    color: 'var(--color-error)',
+    backgroundColor: 'transparent',
+    border: '1px solid var(--color-error)',
+    borderRadius: 'var(--radius-full)',
+    cursor: 'pointer',
+    marginLeft: 'auto',
+  },
+
+  clearFiltersLarge: {
+    marginTop: 'var(--space-4)',
+    padding: 'var(--space-2) var(--space-4)',
+    fontSize: 'var(--text-sm)',
+    fontWeight: 'var(--font-medium)',
+    color: 'white',
+    backgroundColor: 'var(--color-navy)',
+    border: 'none',
+    borderRadius: 'var(--radius-md)',
+    cursor: 'pointer',
+  },
+
+  title: {
+    fontSize: 'var(--text-3xl)',
+    fontWeight: 'var(--font-bold)',
+    color: 'var(--text-primary)',
+    marginBottom: 'var(--space-1)',
+  },
+
+  subtitle: {
+    fontSize: 'var(--text-sm)',
+    color: 'var(--text-secondary)',
+  },
+
+  viewToggle: {
+    display: 'flex',
+    backgroundColor: 'var(--bg-card)',
+    borderRadius: 'var(--radius-md)',
+    border: '1px solid var(--border-default)',
+    overflow: 'hidden',
+  },
+
+  viewButton: {
+    width: '40px',
+    height: '36px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    border: 'none',
+    cursor: 'pointer',
+    transition: 'all var(--transition-fast)',
+  },
+
+  resetOrderButton: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-1)',
+    height: '36px',
+    padding: '0 var(--space-3)',
+    fontSize: 'var(--text-xs)',
+    fontWeight: 'var(--font-medium)',
+    color: 'var(--text-secondary)',
+    backgroundColor: 'var(--bg-card)',
+    border: '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-md)',
+    cursor: 'pointer',
+    transition: 'all var(--transition-fast)',
+  },
+
+  dragHandle: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: '4px',
+    borderRadius: 'var(--radius-sm)',
+    color: 'var(--text-muted)',
+    cursor: 'grab',
+    opacity: 0,
+    transition: 'opacity var(--transition-fast)',
+  },
+
+  // Grid View Styles - uses CSS Grid for card alignment, scales proportionally with viewport
+  grid: {
+    display: 'grid',
+    // Cards grow from 280px min to fill available space, with max ~400px before wrapping
+    gridTemplateColumns: 'repeat(auto-fill, minmax(clamp(280px, 20vw, 400px), 1fr))',
+    gap: 'clamp(16px, 2vw, 24px)',
+    // Each card is a 5-row grid for internal alignment
+    alignItems: 'stretch',
+    flex: 1,
+  },
+
+  gridCard: {
+    backgroundColor: 'var(--bg-card)',
+    borderRadius: 'var(--radius-lg)',
+    boxShadow: 'var(--shadow-card)',
+    overflow: 'hidden',
+    transition: 'box-shadow var(--transition-fast), transform var(--transition-fast)',
+    cursor: 'pointer',
+    // Internal grid for consistent alignment
+    display: 'grid',
+    gridTemplateRows: 'auto auto 1fr auto auto', // header, name, spacer, stats, footer
+    height: '100%', // Stretch to fill row height
+    minHeight: 'clamp(200px, 18vw, 280px)', // Proportional minimum height
+  },
+
+  colorBar: {
+    height: '4px',
+  },
+
+  colorPickerPopup: {
+    position: 'absolute',
+    top: '100%',
+    left: 'var(--space-4)',
+    backgroundColor: 'var(--bg-card)',
+    borderRadius: 'var(--radius-lg)',
+    boxShadow: '0 4px 20px rgba(0, 0, 0, 0.15)',
+    padding: 'var(--space-3)',
+    zIndex: 100,
+    minWidth: '200px',
+  },
+
+  colorPresets: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(5, 1fr)',
+    gap: 'var(--space-2)',
+    marginBottom: 'var(--space-3)',
+  },
+
+  colorPresetBtn: {
+    width: '28px',
+    height: '28px',
+    borderRadius: 'var(--radius-md)',
+    cursor: 'pointer',
+    transition: 'transform var(--transition-fast)',
+  },
+
+  hexInputRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-2)',
+    borderTop: '1px solid var(--border-light)',
+    paddingTop: 'var(--space-3)',
+  },
+
+  hexLabel: {
+    fontSize: 'var(--text-xs)',
+    fontWeight: 'var(--font-medium)',
+    color: 'var(--text-muted)',
+  },
+
+  hexInput: {
+    flex: 1,
+    height: '28px',
+    padding: '0 var(--space-2)',
+    fontSize: 'var(--text-sm)',
+    fontFamily: 'var(--font-mono)',
+    border: '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-md)',
+    backgroundColor: 'var(--bg-app)',
+    color: 'var(--text-primary)',
+  },
+
+  nativeColorPicker: {
+    width: '28px',
+    height: '28px',
+    padding: 0,
+    border: '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-md)',
+    cursor: 'pointer',
+  },
+
+  colorPickerPopupList: {
+    position: 'absolute',
+    top: '50%',
+    left: 'calc(100% + var(--space-2))',
+    transform: 'translateY(-50%)',
+    backgroundColor: 'var(--bg-card)',
+    borderRadius: 'var(--radius-lg)',
+    boxShadow: '0 4px 20px rgba(0, 0, 0, 0.15)',
+    padding: 'var(--space-3)',
+    zIndex: 100,
+    minWidth: '200px',
+  },
+
+  gridCardContent: {
+    display: 'contents', // Let children participate in parent grid
+  },
+
+  gridCardHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 'clamp(12px, 1.5vw, 20px) clamp(12px, 1.5vw, 20px) clamp(6px, 0.8vw, 12px) clamp(12px, 1.5vw, 20px)',
+  },
+
+  courseCodeBadge: {
+    fontSize: 'clamp(10px, 0.85vw, 13px)',
+    fontWeight: 'var(--font-bold)',
+    color: 'white',
+    padding: 'clamp(2px, 0.3vw, 5px) clamp(6px, 0.6vw, 10px)',
+    borderRadius: 'clamp(3px, 0.3vw, 5px)',
+    textTransform: 'uppercase',
+    letterSpacing: '0.025em',
+  },
+
+  pinButton: {
+    width: '28px',
+    height: '28px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    background: 'none',
+    border: 'none',
+    borderRadius: 'var(--radius-sm)',
+    cursor: 'pointer',
+    transition: 'all var(--transition-fast)',
+  },
+
+  gridCourseName: {
+    fontSize: 'clamp(14px, 1.1vw, 18px)',
+    fontWeight: 'var(--font-semibold)',
+    color: 'var(--text-primary)',
+    lineHeight: 'var(--leading-snug)',
+    padding: '0 clamp(12px, 1.5vw, 20px)',
+  },
+
+  fullCode: {
+    fontSize: 'clamp(10px, 0.8vw, 13px)',
+    color: 'var(--text-muted)',
+    display: 'block',
+    padding: 'clamp(4px, 0.4vw, 8px) clamp(12px, 1.5vw, 20px) 0 clamp(12px, 1.5vw, 20px)',
+    alignSelf: 'start', // Align to top of flex area
+  },
+
+  gridStats: {
+    display: 'flex',
+    gap: 'clamp(12px, 1.2vw, 20px)',
+    padding: 'clamp(8px, 1vw, 16px) clamp(12px, 1.5vw, 20px)',
+    borderTop: '1px solid var(--border-light)',
+    marginTop: 'auto', // Push to bottom of flex area
+  },
+
+  gridStatItem: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'clamp(4px, 0.4vw, 8px)',
+  },
+
+  gridStatLabel: {
+    fontSize: 'clamp(10px, 0.8vw, 13px)',
+    color: 'var(--text-muted)',
+  },
+
+  gridStatValue: {
+    fontSize: 'clamp(12px, 1vw, 16px)',
+    fontWeight: 'var(--font-semibold)',
+    color: 'var(--text-primary)',
+  },
+
+  syncTime: {
+    fontSize: 'clamp(10px, 0.8vw, 13px)',
+    color: 'var(--text-muted)',
+    padding: '0 clamp(12px, 1.5vw, 20px) clamp(12px, 1.5vw, 20px) clamp(12px, 1.5vw, 20px)',
+  },
+
+  // List View Styles - fills available space
+  list: {
+    backgroundColor: 'var(--bg-card)',
+    borderRadius: 'var(--radius-lg)',
+    boxShadow: 'var(--shadow-card)',
+    overflow: 'hidden',
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+  },
+
+  listItem: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-4)',
+    padding: 'var(--space-4)',
+    cursor: 'pointer',
+    transition: 'background-color var(--transition-fast)',
+  },
+
+  listColorDot: {
+    width: '16px',
+    height: '16px',
+    borderRadius: '50%',
+    flexShrink: 0,
+    padding: 0,
+    transition: 'transform var(--transition-fast)',
+  },
+
+  listInfo: {
+    flex: 1,
+    minWidth: 0,
+  },
+
+  listHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-2)',
+    marginBottom: 'var(--space-1)',
+  },
+
+  listCodeBadge: {
+    fontSize: '10px',
+    fontWeight: 'var(--font-bold)',
+    color: 'white',
+    padding: '2px 6px',
+    borderRadius: '3px',
+    textTransform: 'uppercase',
+  },
+
+  listFullCode: {
+    fontSize: 'var(--text-xs)',
+    color: 'var(--text-muted)',
+  },
+
+  listCourseName: {
+    fontSize: 'var(--text-sm)',
+    fontWeight: 'var(--font-medium)',
+    color: 'var(--text-primary)',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  },
+
+  listGrades: {
+    display: 'flex',
+    gap: 'var(--space-6)',
+    flexShrink: 0,
+  },
+
+  listGradeItem: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'flex-end',
+  },
+
+  listGradeLabel: {
+    fontSize: 'var(--text-xs)',
+    color: 'var(--text-muted)',
+  },
+
+  listGradeValue: {
+    fontSize: 'var(--text-sm)',
+    fontWeight: 'var(--font-semibold)',
+    color: 'var(--text-primary)',
+  },
+
+  listActions: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-2)',
+    flexShrink: 0,
+  },
+
+  // Empty State
+  emptyState: {
+    textAlign: 'center',
+    padding: 'var(--space-10)',
+  },
+
+  emptyTitle: {
+    fontSize: 'var(--text-xl)',
+    fontWeight: 'var(--font-semibold)',
+    color: 'var(--text-primary)',
+    marginBottom: 'var(--space-2)',
+  },
+
+  emptyText: {
+    color: 'var(--text-secondary)',
+  },
+};
+REMOVED_OLD_STYLES_END */
+
+// Inject hover styles for drag handle visibility
+if (typeof document !== 'undefined') {
+  const styleId = 'course-card-drag-styles';
+  if (!document.getElementById(styleId)) {
+    const style = document.createElement('style');
+    style.id = styleId;
+    style.textContent = `
+      [data-drag-handle] {
+        opacity: 0 !important;
+      }
+      div:hover > div > div > [data-drag-handle],
+      div:hover > div > [data-drag-handle] {
+        opacity: 1 !important;
+      }
+    `;
+    document.head.appendChild(style);
+  }
 }
 
 export default CoursesPage;

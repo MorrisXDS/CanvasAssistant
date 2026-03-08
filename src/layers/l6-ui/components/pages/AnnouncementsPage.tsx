@@ -287,6 +287,7 @@ export function AnnouncementsPage() {
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           style={styles.searchInput}
+          data-search-input
         />
         {searchQuery && (
           <button style={styles.searchClear} onClick={() => setSearchQuery('')}>

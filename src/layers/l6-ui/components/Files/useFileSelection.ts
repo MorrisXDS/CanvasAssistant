@@ -1,50 +1,54 @@
 /**
  * useFileSelection Hook
- * Selection mode, selected files, toggle/select-all handlers
+ * Selection mode, selected files, toggle/select-all handlers.
+ * Delegates selection logic to useMultiSelect for Shift+Click, Ctrl+Click,
+ * Mod+A, and Escape keyboard shortcuts.
  */
 
-import { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { isFileDownloaded, getCanonicalFileId } from './FileListItem';
 import type { FileItem } from './FileListItem';
 import type { DownloadProgress } from './FileSelectionBar';
 import type { FileModuleItem, FilePage } from './filesPageTypes';
+import { useMultiSelect } from '../../hooks/useMultiSelect';
 
 export function useFileSelection(groupedFiles: Map<number, Map<string, FileItem[]>>) {
-  const [selectMode, setSelectMode] = useState(false);
-  const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
   const [downloadProgress, setDownloadProgress] = useState<DownloadProgress | null>(null);
 
   const getFileKey = (file: FileItem) => getCanonicalFileId(file);
 
-  const toggleFileSelection = (file: FileItem) => {
-    const key = getFileKey(file);
-    setSelectedFiles((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) {
-        next.delete(key);
-      } else {
-        next.add(key);
-      }
-      return next;
-    });
-  };
-
-  const selectAllVisible = () => {
-    const allKeys: string[] = [];
+  // Flatten groupedFiles into ordered array for useMultiSelect range selection
+  const flattenedFiles = useMemo(() => {
+    const files: FileItem[] = [];
     for (const folderMap of groupedFiles.values()) {
       for (const fileList of folderMap.values()) {
-        for (const f of fileList) {
-          if (!isFileDownloaded(f)) {
-            allKeys.push(getFileKey(f));
-          }
-        }
+        files.push(...fileList);
       }
     }
-    setSelectedFiles(new Set(allKeys));
-  };
+    return files;
+  }, [groupedFiles]);
 
-  const deselectAll = () => {
-    setSelectedFiles(new Set());
+  const {
+    selectMode,
+    setSelectMode,
+    selectedKeys: selectedFiles,
+    selectedCount,
+    handleItemClick: handleMultiSelectClick,
+    selectAll: selectAllVisible,
+    deselectAll,
+    isSelected: isFileSelected,
+    reset: resetSelection,
+  } = useMultiSelect(flattenedFiles, getFileKey, {
+    selectAllFilter: (f) => !isFileDownloaded(f),
+  });
+
+  // Simple toggle for checkbox clicks (no modifier keys)
+  const toggleFileSelection = (file: FileItem) => {
+    handleMultiSelectClick(file, {
+      shiftKey: false,
+      ctrlKey: false,
+      metaKey: false,
+    } as React.MouseEvent);
   };
 
   const handleDownloadSelected = async (
@@ -55,14 +59,7 @@ export function useFileSelection(groupedFiles: Map<number, Map<string, FileItem[
     const api = window.api;
     if (!api) return;
 
-    const allFiles: FileItem[] = [];
-    for (const folderMap of groupedFiles.values()) {
-      for (const fileList of folderMap.values()) {
-        allFiles.push(...fileList);
-      }
-    }
-
-    const filesToDownload = allFiles.filter(
+    const filesToDownload = flattenedFiles.filter(
       (f) => selectedFiles.has(getFileKey(f)) && !isFileDownloaded(f)
     );
 
@@ -129,8 +126,7 @@ export function useFileSelection(groupedFiles: Map<number, Map<string, FileItem[
     });
 
     await fetchFiles();
-    setSelectedFiles(new Set());
-    setSelectMode(false);
+    resetSelection();
 
     setTimeout(() => {
       setDownloadProgress(null);
@@ -141,12 +137,15 @@ export function useFileSelection(groupedFiles: Map<number, Map<string, FileItem[
     selectMode,
     setSelectMode,
     selectedFiles,
-    setSelectedFiles,
+    selectedCount,
     downloadProgress,
     getFileKey,
     toggleFileSelection,
+    handleMultiSelectClick,
     selectAllVisible,
     deselectAll,
+    isFileSelected,
+    resetSelection,
     handleDownloadSelected,
   };
 }
