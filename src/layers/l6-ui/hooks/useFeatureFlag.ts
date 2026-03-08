@@ -6,6 +6,9 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import type { FlagKey, FlagValue } from '../../l0-utilities/FeatureFlags';
+import { createLogger } from '../utils/rendererLogger';
+
+const log = createLogger('useFeatureFlag');
 
 /**
  * Hook to check if a feature flag is enabled.
@@ -39,7 +42,7 @@ export function useFeatureFlag(key: FlagKey): boolean {
           setEnabled(Boolean(value));
         }
       } catch (error) {
-        console.error(`[useFeatureFlag] Failed to get flag '${key}':`, error);
+        log.error(`Failed to get flag '${key}'`, error as Error);
       }
     };
 
@@ -96,7 +99,7 @@ export function useFeatureFlagValue<K extends FlagKey>(key: K): FlagValue<K> | n
           setValue(result as FlagValue<K>);
         }
       } catch (error) {
-        console.error(`[useFeatureFlagValue] Failed to get flag '${key}':`, error);
+        log.error(`Failed to get flag '${key}'`, error as Error);
       }
     };
 
@@ -172,7 +175,7 @@ export function useFeatureFlagsByCategory(category: string): Array<{
           setFlags(result);
         }
       } catch (error) {
-        console.error(`[useFeatureFlagsByCategory] Failed to get flags:`, error);
+        log.error(`Failed to get flags for category '${category}'`, error as Error);
       }
     };
 
@@ -211,7 +214,7 @@ export function useSetFeatureFlag(): (key: FlagKey, value: unknown) => Promise<b
       }
       return false;
     } catch (error) {
-      console.error(`[useSetFeatureFlag] Failed to set flag '${key}':`, error);
+      log.error(`Failed to set flag '${key}'`, error as Error);
       return false;
     }
   }, []);
@@ -239,7 +242,7 @@ export function useResetFeatureFlag(): (key: FlagKey) => Promise<boolean> {
       }
       return false;
     } catch (error) {
-      console.error(`[useResetFeatureFlag] Failed to reset flag '${key}':`, error);
+      log.error(`Failed to reset flag '${key}'`, error as Error);
       return false;
     }
   }, []);

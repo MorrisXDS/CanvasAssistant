@@ -5,6 +5,9 @@
 
 import { useState, useCallback, useEffect } from 'react';
 import { STORAGE_KEYS } from '../../../l5-presentation/settings';
+import { createLogger } from '../../utils/rendererLogger';
+
+const log = createLogger('useDashboardDragDrop');
 
 // Default section order - must match section IDs in UnifiedDashboardGrid.tsx
 const DEFAULT_ORDER = ['priority', 'notifications', 'schedule', 'importantWorks'];
@@ -46,7 +49,7 @@ function saveSectionOrder(order: string[]): void {
   try {
     localStorage.setItem(STORAGE_KEYS.DASHBOARD_SECTION_ORDER, JSON.stringify(order));
   } catch (e) {
-    console.error('Failed to save section order:', e);
+    log.error('Failed to save section order', e instanceof Error ? e : undefined);
   }
 }
 
@@ -69,7 +72,7 @@ function saveCollapsedSections(collapsed: Set<string>): void {
       JSON.stringify([...collapsed])
     );
   } catch (e) {
-    console.error('Failed to save collapsed sections:', e);
+    log.error('Failed to save collapsed sections', e instanceof Error ? e : undefined);
   }
 }
 

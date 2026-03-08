@@ -6,6 +6,9 @@
 import type { Course } from '../../types';
 import { getCurrentTermIds } from '../storeHelpers';
 import { getApi, type SliceCreator } from '../storeUtils';
+import { createLogger } from '../../../l6-ui/utils/rendererLogger';
+
+const log = createLogger('coreDataSlice');
 
 export const createCoreDataSlice: SliceCreator = (set, get) => ({
   /**
@@ -51,7 +54,7 @@ export const createCoreDataSlice: SliceCreator = (set, get) => ({
 
       set({ isInitialized: true });
     } catch (error) {
-      console.error('Failed to initialize store:', error);
+      log.error('Failed to initialize store', error instanceof Error ? error : undefined);
       set({
         isInitialized: true,
         lastError: error instanceof Error ? error.message : String(error),
@@ -77,7 +80,7 @@ export const createCoreDataSlice: SliceCreator = (set, get) => ({
           semesterSelection = String(termResult.termSelection);
         }
       } catch (e) {
-        console.error('[Store] Failed to get term selection from database:', e);
+        log.error('[Store] Failed to get term selection from database', e instanceof Error ? e : undefined);
         // Fall back to localStorage for backwards compatibility during migration
         const academicSettings = localStorage.getItem('academicSettings');
         if (academicSettings) {
@@ -92,14 +95,11 @@ export const createCoreDataSlice: SliceCreator = (set, get) => ({
                   : parseInt(semesterSelection, 10);
               api.setTermSelection(valueToSet).catch((err: unknown) => {
                 // Log migration errors instead of swallowing them (#23)
-                console.warn(
-                  '[Store] Failed to migrate term selection to database:',
-                  err
-                );
+                log.warn('[Store] Failed to migrate term selection to database');
               });
             }
           } catch (parseError) {
-            console.error('[Store] Failed to parse academic settings:', parseError);
+            log.error('[Store] Failed to parse academic settings', parseError instanceof Error ? parseError : undefined);
           }
         }
       }
@@ -129,7 +129,7 @@ export const createCoreDataSlice: SliceCreator = (set, get) => ({
 
       set({ courses });
     } catch (error) {
-      console.error('Failed to fetch courses:', error);
+      log.error('Failed to fetch courses', error instanceof Error ? error : undefined);
       set({ lastError: error instanceof Error ? error.message : String(error) });
     }
   },
@@ -170,7 +170,7 @@ export const createCoreDataSlice: SliceCreator = (set, get) => ({
         set({ tasks });
       }
     } catch (error) {
-      console.error('Failed to fetch tasks:', error);
+      log.error('Failed to fetch tasks', error instanceof Error ? error : undefined);
       set({ lastError: error instanceof Error ? error.message : String(error) });
     }
   },
@@ -201,7 +201,7 @@ export const createCoreDataSlice: SliceCreator = (set, get) => ({
 
       set({ notifications });
     } catch (error) {
-      console.error('Failed to fetch notifications:', error);
+      log.error('Failed to fetch notifications', error instanceof Error ? error : undefined);
       set({ lastError: error instanceof Error ? error.message : String(error) });
     }
   },
@@ -211,7 +211,7 @@ export const createCoreDataSlice: SliceCreator = (set, get) => ({
    * Uses Promise.allSettled to ensure partial failures don't block other refreshes
    */
   refreshAll: async () => {
-    console.debug('[Store] refreshAll: starting');
+    log.debug('[Store] refreshAll: starting');
     const startTime = Date.now();
     const {
       fetchCourses,
@@ -241,12 +241,12 @@ export const createCoreDataSlice: SliceCreator = (set, get) => ({
       );
       if (failures.length > 0) {
         for (const failure of failures) {
-          console.error('[Store] Unexpected refresh failure:', failure.reason);
+          log.error(`[Store] Unexpected refresh failure: ${failure.reason}`);
         }
       }
-      console.debug(`[Store] refreshAll: completed in ${Date.now() - startTime}ms`);
+      log.debug(`[Store] refreshAll: completed in ${Date.now() - startTime}ms`);
     } catch (error) {
-      console.error('[Store] refreshAll: fatal error', error);
+      log.error('[Store] refreshAll: fatal error', error instanceof Error ? error : undefined);
       throw error;
     }
   },

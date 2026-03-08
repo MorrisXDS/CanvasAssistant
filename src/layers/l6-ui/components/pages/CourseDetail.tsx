@@ -37,6 +37,9 @@ import {
   UnifiedTaskList,
   type GradeHistoryEntry,
 } from '../CourseDetail/components';
+import { createLogger } from '../../utils/rendererLogger';
+
+const log = createLogger('CourseDetail');
 
 interface CourseDetailData {
   id: number;
@@ -308,7 +311,7 @@ export function CourseDetail() {
       const api = window.api;
 
       if (!api) {
-        console.error('API not available');
+        log.error('API not available');
         setLoading(false);
         return;
       }
@@ -359,7 +362,7 @@ export function CourseDetail() {
           setArchivedCourseTasks(archivedTasks || []);
         }
       } catch (error) {
-        console.error('Failed to fetch course data:', error);
+        log.error('Failed to fetch course data', error instanceof Error ? error : undefined);
       } finally {
         setLoading(false);
       }
@@ -743,7 +746,7 @@ export function CourseDetail() {
                         : prev
                     );
                   } catch (error) {
-                    console.error('Failed to dismiss syllabus prompt:', error);
+                    log.error('Failed to dismiss syllabus prompt', error instanceof Error ? error : undefined);
                   }
                 },
               });

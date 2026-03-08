@@ -4,6 +4,9 @@
  */
 
 import type { Store } from '../types';
+import { createLogger } from '../../l6-ui/utils/rendererLogger';
+
+const log = createLogger('storeUtils');
 
 /**
  * Zustand-compatible set function type for store slices.
@@ -33,7 +36,7 @@ export function getApi() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const api = (window as any).api;
   if (!api) {
-    console.warn('IPC API not available - running in non-Electron context');
+    log.warn('IPC API not available - running in non-Electron context');
     return null;
   }
   return api;

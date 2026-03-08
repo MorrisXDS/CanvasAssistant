@@ -4,6 +4,9 @@
  */
 
 import { getApi, logUserAction, type SliceCreator } from '../storeUtils';
+import { createLogger } from '../../../l6-ui/utils/rendererLogger';
+
+const log = createLogger('taskQueueSlice');
 
 export const createTaskQueueSlice: SliceCreator = (set, get) => ({
   /**
@@ -22,7 +25,7 @@ export const createTaskQueueSlice: SliceCreator = (set, get) => ({
       }
       set({ taskQueue });
     } catch (error) {
-      console.error('Failed to fetch task queue:', error);
+      log.error('Failed to fetch task queue', error instanceof Error ? error : undefined);
     }
   },
 
@@ -37,7 +40,7 @@ export const createTaskQueueSlice: SliceCreator = (set, get) => ({
       const taskQueueCount = await api.getTaskQueueCount(options);
       set({ taskQueueCount });
     } catch (error) {
-      console.error('Failed to fetch task queue count:', error);
+      log.error('Failed to fetch task queue count', error instanceof Error ? error : undefined);
     }
   },
 
@@ -69,7 +72,7 @@ export const createTaskQueueSlice: SliceCreator = (set, get) => ({
       }
       return result;
     } catch (error) {
-      console.error('Failed to accept queued task:', error);
+      log.error('Failed to accept queued task', error instanceof Error ? error : undefined);
       return { success: false };
     }
   },
@@ -96,7 +99,7 @@ export const createTaskQueueSlice: SliceCreator = (set, get) => ({
       }
       return result.success;
     } catch (error) {
-      console.error('Failed to reject queued task:', error);
+      log.error('Failed to reject queued task', error instanceof Error ? error : undefined);
       return false;
     }
   },
@@ -139,7 +142,7 @@ export const createTaskQueueSlice: SliceCreator = (set, get) => ({
       }
       return result;
     } catch (error) {
-      console.error('Failed to bulk accept queued tasks:', error);
+      log.error('Failed to bulk accept queued tasks', error instanceof Error ? error : undefined);
       return { success: false };
     }
   },
@@ -172,7 +175,7 @@ export const createTaskQueueSlice: SliceCreator = (set, get) => ({
       }
       return result;
     } catch (error) {
-      console.error('Failed to merge queued task:', error);
+      log.error('Failed to merge queued task', error instanceof Error ? error : undefined);
       return { success: false };
     }
   },

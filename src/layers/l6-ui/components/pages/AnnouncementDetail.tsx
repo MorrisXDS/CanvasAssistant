@@ -27,10 +27,13 @@ import {
 } from '../../../l5-presentation/settings';
 import { formatFileSize } from '../../constants';
 import { styles } from './AnnouncementDetail.styles';
+import { createLogger } from '../../utils/rendererLogger';
 import type {
   NotificationAttachment,
   AnnouncementFileReference,
 } from '../../../l5-presentation/types';
+
+const log = createLogger('AnnouncementDetail');
 
 /**
  * Format date for display (with weekday)
@@ -234,7 +237,7 @@ export function AnnouncementDetail() {
           setFetchedNotification(result);
         }
       } catch (error) {
-        console.error('Failed to fetch notification:', error);
+        log.error('Failed to fetch notification', error instanceof Error ? error : undefined);
       } finally {
         setLoading(false);
       }
@@ -259,7 +262,7 @@ export function AnnouncementDetail() {
         setAttachments(attachmentsResult);
         setFileReferences(refsResult);
       } catch (error) {
-        console.error('Failed to fetch data:', error);
+        log.error('Failed to fetch data', error instanceof Error ? error : undefined);
       }
     };
     fetchData();
@@ -316,7 +319,7 @@ export function AnnouncementDetail() {
         setFileReferences(updatedRefs);
       }
     } catch (error) {
-      console.error('Download failed:', error);
+      log.error('Download failed', error instanceof Error ? error : undefined);
     } finally {
       setLoadingAttachment(null);
     }
@@ -326,8 +329,8 @@ export function AnnouncementDetail() {
     const api = window.api;
     if (!api) return;
     // Fire-and-forget: don't block UI while file opens in external app
-    api.openAttachment(attachment.id).catch((error) => {
-      console.error('Failed to open file:', error);
+    api.openAttachment(attachment.id).catch((error: unknown) => {
+      log.error('Failed to open file', error instanceof Error ? error : undefined);
     });
   };
 
@@ -335,8 +338,8 @@ export function AnnouncementDetail() {
     const api = window.api;
     if (!api) return;
     // Fire-and-forget: don't block UI
-    api.showAttachmentInFolder(attachment.id).catch((error) => {
-      console.error('Failed to show in folder:', error);
+    api.showAttachmentInFolder(attachment.id).catch((error: unknown) => {
+      log.error('Failed to show in folder', error instanceof Error ? error : undefined);
     });
   };
 

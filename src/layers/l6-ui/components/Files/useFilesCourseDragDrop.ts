@@ -5,6 +5,9 @@
  */
 
 import { useState, useCallback, useEffect } from 'react';
+import { createLogger } from '../../utils/rendererLogger';
+
+const log = createLogger('useFilesCourseDragDrop');
 
 const STORAGE_KEY = 'filesCourseOrder';
 
@@ -18,7 +21,7 @@ function loadCourseOrder(): number[] {
       return JSON.parse(stored);
     }
   } catch (e) {
-    console.error('Failed to load files course order:', e);
+    log.error('Failed to load files course order', e instanceof Error ? e : undefined);
   }
   return [];
 }
@@ -30,7 +33,7 @@ function saveCourseOrder(order: number[]): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(order));
   } catch (e) {
-    console.error('Failed to save files course order:', e);
+    log.error('Failed to save files course order', e instanceof Error ? e : undefined);
   }
 }
 

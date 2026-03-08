@@ -5,6 +5,9 @@
 
 import type { SyncResultSummary, SyncConflictItem } from '../../types';
 import { getApi, logUserAction, type SliceCreator } from '../storeUtils';
+import { createLogger } from '../../../l6-ui/utils/rendererLogger';
+
+const log = createLogger('syncSlice');
 
 export const createSyncSlice: SliceCreator = (set, get) => ({
   /**
@@ -129,7 +132,7 @@ export const createSyncSlice: SliceCreator = (set, get) => ({
         return { success: false, error: result.error };
       }
     } catch (error) {
-      console.error('Failed to trigger sync:', error);
+      log.error('Failed to trigger sync', error instanceof Error ? error : undefined);
       const errorMsg = error instanceof Error ? error.message : String(error);
       set({
         syncStatus: 'error',
@@ -199,10 +202,10 @@ export const createSyncSlice: SliceCreator = (set, get) => ({
           })
         );
 
-        console.log(`Canvas timezone synced: ${timezone}`);
+        log.info(`Canvas timezone synced: ${timezone}`);
       }
     } catch (error) {
-      console.error('Failed to sync Canvas timezone:', error);
+      log.error('Failed to sync Canvas timezone', error instanceof Error ? error : undefined);
     }
   },
 
@@ -266,7 +269,7 @@ export const createSyncSlice: SliceCreator = (set, get) => ({
       // Refresh data after resolution
       await get().refreshAll();
     } catch (error) {
-      console.error('Failed to resolve sync conflict:', error);
+      log.error('Failed to resolve sync conflict', error instanceof Error ? error : undefined);
     }
   },
 
@@ -286,7 +289,7 @@ export const createSyncSlice: SliceCreator = (set, get) => ({
       // Refresh data after resolution
       await get().refreshAll();
     } catch (error) {
-      console.error('Failed to resolve all sync conflicts:', error);
+      log.error('Failed to resolve all sync conflicts', error instanceof Error ? error : undefined);
     }
   },
 

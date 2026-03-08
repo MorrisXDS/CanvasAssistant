@@ -5,6 +5,9 @@
 
 import type { SimulationChangeEvent, DbCommitEvent, SyncConflictItem } from '../types';
 import { useStore } from './store';
+import { createLogger } from '../../l6-ui/utils/rendererLogger';
+
+const log = createLogger('storeSubscriptions');
 
 /**
  * Get the IPC API from the window object (exposed by preload.ts)
@@ -13,7 +16,7 @@ function getApi() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const api = (window as any).api;
   if (!api) {
-    console.warn('IPC API not available - running in non-Electron context');
+    log.warn('IPC API not available - running in non-Electron context');
     return null;
   }
   return api;
@@ -27,7 +30,7 @@ function getApi() {
 export function subscribeToIpcEvents(): () => void {
   const api = getApi();
   if (!api) {
-    console.warn('Cannot subscribe to IPC events - API not available');
+    log.warn('Cannot subscribe to IPC events - API not available');
     return () => {};
   }
 
@@ -41,7 +44,7 @@ export function subscribeToIpcEvents(): () => void {
 
   const unsubSyncStatus = api.onSyncStatus(
     async (status: 'idle' | 'syncing' | 'error') => {
-      console.debug(`[Store] sync:status received: ${status}`);
+      log.debug(`[Store] sync:status received: ${status}`);
       useStore.setState({ syncStatus: status });
       // Update lastSyncedAt when sync completes successfully
       if (status === 'idle') {
@@ -51,7 +54,7 @@ export function subscribeToIpcEvents(): () => void {
         try {
           await useStore.getState().refreshAll();
         } catch (err) {
-          console.error('[Store] refreshAll failed after sync:status idle:', err);
+          log.error('[Store] refreshAll failed after sync:status idle:', err instanceof Error ? err : undefined);
         }
       }
     }
@@ -83,7 +86,7 @@ export function subscribeToIpcEvents(): () => void {
   const unsubFileStatus =
     api.onFileStatusChanged?.(
       (data: { type: 'deleted' | 'added'; resourceId?: number; path: string }) => {
-        console.debug(`[Store] file-status-changed: ${data.type} ${data.path}`);
+        log.debug(`[Store] file-status-changed: ${data.type} ${data.path}`);
         // Files aren't stored in zustand - components fetch them directly
         // Just broadcast an event so components can refetch if needed
         // The store will emit a custom event that FilesPage can listen to
@@ -128,7 +131,7 @@ export function subscribeToIpcEvents(): () => void {
   const unsubSyncUpdates =
     api.onSyncUpdates?.(
       (event: { type: string; totalUnseen: number; conflictCount: number }) => {
-        console.log('[storeSubscriptions] Received sync:updates event:', event);
+        log.info('[storeSubscriptions] Received sync:updates event');
         useStore.getState().handleSyncUpdatesEvent(event);
       }
     ) || (() => {});

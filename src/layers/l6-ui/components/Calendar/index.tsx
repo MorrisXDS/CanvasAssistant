@@ -55,6 +55,9 @@ import type {
 import { getCourseColor } from '../../constants';
 import { generateICS } from './icsUtils';
 import { calendarPageStyles as styles } from './calendarPageStyles';
+import { createLogger } from '../../utils/rendererLogger';
+
+const log = createLogger('Calendar');
 
 export function CalendarPage() {
   const {
@@ -540,7 +543,7 @@ export function CalendarPage() {
         const preview = await window.api.parseICSPreview(content, file.name);
         if (preview) handleImportReady(content, preview);
       } catch (error) {
-        console.error('Failed to parse ICS file:', error);
+        log.error('Failed to parse ICS file', error instanceof Error ? error : undefined);
       }
     };
     input.click();
@@ -556,7 +559,7 @@ export function CalendarPage() {
         filters: [{ name: 'iCalendar', extensions: ['ics'] }],
       });
     } catch (error) {
-      console.error('Export failed:', error);
+      log.error('Export failed', error instanceof Error ? error : undefined);
     }
   };
 
@@ -569,7 +572,7 @@ export function CalendarPage() {
       await markTaskComplete(task.id, !task.isCompleted);
       setSelectedEvent(null);
     } catch (error) {
-      console.error('Failed to toggle task completion:', error);
+      log.error('Failed to toggle task completion', error instanceof Error ? error : undefined);
     }
   };
 
@@ -607,7 +610,7 @@ export function CalendarPage() {
       if (eventToEdit) {
         const success = await updateCalendarEvent(eventToEdit.id, data);
         if (!success) {
-          console.error('Failed to update calendar event');
+          log.error('Failed to update calendar event');
           setAlertDialog({
             title: 'Error',
             message: 'Failed to update event. Please try again.',
@@ -618,7 +621,7 @@ export function CalendarPage() {
       } else {
         const result = await createCalendarEvent(data);
         if (!result.success) {
-          console.error('Failed to create calendar event');
+          log.error('Failed to create calendar event');
           setAlertDialog({
             title: 'Error',
             message: 'Failed to create event. Please try again.',
@@ -631,7 +634,7 @@ export function CalendarPage() {
       setEventToEdit(null);
       fetchCalendarEventsForRange(prefetchRange.start, prefetchRange.end);
     } catch (error) {
-      console.error('Error saving event:', error);
+      log.error('Error saving event', error instanceof Error ? error : undefined);
       setAlertDialog({
         title: 'Error',
         message: 'An error occurred while saving the event.',
@@ -666,7 +669,7 @@ export function CalendarPage() {
       }
       return { success: false };
     } catch (error) {
-      console.error('Failed to create coursework:', error);
+      log.error('Failed to create coursework', error instanceof Error ? error : undefined);
       return { success: false };
     }
   };

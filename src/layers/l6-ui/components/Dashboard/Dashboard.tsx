@@ -16,6 +16,9 @@ import { TaskContextMenu } from '../Course/TaskContextMenu';
 import type { Task } from '../../../l5-presentation/types';
 import { formatGrade } from '../../constants';
 import { STORAGE_KEYS } from '../../../l5-presentation/settings';
+import { createLogger } from '../../utils/rendererLogger';
+
+const log = createLogger('Dashboard');
 
 // Debug flag - set to true only when debugging layout issues
 const DEBUG_LAYOUT = false;
@@ -36,34 +39,34 @@ export function Dashboard() {
       const newSize = { width: window.innerWidth, height: window.innerHeight };
       setWindowSize(newSize);
 
-      console.debug('[Dashboard] Window:', newSize);
+      log.debug(`Window: ${JSON.stringify(newSize)}`);
 
       if (pageRef.current) {
         const pageRect = pageRef.current.getBoundingClientRect();
-        console.debug('[Dashboard] Page container:', {
+        log.debug(`Page container: ${JSON.stringify({
           width: pageRect.width,
           height: pageRect.height,
           maxWidth: getComputedStyle(pageRef.current).maxWidth,
-        });
+        })}`);
       }
 
       if (mainRowRef.current) {
         const mainRowRect = mainRowRef.current.getBoundingClientRect();
         const children = mainRowRef.current.children;
-        console.debug('[Dashboard] Main row:', {
+        log.debug(`Main row: ${JSON.stringify({
           width: mainRowRect.width,
           flexWrap: getComputedStyle(mainRowRef.current).flexWrap,
           childCount: children.length,
-        });
+        })}`);
 
         Array.from(children).forEach((child, i) => {
           const rect = child.getBoundingClientRect();
           const style = getComputedStyle(child);
-          console.debug(`[Dashboard] Child ${i}:`, {
+          log.debug(`Child ${i}: ${JSON.stringify({
             width: rect.width,
             flex: style.flex,
             minWidth: style.minWidth,
-          });
+          })}`);
         });
       }
     };
@@ -248,7 +251,7 @@ export function Dashboard() {
     try {
       await markTaskComplete(id, !isCompleted);
     } catch (error) {
-      console.error('Failed to toggle task complete:', error);
+      log.error('Failed to toggle task complete', error instanceof Error ? error : undefined);
     }
   };
 
@@ -259,7 +262,7 @@ export function Dashboard() {
     try {
       await api.dispatch('DuplicateTask', { taskId: contextMenu.task.id });
     } catch (error) {
-      console.error('Failed to duplicate task:', error);
+      log.error('Failed to duplicate task', error instanceof Error ? error : undefined);
     }
   };
 
@@ -270,7 +273,7 @@ export function Dashboard() {
     try {
       await api.dispatch('DeleteTask', { taskId: contextMenu.task.id, force: true });
     } catch (error) {
-      console.error('Failed to delete task:', error);
+      log.error('Failed to delete task', error instanceof Error ? error : undefined);
     }
   };
 
@@ -285,7 +288,7 @@ export function Dashboard() {
         api.openExternal(result.data.canvasUrl);
       }
     } catch (error) {
-      console.error('Failed to open task in Canvas:', error);
+      log.error('Failed to open task in Canvas', error instanceof Error ? error : undefined);
     }
   };
 
@@ -353,7 +356,7 @@ export function Dashboard() {
                 termSelection = settings.termSelection || 'auto';
               }
             } catch (e) {
-              console.error('[Dashboard] Failed to parse academic settings:', e);
+              log.error('Failed to parse academic settings', e instanceof Error ? e : undefined);
             }
             state.triggerSync('full', { termSelection });
           }}

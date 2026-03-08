@@ -770,13 +770,14 @@ export class SyncEngine extends EventEmitter {
       return this.createSkippedResult([], true);
     }
 
-    // Acquire mutex lock atomically - prevents race condition between check and set
-    const release = await this.acquireSyncMutex();
+    // Check synchronously first - immediate rejection avoids redundant queueing
     if (this.isSyncing) {
-      release();
       throw new Error('Sync already in progress');
     }
     this.isSyncing = true;
+
+    // Acquire mutex for sequencing concurrent syncAll() calls
+    const release = await this.acquireSyncMutex();
     this.syncMutexRelease = release;
 
     // Initialize abort controller for this sync session

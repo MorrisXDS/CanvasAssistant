@@ -33,7 +33,10 @@ export type OneWayHandler<T extends OneWayChannel> = (params: OneWayParams<T>) =
  * Creates a typed IPC handler registry for the main process.
  * Call this in main.ts with the ipcMain instance.
  */
-export function createIpcRegistry(ipcMain: IpcMain) {
+export function createIpcRegistry(
+  ipcMain: IpcMain,
+  warn?: (message: string) => void
+) {
   const registeredHandlers = new Set<string>();
 
   /**
@@ -42,7 +45,7 @@ export function createIpcRegistry(ipcMain: IpcMain) {
    */
   function handle<T extends IpcChannel>(channel: T, handler: IpcHandler<T>): void {
     if (registeredHandlers.has(channel)) {
-      console.warn(`[IPC] Handler for '${channel}' already registered, skipping`);
+      warn?.(`[IPC] Handler for '${channel}' already registered, skipping`);
       return;
     }
     registeredHandlers.add(channel);

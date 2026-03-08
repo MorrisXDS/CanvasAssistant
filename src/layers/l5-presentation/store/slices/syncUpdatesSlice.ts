@@ -5,6 +5,9 @@
 
 import type { SyncUpdate } from '../../types';
 import { getApi, type SliceCreator } from '../storeUtils';
+import { createLogger } from '../../../l6-ui/utils/rendererLogger';
+
+const log = createLogger('syncUpdatesSlice');
 
 export const createSyncUpdatesSlice: SliceCreator = (set, get) => ({
   /**
@@ -24,7 +27,7 @@ export const createSyncUpdatesSlice: SliceCreator = (set, get) => ({
         },
       }));
     } catch (error) {
-      console.error('Failed to fetch sync updates:', error);
+      log.error('Failed to fetch sync updates', error instanceof Error ? error : undefined);
     }
   },
 
@@ -33,15 +36,12 @@ export const createSyncUpdatesSlice: SliceCreator = (set, get) => ({
    */
   fetchSyncUpdatesCount: async () => {
     const api = getApi();
-    console.log(
-      '[store] fetchSyncUpdatesCount called, api available:',
-      !!api?.getSyncUpdatesCount
-    );
+    log.info(`[store] fetchSyncUpdatesCount called, api available: ${!!api?.getSyncUpdatesCount}`);
     if (!api?.getSyncUpdatesCount) return;
 
     try {
       const counts = await api.getSyncUpdatesCount();
-      console.log('[store] fetchSyncUpdatesCount received:', counts);
+      log.info(`[store] fetchSyncUpdatesCount received: ${JSON.stringify(counts)}`);
       set((state) => ({
         syncUpdates: {
           ...state.syncUpdates,
@@ -52,7 +52,7 @@ export const createSyncUpdatesSlice: SliceCreator = (set, get) => ({
         },
       }));
     } catch (error) {
-      console.error('Failed to fetch sync updates count:', error);
+      log.error('Failed to fetch sync updates count', error instanceof Error ? error : undefined);
     }
   },
 
@@ -79,7 +79,7 @@ export const createSyncUpdatesSlice: SliceCreator = (set, get) => ({
         },
       }));
     } catch (error) {
-      console.error('Failed to mark sync updates as seen:', error);
+      log.error('Failed to mark sync updates as seen', error instanceof Error ? error : undefined);
     }
   },
 
@@ -102,7 +102,7 @@ export const createSyncUpdatesSlice: SliceCreator = (set, get) => ({
       await get().fetchSyncUpdatesCount();
       await get().fetchSyncUpdates();
     } catch (error) {
-      console.error('Failed to mark all sync updates as seen:', error);
+      log.error('Failed to mark all sync updates as seen', error instanceof Error ? error : undefined);
     }
   },
 
@@ -136,7 +136,7 @@ export const createSyncUpdatesSlice: SliceCreator = (set, get) => ({
         };
       });
     } catch (error) {
-      console.error('Failed to mark sync update by entity:', error);
+      log.error('Failed to mark sync update by entity', error instanceof Error ? error : undefined);
     }
   },
 
@@ -148,7 +148,7 @@ export const createSyncUpdatesSlice: SliceCreator = (set, get) => ({
     totalUnseen: number;
     conflictCount: number;
   }) => {
-    console.log('[store] handleSyncUpdatesEvent called with:', event);
+    log.info(`[store] handleSyncUpdatesEvent called with: ${JSON.stringify(event)}`);
     set((state) => {
       const newState = {
         syncUpdates: {
@@ -158,7 +158,7 @@ export const createSyncUpdatesSlice: SliceCreator = (set, get) => ({
           informationalCount: event.totalUnseen - event.conflictCount,
         },
       };
-      console.log('[store] Setting syncUpdates to:', newState.syncUpdates);
+      log.info(`[store] Setting syncUpdates to: ${JSON.stringify(newState.syncUpdates)}`);
       return newState;
     });
   },

@@ -25,7 +25,12 @@ export const CONFIG_DIR = path.join(APP_ROOT, '.config'); // Hidden - internal c
 export const LOG_DIR = path.join(APP_ROOT, '.logs'); // Hidden - application logs
 export const PROJECT_DB_DIR = path.join(APP_ROOT, 'database'); // Internal - database
 export const BACKUP_DIR = path.join(APP_ROOT, 'backups'); // Internal - backups
-export const FILES_DIR = path.join(INSTALL_DIR, 'Downloads'); // Visible - next to app
+// On macOS, use ~/Documents/CanvasAssistant/Downloads for user-visible download location
+// (INSTALL_DIR is inside /Applications which is not a natural place for user files)
+export const FILES_DIR =
+  process.platform === 'darwin'
+    ? path.join(app.getPath('documents'), 'CanvasAssistant', 'Downloads')
+    : path.join(INSTALL_DIR, 'Downloads'); // Visible - next to app
 
 export const DB_PATH = path.join(PROJECT_DB_DIR, 'canvas.db');
 export const METRICS_DB_PATH = path.join(PROJECT_DB_DIR, 'metrics.db');

@@ -5,6 +5,9 @@
  */
 
 import { useState, useCallback, useEffect, useMemo } from 'react';
+import { createLogger } from '../../utils/rendererLogger';
+
+const log = createLogger('useFolderDragDrop');
 
 const STORAGE_KEY = 'folderOrder';
 
@@ -22,7 +25,7 @@ function loadFolderOrder(): FolderOrderMap {
       return JSON.parse(stored);
     }
   } catch (e) {
-    console.error('Failed to load folder order:', e);
+    log.error('Failed to load folder order', e instanceof Error ? e : undefined);
   }
   return {};
 }
@@ -34,7 +37,7 @@ function saveFolderOrder(order: FolderOrderMap): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(order));
   } catch (e) {
-    console.error('Failed to save folder order:', e);
+    log.error('Failed to save folder order', e instanceof Error ? e : undefined);
   }
 }
 

@@ -5,6 +5,9 @@
 
 import { markOptimisticUpdate } from '../storeHelpers';
 import { getApi, logUserAction, type SliceCreator } from '../storeUtils';
+import { createLogger } from '../../../l6-ui/utils/rendererLogger';
+
+const log = createLogger('taskActionsSlice');
 
 export const createTaskActionsSlice: SliceCreator = (set, get) => ({
   /**
@@ -32,7 +35,7 @@ export const createTaskActionsSlice: SliceCreator = (set, get) => ({
       }
       return result.success;
     } catch (error) {
-      console.error('Failed to update target grade:', error);
+      log.error('Failed to update target grade', error instanceof Error ? error : undefined);
       set({ lastError: error instanceof Error ? error.message : String(error) });
       return false;
     }
@@ -72,7 +75,7 @@ export const createTaskActionsSlice: SliceCreator = (set, get) => ({
       }
       return result.success;
     } catch (error) {
-      console.error('Failed to mark task complete:', error);
+      log.error('Failed to mark task complete', error instanceof Error ? error : undefined);
       set({ lastError: error instanceof Error ? error.message : String(error) });
       return false;
     }
@@ -100,7 +103,7 @@ export const createTaskActionsSlice: SliceCreator = (set, get) => ({
       }
       return result.success;
     } catch (error) {
-      console.error('Failed to dismiss notification:', error);
+      log.error('Failed to dismiss notification', error instanceof Error ? error : undefined);
       set({ lastError: error instanceof Error ? error.message : String(error) });
       return false;
     }
@@ -117,7 +120,7 @@ export const createTaskActionsSlice: SliceCreator = (set, get) => ({
       const result = await api.dispatch('SimulateGrade', { taskId, grade });
       return result.success;
     } catch (error) {
-      console.error('Failed to simulate grade:', error);
+      log.error('Failed to simulate grade', error instanceof Error ? error : undefined);
       set({ lastError: error instanceof Error ? error.message : String(error) });
       return false;
     }
@@ -134,7 +137,7 @@ export const createTaskActionsSlice: SliceCreator = (set, get) => ({
       const result = await api.dispatch('ClearSimulation', taskId ? { taskId } : {});
       return result.success;
     } catch (error) {
-      console.error('Failed to clear simulation:', error);
+      log.error('Failed to clear simulation', error instanceof Error ? error : undefined);
       set({ lastError: error instanceof Error ? error.message : String(error) });
       return false;
     }

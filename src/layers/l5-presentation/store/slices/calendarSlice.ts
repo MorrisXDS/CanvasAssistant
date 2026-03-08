@@ -6,6 +6,9 @@
 import type { DisplayCalendarEvent } from '../../types';
 import { getEffectiveTimezone } from '../../settings';
 import { getApi, logUserAction, type SliceCreator } from '../storeUtils';
+import { createLogger } from '../../../l6-ui/utils/rendererLogger';
+
+const log = createLogger('calendarSlice');
 
 export const createCalendarSlice: SliceCreator = (set, get) => ({
   /**
@@ -14,7 +17,7 @@ export const createCalendarSlice: SliceCreator = (set, get) => ({
   fetchImportedCalendars: async () => {
     const api = getApi();
     if (!api) {
-      console.warn('[Store] No API available for fetchImportedCalendars');
+      log.warn('[Store] No API available for fetchImportedCalendars');
       return;
     }
 
@@ -22,7 +25,7 @@ export const createCalendarSlice: SliceCreator = (set, get) => ({
       const calendars = await api.getImportedCalendars();
       set({ importedCalendars: calendars });
     } catch (error) {
-      console.error('Failed to fetch imported calendars:', error);
+      log.error('Failed to fetch imported calendars', error instanceof Error ? error : undefined);
     }
   },
 
@@ -32,7 +35,7 @@ export const createCalendarSlice: SliceCreator = (set, get) => ({
   fetchCalendarEventsForRange: async (startDate: Date, endDate: Date) => {
     const api = getApi();
     if (!api) {
-      console.warn('[Store] No API available for fetchCalendarEventsForRange');
+      log.warn('[Store] No API available for fetchCalendarEventsForRange');
       return;
     }
 
@@ -51,7 +54,7 @@ export const createCalendarSlice: SliceCreator = (set, get) => ({
       });
       set({ calendarEvents: events });
     } catch (error) {
-      console.error('Failed to fetch calendar events:', error);
+      log.error('Failed to fetch calendar events', error instanceof Error ? error : undefined);
     }
   },
 
@@ -65,7 +68,7 @@ export const createCalendarSlice: SliceCreator = (set, get) => ({
   ) => {
     const api = getApi();
     if (!api) {
-      console.warn('[Store] No API available for importICSFile');
+      log.warn('[Store] No API available for importICSFile');
       return { success: false };
     }
 
@@ -89,7 +92,7 @@ export const createCalendarSlice: SliceCreator = (set, get) => ({
         existingCalendar: result.existingCalendar,
       };
     } catch (error) {
-      console.error('Failed to import ICS:', error);
+      log.error('Failed to import ICS', error instanceof Error ? error : undefined);
       return { success: false };
     }
   },
@@ -115,7 +118,7 @@ export const createCalendarSlice: SliceCreator = (set, get) => ({
       }
       return result.success;
     } catch (error) {
-      console.error('Failed to delete calendar:', error);
+      log.error('Failed to delete calendar', error instanceof Error ? error : undefined);
       return false;
     }
   },
@@ -135,7 +138,7 @@ export const createCalendarSlice: SliceCreator = (set, get) => ({
       }
       return result;
     } catch (error) {
-      console.error('Failed to reimport calendar:', error);
+      log.error('Failed to reimport calendar', error instanceof Error ? error : undefined);
       return { success: false };
     }
   },
@@ -158,7 +161,7 @@ export const createCalendarSlice: SliceCreator = (set, get) => ({
       }
       return result.success;
     } catch (error) {
-      console.error('Failed to toggle calendar visibility:', error);
+      log.error('Failed to toggle calendar visibility', error instanceof Error ? error : undefined);
       return false;
     }
   },
@@ -184,7 +187,7 @@ export const createCalendarSlice: SliceCreator = (set, get) => ({
       }
       return result.success;
     } catch (error) {
-      console.error('Failed to update calendar:', error);
+      log.error('Failed to update calendar', error instanceof Error ? error : undefined);
       return false;
     }
   },
@@ -241,7 +244,7 @@ export const createCalendarSlice: SliceCreator = (set, get) => ({
       }
       return { success: false };
     } catch (error) {
-      console.error('Failed to create calendar event:', error);
+      log.error('Failed to create calendar event', error instanceof Error ? error : undefined);
       return { success: false };
     }
   },
@@ -331,7 +334,7 @@ export const createCalendarSlice: SliceCreator = (set, get) => ({
       }
       return result.success;
     } catch (error) {
-      console.error('Failed to update calendar event:', error);
+      log.error('Failed to update calendar event', error instanceof Error ? error : undefined);
       return false;
     }
   },
@@ -353,7 +356,7 @@ export const createCalendarSlice: SliceCreator = (set, get) => ({
       }
       return result.success;
     } catch (error) {
-      console.error('Failed to delete calendar event:', error);
+      log.error('Failed to delete calendar event', error instanceof Error ? error : undefined);
       return false;
     }
   },
@@ -380,7 +383,7 @@ export const createCalendarSlice: SliceCreator = (set, get) => ({
         eventCount: result.data?.eventCount,
       };
     } catch (error) {
-      console.error('Failed to export calendars:', error);
+      log.error('Failed to export calendars', error instanceof Error ? error : undefined);
       return { success: false };
     }
   },

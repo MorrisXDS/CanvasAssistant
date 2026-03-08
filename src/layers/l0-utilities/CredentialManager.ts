@@ -108,36 +108,37 @@ export class CredentialManager extends EventEmitter {
       this.log = defaultLogger.child('credentialManager');
     }
 
-    // Initialize storage backend (non-blocking)
+    // Lazy initialization - defer initializeStorage() until first use
+    // This avoids macOS TCC keychain prompts at cold startup
     // Callers should use ensureInitialized() or await methods that call waitForInit()
-    this.initializationPromise = this.initializeStorage()
-      .then(() => {
-        this.isInitialized = true;
-        this.emit('initialized', { backend: this.storageBackend });
-      })
-      .catch((error) => {
-        this.log.error(
-          'Storage initialization failed',
-          error instanceof Error ? error : undefined
-        );
-        this.isInitialized = true; // Mark as done even on failure
-        this.emit('error', {
-          type: 'init-failed',
-          message: 'Storage initialization failed',
-          error,
-        });
-      });
   }
 
   /**
-   * Wait for storage initialization to complete
-   * Call this before any storage operation if you need to ensure init is done
+   * Wait for storage initialization to complete.
+   * Lazily triggers init on first call to avoid cold-startup keychain prompts.
    */
   private async waitForInit(): Promise<void> {
     if (this.isInitialized) return;
-    if (this.initializationPromise) {
-      await this.initializationPromise;
+    if (!this.initializationPromise) {
+      this.initializationPromise = this.initializeStorage()
+        .then(() => {
+          this.isInitialized = true;
+          this.emit('initialized', { backend: this.storageBackend });
+        })
+        .catch((error) => {
+          this.log.error(
+            'Storage initialization failed',
+            error instanceof Error ? error : undefined
+          );
+          this.isInitialized = true; // Mark as done even on failure
+          this.emit('error', {
+            type: 'init-failed',
+            message: 'Storage initialization failed',
+            error,
+          });
+        });
     }
+    await this.initializationPromise;
   }
 
   /**

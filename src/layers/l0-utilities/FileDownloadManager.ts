@@ -78,15 +78,13 @@ export class FileDownloadManager extends EventEmitter {
   private activeDownloads: Map<string, AbortController> = new Map();
   private queue: DownloadRequest[] = [];
   private processingPromise: Promise<void> | null = null;
+  private baseDirEnsured: boolean = false;
 
   constructor(config: FileDownloadManagerConfig) {
     super();
     this.baseDir = config.baseDir;
     this.maxConcurrent = config.maxConcurrent ?? 2;
     this.logger = config.logger;
-
-    // Ensure base directory exists
-    this.ensureDirectory(this.baseDir);
   }
 
   /**
@@ -95,7 +93,7 @@ export class FileDownloadManager extends EventEmitter {
    */
   updateBaseDir(newBaseDir: string): void {
     this.baseDir = newBaseDir;
-    this.ensureDirectory(this.baseDir);
+    this.baseDirEnsured = false;
     this.logger?.info(`Updated download base directory to: ${newBaseDir}`);
   }
 
@@ -196,6 +194,7 @@ export class FileDownloadManager extends EventEmitter {
    * Queue a file for download
    */
   queueDownload(request: DownloadRequest): void {
+    this.ensureBaseDirExists();
     this.queue.push(request);
     this.logger?.debug(
       `Queued download: ${request.filename} for course ${request.courseCode}`
@@ -207,9 +206,19 @@ export class FileDownloadManager extends EventEmitter {
    * Queue multiple files for download
    */
   queueDownloads(requests: DownloadRequest[]): void {
+    this.ensureBaseDirExists();
     this.queue.push(...requests);
     this.logger?.debug(`Queued ${requests.length} downloads`);
     this.processQueue();
+  }
+
+  /**
+   * Ensure base directory exists (lazy — only on first download)
+   */
+  private ensureBaseDirExists(): void {
+    if (this.baseDirEnsured) return;
+    this.ensureDirectory(this.baseDir);
+    this.baseDirEnsured = true;
   }
 
   /**
