@@ -9,8 +9,10 @@ import React, {
   useEffect,
   useCallback,
   useDeferredValue,
+  useRef,
 } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { getEventId, positionEvents } from './calendarHelpers';
 import {
   ChevronLeft,
   ChevronRight,
@@ -132,6 +134,29 @@ export function CalendarPage() {
 
   // Highlighted task for "View in Calendar" navigation
   const [highlightedTaskId, setHighlightedTaskId] = useState<number | null>(null);
+
+  // Keyboard focus state
+  // focusedDate = ISO date string 'YYYY-MM-DD' of the focused day cell (Month/Week)
+  // focusedEventId = id of the sub-focused event within that day (or current day in Day view)
+  const [focusedDate, setFocusedDate] = useState<string | null>(() => {
+    return sessionStorage.getItem('calendar-focus-date') || null;
+  });
+  const [focusedEventId, setFocusedEventId] = useState<string | null>(() => {
+    return sessionStorage.getItem('calendar-focus-event') || null;
+  });
+  useEffect(() => {
+    if (focusedDate) sessionStorage.setItem('calendar-focus-date', focusedDate);
+    else sessionStorage.removeItem('calendar-focus-date');
+  }, [focusedDate]);
+  useEffect(() => {
+    if (focusedEventId) sessionStorage.setItem('calendar-focus-event', focusedEventId);
+    else sessionStorage.removeItem('calendar-focus-event');
+  }, [focusedEventId]);
+
+  // Keyboard mode for filter interaction
+  type KeyMode = 'events' | 'filters-courses' | 'filters-deadline' | 'filters-priority';
+  const [keyMode, setKeyMode] = useState<KeyMode>('events');
+  const [filterFocusIndex, setFilterFocusIndex] = useState(0);
 
   // Drag-and-drop
   const handleImportReady = useCallback((content: string, preview: ICSImportPreview) => {
@@ -382,6 +407,60 @@ export function CalendarPage() {
     });
   }, [events, deferredVisibleRange]);
 
+  // Sorted flat list of focusable events for keyboard navigation
+  const focusableEvents = useMemo(() => {
+    return [...visibleEvents].sort((a, b) => {
+      const da =
+        a.type === 'task'
+          ? new Date(a.task.dueAt!).getTime()
+          : new Date(a.event.startAt).getTime();
+      const db =
+        b.type === 'task'
+          ? new Date(b.task.dueAt!).getTime()
+          : new Date(b.event.startAt).getTime();
+      return da - db;
+    });
+  }, [visibleEvents]);
+
+  const focusedEvent = useMemo(() => {
+    if (!focusedEventId) return null;
+    return focusableEvents.find((e) => getEventId(e) === focusedEventId) || null;
+  }, [focusableEvents, focusedEventId]);
+
+  // Helper: convert a Date → 'YYYY-MM-DD' local date string
+  const toISODate = useCallback((d: Date): string => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }, []);
+  // Helper: parse 'YYYY-MM-DD' → Date at local midnight
+  const fromISODate = useCallback((iso: string): Date => {
+    const [y, m, d] = iso.split('-').map(Number);
+    return new Date(y, m - 1, d);
+  }, []);
+  // Get events on a specific date, sorted by start time
+  const getEventsOnDate = useCallback(
+    (dateISO: string): CalendarEvent[] => {
+      const target = fromISODate(dateISO);
+      return focusableEvents.filter((e) => {
+        const d =
+          e.type === 'task' && e.task.dueAt
+            ? new Date(e.task.dueAt)
+            : e.type === 'imported'
+              ? new Date(e.event.startAt)
+              : null;
+        if (!d) return false;
+        return (
+          d.getFullYear() === target.getFullYear() &&
+          d.getMonth() === target.getMonth() &&
+          d.getDate() === target.getDate()
+        );
+      });
+    },
+    [focusableEvents, fromISODate]
+  );
+
   // Get visible courses
   const visibleCourses = useMemo(() => {
     const courseIds = new Set(
@@ -434,60 +513,54 @@ export function CalendarPage() {
 
   const goToToday = () => setCurrentDate(new Date());
 
-  const cycleView = () => {
+  const cycleView = useCallback(() => {
     const order: CalendarView[] = ['month', 'week', 'day'];
     const idx = order.indexOf(view);
     setView(order[(idx + 1) % order.length]);
-  };
-
-  // Keyboard shortcuts
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.ctrlKey || e.metaKey || e.altKey) return;
-      const target = e.target as HTMLElement | null;
-      const tag = target?.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-      if (target?.isContentEditable) return;
-
-      switch (e.key) {
-        case 'ArrowLeft':
-          e.preventDefault();
-          goToPrevious();
-          break;
-        case 'ArrowRight':
-          e.preventDefault();
-          goToNext();
-          break;
-        case 'Tab': {
-          e.preventDefault();
-          const order: CalendarView[] = ['month', 'week', 'day'];
-          const idx = order.indexOf(view);
-          const next = e.shiftKey
-            ? (idx - 1 + order.length) % order.length
-            : (idx + 1) % order.length;
-          setView(order[next]);
-          break;
-        }
-        case 't':
-        case 'T':
-          e.preventDefault();
-          goToToday();
-          break;
-        case 'v':
-        case 'V':
-          e.preventDefault();
-          cycleView();
-          break;
-        case 'f':
-        case 'F':
-          e.preventDefault();
-          setShowFilters((prev) => !prev);
-          break;
-      }
-    };
-    document.addEventListener('keydown', handler);
-    return () => document.removeEventListener('keydown', handler);
   }, [view]);
+
+  // Track modal open state for hotkey gating
+  const isAnyModalOpenRef = useRef(false);
+
+  // When the view mode changes, snap the focused date to the current period.
+  // (We don't run this on every visibleRange change because shiftDay advances the
+  // period itself when needed, and a naive snap-back would fight that.)
+  const prevViewRef = useRef(view);
+  useEffect(() => {
+    if (prevViewRef.current === view) return;
+    prevViewRef.current = view;
+    if (!focusedDate) return;
+    const d = fromISODate(focusedDate);
+    if (d < visibleRange.start || d > visibleRange.end) {
+      setFocusedDate(toISODate(currentDate));
+      setFocusedEventId(null);
+    }
+  }, [view, visibleRange, focusedDate, currentDate, fromISODate, toISODate]);
+
+  // Scroll focused element into view when focus changes
+  useEffect(() => {
+    const rafId = requestAnimationFrame(() => {
+      // Prefer focused event; fall back to focused day cell
+      if (focusedEventId) {
+        const el = document.querySelector(
+          `[data-calendar-event-id="${CSS.escape(focusedEventId)}"]`
+        );
+        if (el instanceof HTMLElement) {
+          el.scrollIntoView({ block: 'nearest', behavior: 'instant' });
+          return;
+        }
+      }
+      if (focusedDate) {
+        const el = document.querySelector(
+          `[data-calendar-date="${CSS.escape(focusedDate)}"]`
+        );
+        if (el instanceof HTMLElement) {
+          el.scrollIntoView({ block: 'nearest', behavior: 'instant' });
+        }
+      }
+    });
+    return () => cancelAnimationFrame(rafId);
+  }, [focusedEventId, focusedDate]);
 
   // Filter handlers
   const toggleCourseFilter = (courseId: number) => {
@@ -772,6 +845,555 @@ export function CalendarPage() {
     }
   };
 
+  // Helper to open edit modal for any CalendarEvent (task or imported)
+  const openEditForEvent = (event: CalendarEvent) => {
+    if (event.type === 'imported') {
+      handleOpenEditEvent(event.event);
+    } else if (event.type === 'task') {
+      const directEvent = event.task.calendarEventId
+        ? calendarEvents.find((e) => e.id === event.task.calendarEventId)
+        : null;
+      if (directEvent) {
+        handleOpenEditEvent(directEvent);
+        return;
+      }
+      const linkedEvent = calendarEvents.find((e) => e.taskId === event.task.id);
+      if (linkedEvent) handleOpenEditEvent(linkedEvent);
+    }
+  };
+
+  // Update modal-open ref for hotkey gating
+  useEffect(() => {
+    isAnyModalOpenRef.current =
+      !!selectedEvent ||
+      showEventFormModal ||
+      !!alertDialog ||
+      showImportModal ||
+      showDuplicateModal;
+  });
+
+  // Keyboard shortcuts (document-level so focus target doesn't matter)
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (target?.isContentEditable) return;
+      if (isAnyModalOpenRef.current) return;
+
+      // Long-combo filter shortcuts (Alt+Shift+...)
+      if (e.altKey && e.shiftKey && !e.ctrlKey && !e.metaKey) {
+        const key = e.key.toLowerCase();
+        if (key === 'd') {
+          e.preventDefault();
+          const order: DeadlineFilter[] = [
+            'all',
+            'overdue',
+            'today',
+            'this-week',
+            'this-month',
+          ];
+          const idx = order.indexOf(deadlineFilter);
+          setDeadlineFilter(order[(idx + 1) % order.length]);
+          return;
+        }
+        if (key === 'p') {
+          e.preventDefault();
+          const order: PriorityFilter[] = ['all', 'high', 'medium', 'low'];
+          const idx = order.indexOf(priorityFilter);
+          setPriorityFilter(order[(idx + 1) % order.length]);
+          return;
+        }
+        if (key === 'c') {
+          e.preventDefault();
+          clearFilters();
+          return;
+        }
+      }
+
+      // Alt+1..9 toggles course filter by index
+      if (e.altKey && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+        const digit = parseInt(e.key, 10);
+        if (digit >= 1 && digit <= 9 && courses[digit - 1]) {
+          e.preventDefault();
+          toggleCourseFilter(courses[digit - 1].id);
+          return;
+        }
+      }
+
+      // Filter mode: W/S navigates, Space toggles
+      if (keyMode !== 'events' && showFilters) {
+        if (e.ctrlKey || e.metaKey || e.altKey) return;
+        const key = e.key.toLowerCase();
+
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          setKeyMode('events');
+          return;
+        }
+
+        if (key === 'w' || key === 's') {
+          e.preventDefault();
+          const maxByMode: Record<Exclude<KeyMode, 'events'>, number> = {
+            'filters-courses': courses.length,
+            'filters-deadline': 5,
+            'filters-priority': 4,
+          };
+          const max = maxByMode[keyMode];
+          if (max > 0) {
+            setFilterFocusIndex((prev) => {
+              const next = key === 'w' ? prev - 1 : prev + 1;
+              return ((next % max) + max) % max;
+            });
+          }
+          return;
+        }
+
+        if (e.key === ' ' || e.key === 'Enter') {
+          e.preventDefault();
+          if (keyMode === 'filters-courses' && courses[filterFocusIndex]) {
+            toggleCourseFilter(courses[filterFocusIndex].id);
+          } else if (keyMode === 'filters-deadline') {
+            const opts: DeadlineFilter[] = [
+              'all',
+              'overdue',
+              'today',
+              'this-week',
+              'this-month',
+            ];
+            setDeadlineFilter(opts[filterFocusIndex]);
+          } else if (keyMode === 'filters-priority') {
+            const opts: PriorityFilter[] = ['all', 'high', 'medium', 'low'];
+            setPriorityFilter(opts[filterFocusIndex]);
+          }
+          return;
+        }
+      }
+
+      // Ctrl/Cmd + Arrow = prev/next period (month/week/day) + carry focus anchor
+      if ((e.ctrlKey || e.metaKey) && !e.altKey) {
+        if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+          e.preventDefault();
+          const delta = e.key === 'ArrowLeft' ? -1 : 1;
+          const newDate = new Date(currentDate);
+          if (view === 'month') newDate.setMonth(newDate.getMonth() + delta);
+          else if (view === 'week') newDate.setDate(newDate.getDate() + 7 * delta);
+          else newDate.setDate(newDate.getDate() + delta);
+          setCurrentDate(newDate);
+          // Move the focus anchor to the new period so subsequent direction keys
+          // pick up from the new period instead of the old one
+          setFocusedDate(toISODate(newDate));
+          setFocusedEventId(null);
+          return;
+        }
+      }
+
+      // Plain modifier-free keys
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+      // Helpers used below — compute current focused day anchor per view
+      const anchorISO = focusedDate ?? toISODate(currentDate);
+
+      // Get event start time as Date
+      const getEventStartAt = (ev: CalendarEvent): Date | null => {
+        if (ev.type === 'task' && ev.task.dueAt) return new Date(ev.task.dueAt);
+        if (ev.type === 'imported') return new Date(ev.event.startAt);
+        return null;
+      };
+
+      // Week view A/D: navigate horizontally with 3-step fallback.
+      //   1. Within same-hour overlap group on the focused day (sorted by minute)
+      //   2. Closest event (by time-of-day) on the adjacent day
+      //   3. Fall back to Q/E behavior (shift day column)
+      // Pick the visually leftmost (direction=+1, coming from left) or rightmost
+      // (direction=-1, coming from right) event in a day's 11pm-style overlap row.
+      // Uses positionEvents for column info; falls back to sort order for non-timed events.
+      const pickEdgeEventOfDay = (
+        dayEvents: CalendarEvent[],
+        direction: 1 | -1
+      ): CalendarEvent | null => {
+        if (dayEvents.length === 0) return null;
+        const positioned = positionEvents(dayEvents);
+        if (positioned.length === 0) {
+          // All-day/no-time events: fall back to chronological first/last
+          return direction > 0 ? dayEvents[0] : dayEvents[dayEvents.length - 1];
+        }
+        // Prefer latest-time events (likely the last row the user sees on their way in)
+        const maxStart = Math.max(
+          ...positioned.map((p) => {
+            const d =
+              p.event.type === 'task' && p.event.task.dueAt
+                ? new Date(p.event.task.dueAt).getTime()
+                : p.event.type === 'imported'
+                  ? new Date(p.event.event.startAt).getTime()
+                  : 0;
+            return d;
+          })
+        );
+        const latestRow = positioned.filter((p) => {
+          const d =
+            p.event.type === 'task' && p.event.task.dueAt
+              ? new Date(p.event.task.dueAt).getTime()
+              : p.event.type === 'imported'
+                ? new Date(p.event.event.startAt).getTime()
+                : 0;
+          return d === maxStart;
+        });
+        // direction > 0 (D, coming from left) → leftmost column; direction < 0 (A) → rightmost
+        latestRow.sort((a, b) => a.column - b.column);
+        return direction > 0 ? latestRow[0].event : latestRow[latestRow.length - 1].event;
+      };
+
+      const navigateWeekHorizontal = (direction: 1 | -1) => {
+        // No focused event: if the focused day has events, pick the edge event
+        // (leftmost when going right, rightmost when going left) so A/D feels spatial.
+        // Otherwise fall back to Q/E mode (day-column shift).
+        if (!focusedEvent) {
+          const dayISO = focusedDate ?? toISODate(currentDate);
+          const dayEvents = getEventsOnDate(dayISO);
+          const edge = pickEdgeEventOfDay(dayEvents, direction);
+          if (edge) {
+            setFocusedEventId(getEventId(edge));
+            if (!focusedDate) setFocusedDate(dayISO);
+            return;
+          }
+          shiftDay(direction);
+          return;
+        }
+        const curStart = getEventStartAt(focusedEvent);
+        if (!curStart) return;
+        const curDayISO = toISODate(curStart);
+
+        // Step 1: same-hour group on same day
+        const sameHourGroup = getEventsOnDate(curDayISO)
+          .filter((ev) => {
+            const s = getEventStartAt(ev);
+            return s && s.getHours() === curStart.getHours();
+          })
+          .sort((a, b) => {
+            const sa = getEventStartAt(a)!.getTime();
+            const sb = getEventStartAt(b)!.getTime();
+            return sa - sb;
+          });
+        const idxInGroup = sameHourGroup.findIndex(
+          (ev) => getEventId(ev) === getEventId(focusedEvent)
+        );
+        if (idxInGroup >= 0) {
+          const nextIdx = idxInGroup + direction;
+          if (nextIdx >= 0 && nextIdx < sameHourGroup.length) {
+            setFocusedEventId(getEventId(sameHourGroup[nextIdx]));
+            return;
+          }
+        }
+
+        // Step 2: closest event on adjacent day (by time-of-day, then visual edge on ties)
+        const curMinutes = curStart.getHours() * 60 + curStart.getMinutes();
+        for (let offset = 1; offset <= 7; offset++) {
+          const adjDate = fromISODate(curDayISO);
+          adjDate.setDate(adjDate.getDate() + direction * offset);
+          const adjEvents = getEventsOnDate(toISODate(adjDate));
+          if (adjEvents.length === 0) continue;
+          // Find the closest time-of-day
+          let bestMinutes: number | null = null;
+          let bestDelta = Infinity;
+          for (const ev of adjEvents) {
+            const s = getEventStartAt(ev);
+            if (!s) continue;
+            const m = s.getHours() * 60 + s.getMinutes();
+            const delta = Math.abs(m - curMinutes);
+            if (delta < bestDelta) {
+              bestDelta = delta;
+              bestMinutes = m;
+            }
+          }
+          // Events tied at the closest time — pick visual edge
+          const tiedGroup = adjEvents.filter((ev) => {
+            const s = getEventStartAt(ev);
+            return s && s.getHours() * 60 + s.getMinutes() === bestMinutes;
+          });
+          const edge = pickEdgeEventOfDay(tiedGroup, direction) ?? adjEvents[0];
+          setFocusedEventId(getEventId(edge));
+          setFocusedDate(toISODate(adjDate));
+          // Advance currentDate if the adjacent day is outside the visible week
+          const weekStart = new Date(currentDate);
+          weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+          weekStart.setHours(0, 0, 0, 0);
+          const weekEnd = new Date(weekStart);
+          weekEnd.setDate(weekEnd.getDate() + 6);
+          weekEnd.setHours(23, 59, 59, 999);
+          if (adjDate < weekStart || adjDate > weekEnd) setCurrentDate(adjDate);
+          return;
+        }
+
+        // Step 3: neither A nor B fired — fall back to Q/E mode (day-column shift)
+        shiftDay(direction);
+      };
+
+      const shiftDay = (deltaDays: number) => {
+        const d = fromISODate(anchorISO);
+        d.setDate(d.getDate() + deltaDays);
+        setFocusedDate(toISODate(d));
+        setFocusedEventId(null);
+
+        // If the new focused date crosses the period boundary, advance the view too.
+        // Month: advance when the year/month differs from the display month.
+        // Week: advance when outside the current 7-day window.
+        if (view === 'month') {
+          if (
+            d.getFullYear() !== currentDate.getFullYear() ||
+            d.getMonth() !== currentDate.getMonth()
+          ) {
+            setCurrentDate(d);
+          }
+        } else if (view === 'week') {
+          const weekStart = new Date(currentDate);
+          weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+          weekStart.setHours(0, 0, 0, 0);
+          const weekEnd = new Date(weekStart);
+          weekEnd.setDate(weekEnd.getDate() + 6);
+          weekEnd.setHours(23, 59, 59, 999);
+          if (d < weekStart || d > weekEnd) {
+            setCurrentDate(d);
+          }
+        }
+      };
+      const cycleEventsInDay = (delta: 1 | -1) => {
+        const events = getEventsOnDate(anchorISO);
+        if (events.length === 0) return;
+        if (!focusedDate) setFocusedDate(anchorISO);
+        setFocusedEventId((prev) => {
+          if (!prev) {
+            return getEventId(delta > 0 ? events[0] : events[events.length - 1]);
+          }
+          const idx = events.findIndex((ev) => getEventId(ev) === prev);
+          if (idx < 0) return getEventId(events[0]);
+          const nextIdx = (idx + delta + events.length) % events.length;
+          return getEventId(events[nextIdx]);
+        });
+      };
+
+      switch (e.key) {
+        // Horizontal day navigation (arrows + A/D)
+        // In Week view, A/D cycles events chronologically across the week; Q/E jumps day columns
+        case 'ArrowLeft':
+        case 'a':
+        case 'A':
+          e.preventDefault();
+          if (view === 'day') {
+            goToPrevious();
+          } else if (view === 'week') {
+            navigateWeekHorizontal(-1);
+          } else {
+            // Month
+            if (!focusedDate) setFocusedDate(toISODate(currentDate));
+            else shiftDay(-1);
+          }
+          break;
+        case 'ArrowRight':
+        case 'd':
+        case 'D':
+          // Shift+D enters Deadline filter mode when filter panel is open
+          if (e.key === 'D' && e.shiftKey && showFilters) {
+            e.preventDefault();
+            setKeyMode('filters-deadline');
+            setFilterFocusIndex(0);
+            break;
+          }
+          e.preventDefault();
+          if (view === 'day') {
+            goToNext();
+          } else if (view === 'week') {
+            navigateWeekHorizontal(1);
+          } else {
+            if (!focusedDate) setFocusedDate(toISODate(currentDate));
+            else shiftDay(1);
+          }
+          break;
+        // Q / E — day-column navigation in Week view
+        case 'q':
+        case 'Q':
+          if (view === 'week') {
+            e.preventDefault();
+            if (!focusedDate) setFocusedDate(toISODate(currentDate));
+            else shiftDay(-1);
+          }
+          break;
+        case 'e':
+        case 'E':
+          if (view === 'week') {
+            e.preventDefault();
+            if (!focusedDate) setFocusedDate(toISODate(currentDate));
+            else shiftDay(1);
+            break;
+          }
+          // Non-Week view: E = edit focused event (handled below)
+          if (focusedEvent) {
+            e.preventDefault();
+            openEditForEvent(focusedEvent);
+          }
+          break;
+        case 'Tab': {
+          e.preventDefault();
+          const order: CalendarView[] = ['month', 'week', 'day'];
+          const idx = order.indexOf(view);
+          const next = e.shiftKey
+            ? (idx - 1 + order.length) % order.length
+            : (idx + 1) % order.length;
+          setView(order[next]);
+          break;
+        }
+        case 't':
+        case 'T':
+          e.preventDefault();
+          goToToday();
+          // Also move focus to today's cell so the highlight jumps with the navigation
+          setFocusedDate(toISODate(new Date()));
+          setFocusedEventId(null);
+          break;
+        case 'v':
+        case 'V':
+          e.preventDefault();
+          cycleView();
+          break;
+        case 'f':
+        case 'F':
+          e.preventDefault();
+          setShowFilters((prev) => {
+            const next = !prev;
+            setKeyMode(next ? 'filters-courses' : 'events');
+            setFilterFocusIndex(0);
+            return next;
+          });
+          break;
+        case 'c':
+        case 'C':
+          if (showFilters) {
+            e.preventDefault();
+            setKeyMode('filters-courses');
+            setFilterFocusIndex(0);
+          }
+          break;
+        case 'p':
+        case 'P':
+          if (showFilters) {
+            e.preventDefault();
+            setKeyMode('filters-priority');
+            setFilterFocusIndex(0);
+          }
+          break;
+        // Vertical navigation (W/S and ArrowUp/ArrowDown behave identically)
+        case 'ArrowUp':
+        case 'w':
+        case 'W':
+          e.preventDefault();
+          if (view === 'month' && !e.shiftKey) {
+            // Month: move focused day cell up 7 days
+            if (!focusedDate) setFocusedDate(toISODate(currentDate));
+            else shiftDay(-7);
+          } else {
+            // Week/Day or Month+Shift: cycle events within focused day backward
+            cycleEventsInDay(-1);
+          }
+          break;
+        case 'ArrowDown':
+        case 's':
+        case 'S':
+          e.preventDefault();
+          if (view === 'month' && !e.shiftKey) {
+            if (!focusedDate) setFocusedDate(toISODate(currentDate));
+            else shiftDay(7);
+          } else {
+            cycleEventsInDay(1);
+          }
+          break;
+        // Event actions
+        case 'Enter':
+          if (focusedEvent) {
+            e.preventDefault();
+            setSelectedEvent(focusedEvent);
+          } else if (focusedDate) {
+            e.preventDefault();
+            const dayEvents = getEventsOnDate(focusedDate);
+            if (dayEvents.length === 0) {
+              // Empty day cell — open create form with that date
+              const d = fromISODate(focusedDate);
+              d.setHours(9, 0, 0, 0);
+              setCurrentDate(d);
+              setEventToEdit(null);
+              setShowEventFormModal(true);
+            } else if (dayEvents.length === 1) {
+              setSelectedEvent(dayEvents[0]);
+            } else {
+              // Multiple events — focus the first and open its detail
+              setFocusedEventId(getEventId(dayEvents[0]));
+              setSelectedEvent(dayEvents[0]);
+            }
+          }
+          break;
+        case 'n':
+        case 'N':
+          e.preventDefault();
+          // Pre-fill date from focus if any
+          if (focusedDate) {
+            const d = fromISODate(focusedDate);
+            if (focusedEvent) {
+              const src =
+                focusedEvent.type === 'task' && focusedEvent.task.dueAt
+                  ? new Date(focusedEvent.task.dueAt)
+                  : focusedEvent.type === 'imported'
+                    ? new Date(focusedEvent.event.startAt)
+                    : d;
+              d.setHours(src.getHours(), src.getMinutes(), 0, 0);
+            } else {
+              d.setHours(9, 0, 0, 0);
+            }
+            setCurrentDate(d);
+          }
+          setEventToEdit(null);
+          setShowEventFormModal(true);
+          break;
+        case 'x':
+        case 'X':
+          if (focusedEvent?.type === 'task') {
+            e.preventDefault();
+            handleToggleTaskComplete(focusedEvent.task);
+          }
+          break;
+        case 'Escape':
+          if (keyMode !== 'events') {
+            e.preventDefault();
+            setKeyMode('events');
+          } else if (focusedEventId) {
+            e.preventDefault();
+            setFocusedEventId(null);
+          } else if (focusedDate) {
+            e.preventDefault();
+            setFocusedDate(null);
+          }
+          break;
+      }
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [
+    view,
+    currentDate,
+    focusableEvents,
+    focusedEvent,
+    focusedEventId,
+    focusedDate,
+    showFilters,
+    keyMode,
+    filterFocusIndex,
+    courses,
+    deadlineFilter,
+    priorityFilter,
+    cycleView,
+    toISODate,
+    fromISODate,
+    getEventsOnDate,
+  ]);
+
   return (
     <div
       style={styles.page}
@@ -943,6 +1565,16 @@ export function CalendarPage() {
           onDeadlineFilterChange={setDeadlineFilter}
           onPriorityFilterChange={setPriorityFilter}
           onClearFilters={clearFilters}
+          keyboardSection={
+            keyMode === 'filters-courses'
+              ? 'courses'
+              : keyMode === 'filters-deadline'
+                ? 'deadline'
+                : keyMode === 'filters-priority'
+                  ? 'priority'
+                  : null
+          }
+          keyboardIndex={filterFocusIndex}
         />
       )}
 
@@ -969,6 +1601,8 @@ export function CalendarPage() {
         onDateClick={handleDateClick}
         onCourseClick={(courseId) => navigate(`/course/${courseId}`)}
         highlightedTaskId={highlightedTaskId}
+        focusedEventId={focusedEventId}
+        focusedDate={focusedDate}
       />
 
       {/* Course Legend */}

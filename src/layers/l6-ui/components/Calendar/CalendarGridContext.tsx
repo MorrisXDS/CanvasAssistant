@@ -98,6 +98,10 @@ interface CalendarGridContextType {
   onDateClick?: (date: Date) => void;
   onCourseClick?: (courseId: number) => void;
   highlightedTaskId: number | null;
+  /** Event id currently focused via keyboard (draws a blue outline) */
+  focusedEventId: string | null;
+  /** ISO date 'YYYY-MM-DD' of the focused day cell (Month/Week views) */
+  focusedDate: string | null;
 
   // State
   popup: PopupState | null;
@@ -165,6 +169,8 @@ interface CalendarGridProviderProps {
   onDateClick?: (date: Date) => void;
   onCourseClick?: (courseId: number) => void;
   highlightedTaskId?: number | null;
+  focusedEventId?: string | null;
+  focusedDate?: string | null;
 }
 
 export function CalendarGridProvider({
@@ -177,6 +183,8 @@ export function CalendarGridProvider({
   onDateClick,
   onCourseClick,
   highlightedTaskId = null,
+  focusedEventId = null,
+  focusedDate = null,
 }: CalendarGridProviderProps) {
   // State
   const [popup, setPopup] = useState<PopupState | null>(null);
@@ -557,6 +565,8 @@ export function CalendarGridProvider({
     onDateClick,
     onCourseClick,
     highlightedTaskId,
+    focusedEventId,
+    focusedDate,
     popup,
     setPopup,
     hoveredEventId,

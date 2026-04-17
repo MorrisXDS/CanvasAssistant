@@ -25,6 +25,8 @@ export function MonthView() {
     onDateClick,
     containerRef,
     hoveredEventId,
+    focusedEventId,
+    focusedDate,
     courseMatches,
     getEffectiveEventColor,
     getEventsForDate,
@@ -36,6 +38,14 @@ export function MonthView() {
     renderPopup,
     renderDetailModal,
   } = useCalendarGrid();
+
+  // Convert Date to 'YYYY-MM-DD' for comparison with focusedDate
+  const toISODateLocal = (d: Date): string => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
 
   // Track month changes for fade transition
   const [displayDate, setDisplayDate] = useState(currentDate);
@@ -95,15 +105,26 @@ export function MonthView() {
             day: 'numeric',
           });
 
+          const cellISO = toISODateLocal(date);
+          const isFocusedDay = focusedDate === cellISO;
           return (
             <div
               key={index}
+              data-calendar-date={cellISO}
               style={{
                 ...styles.dayCell,
                 opacity: isCurrentMonth ? 1 : 0.4,
                 backgroundColor: isToday(date)
                   ? 'rgba(0, 127, 163, 0.08)'
                   : 'transparent',
+                ...(isFocusedDay
+                  ? {
+                      outline: '2px solid var(--color-navy)',
+                      outlineOffset: '-2px',
+                      position: 'relative',
+                      zIndex: 2,
+                    }
+                  : {}),
               }}
               onClick={() => onDateClick?.(date)}
             >
@@ -120,6 +141,7 @@ export function MonthView() {
                 {visibleEvents.map((event, i) => {
                   const eventId = getEventId(event);
                   const isHovered = hoveredEventId === eventId;
+                  const isFocused = focusedEventId === eventId;
                   const match =
                     event.type === 'imported' ? courseMatches.get(eventId) : null;
                   const effectiveColor = getEffectiveEventColor(event);
@@ -127,6 +149,7 @@ export function MonthView() {
                   return (
                     <div
                       key={i}
+                      data-calendar-event-id={eventId}
                       style={{
                         ...styles.eventPill,
                         backgroundColor: effectiveColor,
@@ -136,6 +159,12 @@ export function MonthView() {
                           : '0 1px 2px rgba(0,0,0,0.1)',
                         cursor: match ? 'pointer' : 'pointer',
                         opacity: isCompleted ? 0.5 : 1,
+                        ...(isFocused
+                          ? {
+                              outline: '2px solid var(--color-navy)',
+                              outlineOffset: '1px',
+                            }
+                          : {}),
                       }}
                       onClick={(e) => {
                         e.stopPropagation();

@@ -45,6 +45,10 @@ export interface CalendarGridProps {
   onDateClick?: (date: Date) => void;
   onCourseClick?: (courseId: number) => void;
   highlightedTaskId?: number | null;
+  /** Id of the event currently focused via keyboard (draws a blue outline) */
+  focusedEventId?: string | null;
+  /** ISO date 'YYYY-MM-DD' of the focused day cell */
+  focusedDate?: string | null;
 }
 
 /**
@@ -184,6 +188,8 @@ export function CalendarGrid({
   onDateClick,
   onCourseClick,
   highlightedTaskId,
+  focusedEventId,
+  focusedDate,
 }: CalendarGridProps) {
   return (
     <CalendarGridProvider
@@ -195,6 +201,8 @@ export function CalendarGrid({
       onDateClick={onDateClick}
       onCourseClick={onCourseClick}
       highlightedTaskId={highlightedTaskId}
+      focusedEventId={focusedEventId}
+      focusedDate={focusedDate}
     >
       <CalendarGridInner />
     </CalendarGridProvider>

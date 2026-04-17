@@ -36,6 +36,7 @@ export function DayView() {
     currentTime,
     dayGridRef,
     hoveredEventId,
+    focusedEventId,
     courseMatches,
     getEffectiveEventColor,
     getEventsForDate,
@@ -80,11 +81,13 @@ export function DayView() {
               {allDayEvents.map((event, i) => {
                 const eventId = getEventId(event);
                 const isHovered = hoveredEventId === eventId;
+                const isFocused = focusedEventId === eventId;
                 const effectiveColor = getEffectiveEventColor(event);
                 const isCompleted = isCompletedTask(event);
                 return (
                   <div
                     key={i}
+                    data-calendar-event-id={eventId}
                     style={{
                       ...styles.dayAllDayEvent,
                       backgroundColor: effectiveColor,
@@ -93,6 +96,12 @@ export function DayView() {
                         ? '0 4px 12px rgba(0,0,0,0.2)'
                         : '0 1px 3px rgba(0,0,0,0.12)',
                       opacity: isCompleted ? 0.5 : 1,
+                      ...(isFocused
+                        ? {
+                            outline: '2px solid var(--color-navy)',
+                            outlineOffset: '1px',
+                          }
+                        : {}),
                     }}
                     onClick={() => handleEventClick(event)}
                     onMouseEnter={(e) => handleEventHover(e, event)}
@@ -146,6 +155,7 @@ export function DayView() {
               {positionedDayEvents.map((pe) => {
                 const eventId = getEventId(pe.event);
                 const isHovered = hoveredEventId === eventId;
+                const isFocused = focusedEventId === eventId;
                 const isInProgress =
                   isEventInProgress(pe.event, currentTime) &&
                   isSameDay(currentDate, new Date());
@@ -186,6 +196,7 @@ export function DayView() {
                 return (
                   <div
                     key={eventId}
+                    data-calendar-event-id={eventId}
                     style={{
                       ...styles.dayPositionedEvent,
                       top,
@@ -194,13 +205,19 @@ export function DayView() {
                       width,
                       backgroundColor: effectiveColor,
                       transform: isHovered ? 'scale(1.01)' : 'none',
-                      zIndex: isHovered ? 10 : isInProgress ? 5 : 1,
+                      zIndex: isFocused ? 15 : isHovered ? 10 : isInProgress ? 5 : 1,
                       boxShadow: isInProgress
                         ? `0 0 0 2px white, 0 0 12px ${effectiveColor}`
                         : isHovered
                           ? '0 4px 12px rgba(0,0,0,0.25)'
                           : '0 1px 3px rgba(0,0,0,0.12)',
                       opacity: isCompleted ? 0.5 : 1,
+                      ...(isFocused
+                        ? {
+                            outline: '2px solid var(--color-navy)',
+                            outlineOffset: '1px',
+                          }
+                        : {}),
                     }}
                     onClick={() => handleEventClick(pe.event)}
                     onMouseEnter={(e) => handleEventHover(e, pe.event)}

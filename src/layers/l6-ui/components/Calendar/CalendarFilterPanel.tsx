@@ -23,6 +23,10 @@ export interface CalendarFilterPanelProps {
   onDeadlineFilterChange: (filter: DeadlineFilter) => void;
   onPriorityFilterChange: (filter: PriorityFilter) => void;
   onClearFilters: () => void;
+  /** Which section has keyboard focus */
+  keyboardSection?: 'courses' | 'deadline' | 'priority' | null;
+  /** Index of the focused option within the active section */
+  keyboardIndex?: number;
 }
 
 export function CalendarFilterPanel({
@@ -36,7 +40,14 @@ export function CalendarFilterPanel({
   onDeadlineFilterChange,
   onPriorityFilterChange,
   onClearFilters,
+  keyboardSection = null,
+  keyboardIndex = 0,
 }: CalendarFilterPanelProps) {
+  const focusOutline = {
+    outline: '2px solid var(--color-navy)',
+    outlineOffset: '1px',
+    borderRadius: '4px',
+  } as const;
   const hasActiveFilters =
     selectedCourses !== null || deadlineFilter !== 'all' || priorityFilter !== 'all';
 
@@ -61,9 +72,10 @@ export function CalendarFilterPanel({
           </div>
         </div>
         <div style={styles.courseFilterList}>
-          {courses.map((course) => {
+          {courses.map((course, i) => {
             const color = getCourseColor(course.id, course.color);
             const selected = isCourseSelected(course.id);
+            const isKbdFocused = keyboardSection === 'courses' && keyboardIndex === i;
             return (
               <button
                 key={course.id}
@@ -71,6 +83,7 @@ export function CalendarFilterPanel({
                   ...styles.courseFilterItem,
                   opacity: selected ? 1 : 0.5,
                   borderColor: selected ? color : 'transparent',
+                  ...(isKbdFocused ? focusOutline : {}),
                 }}
                 onClick={() => onCourseToggle(course.id)}
               >
@@ -103,20 +116,24 @@ export function CalendarFilterPanel({
             { value: 'today', label: 'Today' },
             { value: 'this-week', label: 'This Week' },
             { value: 'this-month', label: 'This Month' },
-          ].map((opt) => (
-            <button
-              key={opt.value}
-              style={{
-                ...styles.filterChip,
-                backgroundColor:
-                  deadlineFilter === opt.value ? 'var(--color-navy)' : 'var(--bg-app)',
-                color: deadlineFilter === opt.value ? 'white' : 'var(--text-secondary)',
-              }}
-              onClick={() => onDeadlineFilterChange(opt.value as DeadlineFilter)}
-            >
-              {opt.label}
-            </button>
-          ))}
+          ].map((opt, i) => {
+            const isKbdFocused = keyboardSection === 'deadline' && keyboardIndex === i;
+            return (
+              <button
+                key={opt.value}
+                style={{
+                  ...styles.filterChip,
+                  backgroundColor:
+                    deadlineFilter === opt.value ? 'var(--color-navy)' : 'var(--bg-app)',
+                  color: deadlineFilter === opt.value ? 'white' : 'var(--text-secondary)',
+                  ...(isKbdFocused ? focusOutline : {}),
+                }}
+                onClick={() => onDeadlineFilterChange(opt.value as DeadlineFilter)}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -129,20 +146,24 @@ export function CalendarFilterPanel({
             { value: 'high', label: 'High' },
             { value: 'medium', label: 'Medium' },
             { value: 'low', label: 'Low' },
-          ].map((opt) => (
-            <button
-              key={opt.value}
-              style={{
-                ...styles.filterChip,
-                backgroundColor:
-                  priorityFilter === opt.value ? 'var(--color-navy)' : 'var(--bg-app)',
-                color: priorityFilter === opt.value ? 'white' : 'var(--text-secondary)',
-              }}
-              onClick={() => onPriorityFilterChange(opt.value as PriorityFilter)}
-            >
-              {opt.label}
-            </button>
-          ))}
+          ].map((opt, i) => {
+            const isKbdFocused = keyboardSection === 'priority' && keyboardIndex === i;
+            return (
+              <button
+                key={opt.value}
+                style={{
+                  ...styles.filterChip,
+                  backgroundColor:
+                    priorityFilter === opt.value ? 'var(--color-navy)' : 'var(--bg-app)',
+                  color: priorityFilter === opt.value ? 'white' : 'var(--text-secondary)',
+                  ...(isKbdFocused ? focusOutline : {}),
+                }}
+                onClick={() => onPriorityFilterChange(opt.value as PriorityFilter)}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
         </div>
       </div>
 

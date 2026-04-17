@@ -68,6 +68,8 @@ function WeekPanel({ weekSunday, events, isCurrentWeek, scrollRef }: WeekPanelPr
   const {
     currentTime,
     hoveredEventId,
+    focusedEventId,
+    focusedDate,
     highlightedTaskId,
     courseMatches,
     getEffectiveEventColor,
@@ -120,28 +122,43 @@ function WeekPanel({ weekSunday, events, isCurrentWeek, scrollRef }: WeekPanelPr
         {/* Header row with dates - sticky */}
         <div style={styles.weekHeader}>
           <div style={styles.timeGutter} />
-          {days.map((date, index) => (
-            <div
-              key={index}
-              style={{
-                ...styles.weekDayHeader,
-                backgroundColor: isToday(date)
-                  ? 'rgba(0, 127, 163, 0.08)'
-                  : 'var(--bg-card)',
-              }}
-            >
-              <span style={styles.weekDayName}>{WEEKDAYS[date.getDay()]}</span>
-              <span
+          {days.map((date, index) => {
+            const y = date.getFullYear();
+            const m = String(date.getMonth() + 1).padStart(2, '0');
+            const d = String(date.getDate()).padStart(2, '0');
+            const isFocusedCol = focusedDate === `${y}-${m}-${d}`;
+            return (
+              <div
+                key={index}
+                data-calendar-date={`${y}-${m}-${d}`}
                 style={{
-                  ...styles.weekDayNumber,
-                  backgroundColor: isToday(date) ? 'var(--color-navy)' : 'transparent',
-                  color: isToday(date) ? 'white' : 'var(--text-primary)',
+                  ...styles.weekDayHeader,
+                  backgroundColor: isToday(date)
+                    ? 'rgba(0, 127, 163, 0.08)'
+                    : 'var(--bg-card)',
+                  ...(isFocusedCol
+                    ? {
+                        outline: '2px solid var(--color-navy)',
+                        outlineOffset: '-2px',
+                        position: 'relative',
+                        zIndex: 2,
+                      }
+                    : {}),
                 }}
               >
-                {date.getDate()}
-              </span>
-            </div>
-          ))}
+                <span style={styles.weekDayName}>{WEEKDAYS[date.getDay()]}</span>
+                <span
+                  style={{
+                    ...styles.weekDayNumber,
+                    backgroundColor: isToday(date) ? 'var(--color-navy)' : 'transparent',
+                    color: isToday(date) ? 'white' : 'var(--text-primary)',
+                  }}
+                >
+                  {date.getDate()}
+                </span>
+              </div>
+            );
+          })}
         </div>
 
         {/* All-day row for tasks without specific time - sticky */}
@@ -161,11 +178,13 @@ function WeekPanel({ weekSunday, events, isCurrentWeek, scrollRef }: WeekPanelPr
                 {visibleEvents.map((event, i) => {
                   const eventId = getEventId(event);
                   const isHovered = hoveredEventId === eventId;
+                  const isFocused = focusedEventId === eventId;
                   const effectiveColor = getEffectiveEventColor(event);
                   const isCompleted = isCompletedTask(event);
                   return (
                     <div
                       key={i}
+                      data-calendar-event-id={eventId}
                       style={{
                         ...styles.weekEventPill,
                         backgroundColor: effectiveColor,
@@ -174,6 +193,12 @@ function WeekPanel({ weekSunday, events, isCurrentWeek, scrollRef }: WeekPanelPr
                           ? '0 3px 8px rgba(0,0,0,0.2)'
                           : '0 1px 2px rgba(0,0,0,0.1)',
                         opacity: isCompleted ? 0.5 : 1,
+                        ...(isFocused
+                          ? {
+                              outline: '2px solid var(--color-navy)',
+                              outlineOffset: '1px',
+                            }
+                          : {}),
                       }}
                       onClick={() => handleEventClick(event)}
                       onMouseEnter={(e) => handleEventHover(e, event)}
@@ -256,6 +281,7 @@ function WeekPanel({ weekSunday, events, isCurrentWeek, scrollRef }: WeekPanelPr
                   {positionedEvents.map((pe) => {
                     const eventId = getEventId(pe.event);
                     const isHovered = hoveredEventId === eventId;
+                    const isFocused = focusedEventId === eventId;
                     const isInProgress =
                       isEventInProgress(pe.event, currentTime) &&
                       isSameDay(date, new Date());
@@ -300,6 +326,7 @@ function WeekPanel({ weekSunday, events, isCurrentWeek, scrollRef }: WeekPanelPr
                     return (
                       <div
                         key={eventId}
+                        data-calendar-event-id={eventId}
                         data-task-id={
                           pe.event.type === 'task' ? pe.event.task.id : undefined
                         }
@@ -311,7 +338,13 @@ function WeekPanel({ weekSunday, events, isCurrentWeek, scrollRef }: WeekPanelPr
                           width,
                           backgroundColor: effectiveColor,
                           transform: isHovered ? 'scale(1.02)' : 'none',
-                          zIndex: isHovered ? 10 : isInProgress || isHighlighted ? 5 : 1,
+                          zIndex: isFocused
+                            ? 15
+                            : isHovered
+                              ? 10
+                              : isInProgress || isHighlighted
+                                ? 5
+                                : 1,
                           boxShadow:
                             isInProgress || isHighlighted
                               ? `0 0 0 2px white, 0 0 12px ${effectiveColor}`
@@ -322,6 +355,12 @@ function WeekPanel({ weekSunday, events, isCurrentWeek, scrollRef }: WeekPanelPr
                           animation: isHighlighted
                             ? 'pulse 1.5s ease-in-out infinite'
                             : undefined,
+                          ...(isFocused
+                            ? {
+                                outline: '2px solid var(--color-navy)',
+                                outlineOffset: '1px',
+                              }
+                            : {}),
                         }}
                         onClick={() => handleEventClick(pe.event)}
                         onMouseEnter={(e) => handleEventHover(e, pe.event)}
