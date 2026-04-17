@@ -41,6 +41,7 @@ const logger = createLogger('CalendarPage');
 import { CalendarFilterPanel } from './CalendarFilterPanel';
 import { CalendarMonthView } from './CalendarMonthView';
 import { CalendarWeekView } from './CalendarWeekView';
+import { useCalendarShortcuts } from '../../hooks/useCalendarShortcuts';
 
 export function CalendarPage() {
   const { tasks, courses } = useStore();
@@ -245,6 +246,15 @@ export function CalendarPage() {
   const goToToday = () => {
     setCurrentDate(new Date());
   };
+
+  // Keyboard shortcuts
+  useCalendarShortcuts({
+    goToPrev: viewMode === 'month' ? goToPrevMonth : goToPrevWeek,
+    goToNext: viewMode === 'month' ? goToNextMonth : goToNextWeek,
+    goToToday,
+    cycleView: () => setViewMode(viewMode === 'month' ? 'week' : 'month'),
+    toggleFilters: () => setShowFilters((prev) => !prev),
+  });
 
   // Toggle course selection
   const toggleCourse = (courseId: number) => {

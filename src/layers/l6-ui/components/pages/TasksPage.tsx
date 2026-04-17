@@ -14,6 +14,8 @@ import type { Task, Course } from '../../../l5-presentation/types';
 import { TaskContextMenu } from '../Course/TaskContextMenu';
 import { createLogger } from '../../utils/rendererLogger';
 import { styles } from './TasksPage.styles';
+import { useHotkeys } from 'react-hotkeys-hook';
+import { useFocusedItem } from '../../hooks/useFocusedItem';
 
 const logger = createLogger('TasksPage');
 
@@ -56,6 +58,13 @@ export function TasksPage() {
   const [newTaskType, setNewTaskType] = useState('');
 
   const courseMap = useMemo(() => new Map(courses.map((c) => [c.id, c])), [courses]);
+
+  // Keyboard shortcuts for filter tabs and add task
+  useHotkeys('1', () => setFilter('all'));
+  useHotkeys('2', () => setFilter('pending'));
+  useHotkeys('3', () => setFilter('overdue'));
+  useHotkeys('4', () => setFilter('completed'));
+  useHotkeys('n', () => setShowAddTask(true));
 
   // Process all tasks with course info
   const allTasks = useMemo(() => {
@@ -126,6 +135,26 @@ export function TasksPage() {
     };
   }, [allTasks]);
 
+  // Focused item navigation (Left/Right + J/K)
+  const { focusedIndex, focusedItem, getFocusProps } = useFocusedItem(filteredTasks, {
+    persistKey: 'tasks-page',
+  });
+
+  // X: toggle completion on focused task
+  useHotkeys('x', () => {
+    if (focusedItem) {
+      handleToggleComplete(focusedItem.task.id, focusedItem.task.isCompleted);
+    }
+  });
+
+  // Enter: open focused task in course
+  useHotkeys('enter', (e) => {
+    if (focusedItem) {
+      e.preventDefault();
+      handleTaskDoubleClick(focusedItem.task, focusedItem.course);
+    }
+  });
+
   // Context menu state
   const [contextMenu, setContextMenu] = useState<{
     task: Task & { isOptional?: boolean };
@@ -157,7 +186,10 @@ export function TasksPage() {
     try {
       await markTaskComplete(id, !isCompleted);
     } catch (error) {
-      logger.error('Failed to toggle task complete', error instanceof Error ? error : undefined);
+      logger.error(
+        'Failed to toggle task complete',
+        error instanceof Error ? error : undefined
+      );
     }
   };
 
@@ -168,7 +200,10 @@ export function TasksPage() {
     try {
       await api.dispatch('DuplicateTask', { taskId: contextMenu.task.id });
     } catch (error) {
-      logger.error('Failed to duplicate task', error instanceof Error ? error : undefined);
+      logger.error(
+        'Failed to duplicate task',
+        error instanceof Error ? error : undefined
+      );
     }
   };
 
@@ -194,7 +229,10 @@ export function TasksPage() {
         api.openExternal(result.data.canvasUrl);
       }
     } catch (error) {
-      logger.error('Failed to open task in Canvas', error instanceof Error ? error : undefined);
+      logger.error(
+        'Failed to open task in Canvas',
+        error instanceof Error ? error : undefined
+      );
     }
   };
 
@@ -280,119 +318,134 @@ export function TasksPage() {
           </div>
         ) : (
           <div style={styles.taskList}>
-            {filteredTasks.map((item, index) => (
-              <div
-                key={item.task.id}
-                style={{
-                  ...styles.taskItem,
-                  borderTop: index === 0 ? 'none' : '1px solid var(--border-light)',
-                  opacity: item.task.isCompleted ? 0.7 : 1,
-                  cursor: 'pointer',
-                }}
-                onDoubleClick={() => handleTaskDoubleClick(item.task, item.course)}
-                onContextMenu={(e) => handleTaskContextMenu(e, item.task, item.course)}
-                role="button"
-                tabIndex={0}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    handleTaskDoubleClick(item.task, item.course);
-                  }
-                }}
-              >
-                {/* Priority indicator */}
+            {filteredTasks.map((item, index) => {
+              const focusProps = getFocusProps(index);
+              return (
                 <div
+                  key={item.task.id}
+                  data-focus-index={focusProps['data-focus-index']}
                   style={{
-                    ...styles.priorityBar,
-                    backgroundColor: item.task.isCompleted
-                      ? 'var(--color-success)'
-                      : item.urgencyLevel === 'critical'
-                        ? 'var(--color-critical)'
-                        : item.urgencyLevel === 'high'
-                          ? 'var(--color-high)'
-                          : item.urgencyLevel === 'medium'
-                            ? 'var(--color-medium)'
-                            : 'var(--color-low)',
+                    ...styles.taskItem,
+                    borderTop: index === 0 ? 'none' : '1px solid var(--border-light)',
+                    opacity: item.task.isCompleted ? 0.7 : 1,
+                    cursor: 'pointer',
+                    ...(focusedIndex === index
+                      ? {
+                          outline: '2px solid var(--color-navy)',
+                          outlineOffset: '-2px',
+                          borderRadius: 'var(--radius-md)',
+                        }
+                      : {}),
                   }}
-                />
-
-                {/* Submission status indicator */}
-                <div style={styles.statusIcon}>
-                  {(item.task.submissionStatus === 'submitted' ||
-                    item.task.submissionStatus === 'graded') && (
-                    <CheckCircle
-                      size={18}
-                      color="var(--color-success)"
-                      style={{ animation: 'fadeIn 0.3s ease-out' }}
-                    />
-                  )}
-                </div>
-
-                {/* Content */}
-                <div style={styles.taskContent}>
-                  <div style={styles.taskTopRow}>
-                    <span
-                      style={{
-                        ...styles.courseCode,
-                        backgroundColor: item.course.color || 'var(--color-navy)',
-                      }}
-                    >
-                      {item.course.code.split(/\s/)[0]}
-                    </span>
-                    {!item.task.isCompleted && item.task.dueAt && (
-                      <Badge variant={item.urgencyLevel as BadgeVariant} size="sm">
-                        {formatSmartDate(item.task.dueAt)}
-                      </Badge>
-                    )}
-                  </div>
+                  onDoubleClick={() => handleTaskDoubleClick(item.task, item.course)}
+                  onContextMenu={(e) => handleTaskContextMenu(e, item.task, item.course)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleTaskDoubleClick(item.task, item.course);
+                    }
+                  }}
+                >
+                  {/* Priority indicator */}
                   <div
                     style={{
-                      ...styles.taskTitle,
-                      textDecoration: item.task.isCompleted ? 'line-through' : 'none',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 'var(--space-2)',
+                      ...styles.priorityBar,
+                      backgroundColor: item.task.isCompleted
+                        ? 'var(--color-success)'
+                        : item.urgencyLevel === 'critical'
+                          ? 'var(--color-critical)'
+                          : item.urgencyLevel === 'high'
+                            ? 'var(--color-high)'
+                            : item.urgencyLevel === 'medium'
+                              ? 'var(--color-medium)'
+                              : 'var(--color-low)',
                     }}
-                  >
-                    {item.task.title}
-                    {taskUpdates.get(item.task.id) && (
-                      <NotificationDot
-                        updateType={taskUpdates.get(item.task.id)!.updateType}
-                        size="sm"
-                        style={{ flexShrink: 0 }}
+                  />
+
+                  {/* Submission status indicator */}
+                  <div style={styles.statusIcon}>
+                    {(item.task.submissionStatus === 'submitted' ||
+                      item.task.submissionStatus === 'graded') && (
+                      <CheckCircle
+                        size={18}
+                        color="var(--color-success)"
+                        style={{ animation: 'fadeIn 0.3s ease-out' }}
                       />
                     )}
                   </div>
-                  <div style={styles.taskMeta}>
-                    {item.task.weight > 0 && (
-                      <span style={styles.taskWeight}>{item.task.weight}% weight</span>
-                    )}
-                    {item.task.grade !== null && (
-                      <span style={styles.taskGrade}>{item.task.grade.toFixed(1)}%</span>
-                    )}
-                    <span style={styles.courseName}>
-                      {item.course.nickname || item.course.name}
-                    </span>
-                  </div>
-                </div>
 
-                {/* Checkbox - right side */}
-                <button
-                  style={styles.checkbox}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleToggleComplete(item.task.id, item.task.isCompleted);
-                  }}
-                  aria-label={item.task.isCompleted ? 'Mark incomplete' : 'Mark complete'}
-                >
-                  {item.task.isCompleted ? (
-                    <CheckCircle size={24} color="var(--color-success)" />
-                  ) : (
-                    <Circle size={24} color="var(--text-muted)" />
-                  )}
-                </button>
-              </div>
-            ))}
+                  {/* Content */}
+                  <div style={styles.taskContent}>
+                    <div style={styles.taskTopRow}>
+                      <span
+                        style={{
+                          ...styles.courseCode,
+                          backgroundColor: item.course.color || 'var(--color-navy)',
+                        }}
+                      >
+                        {item.course.code.split(/\s/)[0]}
+                      </span>
+                      {!item.task.isCompleted && item.task.dueAt && (
+                        <Badge variant={item.urgencyLevel as BadgeVariant} size="sm">
+                          {formatSmartDate(item.task.dueAt)}
+                        </Badge>
+                      )}
+                    </div>
+                    <div
+                      style={{
+                        ...styles.taskTitle,
+                        textDecoration: item.task.isCompleted ? 'line-through' : 'none',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 'var(--space-2)',
+                      }}
+                    >
+                      {item.task.title}
+                      {taskUpdates.get(item.task.id) && (
+                        <NotificationDot
+                          updateType={taskUpdates.get(item.task.id)!.updateType}
+                          size="sm"
+                          style={{ flexShrink: 0 }}
+                        />
+                      )}
+                    </div>
+                    <div style={styles.taskMeta}>
+                      {item.task.weight > 0 && (
+                        <span style={styles.taskWeight}>{item.task.weight}% weight</span>
+                      )}
+                      {item.task.grade !== null && (
+                        <span style={styles.taskGrade}>
+                          {item.task.grade.toFixed(1)}%
+                        </span>
+                      )}
+                      <span style={styles.courseName}>
+                        {item.course.nickname || item.course.name}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Checkbox - right side */}
+                  <button
+                    style={styles.checkbox}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleToggleComplete(item.task.id, item.task.isCompleted);
+                    }}
+                    aria-label={
+                      item.task.isCompleted ? 'Mark incomplete' : 'Mark complete'
+                    }
+                  >
+                    {item.task.isCompleted ? (
+                      <CheckCircle size={24} color="var(--color-success)" />
+                    ) : (
+                      <Circle size={24} color="var(--text-muted)" />
+                    )}
+                  </button>
+                </div>
+              );
+            })}
           </div>
         )}
       </Card>
@@ -511,7 +564,10 @@ export function TasksPage() {
                 updates: { isOptional: !contextMenu.task.isOptional },
               });
             } catch (error) {
-              logger.error('Failed to toggle optional', error instanceof Error ? error : undefined);
+              logger.error(
+                'Failed to toggle optional',
+                error instanceof Error ? error : undefined
+              );
             }
             setContextMenu(null);
           }}

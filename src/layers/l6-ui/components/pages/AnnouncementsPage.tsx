@@ -25,6 +25,7 @@ import {
 import { Card } from '../shared';
 import { useStore } from '../../../l5-presentation/store';
 import { styles } from './AnnouncementsPage.styles';
+import { useHotkeys } from 'react-hotkeys-hook';
 
 type ReadFilter = 'all' | 'unread' | 'dismissed';
 type IntentType = 'all' | 'urgent' | 'deadline' | 'grade' | 'informational';
@@ -122,6 +123,11 @@ export function AnnouncementsPage() {
     const courseParam = searchParams.get('course');
     return courseParam ? parseInt(courseParam, 10) : null;
   });
+
+  // Keyboard shortcuts for filter tabs
+  useHotkeys('1', () => setReadFilter('all'));
+  useHotkeys('2', () => setReadFilter('unread'));
+  useHotkeys('3', () => setReadFilter('dismissed'));
 
   // Sync course filter to URL
   useEffect(() => {

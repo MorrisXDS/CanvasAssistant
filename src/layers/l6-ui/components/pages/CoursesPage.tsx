@@ -36,6 +36,7 @@ const logger = createLogger('CoursesPage');
 
 // Extracted modules
 import { styles, injectDragHandleStyles } from './coursesPageStyles';
+import { useCoursesShortcuts } from '../../hooks/useCoursesShortcuts';
 import {
   type ViewMode,
   type GradeFilter,
@@ -174,7 +175,10 @@ export function CoursesPage() {
           setArchivedCourses(result);
         }
       } catch (error) {
-        logger.error('Failed to fetch archived courses', error instanceof Error ? error : undefined);
+        logger.error(
+          'Failed to fetch archived courses',
+          error instanceof Error ? error : undefined
+        );
       } finally {
         setLoadingArchived(false);
       }
@@ -191,7 +195,10 @@ export function CoursesPage() {
         await refreshAll();
       }
     } catch (error) {
-      logger.error('Failed to unarchive course', error instanceof Error ? error : undefined);
+      logger.error(
+        'Failed to unarchive course',
+        error instanceof Error ? error : undefined
+      );
     }
   };
 
@@ -208,7 +215,10 @@ export function CoursesPage() {
         }
       }
     } catch (error) {
-      logger.error('Failed to archive course', error instanceof Error ? error : undefined);
+      logger.error(
+        'Failed to archive course',
+        error instanceof Error ? error : undefined
+      );
     }
   };
 
@@ -377,6 +387,23 @@ export function CoursesPage() {
     });
     resetCourseSelection();
   };
+
+  // Keyboard shortcuts
+  useCoursesShortcuts({
+    toggleView: () => setViewMode(viewMode === 'grid' ? 'list' : 'grid'),
+    toggleFilters: () => setShowFilters((prev) => !prev),
+    openSelected: () => {
+      // Open the first selected course, or do nothing
+      const firstKey = selectedKeys.values().next().value;
+      if (firstKey) handleCourseClick(Number(firstKey));
+    },
+    hideSelected: () => {
+      if (selectedCount > 0) handleBulkHide();
+    },
+    pinSelected: () => {
+      if (selectedCount > 0) handleBulkPin();
+    },
+  });
 
   // Clear all filters
   const clearFilters = () => {
@@ -615,7 +642,7 @@ export function CoursesPage() {
             const cardEl = (e.target as HTMLElement).closest('[data-course-id]');
             if (!cardEl) return;
             const id = Number(cardEl.getAttribute('data-course-id'));
-            const course = filteredCourses.find(c => c.id === id);
+            const course = filteredCourses.find((c) => c.id === id);
             if (course && (e.shiftKey || e.ctrlKey || e.metaKey)) {
               e.stopPropagation();
               handleCourseSelectClick(course, e);
@@ -626,7 +653,11 @@ export function CoursesPage() {
             const grades = getCachedCourseGrades(course.id, tasks);
             const updateInfo = updatesByCourse.get(course.id);
             return (
-              <div key={course.id} data-course-id={course.id} style={{ position: 'relative' }}>
+              <div
+                key={course.id}
+                data-course-id={course.id}
+                style={{ position: 'relative' }}
+              >
                 {selectMode && (
                   <div
                     style={courseSelectOverlayStyles.checkbox}
@@ -650,9 +681,15 @@ export function CoursesPage() {
                   assessed={grades.assessed}
                   onTogglePin={togglePin}
                   onToggleHide={handleToggleHide}
-                  onClick={selectMode
-                    ? () => handleCourseSelectClick(course, { shiftKey: false, ctrlKey: false, metaKey: false } as React.MouseEvent)
-                    : () => handleCourseClick(course.id)
+                  onClick={
+                    selectMode
+                      ? () =>
+                          handleCourseSelectClick(course, {
+                            shiftKey: false,
+                            ctrlKey: false,
+                            metaKey: false,
+                          } as React.MouseEvent)
+                      : () => handleCourseClick(course.id)
                   }
                   onColorClick={selectMode ? undefined : openColorPicker}
                   showColorPicker={!selectMode && colorPickerCourseId === course.id}
@@ -667,7 +704,9 @@ export function CoursesPage() {
                   hasActionRequired={updateInfo?.hasActionRequired}
                   isDragging={draggedCourseId === course.id}
                   isDragOver={dragOverCourseId === course.id}
-                  onDragStart={selectMode ? undefined : (e) => handleDragStart(e, course.id)}
+                  onDragStart={
+                    selectMode ? undefined : (e) => handleDragStart(e, course.id)
+                  }
                   onDragEnd={handleDragEnd}
                   onDragOver={(e) => handleDragOver(e, course.id)}
                   onDragLeave={handleDragLeave}
@@ -686,7 +725,7 @@ export function CoursesPage() {
             const itemEl = (e.target as HTMLElement).closest('[data-course-id]');
             if (!itemEl) return;
             const id = Number(itemEl.getAttribute('data-course-id'));
-            const course = filteredCourses.find(c => c.id === id);
+            const course = filteredCourses.find((c) => c.id === id);
             if (course && (e.shiftKey || e.ctrlKey || e.metaKey)) {
               e.stopPropagation();
               handleCourseSelectClick(course, e);
@@ -699,7 +738,11 @@ export function CoursesPage() {
               const grades = getCachedCourseGrades(course.id, tasks);
               const updateInfo = updatesByCourse.get(course.id);
               return (
-                <div key={course.id} data-course-id={course.id} style={{ display: 'flex', alignItems: 'center' }}>
+                <div
+                  key={course.id}
+                  data-course-id={course.id}
+                  style={{ display: 'flex', alignItems: 'center' }}
+                >
                   {selectMode && (
                     <div
                       style={courseSelectOverlayStyles.listCheckbox}
@@ -725,13 +768,21 @@ export function CoursesPage() {
                       onTogglePin={togglePin}
                       onToggleHide={handleToggleHide}
                       isFirst={index === 0}
-                      onClick={selectMode
-                        ? () => handleCourseSelectClick(course, { shiftKey: false, ctrlKey: false, metaKey: false } as React.MouseEvent)
-                        : () => handleCourseClick(course.id)
+                      onClick={
+                        selectMode
+                          ? () =>
+                              handleCourseSelectClick(course, {
+                                shiftKey: false,
+                                ctrlKey: false,
+                                metaKey: false,
+                              } as React.MouseEvent)
+                          : () => handleCourseClick(course.id)
                       }
                       onColorClick={selectMode ? undefined : openColorPicker}
                       showColorPicker={!selectMode && colorPickerCourseId === course.id}
-                      colorPickerValue={colorPickerCourseId === course.id ? customColor : undefined}
+                      colorPickerValue={
+                        colorPickerCourseId === course.id ? customColor : undefined
+                      }
                       onColorChange={handleColorChange}
                       onColorInputChange={setCustomColor}
                       onColorPickerClose={closeColorPicker}
@@ -851,13 +902,21 @@ function VirtualizedListItem({
             onTogglePin={data.togglePin}
             onToggleHide={data.handleToggleHide}
             isFirst={index === 0}
-            onClick={data.selectMode
-              ? () => data.handleCourseSelectClick(course, { shiftKey: false, ctrlKey: false, metaKey: false } as React.MouseEvent)
-              : () => data.handleCourseClick(course.id)
+            onClick={
+              data.selectMode
+                ? () =>
+                    data.handleCourseSelectClick(course, {
+                      shiftKey: false,
+                      ctrlKey: false,
+                      metaKey: false,
+                    } as React.MouseEvent)
+                : () => data.handleCourseClick(course.id)
             }
             onColorClick={data.selectMode ? undefined : data.openColorPicker}
             showColorPicker={!data.selectMode && data.colorPickerCourseId === course.id}
-            colorPickerValue={data.colorPickerCourseId === course.id ? data.customColor : undefined}
+            colorPickerValue={
+              data.colorPickerCourseId === course.id ? data.customColor : undefined
+            }
             onColorChange={data.handleColorChange}
             onColorInputChange={data.setCustomColor}
             onColorPickerClose={data.closeColorPicker}

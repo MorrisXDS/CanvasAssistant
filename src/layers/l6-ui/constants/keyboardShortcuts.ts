@@ -3,6 +3,9 @@
  *
  * Typed shortcut definitions used by KeyboardShortcutsModal.
  * Key tokens: "mod" resolves to ⌘ (macOS) or Ctrl (Windows/Linux).
+ *
+ * Categories with a `scope` are page-specific and only shown
+ * in the help modal when the user is on the matching page.
  */
 
 export interface ShortcutEntry {
@@ -14,10 +17,46 @@ export interface ShortcutEntry {
 
 export interface ShortcutCategory {
   title: string;
+  /** Page scope — undefined means global (always shown) */
+  scope?: string;
   shortcuts: ShortcutEntry[];
 }
 
+/** Map of route prefixes to scope identifiers */
+export const ROUTE_SCOPE_MAP: Record<string, string> = {
+  '/calendar': 'calendar',
+  '/tasks': 'tasks',
+  '/courses': 'courses',
+  '/files': 'files',
+  '/announcements': 'announcements',
+  '/course/': 'course-detail',
+  '/updates': 'updates',
+  '/': 'dashboard',
+};
+
+/**
+ * Resolve the scope for a given pathname.
+ * Checks longest prefixes first so /course/123 matches 'course-detail' before '/'.
+ */
+export function getScopeForPath(pathname: string): string | null {
+  // Check specific routes first (longer prefixes take priority)
+  const sortedPrefixes = Object.keys(ROUTE_SCOPE_MAP).sort((a, b) => b.length - a.length);
+  for (const prefix of sortedPrefixes) {
+    if (
+      pathname === prefix ||
+      pathname.startsWith(prefix + '/') ||
+      (prefix === '/' && pathname === '/')
+    ) {
+      // Special case: '/' should only match exact '/'
+      if (prefix === '/' && pathname !== '/') continue;
+      return ROUTE_SCOPE_MAP[prefix];
+    }
+  }
+  return null;
+}
+
 export const KEYBOARD_SHORTCUTS: ShortcutCategory[] = [
+  // ========== Global ==========
   {
     title: 'Navigation',
     shortcuts: [
@@ -32,7 +71,8 @@ export const KEYBOARD_SHORTCUTS: ShortcutCategory[] = [
     title: 'General',
     shortcuts: [
       { keys: ['mod', 'F'], label: 'Focus search' },
-      { keys: ['?'], label: 'Show keyboard shortcuts' },
+      { keys: ['?'], label: 'Global shortcuts' },
+      { keys: ['mod', '?'], label: 'Page shortcuts' },
     ],
   },
   {
@@ -42,6 +82,96 @@ export const KEYBOARD_SHORTCUTS: ShortcutCategory[] = [
       { keys: ['Escape'], label: 'Clear selection' },
       { keys: ['Shift', 'Click'], label: 'Range select' },
       { keys: ['mod', 'Click'], label: 'Toggle select' },
+    ],
+  },
+
+  // ========== Page-specific ==========
+  {
+    title: 'Dashboard',
+    scope: 'dashboard',
+    shortcuts: [
+      { keys: ['←', '/', 'J'], label: 'Focus previous task' },
+      { keys: ['→', '/', 'K'], label: 'Focus next task' },
+      { keys: ['X'], label: 'Toggle task completion' },
+      { keys: ['R'], label: 'Refresh / sync' },
+    ],
+  },
+  {
+    title: 'Calendar',
+    scope: 'calendar',
+    shortcuts: [
+      { keys: ['←'], label: 'Previous period' },
+      { keys: ['→'], label: 'Next period' },
+      { keys: ['T'], label: 'Go to today' },
+      { keys: ['V'], label: 'Cycle view mode' },
+      { keys: ['F'], label: 'Toggle filters' },
+    ],
+  },
+  {
+    title: 'Tasks',
+    scope: 'tasks',
+    shortcuts: [
+      { keys: ['1'], label: 'Show all tasks' },
+      { keys: ['2'], label: 'Show pending' },
+      { keys: ['3'], label: 'Show overdue' },
+      { keys: ['4'], label: 'Show completed' },
+      { keys: ['N'], label: 'Add new task' },
+      { keys: ['←', '/', 'J'], label: 'Focus previous task' },
+      { keys: ['→', '/', 'K'], label: 'Focus next task' },
+      { keys: ['X'], label: 'Toggle task completion' },
+      { keys: ['Enter'], label: 'Open task in course' },
+    ],
+  },
+  {
+    title: 'Courses',
+    scope: 'courses',
+    shortcuts: [
+      { keys: ['V'], label: 'Toggle grid/list view' },
+      { keys: ['F'], label: 'Toggle filters' },
+      { keys: ['Enter'], label: 'Open selected course' },
+      { keys: ['H'], label: 'Hide/show selected' },
+      { keys: ['P'], label: 'Pin/unpin selected' },
+    ],
+  },
+  {
+    title: 'Announcements',
+    scope: 'announcements',
+    shortcuts: [
+      { keys: ['←', '/', 'J'], label: 'Focus previous' },
+      { keys: ['→', '/', 'K'], label: 'Focus next' },
+      { keys: ['Enter'], label: 'Open announcement' },
+      { keys: ['D'], label: 'Dismiss announcement' },
+      { keys: ['1'], label: 'Show all' },
+      { keys: ['2'], label: 'Show unread' },
+      { keys: ['3'], label: 'Show dismissed' },
+    ],
+  },
+  {
+    title: 'Course Detail',
+    scope: 'course-detail',
+    shortcuts: [
+      { keys: ['N'], label: 'Create new task' },
+      { keys: ['←', '/', 'J'], label: 'Focus previous task' },
+      { keys: ['→', '/', 'K'], label: 'Focus next task' },
+      { keys: ['X'], label: 'Toggle task completion' },
+      { keys: ['E'], label: 'Edit focused task' },
+      { keys: ['Delete'], label: 'Delete focused task' },
+      { keys: ['Space'], label: 'Expand/collapse task' },
+    ],
+  },
+  {
+    title: 'Updates',
+    scope: 'updates',
+    shortcuts: [
+      { keys: ['←', '/', 'J'], label: 'Focus previous item' },
+      { keys: ['→', '/', 'K'], label: 'Focus next item' },
+      { keys: ['A'], label: 'Accept queued task' },
+      { keys: ['1'], label: 'All updates' },
+      { keys: ['2'], label: 'Tasks' },
+      { keys: ['3'], label: 'Grades' },
+      { keys: ['4'], label: 'Files' },
+      { keys: ['5'], label: 'Pages' },
+      { keys: ['6'], label: 'Announcements' },
     ],
   },
 ];

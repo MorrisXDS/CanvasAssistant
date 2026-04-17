@@ -17,6 +17,7 @@ import type { Task } from '../../../l5-presentation/types';
 import { formatGrade } from '../../constants';
 import { STORAGE_KEYS } from '../../../l5-presentation/settings';
 import { createLogger } from '../../utils/rendererLogger';
+import { useHotkeys } from 'react-hotkeys-hook';
 
 const log = createLogger('Dashboard');
 
@@ -43,30 +44,36 @@ export function Dashboard() {
 
       if (pageRef.current) {
         const pageRect = pageRef.current.getBoundingClientRect();
-        log.debug(`Page container: ${JSON.stringify({
-          width: pageRect.width,
-          height: pageRect.height,
-          maxWidth: getComputedStyle(pageRef.current).maxWidth,
-        })}`);
+        log.debug(
+          `Page container: ${JSON.stringify({
+            width: pageRect.width,
+            height: pageRect.height,
+            maxWidth: getComputedStyle(pageRef.current).maxWidth,
+          })}`
+        );
       }
 
       if (mainRowRef.current) {
         const mainRowRect = mainRowRef.current.getBoundingClientRect();
         const children = mainRowRef.current.children;
-        log.debug(`Main row: ${JSON.stringify({
-          width: mainRowRect.width,
-          flexWrap: getComputedStyle(mainRowRef.current).flexWrap,
-          childCount: children.length,
-        })}`);
+        log.debug(
+          `Main row: ${JSON.stringify({
+            width: mainRowRect.width,
+            flexWrap: getComputedStyle(mainRowRef.current).flexWrap,
+            childCount: children.length,
+          })}`
+        );
 
         Array.from(children).forEach((child, i) => {
           const rect = child.getBoundingClientRect();
           const style = getComputedStyle(child);
-          log.debug(`Child ${i}: ${JSON.stringify({
-            width: rect.width,
-            flex: style.flex,
-            minWidth: style.minWidth,
-          })}`);
+          log.debug(
+            `Child ${i}: ${JSON.stringify({
+              width: rect.width,
+              flex: style.flex,
+              minWidth: style.minWidth,
+            })}`
+          );
         });
       }
     };
@@ -95,6 +102,26 @@ export function Dashboard() {
   const state = useStore();
 
   const viewModel = useDashboardViewModel(state);
+
+  // Keyboard shortcuts
+  useHotkeys('r', () => {
+    if (state.syncStatus !== 'syncing') {
+      let termSelection: 'all' | 'auto' | string = 'auto';
+      try {
+        const academicSettings = localStorage.getItem(STORAGE_KEYS.ACADEMIC);
+        if (academicSettings) {
+          const settings = JSON.parse(academicSettings);
+          termSelection = settings.termSelection || 'auto';
+        }
+      } catch (e) {
+        log.error(
+          'Failed to parse academic settings',
+          e instanceof Error ? e : undefined
+        );
+      }
+      state.triggerSync('full', { termSelection });
+    }
+  });
 
   // Modal states
   const [showPendingTasksModal, setShowPendingTasksModal] = useState(false);
@@ -251,7 +278,10 @@ export function Dashboard() {
     try {
       await markTaskComplete(id, !isCompleted);
     } catch (error) {
-      log.error('Failed to toggle task complete', error instanceof Error ? error : undefined);
+      log.error(
+        'Failed to toggle task complete',
+        error instanceof Error ? error : undefined
+      );
     }
   };
 
@@ -288,7 +318,10 @@ export function Dashboard() {
         api.openExternal(result.data.canvasUrl);
       }
     } catch (error) {
-      log.error('Failed to open task in Canvas', error instanceof Error ? error : undefined);
+      log.error(
+        'Failed to open task in Canvas',
+        error instanceof Error ? error : undefined
+      );
     }
   };
 
@@ -356,7 +389,10 @@ export function Dashboard() {
                 termSelection = settings.termSelection || 'auto';
               }
             } catch (e) {
-              log.error('Failed to parse academic settings', e instanceof Error ? e : undefined);
+              log.error(
+                'Failed to parse academic settings',
+                e instanceof Error ? e : undefined
+              );
             }
             state.triggerSync('full', { termSelection });
           }}

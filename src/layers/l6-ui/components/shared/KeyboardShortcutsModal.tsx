@@ -1,18 +1,26 @@
 /**
- * KeyboardShortcutsModal - Displays all available keyboard shortcuts
+ * KeyboardShortcutsModal - Displays keyboard shortcuts
  *
- * Opened with the "?" key. Shows shortcuts grouped by category
- * with platform-aware modifier labels (⌘ on macOS, Ctrl elsewhere).
+ * Two modes:
+ * - "global" (opened with ?): Shows global shortcuts (Navigation, General, Selection)
+ * - "page" (opened with Shift+?): Shows only shortcuts for the current page
  */
 
 import React from 'react';
 import { Keyboard } from 'lucide-react';
+import { useLocation } from 'react-router-dom';
 import { Modal } from '../primitives/Modal';
-import { KEYBOARD_SHORTCUTS } from '../../constants/keyboardShortcuts';
+import {
+  KEYBOARD_SHORTCUTS,
+  getScopeForPath,
+  type ShortcutCategory,
+} from '../../constants/keyboardShortcuts';
 
 export interface KeyboardShortcutsModalProps {
   isOpen: boolean;
   onClose: () => void;
+  /** "global" shows global shortcuts (?), "page" shows current page shortcuts (Shift+?) */
+  mode?: 'global' | 'page';
 }
 
 const isMac = window.api?.platform === 'darwin';
@@ -25,41 +33,87 @@ function resolveKeyLabel(key: string): string {
       return 'Esc';
     case 'Shift':
       return '⇧';
+    case '←':
+      return '←';
+    case '→':
+      return '→';
+    case 'Delete':
+      return isMac ? '⌫' : 'Del';
+    case 'Space':
+      return '␣';
+    case '/':
+      return '/';
     default:
       return key;
   }
 }
 
-export function KeyboardShortcutsModal({ isOpen, onClose }: KeyboardShortcutsModalProps) {
+function ShortcutList({ category }: { category: ShortcutCategory }) {
+  return (
+    <div>
+      <div style={styles.categoryTitle}>{category.title}</div>
+      <div style={styles.shortcutList}>
+        {category.shortcuts.map((shortcut) => (
+          <div key={shortcut.label} style={styles.shortcutRow}>
+            <span style={styles.label}>{shortcut.label}</span>
+            <span style={styles.keys}>
+              {shortcut.keys.map((key, i) => (
+                <React.Fragment key={`${key}-${i}`}>
+                  {i > 0 && key !== '/' && shortcut.keys[i - 1] !== '/' && (
+                    <span style={styles.separator}>+</span>
+                  )}
+                  {key === '/' ? (
+                    <span style={styles.orSeparator}>or</span>
+                  ) : (
+                    <kbd style={styles.kbd}>{resolveKeyLabel(key)}</kbd>
+                  )}
+                </React.Fragment>
+              ))}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export function KeyboardShortcutsModal({
+  isOpen,
+  onClose,
+  mode = 'global',
+}: KeyboardShortcutsModalProps) {
+  const location = useLocation();
+  const currentScope = getScopeForPath(location.pathname);
+
+  const globalCategories = KEYBOARD_SHORTCUTS.filter((c) => !c.scope);
+  const pageCategories = KEYBOARD_SHORTCUTS.filter(
+    (c) => c.scope && c.scope === currentScope
+  );
+
+  const isPageMode = mode === 'page';
+  const categories = isPageMode ? pageCategories : globalCategories;
+  const title = isPageMode
+    ? `${pageCategories[0]?.title || 'Page'} Shortcuts`
+    : 'Keyboard Shortcuts';
+  const modKey = isMac ? '⌘' : 'Ctrl';
+  const hint = isPageMode
+    ? 'Press ? for global shortcuts'
+    : `Press ${modKey}+? for page shortcuts`;
+
   return (
     <Modal isOpen={isOpen} onClose={onClose} size="md">
-      <Modal.Header
-        title="Keyboard Shortcuts"
-        icon={<Keyboard size={20} />}
-        onClose={onClose}
-      />
+      <Modal.Header title={title} icon={<Keyboard size={20} />} onClose={onClose} />
       <Modal.Content>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          {KEYBOARD_SHORTCUTS.map((category) => (
-            <div key={category.title}>
-              <div style={styles.categoryTitle}>{category.title}</div>
-              <div style={styles.shortcutList}>
-                {category.shortcuts.map((shortcut) => (
-                  <div key={shortcut.label} style={styles.shortcutRow}>
-                    <span style={styles.label}>{shortcut.label}</span>
-                    <span style={styles.keys}>
-                      {shortcut.keys.map((key, i) => (
-                        <React.Fragment key={key}>
-                          {i > 0 && <span style={styles.separator}>+</span>}
-                          <kbd style={styles.kbd}>{resolveKeyLabel(key)}</kbd>
-                        </React.Fragment>
-                      ))}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
+          {categories.length > 0 ? (
+            categories.map((category) => (
+              <ShortcutList key={category.title} category={category} />
+            ))
+          ) : (
+            <div style={styles.emptyState}>No shortcuts available for this page</div>
+          )}
+
+          <div style={styles.hint}>{hint}</div>
         </div>
       </Modal.Content>
     </Modal>
@@ -100,6 +154,12 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '11px',
     color: 'var(--text-muted)',
   },
+  orSeparator: {
+    fontSize: '10px',
+    color: 'var(--text-muted)',
+    fontStyle: 'italic',
+    padding: '0 2px',
+  },
   kbd: {
     display: 'inline-flex',
     alignItems: 'center',
@@ -115,5 +175,17 @@ const styles: Record<string, React.CSSProperties> = {
     border: '1px solid var(--border-default)',
     borderRadius: '6px',
     boxShadow: '0 1px 0 var(--border-default)',
+  },
+  hint: {
+    fontSize: '11px',
+    color: 'var(--text-muted)',
+    textAlign: 'center',
+    fontStyle: 'italic',
+  },
+  emptyState: {
+    fontSize: '13px',
+    color: 'var(--text-muted)',
+    textAlign: 'center',
+    padding: '20px 0',
   },
 };

@@ -19,8 +19,18 @@ import { UPDATE_LABELS } from './Updates/updatesPageConstants';
 import { ActionRequiredItem } from './Updates/ActionRequiredItem';
 import { ConflictItem } from './Updates/ConflictItem';
 import { InformationalItem } from './Updates/InformationalItem';
+import { useHotkeys } from 'react-hotkeys-hook';
 
 type FilterType = 'all' | 'task' | 'grade' | 'file' | 'page' | 'announcement';
+
+const FILTER_KEYS: Record<string, FilterType> = {
+  '1': 'all',
+  '2': 'task',
+  '3': 'grade',
+  '4': 'file',
+  '5': 'page',
+  '6': 'announcement',
+};
 
 export function UpdatesPage() {
   const navigate = useNavigate();
@@ -39,6 +49,13 @@ export function UpdatesPage() {
   const updates = syncUpdates.updates ?? [];
   const totalUnseen = syncUpdates.totalUnseen ?? 0;
   const [filter, setFilter] = useState<FilterType>('all');
+
+  // Keyboard shortcuts for filter tabs
+  useHotkeys('1, 2, 3, 4, 5, 6', (_, handler) => {
+    const key = handler.keys?.join('') || '';
+    const f = FILTER_KEYS[key];
+    if (f) setFilter(f);
+  });
 
   // Timer tick to force re-render of relative times every 30 seconds
   const [timeTick, setTimeTick] = useState(0);

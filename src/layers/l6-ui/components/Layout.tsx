@@ -9,7 +9,12 @@ import { useStore } from '../../l5-presentation/store';
 import type { EnrollmentTerm } from '../../../shared/ipc-contract';
 import { useSidebarState, useLandingPage } from '../../l5-presentation/settings';
 import { TitleBar } from './TitleBar';
-import { SyncResultToast, CloseBehaviorDialog, SyncUpdatesFAB, KeyboardShortcutsModal } from './shared';
+import {
+  SyncResultToast,
+  CloseBehaviorDialog,
+  SyncUpdatesFAB,
+  KeyboardShortcutsModal,
+} from './shared';
 import { useScrollbarVisibility } from '../hooks/useScrollbarVisibility';
 import { useAppShortcuts } from '../hooks/useAppShortcuts';
 import { Sidebar } from './Sidebar';
@@ -27,6 +32,40 @@ export function Layout() {
   const mainRef = useRef<HTMLElement>(null);
   const navigate = useNavigate();
   const location = useLocation();
+
+  // Scroll position restoration across route changes
+  // Track scroll continuously so we always have the latest position before route swap
+  const scrollPositions = useRef<Map<string, number>>(new Map());
+  const currentScrollRef = useRef(0);
+  const prevPathname = useRef(location.pathname);
+
+  // Continuously track scroll position of <main>
+  useEffect(() => {
+    const main = mainRef.current;
+    if (!main) return;
+    const onScroll = () => {
+      currentScrollRef.current = main.scrollTop;
+    };
+    main.addEventListener('scroll', onScroll, { passive: true });
+    return () => main.removeEventListener('scroll', onScroll);
+  }, []);
+
+  // On route change: save previous scroll, restore new scroll
+  useEffect(() => {
+    if (prevPathname.current !== location.pathname) {
+      // Save the continuously-tracked scroll position for the page we're leaving
+      scrollPositions.current.set(prevPathname.current, currentScrollRef.current);
+      prevPathname.current = location.pathname;
+    }
+
+    // Restore scroll position for the page we're entering
+    const saved = scrollPositions.current.get(location.pathname);
+    requestAnimationFrame(() => {
+      if (mainRef.current) {
+        mainRef.current.scrollTop = saved ?? 0;
+      }
+    });
+  }, [location.pathname]);
 
   // Auto-hide scrollbar on main content area (show on scroll, hide after 1.5s)
   useScrollbarVisibility(mainRef, 1500);
@@ -49,7 +88,8 @@ export function Layout() {
     return () => document.removeEventListener('keydown', handler);
   }, []);
 
-  // ? — show keyboard shortcuts help
+  // ? — show global shortcuts help
+  // Ctrl/Cmd+? — show page-specific shortcuts help
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key !== '?') return;
@@ -57,7 +97,11 @@ export function Layout() {
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
       if ((e.target as HTMLElement)?.isContentEditable) return;
       e.preventDefault();
-      setShowKeyboardShortcuts(true);
+      if (e.ctrlKey || e.metaKey) {
+        setShowPageShortcuts(true);
+      } else {
+        setShowKeyboardShortcuts(true);
+      }
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
@@ -65,7 +109,16 @@ export function Layout() {
 
   // Escape — navigate back from sub-pages (course detail, announcement, etc.)
   // Skips when a modal is open so ESC closes the modal instead
-  const TOP_LEVEL = ['/', '/calendar', '/courses', '/files', '/settings', '/tasks', '/updates', '/announcements'];
+  const TOP_LEVEL = [
+    '/',
+    '/calendar',
+    '/courses',
+    '/files',
+    '/settings',
+    '/tasks',
+    '/updates',
+    '/announcements',
+  ];
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
@@ -88,6 +141,7 @@ export function Layout() {
 
   // Keyboard shortcuts help modal
   const [showKeyboardShortcuts, setShowKeyboardShortcuts] = useState(false);
+  const [showPageShortcuts, setShowPageShortcuts] = useState(false);
 
   // Listen for close behavior prompt from main process
   useEffect(() => {
@@ -318,10 +372,18 @@ export function Layout() {
         onChoice={handleCloseBehaviorChoice}
       />
 
-      {/* Keyboard Shortcuts Help */}
+      {/* Global Keyboard Shortcuts Help (?) */}
       <KeyboardShortcutsModal
         isOpen={showKeyboardShortcuts}
         onClose={() => setShowKeyboardShortcuts(false)}
+        mode="global"
+      />
+
+      {/* Page-Specific Shortcuts Help (Shift+?) */}
+      <KeyboardShortcutsModal
+        isOpen={showPageShortcuts}
+        onClose={() => setShowPageShortcuts(false)}
+        mode="page"
       />
 
       {/* Sync Updates Floating Action Button */}
