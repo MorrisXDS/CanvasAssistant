@@ -41,7 +41,6 @@ const logger = createLogger('CalendarPage');
 import { CalendarFilterPanel } from './CalendarFilterPanel';
 import { CalendarMonthView } from './CalendarMonthView';
 import { CalendarWeekView } from './CalendarWeekView';
-import { useCalendarShortcuts } from '../../hooks/useCalendarShortcuts';
 
 export function CalendarPage() {
   const { tasks, courses } = useStore();
@@ -247,14 +246,46 @@ export function CalendarPage() {
     setCurrentDate(new Date());
   };
 
-  // Keyboard shortcuts
-  useCalendarShortcuts({
-    goToPrev: viewMode === 'month' ? goToPrevMonth : goToPrevWeek,
-    goToNext: viewMode === 'month' ? goToNextMonth : goToNextWeek,
-    goToToday,
-    cycleView: () => setViewMode(viewMode === 'month' ? 'week' : 'month'),
-    toggleFilters: () => setShowFilters((prev) => !prev),
-  });
+  // Keyboard shortcuts (document-level so they work regardless of focus target)
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const target = e.target as HTMLElement;
+      const tag = target?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (target?.isContentEditable) return;
+
+      switch (e.key) {
+        case 'ArrowLeft':
+          e.preventDefault();
+          if (viewMode === 'month') goToPrevMonth();
+          else goToPrevWeek();
+          break;
+        case 'ArrowRight':
+          e.preventDefault();
+          if (viewMode === 'month') goToNextMonth();
+          else goToNextWeek();
+          break;
+        case 't':
+        case 'T':
+          e.preventDefault();
+          goToToday();
+          break;
+        case 'v':
+        case 'V':
+          e.preventDefault();
+          setViewMode(viewMode === 'month' ? 'week' : 'month');
+          break;
+        case 'f':
+        case 'F':
+          e.preventDefault();
+          setShowFilters((prev) => !prev);
+          break;
+      }
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [viewMode]);
 
   // Toggle course selection
   const toggleCourse = (courseId: number) => {

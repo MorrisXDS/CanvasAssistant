@@ -432,6 +432,63 @@ export function CalendarPage() {
     });
   };
 
+  const goToToday = () => setCurrentDate(new Date());
+
+  const cycleView = () => {
+    const order: CalendarView[] = ['month', 'week', 'day'];
+    const idx = order.indexOf(view);
+    setView(order[(idx + 1) % order.length]);
+  };
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (target?.isContentEditable) return;
+
+      switch (e.key) {
+        case 'ArrowLeft':
+          e.preventDefault();
+          goToPrevious();
+          break;
+        case 'ArrowRight':
+          e.preventDefault();
+          goToNext();
+          break;
+        case 'Tab': {
+          e.preventDefault();
+          const order: CalendarView[] = ['month', 'week', 'day'];
+          const idx = order.indexOf(view);
+          const next = e.shiftKey
+            ? (idx - 1 + order.length) % order.length
+            : (idx + 1) % order.length;
+          setView(order[next]);
+          break;
+        }
+        case 't':
+        case 'T':
+          e.preventDefault();
+          goToToday();
+          break;
+        case 'v':
+        case 'V':
+          e.preventDefault();
+          cycleView();
+          break;
+        case 'f':
+        case 'F':
+          e.preventDefault();
+          setShowFilters((prev) => !prev);
+          break;
+      }
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [view]);
+
   // Filter handlers
   const toggleCourseFilter = (courseId: number) => {
     setSelectedCourses((prev) => {
@@ -572,7 +629,10 @@ export function CalendarPage() {
       await markTaskComplete(task.id, !task.isCompleted);
       setSelectedEvent(null);
     } catch (error) {
-      log.error('Failed to toggle task completion', error instanceof Error ? error : undefined);
+      log.error(
+        'Failed to toggle task completion',
+        error instanceof Error ? error : undefined
+      );
     }
   };
 
@@ -669,7 +729,10 @@ export function CalendarPage() {
       }
       return { success: false };
     } catch (error) {
-      log.error('Failed to create coursework', error instanceof Error ? error : undefined);
+      log.error(
+        'Failed to create coursework',
+        error instanceof Error ? error : undefined
+      );
       return { success: false };
     }
   };

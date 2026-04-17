@@ -36,7 +36,7 @@ const logger = createLogger('CoursesPage');
 
 // Extracted modules
 import { styles, injectDragHandleStyles } from './coursesPageStyles';
-import { useCoursesShortcuts } from '../../hooks/useCoursesShortcuts';
+import { useHotkeys } from 'react-hotkeys-hook';
 import {
   type ViewMode,
   type GradeFilter,
@@ -389,21 +389,31 @@ export function CoursesPage() {
   };
 
   // Keyboard shortcuts
-  useCoursesShortcuts({
-    toggleView: () => setViewMode(viewMode === 'grid' ? 'list' : 'grid'),
-    toggleFilters: () => setShowFilters((prev) => !prev),
-    openSelected: () => {
-      // Open the first selected course, or do nothing
+  useHotkeys('v', () => setViewMode(viewMode === 'grid' ? 'list' : 'grid'), [viewMode]);
+  useHotkeys('f', () => setShowFilters((prev) => !prev));
+  useHotkeys(
+    'enter',
+    (e) => {
+      e.preventDefault();
       const firstKey = selectedKeys.values().next().value;
       if (firstKey) handleCourseClick(Number(firstKey));
     },
-    hideSelected: () => {
+    [selectedKeys, handleCourseClick]
+  );
+  useHotkeys(
+    'h',
+    () => {
       if (selectedCount > 0) handleBulkHide();
     },
-    pinSelected: () => {
+    [selectedCount, handleBulkHide]
+  );
+  useHotkeys(
+    'p',
+    () => {
       if (selectedCount > 0) handleBulkPin();
     },
-  });
+    [selectedCount, handleBulkPin]
+  );
 
   // Clear all filters
   const clearFilters = () => {
