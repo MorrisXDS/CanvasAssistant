@@ -26,6 +26,7 @@ import { Card } from '../shared';
 import { useStore } from '../../../l5-presentation/store';
 import { styles } from './AnnouncementsPage.styles';
 import { useHotkeys } from 'react-hotkeys-hook';
+import { useFocusedItem } from '../../hooks/useFocusedItem';
 
 type ReadFilter = 'all' | 'unread' | 'dismissed';
 type IntentType = 'all' | 'urgent' | 'deadline' | 'grade' | 'informational';
@@ -214,6 +215,27 @@ export function AnnouncementsPage() {
     }),
     [allAnnouncements]
   );
+
+  // Focused item navigation (Left/Right + J/K)
+  const { focusedIndex, focusedItem, getFocusProps } = useFocusedItem(
+    filteredAnnouncements,
+    { persistKey: 'announcements-page' }
+  );
+
+  // Enter: open focused announcement
+  useHotkeys('enter', (e) => {
+    if (focusedItem) {
+      e.preventDefault();
+      navigate(`/announcement/${focusedItem.notification.id}`);
+    }
+  });
+
+  // D: dismiss focused announcement
+  useHotkeys('d', async () => {
+    if (focusedItem && !focusedItem.notification.dismissedAt) {
+      await dismissNotification(focusedItem.notification.id);
+    }
+  });
 
   // Intent counts (for current read + course filters)
   const intentCounts = useMemo(() => {
@@ -418,11 +440,19 @@ export function AnnouncementsPage() {
             {filteredAnnouncements.map((item, index) => (
               <Link
                 key={item.notification.id}
+                data-focus-index={getFocusProps(index)['data-focus-index']}
                 to={`/announcement/${item.notification.id}`}
                 style={{
                   ...styles.announcementItem,
                   borderTop: index === 0 ? 'none' : '1px solid var(--border-light)',
                   opacity: item.notification.dismissedAt ? 0.7 : 1,
+                  ...(focusedIndex === index
+                    ? {
+                        outline: '2px solid var(--color-navy)',
+                        outlineOffset: '-2px',
+                        borderRadius: 'var(--radius-md)',
+                      }
+                    : {}),
                 }}
               >
                 {/* Course color indicator */}

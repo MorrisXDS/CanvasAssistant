@@ -5,15 +5,19 @@
 import React, { useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CalendarCheck, MapPin } from 'lucide-react';
+import { useHotkeys } from 'react-hotkeys-hook';
 import { Card, NotificationDot } from '../shared';
 import { useStore } from '../../../l5-presentation/store';
 import { useTaskUpdates } from '../../hooks';
+import { useFocusedItem } from '../../hooks/useFocusedItem';
 import type { DisplayCalendarEvent, Task } from '../../../l5-presentation/types';
 import { getCourseColor, CARD_TITLES } from '../../constants';
 
 interface ScheduleCardProps {
   /** Maximum items to show. If not specified, shows all items. */
   maxItems?: number;
+  /** Whether keyboard focus navigation is active for this list */
+  isKeyboardActive?: boolean;
 }
 
 // Unified schedule item type
@@ -185,7 +189,7 @@ function getEventColor(event: DisplayCalendarEvent): string {
   }
 }
 
-export function ScheduleCard({ maxItems }: ScheduleCardProps) {
+export function ScheduleCard({ maxItems, isKeyboardActive = false }: ScheduleCardProps) {
   const navigate = useNavigate();
   const calendarEvents = useStore((state) => state.calendarEvents);
   const tasks = useStore((state) => state.tasks);
@@ -348,6 +352,24 @@ export function ScheduleCard({ maxItems }: ScheduleCardProps) {
     navigate('/calendar?view=week');
   };
 
+  // Focused item navigation (Left/Right + J/K)
+  const { focusedIndex, focusedItem, getFocusProps } = useFocusedItem(todaysSchedule, {
+    persistKey: 'dashboard-schedule',
+    enabled: isKeyboardActive,
+  });
+
+  // Enter: open focused schedule item (goes to calendar)
+  useHotkeys(
+    'enter',
+    (e) => {
+      if (focusedItem) {
+        e.preventDefault();
+        handleEventClick();
+      }
+    },
+    { enabled: isKeyboardActive }
+  );
+
   return (
     <Card
       title={CARD_TITLES.dashboard.todaySchedule}
@@ -371,9 +393,17 @@ export function ScheduleCard({ maxItems }: ScheduleCardProps) {
             return (
               <div
                 key={item.id}
+                data-focus-index={getFocusProps(index)['data-focus-index']}
                 style={{
                   ...styles.item,
                   borderTop: index === 0 ? 'none' : '1px solid var(--border-light)',
+                  ...(focusedIndex === index && isKeyboardActive
+                    ? {
+                        outline: '2px solid var(--color-navy)',
+                        outlineOffset: '-2px',
+                        borderRadius: 'var(--radius-md)',
+                      }
+                    : {}),
                 }}
                 onClick={handleEventClick}
                 role="button"

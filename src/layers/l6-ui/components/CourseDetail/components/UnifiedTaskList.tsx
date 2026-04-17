@@ -6,12 +6,14 @@
 
 import React, { useState, useMemo, useCallback } from 'react';
 import { CheckCircle, Clock, Plus, FileText, ListFilter } from 'lucide-react';
+import { useHotkeys } from 'react-hotkeys-hook';
 import { Card } from '../../shared';
 import type { Task } from '../../../../l5-presentation/types';
 import { courseDetailStyles as styles } from '../../pages/CourseDetail.styles';
 import { TaskItem } from './TaskItem';
 import { AddTaskForm } from './AddTaskForm';
 import { useTaskUpdates } from '../../../hooks';
+import { useFocusedItem } from '../../../hooks/useFocusedItem';
 import { createLogger } from '../../../utils/rendererLogger';
 
 const logger = createLogger('UnifiedTaskList');
@@ -208,7 +210,10 @@ export function UnifiedTaskList({
       const update = taskUpdates.get(taskId);
       if (update && update.updateIds.length > 0) {
         window.api?.markSyncUpdatesSeen?.(update.updateIds).catch((err: Error) => {
-          logger.error('Failed to mark task updates as seen', err instanceof Error ? err : undefined);
+          logger.error(
+            'Failed to mark task updates as seen',
+            err instanceof Error ? err : undefined
+          );
         });
       }
     },
@@ -237,6 +242,46 @@ export function UnifiedTaskList({
     }
     return allTasks.filter((t) => t._category === activeFilter);
   }, [allTasks, activeFilter]);
+
+  // Focused item navigation (Left/Right + J/K)
+  const { focusedIndex, focusedItem, getFocusProps } = useFocusedItem(filteredTasks, {
+    persistKey: 'course-detail-tasks',
+  });
+
+  // X: toggle completion on focused task
+  useHotkeys('x', () => {
+    if (focusedItem) {
+      handleToggleComplete(focusedItem);
+    }
+  });
+
+  // E: edit focused task
+  useHotkeys('e', () => {
+    if (focusedItem) {
+      startEditingTask(focusedItem);
+    }
+  });
+
+  // Delete/Backspace: delete focused task
+  useHotkeys('delete, backspace', (e) => {
+    if (focusedItem) {
+      e.preventDefault();
+      handleDeleteTask(focusedItem.id, focusedItem.title);
+    }
+  });
+
+  // Space: expand/collapse focused task
+  useHotkeys('space', (e) => {
+    if (focusedItem) {
+      e.preventDefault();
+      setExpandedTaskId(expandedTaskId === focusedItem.id ? null : focusedItem.id);
+    }
+  });
+
+  // N: create new task
+  useHotkeys('n', () => {
+    setShowAddTask(true);
+  });
 
   // Filter counts
   const counts = {
@@ -368,6 +413,8 @@ export function UnifiedTaskList({
               isExpanded={expandedTaskId === task.id}
               isEditing={editingTaskId === task.id}
               isHighlighted={highlightedTaskId === task.id}
+              focusIndex={getFocusProps(index)['data-focus-index']}
+              isKeyboardFocused={focusedIndex === index}
               editTitle={editTaskTitle}
               editDescription={editTaskDescription}
               editNotes={editTaskNotes}

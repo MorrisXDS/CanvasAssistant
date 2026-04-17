@@ -103,6 +103,27 @@ export function Dashboard() {
 
   const viewModel = useDashboardViewModel(state);
 
+  // Focusable list types
+  type DashboardListId = 'priority' | 'notifications' | 'schedule' | 'importantWorks';
+  const ALL_LISTS: DashboardListId[] = [
+    'priority',
+    'notifications',
+    'schedule',
+    'importantWorks',
+  ];
+
+  const FOCUS_KEY = 'dashboard-focused-list';
+  const [focusedList, setFocusedList] = useState<DashboardListId>(() => {
+    const saved = sessionStorage.getItem(FOCUS_KEY) as DashboardListId | null;
+    if (saved && ALL_LISTS.includes(saved)) return saved;
+    return 'priority';
+  });
+
+  // Persist focused list across navigation
+  useEffect(() => {
+    sessionStorage.setItem(FOCUS_KEY, focusedList);
+  }, [focusedList]);
+
   // Keyboard shortcuts
   useHotkeys('r', () => {
     if (state.syncStatus !== 'syncing') {
@@ -140,6 +161,67 @@ export function Dashboard() {
       (n) => n.courseId === null || courseMap.has(n.courseId)
     );
   }, [state.notifications, courseMap]);
+
+  // Determine which lists have content (Tab skips empty ones)
+  const availableLists = useMemo(() => {
+    const lists: DashboardListId[] = [];
+
+    if (viewModel.priorityQueue.length > 0) lists.push('priority');
+
+    if (visibleNotifications.some((n) => !n.dismissedAt)) lists.push('notifications');
+
+    // Schedule: has today's calendar events or tasks with start times today
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const hasTodayItem =
+      state.calendarEvents.some((e) => {
+        const start = new Date(e.startAt);
+        return start >= today && start < tomorrow;
+      }) ||
+      state.tasks.some((t) => {
+        if (!t.unlockAt) return false;
+        const start = new Date(t.unlockAt);
+        return start.getTime() >= 86400000 && start >= today && start < tomorrow;
+      });
+    if (hasTodayItem) lists.push('schedule');
+
+    // Important works: any pending task with weight > 0
+    const hasImportant = state.tasks.some((t) => !t.isCompleted && (t.weight ?? 0) > 0);
+    if (hasImportant) lists.push('importantWorks');
+
+    return lists;
+  }, [viewModel.priorityQueue, visibleNotifications, state.calendarEvents, state.tasks]);
+
+  // If the currently focused list has no content, move to the first available one
+  useEffect(() => {
+    if (availableLists.length === 0) return;
+    if (!availableLists.includes(focusedList)) {
+      setFocusedList(availableLists[0]);
+    }
+  }, [availableLists, focusedList]);
+
+  // Tab: cycle through only the non-empty lists
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key !== 'Tab' || e.ctrlKey || e.metaKey || e.altKey) return;
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if ((e.target as HTMLElement)?.isContentEditable) return;
+      if (availableLists.length <= 1) return;
+      e.preventDefault();
+      setFocusedList((prev) => {
+        const idx = availableLists.indexOf(prev);
+        const next = e.shiftKey
+          ? (idx - 1 + availableLists.length) % availableLists.length
+          : (idx + 1) % availableLists.length;
+        return availableLists[next];
+      });
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [availableLists]);
 
   const { pendingTasks, overdueTasks } = useMemo(() => {
     const now = new Date();
@@ -430,6 +512,7 @@ export function Dashboard() {
             onTaskContextMenu={handleTaskContextMenu}
             onToggleComplete={handleToggleComplete}
             onDismissNotification={handleDismissNotification}
+            focusedList={focusedList}
           />
         </section>
       </div>

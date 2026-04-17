@@ -6,6 +6,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Megaphone, Bell, Inbox, X } from 'lucide-react';
+import { useHotkeys } from 'react-hotkeys-hook';
 import { Card } from '../shared';
 import { useStore } from '../../../l5-presentation/store';
 import {
@@ -15,6 +16,7 @@ import {
   CARD_TITLES,
   MENU_LABELS,
 } from '../../constants';
+import { useFocusedItem } from '../../hooks/useFocusedItem';
 import type { Notification } from '../../../l5-presentation/types';
 
 function getShortCode(code: string): string {
@@ -27,6 +29,8 @@ export interface NotificationsFeedProps {
   onDismiss?: (id: number) => void;
   onNotificationClick?: (notification: Notification) => void;
   maxItems?: number;
+  /** Whether keyboard focus navigation is active for this list */
+  isKeyboardActive?: boolean;
 }
 
 export function NotificationsFeed({
@@ -34,6 +38,7 @@ export function NotificationsFeed({
   onDismiss,
   onNotificationClick,
   maxItems = 5,
+  isKeyboardActive = false,
 }: NotificationsFeedProps) {
   const navigate = useNavigate();
   const { courses } = useStore();
@@ -56,6 +61,38 @@ export function NotificationsFeed({
       navigate(`/announcement/${notification.id}`);
     }
   };
+
+  // Focused item navigation (Left/Right + J/K)
+  const { focusedIndex, focusedItem, getFocusProps } = useFocusedItem(
+    activeNotifications,
+    {
+      persistKey: 'dashboard-notifications',
+      enabled: isKeyboardActive,
+    }
+  );
+
+  // Enter: open focused notification
+  useHotkeys(
+    'enter',
+    (e) => {
+      if (focusedItem) {
+        e.preventDefault();
+        handleNotificationClick(focusedItem);
+      }
+    },
+    { enabled: isKeyboardActive }
+  );
+
+  // D: dismiss focused notification
+  useHotkeys(
+    'd',
+    () => {
+      if (focusedItem && onDismiss) {
+        onDismiss(focusedItem.id);
+      }
+    },
+    { enabled: isKeyboardActive }
+  );
 
   return (
     <Card
@@ -84,9 +121,17 @@ export function NotificationsFeed({
           {activeNotifications.map((notification, index) => (
             <div
               key={notification.id}
+              data-focus-index={getFocusProps(index)['data-focus-index']}
               style={{
                 ...styles.item,
                 borderTop: index === 0 ? 'none' : '1px solid var(--border-light)',
+                ...(focusedIndex === index && isKeyboardActive
+                  ? {
+                      outline: '2px solid var(--color-navy)',
+                      outlineOffset: '-2px',
+                      borderRadius: 'var(--radius-md)',
+                    }
+                  : {}),
               }}
             >
               <div

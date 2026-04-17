@@ -5,10 +5,12 @@
 import React, { useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Star, Inbox, Calendar } from 'lucide-react';
+import { useHotkeys } from 'react-hotkeys-hook';
 import { Card, NotificationDot } from '../shared';
 import { ImportantWorksFilter } from './ImportantWorksFilter';
 import { useStore } from '../../../l5-presentation/store';
 import { useTaskUpdates } from '../../hooks';
+import { useFocusedItem } from '../../hooks/useFocusedItem';
 import {
   STORAGE_KEYS,
   useSetting,
@@ -28,9 +30,14 @@ import type { Task, Course, DisplayCalendarEvent } from '../../../l5-presentatio
 
 interface ImportantWorksCardProps {
   maxItems?: number;
+  /** Whether keyboard focus navigation is active for this list */
+  isKeyboardActive?: boolean;
 }
 
-export function ImportantWorksCard({ maxItems = 4 }: ImportantWorksCardProps) {
+export function ImportantWorksCard({
+  maxItems = 4,
+  isKeyboardActive = false,
+}: ImportantWorksCardProps) {
   const navigate = useNavigate();
   const tasks = useStore((state) => state.tasks);
   const courses = useStore((state) => state.courses);
@@ -132,6 +139,24 @@ export function ImportantWorksCard({ maxItems = 4 }: ImportantWorksCardProps) {
     navigate(`/course/${task.courseId}?task=${task.id}`);
   };
 
+  // Focused item navigation (Left/Right + J/K)
+  const { focusedIndex, focusedItem, getFocusProps } = useFocusedItem(importantTasks, {
+    persistKey: 'dashboard-important',
+    enabled: isKeyboardActive,
+  });
+
+  // Enter: open focused task in course detail
+  useHotkeys(
+    'enter',
+    (e) => {
+      if (focusedItem) {
+        e.preventDefault();
+        handleTaskClick(focusedItem);
+      }
+    },
+    { enabled: isKeyboardActive }
+  );
+
   const handleCalendarClick = (task: Task, e: React.MouseEvent) => {
     e.stopPropagation();
     // Navigate to calendar with event highlighted
@@ -195,9 +220,17 @@ export function ImportantWorksCard({ maxItems = 4 }: ImportantWorksCardProps) {
             return (
               <div
                 key={task.id}
+                data-focus-index={getFocusProps(index)['data-focus-index']}
                 style={{
                   ...styles.item,
                   borderTop: index === 0 ? 'none' : '1px solid var(--border-light)',
+                  ...(focusedIndex === index && isKeyboardActive
+                    ? {
+                        outline: '2px solid var(--color-navy)',
+                        outlineOffset: '-2px',
+                        borderRadius: 'var(--radius-md)',
+                      }
+                    : {}),
                 }}
                 onClick={() => handleTaskClick(task)}
                 role="button"

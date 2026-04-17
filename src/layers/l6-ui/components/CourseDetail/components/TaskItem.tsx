@@ -122,6 +122,10 @@ export interface TaskItemProps {
   updateType?: UpdateType | null;
   /** Callback to mark updates as seen */
   onMarkUpdatesSeen?: () => void;
+  /** Index in focus navigation — sets data-focus-index attribute */
+  focusIndex?: number;
+  /** Whether this item is currently keyboard-focused */
+  isKeyboardFocused?: boolean;
 }
 
 export function TaskItem({
@@ -161,6 +165,8 @@ export function TaskItem({
   onFileDownloadRequest,
   updateType,
   onMarkUpdatesSeen,
+  focusIndex,
+  isKeyboardFocused,
 }: TaskItemProps) {
   const [isHovered, setIsHovered] = React.useState(false);
   const wrapperRef = React.useRef<HTMLDivElement | null>(null);
@@ -221,12 +227,19 @@ export function TaskItem({
   return (
     <div
       ref={setRefs}
+      data-focus-index={focusIndex}
       style={{
         ...styles.taskItemWrapper,
         borderTop: isFirst ? 'none' : '1px solid var(--border-light)',
         backgroundColor: isHighlighted ? 'var(--color-info-bg)' : undefined,
         transition: 'background-color 0.5s ease',
-        borderRadius: isHighlighted ? 'var(--radius-md)' : undefined,
+        borderRadius: isHighlighted || isKeyboardFocused ? 'var(--radius-md)' : undefined,
+        ...(isKeyboardFocused
+          ? {
+              outline: '2px solid var(--color-navy)',
+              outlineOffset: '-2px',
+            }
+          : {}),
       }}
       onContextMenu={onContextMenu}
       onMouseEnter={() => setIsHovered(true)}
@@ -414,7 +427,10 @@ export function TaskItem({
                               }
                             }
                           } catch (err) {
-                            logger.error('Error handling link', err instanceof Error ? err : undefined);
+                            logger.error(
+                              'Error handling link',
+                              err instanceof Error ? err : undefined
+                            );
                           }
                         }
                       }

@@ -20,6 +20,7 @@ import { ActionRequiredItem } from './Updates/ActionRequiredItem';
 import { ConflictItem } from './Updates/ConflictItem';
 import { InformationalItem } from './Updates/InformationalItem';
 import { useHotkeys } from 'react-hotkeys-hook';
+import { useFocusedItem } from '../../hooks/useFocusedItem';
 
 type FilterType = 'all' | 'task' | 'grade' | 'file' | 'page' | 'announcement';
 
@@ -139,6 +140,27 @@ export function UpdatesPage() {
 
     return Array.from(grouped.values());
   }, [updates]);
+
+  // Flat list of action-required queued tasks for keyboard focus
+  const flatActionTasks = useMemo(() => {
+    const tasks: SyncUpdate[] = [];
+    for (const group of needsReviewByCourse) {
+      tasks.push(...group.tasks);
+    }
+    return tasks;
+  }, [needsReviewByCourse]);
+
+  // Focused item navigation (Left/Right + J/K) for queued tasks
+  const { focusedItem: focusedActionTask } = useFocusedItem(flatActionTasks, {
+    persistKey: 'updates-page',
+  });
+
+  // A: accept focused queued task
+  useHotkeys('a', () => {
+    if (focusedActionTask) {
+      handleAcceptTask(focusedActionTask.entityId);
+    }
+  });
 
   // Total counts for header
   const totalNeedsReview = useMemo(() => {

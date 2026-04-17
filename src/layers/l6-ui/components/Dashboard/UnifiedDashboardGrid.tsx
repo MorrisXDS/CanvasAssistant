@@ -36,6 +36,8 @@ export interface UnifiedDashboardGridProps {
   onTaskContextMenu?: (e: React.MouseEvent, task: Task) => void;
   onToggleComplete?: (taskId: number, isCompleted: boolean) => void;
   onDismissNotification: (id: number) => void;
+  /** Which list currently has keyboard focus (Tab cycles between them) */
+  focusedList?: 'priority' | 'notifications' | 'schedule' | 'importantWorks';
 }
 
 export function UnifiedDashboardGrid({
@@ -47,6 +49,7 @@ export function UnifiedDashboardGrid({
   onTaskContextMenu,
   onToggleComplete,
   onDismissNotification,
+  focusedList = 'priority',
 }: UnifiedDashboardGridProps) {
   const {
     sectionOrder,
@@ -72,6 +75,7 @@ export function UnifiedDashboardGrid({
             onTaskContextMenu={onTaskContextMenu}
             onToggleComplete={onToggleComplete}
             maxItems={6}
+            isKeyboardActive={focusedList === 'priority'}
           />
         );
       case 'notifications':
@@ -80,12 +84,18 @@ export function UnifiedDashboardGrid({
             notifications={notifications}
             onDismiss={onDismissNotification}
             maxItems={4}
+            isKeyboardActive={focusedList === 'notifications'}
           />
         );
       case 'schedule':
-        return <ScheduleCard />;
+        return <ScheduleCard isKeyboardActive={focusedList === 'schedule'} />;
       case 'importantWorks':
-        return <ImportantWorksCard maxItems={4} />;
+        return (
+          <ImportantWorksCard
+            maxItems={4}
+            isKeyboardActive={focusedList === 'importantWorks'}
+          />
+        );
       default:
         return null;
     }

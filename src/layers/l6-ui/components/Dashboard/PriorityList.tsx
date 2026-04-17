@@ -6,11 +6,13 @@
 import React, { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PartyPopper, CheckCircle, Circle } from 'lucide-react';
+import { useHotkeys } from 'react-hotkeys-hook';
 import { Card, Badge, BadgeVariant, NotificationDot } from '../shared';
 import { formatSmartDate, formatSmartDateRange, CARD_TITLES } from '../../constants';
 import { useStore } from '../../../l5-presentation/store';
 import { isDeadlineEvent } from '../Calendar/calendarUtils';
 import { useTaskUpdates } from '../../hooks';
+import { useFocusedItem } from '../../hooks/useFocusedItem';
 import type { PriorityItem, DisplayCalendarEvent } from '../../../l5-presentation/types';
 import type { Task } from '../../../l5-presentation/types';
 
@@ -24,6 +26,8 @@ export interface PriorityListProps {
   maxItems?: number;
   /** Whether to show urgency badges (only when priority sorting is enabled) */
   showUrgencyBadges?: boolean;
+  /** Whether keyboard focus navigation (←/→/J/K/X/Enter) is active for this list */
+  isKeyboardActive?: boolean;
 }
 
 function urgencyToVariant(urgency: PriorityItem['urgencyLevel']): BadgeVariant {
@@ -39,6 +43,7 @@ export function PriorityList({
   onToggleComplete,
   maxItems = 10,
   showUrgencyBadges = true,
+  isKeyboardActive = true,
 }: PriorityListProps) {
   const navigate = useNavigate();
   const calendarEvents = useStore((state) => state.calendarEvents);
@@ -47,6 +52,39 @@ export function PriorityList({
   // Use totalPendingTasks if provided, otherwise fall back to items length
   const hasPendingTasks =
     totalPendingTasks !== undefined ? totalPendingTasks > 0 : items.length > 0;
+
+  // Focused item navigation (Left/Right + J/K)
+  const { focusedIndex, focusedItem, getFocusProps } = useFocusedItem(displayItems, {
+    persistKey: 'dashboard-priority',
+    enabled: isKeyboardActive,
+  });
+
+  // X: toggle completion on focused task
+  useHotkeys(
+    'x',
+    () => {
+      if (focusedItem && onToggleComplete) {
+        onToggleComplete(focusedItem.task.id, focusedItem.task.isCompleted);
+      }
+    },
+    { enabled: isKeyboardActive }
+  );
+
+  // Enter: open focused task in course
+  useHotkeys(
+    'enter',
+    (e) => {
+      if (focusedItem) {
+        e.preventDefault();
+        if (onTaskDoubleClick) {
+          onTaskDoubleClick(focusedItem.task.id);
+        } else if (onTaskClick) {
+          onTaskClick(focusedItem.task.id);
+        }
+      }
+    },
+    { enabled: isKeyboardActive }
+  );
 
   // Create calendar event lookup map
   const calendarEventMap = useMemo(() => {
@@ -137,9 +175,17 @@ export function PriorityList({
           {displayItems.map((item, index) => (
             <div
               key={item.task.id}
+              data-focus-index={getFocusProps(index)['data-focus-index']}
               style={{
                 ...styles.listItem,
                 borderTop: index === 0 ? 'none' : '1px solid var(--border-light)',
+                ...(focusedIndex === index && isKeyboardActive
+                  ? {
+                      outline: '2px solid var(--color-navy)',
+                      outlineOffset: '-2px',
+                      borderRadius: 'var(--radius-md)',
+                    }
+                  : {}),
               }}
               onDoubleClick={() => handleDoubleClick(item.task.id)}
               onContextMenu={(e) => handleContextMenu(e, item.task)}
