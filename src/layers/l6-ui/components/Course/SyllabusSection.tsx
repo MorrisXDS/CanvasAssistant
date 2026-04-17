@@ -54,7 +54,7 @@ export interface SyllabusSectionProps {
  * SyllabusSection Component - Thin row for settings panel
  */
 export function SyllabusSection({
-  courseId,
+  courseId: _courseId,
   courseCode,
   syllabus,
   availableFiles,
@@ -66,7 +66,7 @@ export function SyllabusSection({
 }: SyllabusSectionProps) {
   const [isSelectorOpen, setIsSelectorOpen] = useState(false);
 
-  const hasChange = syllabus?.changeDetectedAt !== null;
+  const hasChange = syllabus?.changeDetectedAt != null;
 
   // Handle double-click to open the syllabus
   const handleDoubleClick = () => {

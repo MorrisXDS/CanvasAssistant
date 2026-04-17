@@ -21,14 +21,16 @@ export function useScrollbarVisibility(
     if (!el) return;
 
     let timer: ReturnType<typeof setTimeout>;
+    let fadeOutTimer: ReturnType<typeof setTimeout>;
 
     const handleScroll = () => {
       // Show scrollbar
       el.classList.add('scrolling');
       el.classList.remove('scroll-fade-out');
 
-      // Clear existing timer
+      // Clear existing timers
       clearTimeout(timer);
+      clearTimeout(fadeOutTimer);
 
       // Set timer to hide scrollbar after timeout
       timer = setTimeout(() => {
@@ -36,7 +38,7 @@ export function useScrollbarVisibility(
         el.classList.add('scroll-fade-out');
 
         // Remove fade-out class after animation completes
-        setTimeout(() => {
+        fadeOutTimer = setTimeout(() => {
           el.classList.remove('scroll-fade-out');
         }, 300); // Match CSS transition duration
       }, timeout);
@@ -48,6 +50,7 @@ export function useScrollbarVisibility(
     return () => {
       el.removeEventListener('scroll', handleScroll);
       clearTimeout(timer);
+      clearTimeout(fadeOutTimer);
     };
   }, [ref, timeout]);
 }

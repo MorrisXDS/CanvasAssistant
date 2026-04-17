@@ -7,10 +7,14 @@ import React from 'react';
 import { EyeOff, Eye, Archive } from 'lucide-react';
 import { ColorPicker } from '../../primitives';
 import { COURSE_COLORS, getCourseColor } from '../../../constants';
+import { SyllabusSection } from '../../Course/SyllabusSection';
+import type { CourseSyllabus } from '../../Course';
+import type { FileResource } from '../../Files/FileListItem';
 import { courseDetailStyles as styles } from '../../pages/CourseDetail.styles';
 
 export interface SettingsPanelProps {
   courseId: number;
+  courseCode: string;
   courseName: string;
   courseColor: string | null;
   isHidden: boolean;
@@ -29,10 +33,19 @@ export interface SettingsPanelProps {
   onArchive: () => void;
   onSave: () => void;
   onCancel: () => void;
+  // Syllabus
+  syllabus: CourseSyllabus | null;
+  syllabusAvailableFiles: FileResource[];
+  onSetSyllabus: (resourceId: number) => void;
+  onMarkSyllabusReviewed: () => void;
+  onDownloadSyllabus: () => void;
+  onOpenSyllabus: () => void;
+  syllabusLoading?: boolean;
 }
 
 export function SettingsPanel({
   courseId,
+  courseCode,
   courseName,
   courseColor,
   isHidden,
@@ -51,6 +64,13 @@ export function SettingsPanel({
   onArchive,
   onSave,
   onCancel,
+  syllabus,
+  syllabusAvailableFiles,
+  onSetSyllabus,
+  onMarkSyllabusReviewed,
+  onDownloadSyllabus,
+  onOpenSyllabus,
+  syllabusLoading,
 }: SettingsPanelProps) {
   return (
     <div style={styles.settingsPanel}>
@@ -146,6 +166,24 @@ export function SettingsPanel({
             presets={COURSE_COLORS}
             allowCustom={true}
             swatchSize={24}
+          />
+        </div>
+      </div>
+
+      {/* Row 4: Syllabus */}
+      <div style={styles.settingsGrid}>
+        <div style={{ ...styles.settingsField, flex: 1 }}>
+          <label style={styles.settingsLabel}>Syllabus</label>
+          <SyllabusSection
+            courseId={courseId}
+            courseCode={courseCode}
+            syllabus={syllabus}
+            availableFiles={syllabusAvailableFiles}
+            onSetSyllabus={onSetSyllabus}
+            onMarkReviewed={onMarkSyllabusReviewed}
+            onDownload={onDownloadSyllabus}
+            onOpen={onOpenSyllabus}
+            isLoading={syllabusLoading}
           />
         </div>
       </div>

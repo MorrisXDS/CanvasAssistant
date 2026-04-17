@@ -5,7 +5,7 @@
 
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, BookOpen, X, Archive, RefreshCw } from 'lucide-react';
+import { ArrowLeft, BookOpen, Archive } from 'lucide-react';
 import { ConfirmDialog } from '../shared';
 import { MissingDependenciesDialog } from '../Files/MissingDependenciesDialog';
 import { useStore } from '../../../l5-presentation/store';
@@ -174,17 +174,14 @@ export function CourseDetail() {
     setCourseFiles,
     showSyllabusSelector,
     setShowSyllabusSelector,
-    syllabusContextMenu,
-    setSyllabusContextMenu,
     missingDepsDialog,
     handleDownloadDependencies,
     handleOpenSyllabusAnyway,
     closeMissingDepsDialog,
     handleSetSyllabus,
-    handleRemoveSyllabus,
-    handleSyllabusClick,
+    handleMarkSyllabusReviewed,
     handleSyllabusDoubleClick,
-    handleSyllabusContextMenu,
+    syllabusLoading,
   } = useCourseDetailSyllabusState({
     courseId,
     setConfirmDialog,
@@ -348,7 +345,7 @@ export function CourseDetail() {
             resourceTitle: syllabusData.title || 'Unknown file',
             resourceUpdatedAt: syllabusData.downloadedAt || null,
             lastReviewedAt: syllabusData.reviewedAt || syllabusData.designatedAt,
-            changeDetectedAt: null,
+            changeDetectedAt: syllabusData.changeDetectedAt || null,
             markedAt: syllabusData.designatedAt,
           });
         } else {
@@ -362,7 +359,10 @@ export function CourseDetail() {
           setArchivedCourseTasks(archivedTasks || []);
         }
       } catch (error) {
-        log.error('Failed to fetch course data', error instanceof Error ? error : undefined);
+        log.error(
+          'Failed to fetch course data',
+          error instanceof Error ? error : undefined
+        );
       } finally {
         setLoading(false);
       }
@@ -692,10 +692,12 @@ export function CourseDetail() {
           onSaveTargetGrade={handleSaveTargetGrade}
           onCancelEditTarget={() => setEditingTarget(false)}
           syllabus={syllabus}
-          syllabusPromptDismissed={course.syllabusPromptDismissedAt !== null}
-          onSyllabusClick={handleSyllabusClick}
-          onSyllabusDoubleClick={handleSyllabusDoubleClick}
-          onSyllabusContextMenu={handleSyllabusContextMenu}
+          syllabusAvailableFiles={courseFiles}
+          onSetSyllabus={handleSetSyllabus}
+          onMarkSyllabusReviewed={handleMarkSyllabusReviewed}
+          onDownloadSyllabus={handleSyllabusDoubleClick}
+          onOpenSyllabus={handleSyllabusDoubleClick}
+          syllabusLoading={syllabusLoading}
           showSettings={showSettings}
           nicknameInput={nicknameInput}
           creditsInput={creditsInput}
@@ -746,7 +748,10 @@ export function CourseDetail() {
                         : prev
                     );
                   } catch (error) {
-                    log.error('Failed to dismiss syllabus prompt', error instanceof Error ? error : undefined);
+                    log.error(
+                      'Failed to dismiss syllabus prompt',
+                      error instanceof Error ? error : undefined
+                    );
                   }
                 },
               });
@@ -1048,46 +1053,6 @@ export function CourseDetail() {
           setShowSyllabusSelector(false);
         }}
       />
-
-      {/* Syllabus Context Menu */}
-      {syllabusContextMenu && (
-        <div
-          style={styles.contextMenuOverlay}
-          onClick={() => setSyllabusContextMenu(null)}
-        >
-          <div
-            style={{
-              ...styles.contextMenu,
-              left: syllabusContextMenu.x,
-              top: syllabusContextMenu.y,
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <button
-              style={styles.contextMenuItem}
-              onClick={() => {
-                setShowSyllabusSelector(true);
-                setSyllabusContextMenu(null);
-              }}
-            >
-              <RefreshCw size={14} />
-              {syllabus ? 'Replace Syllabus' : 'Select Syllabus'}
-            </button>
-            {syllabus && (
-              <button
-                style={{ ...styles.contextMenuItem, color: 'var(--color-error)' }}
-                onClick={() => {
-                  handleRemoveSyllabus();
-                  setSyllabusContextMenu(null);
-                }}
-              >
-                <X size={14} />
-                Remove Syllabus
-              </button>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* Missing Dependencies Dialog for Syllabus */}
       <MissingDependenciesDialog

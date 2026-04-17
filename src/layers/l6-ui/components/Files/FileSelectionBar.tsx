@@ -4,7 +4,14 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import { CheckSquare, Download, Check, Loader2 } from 'lucide-react';
+import {
+  CheckSquare,
+  Download,
+  Check,
+  Loader2,
+  Trash2,
+  ExternalLink,
+} from 'lucide-react';
 import styles from './FilesPage.module.css';
 
 export interface DownloadProgress {
@@ -15,20 +22,28 @@ export interface DownloadProgress {
 
 export interface FileSelectionBarProps {
   selectedCount: number;
+  pendingCount: number;
+  downloadedCount: number;
   onSelectAllPending: () => void;
   onDeselectAll: () => void;
   onCancel: () => void;
   onDownloadSelected: () => void;
+  onDeleteSelectedLocal: () => void;
+  onOpenSelectedInCanvas: () => void;
   isDownloading: boolean;
   downloadProgress: DownloadProgress | null;
 }
 
 export function FileSelectionBar({
   selectedCount,
+  pendingCount,
+  downloadedCount,
   onSelectAllPending,
   onDeselectAll,
   onCancel,
   onDownloadSelected,
+  onDeleteSelectedLocal,
+  onOpenSelectedInCanvas,
   isDownloading,
   downloadProgress,
 }: FileSelectionBarProps) {
@@ -59,6 +74,11 @@ export function FileSelectionBar({
         <div className={styles.selectionInfo}>
           <CheckSquare size={16} />
           {selectedCount} selected
+          {pendingCount > 0 && downloadedCount > 0 && (
+            <span className={styles.selectionBreakdown}>
+              ({pendingCount} pending, {downloadedCount} downloaded)
+            </span>
+          )}
         </div>
         <div className={styles.selectionActions}>
           <button className={styles.selectionButton} onClick={onSelectAllPending}>
@@ -73,7 +93,7 @@ export function FileSelectionBar({
         </div>
       </div>
 
-      {/* Floating Download FAB */}
+      {/* Floating Action Buttons */}
       {(selectedCount > 0 || showComplete) && (
         <div className={styles.downloadFab}>
           {showComplete ? (
@@ -99,16 +119,34 @@ export function FileSelectionBar({
               </div>
             </div>
           ) : (
-            <button
-              className={styles.downloadFabButton}
-              onClick={onDownloadSelected}
-              disabled={isDownloading}
-            >
-              <Download size={20} />
-              <span>
-                Download {selectedCount} file{selectedCount !== 1 ? 's' : ''}
-              </span>
-            </button>
+            <div className={styles.bulkActions}>
+              {pendingCount > 0 && (
+                <button
+                  className={styles.downloadFabButton}
+                  onClick={onDownloadSelected}
+                  disabled={isDownloading}
+                >
+                  <Download size={18} />
+                  <span>Download {pendingCount}</span>
+                </button>
+              )}
+              {downloadedCount > 0 && (
+                <button
+                  className={`${styles.downloadFabButton} ${styles.fabDanger}`}
+                  onClick={onDeleteSelectedLocal}
+                >
+                  <Trash2 size={18} />
+                  <span>Delete {downloadedCount} local</span>
+                </button>
+              )}
+              <button
+                className={`${styles.downloadFabButton} ${styles.fabSecondary}`}
+                onClick={onOpenSelectedInCanvas}
+              >
+                <ExternalLink size={18} />
+                <span>Open in Canvas{selectedCount > 10 ? ' (first 10)' : ''}</span>
+              </button>
+            </div>
           )}
         </div>
       )}

@@ -85,6 +85,7 @@ export class FileDownloadManager extends EventEmitter {
     this.baseDir = config.baseDir;
     this.maxConcurrent = config.maxConcurrent ?? 2;
     this.logger = config.logger;
+    this.ensureBaseDirExists();
   }
 
   /**
@@ -94,6 +95,7 @@ export class FileDownloadManager extends EventEmitter {
   updateBaseDir(newBaseDir: string): void {
     this.baseDir = newBaseDir;
     this.baseDirEnsured = false;
+    this.ensureBaseDirExists();
     this.logger?.info(`Updated download base directory to: ${newBaseDir}`);
   }
 
@@ -163,11 +165,13 @@ export class FileDownloadManager extends EventEmitter {
     // Use centralized sanitization from PathBuilder
     if (request.contextFolder) {
       // Normalize backslashes to forward slashes before sanitizing
+      // eslint-disable-next-line cross-platform/no-hardcoded-path-separator -- Intentional: normalizing any incoming separator to POSIX before sanitization
       const normalized = request.contextFolder.replace(/\\/g, '/');
       const subfolder = sanitizeFolderPath(normalized);
       return path.join(courseDir, subfolder);
     } else if (request.folderPath) {
       // Normalize backslashes to forward slashes before sanitizing
+      // eslint-disable-next-line cross-platform/no-hardcoded-path-separator -- Intentional: normalizing any incoming separator to POSIX before sanitization
       const normalized = request.folderPath.replace(/\\/g, '/');
       const subfolder = sanitizeFolderPath(normalized);
       return path.join(courseDir, subfolder);
@@ -191,9 +195,20 @@ export class FileDownloadManager extends EventEmitter {
   }
 
   /**
-   * Queue a file for download
+   * Queue a file for download.
+   * Skips if the same download ID is already active or queued (deduplication).
    */
   queueDownload(request: DownloadRequest): void {
+    // Deduplicate: skip if already downloading or already in queue
+    if (this.activeDownloads.has(request.id)) {
+      this.logger?.debug(`Skipping duplicate download (active): ${request.id}`);
+      return;
+    }
+    if (this.queue.some((r) => r.id === request.id)) {
+      this.logger?.debug(`Skipping duplicate download (queued): ${request.id}`);
+      return;
+    }
+
     this.ensureBaseDirExists();
     this.queue.push(request);
     this.logger?.debug(
@@ -203,12 +218,20 @@ export class FileDownloadManager extends EventEmitter {
   }
 
   /**
-   * Queue multiple files for download
+   * Queue multiple files for download.
+   * Deduplicates: skips requests whose ID is already active or queued.
    */
   queueDownloads(requests: DownloadRequest[]): void {
     this.ensureBaseDirExists();
-    this.queue.push(...requests);
-    this.logger?.debug(`Queued ${requests.length} downloads`);
+    const deduplicated = requests.filter((r) => {
+      if (this.activeDownloads.has(r.id) || this.queue.some((q) => q.id === r.id)) {
+        this.logger?.debug(`Skipping duplicate download: ${r.id}`);
+        return false;
+      }
+      return true;
+    });
+    this.queue.push(...deduplicated);
+    this.logger?.debug(`Queued ${deduplicated.length}/${requests.length} downloads`);
     this.processQueue();
   }
 

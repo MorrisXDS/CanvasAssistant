@@ -4,9 +4,10 @@
  */
 
 import React from 'react';
-import { Target, TrendingUp, FileText, Edit3, Save, X, Settings } from 'lucide-react';
+import { Target, TrendingUp, Edit3, Save, X, Settings } from 'lucide-react';
 import { SettingsPanel } from './SettingsPanel';
 import type { CourseSyllabus } from '../../Course';
+import type { FileResource } from '../../Files/FileListItem';
 import { formatGrade } from '../../../constants';
 import { courseDetailStyles as styles } from '../../pages/CourseDetail.styles';
 
@@ -42,12 +43,14 @@ export interface CourseHeaderProps {
   onSaveTargetGrade: () => void;
   onCancelEditTarget: () => void;
 
-  // Syllabus
+  // Syllabus (forwarded to SettingsPanel)
   syllabus: CourseSyllabus | null;
-  syllabusPromptDismissed?: boolean;
-  onSyllabusClick: () => void;
-  onSyllabusDoubleClick: () => void;
-  onSyllabusContextMenu: (e: React.MouseEvent) => void;
+  syllabusAvailableFiles: FileResource[];
+  onSetSyllabus: (resourceId: number) => void;
+  onMarkSyllabusReviewed: () => void;
+  onDownloadSyllabus: () => void;
+  onOpenSyllabus: () => void;
+  syllabusLoading?: boolean;
 
   // Settings panel
   showSettings: boolean;
@@ -96,10 +99,12 @@ export function CourseHeader({
   onSaveTargetGrade,
   onCancelEditTarget,
   syllabus,
-  syllabusPromptDismissed,
-  onSyllabusClick,
-  onSyllabusDoubleClick,
-  onSyllabusContextMenu,
+  syllabusAvailableFiles,
+  onSetSyllabus,
+  onMarkSyllabusReviewed,
+  onDownloadSyllabus,
+  onOpenSyllabus,
+  syllabusLoading,
   showSettings,
   nicknameInput,
   creditsInput,
@@ -258,47 +263,6 @@ export function CourseHeader({
                 {completedWeight > 0 ? 'avg on graded work' : '\u00A0'}
               </div>
             </div>
-            {/* Syllabus */}
-            <div style={styles.gradeDivider} />
-            <div
-              style={{
-                ...styles.gradeItem,
-                cursor: 'pointer',
-                userSelect: 'none',
-              }}
-              onContextMenu={onSyllabusContextMenu}
-              onClick={onSyllabusClick}
-              onDoubleClick={onSyllabusDoubleClick}
-              title={
-                syllabus
-                  ? 'Click to change, double-click to open, right-click for options'
-                  : 'Click to select syllabus'
-              }
-            >
-              <div style={styles.gradeLabel}>
-                <FileText size={14} />
-                Syllabus
-              </div>
-              <div
-                style={{
-                  ...styles.syllabusValue,
-                  color: syllabus ? 'var(--text-primary)' : 'var(--text-muted)',
-                }}
-              >
-                {syllabus ? syllabus.resourceTitle : '—'}
-              </div>
-              <div style={styles.gradeSubtext}>
-                {syllabus?.changeDetectedAt ? (
-                  <span style={{ color: 'var(--color-warning)' }}>Updated</span>
-                ) : syllabus ? (
-                  'Current'
-                ) : syllabusPromptDismissed ? (
-                  '\u2014'
-                ) : (
-                  'Select a syllabus'
-                )}
-              </div>
-            </div>
             {/* Settings Button */}
             <div style={styles.gradeDivider} />
             <button style={styles.settingsButton} onClick={onToggleSettings}>
@@ -311,6 +275,7 @@ export function CourseHeader({
         {showSettings && (
           <SettingsPanel
             courseId={course.id}
+            courseCode={course.code}
             courseName={course.name}
             courseColor={course.color}
             isHidden={course.isHidden}
@@ -329,6 +294,13 @@ export function CourseHeader({
             onArchive={onArchive}
             onSave={onSaveSettings}
             onCancel={onCancelSettings}
+            syllabus={syllabus}
+            syllabusAvailableFiles={syllabusAvailableFiles}
+            onSetSyllabus={onSetSyllabus}
+            onMarkSyllabusReviewed={onMarkSyllabusReviewed}
+            onDownloadSyllabus={onDownloadSyllabus}
+            onOpenSyllabus={onOpenSyllabus}
+            syllabusLoading={syllabusLoading}
           />
         )}
 

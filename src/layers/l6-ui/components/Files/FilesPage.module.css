@@ -476,11 +476,38 @@
 }
 
 /* ============ Download FAB ============ */
+.selectionBreakdown {
+  font-weight: var(--font-normal);
+  color: var(--text-muted);
+}
+
 .downloadFab {
   position: fixed;
   bottom: var(--space-6);
   right: var(--space-6);
   z-index: 100;
+}
+
+.bulkActions {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.fabDanger {
+  background-color: var(--color-danger, #dc3545);
+}
+
+.fabDanger:hover {
+  background-color: var(--color-danger-dark, #b02a37);
+}
+
+.fabSecondary {
+  background-color: var(--color-gray-600, #6b7280);
+}
+
+.fabSecondary:hover {
+  background-color: var(--color-gray-700, #4b5563);
 }
 
 .downloadFabButton {

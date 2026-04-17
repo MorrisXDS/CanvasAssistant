@@ -25,9 +25,10 @@ export function registerCourseContentHandlers(ctx: IpcContext): void {
         resource_id: number;
         source_type: string;
         last_reviewed_at: string;
+        change_detected_at: string | null;
         marked_at: string;
       }>(
-        `SELECT resource_id, source_type, last_reviewed_at, marked_at
+        `SELECT resource_id, source_type, last_reviewed_at, change_detected_at, marked_at
          FROM course_syllabuses
          WHERE course_id = ?`,
         [courseId]
@@ -58,6 +59,7 @@ export function registerCourseContentHandlers(ctx: IpcContext): void {
             downloadStatus: hasLocalFile ? 'completed' : 'pending',
             downloadedAt: resource.synced_at,
             reviewedAt: syllabusDesignation.last_reviewed_at,
+            changeDetectedAt: syllabusDesignation.change_detected_at,
             designatedAt: syllabusDesignation.marked_at,
           };
         }

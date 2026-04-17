@@ -294,9 +294,15 @@ export function useFilesPageState() {
     const coveredAssignments = new Set<string>();
     const coveredByTitle = new Set<string>();
 
+    // Track resource externalIds so module File items that reference the same file are filtered out
+    const coveredFileExternalIds = new Set<string>();
+
     for (const resource of files.resources) {
       const r = resource as FileResource;
       if (r.externalId) {
+        // All resources cover their externalId (for File-type module item dedup)
+        coveredFileExternalIds.add(r.externalId);
+
         const pageMatch = r.externalId.match(/^html-page-(.+)$/);
         if (pageMatch) {
           coveredPageSlugs.add(`${r.courseId}:${pageMatch[1]}`);
@@ -316,6 +322,13 @@ export function useFilesPageState() {
 
     const deduplicatedModuleItems = files.moduleItems.filter((item) => {
       const m = item as FileModuleItem;
+
+      // File-type module items that reference an existing resource are duplicates
+      if (m.itemType === 'File' && m.contentId) {
+        if (coveredFileExternalIds.has(m.contentId)) {
+          return false;
+        }
+      }
 
       if (m.itemType === 'Page' && m.pageUrl) {
         if (coveredPageSlugs.has(`${m.courseId}:${m.pageUrl}`)) {
@@ -532,7 +545,10 @@ export function useFilesPageState() {
           }
         })
         .catch((error) => {
-          logger.error('Failed to sync folder files', error instanceof Error ? error : undefined);
+          logger.error(
+            'Failed to sync folder files',
+            error instanceof Error ? error : undefined
+          );
         });
     }
 
@@ -550,7 +566,10 @@ export function useFilesPageState() {
 
       if (updateIdsToMark.length > 0 && window.api?.markSyncUpdatesSeen) {
         window.api.markSyncUpdatesSeen(updateIdsToMark).catch((error) => {
-          logger.error('Failed to mark folder updates as seen', error instanceof Error ? error : undefined);
+          logger.error(
+            'Failed to mark folder updates as seen',
+            error instanceof Error ? error : undefined
+          );
         });
       }
     }
@@ -626,7 +645,10 @@ export function useFilesPageState() {
       const update = getFileUpdate(file);
       if (update && update.updateIds.length > 0) {
         window.api?.markSyncUpdatesSeen?.(update.updateIds).catch((err: unknown) => {
-          logger.error('Failed to mark file update as seen', err instanceof Error ? err : undefined);
+          logger.error(
+            'Failed to mark file update as seen',
+            err instanceof Error ? err : undefined
+          );
         });
       }
     },
@@ -699,7 +721,10 @@ export function useFilesPageState() {
         termSelection = settings.termSelection || 'auto';
       }
     } catch (e) {
-      logger.error('Failed to parse academic settings', e instanceof Error ? e : undefined);
+      logger.error(
+        'Failed to parse academic settings',
+        e instanceof Error ? e : undefined
+      );
     }
 
     await triggerSync('full', { termSelection });
@@ -710,7 +735,10 @@ export function useFilesPageState() {
     const api = window.api;
     if (api?.openFilesDirectory) {
       api.openFilesDirectory().catch((error) => {
-        logger.error('Failed to open files directory', error instanceof Error ? error : undefined);
+        logger.error(
+          'Failed to open files directory',
+          error instanceof Error ? error : undefined
+        );
       });
     }
   };

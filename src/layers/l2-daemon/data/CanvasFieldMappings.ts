@@ -131,6 +131,7 @@ export const TASK_AUTHORITATIVE_FIELDS = [
   'grade', // Canvas score is authoritative
   'unlock_at', // Canvas unlock date is authoritative
   'lock_at', // Canvas lock date is authoritative
+  'course_id', // Canvas determines which course a task belongs to
   // Note: due_at is NOT authoritative - user can override with conflict UI
 ] as const;
 

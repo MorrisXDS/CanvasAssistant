@@ -36,6 +36,7 @@ export function registerResourceHandlers(ctx: IpcContext): void {
       external_id: string;
       title: string;
       url: string | null;
+      folder_path: string | null;
     }>('SELECT * FROM resources WHERE id = ?', [resourceId]);
 
     if (!resource) {
@@ -88,9 +89,15 @@ export function registerResourceHandlers(ctx: IpcContext): void {
       return { success: false, error: 'No credentials available' };
     }
 
-    // Queue the download
+    // Queue the download — use external_id so the same Canvas file always has one download ID
     return new Promise((resolve) => {
-      const downloadId = `resource-${resourceId}`;
+      const downloadId = `file-${resource.external_id}`;
+
+      const cleanup = () => {
+        fileDownloadManager.off('download-complete', onComplete);
+        fileDownloadManager.off('download-error', onComplete);
+        clearTimeout(safetyTimeout);
+      };
 
       const onComplete = (result: {
         id: string;
@@ -99,9 +106,7 @@ export function registerResourceHandlers(ctx: IpcContext): void {
         error?: string;
       }) => {
         if (result.id !== downloadId) return;
-
-        fileDownloadManager.off('download-complete', onComplete);
-        fileDownloadManager.off('download-error', onComplete);
+        cleanup();
 
         if (result.success && result.localPath) {
           // Update database with local path
@@ -118,6 +123,17 @@ export function registerResourceHandlers(ctx: IpcContext): void {
         }
       };
 
+      // Safety timeout to prevent listener leaks if download never completes
+      const safetyTimeout = setTimeout(
+        () => {
+          fileDownloadManager.off('download-complete', onComplete);
+          fileDownloadManager.off('download-error', onComplete);
+          logger.warn(`[resource:download] Safety timeout for download ${downloadId}`);
+          resolve({ success: false, error: 'Download timed out' });
+        },
+        5 * 60 * 1000
+      );
+
       fileDownloadManager.on('download-complete', onComplete);
       fileDownloadManager.on('download-error', onComplete);
 
@@ -127,6 +143,7 @@ export function registerResourceHandlers(ctx: IpcContext): void {
         courseCode,
         filename: resource.title,
         authToken: token,
+        folderPath: resource.folder_path ?? undefined,
       });
     });
   });
@@ -140,8 +157,9 @@ export function registerResourceHandlers(ctx: IpcContext): void {
       external_id: string;
       title: string;
       url: string | null;
+      folder_path: string | null;
     }>(
-      'SELECT id, course_id, external_id, title, url FROM resources WHERE external_id = ?',
+      'SELECT id, course_id, external_id, title, url, folder_path FROM resources WHERE external_id = ?',
       [externalId]
     );
 
@@ -199,7 +217,13 @@ export function registerResourceHandlers(ctx: IpcContext): void {
 
     // Queue the download
     return new Promise((resolve) => {
-      const downloadId = `resource-ext-${externalId}`;
+      const downloadId = `file-${resource.external_id}`;
+
+      const cleanup = () => {
+        fileDownloadManager.off('download-complete', onComplete);
+        fileDownloadManager.off('download-error', onComplete);
+        clearTimeout(safetyTimeout);
+      };
 
       const onComplete = (result: {
         id: string;
@@ -208,9 +232,7 @@ export function registerResourceHandlers(ctx: IpcContext): void {
         error?: string;
       }) => {
         if (result.id !== downloadId) return;
-
-        fileDownloadManager.off('download-complete', onComplete);
-        fileDownloadManager.off('download-error', onComplete);
+        cleanup();
 
         if (result.success && result.localPath) {
           // Update database with local path
@@ -227,6 +249,19 @@ export function registerResourceHandlers(ctx: IpcContext): void {
         }
       };
 
+      // Safety timeout to prevent listener leaks if download never completes
+      const safetyTimeout = setTimeout(
+        () => {
+          fileDownloadManager.off('download-complete', onComplete);
+          fileDownloadManager.off('download-error', onComplete);
+          logger.warn(
+            `[resource:downloadByExternalId] Safety timeout for download ${downloadId}`
+          );
+          resolve({ success: false, error: 'Download timed out' });
+        },
+        5 * 60 * 1000
+      );
+
       fileDownloadManager.on('download-complete', onComplete);
       fileDownloadManager.on('download-error', onComplete);
 
@@ -236,6 +271,7 @@ export function registerResourceHandlers(ctx: IpcContext): void {
         courseCode,
         filename: resource.title,
         authToken: token,
+        folderPath: resource.folder_path ?? undefined,
       });
     });
   });

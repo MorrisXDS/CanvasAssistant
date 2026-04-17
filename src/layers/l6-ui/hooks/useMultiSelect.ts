@@ -15,6 +15,8 @@ import { useHotkeys } from 'react-hotkeys-hook';
 export interface UseMultiSelectOptions<T> {
   /** Filter predicate for selectAll (e.g., only undownloaded files) */
   selectAllFilter?: (item: T) => boolean;
+  /** Custom handler for Mod+A. When provided, overrides the default selectAll behavior. */
+  onSelectAll?: () => void;
 }
 
 export interface UseMultiSelectState {
@@ -30,6 +32,8 @@ export interface UseMultiSelectActions<T> {
   handleItemClick: (item: T, e: React.MouseEvent) => void;
   /** Select all (respects selectAllFilter) */
   selectAll: () => void;
+  /** Directly set the selected keys (for scoped selection) */
+  setSelectedKeys: React.Dispatch<React.SetStateAction<Set<string>>>;
   /** Clear selection */
   deselectAll: () => void;
   /** Check if a specific item is selected */
@@ -41,7 +45,7 @@ export interface UseMultiSelectActions<T> {
 export function useMultiSelect<T>(
   items: T[],
   getKey: (item: T) => string,
-  options?: UseMultiSelectOptions<T>,
+  options?: UseMultiSelectOptions<T>
 ): UseMultiSelectState & UseMultiSelectActions<T> {
   const [selectMode, setSelectModeState] = useState(false);
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
@@ -65,9 +69,7 @@ export function useMultiSelect<T>(
   const selectAll = useCallback(() => {
     const filter = options?.selectAllFilter;
     const keys = new Set(
-      items
-        .filter((item) => !filter || filter(item))
-        .map((item) => getKey(item))
+      items.filter((item) => !filter || filter(item)).map((item) => getKey(item))
     );
     setSelectedKeys(keys);
   }, [items, getKey, options?.selectAllFilter]);
@@ -77,9 +79,12 @@ export function useMultiSelect<T>(
     lastSelectedIndexRef.current = null;
   }, []);
 
-  const isSelected = useCallback((item: T): boolean => {
-    return selectedKeys.has(getKey(item));
-  }, [selectedKeys, getKey]);
+  const isSelected = useCallback(
+    (item: T): boolean => {
+      return selectedKeys.has(getKey(item));
+    },
+    [selectedKeys, getKey]
+  );
 
   const reset = useCallback(() => {
     setSelectModeState(false);
@@ -87,75 +92,90 @@ export function useMultiSelect<T>(
     lastSelectedIndexRef.current = null;
   }, []);
 
-  const handleItemClick = useCallback((item: T, e: React.MouseEvent) => {
-    const key = getKey(item);
-    const currentIndex = itemIndexMap.get(key);
-    if (currentIndex === undefined) return;
+  const handleItemClick = useCallback(
+    (item: T, e: React.MouseEvent) => {
+      const key = getKey(item);
+      const currentIndex = itemIndexMap.get(key);
+      if (currentIndex === undefined) return;
 
-    // Auto-enter select mode
-    if (!selectMode) {
-      setSelectModeState(true);
-    }
+      // Auto-enter select mode
+      if (!selectMode) {
+        setSelectModeState(true);
+      }
 
-    if (e.shiftKey && lastSelectedIndexRef.current !== null) {
-      // Range select between last and current
-      const start = Math.min(lastSelectedIndexRef.current, currentIndex);
-      const end = Math.max(lastSelectedIndexRef.current, currentIndex);
-      setSelectedKeys((prev) => {
-        const next = new Set(prev);
-        for (let i = start; i <= end; i++) {
-          if (i < items.length) {
-            next.add(getKey(items[i]));
+      if (e.shiftKey && lastSelectedIndexRef.current !== null) {
+        // Range select between last and current
+        const start = Math.min(lastSelectedIndexRef.current, currentIndex);
+        const end = Math.max(lastSelectedIndexRef.current, currentIndex);
+        setSelectedKeys((prev) => {
+          const next = new Set(prev);
+          for (let i = start; i <= end; i++) {
+            if (i < items.length) {
+              next.add(getKey(items[i]));
+            }
           }
-        }
-        return next;
-      });
-    } else if (e.metaKey || e.ctrlKey) {
-      // Toggle individual
-      setSelectedKeys((prev) => {
-        const next = new Set(prev);
-        if (next.has(key)) {
-          next.delete(key);
-        } else {
-          next.add(key);
-        }
-        return next;
-      });
-    } else {
-      // Plain click — toggle individual
-      setSelectedKeys((prev) => {
-        const next = new Set(prev);
-        if (next.has(key)) {
-          next.delete(key);
-        } else {
-          next.add(key);
-        }
-        return next;
-      });
-    }
+          return next;
+        });
+      } else if (e.metaKey || e.ctrlKey) {
+        // Toggle individual
+        setSelectedKeys((prev) => {
+          const next = new Set(prev);
+          if (next.has(key)) {
+            next.delete(key);
+          } else {
+            next.add(key);
+          }
+          return next;
+        });
+      } else {
+        // Plain click — toggle individual
+        setSelectedKeys((prev) => {
+          const next = new Set(prev);
+          if (next.has(key)) {
+            next.delete(key);
+          } else {
+            next.add(key);
+          }
+          return next;
+        });
+      }
 
-    lastSelectedIndexRef.current = currentIndex;
-  }, [getKey, itemIndexMap, items, selectMode]);
+      lastSelectedIndexRef.current = currentIndex;
+    },
+    [getKey, itemIndexMap, items, selectMode]
+  );
 
-  // Mod+A — enter select mode + select all
-  useHotkeys('mod+a', (e) => {
-    e.preventDefault();
-    setSelectModeState(true);
-    selectAll();
-  }, { enableOnFormTags: false });
+  // Mod+A — enter select mode + select all (or custom handler)
+  useHotkeys(
+    'mod+a',
+    (e) => {
+      e.preventDefault();
+      setSelectModeState(true);
+      if (options?.onSelectAll) {
+        options.onSelectAll();
+      } else {
+        selectAll();
+      }
+    },
+    { enableOnFormTags: false }
+  );
 
   // Escape — deselect, then exit select mode
-  useHotkeys('escape', () => {
-    // Don't fire if a dialog/modal is open
-    const dialog = document.querySelector('[role="dialog"], [data-modal]');
-    if (dialog) return;
+  useHotkeys(
+    'escape',
+    () => {
+      // Don't fire if a dialog/modal is open
+      const dialog = document.querySelector('[role="dialog"], [data-modal]');
+      if (dialog) return;
 
-    if (selectedKeys.size > 0) {
-      deselectAll();
-    } else if (selectMode) {
-      setSelectModeState(false);
-    }
-  }, { enableOnFormTags: true });
+      if (selectedKeys.size > 0) {
+        deselectAll();
+      } else if (selectMode) {
+        setSelectModeState(false);
+      }
+    },
+    { enableOnFormTags: true }
+  );
 
   return {
     selectMode,
@@ -164,6 +184,7 @@ export function useMultiSelect<T>(
     setSelectMode,
     handleItemClick,
     selectAll,
+    setSelectedKeys,
     deselectAll,
     isSelected,
     reset,

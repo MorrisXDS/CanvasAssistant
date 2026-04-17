@@ -5,6 +5,59 @@
 
 import { ipcMain } from 'electron';
 import type { IpcContext } from './IpcContext';
+import type { Database } from '../../layers/l1-persistence/Database';
+
+/** Maps html-{sourceType} to Canvas URL path segment */
+const HTML_SOURCE_PATHS: Record<string, string> = {
+  assignment: 'assignments',
+  announcement: 'discussion_topics',
+  quiz: 'quizzes',
+  syllabus: 'assignments/syllabus', // syllabus ignores sourceId
+};
+
+/**
+ * Build the correct Canvas URL for a resource based on its external_id format.
+ * HTML content items (html-page-*, html-assignment-*, etc.) map to their
+ * respective Canvas endpoints; regular file IDs map to /files/{id}.
+ */
+function buildCanvasResourceUrl(
+  baseUrl: string,
+  courseExternalId: string,
+  resourceExternalId: string,
+  courseId: number,
+  database: Database
+): string {
+  const courseBase = `${baseUrl}/courses/${courseExternalId}`;
+  const htmlMatch = resourceExternalId.match(/^html-(\w+)-(.+)$/);
+
+  if (!htmlMatch) {
+    return `${courseBase}/files/${resourceExternalId}?wrap=1`;
+  }
+
+  const [, sourceType, sourceId] = htmlMatch;
+
+  // Pages need a slug lookup
+  if (sourceType === 'page') {
+    const page = database.executeReadOne<{ url_slug: string | null }>(
+      `SELECT url_slug FROM course_pages WHERE course_id = ? AND (external_id = ? OR url_slug = ?)`,
+      [courseId, sourceId, sourceId]
+    );
+    return `${courseBase}/pages/${page?.url_slug || sourceId}`;
+  }
+
+  // Syllabus is a fixed path
+  if (sourceType === 'syllabus') {
+    return `${courseBase}/assignments/syllabus`;
+  }
+
+  const pathSegment = HTML_SOURCE_PATHS[sourceType];
+  if (pathSegment) {
+    return `${courseBase}/${pathSegment}/${sourceId}`;
+  }
+
+  // Unknown html type — fall back to files
+  return `${courseBase}/files/${resourceExternalId}?wrap=1`;
+}
 
 /**
  * Register file data handlers
@@ -423,7 +476,14 @@ export function registerFileDataHandlers(ctx: IpcContext): void {
             return { success: false, error: 'Course not found' };
           }
 
-          const canvasUrl = `${baseUrl}/courses/${course.external_id}/files/${resource.external_id}`;
+          // Construct correct Canvas URL based on external_id format
+          const canvasUrl = buildCanvasResourceUrl(
+            baseUrl,
+            course.external_id,
+            resource.external_id,
+            resource.course_id,
+            database
+          );
           return { success: true, data: { canvasUrl } };
         } else if (source === 'attachment') {
           const result = database.executeRead<{
@@ -447,7 +507,7 @@ export function registerFileDataHandlers(ctx: IpcContext): void {
             return { success: false, error: 'Course not found' };
           }
 
-          const canvasUrl = `${baseUrl}/courses/${course.external_id}/files/${attachment.external_id}`;
+          const canvasUrl = `${baseUrl}/courses/${course.external_id}/files/${attachment.external_id}?wrap=1`;
           return { success: true, data: { canvasUrl } };
         }
 

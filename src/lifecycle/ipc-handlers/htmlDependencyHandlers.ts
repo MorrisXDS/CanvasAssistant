@@ -370,22 +370,39 @@ export function registerHtmlDependencyHandlers(ctx: IpcContext): void {
       // Download using FileDownloadManager
       const downloadId = `html-dep-${fileId}-${Date.now()}`;
       const downloadPromise = new Promise<string | null>((resolve) => {
+        const cleanup = () => {
+          fileDownloadManager.off('download-complete', onComplete);
+          fileDownloadManager.off('download-error', onError);
+          clearTimeout(safetyTimeout);
+        };
+
         const onComplete = (result: { id: string; localPath: string }) => {
           if (result.id === downloadId) {
-            fileDownloadManager.off('download-complete', onComplete);
-            fileDownloadManager.off('download-error', onError);
+            cleanup();
             resolve(result.localPath);
           }
         };
 
         const onError = (result: { id: string; error: string }) => {
           if (result.id === downloadId) {
-            fileDownloadManager.off('download-complete', onComplete);
-            fileDownloadManager.off('download-error', onError);
+            cleanup();
             logger.error(`[html:downloadDependencies] Download failed: ${result.error}`);
             resolve(null);
           }
         };
+
+        // Safety timeout to prevent listener leaks if download never completes
+        const safetyTimeout = setTimeout(
+          () => {
+            fileDownloadManager.off('download-complete', onComplete);
+            fileDownloadManager.off('download-error', onError);
+            logger.warn(
+              `[html:downloadDependencies] Safety timeout for download ${downloadId}`
+            );
+            resolve(null);
+          },
+          5 * 60 * 1000
+        );
 
         fileDownloadManager.on('download-complete', onComplete);
         fileDownloadManager.on('download-error', onError);

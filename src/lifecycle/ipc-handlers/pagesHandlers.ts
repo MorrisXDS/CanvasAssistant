@@ -194,8 +194,14 @@ export function registerPagesHandlers(ctx: IpcContext): void {
                   const mimeType = fileResponse.data['content-type'] || null;
 
                   // Download the file
-                  await new Promise<void>((resolve, _reject) => {
+                  await new Promise<void>((resolve) => {
                     const downloadId = `page-dep-${fileId}-${Date.now()}`;
+
+                    const cleanup = () => {
+                      fileDownloadManager.off('download-complete', onComplete);
+                      fileDownloadManager.off('download-error', onComplete);
+                      clearTimeout(safetyTimeout);
+                    };
 
                     const onComplete = (result: {
                       id: string;
@@ -204,8 +210,7 @@ export function registerPagesHandlers(ctx: IpcContext): void {
                       error?: string;
                     }) => {
                       if (result.id !== downloadId) return;
-                      fileDownloadManager.off('download-complete', onComplete);
-                      fileDownloadManager.off('download-error', onComplete);
+                      cleanup();
 
                       if (result.success && result.localPath) {
                         // Map the original URL pattern to local path
@@ -255,6 +260,19 @@ export function registerPagesHandlers(ctx: IpcContext): void {
                         resolve(); // Continue even if one file fails
                       }
                     };
+
+                    // Safety timeout to prevent listener leaks if download never completes
+                    const safetyTimeout = setTimeout(
+                      () => {
+                        fileDownloadManager.off('download-complete', onComplete);
+                        fileDownloadManager.off('download-error', onComplete);
+                        logger.warn(
+                          `[pages:downloadContent] Safety timeout for download ${downloadId}`
+                        );
+                        resolve();
+                      },
+                      5 * 60 * 1000
+                    );
 
                     fileDownloadManager.on('download-complete', onComplete);
                     fileDownloadManager.on('download-error', onComplete);

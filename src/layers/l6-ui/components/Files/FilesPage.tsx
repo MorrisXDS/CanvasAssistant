@@ -5,7 +5,7 @@
  * Tree rendering lives in FileTreeRenderer.
  */
 
-import React from 'react';
+import React, { useCallback } from 'react';
 import {
   FolderOpen,
   Loader2,
@@ -45,6 +45,23 @@ export function FilesPage() {
   const state = useFilesPageState();
 
   const selection = useFileSelection(state.groupedFiles);
+
+  // Wrap toggleCourse/toggleFolder to also update Ctrl+A focus context
+  const toggleCourseWithFocus = useCallback(
+    (courseId: number) => {
+      selection.setFocusFromCourse(courseId);
+      state.toggleCourse(courseId);
+    },
+    [selection.setFocusFromCourse, state.toggleCourse]
+  );
+
+  const toggleFolderWithFocus = useCallback(
+    (courseId: number, folderPath: string) => {
+      selection.setFocusFromFolder(courseId, folderPath);
+      state.toggleFolder(courseId, folderPath);
+    },
+    [selection.setFocusFromFolder, state.toggleFolder]
+  );
 
   const dialogs = useFileDialogs(
     state.files,
@@ -236,6 +253,8 @@ export function FilesPage() {
       {selection.selectMode && (
         <FileSelectionBar
           selectedCount={selection.selectedCount}
+          pendingCount={selection.pendingCount}
+          downloadedCount={selection.downloadedCount}
           onSelectAllPending={selection.selectAllVisible}
           onDeselectAll={selection.deselectAll}
           onCancel={() => selection.resetSelection()}
@@ -246,6 +265,10 @@ export function FilesPage() {
               state.fetchFiles
             )
           }
+          onDeleteSelectedLocal={() =>
+            selection.handleDeleteSelectedLocal(state.fetchFiles)
+          }
+          onOpenSelectedInCanvas={selection.handleOpenSelectedInCanvas}
           isDownloading={state.downloadingIds.size > 0}
           downloadProgress={selection.downloadProgress}
         />
@@ -289,7 +312,6 @@ export function FilesPage() {
         /* File Tree - onClickCapture for Shift/Ctrl multi-select */
         <div
           onClickCapture={(e) => {
-            if (!selection.selectMode) return;
             if (!e.shiftKey && !e.ctrlKey && !e.metaKey) return;
             const fileEl = (e.target as HTMLElement).closest('[data-file-key]');
             if (!fileEl) return;
@@ -318,9 +340,9 @@ export function FilesPage() {
             folderModulePositions={state.folderModulePositions}
             folderDragDrop={state.folderDragDrop}
             coursesDragDrop={state.coursesDragDrop}
-            toggleCourse={state.toggleCourse}
+            toggleCourse={toggleCourseWithFocus}
             isFolderExpanded={state.isFolderExpanded}
-            toggleFolder={state.toggleFolder}
+            toggleFolder={toggleFolderWithFocus}
             courseHasFileUpdates={state.courseHasFileUpdates}
             getFolderFileUpdates={state.getFolderFileUpdates}
             getFileUpdateType={state.getFileUpdateType}

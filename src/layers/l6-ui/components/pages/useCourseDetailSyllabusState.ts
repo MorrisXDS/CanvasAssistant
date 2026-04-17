@@ -3,7 +3,7 @@
  * Manages syllabus-related state and handlers for CourseDetail page
  */
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback } from 'react';
 import type { CourseSyllabus } from '../Course';
 import type { FileResource } from '../Files/FileListItem';
 import type { MissingDependency } from '../Files/MissingDependenciesDialog';
@@ -41,8 +41,6 @@ export interface UseCourseDetailSyllabusStateReturn {
   setCourseFiles: React.Dispatch<React.SetStateAction<FileResource[]>>;
   showSyllabusSelector: boolean;
   setShowSyllabusSelector: (show: boolean) => void;
-  syllabusContextMenu: { x: number; y: number } | null;
-  setSyllabusContextMenu: (menu: { x: number; y: number } | null) => void;
 
   // Loading state
   syllabusLoading: boolean;
@@ -57,9 +55,7 @@ export interface UseCourseDetailSyllabusStateReturn {
   handleSetSyllabus: (resourceId: number) => Promise<void>;
   handleMarkSyllabusReviewed: () => Promise<void>;
   handleRemoveSyllabus: () => Promise<void>;
-  handleSyllabusClick: () => void;
   handleSyllabusDoubleClick: () => void;
-  handleSyllabusContextMenu: (e: React.MouseEvent) => void;
 }
 
 export function useCourseDetailSyllabusState({
@@ -71,11 +67,6 @@ export function useCourseDetailSyllabusState({
   const [courseFiles, setCourseFiles] = useState<FileResource[]>([]);
   const [syllabusLoading, setSyllabusLoading] = useState(false);
   const [showSyllabusSelector, setShowSyllabusSelector] = useState(false);
-  const [syllabusContextMenu, setSyllabusContextMenu] = useState<{
-    x: number;
-    y: number;
-  } | null>(null);
-  const syllabusClickTimeout = useRef<NodeJS.Timeout | null>(null);
 
   // Missing dependencies dialog state
   const [missingDepsDialog, setMissingDepsDialog] = useState<MissingDepsDialogState>({
@@ -109,7 +100,10 @@ export function useCourseDetailSyllabusState({
           });
         }
       } catch (error) {
-        logger.error('Failed to set syllabus', error instanceof Error ? error : undefined);
+        logger.error(
+          'Failed to set syllabus',
+          error instanceof Error ? error : undefined
+        );
       } finally {
         setSyllabusLoading(false);
       }
@@ -137,7 +131,10 @@ export function useCourseDetailSyllabusState({
         );
       }
     } catch (error) {
-      logger.error('Failed to mark syllabus reviewed', error instanceof Error ? error : undefined);
+      logger.error(
+        'Failed to mark syllabus reviewed',
+        error instanceof Error ? error : undefined
+      );
     } finally {
       setSyllabusLoading(false);
     }
@@ -153,30 +150,17 @@ export function useCourseDetailSyllabusState({
       await api.dispatch('RemoveCourseSyllabus', { courseId });
       setSyllabus(null);
     } catch (error) {
-      logger.error('Failed to remove syllabus', error instanceof Error ? error : undefined);
+      logger.error(
+        'Failed to remove syllabus',
+        error instanceof Error ? error : undefined
+      );
     } finally {
       setSyllabusLoading(false);
     }
   }, [courseId]);
 
-  // Syllabus click - opens selector after delay
-  const handleSyllabusClick = useCallback(() => {
-    // Delay single-click to allow double-click to cancel it
-    if (syllabusClickTimeout.current) {
-      clearTimeout(syllabusClickTimeout.current);
-    }
-    syllabusClickTimeout.current = setTimeout(() => {
-      setShowSyllabusSelector(true);
-    }, 250);
-  }, []);
-
-  // Syllabus double-click - opens file or selector
+  // Open syllabus file or selector
   const handleSyllabusDoubleClick = useCallback(async () => {
-    // Cancel single-click action
-    if (syllabusClickTimeout.current) {
-      clearTimeout(syllabusClickTimeout.current);
-      syllabusClickTimeout.current = null;
-    }
     if (!syllabus) {
       // No syllabus - open selector instead
       setShowSyllabusSelector(true);
@@ -207,7 +191,10 @@ export function useCourseDetailSyllabusState({
             const updatedFiles = await api?.getCourseFiles?.(courseId);
             if (updatedFiles) setCourseFiles(updatedFiles);
           } catch (error) {
-            logger.error('Failed to download syllabus', error instanceof Error ? error : undefined);
+            logger.error(
+              'Failed to download syllabus',
+              error instanceof Error ? error : undefined
+            );
           }
           setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
         },
@@ -235,7 +222,9 @@ export function useCourseDetailSyllabusState({
           | undefined;
 
         if (typedResult?.hasMissingDependencies && typedResult.missingDependencies) {
-          logger.debug(`HTML has missing dependencies: ${JSON.stringify(typedResult.missingDependencies)}`);
+          logger.debug(
+            `HTML has missing dependencies: ${JSON.stringify(typedResult.missingDependencies)}`
+          );
           setMissingDepsDialog({
             isOpen: true,
             dependencies: typedResult.missingDependencies,
@@ -299,7 +288,10 @@ export function useCourseDetailSyllabusState({
         throw new Error(result.error || 'Download failed');
       }
     } catch (error) {
-      logger.error('Failed to download dependencies', error instanceof Error ? error : undefined);
+      logger.error(
+        'Failed to download dependencies',
+        error instanceof Error ? error : undefined
+      );
       setMissingDepsDialog((prev) => ({ ...prev, isDownloading: false }));
       throw error; // Re-throw so dialog shows error
     }
@@ -335,12 +327,6 @@ export function useCourseDetailSyllabusState({
     });
   }, [missingDepsDialog.isDownloading]);
 
-  // Syllabus context menu
-  const handleSyllabusContextMenu = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    setSyllabusContextMenu({ x: e.clientX, y: e.clientY });
-  }, []);
-
   return {
     // Syllabus state
     syllabus,
@@ -349,8 +335,6 @@ export function useCourseDetailSyllabusState({
     setCourseFiles,
     showSyllabusSelector,
     setShowSyllabusSelector,
-    syllabusContextMenu,
-    setSyllabusContextMenu,
 
     // Loading state
     syllabusLoading,
@@ -365,9 +349,7 @@ export function useCourseDetailSyllabusState({
     handleSetSyllabus,
     handleMarkSyllabusReviewed,
     handleRemoveSyllabus,
-    handleSyllabusClick,
     handleSyllabusDoubleClick,
-    handleSyllabusContextMenu,
   };
 }
 
