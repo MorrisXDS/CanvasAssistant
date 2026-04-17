@@ -104,8 +104,14 @@ export function Dashboard() {
   const viewModel = useDashboardViewModel(state);
 
   // Focusable list types
-  type DashboardListId = 'priority' | 'notifications' | 'schedule' | 'importantWorks';
+  type DashboardListId =
+    | 'stats'
+    | 'priority'
+    | 'notifications'
+    | 'schedule'
+    | 'importantWorks';
   const ALL_LISTS: DashboardListId[] = [
+    'stats',
     'priority',
     'notifications',
     'schedule',
@@ -162,8 +168,11 @@ export function Dashboard() {
     );
   }, [state.notifications, courseMap]);
 
-  // Determine which lists have content (Tab skips empty ones)
-  const availableLists = useMemo(() => {
+  // Top row = Stats; bottom row = the four grid lists (see availableBottomLists below)
+  const TOP_LISTS: DashboardListId[] = ['stats'];
+
+  // Determine which bottom-row lists have content (Tab skips empty ones)
+  const availableBottomLists = useMemo(() => {
     const lists: DashboardListId[] = [];
 
     if (viewModel.priorityQueue.length > 0) lists.push('priority');
@@ -194,34 +203,85 @@ export function Dashboard() {
     return lists;
   }, [viewModel.priorityQueue, visibleNotifications, state.calendarEvents, state.tasks]);
 
-  // If the currently focused list has no content, move to the first available one
-  useEffect(() => {
-    if (availableLists.length === 0) return;
-    if (!availableLists.includes(focusedList)) {
-      setFocusedList(availableLists[0]);
-    }
-  }, [availableLists, focusedList]);
+  // Current group the focused list belongs to
+  const currentGroup: DashboardListId[] = TOP_LISTS.includes(focusedList)
+    ? TOP_LISTS
+    : availableBottomLists;
 
-  // Tab: cycle through only the non-empty lists
+  // If the currently focused list has no content, move to the first available one in the bottom row
+  useEffect(() => {
+    if (TOP_LISTS.includes(focusedList)) return; // stats is always valid
+    if (availableBottomLists.length === 0) return;
+    if (!availableBottomLists.includes(focusedList)) {
+      setFocusedList(availableBottomLists[0]);
+    }
+  }, [availableBottomLists, focusedList]);
+
+  // Blur any native DOM focus so the browser's :focus ring doesn't compete with our highlight
+  const blurNative = () => {
+    const active = document.activeElement;
+    if (active && active instanceof HTMLElement && active !== document.body) {
+      active.blur();
+    }
+  };
+
+  // Tab on Dashboard:
+  //   Top row (Stats): cycle between the 4 stat cards (like Right/Left)
+  //   Bottom row: cycle between lists (Tasks, Announcements, Schedule, Important Works)
+  // Always preventDefault so native Tab doesn't leak focus to other elements
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key !== 'Tab' || e.ctrlKey || e.metaKey || e.altKey) return;
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
       if ((e.target as HTMLElement)?.isContentEditable) return;
-      if (availableLists.length <= 1) return;
       e.preventDefault();
+      blurNative();
+
+      // On the top row (Stats), Tab moves between stat cards — delegate to Left/Right handler
+      if (TOP_LISTS.includes(focusedList)) {
+        const syntheticKey = e.shiftKey ? 'ArrowLeft' : 'ArrowRight';
+        document.dispatchEvent(
+          new KeyboardEvent('keydown', { key: syntheticKey, bubbles: true })
+        );
+        return;
+      }
+
+      // Bottom row: cycle between lists
+      if (currentGroup.length <= 1) return;
       setFocusedList((prev) => {
-        const idx = availableLists.indexOf(prev);
+        const idx = currentGroup.indexOf(prev);
         const next = e.shiftKey
-          ? (idx - 1 + availableLists.length) % availableLists.length
-          : (idx + 1) % availableLists.length;
-        return availableLists[next];
+          ? (idx - 1 + currentGroup.length) % currentGroup.length
+          : (idx + 1) % currentGroup.length;
+        return currentGroup[next];
       });
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, [availableLists]);
+  }, [currentGroup, focusedList]);
+
+  // Backtick (`): switch between top row (stats) and bottom row (grid lists)
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key !== '`') return;
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if ((e.target as HTMLElement)?.isContentEditable) return;
+      e.preventDefault();
+      blurNative();
+      setFocusedList((prev) => {
+        if (TOP_LISTS.includes(prev)) {
+          // Switch to first available bottom list
+          return availableBottomLists[0] ?? prev;
+        }
+        // Switch to first top list (stats)
+        return TOP_LISTS[0];
+      });
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [availableBottomLists]);
 
   const { pendingTasks, overdueTasks } = useMemo(() => {
     const now = new Date();
@@ -496,7 +556,11 @@ export function Dashboard() {
       <div style={styles.grid}>
         {/* Top Row: Stats (full width) */}
         <section style={styles.statsRow}>
-          <QuickStats stats={stats} onAction={handleStatAction} />
+          <QuickStats
+            stats={stats}
+            onAction={handleStatAction}
+            isKeyboardActive={focusedList === 'stats'}
+          />
         </section>
 
         {/* Unified Dashboard Grid - 2x2 draggable sections */}

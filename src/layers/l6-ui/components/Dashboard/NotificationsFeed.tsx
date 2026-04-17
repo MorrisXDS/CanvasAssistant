@@ -94,6 +94,9 @@ export function NotificationsFeed({
     { enabled: isKeyboardActive }
   );
 
+  // V: navigate to the full Announcements page (View all)
+  useHotkeys('v', () => navigate('/announcements'), { enabled: isKeyboardActive });
+
   return (
     <Card
       title={CARD_TITLES.dashboard.announcements}
@@ -121,7 +124,7 @@ export function NotificationsFeed({
           {activeNotifications.map((notification, index) => (
             <div
               key={notification.id}
-              data-focus-index={getFocusProps(index)['data-focus-index']}
+              {...getFocusProps(index)}
               style={{
                 ...styles.item,
                 borderTop: index === 0 ? 'none' : '1px solid var(--border-light)',

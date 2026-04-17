@@ -108,22 +108,23 @@ export function Layout() {
   }, []);
 
   // Escape — navigate back from sub-pages (course detail, announcement, etc.)
-  // Skips when a modal is open so ESC closes the modal instead
-  const TOP_LEVEL = [
+  // Skips when a modal is open so ESC closes the modal instead.
+  // "Landing" routes reachable from the sidebar — Escape only backs out if we
+  // arrived here via in-app navigation (history.state has our pushed state).
+  const SIDEBAR_ROUTES = [
     '/',
     '/calendar',
     '/courses',
     '/files',
     '/settings',
-    '/tasks',
     '/updates',
-    '/announcements',
   ];
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
       if (document.querySelector('[role="dialog"], [data-modal]')) return;
-      if (TOP_LEVEL.includes(location.pathname)) return;
+      // Never back out from a sidebar-accessible top-level page
+      if (SIDEBAR_ROUTES.includes(location.pathname)) return;
       navigate(-1);
     };
     document.addEventListener('keydown', handler);

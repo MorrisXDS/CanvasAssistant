@@ -12,7 +12,9 @@ import {
   BarChart3,
   type LucideIcon,
 } from 'lucide-react';
+import { useHotkeys } from 'react-hotkeys-hook';
 import { Card } from '../shared';
+import { useFocusedItem } from '../../hooks/useFocusedItem';
 
 export interface StatItem {
   label: string;
@@ -38,9 +40,15 @@ export interface QuickStatsProps {
   stats: StatItem[];
   /** Callback for action-based stats (modals/popups) */
   onAction?: (action: string) => void;
+  /** Whether keyboard focus navigation is active for this list */
+  isKeyboardActive?: boolean;
 }
 
-export function QuickStats({ stats, onAction }: QuickStatsProps) {
+export function QuickStats({
+  stats,
+  onAction,
+  isKeyboardActive = false,
+}: QuickStatsProps) {
   const navigate = useNavigate();
 
   const handleCardClick = (stat: StatItem) => {
@@ -51,49 +59,81 @@ export function QuickStats({ stats, onAction }: QuickStatsProps) {
     }
   };
 
+  // Focused item navigation (Left/Right + J/K)
+  const { focusedIndex, focusedItem, getFocusProps } = useFocusedItem(stats, {
+    persistKey: 'dashboard-stats',
+    enabled: isKeyboardActive,
+  });
+
+  // Enter: activate focused stat card
+  useHotkeys(
+    'enter',
+    (e) => {
+      if (focusedItem) {
+        e.preventDefault();
+        handleCardClick(focusedItem);
+      }
+    },
+    { enabled: isKeyboardActive }
+  );
+
   return (
     <div style={styles.container}>
       {stats.map((stat, index) => {
         const Icon = iconMap[stat.icon] || BarChart3;
         const isClickable = Boolean(stat.link) || Boolean(stat.action);
+        const isFocused = focusedIndex === index && isKeyboardActive;
         return (
-          <Card
+          <div
             key={index}
-            padding="md"
-            className="stat-card"
-            style={isClickable ? styles.clickableCard : undefined}
-            onClick={isClickable ? () => handleCardClick(stat) : undefined}
+            {...getFocusProps(index)}
+            style={
+              isFocused
+                ? {
+                    borderRadius: 'var(--radius-lg)',
+                    outline: '2px solid var(--color-navy)',
+                    outlineOffset: '-2px',
+                  }
+                : undefined
+            }
           >
-            <div style={styles.statContent}>
-              <div style={styles.iconWrapper}>
-                <Icon size={24} color="var(--color-blue)" />
-              </div>
-              <div style={styles.textContent}>
-                <div style={styles.value}>{stat.value}</div>
-                <div style={styles.label}>{stat.label}</div>
-              </div>
-              {stat.trend && (
-                <div
-                  style={{
-                    ...styles.trend,
-                    color:
-                      stat.trend.direction === 'up'
-                        ? 'var(--color-success)'
-                        : stat.trend.direction === 'down'
-                          ? 'var(--color-error)'
-                          : stat.trend.direction === 'warning'
-                            ? 'var(--color-error)'
-                            : 'var(--text-muted)',
-                  }}
-                >
-                  {stat.trend.direction === 'up' && '↑'}
-                  {stat.trend.direction === 'down' && '↓'}
-                  {stat.trend.direction === 'warning' && '⚠'}
-                  {stat.trend.value}
+            <Card
+              padding="md"
+              className="stat-card"
+              style={isClickable ? styles.clickableCard : undefined}
+              onClick={isClickable ? () => handleCardClick(stat) : undefined}
+            >
+              <div style={styles.statContent}>
+                <div style={styles.iconWrapper}>
+                  <Icon size={24} color="var(--color-blue)" />
                 </div>
-              )}
-            </div>
-          </Card>
+                <div style={styles.textContent}>
+                  <div style={styles.value}>{stat.value}</div>
+                  <div style={styles.label}>{stat.label}</div>
+                </div>
+                {stat.trend && (
+                  <div
+                    style={{
+                      ...styles.trend,
+                      color:
+                        stat.trend.direction === 'up'
+                          ? 'var(--color-success)'
+                          : stat.trend.direction === 'down'
+                            ? 'var(--color-error)'
+                            : stat.trend.direction === 'warning'
+                              ? 'var(--color-error)'
+                              : 'var(--text-muted)',
+                    }}
+                  >
+                    {stat.trend.direction === 'up' && '↑'}
+                    {stat.trend.direction === 'down' && '↓'}
+                    {stat.trend.direction === 'warning' && '⚠'}
+                    {stat.trend.value}
+                  </div>
+                )}
+              </div>
+            </Card>
+          </div>
         );
       })}
     </div>

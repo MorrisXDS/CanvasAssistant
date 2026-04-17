@@ -124,6 +124,8 @@ export interface TaskItemProps {
   onMarkUpdatesSeen?: () => void;
   /** Index in focus navigation — sets data-focus-index attribute */
   focusIndex?: number;
+  /** Focus scope identifier — sets data-focus-scope attribute */
+  focusScope?: string;
   /** Whether this item is currently keyboard-focused */
   isKeyboardFocused?: boolean;
 }
@@ -166,6 +168,7 @@ export function TaskItem({
   updateType,
   onMarkUpdatesSeen,
   focusIndex,
+  focusScope,
   isKeyboardFocused,
 }: TaskItemProps) {
   const [isHovered, setIsHovered] = React.useState(false);
@@ -228,6 +231,7 @@ export function TaskItem({
     <div
       ref={setRefs}
       data-focus-index={focusIndex}
+      data-focus-scope={focusScope}
       style={{
         ...styles.taskItemWrapper,
         borderTop: isFirst ? 'none' : '1px solid var(--border-light)',

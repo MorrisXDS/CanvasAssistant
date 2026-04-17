@@ -393,7 +393,7 @@ export function ScheduleCard({ maxItems, isKeyboardActive = false }: ScheduleCar
             return (
               <div
                 key={item.id}
-                data-focus-index={getFocusProps(index)['data-focus-index']}
+                {...getFocusProps(index)}
                 style={{
                   ...styles.item,
                   borderTop: index === 0 ? 'none' : '1px solid var(--border-light)',

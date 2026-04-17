@@ -34,7 +34,11 @@ export interface UseFocusedItemResult<T> {
   /** Clear focus */
   clearFocus: () => void;
   /** Get data attribute props for a list item at a given index */
-  getFocusProps: (index: number) => { 'data-focus-index': number; className?: string };
+  getFocusProps: (index: number) => {
+    'data-focus-index': number;
+    'data-focus-scope'?: string;
+    className?: string;
+  };
 }
 
 const FOCUS_CLASS = 'keyboard-focused';
@@ -83,22 +87,33 @@ export function useFocusedItem<T>(
     }
   }, [items.length, focusedIndex]);
 
-  // Only scroll into view on user-initiated focus changes, not on restore
+  // Only scroll into view on user-initiated focus changes, not on restore.
+  // Scope the query by persistKey so multiple lists on the same page don't collide.
   const shouldScroll = useRef(false);
   useEffect(() => {
     if (focusedIndex < 0 || !shouldScroll.current) return;
     shouldScroll.current = false;
+    const scopeSelector = persistKey ? `[data-focus-scope="${persistKey}"]` : '';
     const el = document.querySelector(
-      `${itemSelector}[data-focus-index="${focusedIndex}"]`
+      `${itemSelector}${scopeSelector}[data-focus-index="${focusedIndex}"]`
     );
     if (el) {
       el.scrollIntoView({ block: 'nearest', behavior: 'instant' });
     }
-  }, [focusedIndex, itemSelector]);
+  }, [focusedIndex, itemSelector, persistKey]);
+
+  // Blur any native DOM focus so the browser's :focus ring doesn't compete with our highlight
+  const blurNative = () => {
+    const active = document.activeElement;
+    if (active && active instanceof HTMLElement && active !== document.body) {
+      active.blur();
+    }
+  };
 
   const movePrev = useCallback(() => {
     if (items.length === 0) return;
     shouldScroll.current = true;
+    blurNative();
     setFocusedIndex((prev) => {
       if (prev <= 0) return items.length - 1; // wrap to end
       return prev - 1;
@@ -108,6 +123,7 @@ export function useFocusedItem<T>(
   const moveNext = useCallback(() => {
     if (items.length === 0) return;
     shouldScroll.current = true;
+    blurNative();
     setFocusedIndex((prev) => {
       if (prev >= items.length - 1) return 0; // wrap to start
       return prev + 1;
@@ -147,9 +163,10 @@ export function useFocusedItem<T>(
   const getFocusProps = useCallback(
     (index: number) => ({
       'data-focus-index': index,
+      'data-focus-scope': persistKey,
       className: index === focusedIndex ? FOCUS_CLASS : undefined,
     }),
-    [focusedIndex]
+    [focusedIndex, persistKey]
   );
 
   return {

@@ -86,6 +86,9 @@ export function PriorityList({
     { enabled: isKeyboardActive }
   );
 
+  // V: navigate to the full Tasks page (View all)
+  useHotkeys('v', () => navigate('/tasks'), { enabled: isKeyboardActive });
+
   // Create calendar event lookup map
   const calendarEventMap = useMemo(() => {
     const map = new Map<number, DisplayCalendarEvent>();
@@ -175,7 +178,7 @@ export function PriorityList({
           {displayItems.map((item, index) => (
             <div
               key={item.task.id}
-              data-focus-index={getFocusProps(index)['data-focus-index']}
+              {...getFocusProps(index)}
               style={{
                 ...styles.listItem,
                 borderTop: index === 0 ? 'none' : '1px solid var(--border-light)',

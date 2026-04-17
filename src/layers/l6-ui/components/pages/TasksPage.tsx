@@ -319,11 +319,10 @@ export function TasksPage() {
         ) : (
           <div style={styles.taskList}>
             {filteredTasks.map((item, index) => {
-              const focusProps = getFocusProps(index);
               return (
                 <div
                   key={item.task.id}
-                  data-focus-index={focusProps['data-focus-index']}
+                  {...getFocusProps(index)}
                   style={{
                     ...styles.taskItem,
                     borderTop: index === 0 ? 'none' : '1px solid var(--border-light)',

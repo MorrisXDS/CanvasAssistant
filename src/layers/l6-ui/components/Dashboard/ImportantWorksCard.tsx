@@ -220,7 +220,7 @@ export function ImportantWorksCard({
             return (
               <div
                 key={task.id}
-                data-focus-index={getFocusProps(index)['data-focus-index']}
+                {...getFocusProps(index)}
                 style={{
                   ...styles.item,
                   borderTop: index === 0 ? 'none' : '1px solid var(--border-light)',

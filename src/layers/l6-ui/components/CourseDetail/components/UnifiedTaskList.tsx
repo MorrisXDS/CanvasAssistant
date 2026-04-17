@@ -414,6 +414,7 @@ export function UnifiedTaskList({
               isEditing={editingTaskId === task.id}
               isHighlighted={highlightedTaskId === task.id}
               focusIndex={getFocusProps(index)['data-focus-index']}
+              focusScope={getFocusProps(index)['data-focus-scope']}
               isKeyboardFocused={focusedIndex === index}
               editTitle={editTaskTitle}
               editDescription={editTaskDescription}

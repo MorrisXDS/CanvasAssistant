@@ -36,8 +36,9 @@ export interface UnifiedDashboardGridProps {
   onTaskContextMenu?: (e: React.MouseEvent, task: Task) => void;
   onToggleComplete?: (taskId: number, isCompleted: boolean) => void;
   onDismissNotification: (id: number) => void;
-  /** Which list currently has keyboard focus (Tab cycles between them) */
-  focusedList?: 'priority' | 'notifications' | 'schedule' | 'importantWorks';
+  /** Which list currently has keyboard focus (Tab cycles between them).
+   * 'stats' is handled in Dashboard.tsx (outside the grid). */
+  focusedList?: 'stats' | 'priority' | 'notifications' | 'schedule' | 'importantWorks';
 }
 
 export function UnifiedDashboardGrid({

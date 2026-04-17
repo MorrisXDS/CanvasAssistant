@@ -440,7 +440,7 @@ export function AnnouncementsPage() {
             {filteredAnnouncements.map((item, index) => (
               <Link
                 key={item.notification.id}
-                data-focus-index={getFocusProps(index)['data-focus-index']}
+                {...getFocusProps(index)}
                 to={`/announcement/${item.notification.id}`}
                 style={{
                   ...styles.announcementItem,
