@@ -138,6 +138,31 @@ export const KEYBOARD_SHORTCUTS: ShortcutCategory[] = [
       { keys: ['E'], label: 'Edit focused event (Month view only; Week/Day = next day)' },
       { keys: ['N'], label: 'Create new event (pre-fills from focus)' },
       { keys: ['X'], label: 'Toggle completion on focused task' },
+      {
+        keys: ['Delete'],
+        label: 'Delete focused event (user-created events only — confirms first)',
+      },
+      // Confirmation prompts (applies to the inline "Delete event?" prompt
+      // inside the detail modal and the standalone ConfirmDialog)
+      { keys: ['Enter'], label: 'Confirm prompt: proceed (e.g. Delete)' },
+      { keys: ['Escape'], label: 'Confirm prompt: cancel (returns to prior view)' },
+      // Event create/edit modal
+      { keys: ['mod', 'Enter'], label: 'Event form: save' },
+      { keys: ['Escape'], label: 'Event form: close without saving' },
+      { keys: ['Alt', '1'], label: 'Event form (create): select Regular event type' },
+      { keys: ['Alt', '2'], label: 'Event form (create): select Coursework type' },
+      {
+        keys: ['Delete'],
+        label: 'Event form (edit): delete this event (only when not typing in a field)',
+      },
+      // Event form field jumps (Alt + letter)
+      { keys: ['Alt', 'T'], label: 'Event form: jump to Title' },
+      { keys: ['Alt', 'C'], label: 'Event form: jump to Course' },
+      { keys: ['Alt', 'S'], label: 'Event form: jump to Start date' },
+      { keys: ['Alt', 'D'], label: 'Event form: jump to Due / End date' },
+      { keys: ['Alt', 'L'], label: 'Event form: jump to Location' },
+      { keys: ['Alt', 'N'], label: 'Event form: jump to Notes' },
+      { keys: ['Alt', 'R'], label: 'Event form: jump to Reminder' },
       // Filters
       { keys: ['F'], label: 'Open filters + enter filter mode (also closes panel)' },
       { keys: ['Escape'], label: 'Filter mode: close panel (quit filter mode)' },

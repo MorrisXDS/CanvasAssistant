@@ -205,8 +205,8 @@ export const styles: Record<string, React.CSSProperties> = {
   editButton: {
     display: 'flex',
     alignItems: 'center',
-    gap: 'var(--space-1)',
-    padding: 'var(--space-2) var(--space-3)',
+    gap: 'var(--space-2)',
+    padding: 'var(--space-2) var(--space-4)',
     backgroundColor: 'transparent',
     color: 'var(--text-secondary)',
     border: '1px solid var(--border-default)',
@@ -215,13 +215,14 @@ export const styles: Record<string, React.CSSProperties> = {
     fontWeight: 'var(--font-medium)',
     cursor: 'pointer',
     transition: 'all var(--transition-fast)',
+    whiteSpace: 'nowrap',
   },
 
   deleteButton: {
     display: 'flex',
     alignItems: 'center',
-    gap: 'var(--space-1)',
-    padding: 'var(--space-2) var(--space-3)',
+    gap: 'var(--space-2)',
+    padding: 'var(--space-2) var(--space-4)',
     backgroundColor: 'transparent',
     color: 'var(--color-error)',
     border: '1px solid var(--color-error)',
@@ -230,6 +231,7 @@ export const styles: Record<string, React.CSSProperties> = {
     fontWeight: 'var(--font-medium)',
     cursor: 'pointer',
     transition: 'all var(--transition-fast)',
+    whiteSpace: 'nowrap',
   },
 
   deleteConfirm: {
@@ -278,6 +280,7 @@ export const styles: Record<string, React.CSSProperties> = {
     fontWeight: 'var(--font-medium)',
     cursor: 'pointer',
     transition: 'all var(--transition-fast)',
+    whiteSpace: 'nowrap',
   },
 
   secondaryButton: {
@@ -290,5 +293,6 @@ export const styles: Record<string, React.CSSProperties> = {
     fontWeight: 'var(--font-medium)',
     cursor: 'pointer',
     transition: 'all var(--transition-fast)',
+    whiteSpace: 'nowrap',
   },
 };

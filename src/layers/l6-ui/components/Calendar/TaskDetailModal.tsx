@@ -14,12 +14,12 @@ import {
   Circle,
   Clock,
   Edit2,
-  Trash2,
   MapPin,
 } from 'lucide-react';
 import type { Task } from '../../../l5-presentation/types';
 import type { CalendarEvent } from './CalendarGrid';
 import { HtmlContent } from '../shared';
+import { ConfirmDialog } from '../shared/ConfirmDialog';
 import { useStore } from '../../../l5-presentation/store';
 import { styles } from './TaskDetailModal.styles';
 import { formatSmartDate } from '../../constants';
@@ -81,6 +81,17 @@ export function TaskDetailModal({
   const courses = useStore((state) => state.courses);
   const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false);
 
+  // Delete is supported for:
+  // - Task events (dispatches DeleteTask, removing the underlying task)
+  // - User-created / imported standalone calendar events (no linked task)
+  const directImportedEvent = event?.type === 'imported' ? event.event : null;
+  const isStandaloneCalendarEvent =
+    !!directImportedEvent &&
+    !directImportedEvent.taskId &&
+    (directImportedEvent.sourceType === 'user' ||
+      directImportedEvent.sourceType === 'imported');
+  const canDelete = !!onDelete && (event?.type === 'task' || isStandaloneCalendarEvent);
+
   React.useEffect(() => {
     if (!isOpen) return;
     const handler = (e: KeyboardEvent) => {
@@ -89,6 +100,10 @@ export function TaskDetailModal({
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
       if (target?.isContentEditable) return;
       if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+      // When the delete ConfirmDialog is showing, it owns the keyboard
+      // (capture-phase listener + stopPropagation). Skip everything else.
+      if (showDeleteConfirm) return;
 
       if (e.key === 'Escape') {
         e.preventDefault();
@@ -107,7 +122,7 @@ export function TaskDetailModal({
           onToggleComplete(task);
         }
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
-        if (onDelete) {
+        if (canDelete) {
           e.preventDefault();
           setShowDeleteConfirm(true);
         }
@@ -115,7 +130,7 @@ export function TaskDetailModal({
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, [isOpen, onClose, onEdit, onDelete, onToggleComplete]);
+  }, [isOpen, onClose, onEdit, onDelete, onToggleComplete, showDeleteConfirm, canDelete]);
 
   // Reset delete confirm state when modal closes
   React.useEffect(() => {
@@ -389,56 +404,9 @@ export function TaskDetailModal({
           )}
         </div>
 
-        {/* Footer Actions */}
+        {/* Footer Actions — Delete is keyboard-only (Del key → ConfirmDialog) */}
         <div style={styles.footer}>
-          {/* Left side - Edit/Delete for editable events */}
-          {!isTask &&
-            importedEvent &&
-            (importedEvent.sourceType === 'user' ||
-              importedEvent.sourceType === 'imported') && (
-              <div style={styles.footerLeft}>
-                {showDeleteConfirm ? (
-                  <div style={styles.deleteConfirm}>
-                    <span style={styles.deleteText}>Delete event?</span>
-                    <button
-                      style={styles.confirmDeleteButton}
-                      onClick={() => {
-                        onDelete?.();
-                        setShowDeleteConfirm(false);
-                      }}
-                    >
-                      Delete
-                    </button>
-                    <button
-                      style={styles.cancelDeleteButton}
-                      onClick={() => setShowDeleteConfirm(false)}
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                ) : (
-                  <>
-                    {onEdit && (
-                      <button style={styles.editButton} onClick={onEdit}>
-                        <Edit2 size={14} />
-                        Edit
-                      </button>
-                    )}
-                    {onDelete && (
-                      <button
-                        style={styles.deleteButton}
-                        onClick={() => setShowDeleteConfirm(true)}
-                      >
-                        <Trash2 size={14} />
-                        Delete
-                      </button>
-                    )}
-                  </>
-                )}
-              </div>
-            )}
-          {/* Edit event for task events */}
-          {isTask && onEdit && (
+          {onEdit && (
             <div style={styles.footerLeft}>
               <button style={styles.editButton} onClick={onEdit} title="Edit Event (E)">
                 <Edit2 size={14} />
@@ -463,6 +431,25 @@ export function TaskDetailModal({
           </div>
         </div>
       </div>
+
+      {/* Delete confirmation (replaces inline confirm) */}
+      <ConfirmDialog
+        isOpen={showDeleteConfirm}
+        title={isTask ? 'Delete task?' : 'Delete event?'}
+        message={
+          isTask
+            ? `"${task?.title ?? 'this task'}" will be deleted from the course. This cannot be undone.`
+            : `"${importedEvent?.title ?? 'this event'}" will be removed from your calendar. This cannot be undone.`
+        }
+        type="danger"
+        confirmText="Delete"
+        cancelText="Cancel"
+        onConfirm={() => {
+          setShowDeleteConfirm(false);
+          onDelete?.();
+        }}
+        onCancel={() => setShowDeleteConfirm(false)}
+      />
     </div>
   );
 }

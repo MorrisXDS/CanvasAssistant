@@ -60,6 +60,34 @@ export function ConfirmDialog({
   children,
   hideCancel = false,
 }: ConfirmDialogProps) {
+  // Auto-focus the confirm button when the dialog opens so Enter activates
+  // it natively and the dialog has clear keyboard ownership.
+  const confirmBtnRef = React.useRef<HTMLButtonElement>(null);
+  React.useEffect(() => {
+    if (!isOpen) return;
+    // Defer to next tick to make sure the element is in the DOM and any
+    // underlying autoFocus has settled.
+    const id = requestAnimationFrame(() => {
+      confirmBtnRef.current?.focus();
+    });
+    return () => cancelAnimationFrame(id);
+  }, [isOpen]);
+
+  // Escape cancels. Capture phase + stopPropagation so a parent modal's
+  // Escape handler doesn't also fire and close everything.
+  React.useEffect(() => {
+    if (!isOpen) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        onCancel();
+      }
+    };
+    document.addEventListener('keydown', handler, true);
+    return () => document.removeEventListener('keydown', handler, true);
+  }, [isOpen, onCancel]);
+
   if (!isOpen) return null;
 
   const config = typeConfig[type];
@@ -97,6 +125,7 @@ export function ConfirmDialog({
             </button>
           )}
           <button
+            ref={confirmBtnRef}
             type="button"
             style={{
               ...styles.confirmBtn,

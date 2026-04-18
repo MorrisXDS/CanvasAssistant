@@ -69,6 +69,7 @@ export function CalendarPage() {
     calendarEvents,
     fetchImportedCalendars,
     fetchCalendarEventsForRange,
+    fetchTasks,
     importICSFile,
     reimportCalendar,
     deleteImportedCalendar,
@@ -145,6 +146,12 @@ export function CalendarPage() {
   // the detail view instead of dismissing everything.
   const [eventToRestoreAfterEdit, setEventToRestoreAfterEdit] =
     useState<CalendarEvent | null>(null);
+
+  // When Delete is pressed on a focused imported event, we stash it here and
+  // render a ConfirmDialog; confirming calls deleteCalendarEvent.
+  const [eventPendingDelete, setEventPendingDelete] = useState<CalendarEvent | null>(
+    null
+  );
 
   // Highlighted task for "View in Calendar" navigation
   const [highlightedTaskId, setHighlightedTaskId] = useState<number | null>(null);
@@ -582,6 +589,10 @@ export function CalendarPage() {
   }, [visibleEvents, courseMap, coursesWithColors]);
 
   // Navigation handlers
+  // Clicking the nav arrows changes currentDate; keep focusedDate in sync and
+  // clear focusedEventId so subsequent keyboard nav doesn't reference a day or
+  // event outside the now-visible range (which would cause A/D fallbacks to
+  // misfire in Day view).
   const goToPrevious = () => {
     setCurrentDate((prev) => {
       const newDate = new Date(prev);
@@ -590,6 +601,8 @@ export function CalendarPage() {
       else newDate.setDate(newDate.getDate() - 1);
       return newDate;
     });
+    setFocusedEventId(null);
+    if (view === 'day') setFocusedDate(null);
   };
 
   const goToNext = () => {
@@ -600,6 +613,8 @@ export function CalendarPage() {
       else newDate.setDate(newDate.getDate() + 1);
       return newDate;
     });
+    setFocusedEventId(null);
+    if (view === 'day') setFocusedDate(null);
   };
 
   const goToToday = () => setCurrentDate(new Date());
@@ -785,7 +800,20 @@ export function CalendarPage() {
   };
 
   // Event handlers
-  const handleEventClick = (event: CalendarEvent) => setSelectedEvent(event);
+  // Clicking an event should also sync the keyboard focus highlight so that
+  // resuming keyboard navigation picks up from the clicked item (not wherever
+  // the focus cursor was previously).
+  const handleEventClick = (event: CalendarEvent) => {
+    setSelectedEvent(event);
+    setFocusedEventId(getEventId(event));
+    const start =
+      event.type === 'task' && event.task.dueAt
+        ? new Date(event.task.dueAt)
+        : event.type === 'imported'
+          ? new Date(event.event.startAt)
+          : null;
+    if (start) setFocusedDate(toISODate(start));
+  };
 
   const markTaskComplete = useStore((state) => state.markTaskComplete);
   const handleToggleTaskComplete = async (task: Task) => {
@@ -802,6 +830,8 @@ export function CalendarPage() {
 
   const handleDateClick = (date: Date) => {
     setCurrentDate(date);
+    setFocusedDate(toISODate(date));
+    setFocusedEventId(null);
     if (view === 'month') setView('day');
   };
 
@@ -934,11 +964,28 @@ export function CalendarPage() {
   };
 
   const handleDeleteFromDetail = async () => {
-    if (selectedEvent?.type === 'imported') {
+    if (!selectedEvent) return;
+    if (selectedEvent.type === 'imported') {
       await deleteCalendarEvent(selectedEvent.event.id);
-      setSelectedEvent(null);
-      fetchCalendarEventsForRange(prefetchRange.start, prefetchRange.end);
+    } else if (selectedEvent.type === 'task') {
+      const api = window.api;
+      if (!api?.dispatch) return;
+      try {
+        await api.dispatch('DeleteTask', {
+          taskId: selectedEvent.task.id,
+          force: true,
+        });
+        await fetchTasks();
+      } catch (err) {
+        log.error(
+          'Failed to delete task from calendar',
+          err instanceof Error ? err : undefined
+        );
+      }
     }
+    setSelectedEvent(null);
+    setFocusedEventId(null);
+    fetchCalendarEventsForRange(prefetchRange.start, prefetchRange.end);
   };
 
   // Helper to open edit modal for any CalendarEvent (task or imported)
@@ -965,7 +1012,8 @@ export function CalendarPage() {
       showEventFormModal ||
       !!alertDialog ||
       showImportModal ||
-      showDuplicateModal;
+      showDuplicateModal ||
+      !!eventPendingDelete;
   });
 
   // Keyboard shortcuts (document-level so focus target doesn't matter)
@@ -1220,9 +1268,10 @@ export function CalendarPage() {
       };
 
       const navigateWeekHorizontal = (direction: 1 | -1) => {
-        // No focused event: if the focused day has events, pick the edge event
-        // (leftmost when going right, rightmost when going left) so A/D feels spatial.
-        // Otherwise fall back to Q/E mode (day-column shift).
+        // No focused event: pick an edge event of the focused day so A/D
+        // feels spatial. If the day has no events, Week view falls back to
+        // shifting the day column; Day view does nothing (day switching is
+        // Q/E or Ctrl+←/→ in Day view).
         if (!focusedEvent) {
           const dayISO = focusedDate ?? toISODate(currentDate);
           const dayEvents = getEventsOnDate(dayISO);
@@ -1232,7 +1281,7 @@ export function CalendarPage() {
             if (!focusedDate) setFocusedDate(dayISO);
             return;
           }
-          shiftDay(direction);
+          if (view === 'week') shiftDay(direction);
           return;
         }
         const curStart = getEventStartAt(focusedEvent);
@@ -1495,6 +1544,15 @@ export function CalendarPage() {
             handleToggleTaskComplete(focusedEvent.task);
           }
           break;
+        case 'Delete':
+        case 'Backspace':
+          // Imported events delete via deleteCalendarEvent; task events
+          // dispatch DeleteTask. Both funnel through the same confirm dialog.
+          if (focusedEvent) {
+            e.preventDefault();
+            setEventPendingDelete(focusedEvent);
+          }
+          break;
         case 'Escape':
           if (keyMode !== 'events') {
             e.preventDefault();
@@ -1603,6 +1661,48 @@ export function CalendarPage() {
         hideCancel
         onConfirm={() => setAlertDialog(null)}
         onCancel={() => setAlertDialog(null)}
+      />
+
+      {/* Delete Event Confirm (from Delete key on focused event) */}
+      <ConfirmDialog
+        isOpen={!!eventPendingDelete}
+        title={eventPendingDelete?.type === 'task' ? 'Delete task?' : 'Delete event?'}
+        message={
+          eventPendingDelete?.type === 'imported'
+            ? `"${eventPendingDelete.event.title}" will be removed from your calendar. This cannot be undone.`
+            : eventPendingDelete?.type === 'task'
+              ? `"${eventPendingDelete.task.title}" will be deleted from the course. This cannot be undone.`
+              : ''
+        }
+        type="danger"
+        confirmText="Delete"
+        cancelText="Cancel"
+        onConfirm={async () => {
+          if (eventPendingDelete?.type === 'imported') {
+            await deleteCalendarEvent(eventPendingDelete.event.id);
+            fetchCalendarEventsForRange(prefetchRange.start, prefetchRange.end);
+          } else if (eventPendingDelete?.type === 'task') {
+            const api = window.api;
+            if (api?.dispatch) {
+              try {
+                await api.dispatch('DeleteTask', {
+                  taskId: eventPendingDelete.task.id,
+                  force: true,
+                });
+                await fetchTasks();
+                fetchCalendarEventsForRange(prefetchRange.start, prefetchRange.end);
+              } catch (err) {
+                log.error(
+                  'Failed to delete task from calendar',
+                  err instanceof Error ? err : undefined
+                );
+              }
+            }
+          }
+          setFocusedEventId(null);
+          setEventPendingDelete(null);
+        }}
+        onCancel={() => setEventPendingDelete(null)}
       />
 
       {/* Header */}

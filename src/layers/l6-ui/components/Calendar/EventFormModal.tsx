@@ -86,17 +86,101 @@ export function EventFormModal({
 }: EventFormModalProps) {
   const isEditMode = Boolean(event);
 
-  // Close on Escape
+  // Event type selection (only for create mode)
+  const [eventType, setEventType] = useState<EventType>('event');
+
+  // Keyboard shortcuts: Escape closes, Ctrl/Cmd+Enter saves, Alt+1/2 toggle type,
+  // Alt+letter jumps to fields, Alt+Delete triggers delete (edit mode only).
+  // Save is triggered by submitting the form so validation paths stay consistent.
+  const formRef = React.useRef<HTMLFormElement>(null);
   useEffect(() => {
+    if (!isOpen) return;
+    const focusField = (ids: string[]) => {
+      for (const id of ids) {
+        const el = document.getElementById(id);
+        if (el && typeof (el as HTMLElement).focus === 'function') {
+          (el as HTMLElement).focus();
+          if (el instanceof HTMLInputElement && el.type === 'text') {
+            el.select();
+          }
+          return true;
+        }
+      }
+      return false;
+    };
     const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName;
+      const isTyping =
+        tag === 'INPUT' ||
+        tag === 'TEXTAREA' ||
+        tag === 'SELECT' ||
+        target?.isContentEditable === true;
+
+      if (e.key === 'Escape') {
+        onClose();
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault();
+        formRef.current?.requestSubmit();
+        return;
+      }
+
+      // Delete key (unmodified): trigger delete in edit mode, but only when
+      // not typing in an input — otherwise it should behave as the normal
+      // forward-delete keystroke inside the field.
+      if (
+        e.key === 'Delete' &&
+        !e.altKey &&
+        !e.ctrlKey &&
+        !e.metaKey &&
+        !e.shiftKey &&
+        !isTyping &&
+        isEditMode &&
+        onDelete
+      ) {
+        e.preventDefault();
+        setShowDeleteConfirm(true);
+        return;
+      }
+
+      // Alt + letter: type toggles + field jumps.
+      if (!e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+      const key = e.key.toLowerCase();
+
+      if (!isEditMode) {
+        if (key === '1') {
+          e.preventDefault();
+          setEventType('event');
+          return;
+        }
+        if (key === '2') {
+          e.preventDefault();
+          setEventType('coursework');
+          return;
+        }
+      }
+
+      // Field jumps — each entry is an ordered list of IDs to try; first
+      // one present in the DOM wins (handles Event vs Coursework variants).
+      const jumps: Record<string, string[]> = {
+        t: ['event-form-title'],
+        c: ['event-form-course'],
+        s: ['event-form-start', 'event-form-cwstart'],
+        d: ['event-form-due', 'event-form-cwdue'],
+        l: ['event-form-location', 'event-form-cwlocation'],
+        n: ['event-form-notes'],
+        r: ['event-form-reminder'],
+      };
+      const ids = jumps[key];
+      if (ids && focusField(ids)) {
+        e.preventDefault();
+      }
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, [onClose]);
-
-  // Event type selection (only for create mode)
-  const [eventType, setEventType] = useState<EventType>('event');
+  }, [isOpen, onClose, isEditMode, onDelete]);
 
   // Common fields
   const [title, setTitle] = useState('');
@@ -345,7 +429,12 @@ export function EventFormModal({
 
   return (
     <div style={styles.overlay} onClick={onClose}>
-      <div role="dialog" aria-modal="true" style={styles.modal} onClick={(e) => e.stopPropagation()}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        style={styles.modal}
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Header */}
         <div style={styles.header}>
           <h2 style={styles.title}>
@@ -361,7 +450,7 @@ export function EventFormModal({
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} style={styles.form}>
+        <form ref={formRef} onSubmit={handleSubmit} style={styles.form}>
           {/* Event Type Selection (only for create mode) */}
           {!isEditMode && (
             <div style={styles.typeSelector}>
@@ -401,6 +490,7 @@ export function EventFormModal({
               Title
             </label>
             <input
+              id="event-form-title"
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
@@ -422,6 +512,7 @@ export function EventFormModal({
                 {eventType === 'coursework' && <span style={styles.required}>*</span>}
               </label>
               <select
+                id="event-form-course"
                 value={courseId ?? ''}
                 onChange={(e) =>
                   setCourseId(e.target.value ? Number(e.target.value) : undefined)
@@ -465,6 +556,7 @@ export function EventFormModal({
                     {isDeadlineTaskEvent ? 'Start (optional)' : 'Start'}
                   </label>
                   <input
+                    id="event-form-start"
                     type={allDay ? 'date' : 'datetime-local'}
                     value={startAt}
                     onChange={(e) => setStartAt(e.target.value)}
@@ -481,6 +573,7 @@ export function EventFormModal({
                     {isDeadlineTaskEvent ? 'Due' : 'End'}
                   </label>
                   <input
+                    id="event-form-due"
                     type={allDay ? 'date' : 'datetime-local'}
                     value={endAt}
                     onChange={(e) => setEndAt(e.target.value)}
@@ -496,6 +589,7 @@ export function EventFormModal({
                   Location
                 </label>
                 <input
+                  id="event-form-location"
                   type="text"
                   value={location}
                   onChange={(e) => setLocation(e.target.value)}
@@ -598,6 +692,7 @@ export function EventFormModal({
                   Reminder
                 </label>
                 <select
+                  id="event-form-reminder"
                   value={reminderMinutes}
                   onChange={(e) => setReminderMinutes(Number(e.target.value))}
                   style={styles.select}
@@ -626,6 +721,7 @@ export function EventFormModal({
                     Start Date
                   </label>
                   <input
+                    id="event-form-cwstart"
                     type="datetime-local"
                     value={courseworkStartAt}
                     onChange={(e) => setCourseworkStartAt(e.target.value)}
@@ -639,6 +735,7 @@ export function EventFormModal({
                     Due Date
                   </label>
                   <input
+                    id="event-form-cwdue"
                     type="datetime-local"
                     value={dueAt}
                     onChange={(e) => setDueAt(e.target.value)}
@@ -713,6 +810,7 @@ export function EventFormModal({
               )}
             </label>
             <textarea
+              id="event-form-notes"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               placeholder="Add notes"
@@ -728,6 +826,7 @@ export function EventFormModal({
                 Location
               </label>
               <input
+                id="event-form-cwlocation"
                 type="text"
                 value={location}
                 onChange={(e) => setLocation(e.target.value)}
