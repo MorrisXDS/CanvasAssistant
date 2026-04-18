@@ -210,7 +210,10 @@ export function Sidebar({ onToggle }: SidebarProps) {
             logger.debug(`User profile set: ${profile.name}`);
           }
         } catch (error) {
-          logger.error('Failed to fetch user profile', error instanceof Error ? error : undefined);
+          logger.error(
+            'Failed to fetch user profile',
+            error instanceof Error ? error : undefined
+          );
         }
       }
     };
@@ -291,17 +294,24 @@ export function Sidebar({ onToggle }: SidebarProps) {
         text: 'Not Synced',
       };
     }
-    // Use store's lastSyncedAt, or fall back to most recent course sync time
+    // Use whichever is most recent: store-level lastSyncedAt or the newest
+    // course-level lastSyncedAt. The store value can go stale (e.g. initialize
+    // re-reads a cached value from DB after a partial sync), so per-course
+    // times act as a floor so the UI reflects actual observed sync activity.
+    const latestCourseSync = syncedCourses.reduce(
+      (latest, c) => {
+        if (!c.lastSyncedAt) return latest;
+        if (!latest) return c.lastSyncedAt;
+        return c.lastSyncedAt > latest ? c.lastSyncedAt : latest;
+      },
+      null as string | null
+    );
     const effectiveLastSync =
-      lastSyncedAt ||
-      syncedCourses.reduce(
-        (latest, c) => {
-          if (!c.lastSyncedAt) return latest;
-          if (!latest) return c.lastSyncedAt;
-          return c.lastSyncedAt > latest ? c.lastSyncedAt : latest;
-        },
-        null as string | null
-      );
+      lastSyncedAt && latestCourseSync
+        ? lastSyncedAt > latestCourseSync
+          ? lastSyncedAt
+          : latestCourseSync
+        : (lastSyncedAt ?? latestCourseSync);
 
     return {
       icon: <CheckCircle size={14} color="var(--color-success)" />,
