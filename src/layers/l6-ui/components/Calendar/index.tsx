@@ -1261,33 +1261,9 @@ export function CalendarPage() {
           }
         }
 
-        // Step 2: walk to adjacent day; land on the first (chronologically earliest)
-        // event of that day regardless of direction. Skip empty days until one has
-        // events; if none within 7 days, fall through to Q/E.
-        for (let offset = 1; offset <= 7; offset++) {
-          const adjDate = fromISODate(curDayISO);
-          adjDate.setDate(adjDate.getDate() + direction * offset);
-          const adjEvents = getEventsOnDate(toISODate(adjDate));
-          if (adjEvents.length === 0) continue;
-          // adjEvents is already sorted chronologically by getEventsOnDate;
-          // take the first timed event, falling back to the first entry.
-          const firstTimed =
-            adjEvents.find((ev) => getEventStartAt(ev) !== null) ?? adjEvents[0];
-          setFocusedEventId(getEventId(firstTimed));
-          setFocusedDate(toISODate(adjDate));
-          // Advance currentDate if the adjacent day is outside the visible week
-          const weekStart = new Date(currentDate);
-          weekStart.setDate(weekStart.getDate() - weekStart.getDay());
-          weekStart.setHours(0, 0, 0, 0);
-          const weekEnd = new Date(weekStart);
-          weekEnd.setDate(weekEnd.getDate() + 6);
-          weekEnd.setHours(23, 59, 59, 999);
-          if (adjDate < weekStart || adjDate > weekEnd) setCurrentDate(adjDate);
-          return;
-        }
-
-        // Step 3: neither A nor B fired — fall back to Q/E mode (day-column shift)
-        shiftDay(direction);
+        // A/D stays within the current day. Day switching is done via
+        // Q/E or Ctrl+←/→, not here. So if the same-hour group has no
+        // more events, simply stop — do not cross days.
       };
 
       const shiftDay = (deltaDays: number) => {
@@ -1299,7 +1275,10 @@ export function CalendarPage() {
         // If the new focused date crosses the period boundary, advance the view too.
         // Month: advance when the year/month differs from the display month.
         // Week: advance when outside the current 7-day window.
-        if (view === 'month') {
+        // Day: always — Day view shows exactly one day.
+        if (view === 'day') {
+          setCurrentDate(d);
+        } else if (view === 'month') {
           if (
             d.getFullYear() !== currentDate.getFullYear() ||
             d.getMonth() !== currentDate.getMonth()
@@ -1340,9 +1319,7 @@ export function CalendarPage() {
         case 'a':
         case 'A':
           e.preventDefault();
-          if (view === 'day') {
-            goToPrevious();
-          } else if (view === 'week') {
+          if (view === 'day' || view === 'week') {
             navigateWeekHorizontal(-1);
           } else {
             // Month
@@ -1361,19 +1338,17 @@ export function CalendarPage() {
             break;
           }
           e.preventDefault();
-          if (view === 'day') {
-            goToNext();
-          } else if (view === 'week') {
+          if (view === 'day' || view === 'week') {
             navigateWeekHorizontal(1);
           } else {
             if (!focusedDate) setFocusedDate(toISODate(currentDate));
             else shiftDay(1);
           }
           break;
-        // Q / E — day-column navigation in Week view
+        // Q / E — day navigation in Week/Day views
         case 'q':
         case 'Q':
-          if (view === 'week') {
+          if (view === 'week' || view === 'day') {
             e.preventDefault();
             if (!focusedDate) setFocusedDate(toISODate(currentDate));
             else shiftDay(-1);
@@ -1381,13 +1356,13 @@ export function CalendarPage() {
           break;
         case 'e':
         case 'E':
-          if (view === 'week') {
+          if (view === 'week' || view === 'day') {
             e.preventDefault();
             if (!focusedDate) setFocusedDate(toISODate(currentDate));
             else shiftDay(1);
             break;
           }
-          // Non-Week view: E = edit focused event (handled below)
+          // Month view: E = edit focused event (handled below)
           if (focusedEvent) {
             e.preventDefault();
             openEditForEvent(focusedEvent);

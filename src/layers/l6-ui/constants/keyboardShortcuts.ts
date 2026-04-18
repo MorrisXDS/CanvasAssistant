@@ -124,24 +124,18 @@ export const KEYBOARD_SHORTCUTS: ShortcutCategory[] = [
       { keys: ['E'], label: 'Week: next day column' },
       { keys: ['W', '/', '↑'], label: 'Week: prev event (same day, earlier time)' },
       { keys: ['S', '/', '↓'], label: 'Week: next event (same day, later time)' },
-      {
-        keys: ['A', '/', '←'],
-        label:
-          'Week: prev event in same-hour group → first event of prev day → prev day col',
-      },
-      {
-        keys: ['D', '/', '→'],
-        label:
-          'Week: next event in same-hour group → first event of next day → next day col',
-      },
+      { keys: ['A', '/', '←'], label: 'Week: prev event in same-hour group (same day)' },
+      { keys: ['D', '/', '→'], label: 'Week: next event in same-hour group (same day)' },
       // Day view
-      { keys: ['A', '/', '←'], label: 'Day: prev day' },
-      { keys: ['D', '/', '→'], label: 'Day: next day' },
-      { keys: ['W', '/', '↑'], label: 'Day: prev event' },
-      { keys: ['S', '/', '↓'], label: 'Day: next event' },
+      { keys: ['Q'], label: 'Day: prev day' },
+      { keys: ['E'], label: 'Day: next day' },
+      { keys: ['A', '/', '←'], label: 'Day: prev event in same-hour group (same day)' },
+      { keys: ['D', '/', '→'], label: 'Day: next event in same-hour group (same day)' },
+      { keys: ['W', '/', '↑'], label: 'Day: prev event (chronological)' },
+      { keys: ['S', '/', '↓'], label: 'Day: next event (chronological)' },
       // Actions
       { keys: ['Enter'], label: 'Open focused event (or create on empty day)' },
-      { keys: ['E'], label: 'Edit focused event (Month/Day view)' },
+      { keys: ['E'], label: 'Edit focused event (Month view only; Week/Day = next day)' },
       { keys: ['N'], label: 'Create new event (pre-fills from focus)' },
       { keys: ['X'], label: 'Toggle completion on focused task' },
       // Filters
