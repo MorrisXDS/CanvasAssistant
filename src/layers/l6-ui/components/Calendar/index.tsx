@@ -91,11 +91,20 @@ export function CalendarPage() {
     setViewState(newView);
     saveCalendarViewMode(newView);
   };
-  const [currentDate, setCurrentDate] = useState(new Date());
+  const [currentDate, setCurrentDate] = useState(() => {
+    const saved = sessionStorage.getItem('calendar-current-date');
+    if (saved) {
+      const d = new Date(saved);
+      if (!isNaN(d.getTime())) return d;
+    }
+    return new Date();
+  });
 
   // Track the last processed location.key to avoid re-processing
   const lastProcessedKey = React.useRef<string | null>(null);
-  const hasInitializedDate = React.useRef(false);
+  // useState initializer above already seeds currentDate from sessionStorage (or
+  // today). Mark the ref as true so the navigation-state effect doesn't override.
+  const hasInitializedDate = React.useRef(true);
 
   // Filter state
   const [showFilters, setShowFilters] = useState(false);
@@ -131,6 +140,11 @@ export function CalendarPage() {
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   const [showEventFormModal, setShowEventFormModal] = useState(false);
   const [eventToEdit, setEventToEdit] = useState<DisplayCalendarEvent | null>(null);
+  // When the edit modal is opened from the detail modal, we remember the
+  // original event so pressing Escape / Close on the edit form returns to
+  // the detail view instead of dismissing everything.
+  const [eventToRestoreAfterEdit, setEventToRestoreAfterEdit] =
+    useState<CalendarEvent | null>(null);
 
   // Highlighted task for "View in Calendar" navigation
   const [highlightedTaskId, setHighlightedTaskId] = useState<number | null>(null);
@@ -153,8 +167,51 @@ export function CalendarPage() {
     else sessionStorage.removeItem('calendar-focus-event');
   }, [focusedEventId]);
 
+  // Persist the "currently open detail modal" event so navigating away and back
+  // (e.g. Go to Course → ESC) restores it. Skip the first run — on mount
+  // selectedEvent is null (React state is per-instance), and clearing here
+  // would wipe the sessionStorage entry left by the prior mount before the
+  // restore effect gets a chance to read it.
+  const persistSelectedInitialRef = useRef(true);
+  useEffect(() => {
+    if (persistSelectedInitialRef.current) {
+      persistSelectedInitialRef.current = false;
+      return;
+    }
+    if (selectedEvent) {
+      const id = getEventId(selectedEvent);
+      sessionStorage.setItem('calendar-selected-event', id);
+      log.info(`[persist] saved selected event ${id}`);
+    } else {
+      sessionStorage.removeItem('calendar-selected-event');
+      log.info('[persist] cleared selected event');
+    }
+  }, [selectedEvent]);
+
+  // Log on mount so we can confirm Calendar actually re-mounts on return
+  useEffect(() => {
+    const saved = sessionStorage.getItem('calendar-selected-event');
+    log.info(`[mount] CalendarPage mounted. saved selected=${saved ?? '(none)'}`);
+    return () => {
+      log.info('[unmount] CalendarPage unmounting');
+    };
+  }, []);
+
+  // Persist the current view period so we return to the same month/week/day
+  useEffect(() => {
+    sessionStorage.setItem('calendar-current-date', currentDate.toISOString());
+  }, [currentDate]);
+
+  // (Restoration effect moved below focusableEvents definition — see later)
+  const hasRestoredSelectedRef = useRef(false);
+
   // Keyboard mode for filter interaction
-  type KeyMode = 'events' | 'filters-courses' | 'filters-deadline' | 'filters-priority';
+  type KeyMode =
+    | 'events'
+    | 'filters-courses'
+    | 'filters-deadline'
+    | 'filters-priority'
+    | 'filters-clear';
   const [keyMode, setKeyMode] = useState<KeyMode>('events');
   const [filterFocusIndex, setFilterFocusIndex] = useState(0);
 
@@ -426,6 +483,40 @@ export function CalendarPage() {
     if (!focusedEventId) return null;
     return focusableEvents.find((e) => getEventId(e) === focusedEventId) || null;
   }, [focusableEvents, focusedEventId]);
+
+  // On mount, restore the detail modal if a saved selected event matches one
+  // of the events currently loaded. Keeps retrying as focusableEvents populates
+  // so async event loading doesn't cause us to miss the restore.
+  useEffect(() => {
+    if (hasRestoredSelectedRef.current) {
+      log.info('[restore] already restored, skipping');
+      return;
+    }
+    if (selectedEvent) {
+      log.info('[restore] selectedEvent already set, skipping');
+      return;
+    }
+    const savedId = sessionStorage.getItem('calendar-selected-event');
+    if (!savedId) {
+      log.info('[restore] no savedId in sessionStorage');
+      return;
+    }
+    if (focusableEvents.length === 0) {
+      log.info(`[restore] focusableEvents empty (savedId=${savedId}), waiting`);
+      return;
+    }
+    const match = focusableEvents.find((ev) => getEventId(ev) === savedId);
+    if (match) {
+      log.info(`[restore] matched event ${savedId}, reopening modal`);
+      setSelectedEvent(match);
+      hasRestoredSelectedRef.current = true;
+    } else {
+      log.info(
+        `[restore] savedId=${savedId} not in ${focusableEvents.length} focusableEvents`
+      );
+    }
+    // Note: if match not found yet, don't set ref=true — events may still be loading
+  }, [focusableEvents, selectedEvent]);
 
   // Helper: convert a Date → 'YYYY-MM-DD' local date string
   const toISODate = useCallback((d: Date): string => {
@@ -722,6 +813,8 @@ export function CalendarPage() {
   const handleOpenEditEvent = (event: DisplayCalendarEvent) => {
     setEventToEdit(event);
     setShowEventFormModal(true);
+    // Stash the detail-modal event so closing the edit form restores the detail view
+    if (selectedEvent) setEventToRestoreAfterEdit(selectedEvent);
     setSelectedEvent(null);
   };
 
@@ -765,6 +858,7 @@ export function CalendarPage() {
       }
       setShowEventFormModal(false);
       setEventToEdit(null);
+      setEventToRestoreAfterEdit(null);
       fetchCalendarEventsForRange(prefetchRange.start, prefetchRange.end);
     } catch (error) {
       log.error('Error saving event', error instanceof Error ? error : undefined);
@@ -795,6 +889,7 @@ export function CalendarPage() {
       if (result.success) {
         setShowEventFormModal(false);
         setEventToEdit(null);
+        setEventToRestoreAfterEdit(null);
         // Refetch calendar events to include the newly created calendar event
         // (CreateTask also creates a linked calendar_events row for user tasks)
         fetchCalendarEventsForRange(prefetchRange.start, prefetchRange.end);
@@ -815,6 +910,7 @@ export function CalendarPage() {
       await deleteCalendarEvent(eventToEdit.id);
       setShowEventFormModal(false);
       setEventToEdit(null);
+      setEventToRestoreAfterEdit(null);
       fetchCalendarEventsForRange(prefetchRange.start, prefetchRange.end);
     }
   };
@@ -921,20 +1017,77 @@ export function CalendarPage() {
         }
       }
 
-      // Filter mode: W/S navigates, Space toggles
+      // Filter mode: navigation and toggles are scoped to the filter panel.
+      // Any nav-adjacent key (arrows, WASD, Q/E, Tab, N, E, X) is swallowed
+      // so calendar focus does not move while the panel is active.
       if (keyMode !== 'events' && showFilters) {
         if (e.ctrlKey || e.metaKey || e.altKey) return;
         const key = e.key.toLowerCase();
 
-        if (e.key === 'Escape') {
+        // Escape or F closes the panel entirely (quit panel mode)
+        if (e.key === 'Escape' || key === 'f') {
           e.preventDefault();
+          setShowFilters(false);
           setKeyMode('events');
           return;
         }
 
-        if (key === 'w' || key === 's') {
+        // Jump to section: C (courses), Shift+D (deadline), P (priority)
+        if (key === 'c' && !e.shiftKey) {
           e.preventDefault();
-          const maxByMode: Record<Exclude<KeyMode, 'events'>, number> = {
+          setKeyMode('filters-courses');
+          setFilterFocusIndex(0);
+          return;
+        }
+        if (key === 'p' && !e.shiftKey) {
+          e.preventDefault();
+          setKeyMode('filters-priority');
+          setFilterFocusIndex(0);
+          return;
+        }
+        if (key === 'd' && e.shiftKey) {
+          e.preventDefault();
+          setKeyMode('filters-deadline');
+          setFilterFocusIndex(0);
+          return;
+        }
+
+        // Vertical axis (W/S/↑/↓ or Tab/Shift+Tab) switches rows = sections.
+        // The 'filters-clear' row is only reachable when there are active filters.
+        const isSectionPrev =
+          key === 'w' || e.key === 'ArrowUp' || (e.key === 'Tab' && e.shiftKey);
+        const isSectionNext =
+          key === 's' || e.key === 'ArrowDown' || (e.key === 'Tab' && !e.shiftKey);
+        if (isSectionPrev || isSectionNext) {
+          e.preventDefault();
+          const sections: Array<Exclude<KeyMode, 'events'>> = [
+            'filters-courses',
+            'filters-deadline',
+            'filters-priority',
+            ...(hasActiveFilters ? (['filters-clear'] as const) : []),
+          ];
+          const idx = sections.indexOf(keyMode);
+          const delta = isSectionNext ? 1 : -1;
+          // If the current mode isn't in the visible list (e.g. we were on 'filters-clear'
+          // and the filters just got cleared), treat as starting from 0.
+          const startIdx = idx === -1 ? 0 : idx;
+          const next = (startIdx + delta + sections.length) % sections.length;
+          setKeyMode(sections[next]);
+          setFilterFocusIndex(0);
+          return;
+        }
+
+        // Horizontal axis (A/D/←/→) moves option index within the focused section.
+        // The 'filters-clear' row is a single button, so horizontal keys are no-ops.
+        const isOptionPrev = key === 'a' || e.key === 'ArrowLeft';
+        const isOptionNext = key === 'd' || e.key === 'ArrowRight';
+        if (isOptionPrev || isOptionNext) {
+          e.preventDefault();
+          if (keyMode === 'filters-clear') return;
+          const maxByMode: Record<
+            Exclude<KeyMode, 'events' | 'filters-clear'>,
+            number
+          > = {
             'filters-courses': courses.length,
             'filters-deadline': 5,
             'filters-priority': 4,
@@ -942,13 +1095,14 @@ export function CalendarPage() {
           const max = maxByMode[keyMode];
           if (max > 0) {
             setFilterFocusIndex((prev) => {
-              const next = key === 'w' ? prev - 1 : prev + 1;
+              const next = isOptionPrev ? prev - 1 : prev + 1;
               return ((next % max) + max) % max;
             });
           }
           return;
         }
 
+        // Toggle focused option / activate the clear-filters row
         if (e.key === ' ' || e.key === 'Enter') {
           e.preventDefault();
           if (keyMode === 'filters-courses' && courses[filterFocusIndex]) {
@@ -965,9 +1119,30 @@ export function CalendarPage() {
           } else if (keyMode === 'filters-priority') {
             const opts: PriorityFilter[] = ['all', 'high', 'medium', 'low'];
             setPriorityFilter(opts[filterFocusIndex]);
+          } else if (keyMode === 'filters-clear') {
+            clearFilters();
+            // Clearing removes the row; jump back to Courses
+            setKeyMode('filters-courses');
+            setFilterFocusIndex(0);
           }
           return;
         }
+
+        // Swallow any remaining nav-adjacent keys so they can't leak to event nav.
+        // (A/D and ←/→ are handled above for section switching.)
+        if (
+          key === 'q' ||
+          key === 'e' ||
+          key === 'n' ||
+          key === 'x' ||
+          key === 't' ||
+          key === 'v'
+        ) {
+          e.preventDefault();
+          return;
+        }
+        // Non-navigation keys (e.g. typing in a future search field) fall through
+        return;
       }
 
       // Ctrl/Cmd + Arrow = prev/next period (month/week/day) + carry focus anchor
@@ -1086,33 +1261,19 @@ export function CalendarPage() {
           }
         }
 
-        // Step 2: closest event on adjacent day (by time-of-day, then visual edge on ties)
-        const curMinutes = curStart.getHours() * 60 + curStart.getMinutes();
+        // Step 2: walk to adjacent day; land on the first (chronologically earliest)
+        // event of that day regardless of direction. Skip empty days until one has
+        // events; if none within 7 days, fall through to Q/E.
         for (let offset = 1; offset <= 7; offset++) {
           const adjDate = fromISODate(curDayISO);
           adjDate.setDate(adjDate.getDate() + direction * offset);
           const adjEvents = getEventsOnDate(toISODate(adjDate));
           if (adjEvents.length === 0) continue;
-          // Find the closest time-of-day
-          let bestMinutes: number | null = null;
-          let bestDelta = Infinity;
-          for (const ev of adjEvents) {
-            const s = getEventStartAt(ev);
-            if (!s) continue;
-            const m = s.getHours() * 60 + s.getMinutes();
-            const delta = Math.abs(m - curMinutes);
-            if (delta < bestDelta) {
-              bestDelta = delta;
-              bestMinutes = m;
-            }
-          }
-          // Events tied at the closest time — pick visual edge
-          const tiedGroup = adjEvents.filter((ev) => {
-            const s = getEventStartAt(ev);
-            return s && s.getHours() * 60 + s.getMinutes() === bestMinutes;
-          });
-          const edge = pickEdgeEventOfDay(tiedGroup, direction) ?? adjEvents[0];
-          setFocusedEventId(getEventId(edge));
+          // adjEvents is already sorted chronologically by getEventsOnDate;
+          // take the first timed event, falling back to the first entry.
+          const firstTimed =
+            adjEvents.find((ev) => getEventStartAt(ev) !== null) ?? adjEvents[0];
+          setFocusedEventId(getEventId(firstTimed));
           setFocusedDate(toISODate(adjDate));
           // Advance currentDate if the adjacent day is outside the visible week
           const weekStart = new Date(currentDate);
@@ -1449,6 +1610,11 @@ export function CalendarPage() {
         onClose={() => {
           setShowEventFormModal(false);
           setEventToEdit(null);
+          // If this edit was launched from the detail modal, restore it
+          if (eventToRestoreAfterEdit) {
+            setSelectedEvent(eventToRestoreAfterEdit);
+            setEventToRestoreAfterEdit(null);
+          }
         }}
       />
 
@@ -1572,7 +1738,9 @@ export function CalendarPage() {
                 ? 'deadline'
                 : keyMode === 'filters-priority'
                   ? 'priority'
-                  : null
+                  : keyMode === 'filters-clear'
+                    ? 'clear'
+                    : null
           }
           keyboardIndex={filterFocusIndex}
         />

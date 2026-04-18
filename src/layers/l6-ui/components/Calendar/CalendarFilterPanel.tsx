@@ -24,7 +24,7 @@ export interface CalendarFilterPanelProps {
   onPriorityFilterChange: (filter: PriorityFilter) => void;
   onClearFilters: () => void;
   /** Which section has keyboard focus */
-  keyboardSection?: 'courses' | 'deadline' | 'priority' | null;
+  keyboardSection?: 'courses' | 'deadline' | 'priority' | 'clear' | null;
   /** Index of the focused option within the active section */
   keyboardIndex?: number;
 }
@@ -169,7 +169,13 @@ export function CalendarFilterPanel({
 
       {/* Clear Filters */}
       {hasActiveFilters && (
-        <button style={styles.clearFilters} onClick={onClearFilters}>
+        <button
+          style={{
+            ...styles.clearFilters,
+            ...(keyboardSection === 'clear' ? focusOutline : {}),
+          }}
+          onClick={onClearFilters}
+        >
           <X size={14} />
           Clear all filters
         </button>

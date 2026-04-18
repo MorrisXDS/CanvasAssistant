@@ -126,11 +126,13 @@ export const KEYBOARD_SHORTCUTS: ShortcutCategory[] = [
       { keys: ['S', '/', '↓'], label: 'Week: next event (same day, later time)' },
       {
         keys: ['A', '/', '←'],
-        label: 'Week: prev event in same-hour group → closest on prev day → prev day col',
+        label:
+          'Week: prev event in same-hour group → first event of prev day → prev day col',
       },
       {
         keys: ['D', '/', '→'],
-        label: 'Week: next event in same-hour group → closest on next day → next day col',
+        label:
+          'Week: next event in same-hour group → first event of next day → next day col',
       },
       // Day view
       { keys: ['A', '/', '←'], label: 'Day: prev day' },
@@ -143,11 +145,27 @@ export const KEYBOARD_SHORTCUTS: ShortcutCategory[] = [
       { keys: ['N'], label: 'Create new event (pre-fills from focus)' },
       { keys: ['X'], label: 'Toggle completion on focused task' },
       // Filters
-      { keys: ['F'], label: 'Toggle filters + enter filter mode' },
+      { keys: ['F'], label: 'Open filters + enter filter mode (also closes panel)' },
+      { keys: ['Escape'], label: 'Filter mode: close panel (quit filter mode)' },
       { keys: ['C'], label: 'Filter mode: focus Courses section' },
       { keys: ['Shift', 'D'], label: 'Filter mode: focus Deadline section' },
       { keys: ['P'], label: 'Filter mode: focus Priority section' },
-      { keys: ['Space'], label: 'Filter mode: toggle focused option' },
+      {
+        keys: ['Enter'],
+        label:
+          'Filter mode: on "Clear all" row → clear all filters (row appears only when filters are active)',
+      },
+      {
+        keys: ['W', '/', '↑', '/', 'Shift', 'Tab'],
+        label: 'Filter mode: previous row (section)',
+      },
+      {
+        keys: ['S', '/', '↓', '/', 'Tab'],
+        label: 'Filter mode: next row (section)',
+      },
+      { keys: ['A', '/', '←'], label: 'Filter mode: previous option in row' },
+      { keys: ['D', '/', '→'], label: 'Filter mode: next option in row' },
+      { keys: ['Space', '/', 'Enter'], label: 'Filter mode: toggle focused option' },
       { keys: ['Alt', 'Shift', 'D'], label: 'Cycle deadline filter' },
       { keys: ['Alt', 'Shift', 'P'], label: 'Cycle priority filter' },
       { keys: ['Alt', 'Shift', 'C'], label: 'Clear all filters' },

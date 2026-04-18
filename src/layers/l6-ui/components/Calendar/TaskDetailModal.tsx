@@ -82,12 +82,40 @@ export function TaskDetailModal({
   const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false);
 
   React.useEffect(() => {
+    if (!isOpen) return;
     const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (target?.isContentEditable) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+      } else if (e.key === 'e' || e.key === 'E') {
+        if (onEdit) {
+          e.preventDefault();
+          onEdit();
+        }
+      } else if (e.key === 'g' || e.key === 'G') {
+        e.preventDefault();
+        handleGoToCourse();
+      } else if (e.key === 'x' || e.key === 'X') {
+        if (task && onToggleComplete) {
+          e.preventDefault();
+          onToggleComplete(task);
+        }
+      } else if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (onDelete) {
+          e.preventDefault();
+          setShowDeleteConfirm(true);
+        }
+      }
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, [onClose]);
+  }, [isOpen, onClose, onEdit, onDelete, onToggleComplete]);
 
   // Reset delete confirm state when modal closes
   React.useEffect(() => {
@@ -115,8 +143,14 @@ export function TaskDetailModal({
 
   const handleGoToCourse = () => {
     if (course) {
-      onClose();
-      navigate(`/course/${course.id}`);
+      // Don't call onClose() here — React Router unmounts this modal on
+      // navigation, and calling setSelectedEvent(null) beforehand would clear
+      // the sessionStorage entry our restore-on-mount effect depends on.
+      const targetTaskId = task?.id;
+      const url = targetTaskId
+        ? `/course/${course.id}?highlightTask=${targetTaskId}`
+        : `/course/${course.id}`;
+      navigate(url);
     }
   };
 
@@ -130,7 +164,12 @@ export function TaskDetailModal({
 
   return (
     <div style={styles.overlay} onClick={onClose}>
-      <div style={styles.modal} role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+      <div
+        style={styles.modal}
+        role="dialog"
+        aria-modal="true"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Header */}
         <div style={styles.header}>
           <div
@@ -398,23 +437,27 @@ export function TaskDetailModal({
                 )}
               </div>
             )}
-          {/* Edit calendar settings for task events */}
+          {/* Edit event for task events */}
           {isTask && onEdit && (
             <div style={styles.footerLeft}>
-              <button style={styles.editButton} onClick={onEdit}>
+              <button style={styles.editButton} onClick={onEdit} title="Edit Event (E)">
                 <Edit2 size={14} />
-                Edit Calendar Settings
+                Edit Event
               </button>
             </div>
           )}
           <div style={styles.footerRight}>
             {isTask && course && (
-              <button style={styles.primaryButton} onClick={handleGoToCourse}>
+              <button
+                style={styles.primaryButton}
+                onClick={handleGoToCourse}
+                title="Go to Course (G)"
+              >
                 <BookOpen size={16} />
                 Go to Course
               </button>
             )}
-            <button style={styles.secondaryButton} onClick={onClose}>
+            <button style={styles.secondaryButton} onClick={onClose} title="Close (Esc)">
               Close
             </button>
           </div>
