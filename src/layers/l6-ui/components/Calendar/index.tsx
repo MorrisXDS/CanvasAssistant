@@ -424,7 +424,16 @@ export function CalendarPage() {
         // If all courses deselected, hide all
         if (selectedCourses.size === 0) return false;
 
-        // Check if event matches any selected course
+        // Prefer the event's explicit courseId when present — this is exact
+        // and avoids the ambiguity of two courses sharing a code prefix
+        // (e.g. two "ECE342H1 S LEC0102" + "ECE342H1 S PRA0105" entries
+        // both matching a shortCode "ece342" in title-based filtering).
+        if (event.courseId !== null && event.courseId !== undefined) {
+          return selectedCourses.has(event.courseId);
+        }
+
+        // Fallback for events without a courseId (e.g. free-form ICS imports):
+        // match by event title/calendar-name text.
         const title = event.title.toLowerCase();
         const calendarName = event.calendarName?.toLowerCase() || '';
 
@@ -568,6 +577,12 @@ export function CalendarPage() {
     );
     for (const event of visibleEvents) {
       if (event.type === 'imported') {
+        // Prefer the event's explicit courseId — avoids false matches when
+        // two courses share a code prefix.
+        if (event.event.courseId !== null && event.event.courseId !== undefined) {
+          courseIds.add(event.event.courseId);
+          continue;
+        }
         const eventTitle = event.event.title.toLowerCase();
         const calendarName = event.event.calendarName?.toLowerCase() || '';
         for (const course of coursesWithColors) {
@@ -1069,6 +1084,22 @@ export function CalendarPage() {
       // Any nav-adjacent key (arrows, WASD, Q/E, Tab, N, E, X) is swallowed
       // so calendar focus does not move while the panel is active.
       if (keyMode !== 'events' && showFilters) {
+        // Ctrl/Cmd+A selects all courses; Ctrl/Cmd+N deselects all.
+        // Handled first so the early Ctrl return below doesn't swallow them.
+        // Work regardless of which section row is currently focused.
+        if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey) {
+          const ctrlKey = e.key.toLowerCase();
+          if (ctrlKey === 'a') {
+            e.preventDefault();
+            setSelectedCourses(null);
+            return;
+          }
+          if (ctrlKey === 'n') {
+            e.preventDefault();
+            setSelectedCourses(new Set());
+            return;
+          }
+        }
         if (e.ctrlKey || e.metaKey || e.altKey) return;
         const key = e.key.toLowerCase();
 

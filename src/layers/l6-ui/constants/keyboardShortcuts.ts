@@ -184,6 +184,8 @@ export const KEYBOARD_SHORTCUTS: ShortcutCategory[] = [
       },
       { keys: ['A', '/', '←'], label: 'Filter mode: previous option in row' },
       { keys: ['D', '/', '→'], label: 'Filter mode: next option in row' },
+      { keys: ['mod', 'A'], label: 'Filter mode: select all courses (Courses row)' },
+      { keys: ['mod', 'N'], label: 'Filter mode: deselect all courses (Courses row)' },
       { keys: ['Space', '/', 'Enter'], label: 'Filter mode: toggle focused option' },
       { keys: ['Alt', 'Shift', 'D'], label: 'Cycle deadline filter' },
       { keys: ['Alt', 'Shift', 'P'], label: 'Cycle priority filter' },
