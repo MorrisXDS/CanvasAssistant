@@ -44,6 +44,8 @@ export interface CourseCardProps {
   onDragOver?: (e: React.DragEvent) => void;
   onDragLeave?: () => void;
   onDrop?: (e: React.DragEvent) => void;
+  /** Keyboard-focused card (for grid/list nav highlight) */
+  focused?: boolean;
 }
 
 function CourseGridCardComponent({
@@ -70,6 +72,7 @@ function CourseGridCardComponent({
   onDragOver,
   onDragLeave,
   onDrop,
+  focused,
 }: CourseCardProps) {
   const color = getCourseColor(course.id, course.color);
 
@@ -77,8 +80,13 @@ function CourseGridCardComponent({
     <div
       style={{
         ...styles.gridCard,
-        opacity: isDragging ? 0.5 : 1,
-        boxShadow: isDragOver ? '0 0 0 2px var(--color-blue)' : 'var(--shadow-card)',
+        opacity: isDragging ? 0.5 : course.isHidden ? 0.5 : 1,
+        // Precedence: drag-over outline wins; then keyboard focus; then default shadow.
+        boxShadow: isDragOver
+          ? '0 0 0 2px var(--color-blue)'
+          : focused
+            ? '0 0 0 2px var(--color-navy)'
+            : 'var(--shadow-card)',
         transition: 'box-shadow 150ms ease, opacity 150ms ease',
         position: 'relative',
       }}

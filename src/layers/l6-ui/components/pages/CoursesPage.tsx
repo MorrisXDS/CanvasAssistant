@@ -3,7 +3,7 @@
  * Course glossary with grid/list view toggle and pin functionality
  */
 
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { FixedSizeList as VirtualList } from 'react-window';
 import {
@@ -27,7 +27,9 @@ import { Card, SelectionBar } from '../shared';
 import { useShallow } from 'zustand/react/shallow';
 import { useCourseDragDrop } from './useCourseDragDrop';
 import { useMultiSelect } from '../../hooks/useMultiSelect';
+import { useFocusedItem } from '../../hooks/useFocusedItem';
 import { useUpdatesByCourse } from '../../hooks';
+import { settingsManager, STORAGE_KEYS } from '../../../l5-presentation/settings';
 import { getCourseColor, formatGrade } from '../../constants';
 import type { Course } from '../../../l5-presentation/types';
 import { createLogger } from '../../utils/rendererLogger';
@@ -100,15 +102,56 @@ export function CoursesPage() {
   const [colorPickerCourseId, setColorPickerCourseId] = useState<number | null>(null);
   const [customColor, setCustomColor] = useState<string>('');
 
-  // Filter state
-  const [searchQuery, setSearchQuery] = useState('');
-  const [gradeFilter, setGradeFilter] = useState<GradeFilter>('all');
-  const [prefixFilter, setPrefixFilter] = useState<string>('all');
-  const [typeFilter, setTypeFilter] = useState<string>('all');
-  const [showHidden, setShowHidden] = useState(
-    () => loadCourseSettings().showHiddenByDefault
+  // Filter state — persisted to sessionStorage so it survives navigation
+  // (e.g. visiting a course detail page and coming back).
+  const FILTER_KEYS = {
+    search: 'courses-search-query',
+    grade: 'courses-grade-filter',
+    prefix: 'courses-prefix-filter',
+    type: 'courses-type-filter',
+    showHidden: 'courses-show-hidden',
+    showFilters: 'courses-show-filters',
+  } as const;
+  const [searchQuery, setSearchQuery] = useState(
+    () => sessionStorage.getItem(FILTER_KEYS.search) || ''
   );
-  const [showFilters, setShowFilters] = useState(false);
+  const [gradeFilter, setGradeFilter] = useState<GradeFilter>(
+    () => (sessionStorage.getItem(FILTER_KEYS.grade) as GradeFilter) || 'all'
+  );
+  const [prefixFilter, setPrefixFilter] = useState<string>(
+    () => sessionStorage.getItem(FILTER_KEYS.prefix) || 'all'
+  );
+  const [typeFilter, setTypeFilter] = useState<string>(
+    () => sessionStorage.getItem(FILTER_KEYS.type) || 'all'
+  );
+  const [showHidden, setShowHidden] = useState(() => {
+    const saved = sessionStorage.getItem(FILTER_KEYS.showHidden);
+    if (saved !== null) return saved === 'true';
+    return loadCourseSettings().showHiddenByDefault;
+  });
+  const [showFilters, setShowFilters] = useState(
+    () => sessionStorage.getItem(FILTER_KEYS.showFilters) === 'true'
+  );
+
+  // Persist on change
+  useEffect(() => {
+    sessionStorage.setItem(FILTER_KEYS.search, searchQuery);
+  }, [searchQuery, FILTER_KEYS.search]);
+  useEffect(() => {
+    sessionStorage.setItem(FILTER_KEYS.grade, gradeFilter);
+  }, [gradeFilter, FILTER_KEYS.grade]);
+  useEffect(() => {
+    sessionStorage.setItem(FILTER_KEYS.prefix, prefixFilter);
+  }, [prefixFilter, FILTER_KEYS.prefix]);
+  useEffect(() => {
+    sessionStorage.setItem(FILTER_KEYS.type, typeFilter);
+  }, [typeFilter, FILTER_KEYS.type]);
+  useEffect(() => {
+    sessionStorage.setItem(FILTER_KEYS.showHidden, String(showHidden));
+  }, [showHidden, FILTER_KEYS.showHidden]);
+  useEffect(() => {
+    sessionStorage.setItem(FILTER_KEYS.showFilters, String(showFilters));
+  }, [showFilters, FILTER_KEYS.showFilters]);
 
   // Archived courses state
   const [archivedCourses, setArchivedCourses] = useState<Course[]>([]);
@@ -118,6 +161,11 @@ export function CoursesPage() {
   // Archive dropdown state
   const [showArchiveDropdown, setShowArchiveDropdown] = useState(false);
   const archiveDropdownRef = React.useRef<HTMLDivElement>(null);
+
+  // "Keep visible after hide" — course IDs that just got hidden via the
+  // keyboard shortcut. They remain rendered (dimmed) until focus moves
+  // off them, so Shift+H is an instant undo.
+  const [keepVisibleHidden, setKeepVisibleHidden] = useState<Set<number>>(new Set());
 
   // Close archive dropdown when clicking outside
   useEffect(() => {
@@ -283,6 +331,7 @@ export function CoursesPage() {
         typeFilter,
         pinnedCourses,
         sortByCustomOrder,
+        keepVisibleIds: keepVisibleHidden,
       }),
     [
       courses,
@@ -293,6 +342,7 @@ export function CoursesPage() {
       typeFilter,
       showHidden,
       sortByCustomOrder,
+      keepVisibleHidden,
     ]
   );
 
@@ -338,6 +388,94 @@ export function CoursesPage() {
     isSelected: isCourseSelected,
     reset: resetCourseSelection,
   } = useMultiSelect(filteredCourses, getCourseKey);
+
+  // Keyboard filter mode (scoped arrow navigation while the filter panel is open)
+  type KeyMode =
+    | 'courses'
+    | 'filters-prefix'
+    | 'filters-type'
+    | 'filters-grade'
+    | 'filters-show-hidden'
+    | 'filters-clear';
+  const [keyMode, setKeyMode] = useState<KeyMode>('courses');
+  const [filterFocusIndex, setFilterFocusIndex] = useState(0);
+
+  // Reset filter focus when the panel closes
+  useEffect(() => {
+    if (!showFilters) setKeyMode('courses');
+  }, [showFilters]);
+
+  // Clamp filter focus when switching sections
+  useEffect(() => {
+    setFilterFocusIndex(0);
+  }, [keyMode]);
+
+  // Focused-item keyboard navigation. We use the 1D hook but wire the actual
+  // hotkeys ourselves so we can do 2D grid navigation (W/S jumps by column count)
+  // and scope the keys behind keyMode === 'courses'.
+  const { focusedIndex, setFocusedIndex, clearFocus } = useFocusedItem(filteredCourses, {
+    persistKey: 'courses-page',
+    // Custom nav below — use no-op keys so the hook doesn't bind anything.
+    // Passing `enabled: false` keeps focus-index state + scroll-into-view
+    // behavior, but skips the built-in left/right/j/k bindings.
+    enabled: false,
+  });
+
+  // Measure the grid's column count to drive W/S (row jump) in grid view.
+  const gridRef = useRef<HTMLDivElement>(null);
+  const [columnCount, setColumnCount] = useState(1);
+  useEffect(() => {
+    if (viewMode !== 'grid') return;
+    const el = gridRef.current;
+    if (!el) return;
+    const measure = () => {
+      const cols = getComputedStyle(el).gridTemplateColumns.split(' ').length;
+      setColumnCount(Math.max(1, cols));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [viewMode, filteredCourses.length]);
+
+  // Clamp the focused index when the filtered list shrinks.
+  useEffect(() => {
+    if (focusedIndex >= filteredCourses.length && filteredCourses.length > 0) {
+      setFocusedIndex(filteredCourses.length - 1);
+    } else if (filteredCourses.length === 0 && focusedIndex !== -1) {
+      clearFocus();
+    }
+  }, [filteredCourses.length, focusedIndex, setFocusedIndex, clearFocus]);
+
+  // Blur native focus + scroll the focused card/row into view.
+  // (useFocusedItem's built-in scroll only fires when the hook owns nav; we
+  // own nav here so scroll manually.)
+  // Also clear any "keep-visible hidden" entries for courses we're moving
+  // away from — once focus leaves a just-hidden card, it should disappear.
+  const focusAndScroll = useCallback(
+    (next: number) => {
+      if (next < 0 || next >= filteredCourses.length) return;
+      const active = document.activeElement;
+      if (active instanceof HTMLElement && active !== document.body) active.blur();
+      const leaving = filteredCourses[focusedIndex];
+      setFocusedIndex(next);
+      if (leaving && keepVisibleHidden.has(leaving.id)) {
+        setKeepVisibleHidden((prev) => {
+          const n = new Set(prev);
+          n.delete(leaving.id);
+          return n;
+        });
+      }
+      // Defer to after render so the card has the `focused` outline applied.
+      requestAnimationFrame(() => {
+        const el = document.querySelector(
+          `[data-focus-scope="courses-page"][data-focus-index="${next}"]`
+        );
+        if (el) el.scrollIntoView({ block: 'nearest', behavior: 'instant' });
+      });
+    },
+    [filteredCourses, focusedIndex, setFocusedIndex, keepVisibleHidden]
+  );
 
   // Bulk action handlers
   const handleBulkHide = async () => {
@@ -388,41 +526,430 @@ export function CoursesPage() {
     resetCourseSelection();
   };
 
-  // Keyboard shortcuts
-  useHotkeys('v', () => setViewMode(viewMode === 'grid' ? 'list' : 'grid'), [viewMode]);
-  useHotkeys('f', () => setShowFilters((prev) => !prev));
-  useHotkeys(
-    'enter',
-    (e) => {
-      e.preventDefault();
-      const firstKey = selectedKeys.values().next().value;
-      if (firstKey) handleCourseClick(Number(firstKey));
-    },
-    [selectedKeys, handleCourseClick]
-  );
-  useHotkeys(
-    'h',
-    () => {
-      if (selectedCount > 0) handleBulkHide();
-    },
-    [selectedCount, handleBulkHide]
-  );
-  useHotkeys(
-    'p',
-    () => {
-      if (selectedCount > 0) handleBulkPin();
-    },
-    [selectedCount, handleBulkPin]
-  );
-
-  // Clear all filters
-  const clearFilters = () => {
+  // Clear all filters — declared before hotkeys so Alt+Shift+C can reference it
+  const clearFilters = useCallback(() => {
     setSearchQuery('');
     setGradeFilter('all');
     setPrefixFilter('all');
     setTypeFilter('all');
     setShowHidden(false);
-  };
+  }, []);
+
+  // Bulk archive — loops over selection and dispatches ArchiveCourse for each.
+  const handleBulkArchive = useCallback(async () => {
+    if (selectedCount === 0) return;
+    const ids = Array.from(selectedKeys).map(Number);
+    for (const id of ids) {
+      await handleArchiveCourse(id);
+    }
+    resetCourseSelection();
+  }, [selectedCount, selectedKeys, resetCourseSelection]);
+
+  // Build a Canvas course URL. We store the base URL via settingsManager at
+  // onboarding time; the course's externalId is the Canvas course id.
+  const openFocusedInCanvas = useCallback(() => {
+    const course = filteredCourses[focusedIndex];
+    if (!course) return;
+    const baseUrl = settingsManager.get(STORAGE_KEYS.CANVAS_URL);
+    if (!baseUrl) return;
+    const trimmed = baseUrl.replace(/\/+$/, '');
+    window.api?.openExternal(`${trimmed}/courses/${course.externalId}`);
+  }, [filteredCourses, focusedIndex]);
+
+  // Keyboard shortcuts. Nav / action keys are gated behind keyMode === 'courses'
+  // so they don't fire while the filter panel is driving keyboard focus.
+  const gridNavActive = keyMode === 'courses';
+
+  useHotkeys('v', () => setViewMode(viewMode === 'grid' ? 'list' : 'grid'), [viewMode]);
+  useHotkeys(
+    'f',
+    () => {
+      setShowFilters((prev) => {
+        const next = !prev;
+        setKeyMode(next ? 'filters-prefix' : 'courses');
+        return next;
+      });
+    },
+    [setShowFilters]
+  );
+  useHotkeys(
+    'enter',
+    (e) => {
+      e.preventDefault();
+      // Selection takes precedence (existing behavior).
+      const firstKey = selectedKeys.values().next().value;
+      if (firstKey) {
+        handleCourseClick(Number(firstKey));
+        return;
+      }
+      // Otherwise open the keyboard-focused course.
+      const course = filteredCourses[focusedIndex];
+      if (course) handleCourseClick(course.id);
+    },
+    { enabled: gridNavActive },
+    [selectedKeys, handleCourseClick, filteredCourses, focusedIndex, gridNavActive]
+  );
+  // H / Shift+H / P / Ctrl+Shift+A: bulk actions.
+  // If there's a multi-select, act on it; otherwise fall back to the
+  // keyboard-focused course so the highlighted item is the implicit target.
+  useHotkeys(
+    'h',
+    () => {
+      if (selectedCount > 0) {
+        handleBulkHide();
+        return;
+      }
+      const course = filteredCourses[focusedIndex];
+      if (course && !course.isHidden) {
+        // Keep the just-hidden card visible in place so Shift+H can undo
+        // before focus moves away.
+        setKeepVisibleHidden((prev) => {
+          const n = new Set(prev);
+          n.add(course.id);
+          return n;
+        });
+        handleToggleHide(course.id, false);
+      }
+    },
+    { enabled: gridNavActive },
+    [
+      selectedCount,
+      handleBulkHide,
+      filteredCourses,
+      focusedIndex,
+      handleToggleHide,
+      gridNavActive,
+    ]
+  );
+  useHotkeys(
+    'shift+h',
+    () => {
+      if (selectedCount > 0) {
+        handleBulkShow();
+        return;
+      }
+      const course = filteredCourses[focusedIndex];
+      if (course && course.isHidden) {
+        // Unhiding — no need to keep it in the visible-after-hide set anymore.
+        setKeepVisibleHidden((prev) => {
+          if (!prev.has(course.id)) return prev;
+          const n = new Set(prev);
+          n.delete(course.id);
+          return n;
+        });
+        handleToggleHide(course.id, true);
+      }
+    },
+    { enabled: gridNavActive },
+    [
+      selectedCount,
+      handleBulkShow,
+      filteredCourses,
+      focusedIndex,
+      handleToggleHide,
+      gridNavActive,
+    ]
+  );
+  useHotkeys(
+    'p',
+    () => {
+      if (selectedCount > 0) {
+        handleBulkPin();
+        return;
+      }
+      const course = filteredCourses[focusedIndex];
+      if (course) {
+        setPinnedCourses((prev) => {
+          const next = new Set(prev);
+          if (next.has(course.id)) next.delete(course.id);
+          else next.add(course.id);
+          return next;
+        });
+      }
+    },
+    { enabled: gridNavActive },
+    [selectedCount, handleBulkPin, filteredCourses, focusedIndex, gridNavActive]
+  );
+  // Ctrl/Cmd+Shift+A: bulk archive; falls back to focused course.
+  useHotkeys(
+    'mod+shift+a',
+    (e) => {
+      e.preventDefault();
+      if (selectedCount > 0) {
+        handleBulkArchive();
+        return;
+      }
+      const course = filteredCourses[focusedIndex];
+      if (course) handleArchiveCourse(course.id);
+    },
+    { enabled: gridNavActive },
+    [selectedCount, handleBulkArchive, filteredCourses, focusedIndex, gridNavActive]
+  );
+  // O / Shift+Enter: open focused course on Canvas in the external browser
+  useHotkeys('o', () => openFocusedInCanvas(), { enabled: gridNavActive }, [
+    openFocusedInCanvas,
+    gridNavActive,
+  ]);
+  useHotkeys(
+    'shift+enter',
+    (e) => {
+      e.preventDefault();
+      openFocusedInCanvas();
+    },
+    { enabled: gridNavActive },
+    [openFocusedInCanvas, gridNavActive]
+  );
+
+  // Grid/list focused-item nav.
+  // Grid view: A/D/←/→ step by 1; W/S/↑/↓ jump by columnCount (2D).
+  // List view: W/S/↑/↓ step by 1; A/D/←/→ swallowed.
+  const moveFocus = useCallback(
+    (delta: number) => {
+      if (filteredCourses.length === 0) return;
+      const current = focusedIndex < 0 ? 0 : focusedIndex;
+      const next = current + delta;
+      if (next < 0 || next >= filteredCourses.length) {
+        // Clamp — no wrap.
+        if (focusedIndex < 0) focusAndScroll(0);
+        return;
+      }
+      focusAndScroll(next);
+    },
+    [filteredCourses.length, focusedIndex, focusAndScroll]
+  );
+
+  useHotkeys(
+    'a, left',
+    (e) => {
+      if (viewMode === 'grid') {
+        e.preventDefault();
+        moveFocus(-1);
+      } else {
+        // List view: swallow so default arrow-key scroll doesn't fire.
+        e.preventDefault();
+      }
+    },
+    { enabled: gridNavActive },
+    [viewMode, moveFocus, gridNavActive]
+  );
+  useHotkeys(
+    'd, right',
+    (e) => {
+      if (viewMode === 'grid') {
+        e.preventDefault();
+        moveFocus(1);
+      } else {
+        e.preventDefault();
+      }
+    },
+    { enabled: gridNavActive },
+    [viewMode, moveFocus, gridNavActive]
+  );
+  useHotkeys(
+    'w, up',
+    (e) => {
+      e.preventDefault();
+      moveFocus(viewMode === 'grid' ? -columnCount : -1);
+    },
+    { enabled: gridNavActive },
+    [viewMode, columnCount, moveFocus, gridNavActive]
+  );
+  useHotkeys(
+    's, down',
+    (e) => {
+      e.preventDefault();
+      moveFocus(viewMode === 'grid' ? columnCount : 1);
+    },
+    { enabled: gridNavActive },
+    [viewMode, columnCount, moveFocus, gridNavActive]
+  );
+
+  // Filter-mode nav:
+  //   - Q / E / Shift+← / Shift+→  → switch between filter sections (blocks)
+  //   - A/D/←/→ and W/S/↑/↓        → walk options within the focused section
+  //   - Space / Enter              → toggle focused option (chip sections)
+  // For the Subject <select>, walking options commits live (the native select
+  // can't visually preview a pre-commit focused option).
+  useHotkeys(
+    'q, e, shift+left, shift+right, a, left, d, right, w, up, s, down, space, enter',
+    (e) => {
+      if (keyMode === 'courses') return; // gridNavActive branch handles it
+      e.preventDefault();
+      const FILTER_SECTIONS: Exclude<KeyMode, 'courses'>[] = [
+        'filters-prefix',
+        'filters-type',
+        'filters-grade',
+        'filters-show-hidden',
+        ...(hasActiveFilters ? (['filters-clear'] as const) : []),
+      ];
+      // If we're on 'filters-clear' but filters just got cleared, snap back
+      // to the first section.
+      const rawIdx = FILTER_SECTIONS.indexOf(keyMode as Exclude<KeyMode, 'courses'>);
+      const sectionIdx = rawIdx === -1 ? 0 : rawIdx;
+      const key = e.key;
+
+      // Section switching: Q / E / Shift+← / Shift+→
+      const isPrevSection =
+        key === 'q' || key === 'Q' || (e.shiftKey && key === 'ArrowLeft');
+      const isNextSection =
+        key === 'e' || key === 'E' || (e.shiftKey && key === 'ArrowRight');
+      if (isPrevSection || isNextSection) {
+        const step = isNextSection ? 1 : -1;
+        const nextIdx =
+          (sectionIdx + step + FILTER_SECTIONS.length) % FILTER_SECTIONS.length;
+        setKeyMode(FILTER_SECTIONS[nextIdx]);
+        return;
+      }
+
+      // Within-section option walk (both axes) — NOT a section switch since
+      // Shift isn't held. Direction keys without Shift walk options.
+      const walk =
+        key === 'a' ||
+        key === 'A' ||
+        key === 'ArrowLeft' ||
+        key === 'd' ||
+        key === 'D' ||
+        key === 'ArrowRight' ||
+        key === 'w' ||
+        key === 'W' ||
+        key === 'ArrowUp' ||
+        key === 's' ||
+        key === 'S' ||
+        key === 'ArrowDown';
+      const walkForward =
+        key === 'd' ||
+        key === 'D' ||
+        key === 'ArrowRight' ||
+        key === 's' ||
+        key === 'S' ||
+        key === 'ArrowDown';
+      const isToggle = key === ' ' || key === 'Enter';
+
+      if (walk && !e.shiftKey) {
+        const counts: Record<Exclude<KeyMode, 'courses'>, number> = {
+          'filters-prefix': 1 + availablePrefixes.length, // 'all' + each prefix
+          'filters-type': 1 + availableTypes.length,
+          'filters-grade': 4, // all / on-track / at-risk / behind
+          'filters-show-hidden': 1, // single toggle button
+          'filters-clear': 1, // single action button
+        };
+        const max = counts[keyMode as Exclude<KeyMode, 'courses'>];
+        if (max <= 1) return;
+        const step = walkForward ? 1 : -1;
+        const nextIdx = (((filterFocusIndex + step) % max) + max) % max;
+        setFilterFocusIndex(nextIdx);
+        return;
+      }
+
+      if (isToggle) {
+        if (keyMode === 'filters-prefix') {
+          const opt =
+            filterFocusIndex === 0 ? 'all' : availablePrefixes[filterFocusIndex - 1];
+          if (opt !== undefined) setPrefixFilter(opt);
+        } else if (keyMode === 'filters-type') {
+          const opt =
+            filterFocusIndex === 0 ? 'all' : availableTypes[filterFocusIndex - 1];
+          if (opt !== undefined) setTypeFilter(opt);
+        } else if (keyMode === 'filters-grade') {
+          const opts: GradeFilter[] = ['all', 'on-track', 'at-risk', 'behind'];
+          setGradeFilter(opts[filterFocusIndex]);
+        } else if (keyMode === 'filters-show-hidden') {
+          setShowHidden(!showHidden);
+        } else if (keyMode === 'filters-clear') {
+          clearFilters();
+          // Row disappears when hasActiveFilters flips false — snap back.
+          setKeyMode('filters-prefix');
+          setFilterFocusIndex(0);
+        }
+      }
+    },
+    { enabled: !gridNavActive },
+    [
+      keyMode,
+      filterFocusIndex,
+      availablePrefixes,
+      availableTypes,
+      showHidden,
+      gridNavActive,
+      hasActiveFilters,
+    ]
+  );
+
+  // Quick-access filter cycles — work regardless of filter mode, matching
+  // the Calendar's Alt+Shift+{D,P,C} pattern.
+  useHotkeys(
+    'alt+shift+c',
+    (e) => {
+      e.preventDefault();
+      clearFilters();
+    },
+    [clearFilters]
+  );
+  useHotkeys(
+    'alt+shift+g',
+    (e) => {
+      e.preventDefault();
+      const opts: GradeFilter[] = ['all', 'on-track', 'at-risk', 'behind'];
+      const i = opts.indexOf(gradeFilter);
+      setGradeFilter(opts[(i + 1) % opts.length]);
+    },
+    [gradeFilter]
+  );
+  useHotkeys(
+    'alt+shift+t',
+    (e) => {
+      e.preventDefault();
+      const opts = ['all', ...availableTypes];
+      const i = opts.indexOf(typeFilter);
+      setTypeFilter(opts[(i + 1) % opts.length]);
+    },
+    [typeFilter, availableTypes]
+  );
+  useHotkeys(
+    'alt+shift+s',
+    (e) => {
+      e.preventDefault();
+      const opts = ['all', ...availablePrefixes];
+      const i = opts.indexOf(prefixFilter);
+      setPrefixFilter(opts[(i + 1) % opts.length]);
+    },
+    [prefixFilter, availablePrefixes]
+  );
+  useHotkeys(
+    'alt+shift+h',
+    (e) => {
+      e.preventDefault();
+      setShowHidden((prev) => !prev);
+    },
+    []
+  );
+
+  // Escape cascade: filter-mode → panel → selection → focus → no-op
+  useHotkeys(
+    'esc',
+    (e) => {
+      if (keyMode !== 'courses') {
+        e.preventDefault();
+        setKeyMode('courses');
+        return;
+      }
+      if (showFilters) {
+        e.preventDefault();
+        setShowFilters(false);
+        return;
+      }
+      if (selectMode) {
+        e.preventDefault();
+        resetCourseSelection();
+        return;
+      }
+      if (focusedIndex >= 0) {
+        e.preventDefault();
+        clearFocus();
+      }
+    },
+    [keyMode, showFilters, selectMode, focusedIndex, resetCourseSelection, clearFocus]
+  );
 
   return (
     <div style={styles.page}>
@@ -589,6 +1116,11 @@ export function CoursesPage() {
             { label: 'Show', icon: <Eye size={14} />, onClick: handleBulkShow },
             { label: 'Pin', icon: <Pin size={14} />, onClick: handleBulkPin },
             { label: 'Unpin', icon: <PinOff size={14} />, onClick: handleBulkUnpin },
+            {
+              label: 'Archive',
+              icon: <Archive size={14} />,
+              onClick: handleBulkArchive,
+            },
           ]}
         />
       )}
@@ -609,6 +1141,20 @@ export function CoursesPage() {
           onGradeFilterChange={setGradeFilter}
           onShowHiddenChange={setShowHidden}
           onClearFilters={clearFilters}
+          keyboardSection={
+            keyMode === 'filters-prefix'
+              ? 'prefix'
+              : keyMode === 'filters-type'
+                ? 'type'
+                : keyMode === 'filters-grade'
+                  ? 'grade'
+                  : keyMode === 'filters-show-hidden'
+                    ? 'show-hidden'
+                    : keyMode === 'filters-clear'
+                      ? 'clear'
+                      : null
+          }
+          keyboardIndex={filterFocusIndex}
         />
       )}
 
@@ -646,6 +1192,7 @@ export function CoursesPage() {
       ) : viewMode === 'grid' ? (
         /* Grid View */
         <div
+          ref={gridRef}
           style={styles.grid}
           onClickCapture={(e) => {
             if (!selectMode) return;
@@ -659,13 +1206,15 @@ export function CoursesPage() {
             }
           }}
         >
-          {filteredCourses.map((course) => {
+          {filteredCourses.map((course, index) => {
             const grades = getCachedCourseGrades(course.id, tasks);
             const updateInfo = updatesByCourse.get(course.id);
             return (
               <div
                 key={course.id}
                 data-course-id={course.id}
+                data-focus-index={index}
+                data-focus-scope="courses-page"
                 style={{ position: 'relative' }}
               >
                 {selectMode && (
@@ -721,6 +1270,7 @@ export function CoursesPage() {
                   onDragOver={(e) => handleDragOver(e, course.id)}
                   onDragLeave={handleDragLeave}
                   onDrop={(e) => handleDrop(e, course.id)}
+                  focused={focusedIndex === index}
                 />
               </div>
             );
@@ -751,6 +1301,8 @@ export function CoursesPage() {
                 <div
                   key={course.id}
                   data-course-id={course.id}
+                  data-focus-index={index}
+                  data-focus-scope="courses-page"
                   style={{ display: 'flex', alignItems: 'center' }}
                 >
                   {selectMode && (
@@ -799,6 +1351,7 @@ export function CoursesPage() {
                       hasUpdates={!!updateInfo}
                       updateCount={updateInfo?.count}
                       hasActionRequired={updateInfo?.hasActionRequired}
+                      focused={focusedIndex === index}
                     />
                   </div>
                 </div>
@@ -828,6 +1381,7 @@ export function CoursesPage() {
                 selectMode,
                 isCourseSelected,
                 handleCourseSelectClick,
+                focusedIndex,
               }}
             >
               {VirtualizedListItem}
@@ -869,6 +1423,7 @@ interface VirtualizedListItemData {
   selectMode: boolean;
   isCourseSelected: (course: Course) => boolean;
   handleCourseSelectClick: (course: Course, e: React.MouseEvent) => void;
+  focusedIndex: number;
 }
 
 function VirtualizedListItem({
@@ -885,7 +1440,12 @@ function VirtualizedListItem({
   const updateInfo = data.updatesByCourse.get(course.id);
 
   return (
-    <div style={style} data-course-id={course.id}>
+    <div
+      style={style}
+      data-course-id={course.id}
+      data-focus-index={index}
+      data-focus-scope="courses-page"
+    >
       <div style={{ display: 'flex', alignItems: 'center', height: '100%' }}>
         {data.selectMode && (
           <div
@@ -933,6 +1493,7 @@ function VirtualizedListItem({
             hasUpdates={!!updateInfo}
             updateCount={updateInfo?.count}
             hasActionRequired={updateInfo?.hasActionRequired}
+            focused={data.focusedIndex === index}
           />
         </div>
       </div>

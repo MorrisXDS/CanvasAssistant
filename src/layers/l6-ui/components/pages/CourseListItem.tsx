@@ -34,6 +34,7 @@ function CourseListItemComponent({
   onColorPickerClose,
   hasUpdates,
   hasActionRequired,
+  focused,
 }: CourseListItemProps) {
   const color = getCourseColor(course.id, course.color);
 
@@ -42,6 +43,15 @@ function CourseListItemComponent({
       style={{
         ...styles.listItem,
         borderTop: isFirst ? 'none' : '1px solid var(--border-light)',
+        opacity: course.isHidden ? 0.5 : 1,
+        ...(focused
+          ? {
+              outline: '2px solid var(--color-navy)',
+              outlineOffset: '-2px',
+              position: 'relative',
+              zIndex: 1,
+            }
+          : {}),
       }}
       onClick={onClick}
     >

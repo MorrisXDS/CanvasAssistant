@@ -41,11 +41,7 @@ export function SelectionBar({
           Deselect all
         </button>
         {actions?.map((action) => (
-          <button
-            key={action.label}
-            style={styles.button}
-            onClick={action.onClick}
-          >
+          <button key={action.label} style={styles.button} onClick={action.onClick}>
             {action.icon}
             <span>{action.label}</span>
           </button>
@@ -59,6 +55,8 @@ export function SelectionBar({
   );
 }
 
+// The bar has a solid navy background in both light and dark themes; use
+// white foreground + translucent-white borders for guaranteed contrast.
 const styles: Record<string, React.CSSProperties> = {
   bar: {
     display: 'flex',
@@ -76,7 +74,7 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 'var(--space-2)',
     fontSize: 'var(--text-sm)',
     fontWeight: 'var(--font-semibold)',
-    color: 'var(--color-navy)',
+    color: '#ffffff',
   },
   actions: {
     display: 'flex',
@@ -90,9 +88,9 @@ const styles: Record<string, React.CSSProperties> = {
     padding: 'var(--space-1) var(--space-3)',
     fontSize: 'var(--text-xs)',
     fontWeight: 'var(--font-medium)',
-    color: 'var(--color-navy)',
+    color: '#ffffff',
     backgroundColor: 'transparent',
-    border: '1px solid var(--color-navy)',
+    border: '1px solid rgba(255, 255, 255, 0.4)',
     borderRadius: 'var(--radius-md)',
     cursor: 'pointer',
     transition: 'background-color var(--transition-fast)',
@@ -104,9 +102,9 @@ const styles: Record<string, React.CSSProperties> = {
     padding: 'var(--space-1) var(--space-3)',
     fontSize: 'var(--text-xs)',
     fontWeight: 'var(--font-medium)',
-    color: 'var(--text-secondary)',
-    backgroundColor: 'transparent',
-    border: '1px solid var(--border-default)',
+    color: '#ffffff',
+    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+    border: '1px solid rgba(255, 255, 255, 0.5)',
     borderRadius: 'var(--radius-md)',
     cursor: 'pointer',
     transition: 'background-color var(--transition-fast)',

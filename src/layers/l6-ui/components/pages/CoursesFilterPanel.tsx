@@ -22,6 +22,10 @@ export interface CoursesFilterPanelProps {
   onGradeFilterChange: (filter: GradeFilter) => void;
   onShowHiddenChange: (show: boolean) => void;
   onClearFilters: () => void;
+  /** Which section has keyboard focus (null when keyboard isn't driving) */
+  keyboardSection?: 'prefix' | 'type' | 'grade' | 'show-hidden' | 'clear' | null;
+  /** Index of the focused option within the active section */
+  keyboardIndex?: number;
 }
 
 export function CoursesFilterPanel({
@@ -38,25 +42,60 @@ export function CoursesFilterPanel({
   onGradeFilterChange,
   onShowHiddenChange,
   onClearFilters,
+  keyboardSection = null,
+  keyboardIndex = 0,
 }: CoursesFilterPanelProps) {
+  const focusOutline = {
+    outline: '2px solid var(--color-navy)',
+    outlineOffset: '2px',
+    borderRadius: 'var(--radius-sm)',
+  } as const;
   return (
     <div style={styles.filterPanel}>
-      {/* Prefix Filter */}
+      {/* Prefix Filter — chip buttons to match the other sections so keyboard
+          nav behaves identically (walk with W/S/arrows, commit with Space/Enter). */}
       {availablePrefixes.length > 1 && (
         <div style={styles.filterGroup}>
           <label style={styles.filterLabel}>Subject</label>
-          <select
-            style={styles.filterSelect}
-            value={prefixFilter}
-            onChange={(e) => onPrefixFilterChange(e.target.value)}
-          >
-            <option value="all">All</option>
-            {availablePrefixes.map((prefix) => (
-              <option key={prefix} value={prefix}>
+          <div style={styles.filterChips}>
+            <button
+              style={{
+                ...styles.filterChip,
+                backgroundColor:
+                  prefixFilter === 'all' ? 'var(--color-navy)' : 'var(--bg-app)',
+                color: prefixFilter === 'all' ? 'white' : 'var(--text-secondary)',
+                borderColor:
+                  prefixFilter === 'all' ? 'var(--color-navy)' : 'var(--border-default)',
+                ...(keyboardSection === 'prefix' && keyboardIndex === 0
+                  ? focusOutline
+                  : {}),
+              }}
+              onClick={() => onPrefixFilterChange('all')}
+            >
+              All
+            </button>
+            {availablePrefixes.map((prefix, i) => (
+              <button
+                key={prefix}
+                style={{
+                  ...styles.filterChip,
+                  backgroundColor:
+                    prefixFilter === prefix ? 'var(--color-navy)' : 'var(--bg-app)',
+                  color: prefixFilter === prefix ? 'white' : 'var(--text-secondary)',
+                  borderColor:
+                    prefixFilter === prefix
+                      ? 'var(--color-navy)'
+                      : 'var(--border-default)',
+                  ...(keyboardSection === 'prefix' && keyboardIndex === i + 1
+                    ? focusOutline
+                    : {}),
+                }}
+                onClick={() => onPrefixFilterChange(prefix)}
+              >
                 {prefix}
-              </option>
+              </button>
             ))}
-          </select>
+          </div>
         </div>
       )}
 
@@ -73,12 +112,15 @@ export function CoursesFilterPanel({
                 color: typeFilter === 'all' ? 'white' : 'var(--text-secondary)',
                 borderColor:
                   typeFilter === 'all' ? 'var(--color-navy)' : 'var(--border-default)',
+                ...(keyboardSection === 'type' && keyboardIndex === 0
+                  ? focusOutline
+                  : {}),
               }}
               onClick={() => onTypeFilterChange('all')}
             >
               All
             </button>
-            {availableTypes.map((type) => (
+            {availableTypes.map((type, i) => (
               <button
                 key={type}
                 style={{
@@ -88,6 +130,9 @@ export function CoursesFilterPanel({
                   color: typeFilter === type ? 'white' : 'var(--text-secondary)',
                   borderColor:
                     typeFilter === type ? 'var(--color-navy)' : 'var(--border-default)',
+                  ...(keyboardSection === 'type' && keyboardIndex === i + 1
+                    ? focusOutline
+                    : {}),
                 }}
                 onClick={() => onTypeFilterChange(type)}
               >
@@ -102,28 +147,35 @@ export function CoursesFilterPanel({
       <div style={styles.filterGroup}>
         <label style={styles.filterLabel}>Grade</label>
         <div style={styles.filterChips}>
-          {(['all', 'on-track', 'at-risk', 'behind'] as GradeFilter[]).map((filter) => (
-            <button
-              key={filter}
-              style={{
-                ...styles.filterChip,
-                backgroundColor:
-                  gradeFilter === filter ? 'var(--color-navy)' : 'var(--bg-app)',
-                color: gradeFilter === filter ? 'white' : 'var(--text-secondary)',
-                borderColor:
-                  gradeFilter === filter ? 'var(--color-navy)' : 'var(--border-default)',
-              }}
-              onClick={() => onGradeFilterChange(filter)}
-            >
-              {filter === 'all'
-                ? 'All'
-                : filter === 'on-track'
-                  ? 'On Track'
-                  : filter === 'at-risk'
-                    ? 'At Risk'
-                    : 'Behind'}
-            </button>
-          ))}
+          {(['all', 'on-track', 'at-risk', 'behind'] as GradeFilter[]).map(
+            (filter, i) => (
+              <button
+                key={filter}
+                style={{
+                  ...styles.filterChip,
+                  backgroundColor:
+                    gradeFilter === filter ? 'var(--color-navy)' : 'var(--bg-app)',
+                  color: gradeFilter === filter ? 'white' : 'var(--text-secondary)',
+                  borderColor:
+                    gradeFilter === filter
+                      ? 'var(--color-navy)'
+                      : 'var(--border-default)',
+                  ...(keyboardSection === 'grade' && keyboardIndex === i
+                    ? focusOutline
+                    : {}),
+                }}
+                onClick={() => onGradeFilterChange(filter)}
+              >
+                {filter === 'all'
+                  ? 'All'
+                  : filter === 'on-track'
+                    ? 'On Track'
+                    : filter === 'at-risk'
+                      ? 'At Risk'
+                      : 'Behind'}
+              </button>
+            )
+          )}
         </div>
       </div>
 
@@ -135,6 +187,7 @@ export function CoursesFilterPanel({
             backgroundColor: showHidden ? 'var(--color-navy)' : 'var(--bg-app)',
             color: showHidden ? 'white' : 'var(--text-secondary)',
             borderColor: showHidden ? 'var(--color-navy)' : 'var(--border-default)',
+            ...(keyboardSection === 'show-hidden' ? focusOutline : {}),
           }}
           onClick={() => onShowHiddenChange(!showHidden)}
         >
@@ -144,7 +197,13 @@ export function CoursesFilterPanel({
       </div>
 
       {hasActiveFilters && (
-        <button style={styles.clearFiltersBtn} onClick={onClearFilters}>
+        <button
+          style={{
+            ...styles.clearFiltersBtn,
+            ...(keyboardSection === 'clear' ? focusOutline : {}),
+          }}
+          onClick={onClearFilters}
+        >
           <X size={14} />
           Clear All
         </button>

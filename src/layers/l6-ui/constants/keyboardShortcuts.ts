@@ -214,10 +214,61 @@ export const KEYBOARD_SHORTCUTS: ShortcutCategory[] = [
     scope: 'courses',
     shortcuts: [
       { keys: ['V'], label: 'Toggle grid/list view' },
-      { keys: ['F'], label: 'Toggle filters' },
-      { keys: ['Enter'], label: 'Open selected course' },
-      { keys: ['H'], label: 'Hide/show selected' },
-      { keys: ['P'], label: 'Pin/unpin selected' },
+      // Grid/list navigation
+      {
+        keys: ['A', '/', '←'],
+        label: 'Focus previous card (grid: left; list: swallowed)',
+      },
+      {
+        keys: ['D', '/', '→'],
+        label: 'Focus next card (grid: right; list: swallowed)',
+      },
+      {
+        keys: ['W', '/', '↑'],
+        label: 'Focus up (grid: by row; list: previous item)',
+      },
+      {
+        keys: ['S', '/', '↓'],
+        label: 'Focus down (grid: by row; list: next item)',
+      },
+      { keys: ['Enter'], label: 'Open focused course (or first selected)' },
+      { keys: ['O'], label: 'Open focused course on Canvas' },
+      { keys: ['Shift', 'Enter'], label: 'Open focused course on Canvas' },
+      // Bulk / focused actions (selection wins; else act on focused card)
+      { keys: ['H'], label: 'Hide selected or focused course' },
+      { keys: ['Shift', 'H'], label: 'Unhide selected or focused course' },
+      { keys: ['P'], label: 'Pin/unpin selected or focused course' },
+      { keys: ['mod', 'Shift', 'A'], label: 'Archive selected or focused course' },
+      // Filter mode
+      { keys: ['F'], label: 'Toggle filters + enter filter mode' },
+      {
+        keys: ['Q', '/', 'E'],
+        label: 'Filter mode: prev / next section (Subject → Type → Grade → Show Hidden)',
+      },
+      {
+        keys: ['Shift', '←', '/', 'Shift', '→'],
+        label: 'Filter mode: prev / next section (alt)',
+      },
+      {
+        keys: ['A', '/', '←', '/', 'D', '/', '→', '/', 'W', '/', '↑', '/', 'S', '/', '↓'],
+        label: 'Filter mode: walk options within the focused section',
+      },
+      {
+        keys: ['Space', '/', 'Enter'],
+        label: 'Filter mode: toggle focused option (on Clear row → clears all filters)',
+      },
+      // Quick-access filter shortcuts (work outside filter mode too)
+      { keys: ['Alt', 'Shift', 'C'], label: 'Clear all filters' },
+      { keys: ['Alt', 'Shift', 'G'], label: 'Cycle Grade filter' },
+      { keys: ['Alt', 'Shift', 'T'], label: 'Cycle Type filter' },
+      { keys: ['Alt', 'Shift', 'S'], label: 'Cycle Subject filter' },
+      { keys: ['Alt', 'Shift', 'H'], label: 'Toggle Show Hidden' },
+      // Escape cascade
+      {
+        keys: ['Escape'],
+        label:
+          'Exit filter mode → close panel → clear selection → clear focus (falls through)',
+      },
     ],
   },
   {

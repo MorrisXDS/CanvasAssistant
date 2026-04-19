@@ -165,13 +165,17 @@ export function filterAndSortCourses(
     typeFilter: string;
     pinnedCourses: Set<number>;
     sortByCustomOrder: (ids: number[]) => number[];
+    /** Course IDs that should remain visible even if isHidden — used for
+     *  "keep-in-place on hide" so Shift+H can instantly undo before the card
+     *  disappears from view. */
+    keepVisibleIds?: Set<number>;
   }
 ): Course[] {
   let result = [...courses];
 
-  // Filter by hidden status
+  // Filter by hidden status (keepVisibleIds bypasses the filter for specific rows)
   if (!options.showHidden) {
-    result = result.filter((c) => !c.isHidden);
+    result = result.filter((c) => !c.isHidden || options.keepVisibleIds?.has(c.id));
   }
 
   // Filter by search query
