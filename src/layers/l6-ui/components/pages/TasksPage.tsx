@@ -135,9 +135,10 @@ export function TasksPage() {
     };
   }, [allTasks]);
 
-  // Focused item navigation (Left/Right + J/K)
+  // Focused item navigation (Up/Down + W/S)
   const { focusedIndex, focusedItem, getFocusProps } = useFocusedItem(filteredTasks, {
     persistKey: 'tasks-page',
+    verticalNav: true,
   });
 
   // X: toggle completion on focused task

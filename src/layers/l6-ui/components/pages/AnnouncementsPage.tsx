@@ -27,6 +27,7 @@ import { useStore } from '../../../l5-presentation/store';
 import { styles } from './AnnouncementsPage.styles';
 import { useHotkeys } from 'react-hotkeys-hook';
 import { useFocusedItem } from '../../hooks/useFocusedItem';
+import { getCourseColor } from '../../constants';
 
 type ReadFilter = 'all' | 'unread' | 'dismissed';
 type IntentType = 'all' | 'urgent' | 'deadline' | 'grade' | 'informational';
@@ -141,7 +142,13 @@ export function AnnouncementsPage() {
     setSearchParams(newParams, { replace: true });
   }, [courseFilter, searchParams, setSearchParams]);
 
-  const courseMap = useMemo(() => new Map(courses.map((c) => [c.id, c])), [courses]);
+  // Build courseMap with resolved colors so course badges render consistently
+  // across the page regardless of whether the course row has a stored color.
+  const courseMap = useMemo(
+    () =>
+      new Map(courses.map((c) => [c.id, { ...c, color: getCourseColor(c.id, c.color) }])),
+    [courses]
+  );
 
   // Get visible courses (non-hidden) that have announcements
   const coursesWithAnnouncements = useMemo(() => {
@@ -216,10 +223,10 @@ export function AnnouncementsPage() {
     [allAnnouncements]
   );
 
-  // Focused item navigation (Left/Right + J/K)
+  // Focused item navigation (Up/Down + W/S)
   const { focusedIndex, focusedItem, getFocusProps } = useFocusedItem(
     filteredAnnouncements,
-    { persistKey: 'announcements-page' }
+    { persistKey: 'announcements-page', verticalNav: true }
   );
 
   // Enter: open focused announcement
@@ -390,24 +397,35 @@ export function AnnouncementsPage() {
               >
                 All Courses
               </button>
-              {coursesWithAnnouncements.map((course) => (
-                <button
-                  key={course.id}
-                  style={{
-                    ...styles.filterChip,
-                    ...(courseFilter === course.id
-                      ? {
-                          ...styles.filterChipActive,
-                          backgroundColor: course.color || 'var(--color-navy)',
-                          borderColor: course.color || 'var(--color-navy)',
-                        }
-                      : {}),
-                  }}
-                  onClick={() => setCourseFilter(course.id)}
-                >
-                  {course.code.split(/\s/)[0]}
-                </button>
-              ))}
+              {coursesWithAnnouncements.map((course) => {
+                const color = getCourseColor(course.id, course.color);
+                const isActive = courseFilter === course.id;
+                return (
+                  <button
+                    key={course.id}
+                    style={{
+                      ...styles.filterChip,
+                      // Always color the chip by course so users can tell
+                      // them apart; when active, fill with the color; when
+                      // inactive, tint the border + text so identity is still
+                      // obvious.
+                      ...(isActive
+                        ? {
+                            ...styles.filterChipActive,
+                            backgroundColor: color,
+                            borderColor: color,
+                          }
+                        : {
+                            borderColor: color,
+                            color,
+                          }),
+                    }}
+                    onClick={() => setCourseFilter(course.id)}
+                  >
+                    {course.code.split(/\s/)[0]}
+                  </button>
+                );
+              })}
             </div>
           </div>
         )}

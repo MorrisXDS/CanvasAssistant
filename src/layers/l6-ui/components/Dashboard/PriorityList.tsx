@@ -53,10 +53,11 @@ export function PriorityList({
   const hasPendingTasks =
     totalPendingTasks !== undefined ? totalPendingTasks > 0 : items.length > 0;
 
-  // Focused item navigation (Left/Right + J/K)
+  // Focused item navigation (Up/Down + W/S)
   const { focusedIndex, focusedItem, getFocusProps } = useFocusedItem(displayItems, {
     persistKey: 'dashboard-priority',
     enabled: isKeyboardActive,
+    verticalNav: true,
   });
 
   // X: toggle completion on focused task

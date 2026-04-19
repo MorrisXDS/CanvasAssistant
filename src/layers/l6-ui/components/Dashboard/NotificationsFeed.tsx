@@ -62,12 +62,13 @@ export function NotificationsFeed({
     }
   };
 
-  // Focused item navigation (Left/Right + J/K)
+  // Focused item navigation (Up/Down + W/S)
   const { focusedIndex, focusedItem, getFocusProps } = useFocusedItem(
     activeNotifications,
     {
       persistKey: 'dashboard-notifications',
       enabled: isKeyboardActive,
+      verticalNav: true,
     }
   );
 

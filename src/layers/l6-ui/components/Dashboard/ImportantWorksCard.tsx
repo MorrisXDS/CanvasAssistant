@@ -139,10 +139,11 @@ export function ImportantWorksCard({
     navigate(`/course/${task.courseId}?task=${task.id}`);
   };
 
-  // Focused item navigation (Left/Right + J/K)
+  // Focused item navigation (Up/Down + W/S)
   const { focusedIndex, focusedItem, getFocusProps } = useFocusedItem(importantTasks, {
     persistKey: 'dashboard-important',
     enabled: isKeyboardActive,
+    verticalNav: true,
   });
 
   // Enter: open focused task in course detail

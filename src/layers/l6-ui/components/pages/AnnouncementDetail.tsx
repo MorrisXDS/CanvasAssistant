@@ -216,6 +216,42 @@ export function AnnouncementDetail() {
   const storeNotification = notifications.find((n) => n.id === Number(id));
   const notification = storeNotification || fetchedNotification;
 
+  // Up/Down + W/S scroll the main content. We handle this explicitly because
+  // the list page (AnnouncementsPage) uses the same keys for focused-item
+  // navigation; inside a detail view those bindings are gone, but we want to
+  // guarantee scrolling works regardless of where native focus lands.
+  // V opens the announcement on Canvas (when a url is available).
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (target?.isContentEditable) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+      const key = e.key;
+      const isDown = key === 'ArrowDown' || key === 's' || key === 'S';
+      const isUp = key === 'ArrowUp' || key === 'w' || key === 'W';
+      if (isDown || isUp) {
+        const main = document.querySelector('main');
+        if (!main) return;
+        e.preventDefault();
+        main.scrollBy({ top: isDown ? 80 : -80, behavior: 'smooth' });
+        return;
+      }
+
+      if (key === 'v' || key === 'V') {
+        const url = notification?.url;
+        if (url) {
+          e.preventDefault();
+          window.api?.openExternal(url);
+        }
+      }
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [notification?.url]);
+
   // Fetch notification if not in store
   useEffect(() => {
     const fetchNotification = async () => {
@@ -237,7 +273,10 @@ export function AnnouncementDetail() {
           setFetchedNotification(result);
         }
       } catch (error) {
-        log.error('Failed to fetch notification', error instanceof Error ? error : undefined);
+        log.error(
+          'Failed to fetch notification',
+          error instanceof Error ? error : undefined
+        );
       } finally {
         setLoading(false);
       }

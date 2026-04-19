@@ -22,6 +22,13 @@ export interface UseFocusedItemOptions {
   enabled?: boolean;
   /** Key for persisting focus position in sessionStorage (survives navigation) */
   persistKey?: string;
+  /**
+   * When true, bind Up/↑ + W for prev and Down/↓ + S for next, freeing
+   * Left/Right/J/K. Use on list pages where vertical movement maps to the
+   * visual layout (Dashboard, Tasks, Announcements). Default: false —
+   * Left/J = prev, Right/K = next.
+   */
+  verticalNav?: boolean;
 }
 
 export interface UseFocusedItemResult<T> {
@@ -60,6 +67,7 @@ export function useFocusedItem<T>(
   });
   const enabled = options?.enabled ?? true;
   const itemSelector = options?.itemSelector ?? '[data-focus-index]';
+  const verticalNav = options?.verticalNav ?? false;
   const itemsLengthRef = useRef(items.length);
 
   // Wrap setter to also persist
@@ -137,9 +145,12 @@ export function useFocusedItem<T>(
     }
   }, [setFocusedIndex, persistKey]);
 
-  // Left arrow + J = previous
+  // Bind prev/next keys. verticalNav swaps Left/Right/J/K for Up/Down/W/S.
+  const prevKeys = verticalNav ? 'up, w' : 'left, j';
+  const nextKeys = verticalNav ? 'down, s' : 'right, k';
+
   useHotkeys(
-    'left, j',
+    prevKeys,
     (e) => {
       e.preventDefault();
       movePrev();
@@ -147,9 +158,8 @@ export function useFocusedItem<T>(
     { enabled }
   );
 
-  // Right arrow + K = next
   useHotkeys(
-    'right, k',
+    nextKeys,
     (e) => {
       e.preventDefault();
       moveNext();

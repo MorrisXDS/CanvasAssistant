@@ -352,10 +352,11 @@ export function ScheduleCard({ maxItems, isKeyboardActive = false }: ScheduleCar
     navigate('/calendar?view=week');
   };
 
-  // Focused item navigation (Left/Right + J/K)
+  // Focused item navigation (Up/Down + W/S)
   const { focusedIndex, focusedItem, getFocusProps } = useFocusedItem(todaysSchedule, {
     persistKey: 'dashboard-schedule',
     enabled: isKeyboardActive,
+    verticalNav: true,
   });
 
   // Enter: open focused schedule item (goes to calendar)
