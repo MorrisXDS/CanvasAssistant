@@ -1,6 +1,7 @@
 #!/usr/bin/env sh
 
-# Cross-platform compatibility pre-commit hook
-# Runs lint-staged to check for platform-specific patterns
+# Block commits that add plaintext credentials (high-precision secret scan).
+sh scripts/secret-scan.sh || exit 1
 
+# Cross-platform compatibility checks + format on staged files.
 npx lint-staged
