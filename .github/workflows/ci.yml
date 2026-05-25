@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      # keytar builds against libsecret on Linux
+      - name: Install libsecret
+        run: sudo apt-get update && sudo apt-get install -y libsecret-1-dev
+
+      - name: Install dependencies
+        run: npm install
+
+      # Blocking gate: tsc + vite build must succeed.
+      - name: Build
+        run: npm run build
+
+      # Informational until the lint baseline is clean — then drop continue-on-error.
+      - name: Lint
+        run: npm run lint
+        continue-on-error: true
+
+      # Informational until the Jest baseline is green — then drop continue-on-error.
+      - name: Unit tests
+        run: npm test
+        continue-on-error: true
+
+  # NOTE: e2e (`npm run test:e2e`) is intentionally NOT in CI — it needs a populated
+  # local database/canvas.db, an onboarded OS keychain, and a real Electron window, none
+  # of which exist on a clean CI runner. Run it locally before shipping UI/keyboard changes.
