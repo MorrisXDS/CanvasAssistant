@@ -25,7 +25,7 @@ module.exports = [
 
   // TypeScript files configuration
   {
-    files: ['src/**/*.ts', 'src/**/*.tsx', 'tests/**/*.ts'],
+    files: ['src/**/*.ts', 'src/**/*.tsx', 'tests/**/*.ts', 'e2e/**/*.ts'],
     languageOptions: {
       parser: tsparser,
       parserOptions: {

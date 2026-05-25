@@ -6,6 +6,21 @@
   "engines": {
     "node": ">=24.0.0"
   },
+  "electronmon": {
+    "patterns": [
+      "!Downloads/**",
+      "!database/**",
+      "!.logs/**",
+      "!backups/**",
+      "!.cache/**",
+      "!.config/**",
+      "!dist/renderer/**",
+      "!dist-installer/**",
+      "!.claude/**",
+      "!.git/**",
+      "!coverage/**"
+    ]
+  },
   "scripts": {
     "preinstall": "node scripts/check-node-version.js",
     "setup": "npm install && npm run rebuild",
@@ -16,6 +31,7 @@
     "dev:renderer": "vite",
     "dev:electron": "node -e \"setTimeout(() => {}, 3000)\" && cross-env NODE_ENV=development electronmon .",
     "build": "tsc && vite build",
+    "test:e2e": "npm run build && playwright test --config e2e/playwright.config.ts",
     "pretest": "node scripts/ensure-native-modules.js",
     "test": "jest",
     "test:watch": "jest --watch",
@@ -71,6 +87,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.2",
+    "@playwright/test": "^1.60.0",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.1.0",
     "@types/better-sqlite3": "^7.6.12",
@@ -94,6 +111,7 @@
     "jest": "^29.7.0",
     "jest-environment-jsdom": "^30.2.0",
     "lint-staged": "^15.5.2",
+    "playwright": "^1.60.0",
     "prettier": "^3.4.2",
     "ts-jest": "^29.2.5",
     "typescript": "^5.7.3",

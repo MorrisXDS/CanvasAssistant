@@ -64,6 +64,8 @@ scripts/verify-*.ts
 
 # Test artifacts
 logs-test/
+test-results/
+playwright-report/
 
 # Course data folders (user-specific)
 *H1_*/
