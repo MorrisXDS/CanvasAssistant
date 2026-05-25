@@ -33,6 +33,15 @@ import {
 
 const logger = createLogger('FilesState');
 
+// Module-scoped flag: set to true by useFileSelection.handleDownloadSelected
+// (via setBulkDownloadInProgress) while a bulk download is iterating, so the
+// per-file 'file-status-changed' events don't trigger a full refetch for
+// every file. The page is a single instance so a module-scoped ref is safe.
+let bulkDownloadInProgress = false;
+export function setBulkDownloadInProgress(value: boolean): void {
+  bulkDownloadInProgress = value;
+}
+
 export function useFilesPageState() {
   const { courses, syncStatus, triggerSync, syncUpdates, markAllSyncUpdatesSeen } =
     useStore();
@@ -151,16 +160,33 @@ export function useFilesPageState() {
     fetchFiles();
   }, [fetchFiles]);
 
-  // Listen for file status changes from FileWatcher (via store)
+  // Listen for file status changes from FileWatcher (via store).
+  // - Skip while a bulk download is in progress (the bulk handler refetches
+  //   once at the end). Without this guard, each completed file in a 10-file
+  //   bulk would replace the entire `files` state 10 times, causing the tree
+  //   to visibly "refresh" mid-download.
+  // - Debounce non-bulk events on a 350ms trailing edge so rapid back-to-back
+  //   events (e.g. a page export with several dependencies) coalesce into one
+  //   refetch.
   useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
     const handleFileStatusChanged = () => {
-      logger.debug('file-status-changed event received, refetching files');
-      fetchFiles();
+      if (bulkDownloadInProgress) {
+        logger.debug('file-status-changed received during bulk — suppressed');
+        return;
+      }
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        logger.debug('file-status-changed (debounced), refetching files');
+        fetchFiles();
+        timer = null;
+      }, 350);
     };
 
     window.addEventListener('file-status-changed', handleFileStatusChanged);
     return () => {
       window.removeEventListener('file-status-changed', handleFileStatusChanged);
+      if (timer) clearTimeout(timer);
     };
   }, [fetchFiles]);
 

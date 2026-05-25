@@ -20,6 +20,7 @@ import {
 import type { FileItem, FileResource, FilePage, FileModuleItem } from './FileListItem';
 import type { DownloadProgress } from './FileSelectionBar';
 import { useMultiSelect } from '../../hooks/useMultiSelect';
+import { setBulkDownloadInProgress } from './useFilesPageState';
 import { createLogger } from '../../utils/rendererLogger';
 
 const logger = createLogger('FileSelection');
@@ -178,6 +179,10 @@ export function useFileSelection(groupedFiles: Map<number, Map<string, FileItem[
 
     setDownloadProgress({ total: totalCount, completed: 0, isComplete: false });
 
+    // Block per-file file-status-changed refetches while iterating —
+    // we'll do one fetchFiles() at the end of the loop.
+    setBulkDownloadInProgress(true);
+
     const progressInterval = setInterval(() => {
       setDownloadProgress((prev) =>
         prev ? { ...prev, completed: completedCount } : null
@@ -225,6 +230,7 @@ export function useFileSelection(groupedFiles: Map<number, Map<string, FileItem[
       }
     } finally {
       clearInterval(progressInterval);
+      setBulkDownloadInProgress(false);
     }
 
     setDownloadProgress({

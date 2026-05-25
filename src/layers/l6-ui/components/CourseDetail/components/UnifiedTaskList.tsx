@@ -84,6 +84,15 @@ export interface UnifiedTaskListProps {
 
   // File download handler
   onFileDownloadRequest: (file: { id: number; title: string }, href: string) => void;
+
+  // Keyboard nav — when false, all shortcuts scoped to this list are disabled
+  // so the parent can hand off keys to another section (Queue / Announcements).
+  keyboardEnabled?: boolean;
+
+  // Open focused task on Canvas (added here so the same keyboard context
+  // can dispatch it without the parent needing to look up focusedItem).
+  handleOpenTaskInCanvas?: (task: Task) => void;
+  handleToggleOptional?: (task: Task) => void;
 }
 
 const filterChipStyles: React.CSSProperties = {
@@ -198,6 +207,9 @@ export function UnifiedTaskList({
   handleDeleteTask,
   handleTaskContextMenu,
   onFileDownloadRequest,
+  keyboardEnabled = true,
+  handleOpenTaskInCanvas,
+  handleToggleOptional,
 }: UnifiedTaskListProps) {
   const [activeFilter, setActiveFilter] = useState<TaskFilter>('all');
 
@@ -243,45 +255,149 @@ export function UnifiedTaskList({
     return allTasks.filter((t) => t._category === activeFilter);
   }, [allTasks, activeFilter]);
 
-  // Focused item navigation (Left/Right + J/K)
+  // Focused item navigation — verticalNav: W/S + ↑/↓. A/D/←/→ are freed
+  // up for filter-chip cycling below.
   const { focusedIndex, focusedItem, getFocusProps } = useFocusedItem(filteredTasks, {
     persistKey: 'course-detail-tasks',
+    enabled: keyboardEnabled,
+    verticalNav: true,
   });
 
   // X: toggle completion on focused task
-  useHotkeys('x', () => {
-    if (focusedItem) {
-      handleToggleComplete(focusedItem);
-    }
-  });
+  useHotkeys(
+    'x',
+    () => {
+      if (focusedItem) handleToggleComplete(focusedItem);
+    },
+    { enabled: keyboardEnabled },
+    [focusedItem, handleToggleComplete, keyboardEnabled]
+  );
 
   // E: edit focused task
-  useHotkeys('e', () => {
-    if (focusedItem) {
-      startEditingTask(focusedItem);
-    }
-  });
+  useHotkeys(
+    'e',
+    () => {
+      if (focusedItem) startEditingTask(focusedItem);
+    },
+    { enabled: keyboardEnabled },
+    [focusedItem, startEditingTask, keyboardEnabled]
+  );
 
   // Delete/Backspace: delete focused task
-  useHotkeys('delete, backspace', (e) => {
-    if (focusedItem) {
-      e.preventDefault();
-      handleDeleteTask(focusedItem.id, focusedItem.title);
-    }
-  });
+  useHotkeys(
+    'delete, backspace',
+    (e) => {
+      if (focusedItem) {
+        e.preventDefault();
+        handleDeleteTask(focusedItem.id, focusedItem.title);
+      }
+    },
+    { enabled: keyboardEnabled },
+    [focusedItem, handleDeleteTask, keyboardEnabled]
+  );
 
   // Space: expand/collapse focused task
-  useHotkeys('space', (e) => {
-    if (focusedItem) {
-      e.preventDefault();
-      setExpandedTaskId(expandedTaskId === focusedItem.id ? null : focusedItem.id);
-    }
-  });
+  useHotkeys(
+    'space',
+    (e) => {
+      if (focusedItem) {
+        e.preventDefault();
+        setExpandedTaskId(expandedTaskId === focusedItem.id ? null : focusedItem.id);
+      }
+    },
+    { enabled: keyboardEnabled },
+    [focusedItem, expandedTaskId, setExpandedTaskId, keyboardEnabled]
+  );
 
   // N: create new task
-  useHotkeys('n', () => {
-    setShowAddTask(true);
-  });
+  useHotkeys('n', () => setShowAddTask(true), { enabled: keyboardEnabled }, [
+    setShowAddTask,
+    keyboardEnabled,
+  ]);
+
+  // O: open focused task on Canvas (external browser)
+  useHotkeys(
+    'o',
+    () => {
+      if (focusedItem && handleOpenTaskInCanvas) handleOpenTaskInCanvas(focusedItem);
+    },
+    { enabled: keyboardEnabled },
+    [focusedItem, handleOpenTaskInCanvas, keyboardEnabled]
+  );
+
+  // Shift+D: duplicate focused task (plain D is freed for "next filter")
+  useHotkeys(
+    'shift+d',
+    (e) => {
+      if (focusedItem) {
+        e.preventDefault();
+        handleDuplicateTask(focusedItem.id);
+      }
+    },
+    { enabled: keyboardEnabled },
+    [focusedItem, handleDuplicateTask, keyboardEnabled]
+  );
+
+  // M: mark focused task as optional / restore
+  useHotkeys(
+    'm',
+    () => {
+      if (focusedItem && handleToggleOptional) handleToggleOptional(focusedItem);
+    },
+    { enabled: keyboardEnabled },
+    [focusedItem, handleToggleOptional, keyboardEnabled]
+  );
+
+  // Enter: expand focused task (mirror Space; also opens detail)
+  useHotkeys(
+    'enter',
+    (e) => {
+      if (focusedItem) {
+        e.preventDefault();
+        setExpandedTaskId(expandedTaskId === focusedItem.id ? null : focusedItem.id);
+      }
+    },
+    { enabled: keyboardEnabled },
+    [focusedItem, expandedTaskId, setExpandedTaskId, keyboardEnabled]
+  );
+
+  // Filter chip navigation — A/D/←/→ cycles; digits 1–5 jump directly.
+  const FILTER_ORDER: TaskFilter[] = ['all', 'pending', 'submitted', 'graded', 'info'];
+  useHotkeys(
+    'a, left',
+    (e) => {
+      e.preventDefault();
+      const i = FILTER_ORDER.indexOf(activeFilter);
+      setActiveFilter(FILTER_ORDER[(i - 1 + FILTER_ORDER.length) % FILTER_ORDER.length]);
+    },
+    { enabled: keyboardEnabled },
+    [activeFilter, keyboardEnabled]
+  );
+  useHotkeys(
+    'd, right',
+    (e) => {
+      e.preventDefault();
+      const i = FILTER_ORDER.indexOf(activeFilter);
+      setActiveFilter(FILTER_ORDER[(i + 1) % FILTER_ORDER.length]);
+    },
+    { enabled: keyboardEnabled },
+    [activeFilter, keyboardEnabled]
+  );
+  useHotkeys('1', () => setActiveFilter('all'), { enabled: keyboardEnabled }, [
+    keyboardEnabled,
+  ]);
+  useHotkeys('2', () => setActiveFilter('pending'), { enabled: keyboardEnabled }, [
+    keyboardEnabled,
+  ]);
+  useHotkeys('3', () => setActiveFilter('submitted'), { enabled: keyboardEnabled }, [
+    keyboardEnabled,
+  ]);
+  useHotkeys('4', () => setActiveFilter('graded'), { enabled: keyboardEnabled }, [
+    keyboardEnabled,
+  ]);
+  useHotkeys('5', () => setActiveFilter('info'), { enabled: keyboardEnabled }, [
+    keyboardEnabled,
+  ]);
 
   // Filter counts
   const counts = {
