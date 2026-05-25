@@ -37,7 +37,9 @@ Thumbs.db
 .idea/
 *.sublime-project
 *.sublime-workspace
-.claude/
+# Ignore all of .claude EXCEPT shared project skills
+.claude/*
+!.claude/skills/
 
 # Internal docs
 CLAUDE.md
