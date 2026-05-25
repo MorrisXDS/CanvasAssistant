@@ -70,7 +70,6 @@ export function FileFilterPanel({
   statusFilter,
   selectedExtensions,
   sizeFilter,
-  selectedCourseIds,
   onTogglePrefix,
   onToggleTerm,
   onSourceFilterChange,

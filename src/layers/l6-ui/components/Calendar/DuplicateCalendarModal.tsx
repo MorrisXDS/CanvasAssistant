@@ -4,7 +4,7 @@
  */
 
 import React from 'react';
-import { AlertTriangle, Calendar, RefreshCw, Eye, X } from 'lucide-react';
+import { AlertTriangle, Calendar, RefreshCw, Eye } from 'lucide-react';
 
 interface ExistingCalendarInfo {
   id: number;

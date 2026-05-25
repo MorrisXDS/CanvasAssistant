@@ -27,16 +27,15 @@ jobs:
       - name: Build
         run: npm run build
 
-      # Informational until the lint baseline is clean — then drop continue-on-error.
+      # Informational for now: the lint baseline still has cross-file debt, and the lint
+      # script's glob expands to different file sets on CI vs Windows (CI and local lint
+      # disagree). Promote to a blocking gate after a dedicated lint cleanup.
       - name: Lint
         run: npm run lint
         continue-on-error: true
 
-      # Informational until the Jest baseline is green — then drop continue-on-error.
-      - name: Unit tests
-        run: npm test
-        continue-on-error: true
-
-  # NOTE: e2e (`npm run test:e2e`) is intentionally NOT in CI — it needs a populated
-  # local database/canvas.db, an onboarded OS keychain, and a real Electron window, none
-  # of which exist on a clean CI runner. Run it locally before shipping UI/keyboard changes.
+  # NOTE: unit tests and e2e are NOT in CI:
+  #  - `tests/` is gitignored (local-only), so a clean CI clone has no test files;
+  #    `npm test` can't run here. Un-ignore tests/ (and green the baseline) to re-add it.
+  #  - e2e needs a populated local DB, an onboarded OS keychain, and a real Electron window.
+  # Run both locally before shipping.

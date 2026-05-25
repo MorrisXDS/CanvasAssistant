@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useCallback } from 'react';
-import { ChevronDown, ChevronRight } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
 
 export interface AccordionItemProps {
   id: string;
@@ -88,7 +88,6 @@ export function AccordionItem({
   title,
   subtitle,
   badge,
-  defaultExpanded = false,
   isExpanded,
   onToggle,
   children,
