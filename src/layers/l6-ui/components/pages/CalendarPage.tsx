@@ -249,11 +249,56 @@ export function CalendarPage() {
   // Keyboard shortcuts (document-level so they work regardless of focus target)
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.ctrlKey || e.metaKey || e.altKey) return;
       const target = e.target as HTMLElement;
       const tag = target?.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-      if (target?.isContentEditable) return;
+      if (
+        tag === 'INPUT' ||
+        tag === 'TEXTAREA' ||
+        tag === 'SELECT' ||
+        target?.isContentEditable
+      ) {
+        return;
+      }
+
+      // Alt-based quick filters: Alt+Shift+D/P cycle deadline/priority,
+      // Alt+Shift+C clears, Alt+1..9 toggles a course by its position in the list.
+      if (e.altKey && !e.ctrlKey && !e.metaKey) {
+        if (e.shiftKey) {
+          switch (e.key.toLowerCase()) {
+            case 'd': {
+              e.preventDefault();
+              const order: DeadlineFilter[] = [
+                'all',
+                'overdue',
+                'today',
+                'this-week',
+                'upcoming',
+              ];
+              setDeadlineFilter((p) => order[(order.indexOf(p) + 1) % order.length]);
+              break;
+            }
+            case 'p': {
+              e.preventDefault();
+              const order: PriorityFilter[] = ['all', 'high', 'medium', 'low'];
+              setPriorityFilter((p) => order[(order.indexOf(p) + 1) % order.length]);
+              break;
+            }
+            case 'c':
+              e.preventDefault();
+              clearFilters();
+              break;
+          }
+          return;
+        }
+        const idx = parseInt(e.key, 10);
+        if (idx >= 1 && idx <= 9 && courses[idx - 1]) {
+          e.preventDefault();
+          toggleCourse(courses[idx - 1].id);
+        }
+        return;
+      }
+
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
 
       switch (e.key) {
         case 'ArrowLeft':
@@ -285,7 +330,7 @@ export function CalendarPage() {
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, [viewMode]);
+  }, [viewMode, courses]);
 
   // Toggle course selection
   const toggleCourse = (courseId: number) => {
