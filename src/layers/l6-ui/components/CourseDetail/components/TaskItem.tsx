@@ -571,6 +571,7 @@ export function TaskItem({
             <div style={styles.taskEditRow}>
               <label style={styles.taskEditLabel}>Title</label>
               <input
+                id="task-edit-title"
                 type="text"
                 value={editTitle}
                 onChange={(e) => onEditTitleChange(e.target.value)}
@@ -604,6 +605,7 @@ export function TaskItem({
                 <div style={styles.taskEditRow}>
                   <label style={styles.taskEditLabel}>Notes</label>
                   <textarea
+                    id="task-edit-notes"
                     value={editNotes}
                     onChange={(e) => onEditNotesChange(e.target.value)}
                     placeholder="Add your personal notes..."
@@ -624,7 +626,7 @@ export function TaskItem({
                 </div>
               </>
             ) : (
-              <div style={styles.taskEditRow}>
+              <div id="task-edit-description" style={styles.taskEditRow}>
                 <label style={styles.taskEditLabel}>Description</label>
                 <RichTextEditor
                   value={editDescription}
@@ -637,6 +639,7 @@ export function TaskItem({
             <div style={styles.taskEditRow}>
               <label style={styles.taskEditLabel}>Type</label>
               <select
+                id="task-edit-type"
                 value={editTaskType}
                 onChange={(e) => onEditTaskTypeChange(e.target.value)}
                 style={styles.taskEditSelect}
@@ -652,6 +655,7 @@ export function TaskItem({
             <div style={styles.taskEditRow}>
               <label style={styles.taskEditLabel}>Location</label>
               <input
+                id="task-edit-location"
                 type="text"
                 value={editLocation}
                 onChange={(e) => onEditLocationChange(e.target.value)}
@@ -669,6 +673,7 @@ export function TaskItem({
                   Start Date
                 </label>
                 <input
+                  id="task-edit-start"
                   type="datetime-local"
                   value={editStartDate}
                   onChange={(e) => onEditStartDateChange(e.target.value)}
@@ -679,6 +684,7 @@ export function TaskItem({
               <div style={styles.taskEditRowHalf}>
                 <label style={styles.taskEditLabel}>Due Date</label>
                 <input
+                  id="task-edit-due"
                   type="datetime-local"
                   value={editDueDate}
                   onChange={(e) => onEditDueDateChange(e.target.value)}
@@ -696,6 +702,7 @@ export function TaskItem({
                   Weight (%)
                 </label>
                 <input
+                  id="task-edit-weight"
                   type="number"
                   value={editWeight}
                   onChange={(e) => onEditWeightChange(e.target.value)}
@@ -713,6 +720,7 @@ export function TaskItem({
                   Score (%)
                 </label>
                 <input
+                  id="task-edit-grade"
                   type="number"
                   value={editGrade}
                   onChange={(e) => onEditGradeChange(e.target.value)}

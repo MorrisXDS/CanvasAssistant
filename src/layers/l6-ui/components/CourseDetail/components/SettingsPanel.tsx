@@ -79,6 +79,7 @@ export function SettingsPanel({
         <div style={styles.settingsField}>
           <label style={styles.settingsLabel}>Nickname</label>
           <input
+            id="course-settings-nickname"
             type="text"
             value={nicknameInput}
             onChange={(e) => onNicknameChange(e.target.value)}
@@ -101,6 +102,7 @@ export function SettingsPanel({
         <div style={styles.settingsField}>
           <label style={styles.settingsLabel}>Credits</label>
           <input
+            id="course-settings-credits"
             type="number"
             value={creditsInput}
             onChange={(e) => onCreditsChange(e.target.value)}
@@ -117,6 +119,7 @@ export function SettingsPanel({
         <div style={styles.settingsField}>
           <label style={styles.settingsLabel}>Grade Adjustment (±%)</label>
           <input
+            id="course-settings-curve"
             type="number"
             value={curveAdjustmentInput}
             onChange={(e) => onCurveAdjustmentChange(e.target.value)}
@@ -158,7 +161,7 @@ export function SettingsPanel({
       </div>
       {/* Row 3: Color picker */}
       <div style={styles.settingsGrid}>
-        <div style={styles.settingsField}>
+        <div id="course-settings-color" style={styles.settingsField}>
           <label style={styles.settingsLabel}>Color</label>
           <ColorPicker
             value={selectedColor || getCourseColor(courseId, courseColor)}

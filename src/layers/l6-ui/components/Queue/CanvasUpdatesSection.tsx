@@ -5,8 +5,10 @@
 
 import React, { useState, useEffect } from 'react';
 import { ChevronDown, ChevronRight, CloudDownload, CheckCircle2 } from 'lucide-react';
+import { useHotkeys } from 'react-hotkeys-hook';
 import { QueuedTaskCard, type QueuedTaskEdits } from './QueuedTaskCard';
 import { ConfirmDialog } from '../shared';
+import { useFocusedItem } from '../../hooks/useFocusedItem';
 import type { QueuedTask } from '../../../l5-presentation/types';
 
 interface CanvasUpdatesSectionProps {
@@ -21,6 +23,8 @@ interface CanvasUpdatesSectionProps {
   defaultExpanded?: boolean;
   highlightedQueueId?: number;
   onHighlightClear?: () => void;
+  /** Keyboard nav active — W/S/↑/↓ walks queued cards; A/R/L act on focus. */
+  keyboardEnabled?: boolean;
 }
 
 const styles = {
@@ -166,6 +170,7 @@ export function CanvasUpdatesSection({
   defaultExpanded = false,
   highlightedQueueId,
   onHighlightClear,
+  keyboardEnabled = false,
 }: CanvasUpdatesSectionProps) {
   // Collapsed by default (can be changed via settings)
   // Force expand if there's a highlighted queue item
@@ -174,6 +179,61 @@ export function CanvasUpdatesSection({
   );
   const [isAcceptingAll, setIsAcceptingAll] = useState(false);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+
+  // Auto-expand when keyboard focus arrives so users can actually see the
+  // card they're walking.
+  useEffect(() => {
+    if (keyboardEnabled && !isExpanded) setIsExpanded(true);
+  }, [keyboardEnabled, isExpanded]);
+
+  // Focused-card navigation when keyboard is active.
+  const { focusedIndex, focusedItem, getFocusProps } = useFocusedItem(queuedTasks, {
+    persistKey: 'course-detail-queue',
+    enabled: keyboardEnabled,
+    verticalNav: true,
+  });
+
+  useHotkeys(
+    'a',
+    (e) => {
+      if (!focusedItem || !keyboardEnabled) return;
+      if (e.shiftKey) return; // Shift+A = bulk accept below
+      e.preventDefault();
+      onAccept(focusedItem.id);
+    },
+    { enabled: keyboardEnabled },
+    [focusedItem, onAccept, keyboardEnabled]
+  );
+  useHotkeys(
+    'shift+a',
+    (e) => {
+      if (!keyboardEnabled) return;
+      e.preventDefault();
+      setShowConfirmDialog(true);
+    },
+    { enabled: keyboardEnabled },
+    [keyboardEnabled]
+  );
+  useHotkeys(
+    'r',
+    (e) => {
+      if (!focusedItem || !keyboardEnabled) return;
+      e.preventDefault();
+      onReject(focusedItem.id);
+    },
+    { enabled: keyboardEnabled },
+    [focusedItem, onReject, keyboardEnabled]
+  );
+  useHotkeys(
+    'l',
+    (e) => {
+      if (!focusedItem || !keyboardEnabled) return;
+      e.preventDefault();
+      onLink(focusedItem.id);
+    },
+    { enabled: keyboardEnabled },
+    [focusedItem, onLink, keyboardEnabled]
+  );
 
   // Auto-expand when highlight is set
   useEffect(() => {
@@ -258,16 +318,36 @@ export function CanvasUpdatesSection({
             <span style={styles.colActions}>Actions</span>
           </div>
           {/* Rows */}
-          {queuedTasks.map((queuedTask) => (
-            <QueuedTaskCard
-              key={queuedTask.id}
-              queuedTask={queuedTask}
-              onAccept={onAccept}
-              onReject={onReject}
-              onLink={onLink}
-              isHighlighted={queuedTask.id === highlightedQueueId}
-            />
-          ))}
+          {queuedTasks.map((queuedTask, i) => {
+            const isFocused = focusedIndex === i;
+            const { 'data-focus-index': fIdx, 'data-focus-scope': fScope } =
+              getFocusProps(i);
+            return (
+              <div
+                key={queuedTask.id}
+                data-focus-index={fIdx}
+                data-focus-scope={fScope}
+                style={{
+                  ...(isFocused
+                    ? {
+                        outline: '2px solid var(--color-navy)',
+                        outlineOffset: '-2px',
+                        borderRadius: '4px',
+                        position: 'relative',
+                      }
+                    : {}),
+                }}
+              >
+                <QueuedTaskCard
+                  queuedTask={queuedTask}
+                  onAccept={onAccept}
+                  onReject={onReject}
+                  onLink={onLink}
+                  isHighlighted={queuedTask.id === highlightedQueueId}
+                />
+              </div>
+            );
+          })}
         </div>
       )}
 

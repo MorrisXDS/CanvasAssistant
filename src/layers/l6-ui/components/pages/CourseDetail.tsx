@@ -6,12 +6,17 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, BookOpen, Archive } from 'lucide-react';
+import { useHotkeys } from 'react-hotkeys-hook';
 import { ConfirmDialog } from '../shared';
 import { MissingDependenciesDialog } from '../Files/MissingDependenciesDialog';
 import { useStore } from '../../../l5-presentation/store';
 import type { Task, Notification, QueuedTask } from '../../../l5-presentation/types';
 import { getCourseColor } from '../../constants';
-import { STORAGE_KEYS, SETTINGS_DEFAULTS } from '../../../l5-presentation/settings';
+import {
+  STORAGE_KEYS,
+  SETTINGS_DEFAULTS,
+  settingsManager,
+} from '../../../l5-presentation/settings';
 import {
   SyllabusSelector,
   TaskContextMenu,
@@ -148,6 +153,12 @@ export function CourseDetail() {
     setCourse,
     navigate,
   });
+
+  // Keyboard section focus — which sub-section on the page the user is
+  // currently driving with the keyboard. Tasks is the default; Queue and
+  // Announcements only become reachable via Q/E when they're visible.
+  type SectionFocus = 'tasks' | 'queue' | 'announcements' | 'preferences';
+  const [sectionFocus, setSectionFocus] = useState<SectionFocus>('tasks');
 
   // Confirm dialog state (declared early as other hooks depend on it)
   const [confirmDialog, setConfirmDialog] = useState<{
@@ -608,6 +619,348 @@ export function CourseDetail() {
     });
   }, []);
 
+  // ===== Page-level keyboard shortcuts =====
+  // Availability of conditional sections (snapshot per render; useHotkeys
+  // closures capture these via the deps arrays on each binding below).
+  const queueAvailable = !course?.archivedAt && queuedTasks.length > 0;
+  const announcementsAvailable = announcements.length > 0;
+  const preferencesAvailable = showSettings;
+
+  // Open focused course on Canvas (Shift+O, distinct from task-level 'O')
+  useHotkeys(
+    'shift+o',
+    (e) => {
+      if (!course) return;
+      e.preventDefault();
+      const baseUrl = settingsManager.get(STORAGE_KEYS.CANVAS_URL);
+      if (!baseUrl) return;
+      window.api?.openExternal(
+        `${baseUrl.replace(/\/+$/, '')}/courses/${course.externalId}`
+      );
+    },
+    [course]
+  );
+
+  // G: go back (same as Back button) — ignored when typing in inputs.
+  useHotkeys('g', () => navigate(-1), []);
+
+  // mod+E: toggle Settings panel
+  useHotkeys(
+    'mod+e',
+    (e) => {
+      e.preventDefault();
+      handleToggleSettings();
+    },
+    [handleToggleSettings]
+  );
+
+  // T: start inline Target-grade edit in the header
+  useHotkeys(
+    't',
+    () => {
+      handleStartEditTarget();
+    },
+    [handleStartEditTarget]
+  );
+
+  // mod+Shift+A: archive this course (confirms first)
+  useHotkeys(
+    'mod+shift+a',
+    (e) => {
+      if (!course) return;
+      e.preventDefault();
+      setConfirmDialog({
+        isOpen: true,
+        title: 'Archive Course',
+        message: `Are you sure you want to archive "${course.nickname || course.name}"? Archived courses are hidden from the main view but can be restored later.`,
+        type: 'warning',
+        confirmText: 'Archive',
+        onConfirm: handleArchiveCourse,
+      });
+    },
+    [course, handleArchiveCourse]
+  );
+
+  // mod+S: save settings (when panel is open)
+  useHotkeys(
+    'mod+s',
+    (e) => {
+      if (!showSettings) return;
+      e.preventDefault();
+      handleSaveSettings();
+    },
+    [showSettings, handleSaveSettings]
+  );
+
+  // Section switching: Q / E cycles across visible sections
+  const cycleSection = useCallback(
+    (dir: 1 | -1) => {
+      const available: SectionFocus[] = ['tasks'];
+      if (queueAvailable) available.push('queue');
+      if (announcementsAvailable) available.push('announcements');
+      if (preferencesAvailable) available.push('preferences');
+      if (available.length <= 1) return;
+      const idx = available.indexOf(sectionFocus);
+      const next = (idx === -1 ? 0 : idx + dir + available.length) % available.length;
+      setSectionFocus(available[next]);
+    },
+    [queueAvailable, announcementsAvailable, preferencesAvailable, sectionFocus]
+  );
+  useHotkeys(
+    'q',
+    (e) => {
+      // Don't hijack Q while the user is editing target grade inline etc.
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      e.preventDefault();
+      cycleSection(-1);
+    },
+    [cycleSection]
+  );
+  useHotkeys(
+    'e',
+    (e) => {
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      // Only hijack E when in a non-task section (tasks section uses E=edit).
+      if (sectionFocus === 'tasks') return;
+      e.preventDefault();
+      cycleSection(1);
+    },
+    [cycleSection, sectionFocus]
+  );
+
+  // Re-scope sectionFocus when the underlying availability changes.
+  useEffect(() => {
+    if (sectionFocus === 'queue' && !queueAvailable) setSectionFocus('tasks');
+    if (sectionFocus === 'announcements' && !announcementsAvailable)
+      setSectionFocus('tasks');
+    if (sectionFocus === 'preferences' && !preferencesAvailable) setSectionFocus('tasks');
+  }, [sectionFocus, queueAvailable, announcementsAvailable, preferencesAvailable]);
+
+  // ===== Task edit mode shortcuts (active while editingTaskId !== null) =====
+  // Ctrl/Cmd+Enter saves the edit; Alt+letter jumps to a field.
+  const taskEditActive = editingTaskId !== null;
+  const focusTaskEditField = (id: string) => {
+    const el = document.getElementById(id);
+    if (!el) return false;
+    if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+      el.focus();
+      if (el instanceof HTMLInputElement && el.type === 'text') el.select();
+      return true;
+    }
+    if (el instanceof HTMLSelectElement) {
+      el.focus();
+      return true;
+    }
+    // Wrapper div (e.g. description RichTextEditor, color picker swatch row):
+    // focus the first focusable descendant.
+    const focusable = el.querySelector<HTMLElement>(
+      '[contenteditable], button, input, select, textarea, [tabindex]:not([tabindex="-1"])'
+    );
+    if (focusable) {
+      focusable.focus();
+      return true;
+    }
+    return false;
+  };
+  useHotkeys(
+    'mod+enter',
+    (e) => {
+      if (!taskEditActive) return;
+      e.preventDefault();
+      handleSaveTask();
+    },
+    { enableOnFormTags: true, enableOnContentEditable: true },
+    [taskEditActive, handleSaveTask]
+  );
+  useHotkeys(
+    'alt+t',
+    (e) => {
+      if (!taskEditActive) return;
+      if (focusTaskEditField('task-edit-title')) e.preventDefault();
+    },
+    { enableOnFormTags: true, enableOnContentEditable: true },
+    [taskEditActive]
+  );
+  useHotkeys(
+    'alt+d',
+    (e) => {
+      if (!taskEditActive) return;
+      if (focusTaskEditField('task-edit-description')) e.preventDefault();
+    },
+    { enableOnFormTags: true, enableOnContentEditable: true },
+    [taskEditActive]
+  );
+  useHotkeys(
+    'alt+n',
+    (e) => {
+      if (!taskEditActive) return;
+      if (focusTaskEditField('task-edit-notes')) e.preventDefault();
+    },
+    { enableOnFormTags: true, enableOnContentEditable: true },
+    [taskEditActive]
+  );
+  useHotkeys(
+    'alt+y',
+    (e) => {
+      if (!taskEditActive) return;
+      if (focusTaskEditField('task-edit-type')) e.preventDefault();
+    },
+    { enableOnFormTags: true, enableOnContentEditable: true },
+    [taskEditActive]
+  );
+  useHotkeys(
+    'alt+l',
+    (e) => {
+      if (!taskEditActive) return;
+      if (focusTaskEditField('task-edit-location')) e.preventDefault();
+    },
+    { enableOnFormTags: true, enableOnContentEditable: true },
+    [taskEditActive]
+  );
+  useHotkeys(
+    'alt+s',
+    (e) => {
+      if (!taskEditActive) return;
+      if (focusTaskEditField('task-edit-start')) e.preventDefault();
+    },
+    { enableOnFormTags: true, enableOnContentEditable: true },
+    [taskEditActive]
+  );
+  useHotkeys(
+    'alt+shift+d',
+    (e) => {
+      if (!taskEditActive) return;
+      if (focusTaskEditField('task-edit-due')) e.preventDefault();
+    },
+    { enableOnFormTags: true, enableOnContentEditable: true },
+    [taskEditActive]
+  );
+  useHotkeys(
+    'alt+w',
+    (e) => {
+      if (!taskEditActive) return;
+      if (focusTaskEditField('task-edit-weight')) e.preventDefault();
+    },
+    { enableOnFormTags: true, enableOnContentEditable: true },
+    [taskEditActive]
+  );
+  useHotkeys(
+    'alt+g',
+    (e) => {
+      // In preferences section → Grade curve; in task edit → Score
+      if (showSettings && !taskEditActive) {
+        if (focusTaskEditField('course-settings-curve')) e.preventDefault();
+        return;
+      }
+      if (!taskEditActive) return;
+      if (focusTaskEditField('task-edit-grade')) e.preventDefault();
+    },
+    { enableOnFormTags: true, enableOnContentEditable: true },
+    [taskEditActive, showSettings]
+  );
+
+  // ===== Preferences shortcuts (active while showSettings === true) =====
+  useHotkeys(
+    'alt+n',
+    (e) => {
+      // Task-edit N = notes handled above; when task edit is inactive but
+      // settings is open, Alt+N jumps to Nickname.
+      if (taskEditActive || !showSettings) return;
+      if (focusTaskEditField('course-settings-nickname')) e.preventDefault();
+    },
+    { enableOnFormTags: true, enableOnContentEditable: true },
+    [taskEditActive, showSettings]
+  );
+  useHotkeys(
+    'alt+c',
+    (e) => {
+      if (!showSettings) return;
+      if (focusTaskEditField('course-settings-color')) e.preventDefault();
+    },
+    { enableOnFormTags: true, enableOnContentEditable: true },
+    [showSettings]
+  );
+  useHotkeys(
+    'alt+u',
+    (e) => {
+      if (!showSettings) return;
+      if (focusTaskEditField('course-settings-credits')) e.preventDefault();
+    },
+    { enableOnFormTags: true, enableOnContentEditable: true },
+    [showSettings]
+  );
+  // Alt+T in preferences mirrors the page-level T (opens target grade edit)
+  useHotkeys(
+    'alt+t',
+    (e) => {
+      if (taskEditActive) return; // task-edit Alt+T = Title is handled above
+      if (!showSettings) return;
+      e.preventDefault();
+      handleStartEditTarget();
+    },
+    { enableOnFormTags: true, enableOnContentEditable: true },
+    [taskEditActive, showSettings, handleStartEditTarget]
+  );
+
+  // Escape cascade: close open menus/forms/edits first, then sectionFocus
+  // back to tasks, else navigate back.
+  useHotkeys(
+    'esc',
+    (e) => {
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (taskContextMenu) {
+        e.preventDefault();
+        setTaskContextMenu(null);
+        return;
+      }
+      if (showAddTask) {
+        e.preventDefault();
+        setShowAddTask(false);
+        return;
+      }
+      if (editingTaskId !== null) {
+        e.preventDefault();
+        setEditingTaskId(null);
+        return;
+      }
+      if (expandedTaskId !== null) {
+        e.preventDefault();
+        setExpandedTaskId(null);
+        return;
+      }
+      if (showSettings) {
+        e.preventDefault();
+        setShowSettings(false);
+        return;
+      }
+      if (sectionFocus !== 'tasks') {
+        e.preventDefault();
+        setSectionFocus('tasks');
+        return;
+      }
+      // Fall through: let Layout's Escape handler navigate(-1) on sub-pages.
+    },
+    [
+      taskContextMenu,
+      setTaskContextMenu,
+      showAddTask,
+      setShowAddTask,
+      editingTaskId,
+      setEditingTaskId,
+      expandedTaskId,
+      setExpandedTaskId,
+      showSettings,
+      setShowSettings,
+      sectionFocus,
+    ]
+  );
+
   if (loading) {
     return (
       <div style={styles.pageWrapper}>
@@ -815,6 +1168,7 @@ export function CourseDetail() {
               highlightQueueId ? parseInt(highlightQueueId, 10) : undefined
             }
             onHighlightClear={() => setSearchParams({}, { replace: true })}
+            keyboardEnabled={sectionFocus === 'queue'}
           />
         )}
 
@@ -872,6 +1226,9 @@ export function CourseDetail() {
               handleSaveTask={handleSaveTask}
               handleDeleteTask={handleDeleteTask}
               handleTaskContextMenu={handleTaskContextMenu}
+              handleOpenTaskInCanvas={handleOpenTaskInCanvas}
+              handleToggleOptional={handleToggleOptional}
+              keyboardEnabled={sectionFocus === 'tasks'}
               onFileDownloadRequest={(file, href) => {
                 setPendingFileDownload({
                   fileId: file.id,
@@ -921,6 +1278,7 @@ export function CourseDetail() {
                     onDragOver={sidebarDragHandlers.onDragOver(sectionId)}
                     onDragLeave={sidebarDragHandlers.onDragLeave}
                     onDrop={sidebarDragHandlers.onDrop(sectionId)}
+                    keyboardEnabled={sectionFocus === 'announcements'}
                   />
                 );
               }

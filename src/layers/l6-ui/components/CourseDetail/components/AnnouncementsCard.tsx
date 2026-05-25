@@ -4,10 +4,13 @@
  */
 
 import React from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Megaphone, ChevronRight, GripVertical } from 'lucide-react';
+import { useHotkeys } from 'react-hotkeys-hook';
 import { Card } from '../../shared';
 import type { Notification } from '../../../../l5-presentation/types';
+import { useStore } from '../../../../l5-presentation/store';
+import { useFocusedItem } from '../../../hooks/useFocusedItem';
 import { courseDetailStyles as styles } from '../../pages/CourseDetail.styles';
 
 export interface AnnouncementsCardProps {
@@ -20,6 +23,8 @@ export interface AnnouncementsCardProps {
   onDragOver: (e: React.DragEvent) => void;
   onDragLeave: (e: React.DragEvent) => void;
   onDrop: (e: React.DragEvent) => void;
+  /** Keyboard active — when true, W/S/↑/↓ walks entries and Enter/D/V fire. */
+  keyboardEnabled?: boolean;
 }
 
 function formatShortDate(dateStr: string): string {
@@ -37,7 +42,47 @@ export function AnnouncementsCard({
   onDragOver,
   onDragLeave,
   onDrop,
+  keyboardEnabled = false,
 }: AnnouncementsCardProps) {
+  const navigate = useNavigate();
+  const dismissNotification = useStore((s) => s.dismissNotification);
+  const visible = announcements.slice(0, 8);
+  const { focusedIndex, focusedItem, getFocusProps } = useFocusedItem(visible, {
+    persistKey: `course-${courseId}-announcements`,
+    enabled: keyboardEnabled,
+    verticalNav: true,
+  });
+
+  useHotkeys(
+    'enter',
+    (e) => {
+      if (!focusedItem) return;
+      e.preventDefault();
+      navigate(`/announcement/${focusedItem.id}`);
+    },
+    { enabled: keyboardEnabled },
+    [focusedItem, navigate, keyboardEnabled]
+  );
+  useHotkeys(
+    'd',
+    (e) => {
+      if (!focusedItem) return;
+      e.preventDefault();
+      dismissNotification(focusedItem.id);
+    },
+    { enabled: keyboardEnabled },
+    [focusedItem, dismissNotification, keyboardEnabled]
+  );
+  useHotkeys(
+    'v',
+    (e) => {
+      e.preventDefault();
+      navigate(`/announcements?course=${courseId}`);
+    },
+    { enabled: keyboardEnabled },
+    [navigate, courseId, keyboardEnabled]
+  );
+
   return (
     <div
       draggable
@@ -67,18 +112,34 @@ export function AnnouncementsCard({
           </div>
         ) : (
           <div style={styles.announcementList}>
-            {announcements.slice(0, 8).map((ann) => (
-              <Link
-                key={ann.id}
-                to={`/announcement/${ann.id}`}
-                style={styles.announcementItem}
-              >
-                <div style={styles.announcementTitle}>{ann.title}</div>
-                <div style={styles.announcementDate}>
-                  {formatShortDate(ann.publishedAt)}
-                </div>
-              </Link>
-            ))}
+            {visible.map((ann, i) => {
+              const isFocused = focusedIndex === i;
+              const { 'data-focus-index': fIdx, 'data-focus-scope': fScope } =
+                getFocusProps(i);
+              return (
+                <Link
+                  key={ann.id}
+                  to={`/announcement/${ann.id}`}
+                  data-focus-index={fIdx}
+                  data-focus-scope={fScope}
+                  style={{
+                    ...styles.announcementItem,
+                    ...(isFocused
+                      ? {
+                          outline: '2px solid var(--color-navy)',
+                          outlineOffset: '-2px',
+                          borderRadius: '4px',
+                        }
+                      : {}),
+                  }}
+                >
+                  <div style={styles.announcementTitle}>{ann.title}</div>
+                  <div style={styles.announcementDate}>
+                    {formatShortDate(ann.publishedAt)}
+                  </div>
+                </Link>
+              );
+            })}
             {announcements.length > 8 && (
               <Link to={`/announcements?course=${courseId}`} style={styles.viewAllLink}>
                 View all {announcements.length} announcements
