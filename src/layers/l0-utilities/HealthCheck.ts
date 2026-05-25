@@ -135,14 +135,9 @@ export class HealthCheck extends EventEmitter {
    * Check process health
    */
   private checkProcess(): HealthStatus {
-    // Basic process health - check if event loop is responsive
-    // In a real implementation, you might track event loop lag
-    try {
-      // If we can execute this, the process is at least running
-      return 'healthy';
-    } catch {
-      return 'unhealthy';
-    }
+    // Basic process health — if we can execute this, the process is running.
+    // (A real implementation might track event-loop lag.)
+    return 'healthy';
   }
 
   /**

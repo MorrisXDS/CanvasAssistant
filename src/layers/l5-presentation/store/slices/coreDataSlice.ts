@@ -80,7 +80,10 @@ export const createCoreDataSlice: SliceCreator = (set, get) => ({
           semesterSelection = String(termResult.termSelection);
         }
       } catch (e) {
-        log.error('[Store] Failed to get term selection from database', e instanceof Error ? e : undefined);
+        log.error(
+          '[Store] Failed to get term selection from database',
+          e instanceof Error ? e : undefined
+        );
         // Fall back to localStorage for backwards compatibility during migration
         const academicSettings = localStorage.getItem('academicSettings');
         if (academicSettings) {
@@ -93,13 +96,16 @@ export const createCoreDataSlice: SliceCreator = (set, get) => ({
                 semesterSelection === 'all' || semesterSelection === 'auto'
                   ? semesterSelection
                   : parseInt(semesterSelection, 10);
-              api.setTermSelection(valueToSet).catch((err: unknown) => {
+              api.setTermSelection(valueToSet).catch(() => {
                 // Log migration errors instead of swallowing them (#23)
                 log.warn('[Store] Failed to migrate term selection to database');
               });
             }
           } catch (parseError) {
-            log.error('[Store] Failed to parse academic settings', parseError instanceof Error ? parseError : undefined);
+            log.error(
+              '[Store] Failed to parse academic settings',
+              parseError instanceof Error ? parseError : undefined
+            );
           }
         }
       }
@@ -201,7 +207,10 @@ export const createCoreDataSlice: SliceCreator = (set, get) => ({
 
       set({ notifications });
     } catch (error) {
-      log.error('Failed to fetch notifications', error instanceof Error ? error : undefined);
+      log.error(
+        'Failed to fetch notifications',
+        error instanceof Error ? error : undefined
+      );
       set({ lastError: error instanceof Error ? error.message : String(error) });
     }
   },
@@ -246,7 +255,10 @@ export const createCoreDataSlice: SliceCreator = (set, get) => ({
       }
       log.debug(`[Store] refreshAll: completed in ${Date.now() - startTime}ms`);
     } catch (error) {
-      log.error('[Store] refreshAll: fatal error', error instanceof Error ? error : undefined);
+      log.error(
+        '[Store] refreshAll: fatal error',
+        error instanceof Error ? error : undefined
+      );
       throw error;
     }
   },

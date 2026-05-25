@@ -4,7 +4,7 @@
  * Persists order to localStorage per course.
  */
 
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { createLogger } from '../../utils/rendererLogger';
 
 const log = createLogger('useFolderDragDrop');

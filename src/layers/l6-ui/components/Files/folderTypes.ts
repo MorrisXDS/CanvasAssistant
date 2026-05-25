@@ -138,6 +138,7 @@ export function getFolderTypeFromPath(folderPath: string | null): FolderTypeConf
   if (!folderPath) return DEFAULT_FOLDER_CONFIG;
 
   // Get the last segment of the path
+  // eslint-disable-next-line cross-platform/no-hardcoded-path-separator -- Canvas folder paths use '/' regardless of OS
   const segments = folderPath.split('/').filter(Boolean);
   if (segments.length === 0) return DEFAULT_FOLDER_CONFIG;
 
@@ -185,6 +186,7 @@ export interface FolderSegment {
 export function parseFolderPath(folderPath: string | null): FolderSegment[] {
   if (!folderPath) return [];
 
+  // eslint-disable-next-line cross-platform/no-hardcoded-path-separator -- Canvas folder paths use '/' regardless of OS
   const segments = folderPath.split('/').filter(Boolean);
   const result: FolderSegment[] = [];
 
