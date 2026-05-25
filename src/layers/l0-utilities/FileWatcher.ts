@@ -73,7 +73,7 @@ export class FileWatcher extends EventEmitter {
       ignorePermissionErrors: true,
       // Ignore hidden files and temp files
       ignored: [
-        /(^|[\/\\])\../, // dotfiles
+        /(^|[/\\])\../, // dotfiles
         /\.tmp$/,
         /\.part$/,
         /\.crdownload$/,

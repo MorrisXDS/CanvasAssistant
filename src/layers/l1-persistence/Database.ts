@@ -105,6 +105,7 @@ export class Database extends EventEmitter {
 
     // Initialize SQLite with optional verbose logging
     this.db = new BetterSqlite3(this.dbPath, {
+      // eslint-disable-next-line no-console -- better-sqlite3 verbose hook; only active when config.verbose is set (debug)
       verbose: config.verbose ? console.log : undefined,
     });
 

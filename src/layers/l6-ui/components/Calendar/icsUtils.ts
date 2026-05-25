@@ -3,7 +3,7 @@
  * Functions for generating and parsing ICS calendar files
  */
 
-import type { CalendarEvent, TaskCalendarEvent } from './CalendarGrid';
+import type { CalendarEvent } from './CalendarGrid';
 
 /**
  * Format a Date object to ICS format (YYYYMMDDTHHMMSSZ)

@@ -52,7 +52,7 @@ export function useCourseDragDrop(courseIds: number[]) {
       setCustomOrder(updatedOrder);
       saveCourseOrder(updatedOrder);
     }
-  }, [courseIds]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [courseIds]);
 
   // Sort courses by custom order
   const sortByCustomOrder = useCallback(

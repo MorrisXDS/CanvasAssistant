@@ -37,10 +37,13 @@ export function sanitizeTitle(title: string, maxLength: number = 50): string {
  * Handles nested paths like "Lectures/Week 1".
  */
 export function sanitizeFolderPath(folderPath: string): string {
-  return folderPath
-    .split('/')
-    .map((segment) => segment.replace(/[^a-zA-Z0-9_\-. ]/g, '_').replace(/\s+/g, '_'))
-    .join(path.sep);
+  return (
+    folderPath
+      // eslint-disable-next-line cross-platform/no-hardcoded-path-separator -- Canvas folder paths use '/' regardless of OS
+      .split('/')
+      .map((segment) => segment.replace(/[^a-zA-Z0-9_\-. ]/g, '_').replace(/\s+/g, '_'))
+      .join(path.sep)
+  );
 }
 
 /**
