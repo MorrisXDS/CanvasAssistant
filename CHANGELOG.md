@@ -51,6 +51,15 @@ fields]` button that opens the same picker in a child modal layered above the li
 
 ### Changed
 
+- `2026-05-26 22:30 UTC` — `TaskLinkDialog` (the two-step Canvas → user task linker, last
+  actively-used handwritten modal) migrated to the shared `<Modal>` primitive (sectioned
+  shape, `size="xl"`, `zIndex={1100}`). Step 2's hand-rolled per-field picker is now a
+  `<FieldMergeEditor>` instance — the same component PR #16 introduced for the
+  duplicate-warning flow — fed by a synthesized `DuplicateCheckResult` whose
+  `conflictingFields` are computed from value comparison. Fields that already agree now
+  collapse into the quiet "kept as-is" summary instead of rendering an empty picker.
+  Public prop contract preserved (no caller changes). FOLLOWUPS batch 3 / final; all
+  actively-used handwritten modals are now on the primitive.
 - `2026-05-26 21:05 UTC` — CourseDetail announcements now read from the Zustand
   `state.notifications` store via a memoized selector instead of a parallel `useState`
   list hydrated by a separate IPC fetch. Archived courses (which the store filters out
