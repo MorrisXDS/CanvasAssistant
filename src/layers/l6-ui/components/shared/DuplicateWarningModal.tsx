@@ -17,6 +17,7 @@ import {
   isCustomized,
   formatFieldValue,
   type FieldChoice,
+  type FieldKey,
 } from './FieldMergeEditor';
 
 /**
@@ -201,6 +202,10 @@ export function DuplicateWarningModal({
   const [editingQueueId, setEditingQueueId] = useState<number | null>(null);
   // Snapshot of choices taken when the child modal opens — restored on Cancel.
   const editSnapshotRef = useRef<FieldChoice | null>(null);
+  // Child-modal field-picker keyboard navigation: which conflict field is
+  // currently "focused" inside the FieldMergeEditor. Reset to 0 each time
+  // the child modal opens.
+  const [editingFocusedFieldIdx, setEditingFocusedFieldIdx] = useState(0);
   // Focused row index (bulk mode keyboard nav)
   const [focusedIdx, setFocusedIdx] = useState(0);
   const [isConfirming, setIsConfirming] = useState(false);
@@ -235,6 +240,8 @@ export function DuplicateWarningModal({
       // Snapshot current choices so Cancel can revert.
       const current = fieldChoicesByQueueId.get(queueId);
       editSnapshotRef.current = current ? { ...current } : null;
+      // Reset field-picker focus to the first conflict whenever the child opens.
+      setEditingFocusedFieldIdx(0);
       setEditingQueueId(queueId);
     },
     [fieldChoicesByQueueId]
@@ -308,13 +315,78 @@ export function DuplicateWarningModal({
     const focused = items[focusedIdx];
     if (focused?.match?.conflictingFields.length) openCustomize(focused.queueId);
   });
+  // Resolve the item / canvasTask for the child editor up front so the render
+  // tree stays simple.
+  const editingItem = useMemo(
+    () =>
+      editingQueueId != null ? items.find((i) => i.queueId === editingQueueId) : null,
+    [editingQueueId, items]
+  );
+  // Conflict-field list for the currently-edited item (drives child-modal
+  // arrow navigation).
+  const editingConflictFields = editingItem?.match?.conflictingFields ?? [];
+
+  /**
+   * Helper used by the child-modal picker hotkeys (Left/Right/1/2): set the
+   * choice for the currently focused conflict field.
+   */
+  const pickFocusedField = useCallback(
+    (side: 'canvas' | 'user') => {
+      if (editingQueueId == null || !editingItem) return;
+      const field = editingConflictFields[editingFocusedFieldIdx]?.field as
+        | FieldKey
+        | undefined;
+      if (!field) return;
+      const cur =
+        fieldChoicesByQueueId.get(editingQueueId) ?? buildDefaultChoices(editingItem);
+      setFieldChoice(editingQueueId, { ...cur, [field]: side });
+    },
+    [
+      editingQueueId,
+      editingItem,
+      editingConflictFields,
+      editingFocusedFieldIdx,
+      fieldChoicesByQueueId,
+      setFieldChoice,
+    ]
+  );
+
+  /** Snap all conflict fields to one side (Q / W shortcuts). */
+  const pickAll = useCallback(
+    (side: 'canvas' | 'user') => {
+      if (editingQueueId == null || !editingItem) return;
+      setFieldChoice(editingQueueId, { title: side, dueAt: side, taskType: side });
+    },
+    [editingQueueId, editingItem, setFieldChoice]
+  );
+
   useHotkeys('ArrowUp', () => {
-    if (editingQueueId != null) return;
+    if (editingQueueId != null) {
+      // Walk conflict fields inside the child modal.
+      setEditingFocusedFieldIdx((i) => Math.max(0, i - 1));
+      return;
+    }
     if (!isSingle) setFocusedIdx((i) => Math.max(0, i - 1));
   });
   useHotkeys('ArrowDown', () => {
-    if (editingQueueId != null) return;
+    if (editingQueueId != null) {
+      const max = Math.max(0, editingConflictFields.length - 1);
+      setEditingFocusedFieldIdx((i) => Math.min(max, i + 1));
+      return;
+    }
     if (!isSingle) setFocusedIdx((i) => Math.min(items.length - 1, i + 1));
+  });
+  useHotkeys('ArrowLeft, 1', () => {
+    if (editingQueueId != null) pickFocusedField('canvas');
+  });
+  useHotkeys('ArrowRight, 2', () => {
+    if (editingQueueId != null) pickFocusedField('user');
+  });
+  useHotkeys('q', () => {
+    if (editingQueueId != null) pickAll('canvas');
+  });
+  useHotkeys('w', () => {
+    if (editingQueueId != null) pickAll('user');
   });
   useHotkeys('space', (e) => {
     e.preventDefault();
@@ -324,14 +396,6 @@ export function DuplicateWarningModal({
       if (focused) toggleSelected(focused.queueId);
     }
   });
-
-  // Resolve the item / canvasTask for the child editor up front so the render
-  // tree stays simple.
-  const editingItem = useMemo(
-    () =>
-      editingQueueId != null ? items.find((i) => i.queueId === editingQueueId) : null,
-    [editingQueueId, items]
-  );
 
   // Header strings derived once.
   const headerTitle = isSingle
@@ -651,9 +715,16 @@ export function DuplicateWarningModal({
                 buildDefaultChoices(editingItem)
               }
               onChange={(next) => setFieldChoice(editingItem.queueId, next)}
+              focusedFieldKey={
+                (editingConflictFields[editingFocusedFieldIdx]?.field as
+                  | FieldKey
+                  | undefined) ?? null
+              }
             />
           </Modal.Content>
-          <div style={s.kbdHintBar}>Enter — save · Esc — cancel</div>
+          <div style={s.kbdHintBar}>
+            ↑↓ field · ←→ pick · Q canvas · W local · Enter save · Esc cancel
+          </div>
           <div style={s.manualFooter}>
             <button
               style={s.btn('secondary')}

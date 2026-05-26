@@ -35,6 +35,12 @@ interface FieldMergeEditorProps {
   canvasTask: CanvasTaskDisplay;
   choices: FieldChoice;
   onChange: (next: FieldChoice) => void;
+  /**
+   * If set, render a focus outline around the matching conflict row. Used by
+   * the child Customize modal's keyboard navigation (↑↓ walks fields).
+   * Single-mode callers leave it `null`.
+   */
+  focusedFieldKey?: FieldKey | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -103,6 +109,11 @@ const styles = {
     display: 'grid',
     gridTemplateColumns: '1fr 1fr',
     borderBottom: '1px solid var(--border-light)',
+  } as React.CSSProperties,
+  // Applied when the child-modal's ↑↓ keyboard nav has this row focused.
+  fieldRowFocused: {
+    outline: '2px solid var(--color-navy)',
+    outlineOffset: '-2px',
   } as React.CSSProperties,
   columnHeader: {
     display: 'flex',
@@ -243,6 +254,7 @@ export function FieldMergeEditor({
   canvasTask,
   choices,
   onChange,
+  focusedFieldKey = null,
 }: FieldMergeEditorProps) {
   if (!item.match) return null;
   const { task: userTask, conflictingFields } = item.match;
@@ -300,8 +312,15 @@ export function FieldMergeEditor({
           const userEmpty = !userRaw;
           const selected = choices[def.key];
 
+          const isKbdFocused = focusedFieldKey === def.key;
           return (
-            <div key={def.key} style={styles.fieldRow}>
+            <div
+              key={def.key}
+              style={{
+                ...styles.fieldRow,
+                ...(isKbdFocused ? styles.fieldRowFocused : {}),
+              }}
+            >
               <PickerCell
                 selected={selected === 'canvas'}
                 label={def.label}

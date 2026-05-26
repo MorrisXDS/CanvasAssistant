@@ -68,6 +68,15 @@ fields]` button that opens the same picker in a child modal layered above the li
 
 ### Fixed
 
+- `2026-05-26 17:35 UTC` — Keyboard shortcuts in the bulk-accept duplicate-warning modal
+  no longer leak into the underlying queue section. `CanvasUpdatesSection`'s `useHotkeys`
+  (`a` / `shift+a` / `r` / `l`) and `useFocusedItem` arrow keys now suppress while the
+  modal is open (gated via `gateState == null`). Previously, pressing `L` in the modal
+  also opened the section's link dialog behind it.
+- `2026-05-26 17:35 UTC` — Customize-fields child modal is now fully keyboard-driven.
+  New shortcuts: `↑↓` walk conflict fields (focused row gets a navy outline), `←/1` pick
+  Canvas, `→/2` pick Your task, `Q` snap all to Canvas, `W` snap all to Your task. `Enter`
+  saves, `Esc` cancels (existing).
 - `2026-05-26 17:10 UTC` — Clicking the green ✓ on a no-match queued task (e.g. "Lecture
   Reflection 1") now removes it from the queue list on the first click. Was silently
   failing because `CourseDetail` held `queuedTasks` in local React `useState` while the
