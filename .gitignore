@@ -44,7 +44,8 @@ Thumbs.db
 # Internal docs
 CLAUDE.md
 DevDocs/
-docs/
+docs/*
+!docs/CHANGELOG.md
 ARCHITECTURE_ANALYSIS.md
 
 # Environment
