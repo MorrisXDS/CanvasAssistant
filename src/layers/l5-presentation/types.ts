@@ -59,6 +59,27 @@ export {
  */
 export type { TypedApi as IpcApi } from '../../shared/ipc-client';
 
+/** Result of a duplicate check for a single queued task. */
+export interface DuplicateCheckResult {
+  queueId: number;
+  match: {
+    type: 'exact' | 'fuzzy';
+    task: {
+      id: number;
+      title: string;
+      dueAt: string | null;
+      weight: number | null;
+      taskType: string | null;
+    };
+    conflictingFields: Array<{
+      field: string;
+      label: string;
+      canvasValue: string | null;
+      localValue: string | null;
+    }>;
+  } | null;
+}
+
 /**
  * Store state shape
  */
@@ -215,6 +236,15 @@ export interface StoreActions {
     userTaskId: number;
     keepFromUser?: { notes?: boolean; dueAt?: boolean; title?: boolean };
   }) => Promise<{ success: boolean; taskId?: number }>;
+  checkQueueDuplicates: (
+    items: Array<{
+      queueId: number;
+      courseId: number;
+      title: string;
+      dueAt: string | null;
+      taskType: string | null;
+    }>
+  ) => Promise<DuplicateCheckResult[]>;
 
   // Commands
   updateTargetGrade: (courseId: number, targetGrade: number) => Promise<boolean>;

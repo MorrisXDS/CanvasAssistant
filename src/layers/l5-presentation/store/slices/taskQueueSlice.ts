@@ -40,7 +40,10 @@ export const createTaskQueueSlice: SliceCreator = (set, get) => ({
       const taskQueueCount = await api.getTaskQueueCount(options);
       set({ taskQueueCount });
     } catch (error) {
-      log.error('Failed to fetch task queue count', error instanceof Error ? error : undefined);
+      log.error(
+        'Failed to fetch task queue count',
+        error instanceof Error ? error : undefined
+      );
     }
   },
 
@@ -72,7 +75,10 @@ export const createTaskQueueSlice: SliceCreator = (set, get) => ({
       }
       return result;
     } catch (error) {
-      log.error('Failed to accept queued task', error instanceof Error ? error : undefined);
+      log.error(
+        'Failed to accept queued task',
+        error instanceof Error ? error : undefined
+      );
       return { success: false };
     }
   },
@@ -99,7 +105,10 @@ export const createTaskQueueSlice: SliceCreator = (set, get) => ({
       }
       return result.success;
     } catch (error) {
-      log.error('Failed to reject queued task', error instanceof Error ? error : undefined);
+      log.error(
+        'Failed to reject queued task',
+        error instanceof Error ? error : undefined
+      );
       return false;
     }
   },
@@ -142,8 +151,37 @@ export const createTaskQueueSlice: SliceCreator = (set, get) => ({
       }
       return result;
     } catch (error) {
-      log.error('Failed to bulk accept queued tasks', error instanceof Error ? error : undefined);
+      log.error(
+        'Failed to bulk accept queued tasks',
+        error instanceof Error ? error : undefined
+      );
       return { success: false };
+    }
+  },
+
+  /**
+   * Check queued items for duplicate user tasks (exact or fuzzy match).
+   * Returns null match for items with no duplicate found.
+   */
+  checkQueueDuplicates: async (
+    items: Array<{
+      queueId: number;
+      courseId: number;
+      title: string;
+      dueAt: string | null;
+      taskType: string | null;
+    }>
+  ) => {
+    const api = getApi();
+    if (!api) return [];
+    try {
+      return await api.checkQueueDuplicates(items);
+    } catch (error) {
+      log.error(
+        'Failed to check queue duplicates',
+        error instanceof Error ? error : undefined
+      );
+      return [];
     }
   },
 
@@ -175,7 +213,10 @@ export const createTaskQueueSlice: SliceCreator = (set, get) => ({
       }
       return result;
     } catch (error) {
-      log.error('Failed to merge queued task', error instanceof Error ? error : undefined);
+      log.error(
+        'Failed to merge queued task',
+        error instanceof Error ? error : undefined
+      );
       return { success: false };
     }
   },

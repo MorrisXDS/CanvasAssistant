@@ -147,6 +147,20 @@ const api = {
   }) => ipcRenderer.invoke('data:mergeQueuedTask', params),
 
   /**
+   * Check queued Canvas tasks for duplicate user tasks (exact or fuzzy title match).
+   * Returns a match result per item — null match means no duplicate found.
+   */
+  checkQueueDuplicates: (
+    items: Array<{
+      queueId: number;
+      courseId: number;
+      title: string;
+      dueAt: string | null;
+      taskType: string | null;
+    }>
+  ) => ipcRenderer.invoke('data:checkQueueDuplicates', items),
+
+  /**
    * DEBUG: Get queue and task state for debugging
    */
   debugGetQueueState: (courseId?: number) =>
