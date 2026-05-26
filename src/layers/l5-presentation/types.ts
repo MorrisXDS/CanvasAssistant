@@ -234,7 +234,14 @@ export interface StoreActions {
   mergeQueuedTask: (params: {
     queueId: number;
     userTaskId: number;
-    keepFromUser?: { notes?: boolean; dueAt?: boolean; title?: boolean };
+    keepFromUser?: {
+      notes?: boolean;
+      dueAt?: boolean;
+      title?: boolean;
+      taskType?: boolean;
+      description?: boolean;
+      startAt?: boolean;
+    };
   }) => Promise<{ success: boolean; taskId?: number }>;
   checkQueueDuplicates: (
     items: Array<{

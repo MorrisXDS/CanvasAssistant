@@ -88,8 +88,17 @@ export function CourseDetail() {
   const [announcements, setAnnouncements] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Canvas Task Queue state
-  const [queuedTasks, setQueuedTasks] = useState<QueuedTask[]>([]);
+  // Canvas Task Queue — derived from the store. NEVER hold this in local
+  // useState: the store's `taskQueue` is the single source of truth, and any
+  // hook/handler that writes via the slice actions (acceptQueuedTask,
+  // mergeQueuedTask, etc.) automatically flows here without us hand-syncing a
+  // duplicate list. See CLAUDE.md §2 "Single source of truth for domain data".
+  const taskQueue = useStore((s) => s.taskQueue);
+  const fetchTaskQueue = useStore((s) => s.fetchTaskQueue);
+  const queuedTasks = useMemo(
+    () => taskQueue.filter((q) => q.courseId === courseId),
+    [taskQueue, courseId]
+  );
 
   // Queue expanded setting from localStorage
   const queueDefaultExpanded = useMemo(() => {
@@ -327,27 +336,24 @@ export function CourseDetail() {
       }
 
       try {
-        // Fetch all data in parallel
-        const [
-          courseData,
-          historyData,
-          announcementsData,
-          syllabusData,
-          filesData,
-          queueData,
-        ] = await Promise.all([
-          api.getCourse(courseId),
-          api.getGradeHistory(courseId),
-          api.getCourseNotifications(courseId),
-          api.getCourseSyllabus?.(courseId).catch(() => null),
-          api.getCourseFiles?.(courseId).catch(() => []),
-          api.getTaskQueueForCourse?.(courseId).catch(() => []),
-        ]);
+        // Fetch all data in parallel. The task queue is fetched via the
+        // store action (which writes to `state.taskQueue`); the derived
+        // `queuedTasks` selector above picks it up — no local copy needed.
+        const [courseData, historyData, announcementsData, syllabusData, filesData] =
+          await Promise.all([
+            api.getCourse(courseId),
+            api.getGradeHistory(courseId),
+            api.getCourseNotifications(courseId),
+            api.getCourseSyllabus?.(courseId).catch(() => null),
+            api.getCourseFiles?.(courseId).catch(() => []),
+          ]);
+        // Kick off the queue fetch in parallel but don't block on its return —
+        // we don't need its value, and it writes into the store anyway.
+        void fetchTaskQueue({ courseId });
 
         setCourse(courseData);
         setGradeHistory(historyData || []);
         setAnnouncements(announcementsData || []);
-        setQueuedTasks(queueData || []);
 
         // Map syllabus API response to CourseSyllabus interface
         if (syllabusData && syllabusData.type === 'resource') {
@@ -540,36 +546,23 @@ export function CourseDetail() {
     };
   }, [courseTasks]);
 
-  // Queue action handlers
+  // Queue action handlers — thin wrappers over store actions. The store
+  // updates `state.taskQueue`; the derived `queuedTasks` selector re-runs
+  // and the UI reflects the change automatically. No local filter needed.
   const handleQueueAccept = useCallback(
-    async (queueId: number, edits?: QueuedTaskEdits) => {
-      const result = await acceptQueuedTask(queueId, edits);
-      if (result.success) {
-        setQueuedTasks((prev) => prev.filter((q) => q.id !== queueId));
-      }
-      return result;
-    },
+    (queueId: number, edits?: QueuedTaskEdits) => acceptQueuedTask(queueId, edits),
     [acceptQueuedTask]
   );
 
   const handleQueueReject = useCallback(
-    async (queueId: number) => {
-      const success = await rejectQueuedTask(queueId);
-      if (success) {
-        setQueuedTasks((prev) => prev.filter((q) => q.id !== queueId));
-      }
-      return success;
-    },
+    (queueId: number) => rejectQueuedTask(queueId),
     [rejectQueuedTask]
   );
 
-  const handleQueueBulkAccept = useCallback(async () => {
-    const result = await bulkAcceptQueuedTasks({ courseId });
-    if (result.success) {
-      setQueuedTasks([]);
-    }
-    return result;
-  }, [bulkAcceptQueuedTasks, courseId]);
+  const handleQueueBulkAccept = useCallback(
+    () => bulkAcceptQueuedTasks({ courseId }),
+    [bulkAcceptQueuedTasks, courseId]
+  );
 
   // Open link dialog to select which task to link
   const handleOpenLinkDialog = useCallback(
@@ -599,17 +592,18 @@ export function CourseDetail() {
   }, []);
 
   const handleMergeTask = useCallback(
-    async (params: {
+    (params: {
       queueId: number;
       userTaskId: number;
-      keepFromUser?: { notes?: boolean; dueAt?: boolean; title?: boolean };
-    }) => {
-      const result = await mergeQueuedTask(params);
-      if (result.success) {
-        setQueuedTasks((prev) => prev.filter((q) => q.id !== params.queueId));
-      }
-      return result;
-    },
+      keepFromUser?: {
+        notes?: boolean;
+        dueAt?: boolean;
+        title?: boolean;
+        taskType?: boolean;
+        description?: boolean;
+        startAt?: boolean;
+      };
+    }) => mergeQueuedTask(params),
     [mergeQueuedTask]
   );
 

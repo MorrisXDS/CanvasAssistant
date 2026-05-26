@@ -19,7 +19,11 @@ import { UPDATE_LABELS } from './Updates/updatesPageConstants';
 import { ActionRequiredItem } from './Updates/ActionRequiredItem';
 import { ConflictItem } from './Updates/ConflictItem';
 import { InformationalItem } from './Updates/InformationalItem';
-import { DuplicateWarningModal } from '../shared/DuplicateWarningModal';
+import {
+  DuplicateWarningModal,
+  type CanvasTaskDisplay,
+} from '../shared/DuplicateWarningModal';
+import type { FieldChoice } from '../shared/FieldMergeEditor';
 import { useKeymap } from '../../hooks/useKeymap';
 import { useFocusedItem } from '../../hooks/useFocusedItem';
 import type { DuplicateCheckResult } from '../../../l5-presentation/types';
@@ -39,12 +43,15 @@ export function UpdatesPage() {
     resolveSyncConflict,
     checkQueueDuplicates,
     mergeQueuedTask,
+    taskQueue,
+    fetchTaskQueue,
   } = useStore();
 
   // Duplicate warning gate state (single mode only on this page)
   const [dupeGate, setDupeGate] = useState<{
     items: DuplicateCheckResult[];
     entityId: number;
+    canvasTask: CanvasTaskDisplay;
   } | null>(null);
 
   // Ensure updates is always an array (defensive)
@@ -60,7 +67,10 @@ export function UpdatesPage() {
   // Fetch updates on mount
   useEffect(() => {
     fetchSyncUpdates();
-  }, [fetchSyncUpdates]);
+    // Also load the queue so we can hydrate real Canvas-side fields into the
+    // DuplicateWarningModal when the user accepts a queued task from this page.
+    fetchTaskQueue();
+  }, [fetchSyncUpdates, fetchTaskQueue]);
 
   // Update relative times every 30 seconds
   useEffect(() => {
@@ -253,28 +263,40 @@ export function UpdatesPage() {
       const update = updates.find(
         (u) => u.entityType === 'task' && u.entityId === entityId
       );
+      // Prefer the live queued-task row (has real dueAt/taskType) — fall back
+      // to the update payload if the queue hasn't loaded yet.
+      const queued = taskQueue.find((q) => q.id === entityId);
+      const canvasTask: CanvasTaskDisplay = {
+        title: queued?.title ?? update?.title ?? '',
+        dueAt: queued?.dueAt ?? null,
+        taskType: queued?.taskType ?? null,
+      };
       const results = await checkQueueDuplicates([
         {
           queueId: entityId,
-          courseId: update?.courseId ?? 0,
-          title: update?.title ?? '',
-          dueAt: null,
-          taskType: null,
+          courseId: queued?.courseId ?? update?.courseId ?? 0,
+          title: canvasTask.title,
+          dueAt: canvasTask.dueAt,
+          taskType: canvasTask.taskType,
         },
       ]);
       const result = results[0];
       if (result?.match) {
-        setDupeGate({ items: results, entityId });
+        setDupeGate({ items: results, entityId, canvasTask });
       } else {
         await acceptQueuedTask(entityId);
         await fetchSyncUpdates();
       }
     },
-    [acceptQueuedTask, fetchSyncUpdates, checkQueueDuplicates, updates]
+    [acceptQueuedTask, fetchSyncUpdates, checkQueueDuplicates, updates, taskQueue]
   );
 
   const handleDupeConfirm = useCallback(
-    async (decisions: Map<number, 'link' | 'separate'>, selected: Set<number>) => {
+    async (
+      decisions: Map<number, 'link' | 'separate'>,
+      selected: Set<number>,
+      fieldChoicesByQueueId: Map<number, FieldChoice>
+    ) => {
       if (!dupeGate) return;
       const { entityId, items } = dupeGate;
       if (!selected.has(entityId)) {
@@ -284,10 +306,16 @@ export function UpdatesPage() {
       const decision = decisions.get(entityId) ?? 'separate';
       const match = items[0]?.match;
       if (decision === 'link' && match) {
+        const fc = fieldChoicesByQueueId.get(entityId);
         await mergeQueuedTask({
           queueId: entityId,
           userTaskId: match.task.id,
-          keepFromUser: { notes: true, dueAt: !!match.task.dueAt },
+          keepFromUser: {
+            notes: true,
+            title: fc?.title === 'user',
+            dueAt: fc?.dueAt === 'user',
+            taskType: fc?.taskType === 'user',
+          },
         });
       } else {
         await acceptQueuedTask(entityId);
@@ -548,6 +576,7 @@ export function UpdatesPage() {
         <DuplicateWarningModal
           mode="single"
           items={dupeGate.items}
+          canvasTaskByQueueId={new Map([[dupeGate.entityId, dupeGate.canvasTask]])}
           onConfirm={handleDupeConfirm}
           onCancel={() => setDupeGate(null)}
         />

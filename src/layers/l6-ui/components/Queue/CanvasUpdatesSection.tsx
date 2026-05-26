@@ -174,8 +174,14 @@ export function CanvasUpdatesSection({
   onHighlightClear,
   keyboardEnabled = false,
 }: CanvasUpdatesSectionProps) {
-  const { gatedAccept, gatedBulkAccept, confirmDecisions, gateState, closeModal } =
-    useDuplicateGate();
+  const {
+    gatedAccept,
+    gatedBulkAccept,
+    confirmDecisions,
+    gateState,
+    canvasTaskByQueueId,
+    closeModal,
+  } = useDuplicateGate();
 
   // Collapsed by default (can be changed via settings)
   // Force expand if there's a highlighted queue item
@@ -377,6 +383,7 @@ export function CanvasUpdatesSection({
         <DuplicateWarningModal
           mode={gateState.mode}
           items={gateState.items}
+          canvasTaskByQueueId={canvasTaskByQueueId}
           onConfirm={confirmDecisions}
           onCancel={closeModal}
         />
