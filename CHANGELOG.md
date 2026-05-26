@@ -12,6 +12,13 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ### Added
 
+- `2026-05-26 03:37 UTC` — Duplicate warning gate on Canvas task acceptance. Exact title
+  matches show a "Duplicate found" dialog; fuzzy matches (≥ 70% similarity) show "May
+  match". The dialog compares incoming Canvas fields against the existing task side by side
+  and lets the user link them (merging via the existing COALESCE logic, preserving weight
+  and notes) or keep them separate. Bulk accept shows a multi-select list with per-item
+  link/separate radio; items with no duplicate are auto-accepted silently. Full keyboard
+  nav (A select-all, ↑↓ Space L S Enter Esc). Wired into the queue section and Updates page.
 - `2026-05-26 02:50 UTC` — Playwright + Electron end-to-end harness (`e2e/`) that drives
   Course-Detail keyboard navigation against the built app offline (mock Canvas + copied DB
   - isolated profile).
