@@ -150,8 +150,18 @@ export function UpdatesPage() {
     return tasks;
   }, [needsReviewByCourse]);
 
+  // Map each action task to its flat focus index (used by getFocusProps in render).
+  const actionFocusIndexById = useMemo(
+    () => new Map(flatActionTasks.map((t, i) => [t.id, i])),
+    [flatActionTasks]
+  );
+
   // Focused item navigation (Left/Right + J/K) for queued tasks
-  const { focusedItem: focusedActionTask } = useFocusedItem(flatActionTasks, {
+  const {
+    focusedItem: focusedActionTask,
+    focusedIndex: focusedActionIndex,
+    getFocusProps: getActionFocusProps,
+  } = useFocusedItem(flatActionTasks, {
     persistKey: 'updates-page',
   });
 
@@ -352,19 +362,37 @@ export function UpdatesPage() {
                   )}
 
                   {/* Queued tasks for this course */}
-                  {group.tasks.map((update) => (
-                    <ActionRequiredItem
-                      key={update.id}
-                      update={update}
-                      onAccept={() => handleAcceptTask(update.entityId)}
-                      onReject={() => handleRejectTask(update.entityId)}
-                      onNavigate={() =>
-                        navigate(
-                          `/course/${update.courseId}?highlightQueue=${update.entityId}`
-                        )
-                      }
-                    />
-                  ))}
+                  {group.tasks.map((update) => {
+                    const fi = actionFocusIndexById.get(update.id) ?? -1;
+                    const fp = getActionFocusProps(fi);
+                    return (
+                      <div
+                        key={update.id}
+                        data-focus-index={fp['data-focus-index']}
+                        data-focus-scope={fp['data-focus-scope']}
+                        style={
+                          focusedActionIndex === fi
+                            ? {
+                                outline: '2px solid var(--color-navy)',
+                                outlineOffset: '-2px',
+                                borderRadius: '4px',
+                              }
+                            : undefined
+                        }
+                      >
+                        <ActionRequiredItem
+                          update={update}
+                          onAccept={() => handleAcceptTask(update.entityId)}
+                          onReject={() => handleRejectTask(update.entityId)}
+                          onNavigate={() =>
+                            navigate(
+                              `/course/${update.courseId}?highlightQueue=${update.entityId}`
+                            )
+                          }
+                        />
+                      </div>
+                    );
+                  })}
                 </div>
               ))
             )}
