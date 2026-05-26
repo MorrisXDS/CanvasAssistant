@@ -52,8 +52,7 @@ ARCHITECTURE_ANALYSIS.md
 .env.local
 .env.production
 
-# Testing
-tests/
+# Testing (tests/ is tracked — it runs as a blocking CI gate)
 test.ps1
 coverage/
 .nyc_output/
