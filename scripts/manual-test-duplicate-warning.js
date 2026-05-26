@@ -74,46 +74,128 @@ function seedToDir(tmpDir) {
       "INSERT OR IGNORE INTO canvas_task_queue (external_id, canvas_data, course_id, title, description, due_at, points_possible, task_type, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')"
     );
 
+    // ── canvas_data blob builder ──────────────────────────────────────────
+    // MergeQueuedTaskCommand parses canvas_data via mapAssignment(), which
+    // reads description / due_at / unlock_at / lock_at / points_possible /
+    // submission_types out of the blob. If the blob omits a field, the
+    // merged task gets null — even if the queue's *column* has a real
+    // value (the column is for modal display only; the merge reads the
+    // blob). The blob must mirror a real Canvas Assignment payload, not a
+    // stub. \`submission\` is omitted: queue entries are pre-acceptance,
+    // so no submission state exists yet (mapAssignment handles absent).
+    function buildCanvasBlob(o) {
+      return JSON.stringify({
+        id: o.id,
+        name: o.name,
+        description: o.description ?? null,
+        due_at: o.due_at ?? null,
+        unlock_at: o.unlock_at ?? null,
+        lock_at: o.lock_at ?? null,
+        points_possible: o.points_possible ?? 100,
+        submission_types: o.submission_types ?? ['online_text_entry'],
+      });
+    }
+    function insertScenario(tag, courseId, o) {
+      insertQueue.run(
+        tag,
+        buildCanvasBlob(o),
+        courseId,
+        o.name,
+        o.description ?? null,
+        o.due_at ?? null,
+        o.points_possible ?? 100,
+        o.queue_task_type ?? 'assignment'
+      );
+    }
+
     // ── Course A — comprehensive matrix ────────────────────────────────────
     // Case 1 — EXACT match, NO field conflicts (identical title + dueAt; both task_type=assignment)
     insertUser.run(cA.id, 'Problem Set 1', 15, '2026-06-15T23:59:00Z', 'assignment');
-    insertQueue.run('${TEST_TAG}_EXACT_CLEAN', JSON.stringify({id:88001,name:'Problem Set 1'}),
-      cA.id, 'Problem Set 1', '<p>Standard PSet.</p>', '2026-06-15T23:59:00Z', 100, 'assignment');
+    insertScenario('${TEST_TAG}_EXACT_CLEAN', cA.id, {
+      id: 88001, name: 'Problem Set 1',
+      description: '<p>Standard PSet.</p>',
+      due_at: '2026-06-15T23:59:00Z',
+      points_possible: 100,
+      submission_types: ['online_upload'],
+      queue_task_type: 'assignment',
+    });
 
     // Case 2 — EXACT title, due-date CONFLICT (Jun 10 user vs Jun 12 canvas; same task_type)
     insertUser.run(cA.id, 'Quiz 1', 5, '2026-06-10T23:59:00Z', 'quiz');
-    insertQueue.run('${TEST_TAG}_EXACT_DUE_CONFLICT', JSON.stringify({id:88002,name:'Quiz 1'}),
-      cA.id, 'Quiz 1', '<p>In-class quiz, rescheduled.</p>', '2026-06-12T23:59:00Z', 20, 'quiz');
+    insertScenario('${TEST_TAG}_EXACT_DUE_CONFLICT', cA.id, {
+      id: 88002, name: 'Quiz 1',
+      description: '<p>In-class quiz, rescheduled.</p>',
+      due_at: '2026-06-12T23:59:00Z',
+      points_possible: 20,
+      submission_types: ['none'],
+      queue_task_type: 'quiz',
+    });
 
     // Case 3 — EXACT title, MULTI-field conflict (dueAt + taskType BOTH differ)
     insertUser.run(cA.id, 'Midterm', 25, '2026-06-05T23:59:00Z', 'quiz');
-    insertQueue.run('${TEST_TAG}_EXACT_MULTI_CONFLICT', JSON.stringify({id:88003,name:'Midterm'}),
-      cA.id, 'Midterm', '<p>Closed-book midterm.</p>', '2026-06-07T23:59:00Z', 100, 'exam');
+    insertScenario('${TEST_TAG}_EXACT_MULTI_CONFLICT', cA.id, {
+      id: 88003, name: 'Midterm',
+      description: '<p>Closed-book midterm.</p>',
+      due_at: '2026-06-07T23:59:00Z',
+      points_possible: 100,
+      submission_types: ['on_paper'],
+      queue_task_type: 'exam',
+    });
 
     // Case 4 — FUZZY: abbreviation expansion (hw → homework). User has no dueAt.
     insertUser.run(cA.id, 'Homework 3', 8, null, 'assignment');
-    insertQueue.run('${TEST_TAG}_FUZZY_ABBREV', JSON.stringify({id:88004,name:'HW 3'}),
-      cA.id, 'HW 3', '<p>Weekly assignment #3.</p>', '2026-06-18T23:59:00Z', 30, 'assignment');
+    insertScenario('${TEST_TAG}_FUZZY_ABBREV', cA.id, {
+      id: 88004, name: 'HW 3',
+      description: '<p>Weekly assignment #3.</p>',
+      due_at: '2026-06-18T23:59:00Z',
+      points_possible: 30,
+      submission_types: ['online_upload'],
+      queue_task_type: 'assignment',
+    });
 
     // Case 5 — FUZZY: punctuation difference only ("Lab #2" vs "Lab 2", same dueAt)
     insertUser.run(cA.id, 'Lab 2', 5, '2026-06-20T23:59:00Z', 'assignment');
-    insertQueue.run('${TEST_TAG}_FUZZY_PUNCT', JSON.stringify({id:88005,name:'Lab #2'}),
-      cA.id, 'Lab #2', '<p>Hands-on lab.</p>', '2026-06-20T23:59:00Z', 40, 'assignment');
+    insertScenario('${TEST_TAG}_FUZZY_PUNCT', cA.id, {
+      id: 88005, name: 'Lab #2',
+      description: '<p>Hands-on lab.</p>',
+      due_at: '2026-06-20T23:59:00Z',
+      points_possible: 40,
+      submission_types: ['online_upload'],
+      queue_task_type: 'assignment',
+    });
 
     // Case 6 — FUZZY: combined abbreviation + punctuation ("PS #4" vs "Problem Set 4")
     insertUser.run(cA.id, 'Problem Set 4', 12, '2026-06-25T23:59:00Z', 'assignment');
-    insertQueue.run('${TEST_TAG}_FUZZY_COMBO', JSON.stringify({id:88006,name:'PS #4'}),
-      cA.id, 'PS #4', '<p>Final problem set.</p>', '2026-06-25T23:59:00Z', 100, 'assignment');
+    insertScenario('${TEST_TAG}_FUZZY_COMBO', cA.id, {
+      id: 88006, name: 'PS #4',
+      description: '<p>Final problem set.</p>',
+      due_at: '2026-06-25T23:59:00Z',
+      points_possible: 100,
+      submission_types: ['online_upload'],
+      queue_task_type: 'assignment',
+    });
 
     // Case 7 — NO match control: queued task with no similar user task.
     // Should auto-accept (no modal) when individually accepted.
-    insertQueue.run('${TEST_TAG}_NO_MATCH', JSON.stringify({id:88007,name:'Lecture Reflection 1'}),
-      cA.id, 'Lecture Reflection 1', '<p>One-page reflection.</p>', '2026-06-30T23:59:00Z', 10, 'assignment');
+    insertScenario('${TEST_TAG}_NO_MATCH', cA.id, {
+      id: 88007, name: 'Lecture Reflection 1',
+      description: '<p>One-page reflection.</p>',
+      due_at: '2026-06-30T23:59:00Z',
+      points_possible: 10,
+      submission_types: ['online_text_entry'],
+      queue_task_type: 'assignment',
+    });
 
     // ── Course B — clean single-mode fuzzy demo ───────────────────────────
     insertUser.run(cB.id, 'Homework Assignment', 10, null, 'assignment');
-    insertQueue.run('${TEST_TAG}_FUZZY', JSON.stringify({id:88008,name:'HW Assignment'}),
-      cB.id, 'HW Assignment', '<p>Weekly submission.</p>', '2026-06-20T23:59:00Z', 50, 'assignment');
+    insertScenario('${TEST_TAG}_FUZZY', cB.id, {
+      id: 88008, name: 'HW Assignment',
+      description: '<p>Weekly submission.</p>',
+      due_at: '2026-06-20T23:59:00Z',
+      points_possible: 50,
+      submission_types: ['online_upload'],
+      queue_task_type: 'assignment',
+    });
 
     process.stdout.write('COURSE_A=' + cA.id + ':' + cA.code + '\\n');
     process.stdout.write('COURSE_B=' + cB.id + ':' + cB.code + '\\n');

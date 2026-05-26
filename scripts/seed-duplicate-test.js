@@ -41,6 +41,28 @@ const EXACT_COURSE_ID = 27764;   // ECE311H1
 const FUZZY_COURSE_ID = 27765;   // ECE342H1
 const TEST_TAG = 'DUPLICATE_TEST'; // tag embedded in external_id so cleanup is safe
 
+// ── canvas_data blob builder ───────────────────────────────────────────────
+// MergeQueuedTaskCommand parses canvas_data via mapAssignment(), which reads
+// description / due_at / unlock_at / lock_at / points_possible /
+// submission_types out of the blob. If the blob omits a field, the merged
+// task gets null — even if the queue's *column* has a real value (the column
+// is for modal display only; the merge reads the blob). The blob must mirror
+// a real Canvas Assignment payload, not a stub. `submission` is omitted:
+// queue entries are pre-acceptance, so no submission state exists yet
+// (mapAssignment handles it absent).
+function buildCanvasBlob(o) {
+  return JSON.stringify({
+    id: o.id,
+    name: o.name,
+    description: o.description ?? null,
+    due_at: o.due_at ?? null,
+    unlock_at: o.unlock_at ?? null,
+    lock_at: o.lock_at ?? null,
+    points_possible: o.points_possible ?? 100,
+    submission_types: o.submission_types ?? ['online_text_entry'],
+  });
+}
+
 function seed(db) {
   // ── Scenario A: Exact match ─────────────────────────────────────────────
   // User task — source_type='user', no external_id (simulates manually created)
@@ -75,7 +97,14 @@ function seed(db) {
        VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')`
     ).run(
       `${TEST_TAG}_EXACT`,
-      JSON.stringify({ id: 88001, name: 'Problem Set 1', due_at: '2026-06-15T23:59:00Z', points_possible: 100 }),
+      buildCanvasBlob({
+        id: 88001,
+        name: 'Problem Set 1',
+        description: '<p>Submit your work to the online portal.</p>',
+        due_at: '2026-06-15T23:59:00Z',
+        points_possible: 100,
+        submission_types: ['online_upload'],
+      }),
       EXACT_COURSE_ID,
       'Problem Set 1',
       '<p>Submit your work to the online portal.</p>',
@@ -116,7 +145,14 @@ function seed(db) {
        VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')`
     ).run(
       `${TEST_TAG}_BULK_EXACT`,
-      JSON.stringify({ id: 88003, name: 'Problem Set 2', due_at: '2026-06-22T23:59:00Z', points_possible: 100 }),
+      buildCanvasBlob({
+        id: 88003,
+        name: 'Problem Set 2',
+        description: '<p>Second problem set — same drill.</p>',
+        due_at: '2026-06-22T23:59:00Z',
+        points_possible: 100,
+        submission_types: ['online_upload'],
+      }),
       EXACT_COURSE_ID,
       'Problem Set 2',
       '<p>Second problem set — same drill.</p>',
@@ -157,7 +193,14 @@ function seed(db) {
        VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')`
     ).run(
       `${TEST_TAG}_BULK_FUZZY`,
-      JSON.stringify({ id: 88004, name: 'Lab Report 1', due_at: '2026-06-28T23:59:00Z', points_possible: 50 }),
+      buildCanvasBlob({
+        id: 88004,
+        name: 'Lab Report 1',
+        description: '<p>First lab writeup.</p>',
+        due_at: '2026-06-28T23:59:00Z',
+        points_possible: 50,
+        submission_types: ['online_upload'],
+      }),
       EXACT_COURSE_ID,
       'Lab Report 1',
       '<p>First lab writeup.</p>',
@@ -202,7 +245,14 @@ function seed(db) {
        VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')`
     ).run(
       `${TEST_TAG}_FUZZY`,
-      JSON.stringify({ id: 88002, name: 'HW Assignment', due_at: '2026-06-20T23:59:00Z', points_possible: 50 }),
+      buildCanvasBlob({
+        id: 88002,
+        name: 'HW Assignment',
+        description: '<p>Weekly homework submission.</p>',
+        due_at: '2026-06-20T23:59:00Z',
+        points_possible: 50,
+        submission_types: ['online_upload'],
+      }),
       FUZZY_COURSE_ID,
       'HW Assignment',
       '<p>Weekly homework submission.</p>',
