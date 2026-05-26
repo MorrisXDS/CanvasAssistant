@@ -155,6 +155,16 @@ export function CourseDetail() {
   type SectionFocus = 'tasks' | 'queue' | 'announcements' | 'preferences';
   const [sectionFocus, setSectionFocus] = useState<SectionFocus>('tasks');
 
+  // Suppress all page-level nav hotkeys (Q/E section cycle, G back-nav,
+  // T target-edit, Shift+O open-on-Canvas, Mod+E settings toggle,
+  // Mod+S save, Mod+Shift+A archive) while the duplicate-warning modal in
+  // the queue section is on screen. Otherwise pressing Q/E in the modal's
+  // Customize editor would also cycle sections behind the modal, G would
+  // navigate away from the page, Mod+Shift+A would stack another
+  // ConfirmDialog on top, etc. CanvasUpdatesSection signals this via the
+  // `onModalStateChange` prop we pass below.
+  const [queueModalOpen, setQueueModalOpen] = useState(false);
+
   // Confirm dialog state (declared early as other hooks depend on it)
   const [confirmDialog, setConfirmDialog] = useState<{
     isOpen: boolean;
@@ -676,7 +686,13 @@ export function CourseDetail() {
         },
       },
     },
-    { initialScope: 'nav' }
+    {
+      initialScope: 'nav',
+      // Suppress all nav keys while the queue's duplicate-warning modal is
+      // open — otherwise Q/E section-cycle, G back-nav, etc. all fire
+      // behind the modal. See `queueModalOpen` declaration above.
+      when: () => !queueModalOpen,
+    }
   );
 
   // Re-scope sectionFocus when the underlying availability changes.
@@ -1048,6 +1064,7 @@ export function CourseDetail() {
             }
             onHighlightClear={() => setSearchParams({}, { replace: true })}
             keyboardEnabled={sectionFocus === 'queue'}
+            onModalStateChange={setQueueModalOpen}
           />
         )}
 

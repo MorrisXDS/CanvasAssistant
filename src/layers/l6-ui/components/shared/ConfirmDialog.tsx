@@ -2,8 +2,12 @@
  * ConfirmDialog — confirmation dialog built on the shared `Modal` primitive.
  *
  * Public API is unchanged from the previous handwritten implementation; only
- * the internal chrome (backdrop / dialog container / escape handling) is
- * delegated to `<Modal>`.
+ * the structural chrome (backdrop / centered dialog / escape / body-scroll
+ * lock / z-index stacking) is delegated to `<Modal>`. We deliberately do NOT
+ * use `Modal.Header` / `Modal.Footer` here — those add `borderBottom` /
+ * `borderTop` dividers between sections that look heavy on a compact
+ * confirmation prompt. Instead the icon + title + message + buttons live in
+ * a single padded block, matching the original tight ConfirmDialog look.
  *
  * Preserved behaviour:
  *   - Auto-focus the confirm button on open (so Enter activates it natively).
@@ -12,8 +16,7 @@
  *     dismisses only the ConfirmDialog and doesn't cascade-close the parent.
  *     We pass `closeOnEscape={false}` to the primitive so its own listener
  *     doesn't compete.
- *   - Type-specific icon + tint (`danger` / `warning` / `info` / `success`)
- *     rendered inside the primitive's `Modal.Header` `icon` slot.
+ *   - Type-specific icon + tint (`danger` / `warning` / `info` / `success`).
  *   - `danger` type uses `--color-error` for the confirm button; everything
  *     else uses `--color-navy` (matches the rest of the app's primary CTAs).
  */
@@ -112,6 +115,11 @@ export function ConfirmDialog({
     <Modal
       isOpen
       onClose={onCancel}
+      // sm caps at 320px which is too cramped for typical prompt messages.
+      // Use a tighter custom maxWidth via className-less inline override
+      // below by relying on the primitive's `sm` size and overriding via
+      // wrapper styles. (Could also use size="md" at 480px — slightly wider
+      // than the original 400px but acceptable.)
       size="md"
       // Our own Escape handler above owns this — keep the primitive's
       // listener disabled so we don't get duplicate cancellations and
@@ -122,83 +130,88 @@ export function ConfirmDialog({
       // chrome's z-indexes of 1000/1001).
       zIndex={1100}
     >
-      <Modal.Header
-        title={title}
-        icon={
-          // Fills the primitive's 40x40 headerIcon slot with our type-tinted
-          // square — covers the default --color-navy / --bg-elevated styling.
-          <div
-            style={{
-              width: '40px',
-              height: '40px',
-              borderRadius: 'var(--radius-md)',
-              backgroundColor: config.bgColor,
-              color: config.color,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-            aria-hidden="true"
-          >
-            {config.icon}
-          </div>
-        }
-        showCloseButton={false}
-        onClose={onCancel}
-      />
-
-      <Modal.Content>
-        {message && <p style={styles.message}>{message}</p>}
-        {children}
-      </Modal.Content>
-
-      {/* Manual right-aligned footer — bulletproof against the flex-wrap
-          edge cases we hit during the duplicate-warning migration. */}
-      <div style={styles.footer}>
-        {!hideCancel && (
-          <button type="button" style={styles.cancelBtn} onClick={onCancel}>
-            {cancelText}
-          </button>
-        )}
-        {!hideCancel && <span style={styles.footerGap} />}
-        <button
-          ref={confirmBtnRef}
-          type="button"
+      {/* Single padded block — no Modal.Header / Modal.Footer so we don't
+          get the borderBottom/borderTop section dividers that look heavy on
+          a compact prompt. */}
+      <div style={styles.body}>
+        {/* Icon */}
+        <div
           style={{
-            ...styles.confirmBtn,
-            backgroundColor:
-              type === 'danger' ? 'var(--color-error)' : 'var(--color-navy)',
+            ...styles.iconWrapper,
+            backgroundColor: config.bgColor,
+            color: config.color,
           }}
-          onClick={onConfirm}
+          aria-hidden="true"
         >
-          {confirmText}
-        </button>
+          {config.icon}
+        </div>
+
+        {/* Title + message */}
+        <div style={styles.content}>
+          <h3 style={styles.title}>{title}</h3>
+          {message && <p style={styles.message}>{message}</p>}
+          {children}
+        </div>
+
+        {/* Actions */}
+        <div style={styles.actions}>
+          {!hideCancel && (
+            <button type="button" style={styles.cancelBtn} onClick={onCancel}>
+              {cancelText}
+            </button>
+          )}
+          <button
+            ref={confirmBtnRef}
+            type="button"
+            style={{
+              ...styles.confirmBtn,
+              backgroundColor:
+                type === 'danger' ? 'var(--color-error)' : 'var(--color-navy)',
+            }}
+            onClick={onConfirm}
+          >
+            {confirmText}
+          </button>
+        </div>
       </div>
     </Modal>
   );
 }
 
 const styles: Record<string, React.CSSProperties> = {
+  body: {
+    padding: '24px',
+  },
+  iconWrapper: {
+    width: '48px',
+    height: '48px',
+    borderRadius: '50%',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: '16px',
+  },
+  content: {
+    marginBottom: '24px',
+  },
+  title: {
+    fontSize: '18px',
+    fontWeight: 600,
+    color: 'var(--text-primary)',
+    margin: '0 0 8px 0',
+  },
   message: {
     fontSize: '14px',
     color: 'var(--text-secondary)',
     margin: 0,
     lineHeight: 1.5,
   },
-  footer: {
-    textAlign: 'right',
-    padding: '16px 24px 20px',
-    borderTop: '1px solid var(--border-default)',
-    flexShrink: 0,
-    whiteSpace: 'nowrap',
-  },
-  footerGap: {
-    display: 'inline-block',
-    width: '12px',
+  actions: {
+    display: 'flex',
+    gap: '12px',
+    justifyContent: 'flex-end',
   },
   cancelBtn: {
-    display: 'inline-flex',
-    alignItems: 'center',
     height: '40px',
     padding: '0 20px',
     fontSize: '14px',
@@ -211,8 +224,6 @@ const styles: Record<string, React.CSSProperties> = {
     transition: 'all 150ms ease',
   },
   confirmBtn: {
-    display: 'inline-flex',
-    alignItems: 'center',
     height: '40px',
     padding: '0 20px',
     fontSize: '14px',

@@ -27,6 +27,13 @@ interface CanvasUpdatesSectionProps {
   onHighlightClear?: () => void;
   /** Keyboard nav active — W/S/↑/↓ walks queued cards; A/R/L act on focus. */
   keyboardEnabled?: boolean;
+  /**
+   * Fired whenever the duplicate-warning modal (or its child Customize
+   * editor) opens or closes. The parent (e.g. CourseDetail) should suppress
+   * its own page-level hotkeys while this is `true` so they don't fire
+   * behind the modal (Q/E section cycling, G back-nav, T target-edit, etc.).
+   */
+  onModalStateChange?: (isOpen: boolean) => void;
 }
 
 const styles = {
@@ -173,6 +180,7 @@ export function CanvasUpdatesSection({
   highlightedQueueId,
   onHighlightClear,
   keyboardEnabled = false,
+  onModalStateChange,
 }: CanvasUpdatesSectionProps) {
   const {
     gatedAccept,
@@ -182,6 +190,13 @@ export function CanvasUpdatesSection({
     canvasTaskByQueueId,
     closeModal,
   } = useDuplicateGate();
+
+  // Notify the parent whenever the duplicate-warning modal opens/closes so
+  // it can suppress its own page-level hotkeys (Q/E section cycling, G back,
+  // T target-edit, Mod+E settings toggle, etc.) while a modal is on screen.
+  useEffect(() => {
+    onModalStateChange?.(gateState != null);
+  }, [gateState, onModalStateChange]);
 
   // Collapsed by default (can be changed via settings)
   // Force expand if there's a highlighted queue item

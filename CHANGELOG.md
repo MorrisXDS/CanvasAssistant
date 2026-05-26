@@ -51,12 +51,19 @@ fields]` button that opens the same picker in a child modal layered above the li
 
 ### Changed
 
-- `2026-05-26 18:56 UTC` — `ConfirmDialog` (used in 58 call sites) migrated to the shared
-  `Modal` primitive (`Modal.Header` + `Modal.Content` + manual right-aligned footer for
-  the action buttons). Public API unchanged — no call-site touched. Preserves the existing
-  autofocus-on-confirm behaviour and the custom Escape handler that uses `stopPropagation`
-  in capture phase so a `ConfirmDialog` stacked on top of another modal closes only itself
-  on Esc.
+- `2026-05-26 19:24 UTC` — Duplicate-warning Customize child modal now uses `Q` / `E`
+  (matching CourseDetail's existing `Q` = section-back / `E` = section-forward navigation
+  pair) for "use all Canvas" / "use all Local" instead of `Q` / `W`. Mnemonic aligns with
+  the app's broader left/right keyboard convention.
+- `2026-05-26 18:56 UTC` — `ConfirmDialog` (used in 58 call sites) migrated to use the
+  shared `Modal` primitive for its structural concerns (backdrop, centering, sizing,
+  escape, body-scroll-lock, z-index stacking). The visual chrome (icon, title, message,
+  action buttons) is rendered as a single padded block inside the modal — deliberately
+  _not_ using `Modal.Header` / `Modal.Footer` because their `borderBottom` / `borderTop`
+  dividers look heavy on a compact confirmation prompt. Public API unchanged — no
+  call-site touched. Preserves the existing autofocus-on-confirm behaviour and the custom
+  Escape handler that uses `stopPropagation` in capture phase so a `ConfirmDialog`
+  stacked on top of another modal closes only itself on Esc.
 - `2026-05-26 02:50 UTC` — Files page: bulk-download no longer triggers a per-file UI
   refetch (suppressed + debounced), so the file tree stops "refreshing" mid-download.
 - `2026-05-26 02:50 UTC` — CI now runs the unit-test suite as a blocking gate (Jest
@@ -78,6 +85,15 @@ fields]` button that opens the same picker in a child modal layered above the li
 
 ### Fixed
 
+- `2026-05-26 19:24 UTC` — CourseDetail's page-level navigation hotkeys (`Q`/`E` section
+  cycle, `G` back-nav, `T` target-grade edit, `Shift+O` open-on-Canvas, `Mod+E` settings
+  toggle, `Mod+S` save settings, `Mod+Shift+A` archive course) no longer fire while the
+  Canvas Updates duplicate-warning modal is on screen. Previously, `useKeymap` attached
+  listeners at the document level, so e.g. pressing `Q` in the Customize child modal
+  (to "use all Canvas") would also cycle CourseDetail's section focus behind the modal,
+  and `Mod+Shift+A` would stack the archive `ConfirmDialog` _on top of_ the duplicate
+  modal. `CanvasUpdatesSection` now exposes an `onModalStateChange` callback;
+  CourseDetail uses it to gate the `useKeymap<'nav'>` scope via its `when` callback.
 - `2026-05-26 17:35 UTC` — Keyboard shortcuts in the bulk-accept duplicate-warning modal
   no longer leak into the underlying queue section. `CanvasUpdatesSection`'s `useHotkeys`
   (`a` / `shift+a` / `r` / `l`) and `useFocusedItem` arrow keys now suppress while the
