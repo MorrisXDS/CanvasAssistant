@@ -395,8 +395,8 @@ describe('Database', () => {
     it('should track lock duration', async () => {
       db.lockWrites();
 
-      // Wait a bit
-      await new Promise((r) => setTimeout(r, 50));
+      // Wait long enough that even a loaded CI runner clears 50 ms
+      await new Promise((r) => setTimeout(r, 100));
 
       const duration = db.getWriteLockDuration();
       expect(duration).toBeGreaterThanOrEqual(50);

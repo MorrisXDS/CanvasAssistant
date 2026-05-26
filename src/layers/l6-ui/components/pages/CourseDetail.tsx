@@ -3,10 +3,12 @@
  * Full course view with assignments, announcements, and grade history
  */
 
-import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import React, { useEffect, useState, useMemo, useCallback, useContext } from 'react';
 import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, BookOpen, Archive } from 'lucide-react';
 import { useHotkeys } from 'react-hotkeys-hook';
+import { useKeymap } from '../../hooks/useKeymap';
+import { KeyboardScopeContext } from '../../contexts/KeyboardScopeContext';
 import { ConfirmDialog } from '../shared';
 import { MissingDependenciesDialog } from '../Files/MissingDependenciesDialog';
 import { useStore } from '../../../l5-presentation/store';
@@ -626,73 +628,7 @@ export function CourseDetail() {
   const announcementsAvailable = announcements.length > 0;
   const preferencesAvailable = showSettings;
 
-  // Open focused course on Canvas (Shift+O, distinct from task-level 'O')
-  useHotkeys(
-    'shift+o',
-    (e) => {
-      if (!course) return;
-      e.preventDefault();
-      const baseUrl = settingsManager.get(STORAGE_KEYS.CANVAS_URL);
-      if (!baseUrl) return;
-      window.api?.openExternal(
-        `${baseUrl.replace(/\/+$/, '')}/courses/${course.externalId}`
-      );
-    },
-    [course]
-  );
-
-  // G: go back (same as Back button) — ignored when typing in inputs.
-  useHotkeys('g', () => navigate(-1), []);
-
-  // mod+E: toggle Settings panel
-  useHotkeys(
-    'mod+e',
-    (e) => {
-      e.preventDefault();
-      handleToggleSettings();
-    },
-    [handleToggleSettings]
-  );
-
-  // T: start inline Target-grade edit in the header
-  useHotkeys(
-    't',
-    () => {
-      handleStartEditTarget();
-    },
-    [handleStartEditTarget]
-  );
-
-  // mod+Shift+A: archive this course (confirms first)
-  useHotkeys(
-    'mod+shift+a',
-    (e) => {
-      if (!course) return;
-      e.preventDefault();
-      setConfirmDialog({
-        isOpen: true,
-        title: 'Archive Course',
-        message: `Are you sure you want to archive "${course.nickname || course.name}"? Archived courses are hidden from the main view but can be restored later.`,
-        type: 'warning',
-        confirmText: 'Archive',
-        onConfirm: handleArchiveCourse,
-      });
-    },
-    [course, handleArchiveCourse]
-  );
-
-  // mod+S: save settings (when panel is open)
-  useHotkeys(
-    'mod+s',
-    (e) => {
-      if (!showSettings) return;
-      e.preventDefault();
-      handleSaveSettings();
-    },
-    [showSettings, handleSaveSettings]
-  );
-
-  // Section switching: Q / E cycles across visible sections
+  // Section switching helper — shared by nav keymap and re-scope effect below
   const cycleSection = useCallback(
     (dir: 1 | -1) => {
       const available: SectionFocus[] = ['tasks'];
@@ -706,30 +642,71 @@ export function CourseDetail() {
     },
     [queueAvailable, announcementsAvailable, preferencesAvailable, sectionFocus]
   );
-  useHotkeys(
-    'q',
-    (e) => {
-      // Don't hijack Q while the user is editing target grade inline etc.
-      const target = e.target as HTMLElement | null;
-      const tag = target?.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-      e.preventDefault();
-      cycleSection(-1);
+
+  // Broadcast active subscope to help modal (edit overrides prefs overrides nav)
+  const { setActiveSubscope } = useContext(KeyboardScopeContext);
+  useEffect(() => {
+    if (editingTaskId !== null) setActiveSubscope('edit');
+    else if (showSettings) setActiveSubscope('prefs');
+    else setActiveSubscope('nav');
+    return () => setActiveSubscope(null);
+  }, [editingTaskId, showSettings, setActiveSubscope]);
+
+  // Nav-scope shortcuts (all fired outside form elements by default)
+  useKeymap<'nav'>(
+    {
+      nav: {
+        // Open on Canvas
+        'shift+o': (e) => {
+          if (!course) return;
+          e.preventDefault();
+          const baseUrl = settingsManager.get(STORAGE_KEYS.CANVAS_URL);
+          if (!baseUrl) return;
+          window.api?.openExternal(
+            `${baseUrl.replace(/\/+$/, '')}/courses/${course.externalId}`
+          );
+        },
+        // Back
+        g: () => navigate(-1),
+        // Toggle settings panel
+        'mod+e': (e) => {
+          e.preventDefault();
+          handleToggleSettings();
+        },
+        // Start target-grade inline edit
+        t: () => handleStartEditTarget(),
+        // Archive course
+        'mod+shift+a': (e) => {
+          if (!course) return;
+          e.preventDefault();
+          setConfirmDialog({
+            isOpen: true,
+            title: 'Archive Course',
+            message: `Are you sure you want to archive "${course.nickname || course.name}"? Archived courses are hidden from the main view but can be restored later.`,
+            type: 'warning',
+            confirmText: 'Archive',
+            onConfirm: handleArchiveCourse,
+          });
+        },
+        // Save settings (when panel open)
+        'mod+s': (e) => {
+          if (!showSettings) return;
+          e.preventDefault();
+          handleSaveSettings();
+        },
+        // Section cycling — E is blocked in tasks section (tasks section uses E = edit task)
+        q: (e) => {
+          e.preventDefault();
+          cycleSection(-1);
+        },
+        e: (e) => {
+          if (sectionFocus === 'tasks') return;
+          e.preventDefault();
+          cycleSection(1);
+        },
+      },
     },
-    [cycleSection]
-  );
-  useHotkeys(
-    'e',
-    (e) => {
-      const target = e.target as HTMLElement | null;
-      const tag = target?.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-      // Only hijack E when in a non-task section (tasks section uses E=edit).
-      if (sectionFocus === 'tasks') return;
-      e.preventDefault();
-      cycleSection(1);
-    },
-    [cycleSection, sectionFocus]
+    { initialScope: 'nav' }
   );
 
   // Re-scope sectionFocus when the underlying availability changes.
@@ -740,9 +717,7 @@ export function CourseDetail() {
     if (sectionFocus === 'preferences' && !preferencesAvailable) setSectionFocus('tasks');
   }, [sectionFocus, queueAvailable, announcementsAvailable, preferencesAvailable]);
 
-  // ===== Task edit mode shortcuts (active while editingTaskId !== null) =====
-  // Ctrl/Cmd+Enter saves the edit; Alt+letter jumps to a field.
-  const taskEditActive = editingTaskId !== null;
+  // ===== Task edit + preferences field-jump shortcuts =====
   const focusTaskEditField = (id: string) => {
     const el = document.getElementById(id);
     if (!el) return false;
@@ -766,144 +741,78 @@ export function CourseDetail() {
     }
     return false;
   };
-  useHotkeys(
-    'mod+enter',
-    (e) => {
-      if (!taskEditActive) return;
-      e.preventDefault();
-      handleSaveTask();
+  // Task edit field-jump shortcuts — only fire when a task is being edited.
+  // enableOnFormTags: true so they work inside the edit form's inputs.
+  useKeymap<'edit'>(
+    {
+      edit: {
+        'mod+Enter': (e) => {
+          e.preventDefault();
+          handleSaveTask();
+        },
+        'alt+t': (e) => {
+          if (focusTaskEditField('task-edit-title')) e.preventDefault();
+        },
+        'alt+d': (e) => {
+          if (focusTaskEditField('task-edit-description')) e.preventDefault();
+        },
+        'alt+n': (e) => {
+          if (focusTaskEditField('task-edit-notes')) e.preventDefault();
+        },
+        'alt+y': (e) => {
+          if (focusTaskEditField('task-edit-type')) e.preventDefault();
+        },
+        'alt+l': (e) => {
+          if (focusTaskEditField('task-edit-location')) e.preventDefault();
+        },
+        'alt+s': (e) => {
+          if (focusTaskEditField('task-edit-start')) e.preventDefault();
+        },
+        'alt+shift+d': (e) => {
+          if (focusTaskEditField('task-edit-due')) e.preventDefault();
+        },
+        'alt+w': (e) => {
+          if (focusTaskEditField('task-edit-weight')) e.preventDefault();
+        },
+        'alt+g': (e) => {
+          if (focusTaskEditField('task-edit-grade')) e.preventDefault();
+        },
+      },
     },
-    { enableOnFormTags: true, enableOnContentEditable: true },
-    [taskEditActive, handleSaveTask]
-  );
-  useHotkeys(
-    'alt+t',
-    (e) => {
-      if (!taskEditActive) return;
-      if (focusTaskEditField('task-edit-title')) e.preventDefault();
-    },
-    { enableOnFormTags: true, enableOnContentEditable: true },
-    [taskEditActive]
-  );
-  useHotkeys(
-    'alt+d',
-    (e) => {
-      if (!taskEditActive) return;
-      if (focusTaskEditField('task-edit-description')) e.preventDefault();
-    },
-    { enableOnFormTags: true, enableOnContentEditable: true },
-    [taskEditActive]
-  );
-  useHotkeys(
-    'alt+n',
-    (e) => {
-      if (!taskEditActive) return;
-      if (focusTaskEditField('task-edit-notes')) e.preventDefault();
-    },
-    { enableOnFormTags: true, enableOnContentEditable: true },
-    [taskEditActive]
-  );
-  useHotkeys(
-    'alt+y',
-    (e) => {
-      if (!taskEditActive) return;
-      if (focusTaskEditField('task-edit-type')) e.preventDefault();
-    },
-    { enableOnFormTags: true, enableOnContentEditable: true },
-    [taskEditActive]
-  );
-  useHotkeys(
-    'alt+l',
-    (e) => {
-      if (!taskEditActive) return;
-      if (focusTaskEditField('task-edit-location')) e.preventDefault();
-    },
-    { enableOnFormTags: true, enableOnContentEditable: true },
-    [taskEditActive]
-  );
-  useHotkeys(
-    'alt+s',
-    (e) => {
-      if (!taskEditActive) return;
-      if (focusTaskEditField('task-edit-start')) e.preventDefault();
-    },
-    { enableOnFormTags: true, enableOnContentEditable: true },
-    [taskEditActive]
-  );
-  useHotkeys(
-    'alt+shift+d',
-    (e) => {
-      if (!taskEditActive) return;
-      if (focusTaskEditField('task-edit-due')) e.preventDefault();
-    },
-    { enableOnFormTags: true, enableOnContentEditable: true },
-    [taskEditActive]
-  );
-  useHotkeys(
-    'alt+w',
-    (e) => {
-      if (!taskEditActive) return;
-      if (focusTaskEditField('task-edit-weight')) e.preventDefault();
-    },
-    { enableOnFormTags: true, enableOnContentEditable: true },
-    [taskEditActive]
-  );
-  useHotkeys(
-    'alt+g',
-    (e) => {
-      // In preferences section → Grade curve; in task edit → Score
-      if (showSettings && !taskEditActive) {
-        if (focusTaskEditField('course-settings-curve')) e.preventDefault();
-        return;
-      }
-      if (!taskEditActive) return;
-      if (focusTaskEditField('task-edit-grade')) e.preventDefault();
-    },
-    { enableOnFormTags: true, enableOnContentEditable: true },
-    [taskEditActive, showSettings]
+    {
+      initialScope: 'edit',
+      enableOnFormTags: true,
+      when: () => editingTaskId !== null,
+    }
   );
 
-  // ===== Preferences shortcuts (active while showSettings === true) =====
-  useHotkeys(
-    'alt+n',
-    (e) => {
-      // Task-edit N = notes handled above; when task edit is inactive but
-      // settings is open, Alt+N jumps to Nickname.
-      if (taskEditActive || !showSettings) return;
-      if (focusTaskEditField('course-settings-nickname')) e.preventDefault();
+  // Preferences field-jump shortcuts — only fire when settings panel is open and no task edit.
+  useKeymap<'prefs'>(
+    {
+      prefs: {
+        'alt+n': (e) => {
+          if (focusTaskEditField('course-settings-nickname')) e.preventDefault();
+        },
+        'alt+c': (e) => {
+          if (focusTaskEditField('course-settings-color')) e.preventDefault();
+        },
+        'alt+u': (e) => {
+          if (focusTaskEditField('course-settings-credits')) e.preventDefault();
+        },
+        'alt+g': (e) => {
+          if (focusTaskEditField('course-settings-curve')) e.preventDefault();
+        },
+        'alt+t': (e) => {
+          e.preventDefault();
+          handleStartEditTarget();
+        },
+      },
     },
-    { enableOnFormTags: true, enableOnContentEditable: true },
-    [taskEditActive, showSettings]
-  );
-  useHotkeys(
-    'alt+c',
-    (e) => {
-      if (!showSettings) return;
-      if (focusTaskEditField('course-settings-color')) e.preventDefault();
-    },
-    { enableOnFormTags: true, enableOnContentEditable: true },
-    [showSettings]
-  );
-  useHotkeys(
-    'alt+u',
-    (e) => {
-      if (!showSettings) return;
-      if (focusTaskEditField('course-settings-credits')) e.preventDefault();
-    },
-    { enableOnFormTags: true, enableOnContentEditable: true },
-    [showSettings]
-  );
-  // Alt+T in preferences mirrors the page-level T (opens target grade edit)
-  useHotkeys(
-    'alt+t',
-    (e) => {
-      if (taskEditActive) return; // task-edit Alt+T = Title is handled above
-      if (!showSettings) return;
-      e.preventDefault();
-      handleStartEditTarget();
-    },
-    { enableOnFormTags: true, enableOnContentEditable: true },
-    [taskEditActive, showSettings, handleStartEditTarget]
+    {
+      initialScope: 'prefs',
+      enableOnFormTags: true,
+      when: () => showSettings && editingTaskId === null,
+    }
   );
 
   // Escape cascade: close open menus/forms/edits first, then sectionFocus

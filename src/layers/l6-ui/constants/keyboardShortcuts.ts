@@ -19,6 +19,12 @@ export interface ShortcutCategory {
   title: string;
   /** Page scope — undefined means global (always shown) */
   scope?: string;
+  /**
+   * useKeymap scope value this category maps to within the page.
+   * When set, the help modal shows this category when the page's active
+   * useKeymap scope matches. Undefined = shown for the whole page scope.
+   */
+  subscope?: string;
   shortcuts: ShortcutEntry[];
 }
 
@@ -28,6 +34,7 @@ export const ROUTE_SCOPE_MAP: Record<string, string> = {
   '/tasks': 'tasks',
   '/courses': 'courses',
   '/files': 'files',
+  '/settings': 'settings',
   '/announcement/': 'announcement-detail',
   '/announcements': 'announcements',
   '/course/': 'course-detail',
@@ -103,9 +110,11 @@ export const KEYBOARD_SHORTCUTS: ShortcutCategory[] = [
       { keys: ['R'], label: 'Refresh / sync' },
     ],
   },
+  // Calendar — split by useKeymap scope
   {
     title: 'Calendar',
     scope: 'calendar',
+    subscope: 'events',
     shortcuts: [
       { keys: ['mod', '←'], label: 'Previous period (month / week / day)' },
       { keys: ['mod', '→'], label: 'Next period' },
@@ -113,50 +122,34 @@ export const KEYBOARD_SHORTCUTS: ShortcutCategory[] = [
       { keys: ['Tab'], label: 'Cycle view (month → week → day)' },
       { keys: ['Shift', 'Tab'], label: 'Cycle view backward' },
       { keys: ['V'], label: 'Cycle view (same as Tab)' },
-      // Month view
-      { keys: ['A', '/', '←'], label: 'Month: prev day' },
-      { keys: ['D', '/', '→'], label: 'Month: next day' },
-      { keys: ['W', '/', '↑'], label: 'Month: prev week (same weekday)' },
-      { keys: ['S', '/', '↓'], label: 'Month: next week (same weekday)' },
+      { keys: ['A', '/', '←'], label: 'Month: prev day · Week/Day: prev event in group' },
+      { keys: ['D', '/', '→'], label: 'Month: next day · Week/Day: next event in group' },
+      {
+        keys: ['W', '/', '↑'],
+        label: 'Month: prev week · Week/Day: prev event (same day)',
+      },
+      {
+        keys: ['S', '/', '↓'],
+        label: 'Month: next week · Week/Day: next event (same day)',
+      },
       { keys: ['Shift', 'W'], label: 'Month: prev event in focused day' },
       { keys: ['Shift', 'S'], label: 'Month: next event in focused day' },
-      // Week view
-      { keys: ['Q'], label: 'Week: prev day column' },
-      { keys: ['E'], label: 'Week: next day column' },
-      { keys: ['W', '/', '↑'], label: 'Week: prev event (same day, earlier time)' },
-      { keys: ['S', '/', '↓'], label: 'Week: next event (same day, later time)' },
-      { keys: ['A', '/', '←'], label: 'Week: prev event in same-hour group (same day)' },
-      { keys: ['D', '/', '→'], label: 'Week: next event in same-hour group (same day)' },
-      // Day view
-      { keys: ['Q'], label: 'Day: prev day' },
-      { keys: ['E'], label: 'Day: next day' },
-      { keys: ['A', '/', '←'], label: 'Day: prev event in same-hour group (same day)' },
-      { keys: ['D', '/', '→'], label: 'Day: next event in same-hour group (same day)' },
-      { keys: ['W', '/', '↑'], label: 'Day: prev event (chronological)' },
-      { keys: ['S', '/', '↓'], label: 'Day: next event (chronological)' },
-      // Actions
+      { keys: ['Q'], label: 'Week/Day: prev day column' },
+      { keys: ['E'], label: 'Week/Day: next day column (Month: edit focused event)' },
       { keys: ['Enter'], label: 'Open focused event (or create on empty day)' },
-      { keys: ['E'], label: 'Edit focused event (Month view only; Week/Day = next day)' },
       { keys: ['N'], label: 'Create new event (pre-fills from focus)' },
       { keys: ['X'], label: 'Toggle completion on focused task' },
-      {
-        keys: ['Delete'],
-        label: 'Delete focused event (user-created events only — confirms first)',
-      },
-      // Confirmation prompts (applies to the inline "Delete event?" prompt
-      // inside the detail modal and the standalone ConfirmDialog)
-      { keys: ['Enter'], label: 'Confirm prompt: proceed (e.g. Delete)' },
-      { keys: ['Escape'], label: 'Confirm prompt: cancel (returns to prior view)' },
-      // Event create/edit modal
+      { keys: ['Delete'], label: 'Delete focused event (confirms first)' },
+      { keys: ['F'], label: 'Open filter panel' },
+      { keys: ['Alt', 'Shift', 'D'], label: 'Cycle deadline filter' },
+      { keys: ['Alt', 'Shift', 'P'], label: 'Cycle priority filter' },
+      { keys: ['Alt', 'Shift', 'C'], label: 'Clear all filters' },
+      { keys: ['Alt', '1', '..', '9'], label: 'Toggle course filter by index' },
+      // Event form
       { keys: ['mod', 'Enter'], label: 'Event form: save' },
-      { keys: ['Escape'], label: 'Event form: close without saving' },
-      { keys: ['Alt', '1'], label: 'Event form (create): select Regular event type' },
-      { keys: ['Alt', '2'], label: 'Event form (create): select Coursework type' },
-      {
-        keys: ['Delete'],
-        label: 'Event form (edit): delete this event (only when not typing in a field)',
-      },
-      // Event form field jumps (Alt + letter)
+      { keys: ['Escape'], label: 'Event form: close · clear event focus' },
+      { keys: ['Alt', '1'], label: 'Event form: select Regular type' },
+      { keys: ['Alt', '2'], label: 'Event form: select Coursework type' },
       { keys: ['Alt', 'T'], label: 'Event form: jump to Title' },
       { keys: ['Alt', 'C'], label: 'Event form: jump to Course' },
       { keys: ['Alt', 'S'], label: 'Event form: jump to Start date' },
@@ -164,34 +157,25 @@ export const KEYBOARD_SHORTCUTS: ShortcutCategory[] = [
       { keys: ['Alt', 'L'], label: 'Event form: jump to Location' },
       { keys: ['Alt', 'N'], label: 'Event form: jump to Notes' },
       { keys: ['Alt', 'R'], label: 'Event form: jump to Reminder' },
-      // Filters
-      { keys: ['F'], label: 'Open filters + enter filter mode (also closes panel)' },
-      { keys: ['Escape'], label: 'Filter mode: close panel (quit filter mode)' },
-      { keys: ['C'], label: 'Filter mode: focus Courses section' },
-      { keys: ['Shift', 'D'], label: 'Filter mode: focus Deadline section' },
-      { keys: ['P'], label: 'Filter mode: focus Priority section' },
-      {
-        keys: ['Enter'],
-        label:
-          'Filter mode: on "Clear all" row → clear all filters (row appears only when filters are active)',
-      },
-      {
-        keys: ['W', '/', '↑', '/', 'Shift', 'Tab'],
-        label: 'Filter mode: previous row (section)',
-      },
-      {
-        keys: ['S', '/', '↓', '/', 'Tab'],
-        label: 'Filter mode: next row (section)',
-      },
-      { keys: ['A', '/', '←'], label: 'Filter mode: previous option in row' },
-      { keys: ['D', '/', '→'], label: 'Filter mode: next option in row' },
-      { keys: ['mod', 'A'], label: 'Filter mode: select all courses (Courses row)' },
-      { keys: ['mod', 'N'], label: 'Filter mode: deselect all courses (Courses row)' },
-      { keys: ['Space', '/', 'Enter'], label: 'Filter mode: toggle focused option' },
-      { keys: ['Alt', 'Shift', 'D'], label: 'Cycle deadline filter' },
-      { keys: ['Alt', 'Shift', 'P'], label: 'Cycle priority filter' },
-      { keys: ['Alt', 'Shift', 'C'], label: 'Clear all filters' },
-      { keys: ['Alt', '1', '..', '9'], label: 'Toggle course filter by index' },
+    ],
+  },
+  {
+    title: 'Calendar — Filter Panel',
+    scope: 'calendar',
+    subscope: 'filter',
+    shortcuts: [
+      { keys: ['C'], label: 'Focus Courses section' },
+      { keys: ['Shift', 'D'], label: 'Focus Deadline section' },
+      { keys: ['P'], label: 'Focus Priority section' },
+      { keys: ['W', '/', '↑', '/', 'Shift', 'Tab'], label: 'Previous row (section)' },
+      { keys: ['S', '/', '↓', '/', 'Tab'], label: 'Next row (section)' },
+      { keys: ['A', '/', '←'], label: 'Previous option in row' },
+      { keys: ['D', '/', '→'], label: 'Next option in row' },
+      { keys: ['Space', '/', 'Enter'], label: 'Toggle focused option' },
+      { keys: ['Enter'], label: '"Clear all" row → clear all filters' },
+      { keys: ['mod', 'A'], label: 'Select all courses (Courses row)' },
+      { keys: ['mod', 'N'], label: 'Deselect all courses (Courses row)' },
+      { keys: ['F', '/', 'Escape'], label: 'Close filter panel' },
     ],
   },
   {
@@ -209,66 +193,44 @@ export const KEYBOARD_SHORTCUTS: ShortcutCategory[] = [
       { keys: ['Enter'], label: 'Open task in course' },
     ],
   },
+  // Courses — split by useKeymap scope
   {
     title: 'Courses',
     scope: 'courses',
+    subscope: 'courses',
     shortcuts: [
       { keys: ['V'], label: 'Toggle grid/list view' },
-      // Grid/list navigation
-      {
-        keys: ['A', '/', '←'],
-        label: 'Focus previous card (grid: left; list: swallowed)',
-      },
-      {
-        keys: ['D', '/', '→'],
-        label: 'Focus next card (grid: right; list: swallowed)',
-      },
-      {
-        keys: ['W', '/', '↑'],
-        label: 'Focus up (grid: by row; list: previous item)',
-      },
-      {
-        keys: ['S', '/', '↓'],
-        label: 'Focus down (grid: by row; list: next item)',
-      },
+      { keys: ['A', '/', '←'], label: 'Focus previous card (grid: left)' },
+      { keys: ['D', '/', '→'], label: 'Focus next card (grid: right)' },
+      { keys: ['W', '/', '↑'], label: 'Focus up (grid: by row; list: previous)' },
+      { keys: ['S', '/', '↓'], label: 'Focus down (grid: by row; list: next)' },
       { keys: ['Enter'], label: 'Open focused course (or first selected)' },
       { keys: ['O'], label: 'Open focused course on Canvas' },
       { keys: ['Shift', 'Enter'], label: 'Open focused course on Canvas' },
-      // Bulk / focused actions (selection wins; else act on focused card)
       { keys: ['H'], label: 'Hide selected or focused course' },
       { keys: ['Shift', 'H'], label: 'Unhide selected or focused course' },
       { keys: ['P'], label: 'Pin/unpin selected or focused course' },
       { keys: ['mod', 'Shift', 'A'], label: 'Archive selected or focused course' },
-      // Filter mode
-      { keys: ['F'], label: 'Toggle filters + enter filter mode' },
-      {
-        keys: ['Q', '/', 'E'],
-        label: 'Filter mode: prev / next section (Subject → Type → Grade → Show Hidden)',
-      },
-      {
-        keys: ['Shift', '←', '/', 'Shift', '→'],
-        label: 'Filter mode: prev / next section (alt)',
-      },
-      {
-        keys: ['A', '/', '←', '/', 'D', '/', '→', '/', 'W', '/', '↑', '/', 'S', '/', '↓'],
-        label: 'Filter mode: walk options within the focused section',
-      },
-      {
-        keys: ['Space', '/', 'Enter'],
-        label: 'Filter mode: toggle focused option (on Clear row → clears all filters)',
-      },
-      // Quick-access filter shortcuts (work outside filter mode too)
+      { keys: ['F'], label: 'Open filter panel' },
       { keys: ['Alt', 'Shift', 'C'], label: 'Clear all filters' },
       { keys: ['Alt', 'Shift', 'G'], label: 'Cycle Grade filter' },
       { keys: ['Alt', 'Shift', 'T'], label: 'Cycle Type filter' },
       { keys: ['Alt', 'Shift', 'S'], label: 'Cycle Subject filter' },
       { keys: ['Alt', 'Shift', 'H'], label: 'Toggle Show Hidden' },
-      // Escape cascade
-      {
-        keys: ['Escape'],
-        label:
-          'Exit filter mode → close panel → clear selection → clear focus (falls through)',
-      },
+      { keys: ['Escape'], label: 'Clear selection → clear focus (falls through)' },
+    ],
+  },
+  {
+    title: 'Courses — Filter Panel',
+    scope: 'courses',
+    subscope: 'filter',
+    shortcuts: [
+      { keys: ['Q', '/', 'E'], label: 'Previous / next section' },
+      { keys: ['Shift', '←', '/', 'Shift', '→'], label: 'Previous / next section (alt)' },
+      { keys: ['A', '/', '←', '/', 'W', '/', '↑'], label: 'Previous option in section' },
+      { keys: ['D', '/', '→', '/', 'S', '/', '↓'], label: 'Next option in section' },
+      { keys: ['Space', '/', 'Enter'], label: 'Toggle focused option' },
+      { keys: ['F', '/', 'Escape'], label: 'Close filter panel' },
     ],
   },
   {
@@ -294,16 +256,16 @@ export const KEYBOARD_SHORTCUTS: ShortcutCategory[] = [
       { keys: ['Escape'], label: 'Back to announcements list' },
     ],
   },
+  // Course Detail — split by useKeymap scope
   {
     title: 'Course Detail',
     scope: 'course-detail',
+    subscope: 'nav',
     shortcuts: [
-      // Section switching
       {
         keys: ['Q', '/', 'E'],
         label: 'Cycle sections (Tasks → Queue → Announcements → Preferences)',
       },
-      // Page-level actions
       { keys: ['G'], label: 'Go back to previous page' },
       { keys: ['T'], label: 'Start editing Target grade in header' },
       { keys: ['mod', 'E'], label: 'Toggle Settings panel' },
@@ -316,54 +278,56 @@ export const KEYBOARD_SHORTCUTS: ShortcutCategory[] = [
       { keys: ['A', '/', '←'], label: 'Tasks: previous filter chip' },
       { keys: ['D', '/', '→'], label: 'Tasks: next filter chip' },
       {
-        keys: ['1', '/', '2', '/', '3', '/', '4', '/', '5'],
+        keys: ['1', '–', '5'],
         label: 'Tasks: jump to All / Pending / Submitted / Graded / Info',
       },
-      { keys: ['Enter'], label: 'Tasks: expand/collapse focused task' },
-      { keys: ['Space'], label: 'Tasks: expand/collapse focused task' },
+      { keys: ['Enter', '/', 'Space'], label: 'Tasks: expand/collapse focused task' },
       { keys: ['X'], label: 'Tasks: toggle focused task completion' },
       { keys: ['E'], label: 'Tasks: edit focused task' },
       { keys: ['N'], label: 'Tasks: new task' },
       { keys: ['O'], label: 'Tasks: open focused task on Canvas' },
       { keys: ['Shift', 'D'], label: 'Tasks: duplicate focused task' },
-      { keys: ['M'], label: 'Tasks: mark focused task as optional (toggle)' },
+      { keys: ['M'], label: 'Tasks: mark as optional (toggle)' },
       { keys: ['Delete'], label: 'Tasks: delete focused task' },
-      // Queue section (when visible)
-      { keys: ['↑', '/', 'W'], label: 'Queue: focus previous queued task' },
-      { keys: ['↓', '/', 'S'], label: 'Queue: focus next queued task' },
+      // Queue section
       { keys: ['A'], label: 'Queue: accept focused queued task' },
       { keys: ['Shift', 'A'], label: 'Queue: accept all (confirms first)' },
       { keys: ['R'], label: 'Queue: reject focused queued task' },
-      { keys: ['L'], label: 'Queue: link focused queued task to existing task' },
-      // Announcements sidebar (when visible)
-      { keys: ['↑', '/', 'W'], label: 'Announcements: focus previous' },
-      { keys: ['↓', '/', 'S'], label: 'Announcements: focus next' },
+      { keys: ['L'], label: 'Queue: link to existing task' },
+      // Announcements sidebar
       { keys: ['Enter'], label: 'Announcements: open focused announcement' },
       { keys: ['D'], label: 'Announcements: dismiss focused announcement' },
       { keys: ['V'], label: 'Announcements: view all for this course' },
-      // Task edit mode (active while a task is being edited)
-      { keys: ['mod', 'Enter'], label: 'Task edit: save' },
-      { keys: ['Alt', 'T'], label: 'Task edit: jump to Title' },
-      { keys: ['Alt', 'D'], label: 'Task edit: jump to Description' },
-      { keys: ['Alt', 'N'], label: 'Task edit: jump to Notes (Canvas tasks)' },
-      { keys: ['Alt', 'Y'], label: 'Task edit: jump to Type' },
-      { keys: ['Alt', 'L'], label: 'Task edit: jump to Location' },
-      { keys: ['Alt', 'S'], label: 'Task edit: jump to Start Date' },
-      { keys: ['Alt', 'Shift', 'D'], label: 'Task edit: jump to Due Date' },
-      { keys: ['Alt', 'W'], label: 'Task edit: jump to Weight' },
-      { keys: ['Alt', 'G'], label: 'Task edit: jump to Score' },
-      // Preferences panel (active while Settings panel is open)
-      { keys: ['Alt', 'N'], label: 'Preferences: jump to Nickname' },
-      { keys: ['Alt', 'C'], label: 'Preferences: jump to Color' },
-      { keys: ['Alt', 'U'], label: 'Preferences: jump to Credits' },
-      { keys: ['Alt', 'G'], label: 'Preferences: jump to Grade curve' },
-      { keys: ['Alt', 'T'], label: 'Preferences: edit Target grade in header' },
-      // Escape cascade
-      {
-        keys: ['Escape'],
-        label:
-          'Close context menu → close add form → exit edit → collapse task → close Settings → return to Tasks section → back',
-      },
+      { keys: ['Escape'], label: 'Close menu/form → exit edit → close Settings → back' },
+    ],
+  },
+  {
+    title: 'Course Detail — Task Edit',
+    scope: 'course-detail',
+    subscope: 'edit',
+    shortcuts: [
+      { keys: ['mod', 'Enter'], label: 'Save task edit' },
+      { keys: ['Alt', 'T'], label: 'Jump to Title' },
+      { keys: ['Alt', 'D'], label: 'Jump to Description' },
+      { keys: ['Alt', 'N'], label: 'Jump to Notes (Canvas tasks)' },
+      { keys: ['Alt', 'Y'], label: 'Jump to Type' },
+      { keys: ['Alt', 'L'], label: 'Jump to Location' },
+      { keys: ['Alt', 'S'], label: 'Jump to Start Date' },
+      { keys: ['Alt', 'Shift', 'D'], label: 'Jump to Due Date' },
+      { keys: ['Alt', 'W'], label: 'Jump to Weight' },
+      { keys: ['Alt', 'G'], label: 'Jump to Score' },
+    ],
+  },
+  {
+    title: 'Course Detail — Preferences',
+    scope: 'course-detail',
+    subscope: 'prefs',
+    shortcuts: [
+      { keys: ['Alt', 'N'], label: 'Jump to Nickname' },
+      { keys: ['Alt', 'C'], label: 'Jump to Color' },
+      { keys: ['Alt', 'U'], label: 'Jump to Credits' },
+      { keys: ['Alt', 'G'], label: 'Jump to Grade curve' },
+      { keys: ['Alt', 'T'], label: 'Edit Target grade in header' },
     ],
   },
   {
@@ -406,6 +370,21 @@ export const KEYBOARD_SHORTCUTS: ShortcutCategory[] = [
       { keys: ['Space'], label: 'Toggle file selection' },
       { keys: ['mod', 'A'], label: 'Select all visible' },
       { keys: ['Esc'], label: 'Clear focus / deselect' },
+    ],
+  },
+  {
+    title: 'Settings',
+    scope: 'settings',
+    shortcuts: [
+      { keys: ['1'], label: 'Jump to Display section' },
+      { keys: ['2'], label: 'Jump to Academic section' },
+      { keys: ['3'], label: 'Jump to Files section' },
+      { keys: ['4'], label: 'Jump to Sync section' },
+      { keys: ['5'], label: 'Jump to Account section' },
+      { keys: ['6'], label: 'Jump to App Behavior section' },
+      { keys: ['7'], label: 'Jump to Notifications section' },
+      { keys: ['8'], label: 'Jump to Data section' },
+      { keys: ['Escape'], label: 'Clear search, then close' },
     ],
   },
 ];

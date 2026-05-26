@@ -25,7 +25,7 @@ import {
 import { Card } from '../shared';
 import { useStore } from '../../../l5-presentation/store';
 import { styles } from './AnnouncementsPage.styles';
-import { useHotkeys } from 'react-hotkeys-hook';
+import { useKeymap } from '../../hooks/useKeymap';
 import { useFocusedItem } from '../../hooks/useFocusedItem';
 import { getCourseColor } from '../../constants';
 
@@ -126,10 +126,7 @@ export function AnnouncementsPage() {
     return courseParam ? parseInt(courseParam, 10) : null;
   });
 
-  // Keyboard shortcuts for filter tabs
-  useHotkeys('1', () => setReadFilter('all'));
-  useHotkeys('2', () => setReadFilter('unread'));
-  useHotkeys('3', () => setReadFilter('dismissed'));
+  // Keyboard shortcuts — wired via useKeymap after focusedItem is declared below
 
   // Sync course filter to URL
   useEffect(() => {
@@ -229,20 +226,27 @@ export function AnnouncementsPage() {
     { persistKey: 'announcements-page', verticalNav: true }
   );
 
-  // Enter: open focused announcement
-  useHotkeys('enter', (e) => {
-    if (focusedItem) {
-      e.preventDefault();
-      navigate(`/announcement/${focusedItem.notification.id}`);
-    }
-  });
-
-  // D: dismiss focused announcement
-  useHotkeys('d', async () => {
-    if (focusedItem && !focusedItem.notification.dismissedAt) {
-      await dismissNotification(focusedItem.notification.id);
-    }
-  });
+  // All keyboard shortcuts in one place
+  useKeymap<'main'>(
+    {
+      main: {
+        '1': () => setReadFilter('all'),
+        '2': () => setReadFilter('unread'),
+        '3': () => setReadFilter('dismissed'),
+        Enter: (e) => {
+          if (focusedItem) {
+            e.preventDefault();
+            navigate(`/announcement/${focusedItem.notification.id}`);
+          }
+        },
+        d: async () => {
+          if (focusedItem && !focusedItem.notification.dismissedAt)
+            await dismissNotification(focusedItem.notification.id);
+        },
+      },
+    },
+    { initialScope: 'main' }
+  );
 
   // Intent counts (for current read + course filters)
   const intentCounts = useMemo(() => {

@@ -14,8 +14,8 @@ import type { Task, Course } from '../../../l5-presentation/types';
 import { TaskContextMenu } from '../Course/TaskContextMenu';
 import { createLogger } from '../../utils/rendererLogger';
 import { styles } from './TasksPage.styles';
-import { useHotkeys } from 'react-hotkeys-hook';
 import { useFocusedItem } from '../../hooks/useFocusedItem';
+import { useKeymap } from '../../hooks/useKeymap';
 
 const logger = createLogger('TasksPage');
 
@@ -59,12 +59,7 @@ export function TasksPage() {
 
   const courseMap = useMemo(() => new Map(courses.map((c) => [c.id, c])), [courses]);
 
-  // Keyboard shortcuts for filter tabs and add task
-  useHotkeys('1', () => setFilter('all'));
-  useHotkeys('2', () => setFilter('pending'));
-  useHotkeys('3', () => setFilter('overdue'));
-  useHotkeys('4', () => setFilter('completed'));
-  useHotkeys('n', () => setShowAddTask(true));
+  // Keyboard shortcuts — wired via useKeymap after focusedItem is declared below
 
   // Process all tasks with course info
   const allTasks = useMemo(() => {
@@ -141,20 +136,29 @@ export function TasksPage() {
     verticalNav: true,
   });
 
-  // X: toggle completion on focused task
-  useHotkeys('x', () => {
-    if (focusedItem) {
-      handleToggleComplete(focusedItem.task.id, focusedItem.task.isCompleted);
-    }
-  });
-
-  // Enter: open focused task in course
-  useHotkeys('enter', (e) => {
-    if (focusedItem) {
-      e.preventDefault();
-      handleTaskDoubleClick(focusedItem.task, focusedItem.course);
-    }
-  });
+  // All keyboard shortcuts in one place
+  useKeymap<'main'>(
+    {
+      main: {
+        '1': () => setFilter('all'),
+        '2': () => setFilter('pending'),
+        '3': () => setFilter('overdue'),
+        '4': () => setFilter('completed'),
+        n: () => setShowAddTask(true),
+        x: () => {
+          if (focusedItem)
+            handleToggleComplete(focusedItem.task.id, focusedItem.task.isCompleted);
+        },
+        Enter: (e) => {
+          if (focusedItem) {
+            e.preventDefault();
+            handleTaskDoubleClick(focusedItem.task, focusedItem.course);
+          }
+        },
+      },
+    },
+    { initialScope: 'main' }
+  );
 
   // Context menu state
   const [contextMenu, setContextMenu] = useState<{

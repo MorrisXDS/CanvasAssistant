@@ -8,7 +8,8 @@
  * - Confirmation dialogs and modals
  */
 
-import React from 'react';
+import React, { useCallback } from 'react';
+import { useKeymap } from '../../hooks/useKeymap';
 import {
   X,
   Check,
@@ -115,6 +116,41 @@ export function SettingsModalContent() {
     if (!hasSearchResults) return true;
     return matchingCategories.has(category);
   };
+
+  // 1-8: jump to settings section by position in sectionOrder
+  const scrollToSection = useCallback(
+    (sectionId: string) => {
+      setSearchQuery('');
+      if (!openSections.includes(sectionId)) {
+        setOpenSections([...openSections, sectionId]);
+      }
+      setTimeout(() => {
+        const ref = (
+          sectionRefs as unknown as Record<string, React.RefObject<HTMLDivElement>>
+        )[sectionId];
+        if (ref?.current) {
+          ref.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      }, 100);
+    },
+    [openSections, setOpenSections, sectionRefs, setSearchQuery]
+  );
+
+  useKeymap<'main'>(
+    {
+      main: {
+        '1': () => scrollToSection(sectionOrder[0] ?? 'display'),
+        '2': () => scrollToSection(sectionOrder[1] ?? 'academic'),
+        '3': () => scrollToSection(sectionOrder[2] ?? 'files'),
+        '4': () => scrollToSection(sectionOrder[3] ?? 'sync'),
+        '5': () => scrollToSection(sectionOrder[4] ?? 'account'),
+        '6': () => scrollToSection(sectionOrder[5] ?? 'behavior'),
+        '7': () => scrollToSection(sectionOrder[6] ?? 'notifications'),
+        '8': () => scrollToSection(sectionOrder[7] ?? 'data'),
+      },
+    },
+    { initialScope: 'main' }
+  );
 
   return (
     <>
@@ -446,7 +482,10 @@ export function SettingsModalContent() {
             }
             setDeleteTokenOnClear(false);
           } catch (error) {
-            logger.error('Failed to clear data', error instanceof Error ? error : undefined);
+            logger.error(
+              'Failed to clear data',
+              error instanceof Error ? error : undefined
+            );
           }
         }}
       >

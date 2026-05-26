@@ -20,20 +20,11 @@ import { ActionRequiredItem } from './Updates/ActionRequiredItem';
 import { ConflictItem } from './Updates/ConflictItem';
 import { InformationalItem } from './Updates/InformationalItem';
 import { DuplicateWarningModal } from '../shared/DuplicateWarningModal';
-import { useHotkeys } from 'react-hotkeys-hook';
+import { useKeymap } from '../../hooks/useKeymap';
 import { useFocusedItem } from '../../hooks/useFocusedItem';
 import type { DuplicateCheckResult } from '../../../l5-presentation/types';
 
 type FilterType = 'all' | 'task' | 'grade' | 'file' | 'page' | 'announcement';
-
-const FILTER_KEYS: Record<string, FilterType> = {
-  '1': 'all',
-  '2': 'task',
-  '3': 'grade',
-  '4': 'file',
-  '5': 'page',
-  '6': 'announcement',
-};
 
 export function UpdatesPage() {
   const navigate = useNavigate();
@@ -61,12 +52,7 @@ export function UpdatesPage() {
   const totalUnseen = syncUpdates.totalUnseen ?? 0;
   const [filter, setFilter] = useState<FilterType>('all');
 
-  // Keyboard shortcuts for filter tabs
-  useHotkeys('1, 2, 3, 4, 5, 6', (_, handler) => {
-    const key = handler.keys?.join('') || '';
-    const f = FILTER_KEYS[key];
-    if (f) setFilter(f);
-  });
+  // Keyboard shortcuts — wired via useKeymap after focusedActionTask is declared below
 
   // Timer tick to force re-render of relative times every 30 seconds
   const [timeTick, setTimeTick] = useState(0);
@@ -175,12 +161,23 @@ export function UpdatesPage() {
     persistKey: 'updates-page',
   });
 
-  // A: accept focused queued task
-  useHotkeys('a', () => {
-    if (focusedActionTask) {
-      handleAcceptTask(focusedActionTask.entityId);
-    }
-  });
+  // All keyboard shortcuts in one place
+  useKeymap<'main'>(
+    {
+      main: {
+        '1': () => setFilter('all'),
+        '2': () => setFilter('task'),
+        '3': () => setFilter('grade'),
+        '4': () => setFilter('file'),
+        '5': () => setFilter('page'),
+        '6': () => setFilter('announcement'),
+        a: () => {
+          if (focusedActionTask) handleAcceptTask(focusedActionTask.entityId);
+        },
+      },
+    },
+    { initialScope: 'main' }
+  );
 
   // Total counts for header
   const totalNeedsReview = useMemo(() => {
