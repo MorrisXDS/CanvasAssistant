@@ -1,0 +1,37 @@
+# Gitleaks configuration for CanvasAssistant.
+#
+# Used by the `Secret scan` workflow at .github/workflows/secret-scan.yml.
+# Gitleaks auto-discovers this file at the repo root when invoked with
+# `--source .`.
+#
+# We extend the default ruleset (so we still get all built-in patterns
+# for AWS / GitHub / Stripe / Slack / Anthropic / OpenAI / etc. tokens)
+# and add a narrow allowlist for files that intentionally contain
+# fake API-key-shaped strings for testing or documentation purposes.
+
+title = "CanvasAssistant gitleaks config"
+
+[extend]
+# Inherit gitleaks' built-in rule set (the ~150 patterns for common
+# providers). Our allowlist below is additive.
+useDefault = true
+
+[allowlist]
+description = """
+Files that intentionally contain API-key-shaped placeholder strings for
+exercising the Logger's PII-redaction behaviour (or documenting it).
+Whitelisted by exact path so a real leaked key in any other tests/ or
+DevDocs/ file would still be caught.
+"""
+paths = [
+  # The Logger's PII-redaction unit tests deliberately log strings like
+  # 'API Key: 1234567890abcdef...' to verify the redactor replaces them
+  # with [KEY_REDACTED]. Has been intentionally placeholder-only since
+  # the suite was first written.
+  '''tests/l0-utilities/Logger\.test\.ts''',
+
+  # Private milestone documentation (in the DevDocs local-only repo,
+  # gitignored from main project but tracked in its own repo) shows the
+  # same redaction-test example inline.
+  '''DevDocs/milestones/week1/MILESTONE_1\.2_COMPLETE\.md''',
+]
