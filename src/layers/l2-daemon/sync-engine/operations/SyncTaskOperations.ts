@@ -59,18 +59,36 @@ export class SyncTaskOperations {
           try {
             const localTask = mapAssignment(assignment, localCourseId);
 
-            const existingByTitle = this.ctx.db.executeReadOne<{
+            const titleMatches = this.ctx.db.executeRead<{
               id: number;
               source_type: string;
               weight: number;
               priority_score: number;
               local_modified_at: string | null;
             }>(
-              'SELECT id, source_type, weight, priority_score, local_modified_at FROM tasks WHERE course_id = ? AND title = ? AND external_id IS NULL',
+              "SELECT id, source_type, weight, priority_score, local_modified_at FROM tasks WHERE course_id = ? AND title = ? AND external_id IS NULL AND source_type = 'user'",
               [localCourseId, localTask.title]
             );
 
-            if (existingByTitle && existingByTitle.source_type === 'user') {
+            // Only auto-link by title when the match is unambiguous. Two user
+            // tasks sharing a title in one course can't be safely linked to a
+            // single Canvas assignment, so skip the merge and let the
+            // external_id / conflict path queue it instead of merging an
+            // arbitrary (SQLite-order-dependent) one.
+            if (titleMatches.length > 1) {
+              this.ctx.log?.warn(
+                '[SyncTaskOps] Ambiguous title match; skipping auto-merge',
+                {
+                  courseId: localCourseId,
+                  title: localTask.title,
+                  matches: titleMatches.length,
+                }
+              );
+            }
+
+            const existingByTitle = titleMatches.length === 1 ? titleMatches[0] : null;
+
+            if (existingByTitle) {
               this.ctx.db.executeWrite(
                 `UPDATE tasks SET
                   external_id = ?,
