@@ -1,9 +1,26 @@
 /**
- * ConfirmDialog - Modern confirmation dialog component
+ * ConfirmDialog — confirmation dialog built on the shared `Modal` primitive.
+ *
+ * Public API is unchanged from the previous handwritten implementation; only
+ * the internal chrome (backdrop / dialog container / escape handling) is
+ * delegated to `<Modal>`.
+ *
+ * Preserved behaviour:
+ *   - Auto-focus the confirm button on open (so Enter activates it natively).
+ *   - Custom Escape handler in the capture phase that calls `stopPropagation`,
+ *     so when a ConfirmDialog is layered on top of another modal, hitting Esc
+ *     dismisses only the ConfirmDialog and doesn't cascade-close the parent.
+ *     We pass `closeOnEscape={false}` to the primitive so its own listener
+ *     doesn't compete.
+ *   - Type-specific icon + tint (`danger` / `warning` / `info` / `success`)
+ *     rendered inside the primitive's `Modal.Header` `icon` slot.
+ *   - `danger` type uses `--color-error` for the confirm button; everything
+ *     else uses `--color-navy` (matches the rest of the app's primary CTAs).
  */
 
 import React from 'react';
 import { AlertTriangle, Info, CheckCircle, XCircle } from 'lucide-react';
+import { Modal } from '../primitives/Modal';
 
 type DialogType = 'danger' | 'warning' | 'info' | 'success';
 
@@ -65,8 +82,7 @@ export function ConfirmDialog({
   const confirmBtnRef = React.useRef<HTMLButtonElement>(null);
   React.useEffect(() => {
     if (!isOpen) return;
-    // Defer to next tick to make sure the element is in the DOM and any
-    // underlying autoFocus has settled.
+    // Defer to next tick so the Modal has mounted into the DOM.
     const id = requestAnimationFrame(() => {
       confirmBtnRef.current?.focus();
     });
@@ -74,7 +90,7 @@ export function ConfirmDialog({
   }, [isOpen]);
 
   // Escape cancels. Capture phase + stopPropagation so a parent modal's
-  // Escape handler doesn't also fire and close everything.
+  // Escape handler doesn't also fire and close everything underneath.
   React.useEffect(() => {
     if (!isOpen) return;
     const handler = (e: KeyboardEvent) => {
@@ -93,121 +109,100 @@ export function ConfirmDialog({
   const config = typeConfig[type];
 
   return (
-    <>
-      {/* Backdrop */}
-      <div style={styles.backdrop} onClick={onCancel} />
-
-      {/* Dialog */}
-      <div style={styles.dialog}>
-        {/* Icon */}
-        <div
-          style={{
-            ...styles.iconWrapper,
-            backgroundColor: config.bgColor,
-            color: config.color,
-          }}
-        >
-          {config.icon}
-        </div>
-
-        {/* Content */}
-        <div style={styles.content}>
-          <h3 style={styles.title}>{title}</h3>
-          {message && <p style={styles.message}>{message}</p>}
-          {children}
-        </div>
-
-        {/* Actions */}
-        <div style={styles.actions}>
-          {!hideCancel && (
-            <button type="button" style={styles.cancelBtn} onClick={onCancel}>
-              {cancelText}
-            </button>
-          )}
-          <button
-            ref={confirmBtnRef}
-            type="button"
+    <Modal
+      isOpen
+      onClose={onCancel}
+      size="md"
+      // Our own Escape handler above owns this — keep the primitive's
+      // listener disabled so we don't get duplicate cancellations and
+      // can stack on top of other modals safely.
+      closeOnEscape={false}
+      // Use a high z-index so ConfirmDialog can layer above any other modal
+      // (the primitive's default is 1000; this matches the previous custom
+      // chrome's z-indexes of 1000/1001).
+      zIndex={1100}
+    >
+      <Modal.Header
+        title={title}
+        icon={
+          // Fills the primitive's 40x40 headerIcon slot with our type-tinted
+          // square — covers the default --color-navy / --bg-elevated styling.
+          <div
             style={{
-              ...styles.confirmBtn,
-              backgroundColor:
-                type === 'danger' ? 'var(--color-error)' : 'var(--color-navy)',
+              width: '40px',
+              height: '40px',
+              borderRadius: 'var(--radius-md)',
+              backgroundColor: config.bgColor,
+              color: config.color,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
             }}
-            onClick={onConfirm}
+            aria-hidden="true"
           >
-            {confirmText}
+            {config.icon}
+          </div>
+        }
+        showCloseButton={false}
+        onClose={onCancel}
+      />
+
+      <Modal.Content>
+        {message && <p style={styles.message}>{message}</p>}
+        {children}
+      </Modal.Content>
+
+      {/* Manual right-aligned footer — bulletproof against the flex-wrap
+          edge cases we hit during the duplicate-warning migration. */}
+      <div style={styles.footer}>
+        {!hideCancel && (
+          <button type="button" style={styles.cancelBtn} onClick={onCancel}>
+            {cancelText}
           </button>
-        </div>
+        )}
+        {!hideCancel && <span style={styles.footerGap} />}
+        <button
+          ref={confirmBtnRef}
+          type="button"
+          style={{
+            ...styles.confirmBtn,
+            backgroundColor:
+              type === 'danger' ? 'var(--color-error)' : 'var(--color-navy)',
+          }}
+          onClick={onConfirm}
+        >
+          {confirmText}
+        </button>
       </div>
-    </>
+    </Modal>
   );
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  backdrop: {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    zIndex: 1000,
-  },
-
-  dialog: {
-    position: 'fixed',
-    top: '50%',
-    left: '50%',
-    transform: 'translate(-50%, -50%)',
-    backgroundColor: 'var(--bg-card)',
-    borderRadius: 'var(--radius-xl)',
-    boxShadow:
-      '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
-    width: '100%',
-    maxWidth: '400px',
-    padding: '24px',
-    zIndex: 1001,
-    // Remove animation to prevent positioning flash on render
-  },
-
-  iconWrapper: {
-    width: '48px',
-    height: '48px',
-    borderRadius: '50%',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: '16px',
-  },
-
-  content: {
-    marginBottom: '24px',
-  },
-
-  title: {
-    fontSize: '18px',
-    fontWeight: '600',
-    color: 'var(--text-primary)',
-    margin: '0 0 8px 0',
-  },
-
   message: {
     fontSize: '14px',
     color: 'var(--text-secondary)',
     margin: 0,
     lineHeight: 1.5,
   },
-
-  actions: {
-    display: 'flex',
-    gap: '12px',
-    justifyContent: 'flex-end',
+  footer: {
+    textAlign: 'right',
+    padding: '16px 24px 20px',
+    borderTop: '1px solid var(--border-default)',
+    flexShrink: 0,
+    whiteSpace: 'nowrap',
   },
-
+  footerGap: {
+    display: 'inline-block',
+    width: '12px',
+  },
   cancelBtn: {
+    display: 'inline-flex',
+    alignItems: 'center',
     height: '40px',
     padding: '0 20px',
     fontSize: '14px',
-    fontWeight: '500',
+    fontWeight: 500,
     backgroundColor: 'var(--bg-app)',
     border: '1px solid var(--border-default)',
     borderRadius: 'var(--radius-md)',
@@ -215,12 +210,13 @@ const styles: Record<string, React.CSSProperties> = {
     color: 'var(--text-secondary)',
     transition: 'all 150ms ease',
   },
-
   confirmBtn: {
+    display: 'inline-flex',
+    alignItems: 'center',
     height: '40px',
     padding: '0 20px',
     fontSize: '14px',
-    fontWeight: '500',
+    fontWeight: 500,
     border: 'none',
     borderRadius: 'var(--radius-md)',
     cursor: 'pointer',

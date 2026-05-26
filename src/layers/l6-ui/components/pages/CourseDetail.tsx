@@ -25,12 +25,7 @@ import {
   MissingSyllabusWarning,
   DuplicateCourseworkBanner,
 } from '../Course';
-import {
-  CanvasUpdatesSection,
-  TaskMergeDialog,
-  TaskLinkDialog,
-  type QueuedTaskEdits,
-} from '../Queue';
+import { CanvasUpdatesSection, TaskLinkDialog, type QueuedTaskEdits } from '../Queue';
 import { useCourseDetailDragDrop } from './useCourseDetailDragDrop';
 import { useCourseDetailTaskState } from './useCourseDetailTaskState';
 import { useCourseDetailSettingsState } from './useCourseDetailSettingsState';
@@ -119,17 +114,6 @@ export function CourseDetail() {
   }>({
     isOpen: false,
     queuedTask: null,
-  });
-
-  // Legacy merge dialog state (for auto-detected matches)
-  const [mergeDialogState, setMergeDialogState] = useState<{
-    isOpen: boolean;
-    queuedTask: QueuedTask | null;
-    userTask: Task | null;
-  }>({
-    isOpen: false,
-    queuedTask: null,
-    userTask: null,
   });
 
   // Store actions for queue operations
@@ -606,14 +590,6 @@ export function CourseDetail() {
     }) => mergeQueuedTask(params),
     [mergeQueuedTask]
   );
-
-  const closeMergeDialog = useCallback(() => {
-    setMergeDialogState({
-      isOpen: false,
-      queuedTask: null,
-      userTask: null,
-    });
-  }, []);
 
   // ===== Page-level keyboard shortcuts =====
   // Availability of conditional sections (snapshot per render; useHotkeys
@@ -1338,19 +1314,6 @@ export function CourseDetail() {
           onCancel={closeLinkDialog}
         />
       )}
-
-      {/* Task Merge Dialog (legacy - for auto-detected matches) */}
-      {mergeDialogState.isOpen &&
-        mergeDialogState.queuedTask &&
-        mergeDialogState.userTask && (
-          <TaskMergeDialog
-            isOpen={mergeDialogState.isOpen}
-            queuedTask={mergeDialogState.queuedTask}
-            userTask={mergeDialogState.userTask}
-            onMerge={handleMergeTask}
-            onCancel={closeMergeDialog}
-          />
-        )}
     </div>
   );
 }

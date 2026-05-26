@@ -5,5 +5,4 @@
 
 export { CanvasUpdatesSection } from './CanvasUpdatesSection';
 export { QueuedTaskCard, type QueuedTaskEdits } from './QueuedTaskCard';
-export { TaskMergeDialog } from './TaskMergeDialog';
 export { TaskLinkDialog } from './TaskLinkDialog';

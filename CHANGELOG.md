@@ -51,6 +51,12 @@ fields]` button that opens the same picker in a child modal layered above the li
 
 ### Changed
 
+- `2026-05-26 18:56 UTC` — `ConfirmDialog` (used in 58 call sites) migrated to the shared
+  `Modal` primitive (`Modal.Header` + `Modal.Content` + manual right-aligned footer for
+  the action buttons). Public API unchanged — no call-site touched. Preserves the existing
+  autofocus-on-confirm behaviour and the custom Escape handler that uses `stopPropagation`
+  in capture phase so a `ConfirmDialog` stacked on top of another modal closes only itself
+  on Esc.
 - `2026-05-26 02:50 UTC` — Files page: bulk-download no longer triggers a per-file UI
   refetch (suppressed + debounced), so the file tree stops "refreshing" mid-download.
 - `2026-05-26 02:50 UTC` — CI now runs the unit-test suite as a blocking gate (Jest
@@ -59,6 +65,10 @@ fields]` button that opens the same picker in a child modal layered above the li
 
 ### Removed
 
+- `2026-05-26 18:56 UTC` — Dead `TaskMergeDialog` component (`src/layers/l6-ui/components/Queue/TaskMergeDialog.tsx`,
+  ~451 lines) and its associated state/JSX in `CourseDetail.tsx`. The component was
+  imported and rendered conditionally but the trigger (`setMergeDialogState({isOpen: true, ...})`)
+  was never called from anywhere — leftover scaffolding from a precursor design.
 - `2026-05-26 02:50 UTC` — Orphaned `priorities:*` and `intelligence:*` IPC channels (no
   backend handlers, no callers) from `preload.ts` and the IPC contract. See ADR 0003 for
   the broader L3-intelligence removal.
