@@ -12,6 +12,15 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ### Added
 
+- `2026-05-26 17:10 UTC` — Per-field merge selection in the duplicate-warning modal. When
+  linking a queued Canvas task to an existing user task, conflicting fields (title, due
+  date, type) now render as a side-by-side picker — click either cell to choose which value
+  wins. Non-conflicting fields show once below as a quiet summary (weight & notes are
+  always preserved). In bulk-accept mode each conflicting row gets a `[⚙ Customize
+fields]` button that opens the same picker in a child modal layered above the list. The
+  backend `MergeQueuedTaskCommand` already supported per-field `keepFromUser`; this exposes
+  it. New `FieldMergeEditor` component lifted from the previously-unwired
+  `TaskLinkDialog` Step-2 layout.
 - `2026-05-26 03:37 UTC` — Duplicate warning gate on Canvas task acceptance. Exact title
   matches show a "Duplicate found" dialog; fuzzy matches (≥ 70% similarity) show "May
   match". The dialog compares incoming Canvas fields against the existing task side by side
@@ -59,6 +68,39 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ### Fixed
 
+- `2026-05-26 17:35 UTC` — Keyboard shortcuts in the bulk-accept duplicate-warning modal
+  no longer leak into the underlying queue section. `CanvasUpdatesSection`'s `useHotkeys`
+  (`a` / `shift+a` / `r` / `l`) and `useFocusedItem` arrow keys now suppress while the
+  modal is open (gated via `gateState == null`). Previously, pressing `L` in the modal
+  also opened the section's link dialog behind it.
+- `2026-05-26 17:35 UTC` — Customize-fields child modal is now fully keyboard-driven.
+  New shortcuts: `↑↓` walk conflict fields (focused row gets a navy outline), `←/1` pick
+  Canvas, `→/2` pick Your task, `Q` snap all to Canvas, `W` snap all to Your task. `Enter`
+  saves, `Esc` cancels (existing).
+- `2026-05-26 17:10 UTC` — Clicking the green ✓ on a no-match queued task (e.g. "Lecture
+  Reflection 1") now removes it from the queue list on the first click. Was silently
+  failing because `CourseDetail` held `queuedTasks` in local React `useState` while the
+  duplicate-gate hook called the store action directly — the store updated but the
+  parent's local copy didn't, so the UI showed stale data and the second-and-later clicks
+  hit "queue row already accepted" and were swallowed. Fix: `CourseDetail.queuedTasks` is
+  now a `useStore` selector + `useMemo` filtered by `courseId`. Eliminates the entire
+  state-duplication bug class for queued tasks.
+- `2026-05-26 17:10 UTC` — Bulk-accept no longer blocks no-match items behind the modal.
+  `gatedBulkAccept` now opens the bulk modal immediately (matched items get attention
+  right away), then fires no-match auto-accepts in parallel via `Promise.allSettled` —
+  items drop out of the queue list behind the modal as their store updates land, and a
+  single failed accept doesn't strand its siblings.
+- `2026-05-26 17:10 UTC` — Bulk-mode conflict summary dates were rendering as raw ISO
+  strings (`2026-06-15T23:59:00Z → —`). Now formatted via `formatSmartDate` for due dates
+  and `getTaskTypeLabel` for task types, matching single-mode display.
+- `2026-05-26 17:10 UTC` — `DuplicateWarningModal` migrated to the shared `Modal` primitive
+  (header/content/footer compound). Removes ~80 lines of handwritten overlay/dialog/
+  header/footer chrome from the file. Fixes a latent footer layout bug where Cancel +
+  Confirm could split across rows when many items were present.
+- `2026-05-26 17:10 UTC` — Confirm button in the bulk modal was rendering invisibly:
+  `var(--color-primary)` (used by `s.btn('primary')`) doesn't exist in the theme — only
+  `--color-navy` does. Replaced 11 stale `--color-primary*` references with the actual
+  theme variables (`--color-navy`, `--color-info-bg`).
 - `2026-05-26 02:50 UTC` — Task sync no longer merges a Canvas assignment into an arbitrary
   local task when two user tasks in a course share the same title; the ambiguous case is
   skipped (and logged) so the assignment lands as its own task instead of orphaning a

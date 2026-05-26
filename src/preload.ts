@@ -143,7 +143,14 @@ const api = {
   mergeQueuedTask: (params: {
     queueId: number;
     userTaskId: number;
-    keepFromUser?: { notes?: boolean; dueAt?: boolean; title?: boolean };
+    keepFromUser?: {
+      notes?: boolean;
+      dueAt?: boolean;
+      title?: boolean;
+      taskType?: boolean;
+      description?: boolean;
+      startAt?: boolean;
+    };
   }) => ipcRenderer.invoke('data:mergeQueuedTask', params),
 
   /**

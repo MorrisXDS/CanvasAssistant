@@ -6,100 +6,58 @@
  * Bulk mode: multi-select list, A/↑↓/Space/L/S/Enter/Esc shortcuts.
  */
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { AlertTriangle, X, Link2, Plus, Check } from 'lucide-react';
+import React, { useState, useCallback, useMemo, useRef } from 'react';
+import { AlertTriangle, Link2, Plus, Check, Settings2 } from 'lucide-react';
 import { useHotkeys } from 'react-hotkeys-hook';
 import type { DuplicateCheckResult } from '../../../l5-presentation/types';
-import { formatSmartDate } from '../../constants';
+import { Modal } from '../primitives/Modal';
+import {
+  FieldMergeEditor,
+  buildDefaultChoices,
+  isCustomized,
+  formatFieldValue,
+  type FieldChoice,
+  type FieldKey,
+} from './FieldMergeEditor';
+
+/**
+ * Display-shape of the *incoming Canvas* task, keyed by queueId.
+ * Lets the modal show real values in its left "Canvas (incoming)" column
+ * instead of falling back to conflict-only data.
+ */
+export interface CanvasTaskDisplay {
+  title: string;
+  dueAt: string | null;
+  taskType: string | null;
+}
 
 interface DuplicateWarningModalProps {
   mode: 'single' | 'bulk';
   items: DuplicateCheckResult[];
+  /** Real Canvas-side values, keyed by queueId — used by FieldMergeEditor. */
+  canvasTaskByQueueId: Map<number, CanvasTaskDisplay>;
+  /**
+   * Confirm callback. Receives per-item link/separate decisions, the set of
+   * items the user actually checked, and the per-item per-field choice map
+   * built by FieldMergeEditor (defaulted to all-Canvas for any conflicting
+   * field the user didn't customize).
+   */
   onConfirm: (
     decisions: Map<number, 'link' | 'separate'>,
-    selected: Set<number>
+    selected: Set<number>,
+    fieldChoicesByQueueId: Map<number, FieldChoice>
   ) => Promise<void>;
   onCancel: () => void;
 }
 
-function formatDate(d: string | null): string {
-  if (!d) return 'Not set';
-  return formatSmartDate(d);
-}
-
 // ---------------------------------------------------------------------------
-// Styles
+// Styles — only the content-specific bits.  Modal chrome (overlay, dialog,
+// header, content, footer) is owned by `<Modal>` from `primitives/Modal.tsx`,
+// which handles backdrop, escape, body-scroll-lock, sizing, z-index stacking,
+// and footer flex-wrap consistently.  See CLAUDE.md §2 "Use the Modal
+// primitive for all dialogs".
 // ---------------------------------------------------------------------------
 const s = {
-  overlay: {
-    position: 'fixed' as const,
-    inset: 0,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 1100,
-  } as React.CSSProperties,
-  dialog: {
-    backgroundColor: 'var(--bg-card)',
-    borderRadius: 'var(--radius-lg)',
-    boxShadow: 'var(--shadow-xl)',
-    width: '90%',
-    maxWidth: '640px',
-    maxHeight: '85vh',
-    display: 'flex',
-    flexDirection: 'column' as const,
-    overflow: 'hidden',
-  } as React.CSSProperties,
-  header: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 'var(--space-4) var(--space-5)',
-    borderBottom: '1px solid var(--border-default)',
-    gap: 'var(--space-3)',
-  } as React.CSSProperties,
-  headerLeft: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 'var(--space-2)',
-    minWidth: 0,
-  } as React.CSSProperties,
-  headerTitle: {
-    fontSize: 'var(--text-base)',
-    fontWeight: 'var(--font-bold)',
-    color: 'var(--text-primary)',
-    whiteSpace: 'nowrap' as const,
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-  } as React.CSSProperties,
-  headerSub: {
-    fontSize: 'var(--text-xs)',
-    color: 'var(--text-muted)',
-    marginTop: '2px',
-  } as React.CSSProperties,
-  closeBtn: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: '28px',
-    height: '28px',
-    border: 'none',
-    borderRadius: 'var(--radius-sm)',
-    backgroundColor: 'transparent',
-    color: 'var(--text-muted)',
-    cursor: 'pointer',
-    flexShrink: 0,
-  } as React.CSSProperties,
-  body: {
-    flex: 1,
-    overflowY: 'auto' as const,
-    padding: 'var(--space-4) var(--space-5)',
-    display: 'flex',
-    flexDirection: 'column' as const,
-    gap: 'var(--space-4)',
-  } as React.CSSProperties,
-  // Single mode
   matchBadge: (type: 'exact' | 'fuzzy'): React.CSSProperties => ({
     display: 'inline-flex',
     alignItems: 'center',
@@ -112,65 +70,6 @@ const s = {
       type === 'exact' ? 'var(--color-warning-bg)' : 'var(--color-info-bg)',
     color: type === 'exact' ? 'var(--color-warning)' : 'var(--color-info)',
   }),
-  compareGrid: {
-    display: 'grid',
-    gridTemplateColumns: '1fr 1fr',
-    gap: 'var(--space-3)',
-    fontSize: 'var(--text-sm)',
-  } as React.CSSProperties,
-  compareCol: {
-    backgroundColor: 'var(--bg-app)',
-    borderRadius: 'var(--radius-md)',
-    border: '1px solid var(--border-default)',
-    overflow: 'hidden',
-  } as React.CSSProperties,
-  compareColHeader: (variant: 'canvas' | 'user'): React.CSSProperties => ({
-    padding: 'var(--space-2) var(--space-3)',
-    fontSize: 'var(--text-xs)',
-    fontWeight: 'var(--font-bold)',
-    borderBottom: '1px solid var(--border-default)',
-    backgroundColor:
-      variant === 'canvas' ? 'var(--color-info-bg)' : 'var(--color-success-bg)',
-    color: variant === 'canvas' ? 'var(--color-info)' : 'var(--color-success)',
-  }),
-  compareBody: {
-    padding: 'var(--space-3)',
-    display: 'flex',
-    flexDirection: 'column' as const,
-    gap: 'var(--space-2)',
-  } as React.CSSProperties,
-  fieldRow: (conflict: boolean): React.CSSProperties => ({
-    display: 'flex',
-    flexDirection: 'column' as const,
-    gap: '2px',
-    padding: conflict ? 'var(--space-1) var(--space-2)' : undefined,
-    backgroundColor: conflict ? 'var(--color-warning-bg)' : undefined,
-    borderRadius: conflict ? 'var(--radius-sm)' : undefined,
-  }),
-  fieldLabel: {
-    fontSize: 'var(--text-xs)',
-    color: 'var(--text-muted)',
-    textTransform: 'uppercase' as const,
-    letterSpacing: '0.04em',
-  } as React.CSSProperties,
-  fieldValue: {
-    fontSize: 'var(--text-sm)',
-    color: 'var(--text-primary)',
-  } as React.CSSProperties,
-  fieldValueMuted: {
-    fontSize: 'var(--text-sm)',
-    color: 'var(--text-muted)',
-    fontStyle: 'italic' as const,
-  } as React.CSSProperties,
-  noConflicts: {
-    fontSize: 'var(--text-sm)',
-    color: 'var(--text-secondary)',
-    padding: 'var(--space-2)',
-    textAlign: 'center' as const,
-    backgroundColor: 'var(--bg-app)',
-    borderRadius: 'var(--radius-md)',
-    border: '1px solid var(--border-light)',
-  } as React.CSSProperties,
   // Bulk mode
   selectAllRow: {
     display: 'flex',
@@ -188,6 +87,13 @@ const s = {
     overflow: 'hidden',
     outline: focused ? '2px solid var(--color-navy)' : 'none',
     outlineOffset: '1px',
+    // The modal body is `display: flex; flexDirection: column`, which means
+    // children default to `flex-shrink: 1`. With many items, flexbox squeezes
+    // each card to fit available height — combined with the `overflow: hidden`
+    // above (needed for clean rounded corners), the bottom of each card
+    // (i.e. the Link / Keep separate / Customize button row) was being
+    // clipped invisibly. Lock the natural intrinsic size.
+    flexShrink: 0,
   }),
   bulkItemHeader: {
     display: 'flex',
@@ -216,23 +122,13 @@ const s = {
     gap: '6px',
     padding: 'var(--space-1) var(--space-3)',
     borderRadius: 'var(--radius-md)',
-    border: `1px solid ${active ? 'var(--color-primary)' : 'var(--border-default)'}`,
-    backgroundColor: active ? 'var(--color-primary-bg)' : 'var(--bg-card)',
-    color: active ? 'var(--color-primary)' : 'var(--text-secondary)',
+    border: `1px solid ${active ? 'var(--color-navy)' : 'var(--border-default)'}`,
+    backgroundColor: active ? 'var(--color-info-bg)' : 'var(--bg-card)',
+    color: active ? 'var(--color-navy)' : 'var(--text-secondary)',
     fontSize: 'var(--text-xs)',
     fontWeight: 'var(--font-medium)',
     cursor: 'pointer',
   }),
-  // Footer
-  footer: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    gap: 'var(--space-3)',
-    padding: 'var(--space-3) var(--space-5)',
-    borderTop: '1px solid var(--border-default)',
-    backgroundColor: 'var(--bg-tertiary)',
-  } as React.CSSProperties,
   btn: (variant: 'primary' | 'secondary'): React.CSSProperties => ({
     display: 'inline-flex',
     alignItems: 'center',
@@ -242,95 +138,37 @@ const s = {
     fontWeight: 'var(--font-medium)',
     borderRadius: 'var(--radius-md)',
     border: variant === 'secondary' ? '1px solid var(--border-default)' : 'none',
-    backgroundColor: variant === 'primary' ? 'var(--color-primary)' : 'var(--bg-card)',
+    backgroundColor: variant === 'primary' ? 'var(--color-navy)' : 'var(--bg-card)',
     color: variant === 'primary' ? 'white' : 'var(--text-secondary)',
     cursor: 'pointer',
   }),
-  kbdHint: {
+  // Hint sub-bar between content and footer.
+  kbdHintBar: {
     fontSize: 'var(--text-xs)',
     color: 'var(--text-muted)',
-    marginRight: 'auto',
+    padding: 'var(--space-2) 24px',
+    borderTop: '1px solid var(--border-light)',
+    lineHeight: 1.5,
+    flexShrink: 0,
+  } as React.CSSProperties,
+  // Manual footer — we render this instead of Modal.Footer because the
+  // primitive's flex-wrap behaviour was packing Cancel + Confirm onto
+  // separate rows at some viewport widths (Confirm got clipped off-screen).
+  // This footer uses `text-align: right` on a block-level container, which
+  // is the most bulletproof way to right-align a small group of inline
+  // buttons — no flex math, no wrap edge cases.
+  manualFooter: {
+    textAlign: 'right' as const,
+    padding: '16px 24px 20px',
+    borderTop: '1px solid var(--border-default)',
+    flexShrink: 0,
+    whiteSpace: 'nowrap' as const,
+  } as React.CSSProperties,
+  manualFooterGap: {
+    display: 'inline-block',
+    width: 'var(--space-3)',
   } as React.CSSProperties,
 };
-
-// ---------------------------------------------------------------------------
-// ComparePanel — renders Canvas vs existing side by side for one item
-// ---------------------------------------------------------------------------
-function ComparePanel({
-  item,
-  canvasTask,
-}: {
-  item: DuplicateCheckResult;
-  canvasTask: { title: string; dueAt: string | null; taskType: string | null };
-}) {
-  if (!item.match) return null;
-  const { task, conflictingFields } = item.match;
-  const conflictSet = new Set(conflictingFields.map((f) => f.field));
-
-  const fields: Array<{
-    field: string;
-    label: string;
-    canvasVal: string | null;
-    localVal: string | null;
-  }> = [
-    { field: 'title', label: 'Title', canvasVal: canvasTask.title, localVal: task.title },
-    {
-      field: 'dueAt',
-      label: 'Due date',
-      canvasVal: formatDate(canvasTask.dueAt),
-      localVal: formatDate(task.dueAt),
-    },
-    {
-      field: 'taskType',
-      label: 'Type',
-      canvasVal: canvasTask.taskType ?? '—',
-      localVal: task.taskType ?? '—',
-    },
-    {
-      field: 'weight',
-      label: 'Weight',
-      canvasVal: '—',
-      localVal: task.weight != null ? `${task.weight}%` : '—',
-    },
-  ];
-
-  return (
-    <div style={s.compareGrid}>
-      {/* Canvas column */}
-      <div style={s.compareCol}>
-        <div style={s.compareColHeader('canvas')}>Canvas (incoming)</div>
-        <div style={s.compareBody}>
-          {fields.map(({ field, label, canvasVal }) => (
-            <div key={field} style={s.fieldRow(conflictSet.has(field))}>
-              <span style={s.fieldLabel}>{label}</span>
-              <span
-                style={canvasVal && canvasVal !== '—' ? s.fieldValue : s.fieldValueMuted}
-              >
-                {canvasVal ?? '—'}
-              </span>
-            </div>
-          ))}
-        </div>
-      </div>
-      {/* Your task column */}
-      <div style={s.compareCol}>
-        <div style={s.compareColHeader('user')}>Your task</div>
-        <div style={s.compareBody}>
-          {fields.map(({ field, label, localVal }) => (
-            <div key={field} style={s.fieldRow(conflictSet.has(field))}>
-              <span style={s.fieldLabel}>{label}</span>
-              <span
-                style={localVal && localVal !== '—' ? s.fieldValue : s.fieldValueMuted}
-              >
-                {localVal ?? '—'}
-              </span>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
 
 // ---------------------------------------------------------------------------
 // Main modal
@@ -338,6 +176,7 @@ function ComparePanel({
 export function DuplicateWarningModal({
   mode,
   items,
+  canvasTaskByQueueId,
   onConfirm,
   onCancel,
 }: DuplicateWarningModalProps) {
@@ -349,17 +188,30 @@ export function DuplicateWarningModal({
   const [selected, setSelected] = useState<Set<number>>(
     () => new Set(items.map((i) => i.queueId))
   );
+  // Per-item per-field choice map ('canvas' | 'user' for title/dueAt/taskType).
+  // Defaults to Canvas-wins-everything; FieldMergeEditor mutates per item.
+  const [fieldChoicesByQueueId, setFieldChoicesByQueueId] = useState<
+    Map<number, FieldChoice>
+  >(() => {
+    const map = new Map<number, FieldChoice>();
+    for (const i of items) map.set(i.queueId, buildDefaultChoices(i));
+    return map;
+  });
+  // Bulk mode only: which item (if any) is currently being edited in the
+  // child "Customize fields" modal layered above the bulk list.
+  const [editingQueueId, setEditingQueueId] = useState<number | null>(null);
+  // Snapshot of choices taken when the child modal opens — restored on Cancel.
+  const editSnapshotRef = useRef<FieldChoice | null>(null);
+  // Child-modal field-picker keyboard navigation: which conflict field is
+  // currently "focused" inside the FieldMergeEditor. Reset to 0 each time
+  // the child modal opens.
+  const [editingFocusedFieldIdx, setEditingFocusedFieldIdx] = useState(0);
   // Focused row index (bulk mode keyboard nav)
   const [focusedIdx, setFocusedIdx] = useState(0);
   const [isConfirming, setIsConfirming] = useState(false);
-  const dialogRef = useRef<HTMLDivElement>(null);
 
   const item0 = items[0];
   const isSingle = mode === 'single';
-
-  useEffect(() => {
-    dialogRef.current?.focus();
-  }, []);
 
   const setDecision = useCallback((queueId: number, d: 'link' | 'separate') => {
     setDecisions((prev) => new Map(prev).set(queueId, d));
@@ -379,18 +231,56 @@ export function DuplicateWarningModal({
     setSelected(allSelected ? new Set() : new Set(items.map((i) => i.queueId)));
   }, [allSelected, items]);
 
+  const setFieldChoice = useCallback((queueId: number, next: FieldChoice) => {
+    setFieldChoicesByQueueId((prev) => new Map(prev).set(queueId, next));
+  }, []);
+
+  const openCustomize = useCallback(
+    (queueId: number) => {
+      // Snapshot current choices so Cancel can revert.
+      const current = fieldChoicesByQueueId.get(queueId);
+      editSnapshotRef.current = current ? { ...current } : null;
+      // Reset field-picker focus to the first conflict whenever the child opens.
+      setEditingFocusedFieldIdx(0);
+      setEditingQueueId(queueId);
+    },
+    [fieldChoicesByQueueId]
+  );
+
+  const closeCustomizeSave = useCallback(() => {
+    editSnapshotRef.current = null;
+    setEditingQueueId(null);
+  }, []);
+
+  const closeCustomizeCancel = useCallback(() => {
+    if (editingQueueId != null && editSnapshotRef.current) {
+      setFieldChoice(editingQueueId, editSnapshotRef.current);
+    }
+    editSnapshotRef.current = null;
+    setEditingQueueId(null);
+  }, [editingQueueId, setFieldChoice]);
+
   const handleConfirm = useCallback(async () => {
     setIsConfirming(true);
     try {
-      await onConfirm(decisions, selected);
+      await onConfirm(decisions, selected, fieldChoicesByQueueId);
     } finally {
       setIsConfirming(false);
     }
-  }, [onConfirm, decisions, selected]);
+  }, [onConfirm, decisions, selected, fieldChoicesByQueueId]);
 
   // --- Keyboard shortcuts ---
-  useHotkeys('esc', onCancel, { enableOnFormTags: false });
+  // Esc gives the child modal priority — if open, close it; otherwise cancel.
+  useHotkeys(
+    'esc',
+    () => {
+      if (editingQueueId != null) closeCustomizeCancel();
+      else onCancel();
+    },
+    { enableOnFormTags: false }
+  );
   useHotkeys('l', () => {
+    if (editingQueueId != null) return;
     if (isSingle && item0) {
       setDecision(item0.queueId, 'link');
       handleConfirm();
@@ -400,6 +290,7 @@ export function DuplicateWarningModal({
     }
   });
   useHotkeys('s', () => {
+    if (editingQueueId != null) return;
     if (isSingle && item0) {
       setDecision(item0.queueId, 'separate');
       handleConfirm();
@@ -409,85 +300,150 @@ export function DuplicateWarningModal({
     }
   });
   useHotkeys('enter', () => {
-    if (!isSingle) handleConfirm();
+    if (editingQueueId != null) {
+      closeCustomizeSave();
+    } else if (!isSingle) {
+      handleConfirm();
+    }
   });
   useHotkeys('a', () => {
+    if (editingQueueId != null) return;
     if (!isSingle) toggleAll();
   });
+  useHotkeys('c', () => {
+    if (editingQueueId != null || isSingle) return;
+    const focused = items[focusedIdx];
+    if (focused?.match?.conflictingFields.length) openCustomize(focused.queueId);
+  });
+  // Resolve the item / canvasTask for the child editor up front so the render
+  // tree stays simple.
+  const editingItem = useMemo(
+    () =>
+      editingQueueId != null ? items.find((i) => i.queueId === editingQueueId) : null,
+    [editingQueueId, items]
+  );
+  // Conflict-field list for the currently-edited item (drives child-modal
+  // arrow navigation).
+  const editingConflictFields = editingItem?.match?.conflictingFields ?? [];
+
+  /**
+   * Helper used by the child-modal picker hotkeys (Left/Right/1/2): set the
+   * choice for the currently focused conflict field.
+   */
+  const pickFocusedField = useCallback(
+    (side: 'canvas' | 'user') => {
+      if (editingQueueId == null || !editingItem) return;
+      const field = editingConflictFields[editingFocusedFieldIdx]?.field as
+        | FieldKey
+        | undefined;
+      if (!field) return;
+      const cur =
+        fieldChoicesByQueueId.get(editingQueueId) ?? buildDefaultChoices(editingItem);
+      setFieldChoice(editingQueueId, { ...cur, [field]: side });
+    },
+    [
+      editingQueueId,
+      editingItem,
+      editingConflictFields,
+      editingFocusedFieldIdx,
+      fieldChoicesByQueueId,
+      setFieldChoice,
+    ]
+  );
+
+  /** Snap all conflict fields to one side (Q / W shortcuts). */
+  const pickAll = useCallback(
+    (side: 'canvas' | 'user') => {
+      if (editingQueueId == null || !editingItem) return;
+      setFieldChoice(editingQueueId, { title: side, dueAt: side, taskType: side });
+    },
+    [editingQueueId, editingItem, setFieldChoice]
+  );
+
   useHotkeys('ArrowUp', () => {
+    if (editingQueueId != null) {
+      // Walk conflict fields inside the child modal.
+      setEditingFocusedFieldIdx((i) => Math.max(0, i - 1));
+      return;
+    }
     if (!isSingle) setFocusedIdx((i) => Math.max(0, i - 1));
   });
   useHotkeys('ArrowDown', () => {
+    if (editingQueueId != null) {
+      const max = Math.max(0, editingConflictFields.length - 1);
+      setEditingFocusedFieldIdx((i) => Math.min(max, i + 1));
+      return;
+    }
     if (!isSingle) setFocusedIdx((i) => Math.min(items.length - 1, i + 1));
+  });
+  useHotkeys('ArrowLeft, 1', () => {
+    if (editingQueueId != null) pickFocusedField('canvas');
+  });
+  useHotkeys('ArrowRight, 2', () => {
+    if (editingQueueId != null) pickFocusedField('user');
+  });
+  useHotkeys('q', () => {
+    if (editingQueueId != null) pickAll('canvas');
+  });
+  useHotkeys('w', () => {
+    if (editingQueueId != null) pickAll('user');
   });
   useHotkeys('space', (e) => {
     e.preventDefault();
+    if (editingQueueId != null) return;
     if (!isSingle) {
       const focused = items[focusedIdx];
       if (focused) toggleSelected(focused.queueId);
     }
   });
 
-  return (
-    <div style={s.overlay} onClick={onCancel}>
-      <div
-        ref={dialogRef}
-        tabIndex={-1}
-        style={s.dialog}
-        role="dialog"
-        aria-modal="true"
-        aria-label={
-          isSingle ? 'Duplicate task found' : 'Review duplicates before accepting'
-        }
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div style={s.header}>
-          <div style={s.headerLeft}>
-            <AlertTriangle size={18} color="var(--color-warning)" />
-            <div>
-              <div style={s.headerTitle}>
-                {isSingle
-                  ? item0?.match?.type === 'exact'
-                    ? `Duplicate found — ${item0.match.task.title}`
-                    : `May match — ${item0?.match?.task.title}`
-                  : `Review before accepting (${items.length} item${items.length > 1 ? 's' : ''})`}
-              </div>
-              {isSingle && (
-                <div style={s.headerSub}>
-                  {item0?.match?.type === 'exact'
-                    ? 'Matches an existing task'
-                    : 'May match an existing task'}
-                </div>
-              )}
-            </div>
-          </div>
-          <button style={s.closeBtn} onClick={onCancel} aria-label="Close">
-            <X size={16} />
-          </button>
-        </div>
+  // Header strings derived once.
+  const headerTitle = isSingle
+    ? item0?.match?.type === 'exact'
+      ? `Duplicate found — ${item0.match.task.title}`
+      : `May match — ${item0?.match?.task.title}`
+    : `Review before accepting (${items.length} item${items.length > 1 ? 's' : ''})`;
+  const headerSubtitle = isSingle
+    ? item0?.match?.type === 'exact'
+      ? 'Matches an existing task'
+      : 'May match an existing task'
+    : undefined;
 
-        {/* Body */}
-        <div style={s.body}>
+  return (
+    <>
+      <Modal
+        isOpen
+        onClose={onCancel}
+        size="lg"
+        zIndex={1100}
+        // Our own useHotkeys('esc') handler manages Esc so it can give the
+        // child editor priority. Don't double-handle it.
+        closeOnEscape={false}
+      >
+        <Modal.Header
+          title={headerTitle}
+          subtitle={headerSubtitle}
+          icon={<AlertTriangle size={20} color="var(--color-warning)" />}
+          onClose={onCancel}
+        />
+
+        <Modal.Content>
           {isSingle && item0 && item0.match && (
             <>
-              {/* Side-by-side comparison */}
-              {item0.match.conflictingFields.length > 0 ? (
-                <ComparePanel
-                  item={item0}
-                  canvasTask={{
-                    title: 'Canvas assignment', // actual title from queue shown in header
-                    dueAt:
-                      item0.match.conflictingFields.find((f) => f.field === 'dueAt')
-                        ?.canvasValue ?? null,
-                    taskType:
-                      item0.match.conflictingFields.find((f) => f.field === 'taskType')
-                        ?.canvasValue ?? null,
-                  }}
-                />
-              ) : (
-                <div style={s.noConflicts}>No field conflicts — values are identical</div>
-              )}
+              <FieldMergeEditor
+                item={item0}
+                canvasTask={
+                  canvasTaskByQueueId.get(item0.queueId) ?? {
+                    title: item0.match.task.title,
+                    dueAt: null,
+                    taskType: null,
+                  }
+                }
+                choices={
+                  fieldChoicesByQueueId.get(item0.queueId) ?? buildDefaultChoices(item0)
+                }
+                onChange={(next) => setFieldChoice(item0.queueId, next)}
+              />
               {/* Single mode action buttons (also triggered by L/S keys) */}
               <div
                 style={{
@@ -521,7 +477,7 @@ export function DuplicateWarningModal({
                   checked={allSelected}
                   onChange={toggleAll}
                   style={{
-                    accentColor: 'var(--color-primary)',
+                    accentColor: 'var(--color-navy)',
                     width: '15px',
                     height: '15px',
                   }}
@@ -538,16 +494,24 @@ export function DuplicateWarningModal({
                 const isFocused = focusedIdx === idx;
                 const isChecked = selected.has(item.queueId);
                 const decision = decisions.get(item.queueId) ?? 'link';
+                const hasConflicts = item.match.conflictingFields.length > 0;
+                const choices =
+                  fieldChoicesByQueueId.get(item.queueId) ?? buildDefaultChoices(item);
+                const customized = isCustomized(item, choices);
 
                 return (
-                  <div key={item.queueId} style={s.bulkItem(isFocused)}>
+                  <div
+                    key={item.queueId}
+                    style={s.bulkItem(isFocused)}
+                    onClick={() => setFocusedIdx(idx)}
+                  >
                     <div style={s.bulkItemHeader}>
                       <input
                         type="checkbox"
                         checked={isChecked}
                         onChange={() => toggleSelected(item.queueId)}
                         style={{
-                          accentColor: 'var(--color-primary)',
+                          accentColor: 'var(--color-navy)',
                           width: '15px',
                           height: '15px',
                         }}
@@ -566,14 +530,25 @@ export function DuplicateWarningModal({
                       >
                         {item.match.task.title}
                       </span>
+                      {customized && (
+                        <span
+                          style={{
+                            fontSize: 'var(--text-xs)',
+                            color: 'var(--color-success)',
+                            fontStyle: 'italic' as const,
+                          }}
+                        >
+                          (customized)
+                        </span>
+                      )}
                       <span style={s.matchBadge(item.match.type)}>
                         {item.match.type === 'exact' ? '⚠ Exact match' : '~ May match'}
                       </span>
                     </div>
 
                     <div style={s.bulkItemBody}>
-                      {/* Conflicting fields summary */}
-                      {item.match.conflictingFields.length > 0 ? (
+                      {/* Conflicting fields summary — values formatted per type */}
+                      {hasConflicts ? (
                         <div
                           style={{
                             fontSize: 'var(--text-xs)',
@@ -586,10 +561,10 @@ export function DuplicateWarningModal({
                                 {f.label}:
                               </span>{' '}
                               <span style={{ color: 'var(--color-warning)' }}>
-                                {f.canvasValue ?? '—'}
+                                {formatFieldValue(f.field, f.canvasValue)}
                               </span>
                               {' → '}
-                              <span>{f.localValue ?? '—'}</span>
+                              <span>{formatFieldValue(f.field, f.localValue)}</span>
                             </span>
                           ))}
                         </div>
@@ -604,8 +579,14 @@ export function DuplicateWarningModal({
                         </div>
                       )}
 
-                      {/* Link / separate radio */}
-                      <div style={s.radioGroup}>
+                      {/* Link / separate / customize controls */}
+                      <div
+                        style={{
+                          ...s.radioGroup,
+                          alignItems: 'center',
+                          flexWrap: 'wrap' as const,
+                        }}
+                      >
                         <button
                           style={s.radioBtn(decision === 'link')}
                           onClick={() => setDecision(item.queueId, 'link')}
@@ -620,6 +601,42 @@ export function DuplicateWarningModal({
                         >
                           <Plus size={12} /> Keep separate
                         </button>
+                        {hasConflicts && (
+                          <button
+                            style={{
+                              // Higher-contrast Customize button so it's
+                              // clearly discoverable as a third action.
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              padding: 'var(--space-1) var(--space-3)',
+                              borderRadius: 'var(--radius-md)',
+                              border: customized
+                                ? '1px solid var(--color-success)'
+                                : '1px solid var(--color-navy)',
+                              backgroundColor: customized
+                                ? 'var(--color-success-bg)'
+                                : 'var(--color-info-bg)',
+                              color: customized
+                                ? 'var(--color-success)'
+                                : 'var(--color-navy)',
+                              fontSize: 'var(--text-xs)',
+                              fontWeight: 'var(--font-medium)',
+                              cursor:
+                                !isChecked || decision !== 'link'
+                                  ? 'not-allowed'
+                                  : 'pointer',
+                              opacity: !isChecked || decision !== 'link' ? 0.5 : 1,
+                              marginLeft: 'auto', // push to the right edge
+                            }}
+                            onClick={() => openCustomize(item.queueId)}
+                            disabled={!isChecked || decision !== 'link'}
+                            title="Customize which value wins for each conflicting field"
+                          >
+                            <Settings2 size={13} />
+                            {customized ? 'Customized — edit' : 'Customize fields'}
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -627,18 +644,22 @@ export function DuplicateWarningModal({
               })}
             </>
           )}
+        </Modal.Content>
+
+        {/* Keyboard hint sub-bar — outside the footer so the footer's flex
+          layout for [Cancel] [Confirm] isn't perturbed by a 100%-basis
+          sibling. */}
+        <div style={s.kbdHintBar}>
+          {isSingle
+            ? 'L — link · S — separate · Esc — cancel'
+            : '↑↓ nav · Space toggle · A all · L/S set · C customize · Enter confirm · Esc cancel'}
         </div>
 
-        {/* Footer */}
-        <div style={s.footer}>
-          <span style={s.kbdHint}>
-            {isSingle
-              ? 'L — link · S — separate · Esc — cancel'
-              : '↑↓ navigate · Space toggle · A all · L/S set · Enter confirm · Esc cancel'}
-          </span>
+        <div style={s.manualFooter}>
           <button style={s.btn('secondary')} onClick={onCancel} disabled={isConfirming}>
             Cancel
           </button>
+          <span style={s.manualFooterGap} />
           {isSingle ? (
             <button
               style={s.btn('primary')}
@@ -661,8 +682,71 @@ export function DuplicateWarningModal({
             </button>
           )}
         </div>
-      </div>
-    </div>
+      </Modal>
+
+      {/* Child modal — per-item field merge editor, opened from bulk row Customize.
+        Layered above the parent via zIndex=1200 (parent uses 1100). */}
+      {editingItem && editingItem.match && (
+        <Modal
+          isOpen
+          onClose={closeCustomizeCancel}
+          size="md"
+          zIndex={1200}
+          closeOnEscape={false}
+        >
+          <Modal.Header
+            title={`Edit field merge — ${editingItem.match.task.title}`}
+            subtitle="Choices apply when you Confirm in the bulk dialog."
+            icon={<Settings2 size={20} color="var(--color-navy)" />}
+            onClose={closeCustomizeCancel}
+          />
+          <Modal.Content>
+            <FieldMergeEditor
+              item={editingItem}
+              canvasTask={
+                canvasTaskByQueueId.get(editingItem.queueId) ?? {
+                  title: editingItem.match.task.title,
+                  dueAt: null,
+                  taskType: null,
+                }
+              }
+              choices={
+                fieldChoicesByQueueId.get(editingItem.queueId) ??
+                buildDefaultChoices(editingItem)
+              }
+              onChange={(next) => setFieldChoice(editingItem.queueId, next)}
+              focusedFieldKey={
+                (editingConflictFields[editingFocusedFieldIdx]?.field as
+                  | FieldKey
+                  | undefined) ?? null
+              }
+            />
+          </Modal.Content>
+          <div style={s.kbdHintBar}>
+            ↑↓ field · ←→ pick · Q canvas · W local · Enter save · Esc cancel
+          </div>
+          <div style={s.manualFooter}>
+            <button
+              style={s.btn('secondary')}
+              onClick={() =>
+                setFieldChoice(editingItem.queueId, buildDefaultChoices(editingItem))
+              }
+              title="Reset all conflicting fields to Canvas defaults"
+            >
+              Reset to Canvas defaults
+            </button>
+            <span style={s.manualFooterGap} />
+            <button style={s.btn('secondary')} onClick={closeCustomizeCancel}>
+              Cancel
+            </button>
+            <span style={s.manualFooterGap} />
+            <button style={s.btn('primary')} onClick={closeCustomizeSave}>
+              <Check size={14} /> Save
+            </button>
+          </div>
+        </Modal>
+      )}
+    </>
   );
 }
 

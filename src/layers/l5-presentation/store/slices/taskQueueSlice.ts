@@ -191,7 +191,14 @@ export const createTaskQueueSlice: SliceCreator = (set, get) => ({
   mergeQueuedTask: async (params: {
     queueId: number;
     userTaskId: number;
-    keepFromUser?: { notes?: boolean; dueAt?: boolean; title?: boolean };
+    keepFromUser?: {
+      notes?: boolean;
+      dueAt?: boolean;
+      title?: boolean;
+      taskType?: boolean;
+      description?: boolean;
+      startAt?: boolean;
+    };
   }) => {
     const api = getApi();
     if (!api) return { success: false };

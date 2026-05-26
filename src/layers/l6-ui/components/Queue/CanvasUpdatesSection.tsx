@@ -174,8 +174,14 @@ export function CanvasUpdatesSection({
   onHighlightClear,
   keyboardEnabled = false,
 }: CanvasUpdatesSectionProps) {
-  const { gatedAccept, gatedBulkAccept, confirmDecisions, gateState, closeModal } =
-    useDuplicateGate();
+  const {
+    gatedAccept,
+    gatedBulkAccept,
+    confirmDecisions,
+    gateState,
+    canvasTaskByQueueId,
+    closeModal,
+  } = useDuplicateGate();
 
   // Collapsed by default (can be changed via settings)
   // Force expand if there's a highlighted queue item
@@ -191,53 +197,59 @@ export function CanvasUpdatesSection({
     if (keyboardEnabled && !isExpanded) setIsExpanded(true);
   }, [keyboardEnabled, isExpanded]);
 
+  // When the DuplicateWarningModal (gateState != null) is open, suppress this
+  // section's keyboard handlers — otherwise pressing L/A/etc. fires BOTH the
+  // modal's hotkey AND this section's, because react-hotkeys-hook attaches
+  // listeners at the document level and doesn't natively stack-scope.
+  const sectionKeysActive = keyboardEnabled && gateState == null;
+
   // Focused-card navigation when keyboard is active.
   const { focusedIndex, focusedItem, getFocusProps } = useFocusedItem(queuedTasks, {
     persistKey: 'course-detail-queue',
-    enabled: keyboardEnabled,
+    enabled: sectionKeysActive,
     verticalNav: true,
   });
 
   useHotkeys(
     'a',
     (e) => {
-      if (!focusedItem || !keyboardEnabled) return;
+      if (!focusedItem || !sectionKeysActive) return;
       if (e.shiftKey) return; // Shift+A = bulk accept below
       e.preventDefault();
       gatedAccept(focusedItem);
     },
-    { enabled: keyboardEnabled },
-    [focusedItem, gatedAccept, keyboardEnabled]
+    { enabled: sectionKeysActive },
+    [focusedItem, gatedAccept, sectionKeysActive]
   );
   useHotkeys(
     'shift+a',
     (e) => {
-      if (!keyboardEnabled) return;
+      if (!sectionKeysActive) return;
       e.preventDefault();
       setShowConfirmDialog(true);
     },
-    { enabled: keyboardEnabled },
-    [keyboardEnabled]
+    { enabled: sectionKeysActive },
+    [sectionKeysActive]
   );
   useHotkeys(
     'r',
     (e) => {
-      if (!focusedItem || !keyboardEnabled) return;
+      if (!focusedItem || !sectionKeysActive) return;
       e.preventDefault();
       onReject(focusedItem.id);
     },
-    { enabled: keyboardEnabled },
-    [focusedItem, onReject, keyboardEnabled]
+    { enabled: sectionKeysActive },
+    [focusedItem, onReject, sectionKeysActive]
   );
   useHotkeys(
     'l',
     (e) => {
-      if (!focusedItem || !keyboardEnabled) return;
+      if (!focusedItem || !sectionKeysActive) return;
       e.preventDefault();
       onLink(focusedItem.id);
     },
-    { enabled: keyboardEnabled },
-    [focusedItem, onLink, keyboardEnabled]
+    { enabled: sectionKeysActive },
+    [focusedItem, onLink, sectionKeysActive]
   );
 
   // Auto-expand when highlight is set
@@ -377,6 +389,7 @@ export function CanvasUpdatesSection({
         <DuplicateWarningModal
           mode={gateState.mode}
           items={gateState.items}
+          canvasTaskByQueueId={canvasTaskByQueueId}
           onConfirm={confirmDecisions}
           onCancel={closeModal}
         />
