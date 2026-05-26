@@ -1,10 +1,26 @@
 /**
- * Duplicate Calendar Modal
- * Shown when user tries to import an ICS file that already exists
+ * DuplicateCalendarModal — shown when the user tries to import an ICS file
+ * that already exists.
+ *
+ * Migrated to the shared `<Modal>` primitive. Public API unchanged.
+ *
+ * Shape: compact prompt — single padded block with icon + title + message
+ * + a small "existing calendar" info card + three action buttons. We
+ * deliberately do NOT use `Modal.Header` / `Modal.Footer` here because
+ * those add borderBottom/borderTop dividers that look heavy on a compact
+ * prompt (same trade-off as `ConfirmDialog`).
+ *
+ * Dismiss: standard — Esc / backdrop click cancel via the primitive's
+ * default behavior (the parent supplies `onCancel`).
+ *
+ * z-index: default 1100 — this dialog is typically opened from the
+ * calendar import flow (not nested above another modal), so the default
+ * `Modal` z-index tier is fine.
  */
 
 import React from 'react';
 import { AlertTriangle, Calendar, RefreshCw, Eye } from 'lucide-react';
+import { Modal } from '../primitives/Modal';
 
 interface ExistingCalendarInfo {
   id: number;
@@ -42,14 +58,11 @@ export function DuplicateCalendarModal({
   };
 
   return (
-    <>
-      {/* Backdrop */}
-      <div style={styles.backdrop} onClick={onCancel} />
-
-      {/* Dialog */}
-      <div style={styles.dialog}>
+    <Modal isOpen onClose={onCancel} size="md" zIndex={1100}>
+      {/* Single padded block — no Modal.Header/Footer (compact prompt). */}
+      <div style={styles.body}>
         {/* Icon */}
-        <div style={styles.iconWrapper}>
+        <div style={styles.iconWrapper} aria-hidden="true">
           <AlertTriangle size={24} />
         </div>
 
@@ -97,34 +110,13 @@ export function DuplicateCalendarModal({
           </button>
         </div>
       </div>
-    </>
+    </Modal>
   );
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  backdrop: {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    zIndex: 1000,
-  },
-
-  dialog: {
-    position: 'fixed',
-    top: '50%',
-    left: '50%',
-    transform: 'translate(-50%, -50%)',
-    backgroundColor: 'var(--bg-card)',
-    borderRadius: 'var(--radius-xl)',
-    boxShadow:
-      '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
-    width: '100%',
-    maxWidth: '440px',
+  body: {
     padding: '24px',
-    zIndex: 1001,
   },
 
   iconWrapper: {

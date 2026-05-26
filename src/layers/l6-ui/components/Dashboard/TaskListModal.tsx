@@ -1,15 +1,33 @@
 /**
- * TaskListModal Component
- * Displays a modal with a list of tasks (pending or overdue)
- * Clicking a task navigates to the course detail page with that task highlighted
+ * TaskListModal — Dashboard variant.
+ *
+ * Displays a modal with a list of pending or overdue tasks. Clicking a task
+ * navigates to the course detail page with that task highlighted.
+ *
+ * Migrated to the shared `<Modal>` primitive. Public API unchanged.
+ *
+ * Shape: sectioned — `Modal.Header` carrying a type-specific icon
+ * (AlertTriangle for overdue, Clock for pending), title, and a count
+ * appended via the header's trailing `children` slot. `Modal.Content`
+ * (scrollable) renders the task list. No footer; rows are clickable.
+ *
+ * Dismiss: standard Esc / backdrop click handled by the primitive — we
+ * dropped the local Esc handler that used to do this.
+ *
+ * z-index: default 1000 — opened from the dashboard, not nested above any
+ * other modal in current flows.
+ *
+ * NOT to be confused with `CourseDetail/components/TaskListModal.tsx`,
+ * which is a different component with its own much larger prop surface.
  */
 
-import React, { useEffect } from 'react';
+import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { X, AlertTriangle, Clock, ExternalLink } from 'lucide-react';
+import { AlertTriangle, Clock, ExternalLink } from 'lucide-react';
 import { Badge } from '../shared';
 import { formatSmartDate, getBadgeUrgency } from '../../constants';
 import type { Task, Course } from '../../../l5-presentation/types';
+import { Modal } from '../primitives/Modal';
 
 export interface TaskWithCourse {
   task: Task;
@@ -34,14 +52,6 @@ export function TaskListModal({
 }: TaskListModalProps) {
   const navigate = useNavigate();
 
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', handler);
-    return () => document.removeEventListener('keydown', handler);
-  }, [onClose]);
-
   if (!isOpen) return null;
 
   const handleTaskClick = (task: Task, course: Course) => {
@@ -50,172 +60,95 @@ export function TaskListModal({
     navigate(`/course/${course.id}?highlightTask=${task.id}`);
   };
 
-  const handleBackdropClick = (e: React.MouseEvent) => {
-    if (e.target === e.currentTarget) {
-      onClose();
-    }
-  };
-
   return (
-    <div style={styles.overlay} onClick={handleBackdropClick}>
-      <div style={styles.modal} role="dialog" aria-modal="true">
-        {/* Header */}
-        <div style={styles.header}>
-          <div style={styles.headerTitle}>
-            {type === 'overdue' ? (
-              <AlertTriangle size={20} color="var(--color-error)" />
-            ) : (
-              <Clock size={20} color="var(--color-blue)" />
-            )}
-            <h2 style={styles.title}>{title}</h2>
-            <span style={styles.count}>({tasks.length})</span>
-          </div>
-          <button style={styles.closeButton} onClick={onClose}>
-            <X size={20} />
-          </button>
-        </div>
-
-        {/* Content */}
-        <div style={styles.content}>
-          {tasks.length === 0 ? (
-            <div style={styles.emptyState}>
-              <span>No {type} tasks</span>
-            </div>
+    <Modal isOpen onClose={onClose} size="lg">
+      <Modal.Header
+        title={title}
+        icon={
+          type === 'overdue' ? (
+            <AlertTriangle size={20} color="var(--color-error)" />
           ) : (
-            <div style={styles.taskList}>
-              {tasks.map((item, index) => (
+            <Clock size={20} color="var(--color-blue)" />
+          )
+        }
+        onClose={onClose}
+      >
+        <span style={styles.count}>({tasks.length})</span>
+      </Modal.Header>
+
+      <Modal.Content padded={false} maxHeight="70vh">
+        {tasks.length === 0 ? (
+          <div style={styles.emptyState}>
+            <span>No {type} tasks</span>
+          </div>
+        ) : (
+          <div style={styles.taskList}>
+            {tasks.map((item, index) => (
+              <div
+                key={item.task.id}
+                style={{
+                  ...styles.taskItem,
+                  borderTop: index === 0 ? 'none' : '1px solid var(--border-light)',
+                }}
+                onClick={() => handleTaskClick(item.task, item.course)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    handleTaskClick(item.task, item.course);
+                  }
+                }}
+              >
+                {/* Priority indicator */}
                 <div
-                  key={item.task.id}
                   style={{
-                    ...styles.taskItem,
-                    borderTop: index === 0 ? 'none' : '1px solid var(--border-light)',
+                    ...styles.priorityBar,
+                    backgroundColor:
+                      getBadgeUrgency(item.daysUntilDue) === 'critical'
+                        ? 'var(--color-critical)'
+                        : getBadgeUrgency(item.daysUntilDue) === 'high'
+                          ? 'var(--color-high)'
+                          : getBadgeUrgency(item.daysUntilDue) === 'medium'
+                            ? 'var(--color-medium)'
+                            : 'var(--color-low)',
                   }}
-                  onClick={() => handleTaskClick(item.task, item.course)}
-                  role="button"
-                  tabIndex={0}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      handleTaskClick(item.task, item.course);
-                    }
-                  }}
-                >
-                  {/* Priority indicator */}
-                  <div
-                    style={{
-                      ...styles.priorityBar,
-                      backgroundColor:
-                        getBadgeUrgency(item.daysUntilDue) === 'critical'
-                          ? 'var(--color-critical)'
-                          : getBadgeUrgency(item.daysUntilDue) === 'high'
-                            ? 'var(--color-high)'
-                            : getBadgeUrgency(item.daysUntilDue) === 'medium'
-                              ? 'var(--color-medium)'
-                              : 'var(--color-low)',
-                    }}
-                  />
+                />
 
-                  {/* Content */}
-                  <div style={styles.taskContent}>
-                    <div style={styles.taskTopRow}>
-                      <span style={styles.courseCode}>{item.course.code}</span>
-                      <Badge variant={getBadgeUrgency(item.daysUntilDue)} size="sm">
-                        {formatSmartDate(item.task.dueAt)}
-                      </Badge>
+                {/* Content */}
+                <div style={styles.taskContent}>
+                  <div style={styles.taskTopRow}>
+                    <span style={styles.courseCode}>{item.course.code}</span>
+                    <Badge variant={getBadgeUrgency(item.daysUntilDue)} size="sm">
+                      {formatSmartDate(item.task.dueAt)}
+                    </Badge>
+                  </div>
+                  <div style={styles.taskTitle}>{item.task.title}</div>
+                  {item.task.weight > 0 && (
+                    <div style={styles.taskMeta}>
+                      <span style={styles.taskWeight}>{item.task.weight}% weight</span>
                     </div>
-                    <div style={styles.taskTitle}>{item.task.title}</div>
-                    {item.task.weight > 0 && (
-                      <div style={styles.taskMeta}>
-                        <span style={styles.taskWeight}>{item.task.weight}% weight</span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Go to course indicator */}
-                  <div style={styles.goIcon}>
-                    <ExternalLink size={16} color="var(--text-muted)" />
-                  </div>
+                  )}
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
+
+                {/* Go to course indicator */}
+                <div style={styles.goIcon}>
+                  <ExternalLink size={16} color="var(--text-muted)" />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Modal.Content>
+    </Modal>
   );
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  overlay: {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 1000,
-  },
-
-  modal: {
-    backgroundColor: 'var(--bg-card)',
-    borderRadius: 'var(--radius-lg)',
-    boxShadow: 'var(--shadow-lg)',
-    width: '90%',
-    maxWidth: '560px',
-    maxHeight: '80vh',
-    display: 'flex',
-    flexDirection: 'column',
-    overflow: 'hidden',
-  },
-
-  header: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 'var(--space-4) var(--space-5)',
-    borderBottom: '1px solid var(--border-light)',
-  },
-
-  headerTitle: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 'var(--space-2)',
-  },
-
-  title: {
-    fontSize: 'var(--text-lg)',
-    fontWeight: 'var(--font-semibold)',
-    color: 'var(--text-primary)',
-    margin: 0,
-  },
-
   count: {
     fontSize: 'var(--text-sm)',
     color: 'var(--text-muted)',
-  },
-
-  closeButton: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: '32px',
-    height: '32px',
-    padding: 0,
-    background: 'none',
-    border: 'none',
-    borderRadius: 'var(--radius-md)',
-    cursor: 'pointer',
-    color: 'var(--text-muted)',
-    transition: 'background-color var(--transition-fast)',
-  },
-
-  content: {
-    flex: 1,
-    overflowY: 'auto',
-    padding: 0,
+    marginLeft: 'var(--space-1)',
   },
 
   emptyState: {

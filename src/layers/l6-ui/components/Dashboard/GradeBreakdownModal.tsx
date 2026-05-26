@@ -1,21 +1,27 @@
 /**
- * GradeBreakdownModal Component
- * Displays a modal showing grade breakdown by course
- * Clicking a course navigates to the course detail page
+ * GradeBreakdownModal — displays a modal showing grade breakdown by course.
+ *
+ * Clicking a course navigates to the course detail page.
+ *
+ * Migrated to the shared `<Modal>` primitive. Public API unchanged.
+ *
+ * Shape: sectioned — `Modal.Header` with icon + title, then an
+ * "average summary" banner sub-section followed by the course list inside
+ * `Modal.Content`. No footer; rows are clickable.
+ *
+ * Dismiss: standard Esc / backdrop click handled by the primitive — we
+ * dropped the local Esc handler that used to do this.
+ *
+ * z-index: default 1000 — opened from the dashboard, not nested above any
+ * other modal in current flows.
  */
 
-import React, { useEffect } from 'react';
+import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import {
-  X,
-  BarChart3,
-  TrendingUp,
-  TrendingDown,
-  Minus,
-  ExternalLink,
-} from 'lucide-react';
+import { BarChart3, TrendingUp, TrendingDown, Minus, ExternalLink } from 'lucide-react';
 import type { CourseSummary } from '../../../l5-presentation/types';
 import { formatGrade } from '../../constants';
+import { Modal } from '../primitives/Modal';
 
 export interface GradeBreakdownModalProps {
   isOpen: boolean;
@@ -32,25 +38,11 @@ export function GradeBreakdownModal({
 }: GradeBreakdownModalProps) {
   const navigate = useNavigate();
 
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', handler);
-    return () => document.removeEventListener('keydown', handler);
-  }, [onClose]);
-
   if (!isOpen) return null;
 
   const handleCourseClick = (courseId: number) => {
     onClose();
     navigate(`/course/${courseId}`);
-  };
-
-  const handleBackdropClick = (e: React.MouseEvent) => {
-    if (e.target === e.currentTarget) {
-      onClose();
-    }
   };
 
   // Sort by grade descending (null grades at bottom)
@@ -62,19 +54,14 @@ export function GradeBreakdownModal({
   });
 
   return (
-    <div style={styles.overlay} onClick={handleBackdropClick}>
-      <div style={styles.modal} role="dialog" aria-modal="true">
-        {/* Header */}
-        <div style={styles.header}>
-          <div style={styles.headerTitle}>
-            <BarChart3 size={20} color="var(--color-blue)" />
-            <h2 style={styles.title}>Grade Breakdown</h2>
-          </div>
-          <button style={styles.closeButton} onClick={onClose}>
-            <X size={20} />
-          </button>
-        </div>
+    <Modal isOpen onClose={onClose} size="lg">
+      <Modal.Header
+        title="Grade Breakdown"
+        icon={<BarChart3 size={20} color="var(--color-blue)" />}
+        onClose={onClose}
+      />
 
+      <Modal.Content padded={false} maxHeight="70vh">
         {/* Average Summary */}
         <div style={styles.averageSummary}>
           <div style={styles.averageLabel}>Overall Average</div>
@@ -84,164 +71,101 @@ export function GradeBreakdownModal({
           <div style={styles.averageSubtext}>Across {sortedCourses.length} courses</div>
         </div>
 
-        {/* Content */}
-        <div style={styles.content}>
-          {sortedCourses.length === 0 ? (
-            <div style={styles.emptyState}>
-              <span>No course grades available</span>
-            </div>
-          ) : (
-            <div style={styles.courseList}>
-              {sortedCourses.map((summary, index) => {
-                const grade = summary.effectiveAssessedGrade;
-                const target = summary.course.targetGrade;
-                const diff = grade !== null ? grade - target : null;
-                const status = diff !== null ? (diff >= 0 ? 'above' : 'below') : 'none';
+        {/* Course list */}
+        {sortedCourses.length === 0 ? (
+          <div style={styles.emptyState}>
+            <span>No course grades available</span>
+          </div>
+        ) : (
+          <div style={styles.courseList}>
+            {sortedCourses.map((summary, index) => {
+              const grade = summary.effectiveAssessedGrade;
+              const target = summary.course.targetGrade;
+              const diff = grade !== null ? grade - target : null;
+              const status = diff !== null ? (diff >= 0 ? 'above' : 'below') : 'none';
 
-                return (
+              return (
+                <div
+                  key={summary.course.id}
+                  style={{
+                    ...styles.courseItem,
+                    borderTop: index === 0 ? 'none' : '1px solid var(--border-light)',
+                  }}
+                  onClick={() => handleCourseClick(summary.course.id)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      handleCourseClick(summary.course.id);
+                    }
+                  }}
+                >
+                  {/* Course color indicator */}
                   <div
-                    key={summary.course.id}
                     style={{
-                      ...styles.courseItem,
-                      borderTop: index === 0 ? 'none' : '1px solid var(--border-light)',
+                      ...styles.colorBar,
+                      backgroundColor: summary.course.color || 'var(--color-navy)',
                     }}
-                    onClick={() => handleCourseClick(summary.course.id)}
-                    role="button"
-                    tabIndex={0}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        handleCourseClick(summary.course.id);
-                      }
-                    }}
-                  >
-                    {/* Course color indicator */}
-                    <div
-                      style={{
-                        ...styles.colorBar,
-                        backgroundColor: summary.course.color || 'var(--color-navy)',
-                      }}
-                    />
+                  />
 
-                    {/* Course info */}
-                    <div style={styles.courseInfo}>
-                      <div style={styles.courseCode}>{summary.course.code}</div>
-                      <div style={styles.courseName}>
-                        {summary.course.nickname || summary.course.name}
-                      </div>
-                      <div style={styles.courseMeta}>
-                        <span>
-                          {summary.completedCount}/{summary.taskCount} tasks completed
-                        </span>
-                      </div>
+                  {/* Course info */}
+                  <div style={styles.courseInfo}>
+                    <div style={styles.courseCode}>{summary.course.code}</div>
+                    <div style={styles.courseName}>
+                      {summary.course.nickname || summary.course.name}
                     </div>
-
-                    {/* Grade */}
-                    <div style={styles.gradeSection}>
-                      <div style={styles.gradeValue}>
-                        {grade !== null ? formatGrade(grade) : '—'}
-                      </div>
-                      {diff !== null && (
-                        <div
-                          style={{
-                            ...styles.gradeDiff,
-                            color:
-                              status === 'above'
-                                ? 'var(--color-success)'
-                                : status === 'below'
-                                  ? 'var(--color-error)'
-                                  : 'var(--text-muted)',
-                          }}
-                        >
-                          {status === 'above' && <TrendingUp size={12} />}
-                          {status === 'below' && <TrendingDown size={12} />}
-                          {status === 'none' && <Minus size={12} />}
-                          <span>
-                            {status === 'above' && '+'}
-                            {formatGrade(diff)}
-                          </span>
-                        </div>
-                      )}
-                      <div style={styles.targetLabel}>Target: {target}%</div>
-                    </div>
-
-                    {/* Go to course indicator */}
-                    <div style={styles.goIcon}>
-                      <ExternalLink size={16} color="var(--text-muted)" />
+                    <div style={styles.courseMeta}>
+                      <span>
+                        {summary.completedCount}/{summary.taskCount} tasks completed
+                      </span>
                     </div>
                   </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
+
+                  {/* Grade */}
+                  <div style={styles.gradeSection}>
+                    <div style={styles.gradeValue}>
+                      {grade !== null ? formatGrade(grade) : '—'}
+                    </div>
+                    {diff !== null && (
+                      <div
+                        style={{
+                          ...styles.gradeDiff,
+                          color:
+                            status === 'above'
+                              ? 'var(--color-success)'
+                              : status === 'below'
+                                ? 'var(--color-error)'
+                                : 'var(--text-muted)',
+                        }}
+                      >
+                        {status === 'above' && <TrendingUp size={12} />}
+                        {status === 'below' && <TrendingDown size={12} />}
+                        {status === 'none' && <Minus size={12} />}
+                        <span>
+                          {status === 'above' && '+'}
+                          {formatGrade(diff)}
+                        </span>
+                      </div>
+                    )}
+                    <div style={styles.targetLabel}>Target: {target}%</div>
+                  </div>
+
+                  {/* Go to course indicator */}
+                  <div style={styles.goIcon}>
+                    <ExternalLink size={16} color="var(--text-muted)" />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </Modal.Content>
+    </Modal>
   );
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  overlay: {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 1000,
-  },
-
-  modal: {
-    backgroundColor: 'var(--bg-card)',
-    borderRadius: 'var(--radius-lg)',
-    boxShadow: 'var(--shadow-lg)',
-    width: '90%',
-    maxWidth: '600px',
-    maxHeight: '80vh',
-    display: 'flex',
-    flexDirection: 'column',
-    overflow: 'hidden',
-  },
-
-  header: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 'var(--space-4) var(--space-5)',
-    borderBottom: '1px solid var(--border-light)',
-  },
-
-  headerTitle: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 'var(--space-2)',
-  },
-
-  title: {
-    fontSize: 'var(--text-lg)',
-    fontWeight: 'var(--font-semibold)',
-    color: 'var(--text-primary)',
-    margin: 0,
-  },
-
-  closeButton: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: '32px',
-    height: '32px',
-    padding: 0,
-    background: 'none',
-    border: 'none',
-    borderRadius: 'var(--radius-md)',
-    cursor: 'pointer',
-    color: 'var(--text-muted)',
-    transition: 'background-color var(--transition-fast)',
-  },
-
   averageSummary: {
     display: 'flex',
     flexDirection: 'column',
@@ -271,12 +195,6 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 'var(--text-sm)',
     color: 'var(--text-secondary)',
     marginTop: 'var(--space-1)',
-  },
-
-  content: {
-    flex: 1,
-    overflowY: 'auto',
-    padding: 0,
   },
 
   emptyState: {
