@@ -1,0 +1,82 @@
+[
+  {
+    "query": "ok i just opened pr 22 and pr 23 — can you give me the test matrix combined? im about to launch /verify",
+    "should_trigger": true
+  },
+  {
+    "query": "what should i manually verify on the calendar import branch before merging into main",
+    "should_trigger": true
+  },
+  {
+    "query": "i did the modal stack fix locally but no PR yet — give me a test plan for the current diff",
+    "should_trigger": true
+  },
+  {
+    "query": "list test cases for prs #25 and #26, gradeCalculationService + submission status changes, formatted as a table",
+    "should_trigger": true
+  },
+  {
+    "query": "before i hit /manual-test-launch, what specifically should I be looking for given the changes on this branch?",
+    "should_trigger": true
+  },
+  {
+    "query": "manual test plan for feature/modal-migration-batch2 vs main please",
+    "should_trigger": true
+  },
+  {
+    "query": "i merged a bunch of hotkey changes — give me a checklist of what to verify in the app, triggers + expected outcomes",
+    "should_trigger": true
+  },
+  {
+    "query": "test plan for this change i'm about to push to feature/duplicate-calendar-fix",
+    "should_trigger": true
+  },
+  {
+    "query": "ok finished the duplicate-calendar refactor on courseDetail/components. what should i eyeball before declaring done",
+    "should_trigger": true
+  },
+  {
+    "query": "give me a falsifiable checklist of triggers and expected outcomes for PR #30 (the SyncEngine rate limit change)",
+    "should_trigger": true
+  },
+  {
+    "query": "run the layer 4 jest tests with the baseline pls — i want to see X passing Y failing before vs after",
+    "should_trigger": false
+  },
+  {
+    "query": "code review pr #22 and post the findings as inline comments on the PR",
+    "should_trigger": false
+  },
+  {
+    "query": "scan the staged diff for plaintext canvas tokens before i commit, paranoid about leaking keys",
+    "should_trigger": false
+  },
+  {
+    "query": "launch the test app pointed at the seeded duplicate-warning env, i want to click through the merge modal",
+    "should_trigger": false
+  },
+  {
+    "query": "find places where useState holds course data instead of reading from the zustand store under components/pages",
+    "should_trigger": false
+  },
+  {
+    "query": "actually run the app and confirm the new duplicate-warning modal opens correctly when i Accept All",
+    "should_trigger": false
+  },
+  {
+    "query": "security review the canvas client changes on this branch — i'm worried about token leaks in axios request headers",
+    "should_trigger": false
+  },
+  {
+    "query": "what's on the followup list right now in docs/FOLLOWUPS.md, are any of them closable",
+    "should_trigger": false
+  },
+  {
+    "query": "i need to clean up old merged feature branches on origin, delete the ones that have already landed in main",
+    "should_trigger": false
+  },
+  {
+    "query": "write a regression jest test for the soft-deleted task resurrection bug we fixed in SyncTaskOperations.ts last week",
+    "should_trigger": false
+  }
+]
