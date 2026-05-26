@@ -101,6 +101,16 @@ fields]` button that opens the same picker in a child modal layered above the li
 
 ### Fixed
 
+- `2026-05-26 22:00 UTC` — Manual-test seed scripts (`scripts/manual-test-duplicate-warning.js`,
+  `scripts/seed-duplicate-test.js`) now write a full Canvas-assignment-shaped JSON into
+  `canvas_task_queue.canvas_data` instead of the previous `{id, name}` stub. The merge
+  command (`MergeQueuedTaskCommand`) reads its merge inputs from the blob (via
+  `mapAssignment`), while the modal display reads the queue's separate _columns_ — so the
+  old stub let the modal show the right Canvas due-date / type while the merge silently
+  wrote `null`. New `buildCanvasBlob` helper in each script keeps blob and columns
+  consistent; per-scenario `description`, `due_at`, `points_possible`, and
+  `submission_types` are now real. This unblocks end-to-end verification of the duplicate
+  warning + TaskLinkDialog field-pick paths.
 - `2026-05-26 19:24 UTC` — CourseDetail's page-level navigation hotkeys (`Q`/`E` section
   cycle, `G` back-nav, `T` target-grade edit, `Shift+O` open-on-Canvas, `Mod+E` settings
   toggle, `Mod+S` save settings, `Mod+Shift+A` archive course) no longer fire while the
