@@ -66,7 +66,7 @@ export class SyncTaskOperations {
               priority_score: number;
               local_modified_at: string | null;
             }>(
-              "SELECT id, source_type, weight, priority_score, local_modified_at FROM tasks WHERE course_id = ? AND title = ? AND external_id IS NULL AND source_type = 'user'",
+              "SELECT id, source_type, weight, priority_score, local_modified_at FROM tasks WHERE course_id = ? AND title = ? AND external_id IS NULL AND source_type = 'user' AND deleted_at IS NULL",
               [localCourseId, localTask.title]
             );
 
