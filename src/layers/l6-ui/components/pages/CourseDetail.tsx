@@ -3,11 +3,12 @@
  * Full course view with assignments, announcements, and grade history
  */
 
-import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import React, { useEffect, useState, useMemo, useCallback, useContext } from 'react';
 import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, BookOpen, Archive } from 'lucide-react';
 import { useHotkeys } from 'react-hotkeys-hook';
 import { useKeymap } from '../../hooks/useKeymap';
+import { KeyboardScopeContext } from '../../contexts/KeyboardScopeContext';
 import { ConfirmDialog } from '../shared';
 import { MissingDependenciesDialog } from '../Files/MissingDependenciesDialog';
 import { useStore } from '../../../l5-presentation/store';
@@ -641,6 +642,15 @@ export function CourseDetail() {
     },
     [queueAvailable, announcementsAvailable, preferencesAvailable, sectionFocus]
   );
+
+  // Broadcast active subscope to help modal (edit overrides prefs overrides nav)
+  const { setActiveSubscope } = useContext(KeyboardScopeContext);
+  useEffect(() => {
+    if (editingTaskId !== null) setActiveSubscope('edit');
+    else if (showSettings) setActiveSubscope('prefs');
+    else setActiveSubscope('nav');
+    return () => setActiveSubscope(null);
+  }, [editingTaskId, showSettings, setActiveSubscope]);
 
   // Nav-scope shortcuts (all fired outside form elements by default)
   useKeymap<'nav'>(

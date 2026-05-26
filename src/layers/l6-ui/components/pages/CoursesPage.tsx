@@ -29,6 +29,7 @@ import { useCourseDragDrop } from './useCourseDragDrop';
 import { useMultiSelect } from '../../hooks/useMultiSelect';
 import { useFocusedItem } from '../../hooks/useFocusedItem';
 import { useKeymap } from '../../hooks/useKeymap';
+import { useRegisterSubscope } from '../../contexts/KeyboardScopeContext';
 import { useUpdatesByCourse } from '../../hooks';
 import { settingsManager, STORAGE_KEYS } from '../../../l5-presentation/settings';
 import { getCourseColor, formatGrade } from '../../constants';
@@ -727,6 +728,9 @@ export function CoursesPage() {
   );
 
   const gridNavActive = scope === 'courses';
+
+  // Broadcast active scope to help modal
+  useRegisterSubscope(scope, { courses: 'courses', filter: 'filter' });
 
   // Filter section helpers used by the filter scope above
   const filterSectionRef = useRef(filterSection);

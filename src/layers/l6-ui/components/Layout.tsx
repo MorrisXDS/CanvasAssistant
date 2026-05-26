@@ -98,10 +98,11 @@ export function Layout() {
       if ((e.target as HTMLElement)?.isContentEditable) return;
       e.preventDefault();
       if (e.ctrlKey || e.metaKey) {
-        setShowPageShortcuts(true);
+        setForceGlobalTab(true);
       } else {
-        setShowKeyboardShortcuts(true);
+        setForceGlobalTab(false);
       }
+      setShowKeyboardShortcuts(true);
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
@@ -140,9 +141,9 @@ export function Layout() {
   // Close behavior dialog state (shown on first close when preference not set)
   const [showCloseBehaviorDialog, setShowCloseBehaviorDialog] = useState(false);
 
-  // Keyboard shortcuts help modal
+  // Keyboard shortcuts help modal (unified — forceGlobalTab = Ctrl+?)
   const [showKeyboardShortcuts, setShowKeyboardShortcuts] = useState(false);
-  const [showPageShortcuts, setShowPageShortcuts] = useState(false);
+  const [forceGlobalTab, setForceGlobalTab] = useState(false);
 
   // Listen for close behavior prompt from main process
   useEffect(() => {
@@ -373,18 +374,11 @@ export function Layout() {
         onChoice={handleCloseBehaviorChoice}
       />
 
-      {/* Global Keyboard Shortcuts Help (?) */}
+      {/* Keyboard Shortcuts Help (? = active scope tab, Ctrl+? = global tab) */}
       <KeyboardShortcutsModal
         isOpen={showKeyboardShortcuts}
         onClose={() => setShowKeyboardShortcuts(false)}
-        mode="global"
-      />
-
-      {/* Page-Specific Shortcuts Help (Shift+?) */}
-      <KeyboardShortcutsModal
-        isOpen={showPageShortcuts}
-        onClose={() => setShowPageShortcuts(false)}
-        mode="page"
+        forceGlobal={forceGlobalTab}
       />
 
       {/* Sync Updates Floating Action Button */}

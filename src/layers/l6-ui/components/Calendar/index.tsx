@@ -12,6 +12,7 @@ import React, {
   useRef,
 } from 'react';
 import { useKeymap } from '../../hooks/useKeymap';
+import { useRegisterSubscope } from '../../contexts/KeyboardScopeContext';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { getEventId, positionEvents } from './calendarHelpers';
 import {
@@ -1549,6 +1550,9 @@ export function CalendarPage() {
       when: () => !isAnyModalOpenRef.current,
     }
   );
+
+  // Broadcast active scope to help modal
+  useRegisterSubscope(calScope, { events: 'events', filter: 'filter' });
 
   // Cross-scope shortcuts: Alt+Shift+D/P/C and Alt+1-9 fire in both scopes.
   // Kept as a separate small handler since useKeymap scopes them exclusively.

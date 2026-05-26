@@ -1,12 +1,15 @@
 /**
- * KeyboardShortcutsModal - Displays keyboard shortcuts
+ * KeyboardShortcutsModal — scope-aware two-tab help modal.
  *
- * Two modes:
- * - "global" (opened with ?): Shows global shortcuts (Navigation, General, Selection)
- * - "page" (opened with Shift+?): Shows only shortcuts for the current page
+ * Tab 1 (default): shortcuts for the currently active keyboard scope
+ *   (e.g. "Calendar — Filter Panel" when the filter panel is open).
+ * Tab 2: global shortcuts (Navigation, General, Selection).
+ *
+ * Left/Right arrow keys switch tabs when focus is on the tab bar.
+ * ? or Ctrl+? re-opens; Ctrl+? pre-selects the Global tab.
  */
 
-import React from 'react';
+import React, { useState, useEffect, useContext, useCallback } from 'react';
 import { Keyboard } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
 import { Modal } from '../primitives/Modal';
@@ -15,12 +18,13 @@ import {
   getScopeForPath,
   type ShortcutCategory,
 } from '../../constants/keyboardShortcuts';
+import { KeyboardScopeContext } from '../../contexts/KeyboardScopeContext';
 
 export interface KeyboardShortcutsModalProps {
   isOpen: boolean;
   onClose: () => void;
-  /** "global" shows global shortcuts (?), "page" shows current page shortcuts (Shift+?) */
-  mode?: 'global' | 'page';
+  /** Force-open on the Global tab (used when triggered with Ctrl+?). Default: page tab. */
+  forceGlobal?: boolean;
 }
 
 const isMac = window.api?.platform === 'darwin';
@@ -33,16 +37,10 @@ function resolveKeyLabel(key: string): string {
       return 'Esc';
     case 'Shift':
       return '⇧';
-    case '←':
-      return '←';
-    case '→':
-      return '→';
     case 'Delete':
       return isMac ? '⌫' : 'Del';
     case 'Space':
       return '␣';
-    case '/':
-      return '/';
     default:
       return key;
   }
@@ -80,40 +78,114 @@ function ShortcutList({ category }: { category: ShortcutCategory }) {
 export function KeyboardShortcutsModal({
   isOpen,
   onClose,
-  mode = 'global',
+  forceGlobal = false,
 }: KeyboardShortcutsModalProps) {
   const location = useLocation();
-  const currentScope = getScopeForPath(location.pathname);
+  const { activeSubscope } = useContext(KeyboardScopeContext);
+  const currentPageScope = getScopeForPath(location.pathname);
+
+  // Resolve which category to show in Tab 1
+  const pageCategory: ShortcutCategory | null = (() => {
+    if (!currentPageScope) return null;
+    const pageCategories = KEYBOARD_SHORTCUTS.filter((c) => c.scope === currentPageScope);
+    if (pageCategories.length === 0) return null;
+    // Try to find the subscope-matching one first
+    if (activeSubscope) {
+      const match = pageCategories.find((c) => c.subscope === activeSubscope);
+      if (match) return match;
+    }
+    // Fall back to first category without a subscope, or just the first one
+    return pageCategories.find((c) => !c.subscope) ?? pageCategories[0];
+  })();
 
   const globalCategories = KEYBOARD_SHORTCUTS.filter((c) => !c.scope);
-  const pageCategories = KEYBOARD_SHORTCUTS.filter(
-    (c) => c.scope && c.scope === currentScope
+
+  type TabId = 'page' | 'global';
+  const [activeTab, setActiveTab] = useState<TabId>(
+    forceGlobal || !pageCategory ? 'global' : 'page'
   );
 
-  const isPageMode = mode === 'page';
-  const categories = isPageMode ? pageCategories : globalCategories;
-  const title = isPageMode
-    ? `${pageCategories[0]?.title || 'Page'} Shortcuts`
-    : 'Keyboard Shortcuts';
+  // Reset tab when modal opens or forceGlobal changes
+  useEffect(() => {
+    if (isOpen) {
+      setActiveTab(forceGlobal || !pageCategory ? 'global' : 'page');
+    }
+  }, [isOpen, forceGlobal, pageCategory]);
+
+  const handleTabKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+      e.preventDefault();
+      setActiveTab((t) => (t === 'page' ? 'global' : 'page'));
+    }
+  }, []);
+
+  const showTabs = pageCategory !== null;
+  const tab1Label = pageCategory?.title ?? 'Page';
   const modKey = isMac ? '⌘' : 'Ctrl';
-  const hint = isPageMode
-    ? 'Press ? for global shortcuts'
-    : `Press ${modKey}+? for page shortcuts`;
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} size="md">
-      <Modal.Header title={title} icon={<Keyboard size={20} />} onClose={onClose} />
+      <Modal.Header
+        title="Keyboard Shortcuts"
+        icon={<Keyboard size={20} />}
+        onClose={onClose}
+      />
       <Modal.Content>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          {categories.length > 0 ? (
-            categories.map((category) => (
-              <ShortcutList key={category.title} category={category} />
-            ))
-          ) : (
-            <div style={styles.emptyState}>No shortcuts available for this page</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          {/* Tab bar */}
+          {showTabs && (
+            <div
+              role="tablist"
+              aria-label="Shortcut categories"
+              style={styles.tabBar}
+              onKeyDown={handleTabKeyDown}
+            >
+              <button
+                role="tab"
+                aria-selected={activeTab === 'page'}
+                style={{
+                  ...styles.tab,
+                  ...(activeTab === 'page' ? styles.tabActive : {}),
+                }}
+                onClick={() => setActiveTab('page')}
+              >
+                {tab1Label}
+              </button>
+              <button
+                role="tab"
+                aria-selected={activeTab === 'global'}
+                style={{
+                  ...styles.tab,
+                  ...(activeTab === 'global' ? styles.tabActive : {}),
+                }}
+                onClick={() => setActiveTab('global')}
+              >
+                Global
+              </button>
+            </div>
           )}
 
-          <div style={styles.hint}>{hint}</div>
+          {/* Content */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            {activeTab === 'page' && pageCategory && (
+              <ShortcutList category={pageCategory} />
+            )}
+            {activeTab === 'global' &&
+              (globalCategories.length > 0 ? (
+                globalCategories.map((cat) => (
+                  <ShortcutList key={cat.title} category={cat} />
+                ))
+              ) : (
+                <div style={styles.emptyState}>No global shortcuts defined</div>
+              ))}
+          </div>
+
+          {/* Hint */}
+          <div style={styles.hint}>
+            {showTabs
+              ? `← → switch tabs · ${modKey}+? for global · ? for page scope`
+              : `Press ${modKey}+? for page shortcuts`}
+          </div>
         </div>
       </Modal.Content>
     </Modal>
@@ -121,10 +193,32 @@ export function KeyboardShortcutsModal({
 }
 
 const styles: Record<string, React.CSSProperties> = {
+  tabBar: {
+    display: 'flex',
+    gap: '4px',
+    borderBottom: '1px solid var(--border-default)',
+    paddingBottom: '8px',
+  },
+  tab: {
+    padding: '6px 14px',
+    fontSize: '13px',
+    fontWeight: 500,
+    border: '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-md)',
+    backgroundColor: 'var(--bg-app)',
+    color: 'var(--text-secondary)',
+    cursor: 'pointer',
+    transition: 'all 0.15s',
+  },
+  tabActive: {
+    backgroundColor: 'var(--color-primary)',
+    color: 'white',
+    borderColor: 'var(--color-primary)',
+  },
   categoryTitle: {
     fontSize: '11px',
     fontWeight: 600,
-    textTransform: 'uppercase',
+    textTransform: 'uppercase' as const,
     letterSpacing: '0.05em',
     color: 'var(--text-muted)',
     paddingBottom: '8px',
@@ -133,7 +227,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   shortcutList: {
     display: 'flex',
-    flexDirection: 'column',
+    flexDirection: 'column' as const,
   },
   shortcutRow: {
     display: 'flex',
@@ -157,7 +251,7 @@ const styles: Record<string, React.CSSProperties> = {
   orSeparator: {
     fontSize: '10px',
     color: 'var(--text-muted)',
-    fontStyle: 'italic',
+    fontStyle: 'italic' as const,
     padding: '0 2px',
   },
   kbd: {
@@ -179,13 +273,15 @@ const styles: Record<string, React.CSSProperties> = {
   hint: {
     fontSize: '11px',
     color: 'var(--text-muted)',
-    textAlign: 'center',
-    fontStyle: 'italic',
+    textAlign: 'center' as const,
+    fontStyle: 'italic' as const,
   },
   emptyState: {
     fontSize: '13px',
     color: 'var(--text-muted)',
-    textAlign: 'center',
+    textAlign: 'center' as const,
     padding: '20px 0',
   },
 };
+
+export default KeyboardShortcutsModal;

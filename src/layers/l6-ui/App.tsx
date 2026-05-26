@@ -4,6 +4,7 @@
  */
 
 import React, { useEffect, useState, Suspense, lazy } from 'react';
+import { KeyboardScopeProvider } from './contexts/KeyboardScopeContext';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 
 import { useStore, subscribeToIpcEvents } from '../l5-presentation/store';
@@ -78,7 +79,9 @@ function initializeSettings() {
   if (fileSettings?.downloadLocation) {
     // Async restore - don't block startup
     window.api?.setFilesDirectory?.(fileSettings.downloadLocation).catch((err: Error) => {
-      logger.warn(`Failed to restore download location: ${err instanceof Error ? err.message : String(err)}`);
+      logger.warn(
+        `Failed to restore download location: ${err instanceof Error ? err.message : String(err)}`
+      );
     });
   }
 }
@@ -338,9 +341,11 @@ export default function App() {
   // HashRouter is required for Electron's file:// protocol in production
   // BrowserRouter only works with http:// URLs (dev server)
   return (
-    <HashRouter>
-      <AppContent />
-    </HashRouter>
+    <KeyboardScopeProvider>
+      <HashRouter>
+        <AppContent />
+      </HashRouter>
+    </KeyboardScopeProvider>
   );
 }
 
