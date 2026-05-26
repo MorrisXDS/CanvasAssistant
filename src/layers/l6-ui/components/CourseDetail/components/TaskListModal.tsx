@@ -1,13 +1,22 @@
 /**
- * TaskListModal Component
- * Modal for displaying a full list of tasks
+ * TaskListModal — modal for displaying a full list of tasks (course detail).
+ *
+ * Migrated to the shared `<Modal>` primitive. Public API unchanged.
+ *
+ * Shape: sectioned — `Modal.Header` (title + close button) and
+ * `Modal.Content` (scrollable list of `TaskItem`s). No footer; the list
+ * IS the body. Dismiss is standard (Esc / backdrop click) handled by the
+ * primitive.
+ *
+ * z-index: default 1000 — opened from CourseDetail and not stacked over
+ * any other modal in current flows.
  */
 
 import React from 'react';
-import { X } from 'lucide-react';
 import { TaskItem } from './TaskItem';
 import type { Task } from '../../../../l5-presentation/types';
 import { courseDetailStyles as styles } from '../../pages/CourseDetail.styles';
+import { Modal } from '../../primitives/Modal';
 
 export interface TaskListModalProps {
   isOpen: boolean;
@@ -83,122 +92,59 @@ export function TaskListModal({
   if (!isOpen) return null;
 
   return (
-    <div style={modalStyles.overlay} onClick={onClose}>
-      <div style={modalStyles.modal} onClick={(e) => e.stopPropagation()}>
-        <div style={modalStyles.header}>
-          <h2 style={modalStyles.title}>{title}</h2>
-          <button style={modalStyles.closeButton} onClick={onClose}>
-            <X size={20} />
-          </button>
-        </div>
-        <div style={modalStyles.content}>
-          {tasks.length === 0 ? (
-            <div style={styles.emptySection}>
-              <span>No tasks</span>
-            </div>
-          ) : (
-            <div style={styles.taskList}>
-              {tasks.map((task, index) => (
-                <TaskItem
-                  key={task.id}
-                  task={task}
-                  isFirst={index === 0}
-                  isCompleted={task.isCompleted}
-                  isExpanded={expandedTaskId === task.id}
-                  isEditing={editingTaskId === task.id}
-                  isHighlighted={highlightedTaskId === task.id}
-                  editTitle={editTitle}
-                  editDescription={editDescription}
-                  editNotes={editNotes}
-                  editStartDate={editStartDate}
-                  editDueDate={editDueDate}
-                  editWeight={editWeight}
-                  editGrade={editGrade}
-                  onToggleExpand={() => onToggleExpand(task.id)}
-                  onToggleComplete={() => onToggleComplete(task)}
-                  onDuplicate={() => onDuplicate(task.id)}
-                  onStartEdit={() => onStartEdit(task)}
-                  onCancelEdit={onCancelEdit}
-                  onSaveEdit={onSaveEdit}
-                  onDelete={() => onDelete(task.id, task.title)}
-                  onEditTitleChange={onEditTitleChange}
-                  onEditDescriptionChange={onEditDescriptionChange}
-                  onEditNotesChange={onEditNotesChange}
-                  onEditStartDateChange={onEditStartDateChange}
-                  onEditDueDateChange={onEditDueDateChange}
-                  onEditWeightChange={onEditWeightChange}
-                  onEditGradeChange={onEditGradeChange}
-                  editTaskType={editTaskType}
-                  onEditTaskTypeChange={onEditTaskTypeChange}
-                  editLocation={editLocation}
-                  onEditLocationChange={onEditLocationChange}
-                  onContextMenu={
-                    onTaskContextMenu ? (e) => onTaskContextMenu(e, task) : undefined
-                  }
-                />
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
+    <Modal isOpen onClose={onClose} size="xl">
+      <Modal.Header title={title} onClose={onClose} />
+      <Modal.Content padded={false} maxHeight="70vh">
+        {tasks.length === 0 ? (
+          <div style={styles.emptySection}>
+            <span>No tasks</span>
+          </div>
+        ) : (
+          <div style={styles.taskList}>
+            {tasks.map((task, index) => (
+              <TaskItem
+                key={task.id}
+                task={task}
+                isFirst={index === 0}
+                isCompleted={task.isCompleted}
+                isExpanded={expandedTaskId === task.id}
+                isEditing={editingTaskId === task.id}
+                isHighlighted={highlightedTaskId === task.id}
+                editTitle={editTitle}
+                editDescription={editDescription}
+                editNotes={editNotes}
+                editStartDate={editStartDate}
+                editDueDate={editDueDate}
+                editWeight={editWeight}
+                editGrade={editGrade}
+                onToggleExpand={() => onToggleExpand(task.id)}
+                onToggleComplete={() => onToggleComplete(task)}
+                onDuplicate={() => onDuplicate(task.id)}
+                onStartEdit={() => onStartEdit(task)}
+                onCancelEdit={onCancelEdit}
+                onSaveEdit={onSaveEdit}
+                onDelete={() => onDelete(task.id, task.title)}
+                onEditTitleChange={onEditTitleChange}
+                onEditDescriptionChange={onEditDescriptionChange}
+                onEditNotesChange={onEditNotesChange}
+                onEditStartDateChange={onEditStartDateChange}
+                onEditDueDateChange={onEditDueDateChange}
+                onEditWeightChange={onEditWeightChange}
+                onEditGradeChange={onEditGradeChange}
+                editTaskType={editTaskType}
+                onEditTaskTypeChange={onEditTaskTypeChange}
+                editLocation={editLocation}
+                onEditLocationChange={onEditLocationChange}
+                onContextMenu={
+                  onTaskContextMenu ? (e) => onTaskContextMenu(e, task) : undefined
+                }
+              />
+            ))}
+          </div>
+        )}
+      </Modal.Content>
+    </Modal>
   );
 }
-
-const modalStyles: Record<string, React.CSSProperties> = {
-  overlay: {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 1000,
-  },
-  modal: {
-    backgroundColor: 'var(--bg-card)',
-    borderRadius: 'var(--radius-lg)',
-    boxShadow: 'var(--shadow-lg)',
-    width: '90%',
-    maxWidth: '700px',
-    maxHeight: '80vh',
-    display: 'flex',
-    flexDirection: 'column',
-    overflow: 'hidden',
-  },
-  header: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 'var(--space-4) var(--space-5)',
-    borderBottom: '1px solid var(--border-light)',
-  },
-  title: {
-    fontSize: 'var(--text-lg)',
-    fontWeight: 'var(--font-semibold)',
-    color: 'var(--text-primary)',
-    margin: 0,
-  },
-  closeButton: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: '32px',
-    height: '32px',
-    padding: 0,
-    background: 'none',
-    border: 'none',
-    cursor: 'pointer',
-    color: 'var(--text-muted)',
-    borderRadius: 'var(--radius-md)',
-  },
-  content: {
-    flex: 1,
-    overflowY: 'auto',
-  },
-};
 
 export default TaskListModal;
