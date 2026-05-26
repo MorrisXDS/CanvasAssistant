@@ -13,6 +13,88 @@ import {
   MergeQueuedTaskCommand,
 } from '../../layers/l4-controller';
 import { createSimulationContext } from '../../layers/l4-controller/types';
+import {
+  findMatchingCanvasTask,
+  LINK_THRESHOLDS,
+} from '../../layers/l2-daemon/sync-engine/sync/TaskMatcher';
+
+interface CheckDuplicateInput {
+  queueId: number;
+  courseId: number;
+  title: string;
+  dueAt: string | null;
+  taskType: string | null;
+}
+
+interface ConflictingField {
+  field: string;
+  label: string;
+  canvasValue: string | null;
+  localValue: string | null;
+}
+
+interface DuplicateCheckResult {
+  queueId: number;
+  match: {
+    type: 'exact' | 'fuzzy';
+    task: {
+      id: number;
+      title: string;
+      dueAt: string | null;
+      weight: number | null;
+      taskType: string | null;
+    };
+    conflictingFields: ConflictingField[];
+  } | null;
+}
+
+function computeConflictingFields(
+  queued: CheckDuplicateInput,
+  existing: { title: string; due_at: string | null; task_type: string | null }
+): ConflictingField[] {
+  const fields: ConflictingField[] = [];
+
+  if (queued.dueAt && existing.due_at) {
+    const diff = Math.abs(
+      new Date(queued.dueAt).getTime() - new Date(existing.due_at).getTime()
+    );
+    if (diff > 60_000) {
+      fields.push({
+        field: 'dueAt',
+        label: 'Due date',
+        canvasValue: queued.dueAt,
+        localValue: existing.due_at,
+      });
+    }
+  } else if (queued.dueAt !== existing.due_at) {
+    fields.push({
+      field: 'dueAt',
+      label: 'Due date',
+      canvasValue: queued.dueAt,
+      localValue: existing.due_at,
+    });
+  }
+
+  if (queued.title.toLowerCase() !== existing.title.toLowerCase()) {
+    fields.push({
+      field: 'title',
+      label: 'Title',
+      canvasValue: queued.title,
+      localValue: existing.title,
+    });
+  }
+
+  if (queued.taskType && existing.task_type && queued.taskType !== existing.task_type) {
+    fields.push({
+      field: 'taskType',
+      label: 'Type',
+      canvasValue: queued.taskType,
+      localValue: existing.task_type,
+    });
+  }
+
+  return fields;
+}
 
 /**
  * Map TaskRow to API response format (camelCase with computed fields)
@@ -251,6 +333,108 @@ export function registerTaskDataHandlers(ctx: IpcContext): void {
       throw error;
     }
   });
+
+  // Check for duplicate user tasks matching queued Canvas items (exact or fuzzy)
+  ipcMain.handle(
+    'data:checkQueueDuplicates',
+    (_event, items: CheckDuplicateInput[]): DuplicateCheckResult[] => {
+      try {
+        return items.map((item) => {
+          type TaskLookupRow = {
+            id: number;
+            title: string;
+            due_at: string | null;
+            weight: number | null;
+            task_type: string | null;
+          };
+
+          // 1. Exact title match (case-insensitive)
+          const exactMatches = database.executeRead<TaskLookupRow>(
+            `SELECT id, title, due_at, weight, task_type FROM tasks
+             WHERE course_id = ? AND LOWER(title) = LOWER(?)
+               AND source_type = 'user' AND external_id IS NULL AND deleted_at IS NULL`,
+            [item.courseId, item.title]
+          );
+
+          if (exactMatches.length > 0) {
+            const matched = exactMatches[0];
+            return {
+              queueId: item.queueId,
+              match: {
+                type: 'exact' as const,
+                task: {
+                  id: matched.id,
+                  title: matched.title,
+                  dueAt: matched.due_at,
+                  weight: matched.weight,
+                  taskType: matched.task_type,
+                },
+                conflictingFields: computeConflictingFields(item, matched),
+              },
+            };
+          }
+
+          // 2. Fuzzy match via TaskMatcher
+          const userTasks = database.executeRead<TaskLookupRow>(
+            `SELECT id, title, due_at, weight, task_type FROM tasks
+             WHERE course_id = ? AND source_type = 'user'
+               AND external_id IS NULL AND deleted_at IS NULL`,
+            [item.courseId]
+          );
+
+          const canvasEntry = {
+            id: item.queueId,
+            title: item.title,
+            courseId: item.courseId,
+            dueAt: item.dueAt,
+            sourceType: 'canvas' as const,
+          };
+
+          let bestMatch: { task: TaskLookupRow; confidence: number } | null = null;
+          for (const ut of userTasks) {
+            const result = findMatchingCanvasTask(
+              {
+                id: ut.id,
+                title: ut.title,
+                courseId: item.courseId,
+                dueAt: ut.due_at,
+                sourceType: 'user' as const,
+              },
+              [canvasEntry]
+            );
+            if (
+              result.confidence >= LINK_THRESHOLDS.suggestLink &&
+              (!bestMatch || result.confidence > bestMatch.confidence)
+            ) {
+              bestMatch = { task: ut, confidence: result.confidence };
+            }
+          }
+
+          if (bestMatch) {
+            return {
+              queueId: item.queueId,
+              match: {
+                type: 'fuzzy' as const,
+                task: {
+                  id: bestMatch.task.id,
+                  title: bestMatch.task.title,
+                  dueAt: bestMatch.task.due_at,
+                  weight: bestMatch.task.weight,
+                  taskType: bestMatch.task.task_type,
+                },
+                conflictingFields: computeConflictingFields(item, bestMatch.task),
+              },
+            };
+          }
+
+          return { queueId: item.queueId, match: null };
+        });
+      } catch (error) {
+        logger.error(`Failed to check queue duplicates: ${error}`);
+        throw error;
+      }
+    }
+  );
 
   // Accept a queued task
   ipcMain.handle(

@@ -8,7 +8,9 @@ import { ChevronDown, ChevronRight, CloudDownload, CheckCircle2 } from 'lucide-r
 import { useHotkeys } from 'react-hotkeys-hook';
 import { QueuedTaskCard, type QueuedTaskEdits } from './QueuedTaskCard';
 import { ConfirmDialog } from '../shared';
+import { DuplicateWarningModal } from '../shared/DuplicateWarningModal';
 import { useFocusedItem } from '../../hooks/useFocusedItem';
+import { useDuplicateGate } from '../../hooks/useDuplicateGate';
 import type { QueuedTask } from '../../../l5-presentation/types';
 
 interface CanvasUpdatesSectionProps {
@@ -165,13 +167,16 @@ export function CanvasUpdatesSection({
   queuedTasks,
   onAccept,
   onReject,
-  onBulkAccept,
+  onBulkAccept: _onBulkAccept,
   onLink,
   defaultExpanded = false,
   highlightedQueueId,
   onHighlightClear,
   keyboardEnabled = false,
 }: CanvasUpdatesSectionProps) {
+  const { gatedAccept, gatedBulkAccept, confirmDecisions, gateState, closeModal } =
+    useDuplicateGate();
+
   // Collapsed by default (can be changed via settings)
   // Force expand if there's a highlighted queue item
   const [isExpanded, setIsExpanded] = useState(
@@ -199,10 +204,10 @@ export function CanvasUpdatesSection({
       if (!focusedItem || !keyboardEnabled) return;
       if (e.shiftKey) return; // Shift+A = bulk accept below
       e.preventDefault();
-      onAccept(focusedItem.id);
+      gatedAccept(focusedItem);
     },
     { enabled: keyboardEnabled },
-    [focusedItem, onAccept, keyboardEnabled]
+    [focusedItem, gatedAccept, keyboardEnabled]
   );
   useHotkeys(
     'shift+a',
@@ -256,12 +261,12 @@ export function CanvasUpdatesSection({
     setShowConfirmDialog(true);
   };
 
-  // Handle confirmed bulk accept
+  // Handle confirmed bulk accept — routes through duplicate gate
   const handleConfirmedBulkAccept = async () => {
     setShowConfirmDialog(false);
     setIsAcceptingAll(true);
     try {
-      await onBulkAccept();
+      await gatedBulkAccept(queuedTasks);
     } finally {
       setIsAcceptingAll(false);
     }
@@ -340,7 +345,11 @@ export function CanvasUpdatesSection({
               >
                 <QueuedTaskCard
                   queuedTask={queuedTask}
-                  onAccept={onAccept}
+                  onAccept={(queueId, edits) => {
+                    const task = queuedTasks.find((t) => t.id === queueId);
+                    if (task) gatedAccept(task, edits);
+                    else onAccept(queueId, edits);
+                  }}
                   onReject={onReject}
                   onLink={onLink}
                   isHighlighted={queuedTask.id === highlightedQueueId}
@@ -362,6 +371,16 @@ export function CanvasUpdatesSection({
         onConfirm={handleConfirmedBulkAccept}
         onCancel={() => setShowConfirmDialog(false)}
       />
+
+      {/* Duplicate warning gate */}
+      {gateState && (
+        <DuplicateWarningModal
+          mode={gateState.mode}
+          items={gateState.items}
+          onConfirm={confirmDecisions}
+          onCancel={closeModal}
+        />
+      )}
     </div>
   );
 }

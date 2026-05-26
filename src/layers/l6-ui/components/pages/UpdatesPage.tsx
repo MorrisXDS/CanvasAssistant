@@ -19,8 +19,10 @@ import { UPDATE_LABELS } from './Updates/updatesPageConstants';
 import { ActionRequiredItem } from './Updates/ActionRequiredItem';
 import { ConflictItem } from './Updates/ConflictItem';
 import { InformationalItem } from './Updates/InformationalItem';
+import { DuplicateWarningModal } from '../shared/DuplicateWarningModal';
 import { useHotkeys } from 'react-hotkeys-hook';
 import { useFocusedItem } from '../../hooks/useFocusedItem';
+import type { DuplicateCheckResult } from '../../../l5-presentation/types';
 
 type FilterType = 'all' | 'task' | 'grade' | 'file' | 'page' | 'announcement';
 
@@ -44,7 +46,15 @@ export function UpdatesPage() {
     acceptQueuedTask,
     rejectQueuedTask,
     resolveSyncConflict,
+    checkQueueDuplicates,
+    mergeQueuedTask,
   } = useStore();
+
+  // Duplicate warning gate state (single mode only on this page)
+  const [dupeGate, setDupeGate] = useState<{
+    items: DuplicateCheckResult[];
+    entityId: number;
+  } | null>(null);
 
   // Ensure updates is always an array (defensive)
   const updates = syncUpdates.updates ?? [];
@@ -243,10 +253,52 @@ export function UpdatesPage() {
 
   const handleAcceptTask = useCallback(
     async (entityId: number) => {
-      await acceptQueuedTask(entityId);
-      await fetchSyncUpdates();
+      const update = updates.find(
+        (u) => u.entityType === 'task' && u.entityId === entityId
+      );
+      const results = await checkQueueDuplicates([
+        {
+          queueId: entityId,
+          courseId: update?.courseId ?? 0,
+          title: update?.title ?? '',
+          dueAt: null,
+          taskType: null,
+        },
+      ]);
+      const result = results[0];
+      if (result?.match) {
+        setDupeGate({ items: results, entityId });
+      } else {
+        await acceptQueuedTask(entityId);
+        await fetchSyncUpdates();
+      }
     },
-    [acceptQueuedTask, fetchSyncUpdates]
+    [acceptQueuedTask, fetchSyncUpdates, checkQueueDuplicates, updates]
+  );
+
+  const handleDupeConfirm = useCallback(
+    async (decisions: Map<number, 'link' | 'separate'>, selected: Set<number>) => {
+      if (!dupeGate) return;
+      const { entityId, items } = dupeGate;
+      if (!selected.has(entityId)) {
+        setDupeGate(null);
+        return;
+      }
+      const decision = decisions.get(entityId) ?? 'separate';
+      const match = items[0]?.match;
+      if (decision === 'link' && match) {
+        await mergeQueuedTask({
+          queueId: entityId,
+          userTaskId: match.task.id,
+          keepFromUser: { notes: true, dueAt: !!match.task.dueAt },
+        });
+      } else {
+        await acceptQueuedTask(entityId);
+      }
+      await fetchSyncUpdates();
+      setDupeGate(null);
+    },
+    [dupeGate, mergeQueuedTask, acceptQueuedTask, fetchSyncUpdates]
   );
 
   const handleRejectTask = useCallback(
@@ -494,6 +546,15 @@ export function UpdatesPage() {
           </div>
         </div>
       </div>
+
+      {dupeGate && (
+        <DuplicateWarningModal
+          mode="single"
+          items={dupeGate.items}
+          onConfirm={handleDupeConfirm}
+          onCancel={() => setDupeGate(null)}
+        />
+      )}
     </div>
   );
 }
