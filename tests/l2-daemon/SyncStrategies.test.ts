@@ -96,7 +96,7 @@ describe('SyncStrategies', () => {
       expect(result.entity).toBe('tasks');
       expect(result.count).toBe(2);
       expect(result.errors).toHaveLength(0);
-      expect(result.duration).toBeGreaterThan(0);
+      expect(result.duration).toEqual(expect.any(Number)); // fast mocks may resolve in 0ms
     });
 
     it('should call rate limiter with correct priority', async () => {
