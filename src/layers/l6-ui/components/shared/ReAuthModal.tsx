@@ -1,14 +1,28 @@
 /**
- * ReAuthModal - Mandatory re-authentication modal when Canvas token expires
+ * ReAuthModal — mandatory re-authentication modal when the Canvas token
+ * expires or is revoked.
  *
- * This modal blocks the entire UI and requires the user to re-authenticate
- * before they can continue using the app.
+ * Migrated to the shared `<Modal>` primitive. Public API unchanged.
+ *
+ * Shape: sectioned modal with header (icon + title + subtitle showing the
+ * reason if provided), scrollable content (token input + status banners),
+ * and a footer with the primary action (Validate -> Reconnect) and a
+ * disconnect "escape hatch".
+ *
+ * Esc handling: `closeOnEscape={false}` and `closeOnBackdropClick={false}` —
+ * this modal is shown when the app cannot continue without a valid token,
+ * so the user must either reconnect or explicitly disconnect. There's no
+ * implicit "cancel". The header's close button is also hidden.
+ *
+ * z-index: 1100 — same tier as CorruptionDialog. If both somehow trigger
+ * the visual order reflects mount order; either is recoverable.
  */
 
 import React, { useState } from 'react';
 import { AlertTriangle, Key, Loader2, Check, XCircle, LogOut } from 'lucide-react';
 import { STORAGE_KEYS } from '../../../l5-presentation/settings';
 import { createLogger } from '../../utils/rendererLogger';
+import { Modal } from '../primitives/Modal';
 
 const logger = createLogger('ReAuthModal');
 
@@ -93,24 +107,26 @@ export function ReAuthModal({ reason, onReauthSuccess, onDisconnect }: ReAuthMod
     }
   };
 
+  const subtitle = reason
+    ? `Your Canvas access token has expired or been revoked. Reason: ${reason}`
+    : 'Your Canvas access token has expired or been revoked. Please enter a new token to continue using the app.';
+
   return (
-    <div style={styles.overlay}>
-      <div style={styles.modal} role="dialog" aria-modal="true">
-        {/* Warning Icon */}
-        <div style={styles.iconWrapper}>
-          <AlertTriangle size={32} />
-        </div>
+    <Modal
+      isOpen
+      closeOnEscape={false}
+      closeOnBackdropClick={false}
+      size="md"
+      zIndex={1100}
+    >
+      <Modal.Header
+        title="Canvas Token Expired"
+        subtitle={subtitle}
+        icon={<AlertTriangle size={24} />}
+        showCloseButton={false}
+      />
 
-        {/* Title */}
-        <h2 style={styles.title}>Canvas Token Expired</h2>
-
-        {/* Description */}
-        <p style={styles.description}>
-          Your Canvas access token has expired or been revoked.
-          {reason && ` Reason: ${reason}`} Please enter a new token to continue using the
-          app.
-        </p>
-
+      <Modal.Content>
         {/* Token Input */}
         <div style={styles.field}>
           <label style={styles.label}>New Access Token</label>
@@ -146,114 +162,63 @@ export function ReAuthModal({ reason, onReauthSuccess, onDisconnect }: ReAuthMod
             Token valid{validationResult.userName && ` for ${validationResult.userName}`}
           </div>
         )}
+      </Modal.Content>
 
-        {/* Action Buttons */}
-        <div style={styles.actions}>
-          {!validationResult?.valid ? (
-            <button
-              style={{
-                ...styles.primaryButton,
-                opacity: isValidating || !token ? 0.6 : 1,
-              }}
-              onClick={handleValidateToken}
-              disabled={isValidating || !token}
-            >
-              {isValidating ? (
-                <>
-                  <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} />
-                  Validating...
-                </>
-              ) : (
-                <>
-                  <Key size={16} />
-                  Validate Token
-                </>
-              )}
-            </button>
-          ) : (
-            <button
-              style={{
-                ...styles.primaryButton,
-                opacity: isReconnecting ? 0.6 : 1,
-              }}
-              onClick={handleReconnect}
-              disabled={isReconnecting}
-            >
-              {isReconnecting ? (
-                <>
-                  <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} />
-                  Reconnecting...
-                </>
-              ) : (
-                <>
-                  <Check size={16} />
-                  Reconnect
-                </>
-              )}
-            </button>
-          )}
-        </div>
-
-        {/* Disconnect Option */}
-        <div style={styles.divider} />
+      <Modal.Footer align="between">
         <button style={styles.disconnectButton} onClick={handleDisconnect}>
           <LogOut size={14} />
           Disconnect from Canvas
         </button>
-      </div>
-    </div>
+
+        {!validationResult?.valid ? (
+          <button
+            style={{
+              ...styles.primaryButton,
+              opacity: isValidating || !token ? 0.6 : 1,
+            }}
+            onClick={handleValidateToken}
+            disabled={isValidating || !token}
+          >
+            {isValidating ? (
+              <>
+                <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} />
+                Validating...
+              </>
+            ) : (
+              <>
+                <Key size={16} />
+                Validate Token
+              </>
+            )}
+          </button>
+        ) : (
+          <button
+            style={{
+              ...styles.primaryButton,
+              opacity: isReconnecting ? 0.6 : 1,
+            }}
+            onClick={handleReconnect}
+            disabled={isReconnecting}
+          >
+            {isReconnecting ? (
+              <>
+                <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} />
+                Reconnecting...
+              </>
+            ) : (
+              <>
+                <Check size={16} />
+                Reconnect
+              </>
+            )}
+          </button>
+        )}
+      </Modal.Footer>
+    </Modal>
   );
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  overlay: {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 99999, // Very high to block everything
-  },
-
-  modal: {
-    backgroundColor: 'var(--bg-card)',
-    borderRadius: 'var(--radius-xl)',
-    width: '100%',
-    maxWidth: '450px',
-    padding: 'var(--space-6)',
-    boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.35)',
-  },
-
-  iconWrapper: {
-    width: '64px',
-    height: '64px',
-    borderRadius: '50%',
-    backgroundColor: 'var(--color-warning-bg)',
-    color: 'var(--color-warning)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 'var(--space-4)',
-  },
-
-  title: {
-    margin: '0 0 var(--space-2) 0',
-    fontSize: 'var(--text-xl)',
-    fontWeight: 'var(--font-bold)',
-    color: 'var(--text-primary)',
-  },
-
-  description: {
-    margin: '0 0 var(--space-5) 0',
-    fontSize: 'var(--text-sm)',
-    color: 'var(--text-secondary)',
-    lineHeight: 'var(--leading-relaxed)',
-  },
-
   field: {
     marginBottom: 'var(--space-4)',
   },
@@ -309,11 +274,6 @@ const styles: Record<string, React.CSSProperties> = {
     marginBottom: 'var(--space-3)',
   },
 
-  actions: {
-    display: 'flex',
-    justifyContent: 'flex-end',
-  },
-
   primaryButton: {
     display: 'flex',
     alignItems: 'center',
@@ -329,19 +289,11 @@ const styles: Record<string, React.CSSProperties> = {
     transition: 'opacity var(--transition-fast)',
   },
 
-  divider: {
-    height: '1px',
-    backgroundColor: 'var(--border-default)',
-    margin: 'var(--space-4) 0',
-  },
-
   disconnectButton: {
     display: 'flex',
     alignItems: 'center',
-    justifyContent: 'center',
     gap: 'var(--space-2)',
-    width: '100%',
-    padding: 'var(--space-2)',
+    padding: 'var(--space-2) var(--space-3)',
     backgroundColor: 'transparent',
     border: 'none',
     borderRadius: 'var(--radius-md)',

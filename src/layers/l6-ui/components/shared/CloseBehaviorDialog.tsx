@@ -1,10 +1,24 @@
 /**
- * CloseBehaviorDialog - Dialog for choosing close button behavior
- * Shown on first close when no preference is set
+ * CloseBehaviorDialog — first-close preference picker (Windows only).
+ *
+ * Migrated to the shared `<Modal>` primitive. Public API unchanged.
+ *
+ * Shape: sectioned modal with header (title + subtitle) and content body. We
+ * deliberately do NOT use `Modal.Footer` here — the two big option buttons
+ * ARE the action, so they live in the content area as a card-style picker
+ * rather than a footer bar. A small hint paragraph below the options
+ * tells the user where to change this later.
+ *
+ * No close button / Esc: this dialog is shown by the main process via
+ * `prompt-close-behavior` and the user must pick one of the two options to
+ * proceed — there is no implicit "cancel". We pass
+ * `closeOnEscape={false}` + `closeOnBackdropClick={false}` and omit the
+ * header's close button to enforce that.
  */
 
 import React from 'react';
 import { Minus, Power } from 'lucide-react';
+import { Modal } from '../primitives/Modal';
 
 interface CloseBehaviorDialogProps {
   isOpen: boolean;
@@ -16,21 +30,22 @@ export function CloseBehaviorDialog({ isOpen, onChoice }: CloseBehaviorDialogPro
   if (!isOpen || window.api?.platform !== 'win32') return null;
 
   return (
-    <>
-      {/* Backdrop */}
-      <div style={styles.backdrop} />
+    <Modal
+      isOpen
+      // No onClose: user must pick an option. Disable backdrop + Esc dismissal
+      // so the dialog truly blocks until a choice is made.
+      closeOnEscape={false}
+      closeOnBackdropClick={false}
+      size="md"
+      zIndex={1100}
+    >
+      <Modal.Header
+        title="Close Window"
+        subtitle="What would you like to do when you close the window?"
+        showCloseButton={false}
+      />
 
-      {/* Dialog */}
-      <div style={styles.dialog}>
-        {/* Header */}
-        <div style={styles.header}>
-          <h3 style={styles.title}>Close Window</h3>
-          <p style={styles.subtitle}>
-            What would you like to do when you close the window?
-          </p>
-        </div>
-
-        {/* Options */}
+      <Modal.Content>
         <div style={styles.options}>
           <button
             style={styles.optionButton}
@@ -66,57 +81,13 @@ export function CloseBehaviorDialog({ isOpen, onChoice }: CloseBehaviorDialogPro
           </button>
         </div>
 
-        {/* Footer */}
-        <p style={styles.footer}>You can change this later in Settings &gt; General</p>
-      </div>
-    </>
+        <p style={styles.hint}>You can change this later in Settings &gt; General</p>
+      </Modal.Content>
+    </Modal>
   );
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  backdrop: {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    zIndex: 10000,
-  },
-
-  dialog: {
-    position: 'fixed',
-    top: '50%',
-    left: '50%',
-    transform: 'translate(-50%, -50%)',
-    backgroundColor: 'var(--bg-card)',
-    borderRadius: 'var(--radius-xl)',
-    boxShadow:
-      '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
-    width: '100%',
-    maxWidth: '420px',
-    padding: '24px',
-    zIndex: 10001,
-  },
-
-  header: {
-    marginBottom: '20px',
-    textAlign: 'center' as const,
-  },
-
-  title: {
-    fontSize: '18px',
-    fontWeight: '600',
-    color: 'var(--text-primary)',
-    margin: '0 0 8px 0',
-  },
-
-  subtitle: {
-    fontSize: '14px',
-    color: 'var(--text-secondary)',
-    margin: 0,
-  },
-
   options: {
     display: 'flex',
     flexDirection: 'column' as const,
@@ -168,7 +139,7 @@ const styles: Record<string, React.CSSProperties> = {
     lineHeight: 1.4,
   },
 
-  footer: {
+  hint: {
     fontSize: '12px',
     color: 'var(--text-muted)',
     textAlign: 'center' as const,

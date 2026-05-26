@@ -1,10 +1,26 @@
 /**
- * CorruptionDialog Component
- * Dialog shown when database corruption is detected, offering recovery options
+ * CorruptionDialog — database-corruption recovery dialog.
+ *
+ * Migrated to the shared `<Modal>` primitive. Public API unchanged.
+ *
+ * Shape: sectioned modal with header (icon + title), scrollable content
+ * (description + error details + status banners) and a footer of stacked
+ * action rows.
+ *
+ * Esc handling: `closeOnEscape={false}` and `closeOnBackdropClick={false}`
+ * because the user must explicitly pick a recovery path (Export / Reset /
+ * Continue). Dismissing the dialog without a choice would leave the app
+ * in a known-bad state. The header's close button is also hidden — the
+ * `onClose` callback is reserved for the parent to invoke after a
+ * successful `reset` / `continue` action completes.
+ *
+ * z-index: 1100 — same tier as ReAuthModal so corruption recovery wins
+ * over a stale re-auth prompt if both somehow trigger together.
  */
 
 import React, { useState } from 'react';
 import { Button } from './Button';
+import { Modal } from '../primitives/Modal';
 
 export interface CorruptionInfo {
   errors: string[];
@@ -53,157 +69,59 @@ export function CorruptionDialog({
     }
   };
 
-  const overlayStyle: React.CSSProperties = {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 9999,
-  };
-
-  const dialogStyle: React.CSSProperties = {
-    backgroundColor: 'var(--bg-card)',
-    borderRadius: 'var(--radius-lg)',
-    boxShadow: 'var(--shadow-xl)',
-    maxWidth: '500px',
-    width: '90%',
-    maxHeight: '90vh',
-    overflow: 'auto',
-  };
-
-  const headerStyle: React.CSSProperties = {
-    padding: 'var(--space-4)',
-    borderBottom: '1px solid var(--border-default)',
-    display: 'flex',
-    alignItems: 'center',
-    gap: 'var(--space-3)',
-  };
-
-  const iconStyle: React.CSSProperties = {
-    fontSize: '1.5rem',
-    color: 'var(--color-critical)',
-  };
-
-  const titleStyle: React.CSSProperties = {
-    fontSize: 'var(--text-lg)',
-    fontWeight: 'var(--font-semibold)',
-    color: 'var(--text-primary)',
-    margin: 0,
-  };
-
-  const contentStyle: React.CSSProperties = {
-    padding: 'var(--space-4)',
-  };
-
-  const descriptionStyle: React.CSSProperties = {
-    fontSize: 'var(--text-sm)',
-    color: 'var(--text-secondary)',
-    marginBottom: 'var(--space-4)',
-    lineHeight: 1.5,
-  };
-
-  const errorsStyle: React.CSSProperties = {
-    backgroundColor: 'var(--bg-app)',
-    borderRadius: 'var(--radius-md)',
-    padding: 'var(--space-3)',
-    marginBottom: 'var(--space-4)',
-    fontSize: 'var(--text-xs)',
-    fontFamily: 'monospace',
-    color: 'var(--text-secondary)',
-    maxHeight: '150px',
-    overflow: 'auto',
-  };
-
-  const actionsStyle: React.CSSProperties = {
-    padding: 'var(--space-4)',
-    borderTop: '1px solid var(--border-default)',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 'var(--space-3)',
-  };
-
-  const actionRowStyle: React.CSSProperties = {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 'var(--space-3)',
-  };
-
-  const actionTextStyle: React.CSSProperties = {
-    flex: 1,
-    fontSize: 'var(--text-sm)',
-    color: 'var(--text-secondary)',
-  };
-
-  const successStyle: React.CSSProperties = {
-    padding: 'var(--space-3)',
-    backgroundColor: 'var(--color-success-bg)',
-    borderRadius: 'var(--radius-md)',
-    color: 'var(--color-success)',
-    fontSize: 'var(--text-sm)',
-    marginBottom: 'var(--space-3)',
-  };
-
-  const errorStyle: React.CSSProperties = {
-    padding: 'var(--space-3)',
-    backgroundColor: 'var(--color-critical-bg)',
-    borderRadius: 'var(--radius-md)',
-    color: 'var(--color-critical)',
-    fontSize: 'var(--text-sm)',
-    marginBottom: 'var(--space-3)',
-  };
-
   return (
-    <div
-      style={overlayStyle}
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="corruption-title"
+    <Modal
+      isOpen
+      // No accidental dismissal — user must pick Export / Reset / Continue.
+      closeOnEscape={false}
+      closeOnBackdropClick={false}
+      size="lg"
+      zIndex={1100}
     >
-      <div style={dialogStyle}>
-        <div style={headerStyle}>
-          <span style={iconStyle} aria-hidden="true">
+      <Modal.Header
+        title="Database Issue Detected"
+        icon={
+          <span
+            style={{ fontSize: '1.5rem', color: 'var(--color-critical)' }}
+            aria-hidden="true"
+          >
             !
           </span>
-          <h2 id="corruption-title" style={titleStyle}>
-            Database Issue Detected
-          </h2>
-        </div>
+        }
+        showCloseButton={false}
+      />
 
-        <div style={contentStyle}>
-          <p style={descriptionStyle}>
-            The app detected potential issues with the database. This can happen after an
-            unexpected shutdown or crash. Choose how you'd like to proceed:
-          </p>
+      <Modal.Content>
+        <p style={styles.description}>
+          The app detected potential issues with the database. This can happen after an
+          unexpected shutdown or crash. Choose how you'd like to proceed:
+        </p>
 
-          {corruption.errors.length > 0 && (
-            <div style={errorsStyle}>
-              <strong>Details:</strong>
-              <ul style={{ margin: 'var(--space-2) 0', paddingLeft: 'var(--space-4)' }}>
-                {corruption.errors.slice(0, 5).map((err, i) => (
-                  <li key={i}>{err}</li>
-                ))}
-                {corruption.errors.length > 5 && (
-                  <li>...and {corruption.errors.length - 5} more</li>
-                )}
-              </ul>
-            </div>
-          )}
+        {corruption.errors.length > 0 && (
+          <div style={styles.errors}>
+            <strong>Details:</strong>
+            <ul style={{ margin: 'var(--space-2) 0', paddingLeft: 'var(--space-4)' }}>
+              {corruption.errors.slice(0, 5).map((err, i) => (
+                <li key={i}>{err}</li>
+              ))}
+              {corruption.errors.length > 5 && (
+                <li>...and {corruption.errors.length - 5} more</li>
+              )}
+            </ul>
+          </div>
+        )}
 
-          {exportPath && (
-            <div style={successStyle}>Data exported successfully to: {exportPath}</div>
-          )}
+        {exportPath && (
+          <div style={styles.success}>Data exported successfully to: {exportPath}</div>
+        )}
 
-          {error && <div style={errorStyle}>Error: {error}</div>}
-        </div>
+        {error && <div style={styles.errorBanner}>Error: {error}</div>}
+      </Modal.Content>
 
-        <div style={actionsStyle}>
-          <div style={actionRowStyle}>
-            <span style={actionTextStyle}>
+      <Modal.Footer align="start">
+        <div style={styles.actionsStack}>
+          <div style={styles.actionRow}>
+            <span style={styles.actionText}>
               Export your data first (recommended before reset)
             </span>
             <Button
@@ -216,8 +134,8 @@ export function CorruptionDialog({
             </Button>
           </div>
 
-          <div style={actionRowStyle}>
-            <span style={actionTextStyle}>Reset database and re-sync from Canvas</span>
+          <div style={styles.actionRow}>
+            <span style={styles.actionText}>Reset database and re-sync from Canvas</span>
             <Button
               variant="danger"
               size="sm"
@@ -229,8 +147,8 @@ export function CorruptionDialog({
           </div>
 
           {corruption.canContinue && (
-            <div style={actionRowStyle}>
-              <span style={actionTextStyle}>
+            <div style={styles.actionRow}>
+              <span style={styles.actionText}>
                 Continue with the current database (not recommended)
               </span>
               <Button
@@ -244,9 +162,70 @@ export function CorruptionDialog({
             </div>
           )}
         </div>
-      </div>
-    </div>
+      </Modal.Footer>
+    </Modal>
   );
 }
+
+const styles: Record<string, React.CSSProperties> = {
+  description: {
+    fontSize: 'var(--text-sm)',
+    color: 'var(--text-secondary)',
+    marginBottom: 'var(--space-4)',
+    marginTop: 0,
+    lineHeight: 1.5,
+  },
+
+  errors: {
+    backgroundColor: 'var(--bg-app)',
+    borderRadius: 'var(--radius-md)',
+    padding: 'var(--space-3)',
+    marginBottom: 'var(--space-4)',
+    fontSize: 'var(--text-xs)',
+    fontFamily: 'monospace',
+    color: 'var(--text-secondary)',
+    maxHeight: '150px',
+    overflow: 'auto',
+  },
+
+  success: {
+    padding: 'var(--space-3)',
+    backgroundColor: 'var(--color-success-bg)',
+    borderRadius: 'var(--radius-md)',
+    color: 'var(--color-success)',
+    fontSize: 'var(--text-sm)',
+    marginBottom: 'var(--space-3)',
+  },
+
+  errorBanner: {
+    padding: 'var(--space-3)',
+    backgroundColor: 'var(--color-critical-bg)',
+    borderRadius: 'var(--radius-md)',
+    color: 'var(--color-critical)',
+    fontSize: 'var(--text-sm)',
+    marginBottom: 'var(--space-3)',
+  },
+
+  // The Modal.Footer's default flex row wraps; we want vertically-stacked
+  // action rows here, so own the layout inside a single footer child.
+  actionsStack: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 'var(--space-3)',
+    width: '100%',
+  },
+
+  actionRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-3)',
+  },
+
+  actionText: {
+    flex: 1,
+    fontSize: 'var(--text-sm)',
+    color: 'var(--text-secondary)',
+  },
+};
 
 export default CorruptionDialog;
