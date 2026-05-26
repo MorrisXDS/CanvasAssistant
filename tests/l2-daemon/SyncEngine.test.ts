@@ -203,6 +203,67 @@ describe('SyncEngine', () => {
       );
     });
 
+    it('does NOT auto-merge when two user tasks share the title (ambiguous match)', async () => {
+      // Two user-created tasks with the SAME title in the same course. Sync
+      // matches by exact title; without an ambiguity guard it would merge an
+      // arbitrary one (SQLite row order) and orphan the other. The guard skips
+      // the title-merge and lets the Canvas assignment land as its own task.
+      db.executeWrite(
+        `INSERT INTO tasks (source_type, course_id, title, weight, priority_score)
+         VALUES ('user', 1, 'Problem Set 3', 10.0, 50.0)`,
+        [],
+        'tasks'
+      );
+      db.executeWrite(
+        `INSERT INTO tasks (source_type, course_id, title, weight, priority_score)
+         VALUES ('user', 1, 'Problem Set 3', 20.0, 60.0)`,
+        [],
+        'tasks'
+      );
+
+      mockGetAll.mockResolvedValue([
+        {
+          id: 98765,
+          name: 'Problem Set 3', // same title as BOTH local tasks
+          description: '<p>Complete exercises</p>',
+          due_at: '2024-02-15T23:59:00Z',
+          unlock_at: null,
+          lock_at: null,
+          points_possible: 100,
+          submission_types: ['online_upload'],
+          has_submitted_submissions: false,
+          course_id: 12345,
+          grading_type: 'points',
+          assignment_group_id: 1,
+        },
+      ]);
+
+      const mergeHandler = jest.fn();
+      syncEngine.on('task-merged', mergeHandler);
+
+      const result = await syncEngine.syncTasks(12345, 1);
+      expect(result.success).toBe(true);
+
+      // Neither user task was merged — both stay unlinked and user-owned.
+      const userTasks = db.executeRead<{
+        external_id: string | null;
+        weight: number;
+      }>("SELECT external_id, weight FROM tasks WHERE source_type = 'user'");
+      expect(userTasks).toHaveLength(2);
+      expect(userTasks.every((t) => t.external_id === null)).toBe(true);
+      expect(userTasks.map((t) => t.weight).sort()).toEqual([10.0, 20.0]);
+
+      // The Canvas assignment lands as its own task rather than merging arbitrarily.
+      const canvasTasks = db.executeRead<{ source_type: string }>(
+        "SELECT source_type FROM tasks WHERE external_id = '98765'"
+      );
+      expect(canvasTasks).toHaveLength(1);
+      expect(canvasTasks[0].source_type).toBe('canvas');
+
+      // No merge event fired for the ambiguous case.
+      expect(mergeHandler).not.toHaveBeenCalled();
+    });
+
     it('should sync assignments as tasks', async () => {
       const mockAssignments = [
         {
