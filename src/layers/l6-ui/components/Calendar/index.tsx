@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Calendar Page
  * Full calendar view with month/week/day toggle and filtering
  */
@@ -11,6 +11,7 @@ import React, {
   useDeferredValue,
   useRef,
 } from 'react';
+import { useKeymap } from '../../hooks/useKeymap';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { getEventId, positionEvents } from './calendarHelpers';
 import {
@@ -175,7 +176,7 @@ export function CalendarPage() {
   }, [focusedEventId]);
 
   // Persist the "currently open detail modal" event so navigating away and back
-  // (e.g. Go to Course → ESC) restores it. Skip the first run — on mount
+  // (e.g. Go to Course 鈫?ESC) restores it. Skip the first run 鈥?on mount
   // selectedEvent is null (React state is per-instance), and clearing here
   // would wipe the sessionStorage entry left by the prior mount before the
   // restore effect gets a chance to read it.
@@ -209,18 +210,25 @@ export function CalendarPage() {
     sessionStorage.setItem('calendar-current-date', currentDate.toISOString());
   }, [currentDate]);
 
-  // (Restoration effect moved below focusableEvents definition — see later)
+  // (Restoration effect moved below focusableEvents definition 鈥?see later)
   const hasRestoredSelectedRef = useRef(false);
 
   // Keyboard mode for filter interaction
-  type KeyMode =
-    | 'events'
+  type FilterSection =
     | 'filters-courses'
     | 'filters-deadline'
     | 'filters-priority'
     | 'filters-clear';
-  const [keyMode, setKeyMode] = useState<KeyMode>('events');
+  const [filterSection, setFilterSection] = useState<FilterSection>('filters-courses');
+  const filterSectionRef = useRef<FilterSection>('filters-courses');
+  useEffect(() => {
+    filterSectionRef.current = filterSection;
+  }, [filterSection]);
   const [filterFocusIndex, setFilterFocusIndex] = useState(0);
+  const filterFocusIndexRef = useRef(0);
+  useEffect(() => {
+    filterFocusIndexRef.current = filterFocusIndex;
+  }, [filterFocusIndex]);
 
   // Drag-and-drop
   const handleImportReady = useCallback((content: string, preview: ICSImportPreview) => {
@@ -424,7 +432,7 @@ export function CalendarPage() {
         // If all courses deselected, hide all
         if (selectedCourses.size === 0) return false;
 
-        // Prefer the event's explicit courseId when present — this is exact
+        // Prefer the event's explicit courseId when present 鈥?this is exact
         // and avoids the ambiguity of two courses sharing a code prefix
         // (e.g. two "ECE342H1 S LEC0102" + "ECE342H1 S PRA0105" entries
         // both matching a shortCode "ece342" in title-based filtering).
@@ -531,17 +539,17 @@ export function CalendarPage() {
         `[restore] savedId=${savedId} not in ${focusableEvents.length} focusableEvents`
       );
     }
-    // Note: if match not found yet, don't set ref=true — events may still be loading
+    // Note: if match not found yet, don't set ref=true 鈥?events may still be loading
   }, [focusableEvents, selectedEvent]);
 
-  // Helper: convert a Date → 'YYYY-MM-DD' local date string
+  // Helper: convert a Date 鈫?'YYYY-MM-DD' local date string
   const toISODate = useCallback((d: Date): string => {
     const y = d.getFullYear();
     const m = String(d.getMonth() + 1).padStart(2, '0');
     const day = String(d.getDate()).padStart(2, '0');
     return `${y}-${m}-${day}`;
   }, []);
-  // Helper: parse 'YYYY-MM-DD' → Date at local midnight
+  // Helper: parse 'YYYY-MM-DD' 鈫?Date at local midnight
   const fromISODate = useCallback((iso: string): Date => {
     const [y, m, d] = iso.split('-').map(Number);
     return new Date(y, m - 1, d);
@@ -577,7 +585,7 @@ export function CalendarPage() {
     );
     for (const event of visibleEvents) {
       if (event.type === 'imported') {
-        // Prefer the event's explicit courseId — avoids false matches when
+        // Prefer the event's explicit courseId 鈥?avoids false matches when
         // two courses share a code prefix.
         if (event.event.courseId !== null && event.event.courseId !== undefined) {
           courseIds.add(event.event.courseId);
@@ -1032,6 +1040,518 @@ export function CalendarPage() {
   });
 
   // Keyboard shortcuts (document-level so focus target doesn't matter)
+  // ---------------------------------------------------------------------------
+  // Keyboard 鈥?useKeymap routes keys between events and filter scopes.
+  // Alt+Shift+D/P/C and Alt+1-9 fire in BOTH scopes so they live in a small
+  // separate handler below.
+  // ---------------------------------------------------------------------------
+
+  // Helpers for filter-scope section / option navigation (use refs for freshness)
+  const calPrevFilterSection = useCallback(() => {
+    const sections: FilterSection[] = [
+      'filters-courses',
+      'filters-deadline',
+      'filters-priority',
+      ...(hasActiveFilters ? (['filters-clear'] as const) : []),
+    ];
+    const idx = sections.indexOf(filterSectionRef.current);
+    const start = idx === -1 ? 0 : idx;
+    setFilterSection(sections[(start - 1 + sections.length) % sections.length]);
+    setFilterFocusIndex(0);
+  }, [hasActiveFilters]);
+
+  const calNextFilterSection = useCallback(() => {
+    const sections: FilterSection[] = [
+      'filters-courses',
+      'filters-deadline',
+      'filters-priority',
+      ...(hasActiveFilters ? (['filters-clear'] as const) : []),
+    ];
+    const idx = sections.indexOf(filterSectionRef.current);
+    const start = idx === -1 ? 0 : idx;
+    setFilterSection(sections[(start + 1) % sections.length]);
+    setFilterFocusIndex(0);
+  }, [hasActiveFilters]);
+
+  const calWalkFilterOption = useCallback(
+    (dir: 1 | -1) => {
+      const maxBySection: Record<FilterSection, number> = {
+        'filters-courses': courses.length,
+        'filters-deadline': 5,
+        'filters-priority': 4,
+        'filters-clear': 0,
+      };
+      const max = maxBySection[filterSectionRef.current];
+      if (max <= 0) return;
+      setFilterFocusIndex((prev) => {
+        const next = prev + dir;
+        return ((next % max) + max) % max;
+      });
+    },
+    [courses.length]
+  );
+
+  const calToggleFilterOption = useCallback(() => {
+    const sec = filterSectionRef.current;
+    const idx = filterFocusIndexRef.current;
+    if (sec === 'filters-courses' && courses[idx]) {
+      toggleCourseFilter(courses[idx].id);
+    } else if (sec === 'filters-deadline') {
+      const opts: DeadlineFilter[] = [
+        'all',
+        'overdue',
+        'today',
+        'this-week',
+        'this-month',
+      ];
+      setDeadlineFilter(opts[idx]);
+    } else if (sec === 'filters-priority') {
+      const opts: PriorityFilter[] = ['all', 'high', 'medium', 'low'];
+      setPriorityFilter(opts[idx]);
+    } else if (sec === 'filters-clear') {
+      clearFilters();
+      setFilterSection('filters-courses');
+      setFilterFocusIndex(0);
+    }
+  }, [courses, toggleCourseFilter, clearFilters]);
+
+  // Helpers for events-scope navigation (inline 鈥?closed over via keymapsRef)
+  // pickEdgeEventOfDay and navigateWeekHorizontal were previously defined inside
+  // the document handler; they're now component-level so useKeymap can reference them.
+  const getEventStartAt = useCallback((ev: CalendarEvent): Date | null => {
+    if (ev.type === 'task' && ev.task.dueAt) return new Date(ev.task.dueAt);
+    if (ev.type === 'imported') return new Date(ev.event.startAt);
+    return null;
+  }, []);
+
+  const pickEdgeEventOfDay = useCallback(
+    (dayEvents: CalendarEvent[], direction: 1 | -1): CalendarEvent | null => {
+      if (dayEvents.length === 0) return null;
+      const positioned = positionEvents(dayEvents);
+      if (positioned.length === 0) {
+        return direction > 0 ? dayEvents[0] : dayEvents[dayEvents.length - 1];
+      }
+      const maxStart = Math.max(
+        ...positioned.map((p) => {
+          const d =
+            p.event.type === 'task' && p.event.task.dueAt
+              ? new Date(p.event.task.dueAt).getTime()
+              : p.event.type === 'imported'
+                ? new Date(p.event.event.startAt).getTime()
+                : 0;
+          return d;
+        })
+      );
+      const latestRow = positioned.filter((p) => {
+        const d =
+          p.event.type === 'task' && p.event.task.dueAt
+            ? new Date(p.event.task.dueAt).getTime()
+            : p.event.type === 'imported'
+              ? new Date(p.event.event.startAt).getTime()
+              : 0;
+        return d === maxStart;
+      });
+      latestRow.sort((a, b) => a.column - b.column);
+      return direction > 0 ? latestRow[0].event : latestRow[latestRow.length - 1].event;
+    },
+    []
+  );
+
+  const navigateWeekHorizontal = useCallback(
+    (
+      direction: 1 | -1,
+      focusedEvent: CalendarEvent | null,
+      focusedDate: string | null
+    ) => {
+      if (!focusedEvent) {
+        const dayISO = focusedDate ?? toISODate(currentDate);
+        const dayEvents = getEventsOnDate(dayISO);
+        const edge = pickEdgeEventOfDay(dayEvents, direction);
+        if (edge) {
+          setFocusedEventId(getEventId(edge));
+          if (!focusedDate) setFocusedDate(dayISO);
+          return;
+        }
+        if (view === 'week') shiftDay(direction);
+        return;
+      }
+      const curStart = getEventStartAt(focusedEvent);
+      if (!curStart) return;
+      const curDayISO = toISODate(curStart);
+      const sameHourGroup = getEventsOnDate(curDayISO).filter((ev) => {
+        const s = getEventStartAt(ev);
+        return s && s.getHours() === curStart.getHours();
+      });
+      const curIdx = sameHourGroup.findIndex(
+        (ev) => getEventId(ev) === getEventId(focusedEvent)
+      );
+      const nextInGroup = sameHourGroup[curIdx + direction];
+      if (nextInGroup) {
+        setFocusedEventId(getEventId(nextInGroup));
+        return;
+      }
+      const adjDayDate = new Date(curStart);
+      adjDayDate.setDate(adjDayDate.getDate() + direction);
+      const adjDayISO = toISODate(adjDayDate);
+      const adjEvents = getEventsOnDate(adjDayISO);
+      if (adjEvents.length > 0) {
+        const closest = adjEvents.reduce((best, ev) => {
+          const s = getEventStartAt(ev);
+          const bestS = getEventStartAt(best);
+          if (!s) return best;
+          if (!bestS) return ev;
+          const diff = Math.abs(
+            s.getHours() * 60 +
+              s.getMinutes() -
+              (curStart.getHours() * 60 + curStart.getMinutes())
+          );
+          const bestDiff = Math.abs(
+            bestS.getHours() * 60 +
+              bestS.getMinutes() -
+              (curStart.getHours() * 60 + curStart.getMinutes())
+          );
+          return diff < bestDiff ? ev : best;
+        });
+        setFocusedEventId(getEventId(closest));
+        setFocusedDate(adjDayISO);
+        return;
+      }
+      if (view === 'week') shiftDay(direction);
+    },
+    [currentDate, view, getEventsOnDate, pickEdgeEventOfDay, getEventStartAt, toISODate]
+  );
+
+  const shiftDay = useCallback(
+    (deltaDays: number) => {
+      const anchor = focusedDate ?? toISODate(currentDate);
+      const d = fromISODate(anchor);
+      d.setDate(d.getDate() + deltaDays);
+      setFocusedDate(toISODate(d));
+      setFocusedEventId(null);
+      if (view === 'day') {
+        setCurrentDate(d);
+      } else if (view === 'month') {
+        if (
+          d.getFullYear() !== currentDate.getFullYear() ||
+          d.getMonth() !== currentDate.getMonth()
+        ) {
+          setCurrentDate(d);
+        }
+      } else if (view === 'week') {
+        const weekStart = new Date(currentDate);
+        weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+        weekStart.setHours(0, 0, 0, 0);
+        const weekEnd = new Date(weekStart);
+        weekEnd.setDate(weekEnd.getDate() + 6);
+        weekEnd.setHours(23, 59, 59, 999);
+        if (d < weekStart || d > weekEnd) setCurrentDate(d);
+      }
+    },
+    [focusedDate, currentDate, view, fromISODate, toISODate]
+  );
+
+  const cycleEventsInDay = useCallback(
+    (delta: 1 | -1) => {
+      const anchor = focusedDate ?? toISODate(currentDate);
+      const events = getEventsOnDate(anchor);
+      if (events.length === 0) return;
+      if (!focusedDate) setFocusedDate(anchor);
+      setFocusedEventId((prev) => {
+        if (!prev) return getEventId(delta > 0 ? events[0] : events[events.length - 1]);
+        const idx = events.findIndex((ev) => getEventId(ev) === prev);
+        if (idx < 0) return getEventId(events[0]);
+        return getEventId(events[(idx + delta + events.length) % events.length]);
+      });
+    },
+    [focusedDate, currentDate, toISODate, getEventsOnDate]
+  );
+
+  const { scope: calScope, setScope: setCalScope } = useKeymap<'events' | 'filter'>(
+    {
+      events: {
+        // Period navigation
+        'mod+ArrowLeft': (e) => {
+          e.preventDefault();
+          const d = new Date(currentDate);
+          d.setMonth(
+            view === 'month'
+              ? d.getMonth() - 1
+              : view === 'week'
+                ? d.getDate() - 7
+                : d.getDate() - 1,
+            view === 'month' ? d.getDate() : undefined
+          );
+          if (view === 'month') d.setMonth(d.getMonth() - 1);
+          else if (view === 'week') d.setDate(d.getDate() - 7);
+          else d.setDate(d.getDate() - 1);
+          setCurrentDate(d);
+          setFocusedDate(toISODate(d));
+          setFocusedEventId(null);
+        },
+        'mod+ArrowRight': (e) => {
+          e.preventDefault();
+          const d = new Date(currentDate);
+          if (view === 'month') d.setMonth(d.getMonth() + 1);
+          else if (view === 'week') d.setDate(d.getDate() + 7);
+          else d.setDate(d.getDate() + 1);
+          setCurrentDate(d);
+          setFocusedDate(toISODate(d));
+          setFocusedEventId(null);
+        },
+        // Horizontal navigation
+        'ArrowLeft,a': (e) => {
+          e.preventDefault();
+          if (view === 'day' || view === 'week') {
+            navigateWeekHorizontal(-1, focusedEvent, focusedDate);
+          } else {
+            if (!focusedDate) setFocusedDate(toISODate(currentDate));
+            else shiftDay(-1);
+          }
+        },
+        'ArrowRight,d': (e) => {
+          e.preventDefault();
+          if (view === 'day' || view === 'week') {
+            navigateWeekHorizontal(1, focusedEvent, focusedDate);
+          } else {
+            if (!focusedDate) setFocusedDate(toISODate(currentDate));
+            else shiftDay(1);
+          }
+        },
+        // Shift+D jumps to deadline filter when panel is open
+        'shift+d': (e) => {
+          if (showFilters) {
+            e.preventDefault();
+            setCalScope('filter');
+            setFilterSection('filters-deadline');
+            setFilterFocusIndex(0);
+          }
+        },
+        // Day navigation Q/E
+        q: (e) => {
+          if (view === 'week' || view === 'day') {
+            e.preventDefault();
+            if (!focusedDate) setFocusedDate(toISODate(currentDate));
+            else shiftDay(-1);
+          }
+        },
+        e: (e) => {
+          if (view === 'week' || view === 'day') {
+            e.preventDefault();
+            if (!focusedDate) setFocusedDate(toISODate(currentDate));
+            else shiftDay(1);
+          } else if (focusedEvent) {
+            e.preventDefault();
+            openEditForEvent(focusedEvent);
+          }
+        },
+        // View cycle
+        Tab: (e) => {
+          e.preventDefault();
+          const order: CalendarView[] = ['month', 'week', 'day'];
+          const idx = order.indexOf(view);
+          setView(
+            order[
+              e.shiftKey
+                ? (idx - 1 + order.length) % order.length
+                : (idx + 1) % order.length
+            ]
+          );
+        },
+        'shift+Tab': (e) => {
+          e.preventDefault();
+          const order: CalendarView[] = ['month', 'week', 'day'];
+          const idx = order.indexOf(view);
+          setView(order[(idx - 1 + order.length) % order.length]);
+        },
+        t: (e) => {
+          e.preventDefault();
+          goToToday();
+          setFocusedDate(toISODate(new Date()));
+          setFocusedEventId(null);
+        },
+        v: (e) => {
+          e.preventDefault();
+          cycleView();
+        },
+        // Filter panel
+        f: (e) => {
+          e.preventDefault();
+          setShowFilters((prev) => {
+            const next = !prev;
+            if (next) setCalScope('filter');
+            setFilterFocusIndex(0);
+            return next;
+          });
+        },
+        c: (e) => {
+          if (showFilters) {
+            e.preventDefault();
+            setCalScope('filter');
+            setFilterSection('filters-courses');
+            setFilterFocusIndex(0);
+          }
+        },
+        p: (e) => {
+          if (showFilters) {
+            e.preventDefault();
+            setCalScope('filter');
+            setFilterSection('filters-priority');
+            setFilterFocusIndex(0);
+          }
+        },
+        // Vertical navigation
+        'ArrowUp,w': (e) => {
+          e.preventDefault();
+          if (view === 'month' && !e.shiftKey) {
+            if (!focusedDate) setFocusedDate(toISODate(currentDate));
+            else shiftDay(-7);
+          } else cycleEventsInDay(-1);
+        },
+        'ArrowDown,s': (e) => {
+          e.preventDefault();
+          if (view === 'month' && !e.shiftKey) {
+            if (!focusedDate) setFocusedDate(toISODate(currentDate));
+            else shiftDay(7);
+          } else cycleEventsInDay(1);
+        },
+        // Event actions
+        Enter: (e) => {
+          if (focusedEvent) {
+            e.preventDefault();
+            setSelectedEvent(focusedEvent);
+          } else if (focusedDate) {
+            e.preventDefault();
+            const dayEvents = getEventsOnDate(focusedDate);
+            if (dayEvents.length === 0) {
+              const d = fromISODate(focusedDate);
+              d.setHours(9, 0, 0, 0);
+              setCurrentDate(d);
+              setEventToEdit(null);
+              setShowEventFormModal(true);
+            } else if (dayEvents.length === 1) {
+              setSelectedEvent(dayEvents[0]);
+            } else {
+              setFocusedEventId(getEventId(dayEvents[0]));
+              setSelectedEvent(dayEvents[0]);
+            }
+          }
+        },
+        n: (e) => {
+          e.preventDefault();
+          if (focusedDate) {
+            const d = fromISODate(focusedDate);
+            if (focusedEvent) {
+              const src =
+                focusedEvent.type === 'task' && focusedEvent.task.dueAt
+                  ? new Date(focusedEvent.task.dueAt)
+                  : focusedEvent.type === 'imported'
+                    ? new Date(focusedEvent.event.startAt)
+                    : d;
+              d.setHours(src.getHours(), src.getMinutes(), 0, 0);
+            } else {
+              d.setHours(9, 0, 0, 0);
+            }
+            setCurrentDate(d);
+          }
+          setEventToEdit(null);
+          setShowEventFormModal(true);
+        },
+        x: (e) => {
+          if (focusedEvent?.type === 'task') {
+            e.preventDefault();
+            handleToggleTaskComplete(focusedEvent.task);
+          }
+        },
+        'Delete,Backspace': (e) => {
+          if (focusedEvent) {
+            e.preventDefault();
+            setEventPendingDelete(focusedEvent);
+          }
+        },
+        Escape: (e) => {
+          if (focusedEventId) {
+            e.preventDefault();
+            setFocusedEventId(null);
+          } else if (focusedDate) {
+            e.preventDefault();
+            setFocusedDate(null);
+          }
+        },
+      },
+      filter: {
+        'mod+a': (e) => {
+          e.preventDefault();
+          setSelectedCourses(null);
+        },
+        'mod+n': (e) => {
+          e.preventDefault();
+          setSelectedCourses(new Set());
+        },
+        'Escape,f': (e) => {
+          e.preventDefault();
+          setShowFilters(false);
+          setCalScope('events');
+        },
+        c: (e) => {
+          e.preventDefault();
+          setFilterSection('filters-courses');
+          setFilterFocusIndex(0);
+        },
+        p: (e) => {
+          e.preventDefault();
+          setFilterSection('filters-priority');
+          setFilterFocusIndex(0);
+        },
+        'shift+d': (e) => {
+          e.preventDefault();
+          setFilterSection('filters-deadline');
+          setFilterFocusIndex(0);
+        },
+        'ArrowUp,w': (e) => {
+          e.preventDefault();
+          calPrevFilterSection();
+        },
+        'ArrowDown,s': (e) => {
+          e.preventDefault();
+          calNextFilterSection();
+        },
+        Tab: (e) => {
+          e.preventDefault();
+          calNextFilterSection();
+        },
+        'shift+Tab': (e) => {
+          e.preventDefault();
+          calPrevFilterSection();
+        },
+        'ArrowLeft,a': (e) => {
+          e.preventDefault();
+          calWalkFilterOption(-1);
+        },
+        'ArrowRight,d': (e) => {
+          e.preventDefault();
+          calWalkFilterOption(1);
+        },
+        'Space,Enter': (e) => {
+          e.preventDefault();
+          calToggleFilterOption();
+        },
+        // Swallow nav-adjacent keys to prevent leakage to event scope
+        q: (e) => e.preventDefault(),
+        e: (e) => e.preventDefault(),
+        n: (e) => e.preventDefault(),
+        x: (e) => e.preventDefault(),
+        t: (e) => e.preventDefault(),
+        v: (e) => e.preventDefault(),
+      },
+    },
+    {
+      initialScope: 'events',
+      when: () => !isAnyModalOpenRef.current,
+    }
+  );
+
+  // Cross-scope shortcuts: Alt+Shift+D/P/C and Alt+1-9 fire in both scopes.
+  // Kept as a separate small handler since useKeymap scopes them exclusively.
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
@@ -1040,7 +1560,6 @@ export function CalendarPage() {
       if (target?.isContentEditable) return;
       if (isAnyModalOpenRef.current) return;
 
-      // Long-combo filter shortcuts (Alt+Shift+...)
       if (e.altKey && e.shiftKey && !e.ctrlKey && !e.metaKey) {
         const key = e.key.toLowerCase();
         if (key === 'd') {
@@ -1079,545 +1598,10 @@ export function CalendarPage() {
           return;
         }
       }
-
-      // Filter mode: navigation and toggles are scoped to the filter panel.
-      // Any nav-adjacent key (arrows, WASD, Q/E, Tab, N, E, X) is swallowed
-      // so calendar focus does not move while the panel is active.
-      if (keyMode !== 'events' && showFilters) {
-        // Ctrl/Cmd+A selects all courses; Ctrl/Cmd+N deselects all.
-        // Handled first so the early Ctrl return below doesn't swallow them.
-        // Work regardless of which section row is currently focused.
-        if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey) {
-          const ctrlKey = e.key.toLowerCase();
-          if (ctrlKey === 'a') {
-            e.preventDefault();
-            setSelectedCourses(null);
-            return;
-          }
-          if (ctrlKey === 'n') {
-            e.preventDefault();
-            setSelectedCourses(new Set());
-            return;
-          }
-        }
-        if (e.ctrlKey || e.metaKey || e.altKey) return;
-        const key = e.key.toLowerCase();
-
-        // Escape or F closes the panel entirely (quit panel mode)
-        if (e.key === 'Escape' || key === 'f') {
-          e.preventDefault();
-          setShowFilters(false);
-          setKeyMode('events');
-          return;
-        }
-
-        // Jump to section: C (courses), Shift+D (deadline), P (priority)
-        if (key === 'c' && !e.shiftKey) {
-          e.preventDefault();
-          setKeyMode('filters-courses');
-          setFilterFocusIndex(0);
-          return;
-        }
-        if (key === 'p' && !e.shiftKey) {
-          e.preventDefault();
-          setKeyMode('filters-priority');
-          setFilterFocusIndex(0);
-          return;
-        }
-        if (key === 'd' && e.shiftKey) {
-          e.preventDefault();
-          setKeyMode('filters-deadline');
-          setFilterFocusIndex(0);
-          return;
-        }
-
-        // Vertical axis (W/S/↑/↓ or Tab/Shift+Tab) switches rows = sections.
-        // The 'filters-clear' row is only reachable when there are active filters.
-        const isSectionPrev =
-          key === 'w' || e.key === 'ArrowUp' || (e.key === 'Tab' && e.shiftKey);
-        const isSectionNext =
-          key === 's' || e.key === 'ArrowDown' || (e.key === 'Tab' && !e.shiftKey);
-        if (isSectionPrev || isSectionNext) {
-          e.preventDefault();
-          const sections: Array<Exclude<KeyMode, 'events'>> = [
-            'filters-courses',
-            'filters-deadline',
-            'filters-priority',
-            ...(hasActiveFilters ? (['filters-clear'] as const) : []),
-          ];
-          const idx = sections.indexOf(keyMode);
-          const delta = isSectionNext ? 1 : -1;
-          // If the current mode isn't in the visible list (e.g. we were on 'filters-clear'
-          // and the filters just got cleared), treat as starting from 0.
-          const startIdx = idx === -1 ? 0 : idx;
-          const next = (startIdx + delta + sections.length) % sections.length;
-          setKeyMode(sections[next]);
-          setFilterFocusIndex(0);
-          return;
-        }
-
-        // Horizontal axis (A/D/←/→) moves option index within the focused section.
-        // The 'filters-clear' row is a single button, so horizontal keys are no-ops.
-        const isOptionPrev = key === 'a' || e.key === 'ArrowLeft';
-        const isOptionNext = key === 'd' || e.key === 'ArrowRight';
-        if (isOptionPrev || isOptionNext) {
-          e.preventDefault();
-          if (keyMode === 'filters-clear') return;
-          const maxByMode: Record<
-            Exclude<KeyMode, 'events' | 'filters-clear'>,
-            number
-          > = {
-            'filters-courses': courses.length,
-            'filters-deadline': 5,
-            'filters-priority': 4,
-          };
-          const max = maxByMode[keyMode];
-          if (max > 0) {
-            setFilterFocusIndex((prev) => {
-              const next = isOptionPrev ? prev - 1 : prev + 1;
-              return ((next % max) + max) % max;
-            });
-          }
-          return;
-        }
-
-        // Toggle focused option / activate the clear-filters row
-        if (e.key === ' ' || e.key === 'Enter') {
-          e.preventDefault();
-          if (keyMode === 'filters-courses' && courses[filterFocusIndex]) {
-            toggleCourseFilter(courses[filterFocusIndex].id);
-          } else if (keyMode === 'filters-deadline') {
-            const opts: DeadlineFilter[] = [
-              'all',
-              'overdue',
-              'today',
-              'this-week',
-              'this-month',
-            ];
-            setDeadlineFilter(opts[filterFocusIndex]);
-          } else if (keyMode === 'filters-priority') {
-            const opts: PriorityFilter[] = ['all', 'high', 'medium', 'low'];
-            setPriorityFilter(opts[filterFocusIndex]);
-          } else if (keyMode === 'filters-clear') {
-            clearFilters();
-            // Clearing removes the row; jump back to Courses
-            setKeyMode('filters-courses');
-            setFilterFocusIndex(0);
-          }
-          return;
-        }
-
-        // Swallow any remaining nav-adjacent keys so they can't leak to event nav.
-        // (A/D and ←/→ are handled above for section switching.)
-        if (
-          key === 'q' ||
-          key === 'e' ||
-          key === 'n' ||
-          key === 'x' ||
-          key === 't' ||
-          key === 'v'
-        ) {
-          e.preventDefault();
-          return;
-        }
-        // Non-navigation keys (e.g. typing in a future search field) fall through
-        return;
-      }
-
-      // Ctrl/Cmd + Arrow = prev/next period (month/week/day) + carry focus anchor
-      if ((e.ctrlKey || e.metaKey) && !e.altKey) {
-        if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-          e.preventDefault();
-          const delta = e.key === 'ArrowLeft' ? -1 : 1;
-          const newDate = new Date(currentDate);
-          if (view === 'month') newDate.setMonth(newDate.getMonth() + delta);
-          else if (view === 'week') newDate.setDate(newDate.getDate() + 7 * delta);
-          else newDate.setDate(newDate.getDate() + delta);
-          setCurrentDate(newDate);
-          // Move the focus anchor to the new period so subsequent direction keys
-          // pick up from the new period instead of the old one
-          setFocusedDate(toISODate(newDate));
-          setFocusedEventId(null);
-          return;
-        }
-      }
-
-      // Plain modifier-free keys
-      if (e.ctrlKey || e.metaKey || e.altKey) return;
-
-      // Helpers used below — compute current focused day anchor per view
-      const anchorISO = focusedDate ?? toISODate(currentDate);
-
-      // Get event start time as Date
-      const getEventStartAt = (ev: CalendarEvent): Date | null => {
-        if (ev.type === 'task' && ev.task.dueAt) return new Date(ev.task.dueAt);
-        if (ev.type === 'imported') return new Date(ev.event.startAt);
-        return null;
-      };
-
-      // Week view A/D: navigate horizontally with 3-step fallback.
-      //   1. Within same-hour overlap group on the focused day (sorted by minute)
-      //   2. Closest event (by time-of-day) on the adjacent day
-      //   3. Fall back to Q/E behavior (shift day column)
-      // Pick the visually leftmost (direction=+1, coming from left) or rightmost
-      // (direction=-1, coming from right) event in a day's 11pm-style overlap row.
-      // Uses positionEvents for column info; falls back to sort order for non-timed events.
-      const pickEdgeEventOfDay = (
-        dayEvents: CalendarEvent[],
-        direction: 1 | -1
-      ): CalendarEvent | null => {
-        if (dayEvents.length === 0) return null;
-        const positioned = positionEvents(dayEvents);
-        if (positioned.length === 0) {
-          // All-day/no-time events: fall back to chronological first/last
-          return direction > 0 ? dayEvents[0] : dayEvents[dayEvents.length - 1];
-        }
-        // Prefer latest-time events (likely the last row the user sees on their way in)
-        const maxStart = Math.max(
-          ...positioned.map((p) => {
-            const d =
-              p.event.type === 'task' && p.event.task.dueAt
-                ? new Date(p.event.task.dueAt).getTime()
-                : p.event.type === 'imported'
-                  ? new Date(p.event.event.startAt).getTime()
-                  : 0;
-            return d;
-          })
-        );
-        const latestRow = positioned.filter((p) => {
-          const d =
-            p.event.type === 'task' && p.event.task.dueAt
-              ? new Date(p.event.task.dueAt).getTime()
-              : p.event.type === 'imported'
-                ? new Date(p.event.event.startAt).getTime()
-                : 0;
-          return d === maxStart;
-        });
-        // direction > 0 (D, coming from left) → leftmost column; direction < 0 (A) → rightmost
-        latestRow.sort((a, b) => a.column - b.column);
-        return direction > 0 ? latestRow[0].event : latestRow[latestRow.length - 1].event;
-      };
-
-      const navigateWeekHorizontal = (direction: 1 | -1) => {
-        // No focused event: pick an edge event of the focused day so A/D
-        // feels spatial. If the day has no events, Week view falls back to
-        // shifting the day column; Day view does nothing (day switching is
-        // Q/E or Ctrl+←/→ in Day view).
-        if (!focusedEvent) {
-          const dayISO = focusedDate ?? toISODate(currentDate);
-          const dayEvents = getEventsOnDate(dayISO);
-          const edge = pickEdgeEventOfDay(dayEvents, direction);
-          if (edge) {
-            setFocusedEventId(getEventId(edge));
-            if (!focusedDate) setFocusedDate(dayISO);
-            return;
-          }
-          if (view === 'week') shiftDay(direction);
-          return;
-        }
-        const curStart = getEventStartAt(focusedEvent);
-        if (!curStart) return;
-        const curDayISO = toISODate(curStart);
-
-        // Step 1: same-hour group on same day
-        const sameHourGroup = getEventsOnDate(curDayISO)
-          .filter((ev) => {
-            const s = getEventStartAt(ev);
-            return s && s.getHours() === curStart.getHours();
-          })
-          .sort((a, b) => {
-            const sa = getEventStartAt(a)!.getTime();
-            const sb = getEventStartAt(b)!.getTime();
-            return sa - sb;
-          });
-        const idxInGroup = sameHourGroup.findIndex(
-          (ev) => getEventId(ev) === getEventId(focusedEvent)
-        );
-        if (idxInGroup >= 0) {
-          const nextIdx = idxInGroup + direction;
-          if (nextIdx >= 0 && nextIdx < sameHourGroup.length) {
-            setFocusedEventId(getEventId(sameHourGroup[nextIdx]));
-            return;
-          }
-        }
-
-        // A/D stays within the current day. Day switching is done via
-        // Q/E or Ctrl+←/→, not here. So if the same-hour group has no
-        // more events, simply stop — do not cross days.
-      };
-
-      const shiftDay = (deltaDays: number) => {
-        const d = fromISODate(anchorISO);
-        d.setDate(d.getDate() + deltaDays);
-        setFocusedDate(toISODate(d));
-        setFocusedEventId(null);
-
-        // If the new focused date crosses the period boundary, advance the view too.
-        // Month: advance when the year/month differs from the display month.
-        // Week: advance when outside the current 7-day window.
-        // Day: always — Day view shows exactly one day.
-        if (view === 'day') {
-          setCurrentDate(d);
-        } else if (view === 'month') {
-          if (
-            d.getFullYear() !== currentDate.getFullYear() ||
-            d.getMonth() !== currentDate.getMonth()
-          ) {
-            setCurrentDate(d);
-          }
-        } else if (view === 'week') {
-          const weekStart = new Date(currentDate);
-          weekStart.setDate(weekStart.getDate() - weekStart.getDay());
-          weekStart.setHours(0, 0, 0, 0);
-          const weekEnd = new Date(weekStart);
-          weekEnd.setDate(weekEnd.getDate() + 6);
-          weekEnd.setHours(23, 59, 59, 999);
-          if (d < weekStart || d > weekEnd) {
-            setCurrentDate(d);
-          }
-        }
-      };
-      const cycleEventsInDay = (delta: 1 | -1) => {
-        const events = getEventsOnDate(anchorISO);
-        if (events.length === 0) return;
-        if (!focusedDate) setFocusedDate(anchorISO);
-        setFocusedEventId((prev) => {
-          if (!prev) {
-            return getEventId(delta > 0 ? events[0] : events[events.length - 1]);
-          }
-          const idx = events.findIndex((ev) => getEventId(ev) === prev);
-          if (idx < 0) return getEventId(events[0]);
-          const nextIdx = (idx + delta + events.length) % events.length;
-          return getEventId(events[nextIdx]);
-        });
-      };
-
-      switch (e.key) {
-        // Horizontal day navigation (arrows + A/D)
-        // In Week view, A/D cycles events chronologically across the week; Q/E jumps day columns
-        case 'ArrowLeft':
-        case 'a':
-        case 'A':
-          e.preventDefault();
-          if (view === 'day' || view === 'week') {
-            navigateWeekHorizontal(-1);
-          } else {
-            // Month
-            if (!focusedDate) setFocusedDate(toISODate(currentDate));
-            else shiftDay(-1);
-          }
-          break;
-        case 'ArrowRight':
-        case 'd':
-        case 'D':
-          // Shift+D enters Deadline filter mode when filter panel is open
-          if (e.key === 'D' && e.shiftKey && showFilters) {
-            e.preventDefault();
-            setKeyMode('filters-deadline');
-            setFilterFocusIndex(0);
-            break;
-          }
-          e.preventDefault();
-          if (view === 'day' || view === 'week') {
-            navigateWeekHorizontal(1);
-          } else {
-            if (!focusedDate) setFocusedDate(toISODate(currentDate));
-            else shiftDay(1);
-          }
-          break;
-        // Q / E — day navigation in Week/Day views
-        case 'q':
-        case 'Q':
-          if (view === 'week' || view === 'day') {
-            e.preventDefault();
-            if (!focusedDate) setFocusedDate(toISODate(currentDate));
-            else shiftDay(-1);
-          }
-          break;
-        case 'e':
-        case 'E':
-          if (view === 'week' || view === 'day') {
-            e.preventDefault();
-            if (!focusedDate) setFocusedDate(toISODate(currentDate));
-            else shiftDay(1);
-            break;
-          }
-          // Month view: E = edit focused event (handled below)
-          if (focusedEvent) {
-            e.preventDefault();
-            openEditForEvent(focusedEvent);
-          }
-          break;
-        case 'Tab': {
-          e.preventDefault();
-          const order: CalendarView[] = ['month', 'week', 'day'];
-          const idx = order.indexOf(view);
-          const next = e.shiftKey
-            ? (idx - 1 + order.length) % order.length
-            : (idx + 1) % order.length;
-          setView(order[next]);
-          break;
-        }
-        case 't':
-        case 'T':
-          e.preventDefault();
-          goToToday();
-          // Also move focus to today's cell so the highlight jumps with the navigation
-          setFocusedDate(toISODate(new Date()));
-          setFocusedEventId(null);
-          break;
-        case 'v':
-        case 'V':
-          e.preventDefault();
-          cycleView();
-          break;
-        case 'f':
-        case 'F':
-          e.preventDefault();
-          setShowFilters((prev) => {
-            const next = !prev;
-            setKeyMode(next ? 'filters-courses' : 'events');
-            setFilterFocusIndex(0);
-            return next;
-          });
-          break;
-        case 'c':
-        case 'C':
-          if (showFilters) {
-            e.preventDefault();
-            setKeyMode('filters-courses');
-            setFilterFocusIndex(0);
-          }
-          break;
-        case 'p':
-        case 'P':
-          if (showFilters) {
-            e.preventDefault();
-            setKeyMode('filters-priority');
-            setFilterFocusIndex(0);
-          }
-          break;
-        // Vertical navigation (W/S and ArrowUp/ArrowDown behave identically)
-        case 'ArrowUp':
-        case 'w':
-        case 'W':
-          e.preventDefault();
-          if (view === 'month' && !e.shiftKey) {
-            // Month: move focused day cell up 7 days
-            if (!focusedDate) setFocusedDate(toISODate(currentDate));
-            else shiftDay(-7);
-          } else {
-            // Week/Day or Month+Shift: cycle events within focused day backward
-            cycleEventsInDay(-1);
-          }
-          break;
-        case 'ArrowDown':
-        case 's':
-        case 'S':
-          e.preventDefault();
-          if (view === 'month' && !e.shiftKey) {
-            if (!focusedDate) setFocusedDate(toISODate(currentDate));
-            else shiftDay(7);
-          } else {
-            cycleEventsInDay(1);
-          }
-          break;
-        // Event actions
-        case 'Enter':
-          if (focusedEvent) {
-            e.preventDefault();
-            setSelectedEvent(focusedEvent);
-          } else if (focusedDate) {
-            e.preventDefault();
-            const dayEvents = getEventsOnDate(focusedDate);
-            if (dayEvents.length === 0) {
-              // Empty day cell — open create form with that date
-              const d = fromISODate(focusedDate);
-              d.setHours(9, 0, 0, 0);
-              setCurrentDate(d);
-              setEventToEdit(null);
-              setShowEventFormModal(true);
-            } else if (dayEvents.length === 1) {
-              setSelectedEvent(dayEvents[0]);
-            } else {
-              // Multiple events — focus the first and open its detail
-              setFocusedEventId(getEventId(dayEvents[0]));
-              setSelectedEvent(dayEvents[0]);
-            }
-          }
-          break;
-        case 'n':
-        case 'N':
-          e.preventDefault();
-          // Pre-fill date from focus if any
-          if (focusedDate) {
-            const d = fromISODate(focusedDate);
-            if (focusedEvent) {
-              const src =
-                focusedEvent.type === 'task' && focusedEvent.task.dueAt
-                  ? new Date(focusedEvent.task.dueAt)
-                  : focusedEvent.type === 'imported'
-                    ? new Date(focusedEvent.event.startAt)
-                    : d;
-              d.setHours(src.getHours(), src.getMinutes(), 0, 0);
-            } else {
-              d.setHours(9, 0, 0, 0);
-            }
-            setCurrentDate(d);
-          }
-          setEventToEdit(null);
-          setShowEventFormModal(true);
-          break;
-        case 'x':
-        case 'X':
-          if (focusedEvent?.type === 'task') {
-            e.preventDefault();
-            handleToggleTaskComplete(focusedEvent.task);
-          }
-          break;
-        case 'Delete':
-        case 'Backspace':
-          // Imported events delete via deleteCalendarEvent; task events
-          // dispatch DeleteTask. Both funnel through the same confirm dialog.
-          if (focusedEvent) {
-            e.preventDefault();
-            setEventPendingDelete(focusedEvent);
-          }
-          break;
-        case 'Escape':
-          if (keyMode !== 'events') {
-            e.preventDefault();
-            setKeyMode('events');
-          } else if (focusedEventId) {
-            e.preventDefault();
-            setFocusedEventId(null);
-          } else if (focusedDate) {
-            e.preventDefault();
-            setFocusedDate(null);
-          }
-          break;
-      }
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, [
-    view,
-    currentDate,
-    focusableEvents,
-    focusedEvent,
-    focusedEventId,
-    focusedDate,
-    showFilters,
-    keyMode,
-    filterFocusIndex,
-    courses,
-    deadlineFilter,
-    priorityFilter,
-    cycleView,
-    toISODate,
-    fromISODate,
-    getEventsOnDate,
-  ]);
+  }, [deadlineFilter, priorityFilter, courses, clearFilters, toggleCourseFilter]);
 
   return (
     <div
@@ -1756,7 +1740,7 @@ export function CalendarPage() {
             Filters
             {hasActiveFilters && (
               <span data-testid="calendar-filter-active" style={styles.filterBadge}>
-                •
+                鈥?{' '}
               </span>
             )}
           </button>
@@ -1843,15 +1827,17 @@ export function CalendarPage() {
           onPriorityFilterChange={setPriorityFilter}
           onClearFilters={clearFilters}
           keyboardSection={
-            keyMode === 'filters-courses'
-              ? 'courses'
-              : keyMode === 'filters-deadline'
-                ? 'deadline'
-                : keyMode === 'filters-priority'
-                  ? 'priority'
-                  : keyMode === 'filters-clear'
-                    ? 'clear'
-                    : null
+            calScope !== 'filter'
+              ? null
+              : filterSection === 'filters-courses'
+                ? 'courses'
+                : filterSection === 'filters-deadline'
+                  ? 'deadline'
+                  : filterSection === 'filters-priority'
+                    ? 'priority'
+                    : filterSection === 'filters-clear'
+                      ? 'clear'
+                      : null
           }
           keyboardIndex={filterFocusIndex}
         />

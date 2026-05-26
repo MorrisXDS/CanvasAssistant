@@ -56,7 +56,19 @@ export function CoursesFilterPanel({
           nav behaves identically (walk with W/S/arrows, commit with Space/Enter). */}
       {availablePrefixes.length > 1 && (
         <div style={styles.filterGroup}>
-          <label style={styles.filterLabel}>Subject</label>
+          <label style={styles.filterLabel}>
+            Subject
+            <kbd
+              style={{
+                marginLeft: '6px',
+                fontSize: '10px',
+                color: 'var(--text-muted)',
+                fontFamily: 'inherit',
+              }}
+            >
+              ⌥⇧S
+            </kbd>
+          </label>
           <div style={styles.filterChips}>
             <button
               style={{
@@ -102,7 +114,19 @@ export function CoursesFilterPanel({
       {/* Type Filter */}
       {availableTypes.length > 0 && (
         <div style={styles.filterGroup}>
-          <label style={styles.filterLabel}>Type</label>
+          <label style={styles.filterLabel}>
+            Type
+            <kbd
+              style={{
+                marginLeft: '6px',
+                fontSize: '10px',
+                color: 'var(--text-muted)',
+                fontFamily: 'inherit',
+              }}
+            >
+              ⌥⇧T
+            </kbd>
+          </label>
           <div style={styles.filterChips}>
             <button
               style={{
@@ -145,7 +169,19 @@ export function CoursesFilterPanel({
 
       {/* Grade Status Filter */}
       <div style={styles.filterGroup}>
-        <label style={styles.filterLabel}>Grade</label>
+        <label style={styles.filterLabel}>
+          Grade
+          <kbd
+            style={{
+              marginLeft: '6px',
+              fontSize: '10px',
+              color: 'var(--text-muted)',
+              fontFamily: 'inherit',
+            }}
+          >
+            ⌥⇧G
+          </kbd>
+        </label>
         <div style={styles.filterChips}>
           {(['all', 'on-track', 'at-risk', 'behind'] as GradeFilter[]).map(
             (filter, i) => (

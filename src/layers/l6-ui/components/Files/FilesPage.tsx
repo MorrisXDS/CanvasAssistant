@@ -5,7 +5,8 @@
  * Tree rendering lives in FileTreeRenderer.
  */
 
-import React, { useCallback } from 'react';
+import React, { useCallback, useMemo, useState, useEffect } from 'react';
+import { useKeymap } from '../../hooks/useKeymap';
 import {
   FolderOpen,
   Loader2,
@@ -69,6 +70,117 @@ export function FilesPage() {
     state.downloadingIds,
     state.setDownloadingIds,
     state.markFileUpdateSeen
+  );
+
+  // ---------------------------------------------------------------------------
+  // Keyboard navigation — flat list of all currently visible tree rows
+  // (courses → expanded folders → files in expanded folders), in render order.
+  // ---------------------------------------------------------------------------
+  type FileTreeRow =
+    | { kind: 'course'; id: number }
+    | { kind: 'folder'; courseId: number; path: string }
+    | { kind: 'file'; file: FileItem };
+
+  const visibleRows = useMemo<FileTreeRow[]>(() => {
+    const rows: FileTreeRow[] = [];
+    const sortedIds = state.coursesDragDrop.sortByCustomOrder(
+      Array.from(state.groupedFiles.keys())
+    );
+    for (const courseId of sortedIds) {
+      rows.push({ kind: 'course', id: courseId });
+      if (!state.expandedCourses.has(courseId)) continue;
+      const folderMap = state.groupedFiles.get(courseId);
+      if (!folderMap) continue;
+      for (const [folderPath, files] of folderMap) {
+        rows.push({ kind: 'folder', courseId, path: folderPath });
+        if (!state.isFolderExpanded(courseId, folderPath)) continue;
+        for (const file of files) {
+          rows.push({ kind: 'file', file });
+        }
+      }
+    }
+    return rows;
+  }, [
+    state.groupedFiles,
+    state.expandedCourses,
+    state.isFolderExpanded,
+    state.coursesDragDrop,
+  ]);
+
+  const rowIndexMap = useMemo<Map<string, number>>(() => {
+    const map = new Map<string, number>();
+    visibleRows.forEach((row, i) => {
+      const key =
+        row.kind === 'course'
+          ? `course:${row.id}`
+          : row.kind === 'folder'
+            ? `folder:${row.courseId}:${row.path}`
+            : getCanonicalFileId(row.file);
+      map.set(key, i);
+    });
+    return map;
+  }, [visibleRows]);
+
+  const [focusedRowIndex, setFocusedRowIndex] = useState(-1);
+  const focusedRow = visibleRows[focusedRowIndex] ?? null;
+
+  useEffect(() => {
+    if (focusedRowIndex >= visibleRows.length) {
+      setFocusedRowIndex(Math.max(-1, visibleRows.length - 1));
+    }
+  }, [visibleRows.length, focusedRowIndex]);
+
+  useKeymap<'files'>(
+    {
+      files: {
+        'ArrowUp,w': (e) => {
+          e.preventDefault();
+          setFocusedRowIndex((i) => (i <= 0 ? 0 : i - 1));
+        },
+        'ArrowDown,s': (e) => {
+          e.preventDefault();
+          setFocusedRowIndex((i) =>
+            i < 0 ? 0 : Math.min(visibleRows.length - 1, i + 1)
+          );
+        },
+        Enter: (e) => {
+          e.preventDefault();
+          if (!focusedRow) return;
+          if (focusedRow.kind === 'course') toggleCourseWithFocus(focusedRow.id);
+          else if (focusedRow.kind === 'folder')
+            toggleFolderWithFocus(focusedRow.courseId, focusedRow.path);
+          else dialogs.handleDownload(focusedRow.file);
+        },
+        'ArrowRight,d': (e) => {
+          e.preventDefault();
+          if (!focusedRow) return;
+          if (focusedRow.kind === 'course' && !state.expandedCourses.has(focusedRow.id))
+            toggleCourseWithFocus(focusedRow.id);
+          else if (
+            focusedRow.kind === 'folder' &&
+            !state.isFolderExpanded(focusedRow.courseId, focusedRow.path)
+          )
+            toggleFolderWithFocus(focusedRow.courseId, focusedRow.path);
+        },
+        'ArrowLeft,a': (e) => {
+          e.preventDefault();
+          if (!focusedRow) return;
+          if (focusedRow.kind === 'course' && state.expandedCourses.has(focusedRow.id))
+            toggleCourseWithFocus(focusedRow.id);
+          else if (
+            focusedRow.kind === 'folder' &&
+            state.isFolderExpanded(focusedRow.courseId, focusedRow.path)
+          )
+            toggleFolderWithFocus(focusedRow.courseId, focusedRow.path);
+        },
+        Space: (e) => {
+          e.preventDefault();
+          if (focusedRow?.kind === 'file') selection.toggleFileSelection(focusedRow.file);
+        },
+        Escape: () => setFocusedRowIndex(-1),
+      },
+    },
+    { initialScope: 'files' }
   );
 
   // Loading state
@@ -333,6 +445,8 @@ export function FilesPage() {
             groupedFiles={state.groupedFiles}
             courseMap={state.courseMap}
             expandedCourses={state.expandedCourses}
+            focusedRowIndex={focusedRowIndex}
+            rowIndexMap={rowIndexMap}
             viewMode={state.viewMode}
             selectMode={selection.selectMode}
             selectedFiles={selection.selectedFiles}

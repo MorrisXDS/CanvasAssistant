@@ -28,6 +28,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { useCourseDragDrop } from './useCourseDragDrop';
 import { useMultiSelect } from '../../hooks/useMultiSelect';
 import { useFocusedItem } from '../../hooks/useFocusedItem';
+import { useKeymap } from '../../hooks/useKeymap';
 import { useUpdatesByCourse } from '../../hooks';
 import { settingsManager, STORAGE_KEYS } from '../../../l5-presentation/settings';
 import { getCourseColor, formatGrade } from '../../constants';
@@ -390,25 +391,19 @@ export function CoursesPage() {
   } = useMultiSelect(filteredCourses, getCourseKey);
 
   // Keyboard filter mode (scoped arrow navigation while the filter panel is open)
-  type KeyMode =
-    | 'courses'
+  type FilterSection =
     | 'filters-prefix'
     | 'filters-type'
     | 'filters-grade'
     | 'filters-show-hidden'
     | 'filters-clear';
-  const [keyMode, setKeyMode] = useState<KeyMode>('courses');
+  const [filterSection, setFilterSection] = useState<FilterSection>('filters-prefix');
   const [filterFocusIndex, setFilterFocusIndex] = useState(0);
-
-  // Reset filter focus when the panel closes
-  useEffect(() => {
-    if (!showFilters) setKeyMode('courses');
-  }, [showFilters]);
 
   // Clamp filter focus when switching sections
   useEffect(() => {
     setFilterFocusIndex(0);
-  }, [keyMode]);
+  }, [filterSection]);
 
   // Focused-item keyboard navigation. We use the 1D hook but wire the actual
   // hotkeys ourselves so we can do 2D grid navigation (W/S jumps by column count)
@@ -556,149 +551,255 @@ export function CoursesPage() {
     window.api?.openExternal(`${trimmed}/courses/${course.externalId}`);
   }, [filteredCourses, focusedIndex]);
 
-  // Keyboard shortcuts. Nav / action keys are gated behind keyMode === 'courses'
-  // so they don't fire while the filter panel is driving keyboard focus.
-  const gridNavActive = keyMode === 'courses';
+  // ---------------------------------------------------------------------------
+  // Keyboard — useKeymap routes keys to the right scope (courses vs filter).
+  // Alt+Shift+* quick-filter cycles and Escape stay as standalone useHotkeys
+  // since they fire regardless of scope.
+  // ---------------------------------------------------------------------------
 
-  useHotkeys('v', () => setViewMode(viewMode === 'grid' ? 'list' : 'grid'), [viewMode]);
-  useHotkeys(
-    'f',
-    () => {
-      setShowFilters((prev) => {
-        const next = !prev;
-        setKeyMode(next ? 'filters-prefix' : 'courses');
-        return next;
-      });
+  const { scope, setScope } = useKeymap<'courses' | 'filter'>(
+    {
+      courses: {
+        // View toggle
+        v: (e) => {
+          e.preventDefault();
+          setViewMode(viewMode === 'grid' ? 'list' : 'grid');
+        },
+        // Open filter panel
+        f: (e) => {
+          e.preventDefault();
+          setShowFilters(true);
+          setScope('filter');
+          setFilterSection('filters-prefix');
+          setFilterFocusIndex(0);
+        },
+        // Open focused / selected course
+        Enter: (e) => {
+          e.preventDefault();
+          const firstKey = selectedKeys.values().next().value;
+          if (firstKey) {
+            handleCourseClick(Number(firstKey));
+            return;
+          }
+          const course = filteredCourses[focusedIndex];
+          if (course) handleCourseClick(course.id);
+        },
+        // Hide / unhide
+        h: () => {
+          if (selectedCount > 0) {
+            handleBulkHide();
+            return;
+          }
+          const course = filteredCourses[focusedIndex];
+          if (course && !course.isHidden) {
+            setKeepVisibleHidden((prev) => {
+              const n = new Set(prev);
+              n.add(course.id);
+              return n;
+            });
+            handleToggleHide(course.id, false);
+          }
+        },
+        'shift+h': () => {
+          if (selectedCount > 0) {
+            handleBulkShow();
+            return;
+          }
+          const course = filteredCourses[focusedIndex];
+          if (course && course.isHidden) {
+            setKeepVisibleHidden((prev) => {
+              if (!prev.has(course.id)) return prev;
+              const n = new Set(prev);
+              n.delete(course.id);
+              return n;
+            });
+            handleToggleHide(course.id, true);
+          }
+        },
+        // Pin / archive
+        p: () => {
+          if (selectedCount > 0) {
+            handleBulkPin();
+            return;
+          }
+          const course = filteredCourses[focusedIndex];
+          if (course)
+            setPinnedCourses((prev) => {
+              const n = new Set(prev);
+              if (n.has(course.id)) n.delete(course.id);
+              else n.add(course.id);
+              return n;
+            });
+        },
+        'mod+shift+a': (e) => {
+          e.preventDefault();
+          if (selectedCount > 0) {
+            handleBulkArchive();
+            return;
+          }
+          const course = filteredCourses[focusedIndex];
+          if (course) handleArchiveCourse(course.id);
+        },
+        // Open on Canvas
+        o: () => openFocusedInCanvas(),
+        'shift+Enter': (e) => {
+          e.preventDefault();
+          openFocusedInCanvas();
+        },
+        // Grid/list navigation (filled in after moveFocus is defined below)
+      },
+      filter: {
+        // Section switching: Q/E or Shift+Arrow
+        q: (e) => {
+          e.preventDefault();
+          prevFilterSection();
+        },
+        e: (e) => {
+          e.preventDefault();
+          nextFilterSection();
+        },
+        'shift+ArrowLeft': (e) => {
+          e.preventDefault();
+          prevFilterSection();
+        },
+        'shift+ArrowRight': (e) => {
+          e.preventDefault();
+          nextFilterSection();
+        },
+        // Within-section option walk
+        a: (e) => {
+          e.preventDefault();
+          walkFilterOption(-1);
+        },
+        ArrowLeft: (e) => {
+          e.preventDefault();
+          walkFilterOption(-1);
+        },
+        w: (e) => {
+          e.preventDefault();
+          walkFilterOption(-1);
+        },
+        ArrowUp: (e) => {
+          e.preventDefault();
+          walkFilterOption(-1);
+        },
+        d: (e) => {
+          e.preventDefault();
+          walkFilterOption(1);
+        },
+        ArrowRight: (e) => {
+          e.preventDefault();
+          walkFilterOption(1);
+        },
+        s: (e) => {
+          e.preventDefault();
+          walkFilterOption(1);
+        },
+        ArrowDown: (e) => {
+          e.preventDefault();
+          walkFilterOption(1);
+        },
+        // Toggle focused option
+        Space: (e) => {
+          e.preventDefault();
+          toggleFilterOption();
+        },
+        Enter: (e) => {
+          e.preventDefault();
+          toggleFilterOption();
+        },
+        // Close filter panel
+        f: (e) => {
+          e.preventDefault();
+          setShowFilters(false);
+          setScope('courses');
+        },
+        // Select / deselect all courses (courses section)
+        'mod+a': (e) => {
+          e.preventDefault();
+          setPrefixFilter('all');
+          setTypeFilter('all');
+          setGradeFilter('all');
+        },
+      },
     },
-    [setShowFilters]
+    { initialScope: 'courses' }
   );
-  useHotkeys(
-    'enter',
-    (e) => {
-      e.preventDefault();
-      // Selection takes precedence (existing behavior).
-      const firstKey = selectedKeys.values().next().value;
-      if (firstKey) {
-        handleCourseClick(Number(firstKey));
-        return;
-      }
-      // Otherwise open the keyboard-focused course.
-      const course = filteredCourses[focusedIndex];
-      if (course) handleCourseClick(course.id);
+
+  const gridNavActive = scope === 'courses';
+
+  // Filter section helpers used by the filter scope above
+  const filterSectionRef = useRef(filterSection);
+  useEffect(() => {
+    filterSectionRef.current = filterSection;
+  }, [filterSection]);
+
+  const prevFilterSection = useCallback(() => {
+    const SECTIONS: FilterSection[] = [
+      'filters-prefix',
+      'filters-type',
+      'filters-grade',
+      'filters-show-hidden',
+      ...(hasActiveFilters ? (['filters-clear'] as const) : []),
+    ];
+    const idx = SECTIONS.indexOf(filterSectionRef.current);
+    setFilterSection(SECTIONS[(idx - 1 + SECTIONS.length) % SECTIONS.length]);
+  }, [hasActiveFilters]);
+
+  const nextFilterSection = useCallback(() => {
+    const SECTIONS: FilterSection[] = [
+      'filters-prefix',
+      'filters-type',
+      'filters-grade',
+      'filters-show-hidden',
+      ...(hasActiveFilters ? (['filters-clear'] as const) : []),
+    ];
+    const idx = SECTIONS.indexOf(filterSectionRef.current);
+    setFilterSection(SECTIONS[(idx + 1) % SECTIONS.length]);
+  }, [hasActiveFilters]);
+
+  const filterFocusIndexRef = useRef(filterFocusIndex);
+  useEffect(() => {
+    filterFocusIndexRef.current = filterFocusIndex;
+  }, [filterFocusIndex]);
+
+  const walkFilterOption = useCallback(
+    (dir: 1 | -1) => {
+      const counts: Record<FilterSection, number> = {
+        'filters-prefix': 1 + availablePrefixes.length,
+        'filters-type': 1 + availableTypes.length,
+        'filters-grade': 4,
+        'filters-show-hidden': 1,
+        'filters-clear': 1,
+      };
+      const max = counts[filterSectionRef.current];
+      if (max <= 1) return;
+      const next = (((filterFocusIndexRef.current + dir) % max) + max) % max;
+      setFilterFocusIndex(next);
     },
-    { enabled: gridNavActive },
-    [selectedKeys, handleCourseClick, filteredCourses, focusedIndex, gridNavActive]
+    [availablePrefixes.length, availableTypes.length]
   );
-  // H / Shift+H / P / Ctrl+Shift+A: bulk actions.
-  // If there's a multi-select, act on it; otherwise fall back to the
-  // keyboard-focused course so the highlighted item is the implicit target.
-  useHotkeys(
-    'h',
-    () => {
-      if (selectedCount > 0) {
-        handleBulkHide();
-        return;
-      }
-      const course = filteredCourses[focusedIndex];
-      if (course && !course.isHidden) {
-        // Keep the just-hidden card visible in place so Shift+H can undo
-        // before focus moves away.
-        setKeepVisibleHidden((prev) => {
-          const n = new Set(prev);
-          n.add(course.id);
-          return n;
-        });
-        handleToggleHide(course.id, false);
-      }
-    },
-    { enabled: gridNavActive },
-    [
-      selectedCount,
-      handleBulkHide,
-      filteredCourses,
-      focusedIndex,
-      handleToggleHide,
-      gridNavActive,
-    ]
-  );
-  useHotkeys(
-    'shift+h',
-    () => {
-      if (selectedCount > 0) {
-        handleBulkShow();
-        return;
-      }
-      const course = filteredCourses[focusedIndex];
-      if (course && course.isHidden) {
-        // Unhiding — no need to keep it in the visible-after-hide set anymore.
-        setKeepVisibleHidden((prev) => {
-          if (!prev.has(course.id)) return prev;
-          const n = new Set(prev);
-          n.delete(course.id);
-          return n;
-        });
-        handleToggleHide(course.id, true);
-      }
-    },
-    { enabled: gridNavActive },
-    [
-      selectedCount,
-      handleBulkShow,
-      filteredCourses,
-      focusedIndex,
-      handleToggleHide,
-      gridNavActive,
-    ]
-  );
-  useHotkeys(
-    'p',
-    () => {
-      if (selectedCount > 0) {
-        handleBulkPin();
-        return;
-      }
-      const course = filteredCourses[focusedIndex];
-      if (course) {
-        setPinnedCourses((prev) => {
-          const next = new Set(prev);
-          if (next.has(course.id)) next.delete(course.id);
-          else next.add(course.id);
-          return next;
-        });
-      }
-    },
-    { enabled: gridNavActive },
-    [selectedCount, handleBulkPin, filteredCourses, focusedIndex, gridNavActive]
-  );
-  // Ctrl/Cmd+Shift+A: bulk archive; falls back to focused course.
-  useHotkeys(
-    'mod+shift+a',
-    (e) => {
-      e.preventDefault();
-      if (selectedCount > 0) {
-        handleBulkArchive();
-        return;
-      }
-      const course = filteredCourses[focusedIndex];
-      if (course) handleArchiveCourse(course.id);
-    },
-    { enabled: gridNavActive },
-    [selectedCount, handleBulkArchive, filteredCourses, focusedIndex, gridNavActive]
-  );
-  // O / Shift+Enter: open focused course on Canvas in the external browser
-  useHotkeys('o', () => openFocusedInCanvas(), { enabled: gridNavActive }, [
-    openFocusedInCanvas,
-    gridNavActive,
-  ]);
-  useHotkeys(
-    'shift+enter',
-    (e) => {
-      e.preventDefault();
-      openFocusedInCanvas();
-    },
-    { enabled: gridNavActive },
-    [openFocusedInCanvas, gridNavActive]
-  );
+
+  const toggleFilterOption = useCallback(() => {
+    const sec = filterSectionRef.current;
+    const idx = filterFocusIndexRef.current;
+    if (sec === 'filters-prefix') {
+      const opt = idx === 0 ? 'all' : availablePrefixes[idx - 1];
+      if (opt !== undefined) setPrefixFilter(opt);
+    } else if (sec === 'filters-type') {
+      const opt = idx === 0 ? 'all' : availableTypes[idx - 1];
+      if (opt !== undefined) setTypeFilter(opt);
+    } else if (sec === 'filters-grade') {
+      const opts: GradeFilter[] = ['all', 'on-track', 'at-risk', 'behind'];
+      setGradeFilter(opts[idx]);
+    } else if (sec === 'filters-show-hidden') {
+      setShowHidden((prev) => !prev);
+    } else if (sec === 'filters-clear') {
+      clearFilters();
+      setFilterSection('filters-prefix');
+      setFilterFocusIndex(0);
+    }
+  }, [availablePrefixes, availableTypes, clearFilters]);
 
   // Grid/list focused-item nav.
   // Grid view: A/D/←/→ step by 1; W/S/↑/↓ jump by columnCount (2D).
@@ -764,116 +865,7 @@ export function CoursesPage() {
     [viewMode, columnCount, moveFocus, gridNavActive]
   );
 
-  // Filter-mode nav:
-  //   - Q / E / Shift+← / Shift+→  → switch between filter sections (blocks)
-  //   - A/D/←/→ and W/S/↑/↓        → walk options within the focused section
-  //   - Space / Enter              → toggle focused option (chip sections)
-  // For the Subject <select>, walking options commits live (the native select
-  // can't visually preview a pre-commit focused option).
-  useHotkeys(
-    'q, e, shift+left, shift+right, a, left, d, right, w, up, s, down, space, enter',
-    (e) => {
-      if (keyMode === 'courses') return; // gridNavActive branch handles it
-      e.preventDefault();
-      const FILTER_SECTIONS: Exclude<KeyMode, 'courses'>[] = [
-        'filters-prefix',
-        'filters-type',
-        'filters-grade',
-        'filters-show-hidden',
-        ...(hasActiveFilters ? (['filters-clear'] as const) : []),
-      ];
-      // If we're on 'filters-clear' but filters just got cleared, snap back
-      // to the first section.
-      const rawIdx = FILTER_SECTIONS.indexOf(keyMode as Exclude<KeyMode, 'courses'>);
-      const sectionIdx = rawIdx === -1 ? 0 : rawIdx;
-      const key = e.key;
-
-      // Section switching: Q / E / Shift+← / Shift+→
-      const isPrevSection =
-        key === 'q' || key === 'Q' || (e.shiftKey && key === 'ArrowLeft');
-      const isNextSection =
-        key === 'e' || key === 'E' || (e.shiftKey && key === 'ArrowRight');
-      if (isPrevSection || isNextSection) {
-        const step = isNextSection ? 1 : -1;
-        const nextIdx =
-          (sectionIdx + step + FILTER_SECTIONS.length) % FILTER_SECTIONS.length;
-        setKeyMode(FILTER_SECTIONS[nextIdx]);
-        return;
-      }
-
-      // Within-section option walk (both axes) — NOT a section switch since
-      // Shift isn't held. Direction keys without Shift walk options.
-      const walk =
-        key === 'a' ||
-        key === 'A' ||
-        key === 'ArrowLeft' ||
-        key === 'd' ||
-        key === 'D' ||
-        key === 'ArrowRight' ||
-        key === 'w' ||
-        key === 'W' ||
-        key === 'ArrowUp' ||
-        key === 's' ||
-        key === 'S' ||
-        key === 'ArrowDown';
-      const walkForward =
-        key === 'd' ||
-        key === 'D' ||
-        key === 'ArrowRight' ||
-        key === 's' ||
-        key === 'S' ||
-        key === 'ArrowDown';
-      const isToggle = key === ' ' || key === 'Enter';
-
-      if (walk && !e.shiftKey) {
-        const counts: Record<Exclude<KeyMode, 'courses'>, number> = {
-          'filters-prefix': 1 + availablePrefixes.length, // 'all' + each prefix
-          'filters-type': 1 + availableTypes.length,
-          'filters-grade': 4, // all / on-track / at-risk / behind
-          'filters-show-hidden': 1, // single toggle button
-          'filters-clear': 1, // single action button
-        };
-        const max = counts[keyMode as Exclude<KeyMode, 'courses'>];
-        if (max <= 1) return;
-        const step = walkForward ? 1 : -1;
-        const nextIdx = (((filterFocusIndex + step) % max) + max) % max;
-        setFilterFocusIndex(nextIdx);
-        return;
-      }
-
-      if (isToggle) {
-        if (keyMode === 'filters-prefix') {
-          const opt =
-            filterFocusIndex === 0 ? 'all' : availablePrefixes[filterFocusIndex - 1];
-          if (opt !== undefined) setPrefixFilter(opt);
-        } else if (keyMode === 'filters-type') {
-          const opt =
-            filterFocusIndex === 0 ? 'all' : availableTypes[filterFocusIndex - 1];
-          if (opt !== undefined) setTypeFilter(opt);
-        } else if (keyMode === 'filters-grade') {
-          const opts: GradeFilter[] = ['all', 'on-track', 'at-risk', 'behind'];
-          setGradeFilter(opts[filterFocusIndex]);
-        } else if (keyMode === 'filters-show-hidden') {
-          setShowHidden(!showHidden);
-        } else if (keyMode === 'filters-clear') {
-          clearFilters();
-          // Row disappears when hasActiveFilters flips false — snap back.
-          setKeyMode('filters-prefix');
-          setFilterFocusIndex(0);
-        }
-      }
-    },
-    { enabled: !gridNavActive },
-    [
-      keyMode,
-      filterFocusIndex,
-      availablePrefixes,
-      availableTypes,
-      showHidden,
-      gridNavActive,
-      hasActiveFilters,
-    ]
-  );
+  // Filter-mode nav is handled by the 'filter' scope in useKeymap above.
 
   // Quick-access filter cycles — work regardless of filter mode, matching
   // the Calendar's Alt+Shift+{D,P,C} pattern.
@@ -928,9 +920,9 @@ export function CoursesPage() {
   useHotkeys(
     'esc',
     (e) => {
-      if (keyMode !== 'courses') {
+      if (scope !== 'courses') {
         e.preventDefault();
-        setKeyMode('courses');
+        setScope('courses');
         return;
       }
       if (showFilters) {
@@ -948,7 +940,7 @@ export function CoursesPage() {
         clearFocus();
       }
     },
-    [keyMode, showFilters, selectMode, focusedIndex, resetCourseSelection, clearFocus]
+    [scope, showFilters, selectMode, focusedIndex, resetCourseSelection, clearFocus]
   );
 
   return (
@@ -1142,15 +1134,15 @@ export function CoursesPage() {
           onShowHiddenChange={setShowHidden}
           onClearFilters={clearFilters}
           keyboardSection={
-            keyMode === 'filters-prefix'
+            filterSection === 'filters-prefix'
               ? 'prefix'
-              : keyMode === 'filters-type'
+              : filterSection === 'filters-type'
                 ? 'type'
-                : keyMode === 'filters-grade'
+                : filterSection === 'filters-grade'
                   ? 'grade'
-                  : keyMode === 'filters-show-hidden'
+                  : filterSection === 'filters-show-hidden'
                     ? 'show-hidden'
-                    : keyMode === 'filters-clear'
+                    : filterSection === 'filters-clear'
                       ? 'clear'
                       : null
           }
