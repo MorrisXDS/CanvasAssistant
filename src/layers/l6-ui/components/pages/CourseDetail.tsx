@@ -25,12 +25,7 @@ import {
   MissingSyllabusWarning,
   DuplicateCourseworkBanner,
 } from '../Course';
-import {
-  CanvasUpdatesSection,
-  TaskMergeDialog,
-  TaskLinkDialog,
-  type QueuedTaskEdits,
-} from '../Queue';
+import { CanvasUpdatesSection, TaskLinkDialog, type QueuedTaskEdits } from '../Queue';
 import { useCourseDetailDragDrop } from './useCourseDetailDragDrop';
 import { useCourseDetailTaskState } from './useCourseDetailTaskState';
 import { useCourseDetailSettingsState } from './useCourseDetailSettingsState';
@@ -121,17 +116,6 @@ export function CourseDetail() {
     queuedTask: null,
   });
 
-  // Legacy merge dialog state (for auto-detected matches)
-  const [mergeDialogState, setMergeDialogState] = useState<{
-    isOpen: boolean;
-    queuedTask: QueuedTask | null;
-    userTask: Task | null;
-  }>({
-    isOpen: false,
-    queuedTask: null,
-    userTask: null,
-  });
-
   // Store actions for queue operations
   const { acceptQueuedTask, rejectQueuedTask, bulkAcceptQueuedTasks, mergeQueuedTask } =
     useStore();
@@ -170,6 +154,16 @@ export function CourseDetail() {
   // Announcements only become reachable via Q/E when they're visible.
   type SectionFocus = 'tasks' | 'queue' | 'announcements' | 'preferences';
   const [sectionFocus, setSectionFocus] = useState<SectionFocus>('tasks');
+
+  // Suppress all page-level nav hotkeys (Q/E section cycle, G back-nav,
+  // T target-edit, Shift+O open-on-Canvas, Mod+E settings toggle,
+  // Mod+S save, Mod+Shift+A archive) while the duplicate-warning modal in
+  // the queue section is on screen. Otherwise pressing Q/E in the modal's
+  // Customize editor would also cycle sections behind the modal, G would
+  // navigate away from the page, Mod+Shift+A would stack another
+  // ConfirmDialog on top, etc. CanvasUpdatesSection signals this via the
+  // `onModalStateChange` prop we pass below.
+  const [queueModalOpen, setQueueModalOpen] = useState(false);
 
   // Confirm dialog state (declared early as other hooks depend on it)
   const [confirmDialog, setConfirmDialog] = useState<{
@@ -607,14 +601,6 @@ export function CourseDetail() {
     [mergeQueuedTask]
   );
 
-  const closeMergeDialog = useCallback(() => {
-    setMergeDialogState({
-      isOpen: false,
-      queuedTask: null,
-      userTask: null,
-    });
-  }, []);
-
   // ===== Page-level keyboard shortcuts =====
   // Availability of conditional sections (snapshot per render; useHotkeys
   // closures capture these via the deps arrays on each binding below).
@@ -700,7 +686,13 @@ export function CourseDetail() {
         },
       },
     },
-    { initialScope: 'nav' }
+    {
+      initialScope: 'nav',
+      // Suppress all nav keys while the queue's duplicate-warning modal is
+      // open — otherwise Q/E section-cycle, G back-nav, etc. all fire
+      // behind the modal. See `queueModalOpen` declaration above.
+      when: () => !queueModalOpen,
+    }
   );
 
   // Re-scope sectionFocus when the underlying availability changes.
@@ -1072,6 +1064,7 @@ export function CourseDetail() {
             }
             onHighlightClear={() => setSearchParams({}, { replace: true })}
             keyboardEnabled={sectionFocus === 'queue'}
+            onModalStateChange={setQueueModalOpen}
           />
         )}
 
@@ -1338,19 +1331,6 @@ export function CourseDetail() {
           onCancel={closeLinkDialog}
         />
       )}
-
-      {/* Task Merge Dialog (legacy - for auto-detected matches) */}
-      {mergeDialogState.isOpen &&
-        mergeDialogState.queuedTask &&
-        mergeDialogState.userTask && (
-          <TaskMergeDialog
-            isOpen={mergeDialogState.isOpen}
-            queuedTask={mergeDialogState.queuedTask}
-            userTask={mergeDialogState.userTask}
-            onMerge={handleMergeTask}
-            onCancel={closeMergeDialog}
-          />
-        )}
     </div>
   );
 }

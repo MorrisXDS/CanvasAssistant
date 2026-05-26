@@ -382,10 +382,13 @@ export function DuplicateWarningModal({
   useHotkeys('ArrowRight, 2', () => {
     if (editingQueueId != null) pickFocusedField('user');
   });
+  // Q/E mirrors the app-wide left/right navigation pair (CourseDetail uses
+  // them for section back/forward), so these shortcuts feel like the
+  // existing "previous/next" muscle memory.
   useHotkeys('q', () => {
     if (editingQueueId != null) pickAll('canvas');
   });
-  useHotkeys('w', () => {
+  useHotkeys('e', () => {
     if (editingQueueId != null) pickAll('user');
   });
   useHotkeys('space', (e) => {
@@ -723,7 +726,7 @@ export function DuplicateWarningModal({
             />
           </Modal.Content>
           <div style={s.kbdHintBar}>
-            ↑↓ field · ←→ pick · Q canvas · W local · Enter save · Esc cancel
+            ↑↓ field · ←→ pick · Q canvas · E local · Enter save · Esc cancel
           </div>
           <div style={s.manualFooter}>
             <button
