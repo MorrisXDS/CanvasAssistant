@@ -77,10 +77,26 @@ export function CourseDetail() {
   const editTaskId = searchParams.get('editTask');
   const highlightQueueId = searchParams.get('highlightQueue');
 
-  // Course and related data state
+  // Course detail — kept as local useState (NOT a store-duplication suspect).
+  // `state.courses` holds the slimmer `Course` shape; `course` here is the
+  // richer `CourseDetailData` fetched via `data:getCourse` — it carries
+  // `syllabusBody`, `totalWeight`, `gradeCurveAdjustment`, and
+  // `syllabusPromptDismissedAt` which are NOT in the store. Several handlers
+  // (settings-save, syllabus-dismiss, target-grade-save) optimistically mutate
+  // this via `setCourse((prev) => …)` and need a richer shape than the store
+  // provides. Migrating this to the store would require introducing a new
+  // course-detail slice — out of scope for the state-duplication cleanup.
   const [course, setCourse] = useState<CourseDetailData | null>(null);
+  // Grade history is not in the store (no `gradeHistory` field on StoreState),
+  // so this is page-local data, not a duplication. Safe to keep as useState.
   const [gradeHistory, setGradeHistory] = useState<GradeHistoryEntry[]>([]);
-  const [announcements, setAnnouncements] = useState<Notification[]>([]);
+  // Announcements for archived courses bypass the visibility filter and are
+  // fetched separately (mirroring `archivedCourseTasks`). For active courses
+  // we read directly from `state.notifications` via a memoized selector below —
+  // see CLAUDE.md §2 "Single source of truth for domain data".
+  const [archivedCourseAnnouncements, setArchivedCourseAnnouncements] = useState<
+    Notification[]
+  >([]);
   const [loading, setLoading] = useState(true);
 
   // Canvas Task Queue — derived from the store. NEVER hold this in local
@@ -94,6 +110,20 @@ export function CourseDetail() {
     () => taskQueue.filter((q) => q.courseId === courseId),
     [taskQueue, courseId]
   );
+
+  // Announcements derived from the store for active courses. The store loads
+  // notifications via `fetchNotifications` (and refetches on any DB commit to
+  // the `notifications` table), so any write from elsewhere flows here
+  // automatically — no parallel `useState` to hand-sync. Archived courses
+  // are NOT in the store's visibility filter, so we fall back to the
+  // separately-fetched `archivedCourseAnnouncements` for those.
+  const storeNotifications = useStore((s) => s.notifications);
+  const announcements = useMemo(() => {
+    if (course?.archivedAt) {
+      return archivedCourseAnnouncements;
+    }
+    return storeNotifications.filter((n) => n.courseId === courseId);
+  }, [course?.archivedAt, archivedCourseAnnouncements, storeNotifications, courseId]);
 
   // Queue expanded setting from localStorage
   const queueDefaultExpanded = useMemo(() => {
@@ -333,21 +363,22 @@ export function CourseDetail() {
         // Fetch all data in parallel. The task queue is fetched via the
         // store action (which writes to `state.taskQueue`); the derived
         // `queuedTasks` selector above picks it up — no local copy needed.
-        const [courseData, historyData, announcementsData, syllabusData, filesData] =
-          await Promise.all([
-            api.getCourse(courseId),
-            api.getGradeHistory(courseId),
-            api.getCourseNotifications(courseId),
-            api.getCourseSyllabus?.(courseId).catch(() => null),
-            api.getCourseFiles?.(courseId).catch(() => []),
-          ]);
+        // Announcements for active courses also flow through the store
+        // (via `state.notifications`), so we no longer fetch them here —
+        // archived-course announcements are fetched below after we know
+        // the course's archived state.
+        const [courseData, historyData, syllabusData, filesData] = await Promise.all([
+          api.getCourse(courseId),
+          api.getGradeHistory(courseId),
+          api.getCourseSyllabus?.(courseId).catch(() => null),
+          api.getCourseFiles?.(courseId).catch(() => []),
+        ]);
         // Kick off the queue fetch in parallel but don't block on its return —
         // we don't need its value, and it writes into the store anyway.
         void fetchTaskQueue({ courseId });
 
         setCourse(courseData);
         setGradeHistory(historyData || []);
-        setAnnouncements(announcementsData || []);
 
         // Map syllabus API response to CourseSyllabus interface
         if (syllabusData && syllabusData.type === 'resource') {
@@ -366,10 +397,16 @@ export function CourseDetail() {
         }
         setCourseFiles(filesData || []);
 
-        // For archived courses, fetch tasks directly (bypasses visibility filtering)
-        if (courseData?.archivedAt && api.getTasksForArchivedCourse) {
-          const archivedTasks = await api.getTasksForArchivedCourse(courseId);
-          setArchivedCourseTasks(archivedTasks || []);
+        // For archived courses, fetch tasks AND announcements directly
+        // (both bypass the visibility filter the store applies). Active
+        // courses' announcements come from `state.notifications`.
+        if (courseData?.archivedAt) {
+          if (api.getTasksForArchivedCourse) {
+            const archivedTasks = await api.getTasksForArchivedCourse(courseId);
+            setArchivedCourseTasks(archivedTasks || []);
+          }
+          const archivedAnnouncements = await api.getCourseNotifications(courseId);
+          setArchivedCourseAnnouncements(archivedAnnouncements || []);
         }
       } catch (error) {
         log.error(

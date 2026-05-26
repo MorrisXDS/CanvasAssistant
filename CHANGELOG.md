@@ -51,6 +51,13 @@ fields]` button that opens the same picker in a child modal layered above the li
 
 ### Changed
 
+- `2026-05-26 21:05 UTC` — CourseDetail announcements now read from the Zustand
+  `state.notifications` store via a memoized selector instead of a parallel `useState`
+  list hydrated by a separate IPC fetch. Archived courses (which the store filters out
+  via `VisibleDataProvider`) keep a small `archivedCourseAnnouncements` local state,
+  mirroring the `archivedCourseTasks` pattern. Eliminates the latent "store write
+  doesn't reflect in the announcements card" desync bug class (per CLAUDE.md §2
+  "Single source of truth for domain data"). Followup #1 from `docs/FOLLOWUPS.md`.
 - `2026-05-26 19:24 UTC` — Duplicate-warning Customize child modal now uses `Q` / `E`
   (matching CourseDetail's existing `Q` = section-back / `E` = section-forward navigation
   pair) for "use all Canvas" / "use all Local" instead of `Q` / `W`. Mnemonic aligns with
