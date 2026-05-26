@@ -1621,6 +1621,7 @@ export function CalendarPage() {
 
   return (
     <div
+      data-testid="calendar-page"
       style={styles.page}
       onDragEnter={handleDragEnter}
       onDragOver={handleDragOver}
@@ -1753,7 +1754,11 @@ export function CalendarPage() {
           >
             <Filter size={16} />
             Filters
-            {hasActiveFilters && <span style={styles.filterBadge}>•</span>}
+            {hasActiveFilters && (
+              <span data-testid="calendar-filter-active" style={styles.filterBadge}>
+                •
+              </span>
+            )}
           </button>
           <button
             style={{
