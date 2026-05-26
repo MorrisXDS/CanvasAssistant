@@ -381,4 +381,31 @@ export const KEYBOARD_SHORTCUTS: ShortcutCategory[] = [
       { keys: ['6'], label: 'Announcements' },
     ],
   },
+  {
+    title: 'Duplicate warning',
+    scope: 'updates',
+    shortcuts: [
+      { keys: ['L'], label: 'Link to existing task' },
+      { keys: ['S'], label: 'Keep separate' },
+      { keys: ['Esc'], label: 'Cancel' },
+      { keys: ['↑', '/', '↓'], label: 'Navigate items (bulk)' },
+      { keys: ['Space'], label: 'Toggle selection (bulk)' },
+      { keys: ['A'], label: 'Select / deselect all (bulk)' },
+      { keys: ['Enter'], label: 'Confirm decisions (bulk)' },
+    ],
+  },
+  {
+    title: 'Files',
+    scope: 'files',
+    shortcuts: [
+      { keys: ['↑', '/', 'W'], label: 'Focus previous row' },
+      { keys: ['↓', '/', 'S'], label: 'Focus next row' },
+      { keys: ['Enter'], label: 'Expand folder / download file' },
+      { keys: ['→', '/', 'D'], label: 'Expand focused folder' },
+      { keys: ['←', '/', 'A'], label: 'Collapse focused folder' },
+      { keys: ['Space'], label: 'Toggle file selection' },
+      { keys: ['mod', 'A'], label: 'Select all visible' },
+      { keys: ['Esc'], label: 'Clear focus / deselect' },
+    ],
+  },
 ];

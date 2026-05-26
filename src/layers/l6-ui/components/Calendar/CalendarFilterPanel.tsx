@@ -108,7 +108,19 @@ export function CalendarFilterPanel({
 
       {/* Deadline Filter */}
       <div style={styles.filterSection}>
-        <span style={styles.filterSectionTitle}>Deadline</span>
+        <span style={styles.filterSectionTitle}>
+          Deadline
+          <kbd
+            style={{
+              marginLeft: '6px',
+              fontSize: '10px',
+              color: 'var(--text-muted)',
+              fontFamily: 'inherit',
+            }}
+          >
+            ⌥⇧D
+          </kbd>
+        </span>
         <div style={styles.filterChips}>
           {[
             { value: 'all', label: 'All' },
@@ -139,7 +151,19 @@ export function CalendarFilterPanel({
 
       {/* Priority Filter */}
       <div style={styles.filterSection}>
-        <span style={styles.filterSectionTitle}>Priority</span>
+        <span style={styles.filterSectionTitle}>
+          Priority
+          <kbd
+            style={{
+              marginLeft: '6px',
+              fontSize: '10px',
+              color: 'var(--text-muted)',
+              fontFamily: 'inherit',
+            }}
+          >
+            ⌥⇧P
+          </kbd>
+        </span>
         <div style={styles.filterChips}>
           {[
             { value: 'all', label: 'All' },

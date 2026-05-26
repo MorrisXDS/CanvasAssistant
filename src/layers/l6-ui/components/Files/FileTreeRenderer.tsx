@@ -60,6 +60,8 @@ export interface FileTreeRendererProps {
   groupedFiles: Map<number, Map<string, FileItem[]>>;
   courseMap: Map<number, CourseInfo>;
   expandedCourses: Set<number>;
+  focusedRowIndex: number;
+  rowIndexMap: Map<string, number>;
   viewMode: ViewMode;
   selectMode: boolean;
   selectedFiles: Set<string>;
@@ -98,6 +100,8 @@ export function FileTreeRenderer({
   groupedFiles,
   courseMap,
   expandedCourses,
+  focusedRowIndex,
+  rowIndexMap,
   viewMode,
   selectMode,
   selectedFiles,
@@ -193,6 +197,13 @@ export function FileTreeRenderer({
               className={styles.courseHeader}
               onClick={() => toggleCourse(courseId)}
               aria-expanded={isExpanded}
+              data-focus-scope="files-page"
+              data-focus-index={rowIndexMap.get(`course:${courseId}`) ?? -1}
+              style={
+                focusedRowIndex === rowIndexMap.get(`course:${courseId}`)
+                  ? { outline: '2px solid var(--color-navy)', outlineOffset: '-2px' }
+                  : undefined
+              }
             >
               <div className={styles.courseHeaderLeft}>
                 <span
@@ -240,6 +251,8 @@ export function FileTreeRenderer({
                     courseId={courseId}
                     courseColor={courseColor}
                     folderPath={folderPath}
+                    focusedRowIndex={focusedRowIndex}
+                    rowIndexMap={rowIndexMap}
                     folderFiles={folderFiles}
                     folderPaths={folderPaths}
                     viewMode={viewMode}
@@ -275,6 +288,8 @@ interface FolderSectionProps {
   courseId: number;
   courseColor: string;
   folderPath: string;
+  focusedRowIndex: number;
+  rowIndexMap: Map<string, number>;
   folderFiles: FileItem[];
   folderPaths: string[];
   viewMode: ViewMode;
@@ -303,6 +318,8 @@ function FolderSection({
   courseId,
   courseColor,
   folderPath,
+  focusedRowIndex,
+  rowIndexMap,
   folderFiles,
   folderPaths,
   viewMode,
@@ -362,8 +379,13 @@ function FolderSection({
           {
             '--folder-accent-color': folderType.color,
             paddingLeft: `calc(var(--space-6) + ${folderDepth * 20}px)`,
+            ...(focusedRowIndex === rowIndexMap.get(`folder:${courseId}:${folderPath}`)
+              ? { outline: '2px solid var(--color-navy)', outlineOffset: '-2px' }
+              : {}),
           } as React.CSSProperties
         }
+        data-focus-scope="files-page"
+        data-focus-index={rowIndexMap.get(`folder:${courseId}:${folderPath}`) ?? -1}
         aria-expanded={folderExpanded}
       >
         <div className={styles.folderHeaderLeft}>
@@ -438,23 +460,41 @@ function FolderSection({
               } as React.CSSProperties
             }
           >
-            {folderFiles.map((file) => (
-              <FileListItem
-                key={getFileKey(file)}
-                file={file}
-                isDownloading={downloadingIds.has(getCanonicalFileId(file))}
-                isSelected={selectedFiles.has(getFileKey(file))}
-                selectMode={selectMode}
-                onToggleSelect={() => toggleFileSelection(file)}
-                onDownload={() => handleDownload(file)}
-                onOpen={() => handleOpen(file)}
-                onShowInFolder={
-                  canShowInFolder(file) ? () => handleShowInFolder(file) : undefined
-                }
-                onContextMenu={(e) => handleContextMenu(file, e)}
-                updateType={getFileUpdateType(file)}
-              />
-            ))}
+            {folderFiles.map((file) => {
+              const fileIdx = rowIndexMap.get(getCanonicalFileId(file)) ?? -1;
+              const isFocused = focusedRowIndex === fileIdx && fileIdx >= 0;
+              return (
+                <div
+                  key={getFileKey(file)}
+                  data-focus-scope="files-page"
+                  data-focus-index={fileIdx}
+                  style={
+                    isFocused
+                      ? {
+                          outline: '2px solid var(--color-navy)',
+                          outlineOffset: '-2px',
+                          borderRadius: '4px',
+                        }
+                      : undefined
+                  }
+                >
+                  <FileListItem
+                    file={file}
+                    isDownloading={downloadingIds.has(getCanonicalFileId(file))}
+                    isSelected={selectedFiles.has(getFileKey(file))}
+                    selectMode={selectMode}
+                    onToggleSelect={() => toggleFileSelection(file)}
+                    onDownload={() => handleDownload(file)}
+                    onOpen={() => handleOpen(file)}
+                    onShowInFolder={
+                      canShowInFolder(file) ? () => handleShowInFolder(file) : undefined
+                    }
+                    onContextMenu={(e) => handleContextMenu(file, e)}
+                    updateType={getFileUpdateType(file)}
+                  />
+                </div>
+              );
+            })}
           </div>
         ) : (
           <div
@@ -465,23 +505,41 @@ function FolderSection({
               } as React.CSSProperties
             }
           >
-            {folderFiles.map((file) => (
-              <FileGridItem
-                key={getFileKey(file)}
-                file={file}
-                isDownloading={downloadingIds.has(getCanonicalFileId(file))}
-                isSelected={selectedFiles.has(getFileKey(file))}
-                selectMode={selectMode}
-                onToggleSelect={() => toggleFileSelection(file)}
-                onDownload={() => handleDownload(file)}
-                onOpen={() => handleOpen(file)}
-                onShowInFolder={
-                  canShowInFolder(file) ? () => handleShowInFolder(file) : undefined
-                }
-                onContextMenu={(e) => handleContextMenu(file, e)}
-                updateType={getFileUpdateType(file)}
-              />
-            ))}
+            {folderFiles.map((file) => {
+              const fileIdx = rowIndexMap.get(getCanonicalFileId(file)) ?? -1;
+              const isFocused = focusedRowIndex === fileIdx && fileIdx >= 0;
+              return (
+                <div
+                  key={getFileKey(file)}
+                  data-focus-scope="files-page"
+                  data-focus-index={fileIdx}
+                  style={
+                    isFocused
+                      ? {
+                          outline: '2px solid var(--color-navy)',
+                          outlineOffset: '-2px',
+                          borderRadius: '4px',
+                        }
+                      : undefined
+                  }
+                >
+                  <FileGridItem
+                    file={file}
+                    isDownloading={downloadingIds.has(getCanonicalFileId(file))}
+                    isSelected={selectedFiles.has(getFileKey(file))}
+                    selectMode={selectMode}
+                    onToggleSelect={() => toggleFileSelection(file)}
+                    onDownload={() => handleDownload(file)}
+                    onOpen={() => handleOpen(file)}
+                    onShowInFolder={
+                      canShowInFolder(file) ? () => handleShowInFolder(file) : undefined
+                    }
+                    onContextMenu={(e) => handleContextMenu(file, e)}
+                    updateType={getFileUpdateType(file)}
+                  />
+                </div>
+              );
+            })}
           </div>
         ))}
     </div>
