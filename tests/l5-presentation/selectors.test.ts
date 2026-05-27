@@ -434,6 +434,17 @@ describe('L5 Selectors', () => {
 
       expect(result.map((n) => n.id)).toEqual([10, 12]);
     });
+
+    it('returns [] (not undefined, not throws) when state is fully empty', () => {
+      // Locks the empty-state contract — downstream `.map`/`.filter` callsites
+      // depend on always getting an array. A future "optimization" early-returning
+      // null would break them silently.
+      const state = createBaseState({ courses: [], notifications: [] });
+
+      const result = selectors.visibleNotifications(state);
+
+      expect(result).toEqual([]);
+    });
   });
 
   describe('visibleTasks', () => {
