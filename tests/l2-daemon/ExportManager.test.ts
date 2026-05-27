@@ -9,7 +9,7 @@
 
 import { ExportManager } from '../../src/layers/l2-daemon/export/ExportManager';
 import { Database } from '../../src/layers/l1-persistence/Database';
-import { VisibleDataProvider } from '../../src/layers/l1-persistence/VisibleDataProvider';
+import { VisibilityOracle } from '../../src/layers/l1-persistence/VisibilityOracle';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
@@ -19,7 +19,7 @@ const describeFn = process.env.SKIP_NATIVE_TESTS ? describe.skip : describe;
 
 describeFn('ExportManager', () => {
   let database: Database;
-  let visibleDataProvider: VisibleDataProvider;
+  let visibilityOracle: VisibilityOracle;
   let exportManager: ExportManager;
   let tempDir: string;
 
@@ -240,26 +240,24 @@ describeFn('ExportManager', () => {
     );
 
     // Create visible data provider mock
-    visibleDataProvider = {
+    visibilityOracle = {
       getVisibleCourseIds: jest.fn().mockReturnValue([1, 2]),
       getVisibleCourses: jest.fn().mockReturnValue([
         { id: 1, code: 'CSC108', name: 'Introduction to Programming' },
         { id: 2, code: 'MAT137', name: 'Calculus I' },
       ]),
       getArchivedCourseIds: jest.fn().mockReturnValue([3]),
-      getArchivedCourses: jest
-        .fn()
-        .mockReturnValue([
-          {
-            id: 3,
-            code: 'CSC148',
-            name: 'Introduction to Computer Science',
-            archived_at: '2023-12-15T00:00:00Z',
-          },
-        ]),
-    } as unknown as VisibleDataProvider;
+      getArchivedCourses: jest.fn().mockReturnValue([
+        {
+          id: 3,
+          code: 'CSC148',
+          name: 'Introduction to Computer Science',
+          archived_at: '2023-12-15T00:00:00Z',
+        },
+      ]),
+    } as unknown as VisibilityOracle;
 
-    exportManager = new ExportManager(database, visibleDataProvider, {
+    exportManager = new ExportManager(database, visibilityOracle, {
       filesDir: tempDir,
       appVersion: '1.0.0-test',
     });
@@ -343,7 +341,7 @@ describeFn('ExportManager', () => {
     });
 
     it('should return error when no visible courses', async () => {
-      (visibleDataProvider.getVisibleCourseIds as jest.Mock).mockReturnValue([]);
+      (visibilityOracle.getVisibleCourseIds as jest.Mock).mockReturnValue([]);
 
       const outputPath = path.join(tempDir, 'tasks-empty.csv');
       const result = await exportManager.exportTasksCsv(outputPath);

@@ -19,7 +19,7 @@ import type { IpcContext } from './IpcContext';
 export function registerSettingsHandlers(ctx: IpcContext): void {
   const database = ctx.getDatabase();
   const logger = ctx.getLogger();
-  const getVisibleDataProvider = ctx.getVisibleDataProvider;
+  const getVisibilityOracle = ctx.getVisibilityOracle;
   const getMainWindow = ctx.getMainWindow;
   const getWindowBehavior = ctx.getWindowBehavior;
   const setWindowBehavior = ctx.setWindowBehavior;
@@ -114,11 +114,11 @@ export function registerSettingsHandlers(ctx: IpcContext): void {
 
   ipcMain.handle('settings:getTermSelection', () => {
     try {
-      const visibleDataProvider = getVisibleDataProvider();
-      if (!visibleDataProvider) {
+      const visibilityOracle = getVisibilityOracle();
+      if (!visibilityOracle) {
         return { termSelection: 'auto' };
       }
-      const termSelection = visibleDataProvider.getTermSelection();
+      const termSelection = visibilityOracle.getTermSelection();
       return { termSelection };
     } catch (error) {
       logger.error('Failed to get term selection:', error as Error);
@@ -130,11 +130,11 @@ export function registerSettingsHandlers(ctx: IpcContext): void {
     'settings:setTermSelection',
     (_event, value: 'all' | 'auto' | number) => {
       try {
-        const visibleDataProvider = getVisibleDataProvider();
-        if (!visibleDataProvider) {
-          return { success: false, error: 'VisibleDataProvider not initialized' };
+        const visibilityOracle = getVisibilityOracle();
+        if (!visibilityOracle) {
+          return { success: false, error: 'VisibilityOracle not initialized' };
         }
-        visibleDataProvider.setTermSelection(value);
+        visibilityOracle.setTermSelection(value);
         logger.info(`Term selection updated to: ${value}`);
         return { success: true };
       } catch (error) {
@@ -146,11 +146,11 @@ export function registerSettingsHandlers(ctx: IpcContext): void {
 
   ipcMain.handle('visibility:getVisibleCourseIds', () => {
     try {
-      const visibleDataProvider = getVisibleDataProvider();
-      if (!visibleDataProvider) {
+      const visibilityOracle = getVisibilityOracle();
+      if (!visibilityOracle) {
         return { courseIds: [] };
       }
-      const courseIds = visibleDataProvider.getVisibleCourseIds();
+      const courseIds = visibilityOracle.getVisibleCourseIds();
       return { courseIds };
     } catch (error) {
       logger.error('Failed to get visible course IDs:', error as Error);

@@ -11,7 +11,7 @@
 import { EventEmitter } from 'events';
 import { CanvasClient } from '../client/CanvasClient';
 import { RateLimiter } from '../resilience/RateLimiter';
-import { Database, VisibleDataProvider } from '../../l1-persistence';
+import { Database, VisibilityOracle } from '../../l1-persistence';
 import { SyncConflictResolver } from './SyncConflictResolver';
 import { SyncCheckpointManager } from './SyncCheckpointManager';
 import { SyncBackoffManager } from './SyncBackoffManager';
@@ -37,7 +37,7 @@ export interface SyncOrchestratorConfig {
   conflictResolver: SyncConflictResolver;
   checkpointManager: SyncCheckpointManager;
   backoffManager: SyncBackoffManager;
-  visibleDataProvider: VisibleDataProvider | null;
+  visibilityOracle: VisibilityOracle | null;
   emitter: EventEmitter;
   log: ComponentLogger | null;
   getDefaultTargetGrade: () => number;
@@ -73,7 +73,7 @@ export class SyncOrchestrator {
       conflictResolver: config.conflictResolver,
       checkpointManager: config.checkpointManager,
       backoffManager: config.backoffManager,
-      visibleDataProvider: config.visibleDataProvider,
+      visibilityOracle: config.visibilityOracle,
       emitter: config.emitter,
       log: config.log,
       getDefaultTargetGrade: config.getDefaultTargetGrade,

@@ -139,23 +139,20 @@ function mapTaskRowToResponse(row: TaskRow) {
 export function registerTaskDataHandlers(ctx: IpcContext): void {
   const database = ctx.getDatabase();
   const logger = ctx.getLogger();
-  const getVisibleDataProvider = ctx.getVisibleDataProvider;
+  const getVisibilityOracle = ctx.getVisibilityOracle;
 
   ipcMain.handle(
     'data:getTasks',
     (_event, options?: { courseIds?: number[] } | number) => {
       try {
-        // Use VisibleDataProvider as single source of truth for visibility
+        // Use VisibilityOracle as single source of truth for visibility
         // This ensures consistent filtering across all services
         let sql: string;
         let params: number[] = [];
 
         if (typeof options === 'number') {
           // Legacy: single courseId - verify it's visible first
-          if (
-            getVisibleDataProvider() &&
-            !getVisibleDataProvider()!.isCourseVisible(options)
-          ) {
+          if (getVisibilityOracle() && !getVisibilityOracle()!.isCourseVisible(options)) {
             return []; // Course not visible, return empty
           }
           sql = `SELECT t.* FROM tasks t
@@ -169,7 +166,7 @@ export function registerTaskDataHandlers(ctx: IpcContext): void {
           options.courseIds.length > 0
         ) {
           // Filter provided courseIds to only visible ones
-          const visibleIds = getVisibleDataProvider()?.getVisibleCourseIds() ?? [];
+          const visibleIds = getVisibilityOracle()?.getVisibleCourseIds() ?? [];
           const visibleSet = new Set(visibleIds);
           const filteredCourseIds = options.courseIds.filter((id) => visibleSet.has(id));
 
@@ -183,7 +180,7 @@ export function registerTaskDataHandlers(ctx: IpcContext): void {
           params = filteredCourseIds;
         } else {
           // No filter - return tasks from all visible courses
-          const visibleIds = getVisibleDataProvider()?.getVisibleCourseIds() ?? [];
+          const visibleIds = getVisibilityOracle()?.getVisibleCourseIds() ?? [];
           if (visibleIds.length === 0) return [];
 
           const placeholders = visibleIds.map(() => '?').join(', ');
@@ -262,7 +259,7 @@ export function registerTaskDataHandlers(ctx: IpcContext): void {
   // Get all pending queue entries (filtered by visibility)
   ipcMain.handle('data:getTaskQueue', (_event, options?: { status?: string }) => {
     try {
-      const visibleIds = getVisibleDataProvider()?.getVisibleCourseIds() ?? [];
+      const visibleIds = getVisibilityOracle()?.getVisibleCourseIds() ?? [];
       if (visibleIds.length === 0) return [];
 
       const placeholders = visibleIds.map(() => '?').join(', ');
@@ -290,7 +287,7 @@ export function registerTaskDataHandlers(ctx: IpcContext): void {
   // Get queue count (for badges)
   ipcMain.handle('data:getTaskQueueCount', (_event, options?: { courseId?: number }) => {
     try {
-      const visibleIds = getVisibleDataProvider()?.getVisibleCourseIds() ?? [];
+      const visibleIds = getVisibilityOracle()?.getVisibleCourseIds() ?? [];
       if (visibleIds.length === 0) return 0;
 
       let sql: string;
@@ -319,7 +316,7 @@ export function registerTaskDataHandlers(ctx: IpcContext): void {
   ipcMain.handle('data:getTaskQueueForCourse', (_event, courseId: number) => {
     try {
       // Verify course is visible
-      const visibleIds = getVisibleDataProvider()?.getVisibleCourseIds() ?? [];
+      const visibleIds = getVisibilityOracle()?.getVisibleCourseIds() ?? [];
       if (!visibleIds.includes(courseId)) return [];
 
       const rows = database.executeRead<CanvasTaskQueueRow>(

@@ -1,16 +1,16 @@
 ---
 name: scaffold-ipc-handler
-description: Generate a new IPC handler (registered via `ipcMain.handle`) with the `VisibleDataProvider` course-visibility filter wired in correctly per `CLAUDE.md` §8 "MANDATORY: Course Visibility Filtering". Prevents the common mistake of querying courses, tasks, notifications, calendar events, or files without filtering to visible courses — which leaks archived/hidden/term-filtered data into the UI. Use when the user says "scaffold an ipc handler", "new ipc handler", "add an ipc endpoint", or is creating any new `data:*` handler that touches course-scoped tables.
+description: Generate a new IPC handler (registered via `ipcMain.handle`) with the `VisibilityOracle` course-visibility filter wired in correctly per `CLAUDE.md` §8 "MANDATORY: Course Visibility Filtering". Prevents the common mistake of querying courses, tasks, notifications, calendar events, or files without filtering to visible courses — which leaks archived/hidden/term-filtered data into the UI. Use when the user says "scaffold an ipc handler", "new ipc handler", "add an ipc endpoint", or is creating any new `data:*` handler that touches course-scoped tables.
 ---
 
 # Scaffold IPC handler
 
 Every IPC handler that touches course-scoped data MUST filter through
-`VisibleDataProvider`. Per `CLAUDE.md` §8:
+`VisibilityOracle`. Per `CLAUDE.md` §8:
 
 > BEFORE writing ANY code that queries courses, tasks, notifications,
 > calendar events, files, or any course-related data, you MUST use
-> `VisibleDataProvider`.
+> `VisibilityOracle`.
 
 The ONLY exception is `SyncEngine` (it discovers ALL courses from
 Canvas — but that's the daemon, not an IPC handler).
@@ -26,7 +26,7 @@ Canvas — but that's the daemon, not an IPC handler).
 
 - The IPC handler doesn't touch course data (e.g. settings, auth,
   global config — those don't need visibility filtering).
-- Modifying an existing handler that already uses VisibleDataProvider
+- Modifying an existing handler that already uses VisibilityOracle
   (just edit it).
 
 ## Where handlers live
@@ -50,7 +50,7 @@ Ask the user (if unclear):
 ```ts
 ipcMain.handle('data:get<Thing>', (_event, options?: { ... }) => {
   // ALWAYS get visible IDs first.
-  const visibleIds = visibleDataProvider.getVisibleCourseIds();
+  const visibleIds = visibilityOracle.getVisibleCourseIds();
 
   // If no visible courses, return empty (NOT all data!).
   if (visibleIds.length === 0) return [];
@@ -71,7 +71,7 @@ ipcMain.handle('data:get<Thing>', (_event, options?: { ... }) => {
 ### 3. If the handler invokes an L4 command
 
 If the handler dispatches to an L4 command (e.g. `AcceptQueuedTaskCommand`),
-the command itself must inject `VisibleDataProvider` via the
+the command itself must inject `VisibilityOracle` via the
 `CommandContext`. See `MergeQueuedTaskCommand.ts` for an example —
 visibility isn't bypassed by routing through a command.
 
@@ -107,7 +107,7 @@ The test MUST verify:
 
 - [ ] Does my code query courses, tasks, notifications, files, or
       calendar events?
-- [ ] If yes, am I using `VisibleDataProvider.getVisibleCourseIds()`?
+- [ ] If yes, am I using `VisibilityOracle.getVisibleCourseIds()`?
 - [ ] If `visibleIds` is empty, do I return empty (not all data)?
 - [ ] In the UI consumer (L6), am I filtering by `courseMap` from the
       store (which is already visibility-filtered)?
@@ -131,5 +131,5 @@ const tasks = db.executeRead(`
 const visibleCourses = courses.filter((c) => !c.isHidden && !c.archivedAt);
 ```
 
-`VisibleDataProvider` is the single source of truth for what "visible"
+`VisibilityOracle` is the single source of truth for what "visible"
 means. Don't re-implement it.

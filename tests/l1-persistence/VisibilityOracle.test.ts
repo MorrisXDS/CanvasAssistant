@@ -1,5 +1,5 @@
 /**
- * VisibleDataProvider Tests
+ * VisibilityOracle Tests
  *
  * Tests the centralized visibility rules service.
  */
@@ -10,14 +10,14 @@ import {
   coreMigrations,
 } from '../../src/layers/l1-persistence/MigrationRunner';
 import {
-  VisibleDataProvider,
+  VisibilityOracle,
   TermSelection,
-} from '../../src/layers/l1-persistence/VisibleDataProvider';
+} from '../../src/layers/l1-persistence/VisibilityOracle';
 
-describe('VisibleDataProvider', () => {
+describe('VisibilityOracle', () => {
   let db: Database;
   let migrationRunner: MigrationRunner;
-  let provider: VisibleDataProvider;
+  let provider: VisibilityOracle;
 
   beforeEach(() => {
     // Create in-memory database
@@ -27,7 +27,7 @@ describe('VisibleDataProvider', () => {
     migrationRunner.loadMigrations(coreMigrations);
     migrationRunner.runAll();
 
-    provider = new VisibleDataProvider(db);
+    provider = new VisibilityOracle(db);
   });
 
   afterEach(() => {

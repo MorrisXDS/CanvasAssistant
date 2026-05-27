@@ -65,7 +65,7 @@ function buildCanvasResourceUrl(
 export function registerFileDataHandlers(ctx: IpcContext): void {
   const database = ctx.getDatabase();
   const logger = ctx.getLogger();
-  const getVisibleDataProvider = ctx.getVisibleDataProvider;
+  const getVisibilityOracle = ctx.getVisibilityOracle;
   const getCanvasClient = ctx.getCanvasClient;
 
   // ============ File Data Handlers ============
@@ -258,7 +258,7 @@ export function registerFileDataHandlers(ctx: IpcContext): void {
   // Get module items for visible courses
   ipcMain.handle('data:getModuleItems', () => {
     try {
-      const visibleIds = getVisibleDataProvider()?.getVisibleCourseIds() ?? [];
+      const visibleIds = getVisibilityOracle()?.getVisibleCourseIds() ?? [];
       if (visibleIds.length === 0) return [];
 
       const placeholders = visibleIds.map(() => '?').join(', ');

@@ -171,9 +171,9 @@ export class UpdateCoursePreferencesCommand implements Command<
         );
       }
 
-      // Notify VisibleDataProvider if visibility changed
-      if (params.preferences.isHidden !== undefined && context.visibleDataProvider) {
-        context.visibleDataProvider.notifyVisibilityChanged(params.courseId);
+      // Notify VisibilityOracle if visibility changed
+      if (params.preferences.isHidden !== undefined && context.visibilityOracle) {
+        context.visibilityOracle.notifyVisibilityChanged(params.courseId);
       }
 
       return {

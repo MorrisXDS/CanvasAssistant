@@ -72,7 +72,7 @@ export const createCoreDataSlice: SliceCreator = (set, get) => ({
     try {
       let courses = await api.getCourses();
 
-      // Get term selection from database via VisibleDataProvider (single source of truth)
+      // Get term selection from database via VisibilityOracle (single source of truth)
       let semesterSelection: 'all' | 'auto' | string = 'auto';
       try {
         const termResult = await api.getTermSelection();

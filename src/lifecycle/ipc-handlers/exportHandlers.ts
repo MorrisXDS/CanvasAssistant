@@ -25,7 +25,7 @@ export function registerExportHandlers(ctx: IpcContext): void {
   const getDbPath = ctx.getDbPath;
   const getFilesDir = ctx.getFilesDir;
   const getAppVersion = ctx.getAppVersion;
-  const getVisibleDataProvider = ctx.getVisibleDataProvider;
+  const getVisibilityOracle = ctx.getVisibilityOracle;
   const getSyncEngine = ctx.getSyncEngine;
 
   // ============ Selective Export ============
@@ -82,13 +82,13 @@ export function registerExportHandlers(ctx: IpcContext): void {
           return { success: false, error: 'Save cancelled' };
         }
 
-        const visibleDataProvider = getVisibleDataProvider();
-        if (!visibleDataProvider) {
+        const visibilityOracle = getVisibilityOracle();
+        if (!visibilityOracle) {
           return { success: false, error: 'Data provider not initialized' };
         }
 
         const syncEngine = getSyncEngine();
-        const exportManager = new ExportManager(database, visibleDataProvider, {
+        const exportManager = new ExportManager(database, visibilityOracle, {
           logger,
           filesDir: getFilesDir(),
           appVersion: getAppVersion(),
@@ -157,13 +157,13 @@ export function registerExportHandlers(ctx: IpcContext): void {
         return { success: false, error: 'Import cancelled' };
       }
 
-      const visibleDataProvider = getVisibleDataProvider();
-      if (!visibleDataProvider) {
+      const visibilityOracle = getVisibilityOracle();
+      if (!visibilityOracle) {
         return { success: false, error: 'Data provider not initialized' };
       }
 
       const syncEngine = getSyncEngine();
-      const exportManager = new ExportManager(database, visibleDataProvider, {
+      const exportManager = new ExportManager(database, visibilityOracle, {
         logger,
         filesDir: getFilesDir(),
         appVersion: getAppVersion(),

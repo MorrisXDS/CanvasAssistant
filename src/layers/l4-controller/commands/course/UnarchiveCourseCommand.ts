@@ -61,9 +61,9 @@ export class UnarchiveCourseCommand implements Command<
         'courses'
       );
 
-      // Notify VisibleDataProvider of visibility change
-      if (context.visibleDataProvider) {
-        context.visibleDataProvider.notifyVisibilityChanged(params.courseId);
+      // Notify VisibilityOracle of visibility change
+      if (context.visibilityOracle) {
+        context.visibilityOracle.notifyVisibilityChanged(params.courseId);
       }
 
       return {

@@ -1,5 +1,5 @@
 /**
- * VisibleDataProvider - Single Source of Truth for Course Visibility
+ * VisibilityOracle - Single Source of Truth for Course Visibility
  *
  * This service centralizes all visibility rules to ensure consistent filtering
  * across L3 orchestrators, L5 store, and IPC handlers.
@@ -71,32 +71,32 @@ export interface VisibleTaskRow {
 }
 
 /**
- * Configuration for VisibleDataProvider
+ * Configuration for VisibilityOracle
  */
-export interface VisibleDataProviderConfig {
+export interface VisibilityOracleConfig {
   /** Days buffer for term end date calculation (default: 30) */
   termEndBufferDays?: number;
 }
 
-const DEFAULT_CONFIG: Required<VisibleDataProviderConfig> = {
+const DEFAULT_CONFIG: Required<VisibilityOracleConfig> = {
   termEndBufferDays: 30,
 };
 
 /**
- * VisibleDataProvider - Centralized visibility rules
+ * VisibilityOracle - Centralized visibility rules
  *
  * Events:
  * - 'visibility-changed': Emitted when a course's visibility changes
  * - 'settings-changed': Emitted when term selection changes
  */
-export class VisibleDataProvider extends EventEmitter {
+export class VisibilityOracle extends EventEmitter {
   private db: Database;
-  private config: Required<VisibleDataProviderConfig>;
+  private config: Required<VisibilityOracleConfig>;
   private cachedVisibleCourseIds: number[] | null = null;
   private cacheTimestamp: number = 0;
   private readonly CACHE_TTL_MS = 5000; // 5 seconds cache
 
-  constructor(db: Database, config?: VisibleDataProviderConfig) {
+  constructor(db: Database, config?: VisibilityOracleConfig) {
     super();
     this.db = db;
     this.config = { ...DEFAULT_CONFIG, ...config };

@@ -14,7 +14,7 @@ import type { HousekeepingManager } from '../l0-utilities/HousekeepingManager';
 import type { FileDownloadManager } from '../l0-utilities/FileDownloadManager';
 import type { Database } from '../l1-persistence/Database';
 import type { MigrationRunner } from '../l1-persistence/MigrationRunner';
-import type { VisibleDataProvider } from '../l1-persistence/VisibleDataProvider';
+import type { VisibilityOracle } from '../l1-persistence/VisibilityOracle';
 import type { CourseRepository } from '../l1-persistence/repositories/CourseRepository';
 import type { TaskRepository } from '../l1-persistence/repositories/TaskRepository';
 import type { NotificationRepository } from '../l1-persistence/repositories/NotificationRepository';
@@ -41,7 +41,7 @@ export type ServiceToken =
   // L1 Persistence
   | 'database'
   | 'migrationRunner'
-  | 'visibleDataProvider'
+  | 'visibilityOracle'
   | 'courseRepository'
   | 'taskRepository'
   | 'notificationRepository'
@@ -71,7 +71,7 @@ export interface ServiceDefinitions {
   // L1 Persistence
   database: Database;
   migrationRunner: MigrationRunner;
-  visibleDataProvider: VisibleDataProvider;
+  visibilityOracle: VisibilityOracle;
   courseRepository: CourseRepository;
   taskRepository: TaskRepository;
   notificationRepository: NotificationRepository;

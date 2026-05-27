@@ -5,7 +5,7 @@
 
 import { Notification, type BrowserWindow } from 'electron';
 import type { Database } from '../layers/l1-persistence';
-import type { VisibleDataProvider } from '../layers/l1-persistence';
+import type { VisibilityOracle } from '../layers/l1-persistence';
 import type { Logger } from '../layers/l0-utilities/Logger';
 import type { MetricsCollector } from '../layers/l0-utilities/MetricsCollector';
 import type { CredentialManager } from '../layers/l0-utilities/CredentialManager';
@@ -51,7 +51,7 @@ export interface CanvasClientManagerConfig {
   fileDownloadManager: FileDownloadManager;
   filesDir: string;
   getMainWindow: () => BrowserWindow | null;
-  getVisibleDataProvider: () => VisibleDataProvider | null;
+  getVisibilityOracle: () => VisibilityOracle | null;
   getOperationCoordinator: () => OperationCoordinator | null;
   getSyncPreferences: () => {
     saveHtmlContent: boolean;
@@ -106,7 +106,7 @@ export class CanvasClientManager {
       fileDownloadManager,
       filesDir,
       getMainWindow,
-      getVisibleDataProvider,
+      getVisibilityOracle,
       getOperationCoordinator,
       getSyncPreferences,
     } = this.config;
@@ -160,7 +160,7 @@ export class CanvasClientManager {
           maxConcurrentDownloads: 3,
         },
         logger: logger.child('SyncEngine'),
-        visibleDataProvider: getVisibleDataProvider() ?? undefined,
+        visibilityOracle: getVisibilityOracle() ?? undefined,
         operationCoordinator: getOperationCoordinator() ?? undefined,
       });
 
@@ -169,7 +169,7 @@ export class CanvasClientManager {
         logger,
         metricsCollector,
         getMainWindow,
-        getVisibleDataProvider
+        getVisibilityOracle
       );
 
       // Start background token validation to detect expired/revoked tokens
@@ -202,7 +202,7 @@ export class CanvasClientManager {
     logger: Logger,
     metricsCollector: MetricsCollector,
     getMainWindow: () => BrowserWindow | null,
-    getVisibleDataProvider: () => VisibleDataProvider | null
+    getVisibilityOracle: () => VisibilityOracle | null
   ): void {
     if (!this.syncEngine) return;
 
@@ -216,11 +216,11 @@ export class CanvasClientManager {
       metricsCollector.recordTiming('sync.full.duration', result.totalDuration);
       logger.info(`Sync completed in ${result.totalDuration}ms`);
 
-      // Invalidate VisibleDataProvider cache so new courses appear immediately
-      const visibleDataProvider = getVisibleDataProvider();
-      if (visibleDataProvider) {
-        visibleDataProvider.invalidateCache();
-        logger.debug('VisibleDataProvider cache invalidated after sync');
+      // Invalidate VisibilityOracle cache so new courses appear immediately
+      const visibilityOracle = getVisibilityOracle();
+      if (visibilityOracle) {
+        visibilityOracle.invalidateCache();
+        logger.debug('VisibilityOracle cache invalidated after sync');
       }
 
       // Desktop notification for sync complete
