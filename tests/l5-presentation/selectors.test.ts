@@ -460,5 +460,15 @@ describe('L5 Selectors', () => {
 
       expect(result.map((t) => t.id)).toEqual([10]);
     });
+
+    it('returns [] (not undefined, not throws) when state is fully empty', () => {
+      // Same empty-state contract as visibleNotifications — every consumer
+      // depends on getting an array back even when there's nothing to filter.
+      const state = createBaseState({ courses: [], tasks: [] });
+
+      const result = selectors.visibleTasks(state);
+
+      expect(result).toEqual([]);
+    });
   });
 });
