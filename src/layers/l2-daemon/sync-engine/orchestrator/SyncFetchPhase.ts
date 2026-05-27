@@ -153,7 +153,7 @@ export async function executeFetchPhase(
 
 /**
  * Commit early metadata (enrollment terms + course rows) so that
- * VisibleDataProvider can filter correctly before the full commit.
+ * VisibilityOracle can filter correctly before the full commit.
  */
 async function commitEarlyMetadata(
   ctx: OrchestratorContext,
@@ -228,8 +228,8 @@ async function commitEarlyMetadata(
   }
 
   // Invalidate cache
-  if (ctx.visibleDataProvider) {
-    ctx.visibleDataProvider.invalidateCache();
+  if (ctx.visibilityOracle) {
+    ctx.visibilityOracle.invalidateCache();
   }
 }
 
@@ -278,8 +278,8 @@ export function filterCourses(
   }
 
   // Filter to visible courses
-  if (ctx.visibleDataProvider) {
-    const visibleLocalIds = new Set(ctx.visibleDataProvider.getVisibleCourseIds());
+  if (ctx.visibilityOracle) {
+    const visibleLocalIds = new Set(ctx.visibilityOracle.getVisibleCourseIds());
     const canvasToLocalId = new Map<number, number>();
 
     for (const course of coursesToSync) {

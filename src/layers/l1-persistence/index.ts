@@ -25,12 +25,12 @@ export {
   verifyImportedCalendars,
 } from './DatabaseRepair';
 export {
-  VisibleDataProvider,
-  VisibleDataProviderConfig,
+  VisibilityOracle,
+  VisibilityOracleConfig,
   TermSelection,
   VisibleCourseRow,
   VisibleTaskRow,
-} from './VisibleDataProvider';
+} from './VisibilityOracle';
 
 // Repositories
 export {

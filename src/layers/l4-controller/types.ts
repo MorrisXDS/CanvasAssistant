@@ -4,14 +4,14 @@
  * Command pattern types for user actions.
  */
 
-import { Database, VisibleDataProvider } from '../l1-persistence';
+import { Database, VisibilityOracle } from '../l1-persistence';
 
 /**
  * Command execution context - provides access to lower layers
  */
 export interface CommandContext {
   db: Database;
-  visibleDataProvider?: VisibleDataProvider;
+  visibilityOracle?: VisibilityOracle;
   simulationContext: SimulationContext;
 }
 

@@ -12,7 +12,7 @@ import type { IpcContext } from '../IpcContext';
 export function registerPolicyHandlers(ctx: IpcContext): void {
   const database = ctx.getDatabase();
   const logger = ctx.getLogger();
-  const getVisibleDataProvider = ctx.getVisibleDataProvider;
+  const getVisibilityOracle = ctx.getVisibilityOracle;
 
   // Get policies for a course
   ipcMain.handle('data:getPolicies', (_event, courseId: number) => {
@@ -54,7 +54,7 @@ export function registerPolicyHandlers(ctx: IpcContext): void {
   // Get all policies for multiple courses (for policy badges on tasks)
   ipcMain.handle('data:getAllPolicies', (_event, options?: { courseIds?: number[] }) => {
     try {
-      const visibleIds = getVisibleDataProvider()?.getVisibleCourseIds() ?? [];
+      const visibleIds = getVisibilityOracle()?.getVisibleCourseIds() ?? [];
 
       let sql: string;
       let params: number[] = [];

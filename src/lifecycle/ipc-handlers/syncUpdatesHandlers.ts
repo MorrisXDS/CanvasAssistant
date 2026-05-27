@@ -59,8 +59,8 @@ export const registerSyncUpdatesHandlers: IpcHandlerRegistrar = (ctx: IpcContext
         const limit = options?.limit ?? 500;
 
         // Get visible course IDs
-        const visibleDataProvider = ctx.getVisibleDataProvider();
-        const visibleCourseIds = visibleDataProvider?.getVisibleCourseIds() ?? [];
+        const visibilityOracle = ctx.getVisibilityOracle();
+        const visibleCourseIds = visibilityOracle?.getVisibleCourseIds() ?? [];
 
         if (visibleCourseIds.length === 0) {
           return [];
@@ -104,8 +104,8 @@ export const registerSyncUpdatesHandlers: IpcHandlerRegistrar = (ctx: IpcContext
   ipcMain.handle('syncUpdates:getCount', async () => {
     try {
       // Get visible course IDs
-      const visibleDataProvider = ctx.getVisibleDataProvider();
-      const visibleCourseIds = visibleDataProvider?.getVisibleCourseIds() ?? [];
+      const visibilityOracle = ctx.getVisibilityOracle();
+      const visibleCourseIds = visibilityOracle?.getVisibleCourseIds() ?? [];
 
       logger.info(`[syncUpdates:getCount] visibleCourseIds: ${visibleCourseIds.length}`);
 
@@ -265,8 +265,8 @@ export const registerSyncUpdatesHandlers: IpcHandlerRegistrar = (ctx: IpcContext
         const values: (number | string)[] = [];
 
         // Get visible course IDs
-        const visibleDataProvider = ctx.getVisibleDataProvider();
-        const visibleCourseIds = visibleDataProvider?.getVisibleCourseIds() ?? [];
+        const visibilityOracle = ctx.getVisibilityOracle();
+        const visibleCourseIds = visibilityOracle?.getVisibleCourseIds() ?? [];
 
         if (visibleCourseIds.length === 0) {
           return { success: true, data: { marked: 0 } };
@@ -479,8 +479,8 @@ export const registerSyncUpdatesHandlers: IpcHandlerRegistrar = (ctx: IpcContext
   ipcMain.handle('syncUpdates:createTestData', async () => {
     try {
       // Get first visible course, task, and file for test data
-      const visibleDataProvider = ctx.getVisibleDataProvider();
-      const visibleCourseIds = visibleDataProvider?.getVisibleCourseIds() ?? [];
+      const visibilityOracle = ctx.getVisibilityOracle();
+      const visibleCourseIds = visibilityOracle?.getVisibleCourseIds() ?? [];
 
       if (visibleCourseIds.length === 0) {
         return { success: false, error: 'No visible courses found' };

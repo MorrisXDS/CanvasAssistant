@@ -23,7 +23,7 @@ import {
   Database,
   MigrationRunner,
   coreMigrations,
-  VisibleDataProvider,
+  VisibilityOracle,
   runPostImportRepairs,
 } from '../layers/l1-persistence';
 
@@ -137,7 +137,7 @@ export class AppLifecycle {
   private readonly commandDispatcherLogger: ComponentLogger;
 
   // Mutable state - lazy-initialized services
-  private visibleDataProvider: VisibleDataProvider | null = null;
+  private visibilityOracle: VisibilityOracle | null = null;
   private htmlLocalPathManager: HtmlLocalPathManager | null = null;
   private operationCoordinator: OperationCoordinator | null = null;
   private commandDispatcher: CommandDispatcher | null = null;
@@ -446,8 +446,8 @@ export class AppLifecycle {
         this.logger.info(`Auto-completed ${autoCompleteResult.changes} graded tasks`);
       }
 
-      // Initialize L1 VisibleDataProvider
-      this.visibleDataProvider = new VisibleDataProvider(this.database);
+      // Initialize L1 VisibilityOracle
+      this.visibilityOracle = new VisibilityOracle(this.database);
 
       // Initialize OperationCoordinator
       this.operationCoordinator = new OperationCoordinator({
@@ -473,7 +473,7 @@ export class AppLifecycle {
         fileDownloadManager: this.fileDownloadManager,
         filesDir: FILES_DIR,
         getMainWindow: () => this.getMainWindow(),
-        getVisibleDataProvider: () => this.visibleDataProvider,
+        getVisibilityOracle: () => this.visibilityOracle,
         getOperationCoordinator: () => this.operationCoordinator,
         getSyncPreferences: this.boundGetSyncPreferences,
       });
@@ -481,7 +481,7 @@ export class AppLifecycle {
       // Initialize L4 CommandDispatcher
       this.commandDispatcher = new CommandDispatcher({
         db: this.database,
-        visibleDataProvider: this.visibleDataProvider ?? undefined,
+        visibilityOracle: this.visibilityOracle ?? undefined,
         logger: this.commandDispatcherLogger,
       });
 
@@ -835,7 +835,7 @@ export class AppLifecycle {
       getFileDownloadManager: () => this.fileDownloadManager,
       getHealthCheck: () => this.healthCheck,
       getSystemMonitor: () => this.systemMonitor,
-      getVisibleDataProvider: () => this.visibleDataProvider,
+      getVisibilityOracle: () => this.visibilityOracle,
       getCanvasClient: () => this.getCanvasClient(),
       getSyncEngine: () => this.getSyncEngine(),
       getOperationCoordinator: () => this.operationCoordinator,

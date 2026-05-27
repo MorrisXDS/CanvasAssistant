@@ -6,7 +6,7 @@
 import type { EventEmitter } from 'events';
 import type { CanvasClient } from '../../client/CanvasClient';
 import type { RateLimiter } from '../../resilience/RateLimiter';
-import type { Database, VisibleDataProvider } from '../../../l1-persistence';
+import type { Database, VisibilityOracle } from '../../../l1-persistence';
 import type { SyncConflictResolver } from '../SyncConflictResolver';
 import type { SyncCheckpointManager } from '../SyncCheckpointManager';
 import type { SyncBackoffManager } from '../SyncBackoffManager';
@@ -31,7 +31,7 @@ export interface OrchestratorContext {
   conflictResolver: SyncConflictResolver;
   checkpointManager: SyncCheckpointManager;
   backoffManager: SyncBackoffManager;
-  visibleDataProvider: VisibleDataProvider | null;
+  visibilityOracle: VisibilityOracle | null;
   emitter: EventEmitter;
   log: ComponentLogger | null;
   getDefaultTargetGrade: () => number;

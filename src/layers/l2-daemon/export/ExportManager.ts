@@ -7,7 +7,7 @@
 
 import { EventEmitter } from 'events';
 import fs from 'fs';
-import { Database, VisibleDataProvider } from '../../l1-persistence';
+import { Database, VisibilityOracle } from '../../l1-persistence';
 import { CryptoManager, EncryptedData } from '../../l0-utilities/CryptoManager';
 import { ComponentLogger, Logger } from '../../l0-utilities/Logger';
 import type { SyncEngine } from '../sync-engine/SyncEngine';
@@ -53,7 +53,7 @@ import {
  */
 export class ExportManager extends EventEmitter {
   private readonly db: Database;
-  private readonly visibleDataProvider: VisibleDataProvider;
+  private readonly visibilityOracle: VisibilityOracle;
   private readonly cryptoManager: CryptoManager;
   private readonly log: ComponentLogger;
   private readonly filesDir: string;
@@ -62,12 +62,12 @@ export class ExportManager extends EventEmitter {
 
   constructor(
     db: Database,
-    visibleDataProvider: VisibleDataProvider,
+    visibilityOracle: VisibilityOracle,
     config: ExportManagerConfig = {}
   ) {
     super();
     this.db = db;
-    this.visibleDataProvider = visibleDataProvider;
+    this.visibilityOracle = visibilityOracle;
     this.filesDir = config.filesDir ?? '';
     this.appVersion = config.appVersion ?? '1.0.0';
     this.syncEngine = config.syncEngine ?? null;
@@ -105,7 +105,7 @@ export class ExportManager extends EventEmitter {
       {
         db: this.db,
         resolveCourseIds: (ids, archived, archivedIds) =>
-          resolveCourseIds(this.visibleDataProvider, ids, archived, archivedIds),
+          resolveCourseIds(this.visibilityOracle, ids, archived, archivedIds),
         emitProgress: (stage, progress, message) =>
           this.emitProgress(stage as ExportProgress['stage'], progress, message),
         log: this.log,
@@ -126,7 +126,7 @@ export class ExportManager extends EventEmitter {
       {
         db: this.db,
         resolveCourseIds: (ids, archived, archivedIds) =>
-          resolveCourseIds(this.visibleDataProvider, ids, archived, archivedIds),
+          resolveCourseIds(this.visibilityOracle, ids, archived, archivedIds),
         emitProgress: (stage, progress, message) =>
           this.emitProgress(stage as ExportProgress['stage'], progress, message),
         log: this.log,
@@ -160,7 +160,7 @@ export class ExportManager extends EventEmitter {
       const collected = collectExportData(
         {
           db: this.db,
-          visibleDataProvider: this.visibleDataProvider,
+          visibilityOracle: this.visibilityOracle,
           appVersion: this.appVersion,
           emitProgress: (stage, progress, message) =>
             this.emitProgress(stage as ExportProgress['stage'], progress, message),

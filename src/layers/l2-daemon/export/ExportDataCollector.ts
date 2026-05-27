@@ -5,7 +5,7 @@
 
 import type {
   Database,
-  VisibleDataProvider,
+  VisibilityOracle,
   CourseRow,
   TaskRow,
   NotificationRow,
@@ -16,7 +16,7 @@ import type { SelectiveExportOptions, SyncMetadataExport } from './ExportManager
 
 export interface ExportDataCollectorDeps {
   db: Database;
-  visibleDataProvider: VisibleDataProvider;
+  visibilityOracle: VisibilityOracle;
   appVersion: string;
   emitProgress: (stage: string, progress: number, message: string) => void;
 }
@@ -40,7 +40,7 @@ export interface CollectedExportData {
  * Resolve course IDs - use provided or fall back to visible courses
  */
 export function resolveCourseIds(
-  visibleDataProvider: VisibleDataProvider,
+  visibilityOracle: VisibilityOracle,
   courseIds?: number[],
   includeArchived?: boolean,
   archivedCourseIds?: number[]
@@ -51,21 +51,21 @@ export function resolveCourseIds(
   if (courseIds !== undefined) {
     // Explicit selection: filter to only visible courses from the selection
     if (courseIds.length > 0) {
-      const visibleIds = new Set(visibleDataProvider.getVisibleCourseIds());
+      const visibleIds = new Set(visibilityOracle.getVisibleCourseIds());
       result = courseIds.filter((id) => visibleIds.has(id));
     }
     // Empty array means no visible courses selected
   } else {
     // No selection specified: include all visible courses
-    result = visibleDataProvider.getVisibleCourseIds();
+    result = visibilityOracle.getVisibleCourseIds();
   }
 
   // Handle archived courses
   if (includeArchived) {
-    const allArchivedIds = visibleDataProvider.getArchivedCourseIds();
+    const allArchivedIds = visibilityOracle.getArchivedCourseIds();
     result = [...result, ...allArchivedIds];
   } else if (archivedCourseIds && archivedCourseIds.length > 0) {
-    const validArchivedIds = new Set(visibleDataProvider.getArchivedCourseIds());
+    const validArchivedIds = new Set(visibilityOracle.getArchivedCourseIds());
     const filteredArchivedIds = archivedCourseIds.filter((id) =>
       validArchivedIds.has(id)
     );
@@ -178,7 +178,7 @@ export function collectExportData(
   options: SelectiveExportOptions
 ): CollectedExportData | { error: string } {
   const courseIds = resolveCourseIds(
-    deps.visibleDataProvider,
+    deps.visibilityOracle,
     options.courses,
     options.includeArchived,
     options.archivedCourses

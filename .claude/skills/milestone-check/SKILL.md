@@ -47,7 +47,7 @@ Also capture two side-lists:
 - **Out-of-scope / deferred** — things explicitly agreed NOT to do (so doing them counts
   as a deviation, not a bonus).
 - **Constraints** — non-negotiables stated by the user or CLAUDE.md that the changes must
-  respect (e.g. "use `VisibleDataProvider`", "no `console.log`", "report-only unless told").
+  respect (e.g. "use `VisibilityOracle`", "no `console.log`", "report-only unless told").
 
 If the intent is genuinely ambiguous, ask ONE clarifying question before scoring rather
 than guessing — a wrong baseline makes the whole index meaningless.
@@ -114,7 +114,7 @@ Check each of these and cite `file:line` evidence:
   paths. Flag anything that alters existing data, ordering, or is non-idempotent / not
   reversible.
 - **Project-invariant regressions** — does the change accidentally bypass
-  `VisibleDataProvider`, introduce `console.log`, use `fetch`/`sqlite3`, or otherwise break a
+  `VisibilityOracle`, introduce `console.log`, use `fetch`/`sqlite3`, or otherwise break a
   CLAUDE.md rule as a _side effect_ of doing something else?
 - **Behavioral regressions in adjacent features** — reason about what else exercises the
   touched code path; note any plausible regression and how to verify it.

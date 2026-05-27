@@ -12,15 +12,15 @@ import type { IpcContext } from './IpcContext';
 export function registerNotificationDataHandlers(ctx: IpcContext): void {
   const database = ctx.getDatabase();
   const logger = ctx.getLogger();
-  const getVisibleDataProvider = ctx.getVisibleDataProvider;
+  const getVisibilityOracle = ctx.getVisibilityOracle;
 
   ipcMain.handle(
     'data:getNotifications',
     (_event, options?: { courseIds?: number[] }) => {
       try {
-        // Use VisibleDataProvider as single source of truth for visibility
+        // Use VisibilityOracle as single source of truth for visibility
         // Always include system notifications (course_id IS NULL)
-        const visibleIds = getVisibleDataProvider()?.getVisibleCourseIds() ?? [];
+        const visibleIds = getVisibilityOracle()?.getVisibleCourseIds() ?? [];
         let sql: string;
         let params: number[] = [];
 

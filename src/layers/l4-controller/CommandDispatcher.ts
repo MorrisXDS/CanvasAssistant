@@ -16,7 +16,7 @@ import {
   SimulationContext,
   createSimulationContext,
 } from './types';
-import { Database, VisibleDataProvider } from '../l1-persistence';
+import { Database, VisibilityOracle } from '../l1-persistence';
 import { SimulationManager } from './SimulationManager';
 import { ILogger, createTimer, createNoopLogger } from '../l0-utilities/Logger';
 
@@ -45,7 +45,7 @@ import { TriggerSyncCommand } from './commands/sync';
 
 export interface CommandDispatcherOptions {
   db: Database;
-  visibleDataProvider?: VisibleDataProvider;
+  visibilityOracle?: VisibilityOracle;
   logger?: ILogger;
 }
 
@@ -99,7 +99,7 @@ export class CommandDispatcher extends EventEmitter {
     // Create command context
     this.context = {
       db: options.db,
-      visibleDataProvider: options.visibleDataProvider,
+      visibilityOracle: options.visibilityOracle,
       simulationContext,
     };
 

@@ -222,9 +222,9 @@ export class ServiceRegistry extends EventEmitter {
       return new MigrationRunner(this.get('database'));
     });
 
-    this.register('visibleDataProvider', () => {
-      const { VisibleDataProvider } = require('../l1-persistence/VisibleDataProvider');
-      return new VisibleDataProvider(this.get('database'));
+    this.register('visibilityOracle', () => {
+      const { VisibilityOracle } = require('../l1-persistence/VisibilityOracle');
+      return new VisibilityOracle(this.get('database'));
     });
 
     // L1 Repositories
@@ -325,7 +325,7 @@ export class ServiceRegistry extends EventEmitter {
         client,
         db: this.get('database'),
         rateLimiter: this.get('rateLimiter'),
-        visibleDataProvider: this.get('visibleDataProvider'),
+        visibilityOracle: this.get('visibilityOracle'),
       });
       this.override('syncEngine', syncEngine);
 

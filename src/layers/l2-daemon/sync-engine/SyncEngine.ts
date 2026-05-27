@@ -12,7 +12,7 @@
 import { EventEmitter } from 'events';
 import { CanvasClient } from '../client/CanvasClient';
 import { RateLimiter } from '../resilience/RateLimiter';
-import { Database, VisibleDataProvider } from '../../l1-persistence';
+import { Database, VisibilityOracle } from '../../l1-persistence';
 import {
   CanvasCourse,
   CanvasAssignment,
@@ -111,7 +111,7 @@ export class SyncEngine extends EventEmitter {
   // Store syncId for deferred file processing
   private lastSyncId: string | null = null;
   // Visible data provider for filtering courses
-  private visibleDataProvider: VisibleDataProvider | null = null;
+  private visibilityOracle: VisibilityOracle | null = null;
   // Operation coordinator for sync/download conflict prevention
   private operationCoordinator: OperationCoordinator | null = null;
   // Extracted managers
@@ -137,7 +137,7 @@ export class SyncEngine extends EventEmitter {
     this.downloadManager = config.downloadManager || null;
     this.filesBaseDir = config.filesBaseDir || null;
     this.log = config.logger ?? null;
-    this.visibleDataProvider = config.visibleDataProvider || null;
+    this.visibilityOracle = config.visibilityOracle || null;
     this.operationCoordinator = config.operationCoordinator || null;
 
     // Initialize HTML content sync if configured
@@ -227,7 +227,7 @@ export class SyncEngine extends EventEmitter {
       conflictResolver: this.conflictResolver,
       checkpointManager: this.checkpointManager,
       backoffManager: this.backoffManager,
-      visibleDataProvider: this.visibleDataProvider,
+      visibilityOracle: this.visibilityOracle,
       emitter: this,
       log: this.log,
       getDefaultTargetGrade: () => this.getDefaultTargetGrade(),
