@@ -4,7 +4,6 @@
  */
 
 import type { Course } from '../../types';
-import { getCurrentTermIds } from '../storeHelpers';
 import { getApi, type SliceCreator } from '../storeUtils';
 import { createLogger } from '../../../l6-ui/utils/rendererLogger';
 
@@ -63,76 +62,21 @@ export const createCoreDataSlice: SliceCreator = (set, get) => ({
   },
 
   /**
-   * Fetch all courses
+   * Fetch all courses.
+   *
+   * Per ADR-0007, the IPC handler (`data:getCourses`) is now the only place
+   * that applies visibility filtering — visible IDs come from the
+   * `VisibilityOracle`, rows come from `CourseReader`. The store trusts that
+   * filtering and stores whatever `getCourses()` returns. Previous versions
+   * of this slice re-derived term filtering here with different math from
+   * the Oracle, which was the silent-correctness bug PR-B closes.
    */
   fetchCourses: async () => {
     const api = getApi();
     if (!api) return;
 
     try {
-      let courses = await api.getCourses();
-
-      // Get term selection from database via VisibilityOracle (single source of truth)
-      let semesterSelection: 'all' | 'auto' | string = 'auto';
-      try {
-        const termResult = await api.getTermSelection();
-        if (termResult?.termSelection !== undefined) {
-          semesterSelection = String(termResult.termSelection);
-        }
-      } catch (e) {
-        log.error(
-          '[Store] Failed to get term selection from database',
-          e instanceof Error ? e : undefined
-        );
-        // Fall back to localStorage for backwards compatibility during migration
-        const academicSettings = localStorage.getItem('academicSettings');
-        if (academicSettings) {
-          try {
-            const settings = JSON.parse(academicSettings);
-            semesterSelection = settings.termSelection || 'auto';
-            // Migrate to database
-            if (api.setTermSelection) {
-              const valueToSet =
-                semesterSelection === 'all' || semesterSelection === 'auto'
-                  ? semesterSelection
-                  : parseInt(semesterSelection, 10);
-              api.setTermSelection(valueToSet).catch(() => {
-                // Log migration errors instead of swallowing them (#23)
-                log.warn('[Store] Failed to migrate term selection to database');
-              });
-            }
-          } catch (parseError) {
-            log.error(
-              '[Store] Failed to parse academic settings',
-              parseError instanceof Error ? parseError : undefined
-            );
-          }
-        }
-      }
-
-      if (semesterSelection !== 'all') {
-        if (semesterSelection === 'auto') {
-          // Auto-detect: show courses where semester is currently active
-          const terms = await api.getEnrollmentTerms();
-          const currentTermIds = getCurrentTermIds(terms);
-
-          if (currentTermIds.size > 0) {
-            courses = courses.filter(
-              (c: Course) =>
-                c.enrollmentTermId !== null && currentTermIds.has(c.enrollmentTermId)
-            );
-          }
-        } else {
-          // Specific semester selected - filter by term external_id
-          const selectedTermId = parseInt(semesterSelection, 10);
-          if (!isNaN(selectedTermId)) {
-            courses = courses.filter(
-              (c: Course) => c.enrollmentTermId === selectedTermId
-            );
-          }
-        }
-      }
-
+      const courses = await api.getCourses();
       set({ courses });
     } catch (error) {
       log.error('Failed to fetch courses', error instanceof Error ? error : undefined);

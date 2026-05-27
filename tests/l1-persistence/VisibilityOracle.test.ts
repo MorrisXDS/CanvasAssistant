@@ -176,59 +176,6 @@ describe('VisibilityOracle', () => {
     });
   });
 
-  describe('getVisibleCourses', () => {
-    test('returns full course rows for visible courses', () => {
-      seedCourse(db, { id: 1, is_hidden: 0, name: 'Visible Course', code: 'CS101' });
-      seedCourse(db, { id: 2, is_hidden: 1, name: 'Hidden Course', code: 'CS102' });
-
-      provider.setTermSelection('all');
-
-      const result = provider.getVisibleCourses();
-      expect(result.length).toBe(1);
-      expect(result[0].name).toBe('Visible Course');
-      expect(result[0].code).toBe('CS101');
-    });
-
-    test('returns empty array when no visible courses', () => {
-      seedCourse(db, { id: 1, is_hidden: 1 });
-
-      provider.setTermSelection('all');
-
-      const result = provider.getVisibleCourses();
-      expect(result).toEqual([]);
-    });
-  });
-
-  describe('getVisibleTasks', () => {
-    test('returns tasks only from visible courses', () => {
-      seedCourse(db, { id: 1, is_hidden: 0 });
-      seedCourse(db, { id: 2, is_hidden: 1 });
-
-      seedTask(db, { id: 1, course_id: 1, title: 'Task from visible course' });
-      seedTask(db, { id: 2, course_id: 2, title: 'Task from hidden course' });
-
-      provider.setTermSelection('all');
-
-      const result = provider.getVisibleTasks();
-      expect(result.length).toBe(1);
-      expect(result[0].title).toBe('Task from visible course');
-    });
-  });
-
-  describe('getVisibleIncompleteTasks', () => {
-    test('returns only incomplete tasks from visible courses', () => {
-      seedCourse(db, { id: 1, is_hidden: 0 });
-      seedTask(db, { id: 1, course_id: 1, title: 'Incomplete', is_completed: 0 });
-      seedTask(db, { id: 2, course_id: 1, title: 'Complete', is_completed: 1 });
-
-      provider.setTermSelection('all');
-
-      const result = provider.getVisibleIncompleteTasks();
-      expect(result.length).toBe(1);
-      expect(result[0].title).toBe('Incomplete');
-    });
-  });
-
   describe('isCourseVisible', () => {
     test('returns true for visible course', () => {
       seedCourse(db, { id: 1, is_hidden: 0 });
