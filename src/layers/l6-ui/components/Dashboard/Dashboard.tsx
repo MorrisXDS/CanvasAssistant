@@ -6,7 +6,7 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { RefreshCw, FlaskConical, X } from 'lucide-react';
-import { useStore } from '../../../l5-presentation/store';
+import { useStore, selectors } from '../../../l5-presentation/store';
 import { useDashboardViewModel } from '../../../l5-presentation/viewModels/DashboardViewModel';
 import { QuickStats, StatItem } from './QuickStats';
 import { TaskListModal, TaskWithCourse } from './TaskListModal';
@@ -161,12 +161,10 @@ export function Dashboard() {
     [state.courses]
   );
 
-  // Filter notifications to only show those from visible courses (or system notifications)
-  const visibleNotifications = useMemo(() => {
-    return state.notifications.filter(
-      (n) => n.courseId === null || courseMap.has(n.courseId)
-    );
-  }, [state.notifications, courseMap]);
+  // Filter notifications to only show those from visible courses (or system notifications).
+  // Uses the centralized selector (per CLAUDE.md §8) — closes the brief staleness
+  // window between `fetchCourses` and `fetchNotifications` re-fetches.
+  const visibleNotifications = useStore(selectors.visibleNotifications);
 
   // Top row = Stats; bottom row = the four grid lists (see availableBottomLists below)
   const TOP_LISTS: DashboardListId[] = ['stats'];

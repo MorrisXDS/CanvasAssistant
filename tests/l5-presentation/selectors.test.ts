@@ -382,4 +382,54 @@ describe('L5 Selectors', () => {
       expect(selectors.effectiveGrade(1)(state)).toBe(85);
     });
   });
+
+  describe('visibleNotifications', () => {
+    it('excludes notifications whose course is not in state.courses (staleness defense)', () => {
+      // The IPC handler already filters to visible courses, but there is a brief
+      // window between `fetchCourses` and `fetchNotifications` re-fetches after a
+      // visibility change where `state.notifications` may contain entries for a
+      // course that's no longer in `state.courses`. The selector closes that gap.
+      const courses = [createCourse({ id: 1 })];
+      const notifications = [
+        createNotification({ id: 10, courseId: 1 }),
+        createNotification({ id: 11, courseId: 999 }), // course not in state
+      ];
+      const state = createBaseState({ courses, notifications });
+
+      const result = selectors.visibleNotifications(state);
+
+      expect(result).toHaveLength(1);
+      expect(result[0].id).toBe(10);
+    });
+
+    it('passes through system notifications (courseId === null)', () => {
+      // System notifications aren't course-scoped — they're surfaced regardless
+      // of which courses are visible.
+      const courses: Course[] = []; // no visible courses
+      const notifications = [
+        createNotification({ id: 10, courseId: null }),
+        createNotification({ id: 11, courseId: 1 }), // would be filtered (course not in state)
+      ];
+      const state = createBaseState({ courses, notifications });
+
+      const result = selectors.visibleNotifications(state);
+
+      expect(result.map((n) => n.id)).toEqual([10]);
+    });
+  });
+
+  describe('visibleTasks', () => {
+    it('excludes tasks whose course is not in state.courses (staleness defense)', () => {
+      const courses = [createCourse({ id: 1 })];
+      const tasks = [
+        createTask({ id: 10, courseId: 1 }),
+        createTask({ id: 11, courseId: 999 }), // course not in state
+      ];
+      const state = createBaseState({ courses, tasks });
+
+      const result = selectors.visibleTasks(state);
+
+      expect(result.map((t) => t.id)).toEqual([10]);
+    });
+  });
 });
