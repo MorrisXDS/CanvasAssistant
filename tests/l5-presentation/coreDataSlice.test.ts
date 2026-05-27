@@ -128,4 +128,28 @@ describe('createCoreDataSlice → fetchCourses', () => {
 
     getItemSpy.mockRestore();
   });
+
+  it('does not call api.getTermSelection or api.getEnrollmentTerms (no client-side term re-derivation)', async () => {
+    // The bug PR-B closed wasn't just "localStorage existed" — it was
+    // "the renderer re-derived term filtering, by ANY mechanism." A
+    // regression that bypasses localStorage and instead calls
+    // api.getTermSelection() + api.getEnrollmentTerms() to compute term
+    // filters client-side is the same bug class, different vector. Lock
+    // both calls closed.
+    const api = {
+      getCourses: jest.fn().mockResolvedValue([]),
+      getTermSelection: jest.fn().mockResolvedValue({ termSelection: 'auto' }),
+      getEnrollmentTerms: jest.fn().mockResolvedValue([]),
+    };
+    stubWindowApi(api);
+
+    const setSpy = jest.fn();
+    const getStub = jest.fn(() => ({}) as Store);
+    const slice = createCoreDataSlice(setSpy, getStub);
+
+    await slice.fetchCourses!();
+
+    expect(api.getTermSelection).not.toHaveBeenCalled();
+    expect(api.getEnrollmentTerms).not.toHaveBeenCalled();
+  });
 });
