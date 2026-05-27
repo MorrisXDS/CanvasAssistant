@@ -6,7 +6,7 @@
 import React, { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PartyPopper, CheckCircle, Circle } from 'lucide-react';
-import { useHotkeys } from 'react-hotkeys-hook';
+import { useStackAwareHotkeys } from '../../hooks/useStackAwareHotkeys';
 import { Card, Badge, BadgeVariant, NotificationDot } from '../shared';
 import { formatSmartDate, formatSmartDateRange, CARD_TITLES } from '../../constants';
 import { useStore } from '../../../l5-presentation/store';
@@ -61,7 +61,7 @@ export function PriorityList({
   });
 
   // X: toggle completion on focused task
-  useHotkeys(
+  useStackAwareHotkeys(
     'x',
     () => {
       if (focusedItem && onToggleComplete) {
@@ -72,7 +72,7 @@ export function PriorityList({
   );
 
   // Enter: open focused task in course
-  useHotkeys(
+  useStackAwareHotkeys(
     'enter',
     (e) => {
       if (focusedItem) {
@@ -88,7 +88,7 @@ export function PriorityList({
   );
 
   // V: navigate to the full Tasks page (View all)
-  useHotkeys('v', () => navigate('/tasks'), { enabled: isKeyboardActive });
+  useStackAwareHotkeys('v', () => navigate('/tasks'), { enabled: isKeyboardActive });
 
   // Create calendar event lookup map
   const calendarEventMap = useMemo(() => {

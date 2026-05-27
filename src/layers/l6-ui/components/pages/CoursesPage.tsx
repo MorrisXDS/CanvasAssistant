@@ -40,7 +40,7 @@ const logger = createLogger('CoursesPage');
 
 // Extracted modules
 import { styles, injectDragHandleStyles } from './coursesPageStyles';
-import { useHotkeys } from 'react-hotkeys-hook';
+import { useStackAwareHotkeys } from '../../hooks/useStackAwareHotkeys';
 import {
   type ViewMode,
   type GradeFilter,
@@ -823,7 +823,7 @@ export function CoursesPage() {
     [filteredCourses.length, focusedIndex, focusAndScroll]
   );
 
-  useHotkeys(
+  useStackAwareHotkeys(
     'a, left',
     (e) => {
       if (viewMode === 'grid') {
@@ -837,7 +837,7 @@ export function CoursesPage() {
     { enabled: gridNavActive },
     [viewMode, moveFocus, gridNavActive]
   );
-  useHotkeys(
+  useStackAwareHotkeys(
     'd, right',
     (e) => {
       if (viewMode === 'grid') {
@@ -850,7 +850,7 @@ export function CoursesPage() {
     { enabled: gridNavActive },
     [viewMode, moveFocus, gridNavActive]
   );
-  useHotkeys(
+  useStackAwareHotkeys(
     'w, up',
     (e) => {
       e.preventDefault();
@@ -859,7 +859,7 @@ export function CoursesPage() {
     { enabled: gridNavActive },
     [viewMode, columnCount, moveFocus, gridNavActive]
   );
-  useHotkeys(
+  useStackAwareHotkeys(
     's, down',
     (e) => {
       e.preventDefault();
@@ -873,15 +873,16 @@ export function CoursesPage() {
 
   // Quick-access filter cycles — work regardless of filter mode, matching
   // the Calendar's Alt+Shift+{D,P,C} pattern.
-  useHotkeys(
+  useStackAwareHotkeys(
     'alt+shift+c',
     (e) => {
       e.preventDefault();
       clearFilters();
     },
+    {},
     [clearFilters]
   );
-  useHotkeys(
+  useStackAwareHotkeys(
     'alt+shift+g',
     (e) => {
       e.preventDefault();
@@ -889,9 +890,10 @@ export function CoursesPage() {
       const i = opts.indexOf(gradeFilter);
       setGradeFilter(opts[(i + 1) % opts.length]);
     },
+    {},
     [gradeFilter]
   );
-  useHotkeys(
+  useStackAwareHotkeys(
     'alt+shift+t',
     (e) => {
       e.preventDefault();
@@ -899,9 +901,10 @@ export function CoursesPage() {
       const i = opts.indexOf(typeFilter);
       setTypeFilter(opts[(i + 1) % opts.length]);
     },
+    {},
     [typeFilter, availableTypes]
   );
-  useHotkeys(
+  useStackAwareHotkeys(
     'alt+shift+s',
     (e) => {
       e.preventDefault();
@@ -909,19 +912,21 @@ export function CoursesPage() {
       const i = opts.indexOf(prefixFilter);
       setPrefixFilter(opts[(i + 1) % opts.length]);
     },
+    {},
     [prefixFilter, availablePrefixes]
   );
-  useHotkeys(
+  useStackAwareHotkeys(
     'alt+shift+h',
     (e) => {
       e.preventDefault();
       setShowHidden((prev) => !prev);
     },
+    {},
     []
   );
 
   // Escape cascade: filter-mode → panel → selection → focus → no-op
-  useHotkeys(
+  useStackAwareHotkeys(
     'esc',
     (e) => {
       if (scope !== 'courses') {
@@ -944,6 +949,7 @@ export function CoursesPage() {
         clearFocus();
       }
     },
+    {},
     [scope, showFilters, selectMode, focusedIndex, resetCourseSelection, clearFocus]
   );
 

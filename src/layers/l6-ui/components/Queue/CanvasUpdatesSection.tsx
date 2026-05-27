@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { ChevronDown, ChevronRight, CloudDownload, CheckCircle2 } from 'lucide-react';
-import { useHotkeys } from 'react-hotkeys-hook';
+import { useStackAwareHotkeys } from '../../hooks/useStackAwareHotkeys';
 import { QueuedTaskCard, type QueuedTaskEdits } from './QueuedTaskCard';
 import { ConfirmDialog } from '../shared';
 import { DuplicateWarningModal } from '../shared/DuplicateWarningModal';
@@ -27,13 +27,6 @@ interface CanvasUpdatesSectionProps {
   onHighlightClear?: () => void;
   /** Keyboard nav active — W/S/↑/↓ walks queued cards; A/R/L act on focus. */
   keyboardEnabled?: boolean;
-  /**
-   * Fired whenever the duplicate-warning modal (or its child Customize
-   * editor) opens or closes. The parent (e.g. CourseDetail) should suppress
-   * its own page-level hotkeys while this is `true` so they don't fire
-   * behind the modal (Q/E section cycling, G back-nav, T target-edit, etc.).
-   */
-  onModalStateChange?: (isOpen: boolean) => void;
 }
 
 const styles = {
@@ -180,7 +173,6 @@ export function CanvasUpdatesSection({
   highlightedQueueId,
   onHighlightClear,
   keyboardEnabled = false,
-  onModalStateChange,
 }: CanvasUpdatesSectionProps) {
   const {
     gatedAccept,
@@ -191,12 +183,11 @@ export function CanvasUpdatesSection({
     closeModal,
   } = useDuplicateGate();
 
-  // Notify the parent whenever the duplicate-warning modal opens/closes so
-  // it can suppress its own page-level hotkeys (Q/E section cycling, G back,
-  // T target-edit, Mod+E settings toggle, etc.) while a modal is on screen.
-  useEffect(() => {
-    onModalStateChange?.(gateState != null);
-  }, [gateState, onModalStateChange]);
+  // Page-level hotkey suppression while the duplicate-warning modal is open
+  // used to require an `onModalStateChange` callback up to CourseDetail.
+  // Now handled centrally by ModalStackContext (ADR-0006) — DuplicateWarningModal
+  // pushes onto the stack via the Modal primitive, and CourseDetail's useKeymap
+  // is auto-gated by default. No wiring needed here.
 
   // Collapsed by default (can be changed via settings)
   // Force expand if there's a highlighted queue item
@@ -212,10 +203,13 @@ export function CanvasUpdatesSection({
     if (keyboardEnabled && !isExpanded) setIsExpanded(true);
   }, [keyboardEnabled, isExpanded]);
 
-  // When the DuplicateWarningModal (gateState != null) is open, suppress this
-  // section's keyboard handlers — otherwise pressing L/A/etc. fires BOTH the
-  // modal's hotkey AND this section's, because react-hotkeys-hook attaches
-  // listeners at the document level and doesn't natively stack-scope.
+  // The `gateState == null` part of this gate is now REDUNDANT — the
+  // `useStackAwareHotkeys` calls below auto-suppress when any modal is open
+  // (DuplicateWarningModal pushes onto ModalStackContext on mount via the
+  // <Modal> primitive — ADR-0006). We keep the explicit local gate so
+  // useFocusedItem's `enabled` prop also respects modal state symmetrically,
+  // and so the gate's intent is visible at the call sites that read
+  // `sectionKeysActive` (e.g. handlers that check it before acting).
   const sectionKeysActive = keyboardEnabled && gateState == null;
 
   // Focused-card navigation when keyboard is active.
@@ -225,7 +219,7 @@ export function CanvasUpdatesSection({
     verticalNav: true,
   });
 
-  useHotkeys(
+  useStackAwareHotkeys(
     'a',
     (e) => {
       if (!focusedItem || !sectionKeysActive) return;
@@ -236,7 +230,7 @@ export function CanvasUpdatesSection({
     { enabled: sectionKeysActive },
     [focusedItem, gatedAccept, sectionKeysActive]
   );
-  useHotkeys(
+  useStackAwareHotkeys(
     'shift+a',
     (e) => {
       if (!sectionKeysActive) return;
@@ -246,7 +240,7 @@ export function CanvasUpdatesSection({
     { enabled: sectionKeysActive },
     [sectionKeysActive]
   );
-  useHotkeys(
+  useStackAwareHotkeys(
     'r',
     (e) => {
       if (!focusedItem || !sectionKeysActive) return;
@@ -256,7 +250,7 @@ export function CanvasUpdatesSection({
     { enabled: sectionKeysActive },
     [focusedItem, onReject, sectionKeysActive]
   );
-  useHotkeys(
+  useStackAwareHotkeys(
     'l',
     (e) => {
       if (!focusedItem || !sectionKeysActive) return;

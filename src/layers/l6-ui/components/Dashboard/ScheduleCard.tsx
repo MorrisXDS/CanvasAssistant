@@ -5,7 +5,7 @@
 import React, { useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CalendarCheck, MapPin } from 'lucide-react';
-import { useHotkeys } from 'react-hotkeys-hook';
+import { useStackAwareHotkeys } from '../../hooks/useStackAwareHotkeys';
 import { Card, NotificationDot } from '../shared';
 import { useStore } from '../../../l5-presentation/store';
 import { useTaskUpdates } from '../../hooks';
@@ -360,7 +360,7 @@ export function ScheduleCard({ maxItems, isKeyboardActive = false }: ScheduleCar
   });
 
   // Enter: open focused schedule item (goes to calendar)
-  useHotkeys(
+  useStackAwareHotkeys(
     'enter',
     (e) => {
       if (focusedItem) {

@@ -6,7 +6,7 @@
 import React, { useEffect, useState, useMemo, useCallback, useContext } from 'react';
 import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, BookOpen, Archive } from 'lucide-react';
-import { useHotkeys } from 'react-hotkeys-hook';
+import { useStackAwareHotkeys } from '../../hooks/useStackAwareHotkeys';
 import { useKeymap } from '../../hooks/useKeymap';
 import { KeyboardScopeContext } from '../../contexts/KeyboardScopeContext';
 import { ConfirmDialog } from '../shared';
@@ -184,16 +184,6 @@ export function CourseDetail() {
   // Announcements only become reachable via Q/E when they're visible.
   type SectionFocus = 'tasks' | 'queue' | 'announcements' | 'preferences';
   const [sectionFocus, setSectionFocus] = useState<SectionFocus>('tasks');
-
-  // Suppress all page-level nav hotkeys (Q/E section cycle, G back-nav,
-  // T target-edit, Shift+O open-on-Canvas, Mod+E settings toggle,
-  // Mod+S save, Mod+Shift+A archive) while the duplicate-warning modal in
-  // the queue section is on screen. Otherwise pressing Q/E in the modal's
-  // Customize editor would also cycle sections behind the modal, G would
-  // navigate away from the page, Mod+Shift+A would stack another
-  // ConfirmDialog on top, etc. CanvasUpdatesSection signals this via the
-  // `onModalStateChange` prop we pass below.
-  const [queueModalOpen, setQueueModalOpen] = useState(false);
 
   // Confirm dialog state (declared early as other hooks depend on it)
   const [confirmDialog, setConfirmDialog] = useState<{
@@ -725,10 +715,8 @@ export function CourseDetail() {
     },
     {
       initialScope: 'nav',
-      // Suppress all nav keys while the queue's duplicate-warning modal is
-      // open — otherwise Q/E section-cycle, G back-nav, etc. all fire
-      // behind the modal. See `queueModalOpen` declaration above.
-      when: () => !queueModalOpen,
+      // No `when` needed — useKeymap auto-gates against the modal stack by
+      // default (ADR-0006). Q/E/G/etc. won't fire while any modal is open.
     }
   );
 
@@ -840,7 +828,7 @@ export function CourseDetail() {
 
   // Escape cascade: close open menus/forms/edits first, then sectionFocus
   // back to tasks, else navigate back.
-  useHotkeys(
+  useStackAwareHotkeys(
     'esc',
     (e) => {
       const target = e.target as HTMLElement | null;
@@ -878,6 +866,7 @@ export function CourseDetail() {
       }
       // Fall through: let Layout's Escape handler navigate(-1) on sub-pages.
     },
+    {},
     [
       taskContextMenu,
       setTaskContextMenu,
@@ -1101,7 +1090,6 @@ export function CourseDetail() {
             }
             onHighlightClear={() => setSearchParams({}, { replace: true })}
             keyboardEnabled={sectionFocus === 'queue'}
-            onModalStateChange={setQueueModalOpen}
           />
         )}
 

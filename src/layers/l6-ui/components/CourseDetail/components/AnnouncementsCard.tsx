@@ -6,7 +6,7 @@
 import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Megaphone, ChevronRight, GripVertical } from 'lucide-react';
-import { useHotkeys } from 'react-hotkeys-hook';
+import { useStackAwareHotkeys } from '../../../hooks/useStackAwareHotkeys';
 import { Card } from '../../shared';
 import type { Notification } from '../../../../l5-presentation/types';
 import { useStore } from '../../../../l5-presentation/store';
@@ -53,7 +53,7 @@ export function AnnouncementsCard({
     verticalNav: true,
   });
 
-  useHotkeys(
+  useStackAwareHotkeys(
     'enter',
     (e) => {
       if (!focusedItem) return;
@@ -63,7 +63,7 @@ export function AnnouncementsCard({
     { enabled: keyboardEnabled },
     [focusedItem, navigate, keyboardEnabled]
   );
-  useHotkeys(
+  useStackAwareHotkeys(
     'd',
     (e) => {
       if (!focusedItem) return;
@@ -73,7 +73,7 @@ export function AnnouncementsCard({
     { enabled: keyboardEnabled },
     [focusedItem, dismissNotification, keyboardEnabled]
   );
-  useHotkeys(
+  useStackAwareHotkeys(
     'v',
     (e) => {
       e.preventDefault();

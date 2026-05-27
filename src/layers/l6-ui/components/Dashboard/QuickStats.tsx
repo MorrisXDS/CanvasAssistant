@@ -12,7 +12,7 @@ import {
   BarChart3,
   type LucideIcon,
 } from 'lucide-react';
-import { useHotkeys } from 'react-hotkeys-hook';
+import { useStackAwareHotkeys } from '../../hooks/useStackAwareHotkeys';
 import { Card } from '../shared';
 import { useFocusedItem } from '../../hooks/useFocusedItem';
 
@@ -66,7 +66,7 @@ export function QuickStats({
   });
 
   // Enter: activate focused stat card
-  useHotkeys(
+  useStackAwareHotkeys(
     'enter',
     (e) => {
       if (focusedItem) {

@@ -18,8 +18,10 @@
  * </Modal>
  */
 
-import React, { useEffect, useCallback, createContext, useContext } from 'react';
+import React, { useEffect, useCallback, createContext, useContext, useId } from 'react';
 import { X } from 'lucide-react';
+import { ModalIdContext, useModalStack } from '../../contexts/ModalStackContext';
+import type { ShortcutCategory } from '../../constants/keyboardShortcuts';
 
 // =============================================================================
 // TYPES
@@ -48,6 +50,13 @@ interface ModalProps {
   children: React.ReactNode;
   /** Additional className for the modal container */
   className?: string;
+  /**
+   * Keyboard shortcuts this modal exposes. When set, the `?` help menu shows
+   * these instead of the underlying page's shortcuts while this modal is the
+   * topmost on the stack. Modal categories are centralised in
+   * `src/layers/l6-ui/constants/modalShortcuts.ts` — import from there.
+   */
+  shortcuts?: ShortcutCategory;
 }
 
 interface ModalHeaderProps {
@@ -118,7 +127,22 @@ export function Modal({
   zIndex = 1000,
   children,
   className,
+  shortcuts,
 }: ModalProps) {
+  // Stable per-mount id used to identify this modal in `ModalStackContext`.
+  // Children can read it via `ModalIdContext` (e.g. `useModalHotkeys`).
+  const stackId = useId();
+  const { push, pop } = useModalStack();
+
+  // Push this modal onto the stack when `isOpen` flips true; pop when it
+  // flips false or the component unmounts. The push includes our optional
+  // `shortcuts` so the help menu can surface them via `useTopmostShortcuts`.
+  useEffect(() => {
+    if (!isOpen) return;
+    push({ id: stackId, shortcuts });
+    return () => pop(stackId);
+  }, [isOpen, push, pop, stackId, shortcuts]);
+
   // Handle escape key
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
@@ -154,33 +178,35 @@ export function Modal({
   const sizeStyles = sizeConfig[size];
 
   return (
-    <ModalContext.Provider value={{ onClose }}>
-      {/* Backdrop */}
-      <div
-        style={{
-          ...styles.backdrop,
-          zIndex,
-        }}
-        onClick={handleBackdropClick}
-        aria-hidden="true"
-      />
+    <ModalIdContext.Provider value={stackId}>
+      <ModalContext.Provider value={{ onClose }}>
+        {/* Backdrop */}
+        <div
+          style={{
+            ...styles.backdrop,
+            zIndex,
+          }}
+          onClick={handleBackdropClick}
+          aria-hidden="true"
+        />
 
-      {/* Modal container */}
-      <div
-        role="dialog"
-        aria-modal="true"
-        className={className}
-        style={{
-          ...styles.modal,
-          width: sizeStyles.width,
-          maxWidth: sizeStyles.maxWidth,
-          zIndex: zIndex + 1,
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {children}
-      </div>
-    </ModalContext.Provider>
+        {/* Modal container */}
+        <div
+          role="dialog"
+          aria-modal="true"
+          className={className}
+          style={{
+            ...styles.modal,
+            width: sizeStyles.width,
+            maxWidth: sizeStyles.maxWidth,
+            zIndex: zIndex + 1,
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {children}
+        </div>
+      </ModalContext.Provider>
+    </ModalIdContext.Provider>
   );
 }
 

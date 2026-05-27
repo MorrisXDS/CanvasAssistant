@@ -6,7 +6,7 @@
 
 import React, { useState, useMemo, useCallback } from 'react';
 import { CheckCircle, Clock, Plus, FileText, ListFilter } from 'lucide-react';
-import { useHotkeys } from 'react-hotkeys-hook';
+import { useStackAwareHotkeys } from '../../../hooks/useStackAwareHotkeys';
 import { Card } from '../../shared';
 import type { Task } from '../../../../l5-presentation/types';
 import { courseDetailStyles as styles } from '../../pages/CourseDetail.styles';
@@ -264,7 +264,7 @@ export function UnifiedTaskList({
   });
 
   // X: toggle completion on focused task
-  useHotkeys(
+  useStackAwareHotkeys(
     'x',
     () => {
       if (focusedItem) handleToggleComplete(focusedItem);
@@ -274,7 +274,7 @@ export function UnifiedTaskList({
   );
 
   // E: edit focused task
-  useHotkeys(
+  useStackAwareHotkeys(
     'e',
     () => {
       if (focusedItem) startEditingTask(focusedItem);
@@ -284,7 +284,7 @@ export function UnifiedTaskList({
   );
 
   // Delete/Backspace: delete focused task
-  useHotkeys(
+  useStackAwareHotkeys(
     'delete, backspace',
     (e) => {
       if (focusedItem) {
@@ -297,7 +297,7 @@ export function UnifiedTaskList({
   );
 
   // Space: expand/collapse focused task
-  useHotkeys(
+  useStackAwareHotkeys(
     'space',
     (e) => {
       if (focusedItem) {
@@ -310,13 +310,13 @@ export function UnifiedTaskList({
   );
 
   // N: create new task
-  useHotkeys('n', () => setShowAddTask(true), { enabled: keyboardEnabled }, [
+  useStackAwareHotkeys('n', () => setShowAddTask(true), { enabled: keyboardEnabled }, [
     setShowAddTask,
     keyboardEnabled,
   ]);
 
   // O: open focused task on Canvas (external browser)
-  useHotkeys(
+  useStackAwareHotkeys(
     'o',
     () => {
       if (focusedItem && handleOpenTaskInCanvas) handleOpenTaskInCanvas(focusedItem);
@@ -326,7 +326,7 @@ export function UnifiedTaskList({
   );
 
   // Shift+D: duplicate focused task (plain D is freed for "next filter")
-  useHotkeys(
+  useStackAwareHotkeys(
     'shift+d',
     (e) => {
       if (focusedItem) {
@@ -339,7 +339,7 @@ export function UnifiedTaskList({
   );
 
   // M: mark focused task as optional / restore
-  useHotkeys(
+  useStackAwareHotkeys(
     'm',
     () => {
       if (focusedItem && handleToggleOptional) handleToggleOptional(focusedItem);
@@ -349,7 +349,7 @@ export function UnifiedTaskList({
   );
 
   // Enter: expand focused task (mirror Space; also opens detail)
-  useHotkeys(
+  useStackAwareHotkeys(
     'enter',
     (e) => {
       if (focusedItem) {
@@ -363,7 +363,7 @@ export function UnifiedTaskList({
 
   // Filter chip navigation — A/D/←/→ cycles; digits 1–5 jump directly.
   const FILTER_ORDER: TaskFilter[] = ['all', 'pending', 'submitted', 'graded', 'info'];
-  useHotkeys(
+  useStackAwareHotkeys(
     'a, left',
     (e) => {
       e.preventDefault();
@@ -373,7 +373,7 @@ export function UnifiedTaskList({
     { enabled: keyboardEnabled },
     [activeFilter, keyboardEnabled]
   );
-  useHotkeys(
+  useStackAwareHotkeys(
     'd, right',
     (e) => {
       e.preventDefault();
@@ -383,19 +383,28 @@ export function UnifiedTaskList({
     { enabled: keyboardEnabled },
     [activeFilter, keyboardEnabled]
   );
-  useHotkeys('1', () => setActiveFilter('all'), { enabled: keyboardEnabled }, [
+  useStackAwareHotkeys('1', () => setActiveFilter('all'), { enabled: keyboardEnabled }, [
     keyboardEnabled,
   ]);
-  useHotkeys('2', () => setActiveFilter('pending'), { enabled: keyboardEnabled }, [
-    keyboardEnabled,
-  ]);
-  useHotkeys('3', () => setActiveFilter('submitted'), { enabled: keyboardEnabled }, [
-    keyboardEnabled,
-  ]);
-  useHotkeys('4', () => setActiveFilter('graded'), { enabled: keyboardEnabled }, [
-    keyboardEnabled,
-  ]);
-  useHotkeys('5', () => setActiveFilter('info'), { enabled: keyboardEnabled }, [
+  useStackAwareHotkeys(
+    '2',
+    () => setActiveFilter('pending'),
+    { enabled: keyboardEnabled },
+    [keyboardEnabled]
+  );
+  useStackAwareHotkeys(
+    '3',
+    () => setActiveFilter('submitted'),
+    { enabled: keyboardEnabled },
+    [keyboardEnabled]
+  );
+  useStackAwareHotkeys(
+    '4',
+    () => setActiveFilter('graded'),
+    { enabled: keyboardEnabled },
+    [keyboardEnabled]
+  );
+  useStackAwareHotkeys('5', () => setActiveFilter('info'), { enabled: keyboardEnabled }, [
     keyboardEnabled,
   ]);
 

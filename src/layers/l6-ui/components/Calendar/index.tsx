@@ -1547,7 +1547,11 @@ export function CalendarPage() {
     },
     {
       initialScope: 'events',
-      when: () => !isAnyModalOpenRef.current,
+      // No `when` needed — useKeymap auto-gates against the modal stack by
+      // default (ADR-0006). The manual `isAnyModalOpenRef` still serves the
+      // raw document-level Alt+Shift+D/P filter handler below; that handler
+      // is a candidate for migration to useStackAwareHotkeys (deferred to
+      // Phase 5 of the modal-stack rollout).
     }
   );
 
