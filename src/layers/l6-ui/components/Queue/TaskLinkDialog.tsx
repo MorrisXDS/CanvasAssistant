@@ -50,7 +50,12 @@ interface TaskLinkDialogProps {
   onMerge: (params: {
     queueId: number;
     userTaskId: number;
-    keepFromUser?: { notes?: boolean; dueAt?: boolean; title?: boolean };
+    keepFromUser?: {
+      notes?: boolean;
+      dueAt?: boolean;
+      title?: boolean;
+      taskType?: boolean;
+    };
   }) => Promise<{ success: boolean }>;
   onCancel: () => void;
 }
@@ -233,6 +238,7 @@ const styles = {
     gridTemplateColumns: '1fr 1fr',
     gap: 'var(--space-4)',
     minHeight: '320px',
+    maxHeight: '60vh',
   } as React.CSSProperties,
   column: {
     backgroundColor: 'var(--bg-app)',
@@ -241,6 +247,7 @@ const styles = {
     overflow: 'hidden',
     display: 'flex',
     flexDirection: 'column' as const,
+    minHeight: 0,
   } as React.CSSProperties,
   columnHeader: {
     display: 'flex',
@@ -439,6 +446,7 @@ export function TaskLinkDialog({
         keepFromUser: {
           dueAt: fieldChoices.dueAt === 'user',
           title: fieldChoices.title === 'user',
+          taskType: fieldChoices.taskType === 'user',
         },
       });
       onCancel();

@@ -118,6 +118,15 @@ fields]` button that opens the same picker in a child modal layered above the li
 
 ### Fixed
 
+- `2026-05-27 03:00 UTC` — Recovery of two TaskLinkDialog regressions from PR #23 that
+  were fixed locally but never made it to `main` (fix commit landed ~8 minutes after the
+  PR merge): (1) toggling the "Type" picker to "Your task" in Step 2 silently dropped
+  the choice — `keepFromUser.taskType` wasn't in the merge payload, so the merge always
+  picked Canvas's value regardless of user selection. (2) The "Local Tasks" candidate
+  list didn't constrain its height — the two-column grid had no `maxHeight` and the
+  flex columns had no `minHeight: 0`, so with many candidates the list overflowed the
+  modal instead of scrolling inside its column. Cherry-picked the original fix commit
+  onto its own branch and re-merged.
 - `2026-05-27 02:00 UTC` — In the duplicate-warning Customize child modal, ↑/↓ now walks
   conflict fields in the visual order they're rendered (title → due date → type) instead
   of the backend's `computeConflictingFields` order (due date → title → type). Pre-existing
