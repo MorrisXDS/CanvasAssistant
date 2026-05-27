@@ -12,6 +12,27 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ### Added
 
+- `2026-05-27 04:30 UTC` — Domain glossary at `CONTEXT.md` (repo root). ~52 canonical terms
+  across 9 sections (cross-cutting states, courses, files & references, tasks & accept
+  queue, announcements, sync, grades, calendar, course content) plus a "settings, coordination,
+  exports, credentials" section and a zombie-schema inventory. Captures every production
+  table in the schema (live and dead), 6 flagged ambiguities, the self-healing schema
+  pattern, and an example dev↔domain-expert dialogue. Produced via `/grill-with-docs` and
+  audited against the full migration history. Intended as input for `/improve-codebase-architecture`
+  and as durable disambiguation between overloaded terms (Notification / Conflict /
+  CanvasFile / etc.).
+- `2026-05-27 04:30 UTC` — Matt Pocock agent-skills configuration wired up. Added
+  `CLAUDE.md` §10 "Agent skills" pointing at three per-repo config files under `docs/agents/`
+  (local-only): `issue-tracker.md` (GitHub via `gh`), `triage-labels.md` (5 canonical labels),
+  `domain.md` (single-context layout pointing at `CONTEXT.md` + `docs/adr/`). Created the
+  four missing triage labels on `MorrisXDS/CanvasAssistant`: `needs-triage`, `needs-info`,
+  `ready-for-agent`, `ready-for-human` (the fifth, `wontfix`, was already present).
+- `2026-05-27 04:30 UTC` — `docs/FOLLOWUPS.md` gained 5 investigation sections produced
+  during the `/grill-with-docs` pass: Canvas file-ID stability (potential `CanvasBlob`
+  unification ADR), `FileReference` table redundancy (announcement_file_references vs
+  content_file_references), orphaned `policy_announcements` writes + broader L3-zombie
+  schema audit, dual Task-grouping mechanism (`course_task_groups` vs `canvas_assignment_groups`),
+  and `field_notification_suppressions` / `field_modifications` zombie cleanup.
 - `2026-05-26 17:10 UTC` — Per-field merge selection in the duplicate-warning modal. When
   linking a queued Canvas task to an existing user task, conflicting fields (title, due
   date, type) now render as a side-by-side picker — click either cell to choose which value
