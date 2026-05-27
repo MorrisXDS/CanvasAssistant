@@ -51,6 +51,23 @@ fields]` button that opens the same picker in a child modal layered above the li
 
 ### Changed
 
+- `2026-05-27 02:00 UTC` — Keyboard shortcuts are now modal-stack-aware (ADR-0006). Page-level
+  hotkeys (Q/E section cycling, ↑↓ list nav, filter shortcuts, etc.) auto-suppress while
+  any modal is open above them, eliminating the bug class where pressing a key inside a
+  modal also fired the underlying page's handler. Nested modals also work correctly:
+  parent modal's keymap suppresses while a child modal is on top. The `?` help menu
+  surfaces the _topmost_ modal's keyboard interface in Tab 1 instead of the underlying
+  page's (e.g. DuplicateWarningModal shows L/S/A/↑↓/C, Customize child shows Q/E/←→/↑↓).
+  Browser default scroll on ↑/↓/PageUp/PageDown/Home/End is also suppressed while a
+  modal is open so focus on a parent-modal button doesn't scroll its scrollable list
+  while the user is typing into the child. Implemented via a new `ModalStackContext`
+  - `<Modal shortcuts={…}>` registration + two hook wrappers
+    (`useStackAwareHotkeys` for page-level, `useModalHotkeys` for in-modal). 52 sites
+    migrated across `UnifiedTaskList`, `CoursesPage`, the Dashboard cluster, `CourseDetail`,
+    `CanvasUpdatesSection`, and the `useFocusedItem` / `useMultiSelect` hooks. Global
+    navigation shortcuts (`Mod+1..5` in `useAppShortcuts`) intentionally bypass the gate.
+    Two e2e anchor tests added (help-menu-shows-modal-shortcuts; arrow-scroll-suppressed);
+    deeper bug-class regression coverage tracked in `docs/FOLLOWUPS.md`.
 - `2026-05-26 22:30 UTC` — `TaskLinkDialog` (the two-step Canvas → user task linker, last
   actively-used handwritten modal) migrated to the shared `<Modal>` primitive (sectioned
   shape, `size="xl"`, `zIndex={1100}`). Step 2's hand-rolled per-field picker is now a
@@ -101,6 +118,18 @@ fields]` button that opens the same picker in a child modal layered above the li
 
 ### Fixed
 
+- `2026-05-27 02:00 UTC` — In the duplicate-warning Customize child modal, ↑/↓ now walks
+  conflict fields in the visual order they're rendered (title → due date → type) instead
+  of the backend's `computeConflictingFields` order (due date → title → type). Pre-existing
+  bug from PR #16 — the field-walk indexed into `editingConflictFields` directly, so the
+  highlight moved correctly idx-wise but appeared visually flipped because the backend's
+  array order didn't match the renderer's FIELD_DEFS order. `editingConflictFields` is now
+  sorted to FIELD_DEFS order before being indexed.
+- `2026-05-27 02:00 UTC` — `KeyboardShortcutsModal` (the `?` help) now opens at
+  `zIndex={1500}` instead of the primitive default `1000`, so it always sits above any
+  other modal it's invoked from (DuplicateWarningModal=1100, its Customize child=1200,
+  ConfirmDialog=1100). Previously the help was buried under the modal it was supposed to
+  describe.
 - `2026-05-26 22:00 UTC` — Manual-test seed scripts (`scripts/manual-test-duplicate-warning.js`,
   `scripts/seed-duplicate-test.js`) now write a full Canvas-assignment-shaped JSON into
   `canvas_task_queue.canvas_data` instead of the previous `{id, name}` stub. The merge

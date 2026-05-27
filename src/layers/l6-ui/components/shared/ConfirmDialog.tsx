@@ -24,6 +24,7 @@
 import React from 'react';
 import { AlertTriangle, Info, CheckCircle, XCircle } from 'lucide-react';
 import { Modal } from '../primitives/Modal';
+import { CONFIRM_DIALOG_SHORTCUTS } from '../../constants/modalShortcuts';
 
 type DialogType = 'danger' | 'warning' | 'info' | 'success';
 
@@ -129,6 +130,7 @@ export function ConfirmDialog({
       // (the primitive's default is 1000; this matches the previous custom
       // chrome's z-indexes of 1000/1001).
       zIndex={1100}
+      shortcuts={CONFIRM_DIALOG_SHORTCUTS}
     >
       {/* Single padded block — no Modal.Header / Modal.Footer so we don't
           get the borderBottom/borderTop section dividers that look heavy on

@@ -6,7 +6,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Megaphone, Bell, Inbox, X } from 'lucide-react';
-import { useHotkeys } from 'react-hotkeys-hook';
+import { useStackAwareHotkeys } from '../../hooks/useStackAwareHotkeys';
 import { Card } from '../shared';
 import { useStore } from '../../../l5-presentation/store';
 import {
@@ -73,7 +73,7 @@ export function NotificationsFeed({
   );
 
   // Enter: open focused notification
-  useHotkeys(
+  useStackAwareHotkeys(
     'enter',
     (e) => {
       if (focusedItem) {
@@ -85,7 +85,7 @@ export function NotificationsFeed({
   );
 
   // D: dismiss focused notification
-  useHotkeys(
+  useStackAwareHotkeys(
     'd',
     () => {
       if (focusedItem && onDismiss) {
@@ -96,7 +96,9 @@ export function NotificationsFeed({
   );
 
   // V: navigate to the full Announcements page (View all)
-  useHotkeys('v', () => navigate('/announcements'), { enabled: isKeyboardActive });
+  useStackAwareHotkeys('v', () => navigate('/announcements'), {
+    enabled: isKeyboardActive,
+  });
 
   return (
     <Card

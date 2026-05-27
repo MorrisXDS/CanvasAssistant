@@ -10,7 +10,7 @@
  */
 
 import { useState, useRef, useMemo, useCallback } from 'react';
-import { useHotkeys } from 'react-hotkeys-hook';
+import { useStackAwareHotkeys } from './useStackAwareHotkeys';
 
 export interface UseMultiSelectOptions<T> {
   /** Filter predicate for selectAll (e.g., only undownloaded files) */
@@ -146,7 +146,7 @@ export function useMultiSelect<T>(
   );
 
   // Mod+A — enter select mode + select all (or custom handler)
-  useHotkeys(
+  useStackAwareHotkeys(
     'mod+a',
     (e) => {
       e.preventDefault();
@@ -161,7 +161,7 @@ export function useMultiSelect<T>(
   );
 
   // Escape — deselect, then exit select mode
-  useHotkeys(
+  useStackAwareHotkeys(
     'escape',
     () => {
       // Don't fire if a dialog/modal is open

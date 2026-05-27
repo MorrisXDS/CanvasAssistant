@@ -5,6 +5,7 @@
 
 import React, { useEffect, useState, Suspense, lazy } from 'react';
 import { KeyboardScopeProvider } from './contexts/KeyboardScopeContext';
+import { ModalStackProvider } from './contexts/ModalStackContext';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 
 import { useStore, subscribeToIpcEvents } from '../l5-presentation/store';
@@ -342,9 +343,11 @@ export default function App() {
   // BrowserRouter only works with http:// URLs (dev server)
   return (
     <KeyboardScopeProvider>
-      <HashRouter>
-        <AppContent />
-      </HashRouter>
+      <ModalStackProvider>
+        <HashRouter>
+          <AppContent />
+        </HashRouter>
+      </ModalStackProvider>
     </KeyboardScopeProvider>
   );
 }

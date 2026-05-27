@@ -13,7 +13,7 @@
  */
 
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { useHotkeys } from 'react-hotkeys-hook';
+import { useStackAwareHotkeys } from './useStackAwareHotkeys';
 
 export interface UseFocusedItemOptions {
   /** CSS selector to find focusable item elements (default: '[data-focus-index]') */
@@ -149,7 +149,7 @@ export function useFocusedItem<T>(
   const prevKeys = verticalNav ? 'up, w' : 'left, j';
   const nextKeys = verticalNav ? 'down, s' : 'right, k';
 
-  useHotkeys(
+  useStackAwareHotkeys(
     prevKeys,
     (e) => {
       e.preventDefault();
@@ -158,7 +158,7 @@ export function useFocusedItem<T>(
     { enabled }
   );
 
-  useHotkeys(
+  useStackAwareHotkeys(
     nextKeys,
     (e) => {
       e.preventDefault();

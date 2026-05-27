@@ -17,16 +17,35 @@
  *   - Aliases:     'w,ArrowUp' fires the same handler for either key
  */
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useContext } from 'react';
+import {
+  ModalIdContext,
+  useIsAnyModalOpen,
+  useModalStack,
+} from '../contexts/ModalStackContext';
 
 type KeyHandler = (e: KeyboardEvent) => void;
 
 export interface KeymapOptions<S extends string> {
   initialScope: S;
-  /** When false, all shortcuts are suppressed (e.g. when a modal is open). */
+  /**
+   * Caller-supplied gate. AND-composed with the default modal-stack gate
+   * (see `escapeStackGate` below) — your `when` callback runs alongside,
+   * not in place of, the stack gate. Use for scope-internal conditions
+   * like "fire only when editing a task" (e.g. `editingTaskId !== null`).
+   */
   when?: () => boolean;
   /** Allow shortcuts to fire even when an input/textarea/select has focus. Default false. */
   enableOnFormTags?: boolean;
+  /**
+   * Opt out of the default modal-stack gate. By default, useKeymap suppresses
+   * all shortcuts while a modal is open above the current scope (or, if this
+   * useKeymap call is inside a modal, while a child modal is on top of it).
+   * Pass `escapeStackGate: true` only for genuinely global hotkeys that MUST
+   * fire over modals — e.g. the `?` help opener, `mod+1..5` page navigation.
+   * See [docs/adr/0006-modal-stack-aware-hotkey-suppression.md](../../../docs/adr/0006-modal-stack-aware-hotkey-suppression.md).
+   */
+  escapeStackGate?: boolean;
 }
 
 /** Normalise a KeyboardEvent into a combo string the keymap can look up. */
@@ -61,10 +80,41 @@ export function useKeymap<S extends string>(
 ): { scope: S; setScope: (s: S) => void } {
   const [scope, setScope] = useState<S>(options.initialScope);
 
+  // Subscribe to the modal stack so the listener closure can gate itself.
+  // These hooks re-run on every stack push/pop, re-rendering the consumer —
+  // acceptable cost; modals open/close infrequently.
+  const isAnyModalOpen = useIsAnyModalOpen();
+  const { topmostId } = useModalStack();
+  const myModalId = useContext(ModalIdContext);
+
+  // Compose the default modal-stack gate. AND-combined with caller's `when`
+  // (see ADR-0006 — REPLACE / OR would drop scope-internal logic like
+  // CourseDetail's `editingTaskId !== null` guard on the `edit` scope).
+  const stackGate = useCallback((): boolean => {
+    if (options.escapeStackGate) return true;
+    if (myModalId !== null) {
+      // Inside a modal — fire only when *this* modal is the topmost.
+      return myModalId === topmostId;
+    }
+    // Under modals — fire only when the stack is empty.
+    return !isAnyModalOpen;
+  }, [options.escapeStackGate, myModalId, topmostId, isAnyModalOpen]);
+
+  const composedWhen = useCallback((): boolean => {
+    if (!stackGate()) return false;
+    if (options.when && !options.when()) return false;
+    return true;
+  }, [stackGate, options]);
+
+  // The options object the listener reads at fire time, with `when` replaced
+  // by the composed gate. Caller's other options (enableOnFormTags etc.) pass
+  // through unchanged.
+  const composedOptions: KeymapOptions<S> = { ...options, when: composedWhen };
+
   // Refs so the listener closure always reads the latest values without re-registering
   const scopeRef = useRef<S>(scope);
   const keymapsRef = useRef(keymaps);
-  const optionsRef = useRef(options);
+  const optionsRef = useRef<KeymapOptions<S>>(composedOptions);
   const expandedRef = useRef<Map<S, Map<string, KeyHandler>>>(new Map());
 
   useEffect(() => {
@@ -82,7 +132,7 @@ export function useKeymap<S extends string>(
   });
 
   useEffect(() => {
-    optionsRef.current = options;
+    optionsRef.current = composedOptions;
   });
 
   useEffect(() => {

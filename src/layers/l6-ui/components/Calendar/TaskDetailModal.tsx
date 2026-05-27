@@ -44,6 +44,7 @@ import { HtmlContent } from '../shared';
 import { ConfirmDialog } from '../shared/ConfirmDialog';
 import { useStore } from '../../../l5-presentation/store';
 import { Modal } from '../primitives/Modal';
+import { TASK_DETAIL_MODAL_SHORTCUTS } from '../../constants/modalShortcuts';
 import { formatSmartDate } from '../../constants';
 
 interface TaskDetailModalProps {
@@ -208,6 +209,7 @@ export function TaskDetailModal({
       // double-handling.
       closeOnEscape={false}
       size="md"
+      shortcuts={TASK_DETAIL_MODAL_SHORTCUTS}
     >
       {/* Custom header — color indicator on left edge is structural so we
           don't use Modal.Header here. */}

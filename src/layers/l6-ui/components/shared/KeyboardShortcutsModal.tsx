@@ -1,12 +1,20 @@
 /**
  * KeyboardShortcutsModal — scope-aware two-tab help modal.
  *
- * Tab 1 (default): shortcuts for the currently active keyboard scope
- *   (e.g. "Calendar — Filter Panel" when the filter panel is open).
+ * Tab 1 (default): shortcuts for the currently active keyboard scope:
+ *   - If a modal is open above the help, show that modal's shortcuts
+ *     (from `<Modal shortcuts={...}>` registration, see ADR-0006).
+ *   - Otherwise show the page-route scope (e.g. "Calendar — Filter Panel").
  * Tab 2: global shortcuts (Navigation, General, Selection).
  *
  * Left/Right arrow keys switch tabs when focus is on the tab bar.
  * ? or Ctrl+? re-opens; Ctrl+? pre-selects the Global tab.
+ *
+ * The component is split into an outer shell (renders `<Modal>`) and an
+ * inner content component (runs INSIDE the Modal so it can read its own
+ * `ModalIdContext` value via `useContext`). This is required because
+ * `useContext(ModalIdContext)` only returns the Modal's id from within the
+ * Modal's JSX subtree, not from the component that *renders* the Modal.
  */
 
 import React, { useState, useEffect, useContext, useCallback } from 'react';
@@ -19,6 +27,7 @@ import {
   type ShortcutCategory,
 } from '../../constants/keyboardShortcuts';
 import { KeyboardScopeContext } from '../../contexts/KeyboardScopeContext';
+import { ModalIdContext, useModalStack } from '../../contexts/ModalStackContext';
 
 export interface KeyboardShortcutsModalProps {
   isOpen: boolean;
@@ -75,16 +84,64 @@ function ShortcutList({ category }: { category: ShortcutCategory }) {
   );
 }
 
+/**
+ * Outer shell — thin wrapper that mounts `<Modal>`. The inner component runs
+ * inside the Modal's JSX subtree so it can read `ModalIdContext` and walk the
+ * stack to find shortcuts for the modal that was on top BEFORE the help
+ * opened.
+ */
 export function KeyboardShortcutsModal({
   isOpen,
   onClose,
   forceGlobal = false,
 }: KeyboardShortcutsModalProps) {
+  return (
+    // zIndex={1500} so the help always sits above any other modal:
+    // DuplicateWarningModal=1100, its Customize child=1200, ConfirmDialog=1100,
+    // TaskLinkDialog=1100. Future modals stacking above 1500 would need to
+    // coordinate (unlikely).
+    <Modal isOpen={isOpen} onClose={onClose} size="md" zIndex={1500}>
+      <KeyboardShortcutsContent forceGlobal={forceGlobal} onClose={onClose} />
+    </Modal>
+  );
+}
+
+interface KeyboardShortcutsContentProps {
+  forceGlobal: boolean;
+  onClose: () => void;
+}
+
+function KeyboardShortcutsContent({
+  forceGlobal,
+  onClose,
+}: KeyboardShortcutsContentProps) {
   const location = useLocation();
   const { activeSubscope } = useContext(KeyboardScopeContext);
   const currentPageScope = getScopeForPath(location.pathname);
 
-  // Resolve which category to show in Tab 1
+  // Read my own modal stack id (the help modal itself) so we can skip it when
+  // looking for "the topmost OTHER modal" — the one the user was looking at
+  // before they pressed `?` to open this help.
+  const myStackId = useContext(ModalIdContext);
+  const { stack } = useModalStack();
+
+  // Walk the stack from the top down, skipping our own entry. The first
+  // earlier entry that registered `shortcuts` wins; if none, fall back to the
+  // page-route category. This is the "help modal walks stack manually" pattern
+  // described in ADR-0006 — kept local to this component rather than baked
+  // into `useTopmostShortcuts()` because only the help has the self-skip
+  // asymmetry.
+  const modalCategoryFromStack: ShortcutCategory | null = (() => {
+    for (let i = stack.length - 1; i >= 0; i--) {
+      const entry = stack[i];
+      if (entry.id === myStackId) continue; // skip ourselves
+      if (entry.shortcuts) return entry.shortcuts;
+    }
+    return null;
+  })();
+
+  // Page-route category — same logic as before, falls back when no modal
+  // category is available.
   const pageCategory: ShortcutCategory | null = (() => {
     if (!currentPageScope) return null;
     const pageCategories = KEYBOARD_SHORTCUTS.filter((c) => c.scope === currentPageScope);
@@ -98,19 +155,22 @@ export function KeyboardShortcutsModal({
     return pageCategories.find((c) => !c.subscope) ?? pageCategories[0];
   })();
 
+  // Modal shortcuts (if any) override page shortcuts for Tab 1.
+  const tab1Category: ShortcutCategory | null = modalCategoryFromStack ?? pageCategory;
+
   const globalCategories = KEYBOARD_SHORTCUTS.filter((c) => !c.scope);
 
   type TabId = 'page' | 'global';
   const [activeTab, setActiveTab] = useState<TabId>(
-    forceGlobal || !pageCategory ? 'global' : 'page'
+    forceGlobal || !tab1Category ? 'global' : 'page'
   );
 
-  // Reset tab when modal opens or forceGlobal changes
+  // Re-evaluate the default tab when forceGlobal or the resolved tab1 category
+  // changes (which happens if a modal opens/closes underneath us mid-session,
+  // though that's rare).
   useEffect(() => {
-    if (isOpen) {
-      setActiveTab(forceGlobal || !pageCategory ? 'global' : 'page');
-    }
-  }, [isOpen, forceGlobal, pageCategory]);
+    setActiveTab(forceGlobal || !tab1Category ? 'global' : 'page');
+  }, [forceGlobal, tab1Category]);
 
   const handleTabKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
@@ -119,12 +179,12 @@ export function KeyboardShortcutsModal({
     }
   }, []);
 
-  const showTabs = pageCategory !== null;
-  const tab1Label = pageCategory?.title ?? 'Page';
+  const showTabs = tab1Category !== null;
+  const tab1Label = tab1Category?.title ?? 'Page';
   const modKey = isMac ? '⌘' : 'Ctrl';
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} size="md">
+    <>
       <Modal.Header
         title="Keyboard Shortcuts"
         icon={<Keyboard size={20} />}
@@ -167,8 +227,8 @@ export function KeyboardShortcutsModal({
 
           {/* Content */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-            {activeTab === 'page' && pageCategory && (
-              <ShortcutList category={pageCategory} />
+            {activeTab === 'page' && tab1Category && (
+              <ShortcutList category={tab1Category} />
             )}
             {activeTab === 'global' &&
               (globalCategories.length > 0 ? (
@@ -188,7 +248,7 @@ export function KeyboardShortcutsModal({
           </div>
         </div>
       </Modal.Content>
-    </Modal>
+    </>
   );
 }
 

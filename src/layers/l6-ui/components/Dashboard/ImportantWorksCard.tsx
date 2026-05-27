@@ -5,7 +5,7 @@
 import React, { useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Star, Inbox, Calendar } from 'lucide-react';
-import { useHotkeys } from 'react-hotkeys-hook';
+import { useStackAwareHotkeys } from '../../hooks/useStackAwareHotkeys';
 import { Card, NotificationDot } from '../shared';
 import { ImportantWorksFilter } from './ImportantWorksFilter';
 import { useStore } from '../../../l5-presentation/store';
@@ -147,7 +147,7 @@ export function ImportantWorksCard({
   });
 
   // Enter: open focused task in course detail
-  useHotkeys(
+  useStackAwareHotkeys(
     'enter',
     (e) => {
       if (focusedItem) {

@@ -17,7 +17,7 @@ import type { Task } from '../../../l5-presentation/types';
 import { formatGrade } from '../../constants';
 import { STORAGE_KEYS } from '../../../l5-presentation/settings';
 import { createLogger } from '../../utils/rendererLogger';
-import { useHotkeys } from 'react-hotkeys-hook';
+import { useStackAwareHotkeys } from '../../hooks/useStackAwareHotkeys';
 
 const log = createLogger('Dashboard');
 
@@ -131,7 +131,7 @@ export function Dashboard() {
   }, [focusedList]);
 
   // Keyboard shortcuts
-  useHotkeys('r', () => {
+  useStackAwareHotkeys('r', () => {
     if (state.syncStatus !== 'syncing') {
       let termSelection: 'all' | 'auto' | string = 'auto';
       try {

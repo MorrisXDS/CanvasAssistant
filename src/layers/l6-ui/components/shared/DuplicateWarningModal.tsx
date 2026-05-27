@@ -8,9 +8,13 @@
 
 import React, { useState, useCallback, useMemo, useRef } from 'react';
 import { AlertTriangle, Link2, Plus, Check, Settings2 } from 'lucide-react';
-import { useHotkeys } from 'react-hotkeys-hook';
 import type { DuplicateCheckResult } from '../../../l5-presentation/types';
 import { Modal } from '../primitives/Modal';
+import { useModalHotkeys } from '../../hooks/useStackAwareHotkeys';
+import {
+  DUPLICATE_WARNING_SHORTCUTS,
+  DUPLICATE_WARNING_CUSTOMIZE_SHORTCUTS,
+} from '../../constants/modalShortcuts';
 import {
   FieldMergeEditor,
   buildDefaultChoices,
@@ -270,51 +274,11 @@ export function DuplicateWarningModal({
   }, [onConfirm, decisions, selected, fieldChoicesByQueueId]);
 
   // --- Keyboard shortcuts ---
-  // Esc gives the child modal priority — if open, close it; otherwise cancel.
-  useHotkeys(
-    'esc',
-    () => {
-      if (editingQueueId != null) closeCustomizeCancel();
-      else onCancel();
-    },
-    { enableOnFormTags: false }
-  );
-  useHotkeys('l', () => {
-    if (editingQueueId != null) return;
-    if (isSingle && item0) {
-      setDecision(item0.queueId, 'link');
-      handleConfirm();
-    } else {
-      const focused = items[focusedIdx];
-      if (focused) setDecision(focused.queueId, 'link');
-    }
-  });
-  useHotkeys('s', () => {
-    if (editingQueueId != null) return;
-    if (isSingle && item0) {
-      setDecision(item0.queueId, 'separate');
-      handleConfirm();
-    } else {
-      const focused = items[focusedIdx];
-      if (focused) setDecision(focused.queueId, 'separate');
-    }
-  });
-  useHotkeys('enter', () => {
-    if (editingQueueId != null) {
-      closeCustomizeSave();
-    } else if (!isSingle) {
-      handleConfirm();
-    }
-  });
-  useHotkeys('a', () => {
-    if (editingQueueId != null) return;
-    if (!isSingle) toggleAll();
-  });
-  useHotkeys('c', () => {
-    if (editingQueueId != null || isSingle) return;
-    const focused = items[focusedIdx];
-    if (focused?.match?.conflictingFields.length) openCustomize(focused.queueId);
-  });
+  // Hotkeys are registered inside the modal subtree (see <ParentHotkeys> and
+  // <CustomizeHotkeys> below) so `useModalHotkeys` can gate them on the modal
+  // stack — parent's keys auto-suppress when the Customize child opens above,
+  // and the underlying CourseDetail page's keys auto-suppress whenever this
+  // modal is open. ADR-0006.
   // Resolve the item / canvasTask for the child editor up front so the render
   // tree stays simple.
   const editingItem = useMemo(
@@ -323,8 +287,17 @@ export function DuplicateWarningModal({
     [editingQueueId, items]
   );
   // Conflict-field list for the currently-edited item (drives child-modal
-  // arrow navigation).
-  const editingConflictFields = editingItem?.match?.conflictingFields ?? [];
+  // arrow navigation). Sorted to match FieldMergeEditor's visual render
+  // order (title → dueAt → taskType from FIELD_DEFS) — the backend's
+  // `computeConflictingFields` builds them in a different order (dueAt
+  // first), so without this sort, ArrowUp/Down would walk by backend order
+  // while the eye sees them in render order, making the keys feel flipped.
+  const editingConflictFields = useMemo(() => {
+    const raw = editingItem?.match?.conflictingFields ?? [];
+    const renderOrder: FieldKey[] = ['title', 'dueAt', 'taskType'];
+    const rank = new Map(renderOrder.map((k, i) => [k as string, i] as const));
+    return [...raw].sort((a, b) => (rank.get(a.field) ?? 99) - (rank.get(b.field) ?? 99));
+  }, [editingItem]);
 
   /**
    * Helper used by the child-modal picker hotkeys (Left/Right/1/2): set the
@@ -360,45 +333,8 @@ export function DuplicateWarningModal({
     [editingQueueId, editingItem, setFieldChoice]
   );
 
-  useHotkeys('ArrowUp', () => {
-    if (editingQueueId != null) {
-      // Walk conflict fields inside the child modal.
-      setEditingFocusedFieldIdx((i) => Math.max(0, i - 1));
-      return;
-    }
-    if (!isSingle) setFocusedIdx((i) => Math.max(0, i - 1));
-  });
-  useHotkeys('ArrowDown', () => {
-    if (editingQueueId != null) {
-      const max = Math.max(0, editingConflictFields.length - 1);
-      setEditingFocusedFieldIdx((i) => Math.min(max, i + 1));
-      return;
-    }
-    if (!isSingle) setFocusedIdx((i) => Math.min(items.length - 1, i + 1));
-  });
-  useHotkeys('ArrowLeft, 1', () => {
-    if (editingQueueId != null) pickFocusedField('canvas');
-  });
-  useHotkeys('ArrowRight, 2', () => {
-    if (editingQueueId != null) pickFocusedField('user');
-  });
-  // Q/E mirrors the app-wide left/right navigation pair (CourseDetail uses
-  // them for section back/forward), so these shortcuts feel like the
-  // existing "previous/next" muscle memory.
-  useHotkeys('q', () => {
-    if (editingQueueId != null) pickAll('canvas');
-  });
-  useHotkeys('e', () => {
-    if (editingQueueId != null) pickAll('user');
-  });
-  useHotkeys('space', (e) => {
-    e.preventDefault();
-    if (editingQueueId != null) return;
-    if (!isSingle) {
-      const focused = items[focusedIdx];
-      if (focused) toggleSelected(focused.queueId);
-    }
-  });
+  // ArrowUp/Down/Left/Right/Q/E/Space and Esc/Enter are registered inside
+  // the modal subtrees — see <ParentHotkeys> and <CustomizeHotkeys> below.
 
   // Header strings derived once.
   const headerTitle = isSingle
@@ -419,10 +355,24 @@ export function DuplicateWarningModal({
         onClose={onCancel}
         size="lg"
         zIndex={1100}
-        // Our own useHotkeys('esc') handler manages Esc so it can give the
-        // child editor priority. Don't double-handle it.
+        // Our own keyboard hooks manage Esc so we can give the child editor
+        // priority. Don't double-handle it.
         closeOnEscape={false}
+        shortcuts={DUPLICATE_WARNING_SHORTCUTS}
       >
+        <ParentHotkeys
+          isSingle={isSingle}
+          item0={item0}
+          items={items}
+          focusedIdx={focusedIdx}
+          setFocusedIdx={setFocusedIdx}
+          setDecision={setDecision}
+          toggleAll={toggleAll}
+          toggleSelected={toggleSelected}
+          openCustomize={openCustomize}
+          handleConfirm={handleConfirm}
+          onCancel={onCancel}
+        />
         <Modal.Header
           title={headerTitle}
           subtitle={headerSubtitle}
@@ -696,7 +646,16 @@ export function DuplicateWarningModal({
           size="md"
           zIndex={1200}
           closeOnEscape={false}
+          shortcuts={DUPLICATE_WARNING_CUSTOMIZE_SHORTCUTS}
         >
+          <CustomizeHotkeys
+            editingConflictFields={editingConflictFields}
+            setEditingFocusedFieldIdx={setEditingFocusedFieldIdx}
+            pickFocusedField={pickFocusedField}
+            pickAll={pickAll}
+            closeCustomizeSave={closeCustomizeSave}
+            closeCustomizeCancel={closeCustomizeCancel}
+          />
           <Modal.Header
             title={`Edit field merge — ${editingItem.match.task.title}`}
             subtitle="Choices apply when you Confirm in the bulk dialog."
@@ -754,3 +713,122 @@ export function DuplicateWarningModal({
 }
 
 export default DuplicateWarningModal;
+
+// ===========================================================================
+// Hotkey components
+// ---------------------------------------------------------------------------
+// These render `null` — their only job is to call `useModalHotkeys` from
+// INSIDE the appropriate <Modal> subtree so they can read `ModalIdContext`
+// and self-gate via the modal stack (ADR-0006). The parent component passes
+// the relevant state/callbacks down as props so the hotkeys can act on
+// fresh values via React's normal re-render.
+// ===========================================================================
+
+interface ParentHotkeysProps {
+  isSingle: boolean;
+  item0: DuplicateCheckResult | undefined;
+  items: DuplicateCheckResult[];
+  focusedIdx: number;
+  setFocusedIdx: React.Dispatch<React.SetStateAction<number>>;
+  setDecision: (queueId: number, d: 'link' | 'separate') => void;
+  toggleAll: () => void;
+  toggleSelected: (queueId: number) => void;
+  openCustomize: (queueId: number) => void;
+  handleConfirm: () => void;
+  onCancel: () => void;
+}
+
+function ParentHotkeys({
+  isSingle,
+  item0,
+  items,
+  focusedIdx,
+  setFocusedIdx,
+  setDecision,
+  toggleAll,
+  toggleSelected,
+  openCustomize,
+  handleConfirm,
+  onCancel,
+}: ParentHotkeysProps) {
+  useModalHotkeys('esc', () => onCancel(), { enableOnFormTags: false });
+  useModalHotkeys('l', () => {
+    if (isSingle && item0) {
+      setDecision(item0.queueId, 'link');
+      handleConfirm();
+    } else {
+      const focused = items[focusedIdx];
+      if (focused) setDecision(focused.queueId, 'link');
+    }
+  });
+  useModalHotkeys('s', () => {
+    if (isSingle && item0) {
+      setDecision(item0.queueId, 'separate');
+      handleConfirm();
+    } else {
+      const focused = items[focusedIdx];
+      if (focused) setDecision(focused.queueId, 'separate');
+    }
+  });
+  useModalHotkeys('enter', () => {
+    if (!isSingle) handleConfirm();
+  });
+  useModalHotkeys('a', () => {
+    if (!isSingle) toggleAll();
+  });
+  useModalHotkeys('c', () => {
+    if (isSingle) return;
+    const focused = items[focusedIdx];
+    if (focused?.match?.conflictingFields.length) openCustomize(focused.queueId);
+  });
+  useModalHotkeys('ArrowUp', () => {
+    if (!isSingle) setFocusedIdx((i) => Math.max(0, i - 1));
+  });
+  useModalHotkeys('ArrowDown', () => {
+    if (!isSingle) setFocusedIdx((i) => Math.min(items.length - 1, i + 1));
+  });
+  useModalHotkeys('space', (e) => {
+    e.preventDefault();
+    if (!isSingle) {
+      const focused = items[focusedIdx];
+      if (focused) toggleSelected(focused.queueId);
+    }
+  });
+  return null;
+}
+
+interface CustomizeHotkeysProps {
+  editingConflictFields: Array<{ field: string }>;
+  setEditingFocusedFieldIdx: React.Dispatch<React.SetStateAction<number>>;
+  pickFocusedField: (side: 'canvas' | 'user') => void;
+  pickAll: (side: 'canvas' | 'user') => void;
+  closeCustomizeSave: () => void;
+  closeCustomizeCancel: () => void;
+}
+
+function CustomizeHotkeys({
+  editingConflictFields,
+  setEditingFocusedFieldIdx,
+  pickFocusedField,
+  pickAll,
+  closeCustomizeSave,
+  closeCustomizeCancel,
+}: CustomizeHotkeysProps) {
+  useModalHotkeys('esc', () => closeCustomizeCancel(), { enableOnFormTags: false });
+  useModalHotkeys('enter', () => closeCustomizeSave());
+  useModalHotkeys('ArrowUp', () => {
+    setEditingFocusedFieldIdx((i) => Math.max(0, i - 1));
+  });
+  useModalHotkeys('ArrowDown', () => {
+    const max = Math.max(0, editingConflictFields.length - 1);
+    setEditingFocusedFieldIdx((i) => Math.min(max, i + 1));
+  });
+  useModalHotkeys('ArrowLeft, 1', () => pickFocusedField('canvas'));
+  useModalHotkeys('ArrowRight, 2', () => pickFocusedField('user'));
+  // Q/E mirrors the app-wide left/right navigation pair (CourseDetail uses
+  // them for section back/forward), so these feel like the existing
+  // previous/next muscle memory.
+  useModalHotkeys('q', () => pickAll('canvas'));
+  useModalHotkeys('e', () => pickAll('user'));
+  return null;
+}
