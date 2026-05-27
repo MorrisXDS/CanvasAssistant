@@ -239,22 +239,12 @@ describeFn('ExportManager', () => {
       'tasks'
     );
 
-    // Create visible data provider mock
+    // VisibilityOracle mock — only the methods ExportDataCollector actually
+    // calls (post-ADR-0007 narrowing; the row-returning methods were removed
+    // because they had no real callers).
     visibilityOracle = {
       getVisibleCourseIds: jest.fn().mockReturnValue([1, 2]),
-      getVisibleCourses: jest.fn().mockReturnValue([
-        { id: 1, code: 'CSC108', name: 'Introduction to Programming' },
-        { id: 2, code: 'MAT137', name: 'Calculus I' },
-      ]),
       getArchivedCourseIds: jest.fn().mockReturnValue([3]),
-      getArchivedCourses: jest.fn().mockReturnValue([
-        {
-          id: 3,
-          code: 'CSC148',
-          name: 'Introduction to Computer Science',
-          archived_at: '2023-12-15T00:00:00Z',
-        },
-      ]),
     } as unknown as VisibilityOracle;
 
     exportManager = new ExportManager(database, visibilityOracle, {

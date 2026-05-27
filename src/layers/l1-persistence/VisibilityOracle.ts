@@ -1,19 +1,21 @@
 /**
- * VisibilityOracle - Single Source of Truth for Course Visibility
+ * VisibilityOracle — single source of truth for course visibility state.
  *
- * This service centralizes all visibility rules to ensure consistent filtering
- * across L3 orchestrators, L5 store, and IPC handlers.
+ * Per ADR-0007 (Future 2 shape): this is a pure visibility-state oracle. It
+ * answers questions ("what's visible?", "is this course archived?", "what's
+ * the term selection?") and emits invalidation events. It does NOT return
+ * row data — `CourseReader` (and future per-table readers) own that.
  *
  * Responsibilities:
- * 1. Store visibility settings in the database (not localStorage)
- * 2. Provide visibility-filtered queries for courses and tasks
- * 3. Emit events when visibility changes for cache invalidation
- * 4. Be the ONLY place that defines what "visible" means
+ *  1. Own the term-selection setting (read/write to `visibility_settings`).
+ *  2. Compute the visible-course-ID set (the canonical visibility recipe:
+ *     not hidden, not deleted, not archived, passes term filter).
+ *  3. Provide the same answer for the archived set.
+ *  4. Cache the visible-ID set for ~5s and emit invalidation events.
  *
- * Usage:
- * - L3 orchestrators MUST use this instead of raw SQL
- * - L5 store reads term selection via IPC from this service
- * - UpdateCoursePreferencesCommand notifies this service of visibility changes
+ * Consumers (IPC handlers, L4 commands, L3 services if any survive) compose
+ * an Oracle call (ID set) with a Reader call (rows). The two interfaces are
+ * orthogonal and tested separately.
  */
 
 import { EventEmitter } from 'events';
@@ -21,34 +23,17 @@ import { Database } from './Database';
 
 /**
  * Term selection options:
- * - 'all': Show all non-hidden courses regardless of term
- * - 'auto': Show courses from currently active terms (end_at > now - 30 days)
- * - number: Show courses from specific term ID
+ *  - 'all': Show all non-hidden courses regardless of term
+ *  - 'auto': Show courses from currently active terms (end_at > now - 30 days)
+ *  - number: Show courses from a specific term ID
  */
 export type TermSelection = 'all' | 'auto' | number;
 
 /**
- * Course row from database
- */
-export interface VisibleCourseRow {
-  id: number;
-  external_id: string;
-  code: string;
-  name: string;
-  current_grade: number | null;
-  assessed_grade: number | null;
-  target_grade: number;
-  total_weight: number;
-  color: string | null;
-  nickname: string | null;
-  is_hidden: number;
-  enrollment_term_id: number | null;
-  deleted_at: string | null;
-  archived_at: string | null;
-}
-
-/**
- * Task row from database
+ * Task row shape returned by the transitional `getTasksForArchivedCourse`
+ * shim. Kept here only until PR-D introduces `TaskReader`.
+ *
+ * @deprecated Will move to `TaskReader` (PR-D of ADR-0007).
  */
 export interface VisibleTaskRow {
   id: number;
@@ -71,7 +56,7 @@ export interface VisibleTaskRow {
 }
 
 /**
- * Configuration for VisibilityOracle
+ * Configuration for VisibilityOracle.
  */
 export interface VisibilityOracleConfig {
   /** Days buffer for term end date calculation (default: 30) */
@@ -83,11 +68,11 @@ const DEFAULT_CONFIG: Required<VisibilityOracleConfig> = {
 };
 
 /**
- * VisibilityOracle - Centralized visibility rules
+ * VisibilityOracle - the visibility-state seam.
  *
  * Events:
- * - 'visibility-changed': Emitted when a course's visibility changes
- * - 'settings-changed': Emitted when term selection changes
+ *  - 'visibility-changed': Emitted when a course's visibility changes
+ *  - 'settings-changed': Emitted when term selection changes
  */
 export class VisibilityOracle extends EventEmitter {
   private db: Database;
@@ -105,7 +90,7 @@ export class VisibilityOracle extends EventEmitter {
   // ============ Settings Management ============
 
   /**
-   * Get the current term selection setting from database
+   * Get the current term selection setting from the database.
    */
   getTermSelection(): TermSelection {
     const row = this.db.executeReadOne<{ value: string }>(
@@ -118,7 +103,7 @@ export class VisibilityOracle extends EventEmitter {
   }
 
   /**
-   * Set the term selection setting in database
+   * Set the term selection setting in the database.
    */
   setTermSelection(value: TermSelection): void {
     this.db.executeWrite(
@@ -131,17 +116,19 @@ export class VisibilityOracle extends EventEmitter {
     this.emit('settings-changed', { key: 'term_selection', value });
   }
 
-  // ============ Visibility Queries (Single Source of Truth) ============
+  // ============ Visibility Queries (single source of truth) ============
 
   /**
-   * Get IDs of all visible courses based on:
-   * 1. is_hidden = 0 (not hidden by user)
-   * 2. deleted_at IS NULL (not soft-deleted)
-   * 3. archived_at IS NULL (not archived)
-   * 4. Term selection (all, auto, or specific term)
+   * Get the IDs of all currently-visible courses. A course is visible when:
+   *  1. `is_hidden = 0` (not hidden by user)
+   *  2. `deleted_at IS NULL` (not soft-deleted)
+   *  3. `archived_at IS NULL` (not archived)
+   *  4. Passes the active term-selection filter
+   *
+   * Cached for ~5s (per ADR-0007 sub-decision; cache is invalidated on
+   * visibility/settings change events).
    */
   getVisibleCourseIds(): number[] {
-    // Check cache
     if (
       this.cachedVisibleCourseIds !== null &&
       Date.now() - this.cacheTimestamp < this.CACHE_TTL_MS
@@ -156,8 +143,8 @@ export class VisibilityOracle extends EventEmitter {
     `;
 
     if (termSelection === 'auto') {
-      // Auto: filter by currently active terms
-      // Canvas end_at is usually ~30 days after actual course end
+      // Auto: filter by currently active terms. Canvas end_at is typically
+      // ~30 days after the actual course end, so we look back that far.
       sql += `
         AND enrollment_term_id IN (
           SELECT CAST(external_id AS INTEGER) FROM enrollment_terms
@@ -166,10 +153,9 @@ export class VisibilityOracle extends EventEmitter {
         )
       `;
     } else if (typeof termSelection === 'number') {
-      // Specific term selected
       sql += ` AND enrollment_term_id = ${termSelection}`;
     }
-    // 'all' = no additional filter (just is_hidden and deleted_at)
+    // 'all' = no additional filter (just is_hidden / deleted_at / archived_at)
 
     const rows = this.db.executeRead<{ id: number }>(sql);
     this.cachedVisibleCourseIds = rows.map((r) => r.id);
@@ -178,83 +164,28 @@ export class VisibilityOracle extends EventEmitter {
   }
 
   /**
-   * Get all visible courses (full rows)
-   */
-  getVisibleCourses(): VisibleCourseRow[] {
-    const visibleIds = this.getVisibleCourseIds();
-    if (visibleIds.length === 0) return [];
-
-    return this.db.executeRead<VisibleCourseRow>(`
-      SELECT * FROM courses
-      WHERE id IN (${visibleIds.join(',')})
-      ORDER BY name
-    `);
-  }
-
-  /**
-   * Get all tasks for visible courses
-   */
-  getVisibleTasks(): VisibleTaskRow[] {
-    const visibleIds = this.getVisibleCourseIds();
-    if (visibleIds.length === 0) return [];
-
-    return this.db.executeRead<VisibleTaskRow>(`
-      SELECT * FROM tasks
-      WHERE course_id IN (${visibleIds.join(',')})
-    `);
-  }
-
-  /**
-   * Get incomplete tasks for visible courses
-   */
-  getVisibleIncompleteTasks(): VisibleTaskRow[] {
-    const visibleIds = this.getVisibleCourseIds();
-    if (visibleIds.length === 0) return [];
-
-    return this.db.executeRead<VisibleTaskRow>(`
-      SELECT * FROM tasks
-      WHERE course_id IN (${visibleIds.join(',')})
-        AND is_completed = 0
-      ORDER BY due_at ASC
-    `);
-  }
-
-  /**
-   * Check if a specific course is visible
+   * Predicate: is this specific course currently visible?
    */
   isCourseVisible(courseId: number): boolean {
-    const visibleIds = this.getVisibleCourseIds();
-    return visibleIds.includes(courseId);
+    return this.getVisibleCourseIds().includes(courseId);
   }
 
-  // ============ Archived Courses ============
+  // ============ Archived state ============
 
   /**
-   * Get all archived courses (archived_at IS NOT NULL)
-   * Sorted by term end date (primary), then alphabetically by code (secondary)
-   */
-  getArchivedCourses(): VisibleCourseRow[] {
-    return this.db.executeRead<VisibleCourseRow>(`
-      SELECT c.* FROM courses c
-      LEFT JOIN enrollment_terms et ON c.enrollment_term_id = CAST(et.external_id AS INTEGER)
-      WHERE c.deleted_at IS NULL AND c.archived_at IS NOT NULL
-      ORDER BY et.end_at DESC NULLS LAST, c.code ASC
-    `);
-  }
-
-  /**
-   * Get IDs of archived courses
+   * Get the IDs of archived (non-deleted) courses. Order is not specified
+   * here — for ordered archived listings, call `CourseReader.getArchivedSortedByTermEnd()`.
    */
   getArchivedCourseIds(): number[] {
-    const rows = this.db.executeRead<{ id: number }>(`
-      SELECT id FROM courses
-      WHERE deleted_at IS NULL AND archived_at IS NOT NULL
-    `);
+    const rows = this.db.executeRead<{ id: number }>(
+      `SELECT id FROM courses
+       WHERE deleted_at IS NULL AND archived_at IS NOT NULL`
+    );
     return rows.map((r) => r.id);
   }
 
   /**
-   * Check if a specific course is archived
+   * Predicate: is this specific course archived?
    */
   isCourseArchived(courseId: number): boolean {
     const row = this.db.executeReadOne<{ archived_at: string | null }>(
@@ -265,16 +196,17 @@ export class VisibilityOracle extends EventEmitter {
   }
 
   /**
-   * Get tasks for an archived course (bypasses visibility filtering)
+   * Get tasks for an archived course (bypasses visibility filtering).
    *
-   * Archived courses are local-only sandboxes - users can view and edit
-   * their data without affecting visible/active course workflows.
+   * Archived courses are local-only sandboxes — users can view and edit
+   * their data without affecting visible/active workflows.
    *
-   * @param courseId - The archived course ID
-   * @returns Tasks for the course, or empty array if course doesn't exist or isn't archived
+   * @deprecated Transitional shim. This is task-table data and will move to
+   * `TaskReader.getByArchivedCourseId` in PR-D of ADR-0007. Kept here for
+   * now because `taskDataHandlers.ts:205` still consumes it; that handler
+   * migrates as part of PR-D.
    */
   getTasksForArchivedCourse(courseId: number): VisibleTaskRow[] {
-    // Verify course exists and is archived
     const course = this.db.executeReadOne<{ id: number; archived_at: string | null }>(
       `SELECT id, archived_at FROM courses WHERE id = ? AND deleted_at IS NULL`,
       [courseId]
@@ -285,19 +217,17 @@ export class VisibilityOracle extends EventEmitter {
     }
 
     return this.db.executeRead<VisibleTaskRow>(
-      `
-      SELECT * FROM tasks
-      WHERE course_id = ?
-      ORDER BY due_at ASC NULLS LAST, priority_score DESC
-    `,
+      `SELECT * FROM tasks
+       WHERE course_id = ?
+       ORDER BY due_at ASC NULLS LAST, priority_score DESC`,
       [courseId]
     );
   }
 
-  // ============ Event Emission ============
+  // ============ Cache & Event Emission ============
 
   /**
-   * Invalidate the cache and optionally emit visibility changed event
+   * Invalidate the cached visible-ID set. Idempotent.
    */
   invalidateCache(): void {
     this.cachedVisibleCourseIds = null;
@@ -305,8 +235,9 @@ export class VisibilityOracle extends EventEmitter {
   }
 
   /**
-   * Notify that a course's visibility has changed
-   * Call this from UpdateCoursePreferencesCommand when isHidden changes
+   * Notify that a course's visibility changed. Called from
+   * `UpdateCoursePreferencesCommand` / `ArchiveCourseCommand` /
+   * `UnarchiveCourseCommand` when state that affects visibility mutates.
    */
   notifyVisibilityChanged(courseId?: number): void {
     this.invalidateCache();
@@ -314,7 +245,8 @@ export class VisibilityOracle extends EventEmitter {
   }
 
   /**
-   * Stop the provider (no timers to stop, but follows convention)
+   * Stop the oracle (no timers to stop, but follows the L0–L1 service
+   * convention).
    */
   stop(): void {
     this.removeAllListeners();

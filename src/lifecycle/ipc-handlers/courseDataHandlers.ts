@@ -1,17 +1,32 @@
 /**
  * Course Data IPC Handlers
- * Handlers for course and enrollment term data operations
+ *
+ * Thin adapters between the renderer and L1 services (per ADR-0007).
+ * No raw `database.execute*` here — visibility comes from `VisibilityOracle`,
+ * rows come from `CourseReader`, and snake→camel translation happens via
+ * the local `courseMapper`.
+ *
+ * Closes two visibility-bypass bugs from the pre-ADR-0007 codebase:
+ *   - `data:getCourses` previously ran raw SQL filtering only
+ *     `archived_at IS NULL AND deleted_at IS NULL`, missing `is_hidden = 0`
+ *     AND term selection.
+ *   - The renderer's `coreDataSlice.fetchCourses` re-derived term filtering
+ *     in JS with different math than the Oracle's SQL. Now redundant
+ *     (handler hands back the filtered list).
  */
 
 import { ipcMain } from 'electron';
 import type { IpcContext } from './IpcContext';
+import { CourseReader } from '../../layers/l1-persistence/readers/CourseReader';
+import { mapCourseRowToListDto, mapCourseRowToDetailDto } from './mappers/courseMapper';
 
 /**
- * Register course and enrollment term data handlers
+ * Register course and enrollment term data handlers.
  */
 export function registerCourseDataHandlers(ctx: IpcContext): void {
   const database = ctx.getDatabase();
   const logger = ctx.getLogger();
+  const courseReader = new CourseReader(database);
 
   // ============ Enrollment Terms ============
 
@@ -37,160 +52,59 @@ export function registerCourseDataHandlers(ctx: IpcContext): void {
       throw error;
     }
   });
+  // TODO(ADR-0007): enrollment_terms reader belongs to a future PR. The above
+  // handler still does raw SQL because `enrollment_terms` isn't course-scoped
+  // and isn't part of PR-B's surface; it will be migrated when the
+  // enforcement test forces it (final PR of the Option 5 sequence).
 
   // ============ Courses ============
 
+  /**
+   * data:getCourses — visibility-filtered list of courses for the UI.
+   *
+   * Visibility is enforced by the Oracle (which applies all four filters:
+   * `is_hidden = 0`, `deleted_at IS NULL`, `archived_at IS NULL`, term
+   * selection). List endpoints filter; single-id endpoints don't (per
+   * ADR-0007 sub-decision α).
+   */
   ipcMain.handle('data:getCourses', () => {
     try {
-      // Filter out archived and deleted courses
-      const rows = database.executeRead<{
-        id: number;
-        external_id: string;
-        code: string;
-        name: string;
-        target_grade: number;
-        target_grade_source: 'default' | 'manual' | null;
-        assessed_grade: number | null;
-        current_grade: number | null;
-        color: string | null;
-        nickname: string | null;
-        is_hidden: number;
-        last_synced_at: string | null;
-        enrollment_term_id: number | null;
-        credits: number | null;
-      }>(
-        'SELECT * FROM courses WHERE archived_at IS NULL AND deleted_at IS NULL ORDER BY name'
-      );
+      const oracle = ctx.getVisibilityOracle();
+      if (!oracle) return [];
 
-      return rows.map((row) => ({
-        id: row.id,
-        externalId: row.external_id,
-        code: row.code,
-        name: row.name,
-        targetGrade: row.target_grade,
-        targetGradeSource: row.target_grade_source ?? 'default',
-        assessedGrade: row.assessed_grade,
-        currentGrade: row.current_grade,
-        color: row.color,
-        nickname: row.nickname,
-        isHidden: Boolean(row.is_hidden),
-        lastSyncedAt: row.last_synced_at,
-        enrollmentTermId: row.enrollment_term_id,
-        credits: row.credits ?? 1.0,
-        archivedAt: null, // Always null since we filter out archived courses
-        archiveSource: null, // Always null since we filter out archived courses
-      }));
+      const ids = oracle.getVisibleCourseIds();
+      if (ids.length === 0) return [];
+
+      return courseReader.getByIds(ids).map(mapCourseRowToListDto);
     } catch (error) {
       logger.error(`Failed to get courses: ${error}`);
       throw error;
     }
   });
 
-  // Get a single course by ID (returns CourseDetail with extended fields)
+  /**
+   * data:getCourse(id) — single-course lookup. Bypasses visibility on
+   * purpose: the caller has the id (e.g. an announcement deep-link landing
+   * on a course that's since been hidden). The UI can render a "hidden"
+   * badge based on the returned `isHidden` flag.
+   */
   ipcMain.handle('data:getCourse', (_event, courseId: number) => {
     try {
-      const row = database.executeReadOne<{
-        id: number;
-        external_id: string;
-        code: string;
-        name: string;
-        target_grade: number;
-        target_grade_source: 'default' | 'manual' | null;
-        assessed_grade: number | null;
-        current_grade: number | null;
-        color: string | null;
-        nickname: string | null;
-        is_hidden: number;
-        last_synced_at: string | null;
-        enrollment_term_id: number | null;
-        credits: number | null;
-        archived_at: string | null;
-        archive_source: string | null;
-        total_weight: number | null;
-        syllabus_body: string | null;
-        grade_curve_adjustment: number | null;
-        syllabus_prompt_dismissed_at: string | null;
-      }>('SELECT * FROM courses WHERE id = ?', [courseId]);
-
-      if (!row) {
-        return null;
-      }
-
-      return {
-        id: row.id,
-        externalId: row.external_id,
-        code: row.code,
-        name: row.name,
-        targetGrade: row.target_grade,
-        targetGradeSource: row.target_grade_source ?? 'default',
-        assessedGrade: row.assessed_grade,
-        currentGrade: row.current_grade,
-        color: row.color,
-        nickname: row.nickname,
-        isHidden: Boolean(row.is_hidden),
-        lastSyncedAt: row.last_synced_at,
-        enrollmentTermId: row.enrollment_term_id,
-        credits: row.credits ?? 1.0,
-        archivedAt: row.archived_at,
-        archiveSource: row.archive_source,
-        totalWeight: row.total_weight ?? 0,
-        syllabusBody: row.syllabus_body,
-        gradeCurveAdjustment: row.grade_curve_adjustment ?? 0,
-        syllabusPromptDismissedAt: row.syllabus_prompt_dismissed_at,
-      };
+      const row = courseReader.getById(courseId);
+      return row ? mapCourseRowToDetailDto(row) : null;
     } catch (error) {
       logger.error(`Failed to get course: ${error}`);
       throw error;
     }
   });
 
-  // Get archived courses - sorted by term end date (primary), then alphabetically (secondary)
+  /**
+   * data:getArchivedCourses — archived list for the Archived section UI.
+   * Ordering (term end DESC, then name ASC) is owned by the reader.
+   */
   ipcMain.handle('data:getArchivedCourses', () => {
     try {
-      const rows = database.executeRead<{
-        id: number;
-        external_id: string;
-        code: string;
-        name: string;
-        target_grade: number;
-        target_grade_source: 'default' | 'manual' | null;
-        assessed_grade: number | null;
-        current_grade: number | null;
-        color: string | null;
-        nickname: string | null;
-        is_hidden: number;
-        last_synced_at: string | null;
-        enrollment_term_id: number | null;
-        credits: number | null;
-        archived_at: string;
-        archive_source: string | null;
-        term_end_at: string | null;
-      }>(
-        `SELECT c.*, et.end_at as term_end_at
-         FROM courses c
-         LEFT JOIN enrollment_terms et ON c.enrollment_term_id = et.id
-         WHERE c.archived_at IS NOT NULL AND c.deleted_at IS NULL
-         ORDER BY et.end_at DESC NULLS LAST, c.name ASC`
-      );
-
-      return rows.map((row) => ({
-        id: row.id,
-        externalId: row.external_id,
-        code: row.code,
-        name: row.name,
-        targetGrade: row.target_grade,
-        targetGradeSource: row.target_grade_source ?? 'default',
-        assessedGrade: row.assessed_grade,
-        currentGrade: row.current_grade,
-        color: row.color,
-        nickname: row.nickname,
-        isHidden: Boolean(row.is_hidden),
-        lastSyncedAt: row.last_synced_at,
-        enrollmentTermId: row.enrollment_term_id,
-        credits: row.credits ?? 1.0,
-        archivedAt: row.archived_at,
-        archiveSource: row.archive_source,
-      }));
+      return courseReader.getArchivedSortedByTermEnd().map(mapCourseRowToListDto);
     } catch (error) {
       logger.error(`Failed to get archived courses: ${error}`);
       throw error;

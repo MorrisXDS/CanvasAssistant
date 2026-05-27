@@ -10,6 +10,34 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ## [Unreleased]
 
+### Fixed
+
+- `2026-05-27 18:03 UTC` — Two silent course-visibility bugs (ADR-0007 PR-B).
+  `data:getCourses` previously ran raw SQL filtering only `archived_at IS NULL
+AND deleted_at IS NULL` — it was returning **hidden courses** and **ignoring
+  term selection** entirely (`courseDataHandlers.ts:43`). The renderer's
+  `fetchCourses` then **re-derived** term filtering with different math from
+  the Oracle, so the same course could appear or disappear depending on which
+  route loaded it (`coreDataSlice.ts:113`). Both bugs are now closed —
+  `data:getCourses` routes through `VisibilityOracle.getVisibleCourseIds()` +
+  the new `CourseReader.getByIds()`, and the renderer trusts the IPC's
+  filtered list. Deletes the unused `localStorage`-fallback term-selection
+  path that had been kept "during migration" since the move to SQLite. No
+  user action needed.
+
+### Changed
+
+- `2026-05-27 18:03 UTC` — Architecture refactor: new `src/layers/l1-persistence/readers/`
+  directory introduces the **Reader** pattern (per [ADR-0007](docs/adr/0007-ipc-handlers-thin-adapters.md)).
+  `CourseReader` is the first; it owns all SQL touching the `courses` table.
+  `VisibilityOracle` is narrowed to a pure visibility-state oracle — its
+  row-returning methods (`getVisibleCourses`, `getVisibleTasks`,
+  `getVisibleIncompleteTasks`, `getArchivedCourses`) are removed (they had no
+  production callers). `data:getCourse` and `data:getArchivedCourses` IPC
+  handlers also migrated to the new pattern (thin adapter → Oracle + Reader
+  - `courseMapper`). Subsequent PRs (C..N of ADR-0007) migrate the other
+    handler families one at a time.
+
 ### Added
 
 - `2026-05-27 04:30 UTC` — Domain glossary at `CONTEXT.md` (repo root). ~52 canonical terms

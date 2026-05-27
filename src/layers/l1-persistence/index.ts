@@ -28,9 +28,11 @@ export {
   VisibilityOracle,
   VisibilityOracleConfig,
   TermSelection,
-  VisibleCourseRow,
   VisibleTaskRow,
 } from './VisibilityOracle';
+
+// L1 Readers — see docs/adr/0007 (ADR-0007)
+export { CourseReader } from './readers/CourseReader';
 
 // Repositories
 export {
