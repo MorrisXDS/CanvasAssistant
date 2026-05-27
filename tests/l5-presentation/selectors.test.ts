@@ -416,6 +416,35 @@ describe('L5 Selectors', () => {
 
       expect(result.map((n) => n.id)).toEqual([10]);
     });
+
+    it('handles a mixed batch — keeps visible-course and system entries, drops the rest', () => {
+      // Both branches of the OR-predicate (`courseId === null || courseIds.has(...)`)
+      // exercised in the same call. A future regression that decouples the branches
+      // (e.g. accidental AND, or dropping the null guard) gets caught here.
+      const courses = [createCourse({ id: 1 })];
+      const notifications = [
+        createNotification({ id: 10, courseId: 1 }), // kept (course is in state)
+        createNotification({ id: 11, courseId: 2 }), // dropped (course not in state)
+        createNotification({ id: 12, courseId: null }), // kept (system notification)
+        createNotification({ id: 13, courseId: 999 }), // dropped (course not in state)
+      ];
+      const state = createBaseState({ courses, notifications });
+
+      const result = selectors.visibleNotifications(state);
+
+      expect(result.map((n) => n.id)).toEqual([10, 12]);
+    });
+
+    it('returns [] (not undefined, not throws) when state is fully empty', () => {
+      // Locks the empty-state contract — downstream `.map`/`.filter` callsites
+      // depend on always getting an array. A future "optimization" early-returning
+      // null would break them silently.
+      const state = createBaseState({ courses: [], notifications: [] });
+
+      const result = selectors.visibleNotifications(state);
+
+      expect(result).toEqual([]);
+    });
   });
 
   describe('visibleTasks', () => {
@@ -430,6 +459,16 @@ describe('L5 Selectors', () => {
       const result = selectors.visibleTasks(state);
 
       expect(result.map((t) => t.id)).toEqual([10]);
+    });
+
+    it('returns [] (not undefined, not throws) when state is fully empty', () => {
+      // Same empty-state contract as visibleNotifications — every consumer
+      // depends on getting an array back even when there's nothing to filter.
+      const state = createBaseState({ courses: [], tasks: [] });
+
+      const result = selectors.visibleTasks(state);
+
+      expect(result).toEqual([]);
     });
   });
 });
