@@ -107,4 +107,25 @@ describe('createCoreDataSlice → fetchCourses', () => {
     expect(getCourses).toHaveBeenCalledTimes(1);
     expect(setSpy).toHaveBeenCalledWith({ courses: mockCourses });
   });
+
+  it('does not read localStorage (the deleted "academicSettings" fallback stays deleted)', async () => {
+    // PR-B deleted a localStorage.getItem('academicSettings') fallback that
+    // re-derived term filtering when the IPC was unavailable. That fallback
+    // was a TWO-source-of-truth bug — the renderer's localStorage value
+    // could disagree with the database's VisibilityOracle setting. This
+    // negative test catches a regression that re-adds ANY localStorage read
+    // (the specific key, or a new key with the same anti-pattern).
+    const getItemSpy = jest.spyOn(Storage.prototype, 'getItem');
+    stubWindowApi({ getCourses: jest.fn().mockResolvedValue([]) });
+
+    const setSpy = jest.fn();
+    const getStub = jest.fn(() => ({}) as Store);
+    const slice = createCoreDataSlice(setSpy, getStub);
+
+    await slice.fetchCourses!();
+
+    expect(getItemSpy).not.toHaveBeenCalled();
+
+    getItemSpy.mockRestore();
+  });
 });
