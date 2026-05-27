@@ -27,6 +27,15 @@ AND deleted_at IS NULL` — it was returning **hidden courses** and **ignoring
 
 ### Changed
 
+- `2026-05-27 22:08 UTC` — Visibility-defense filtering moved into centralized
+  Zustand selectors (ADR-0007 PR-C). Components no longer re-derive the
+  `notifications.filter(n => courseMap.has(n.courseId))` defense inline — they
+  call `useStore(selectors.visibleNotifications)` / `selectors.visibleTasks`.
+  The selectors close the brief staleness window between `fetchCourses` and the
+  entity-specific re-fetches after a visibility change. Dashboard migrated;
+  CLAUDE.md §8's "Correct Pattern (L6 UI Component)" example updated to point
+  at the selectors. Other components that use `courseMap` for lookup (course
+  color/code on a card, not for filtering) are unaffected — lookup stays local.
 - `2026-05-27 18:03 UTC` — Architecture refactor: new `src/layers/l1-persistence/readers/`
   directory introduces the **Reader** pattern (per [ADR-0007](docs/adr/0007-ipc-handlers-thin-adapters.md)).
   `CourseReader` is the first; it owns all SQL touching the `courses` table.

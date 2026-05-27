@@ -40,6 +40,36 @@ export const selectors = {
     state.notifications.filter((n) => !n.dismissedAt),
 
   /**
+   * Get notifications whose course is currently in `state.courses`. System
+   * notifications (`courseId === null`) are always included. The IPC handler
+   * already filters by visibility, but there is a brief window between
+   * `fetchCourses` and `fetchNotifications` re-fetches after a visibility
+   * change where `state.notifications` may carry entries for a course that
+   * was just hidden/archived. This selector closes that staleness window.
+   *
+   * Centralises the per-component `notifications.filter(n => courseMap.has(n.courseId))`
+   * pattern (see CLAUDE.md §8). Prefer `useStore(selectors.visibleNotifications)`
+   * over the inline filter in new code.
+   */
+  visibleNotifications: (state: StoreState) => {
+    const courseIds = new Set(state.courses.map((c) => c.id));
+    return state.notifications.filter(
+      (n) => n.courseId === null || courseIds.has(n.courseId)
+    );
+  },
+
+  /**
+   * Get tasks whose course is currently in `state.courses`. Defends the same
+   * staleness window as `visibleNotifications` for the tasks list. Use
+   * `useStore(selectors.visibleTasks)` over the inline
+   * `tasks.filter(t => courseMap.has(t.courseId))` pattern.
+   */
+  visibleTasks: (state: StoreState) => {
+    const courseIds = new Set(state.courses.map((c) => c.id));
+    return state.tasks.filter((t) => courseIds.has(t.courseId));
+  },
+
+  /**
    * Get simulated grade for a task
    */
   simulatedGrade: (taskId: number) => (state: StoreState) =>
