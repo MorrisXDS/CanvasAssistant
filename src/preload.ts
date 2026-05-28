@@ -217,6 +217,13 @@ const api = {
 
   getFiles: () => ipcRenderer.invoke('data:getFiles'),
 
+  // FileEntity (ADR-0008 PR-F.3) — forward-facing unified read channels.
+  getFileEntity: (canvasId: string) => ipcRenderer.invoke('data:getFileEntity', canvasId),
+  getFileEntitiesByCourse: (courseId: number) =>
+    ipcRenderer.invoke('data:getFileEntitiesByCourse', courseId),
+  getFileEntitiesForVisibleCourses: () =>
+    ipcRenderer.invoke('data:getFileEntitiesForVisibleCourses'),
+
   getModuleItems: () => ipcRenderer.invoke('data:getModuleItems'),
 
   getResourceCanvasUrl: (resourceId: number, source: 'resource' | 'attachment') =>

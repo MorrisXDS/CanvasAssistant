@@ -6,6 +6,7 @@
 import { ipcMain } from 'electron';
 import type { IpcContext } from './IpcContext';
 import type { Database } from '../../layers/l1-persistence/Database';
+import { AnnouncementAttachmentReader } from '../../layers/l1-persistence';
 
 /** Maps html-{sourceType} to Canvas URL path segment */
 const HTML_SOURCE_PATHS: Record<string, string> = {
@@ -66,6 +67,7 @@ export function registerFileDataHandlers(ctx: IpcContext): void {
   const database = ctx.getDatabase();
   const logger = ctx.getLogger();
   const getVisibilityOracle = ctx.getVisibilityOracle;
+  const getFileEntityProvider = ctx.getFileEntityProvider;
   const getCanvasClient = ctx.getCanvasClient;
 
   // ============ File Data Handlers ============
@@ -338,24 +340,19 @@ export function registerFileDataHandlers(ctx: IpcContext): void {
 
   // ============ Attachment Handlers ============
 
-  // Get attachments for a notification
+  // Get attachments for a notification.
+  //
+  // Per ADR-0007/ADR-0008 (PR-F.3): routes through AnnouncementAttachmentReader
+  // composed inside FileEntityProvider. No raw SQL in the handler.
   ipcMain.handle('data:getAttachments', (_event, notificationId: number) => {
     try {
-      const rows = database.executeRead<{
-        id: number;
-        notification_id: number;
-        external_id: string;
-        display_name: string;
-        filename: string;
-        url: string;
-        size_bytes: number | null;
-        content_type: string | null;
-        local_path: string | null;
-        download_status: string;
-        downloaded_at: string | null;
-      }>('SELECT * FROM notification_attachments WHERE notification_id = ?', [
-        notificationId,
-      ]);
+      // The provider doesn't expose getByNotificationId directly — that's a
+      // reader concern, not a "unified entity" concern. We pull the reader
+      // out via the provider's collaborator-injection. Simpler: ctx exposes
+      // the provider; we instantiate a fresh reader on the database here.
+      // (PR-F.2's slice-1 added the reader to the L1 barrel.)
+      const reader = new AnnouncementAttachmentReader(database);
+      const rows = reader.getByNotificationId(notificationId);
 
       return rows.map((row) => ({
         id: row.id,
@@ -372,6 +369,55 @@ export function registerFileDataHandlers(ctx: IpcContext): void {
       }));
     } catch (error) {
       logger.error(`Failed to get attachments: ${error}`);
+      throw error;
+    }
+  });
+
+  // ============ FileEntity Handlers (ADR-0008 PR-F.3) ============
+  //
+  // Forward-facing channels returning the unified FileEntity wire shape from
+  // ADR-0008. The legacy data:getFiles / data:getCourseFiles channels still
+  // return the older FilesData shape until consumer migration completes.
+
+  // Single FileEntity by Canvas File ID. Single-id lookup bypasses
+  // visibility (per ADR-0007 sub-decision alpha) — caller knew the id.
+  ipcMain.handle('data:getFileEntity', (_event, canvasId: string) => {
+    try {
+      const provider = getFileEntityProvider();
+      if (!provider) return null;
+      return provider.findByCanvasId(canvasId);
+    } catch (error) {
+      logger.error(`Failed to get file entity for ${canvasId}: ${error}`);
+      throw error;
+    }
+  });
+
+  // All FileEntities in one course. No visibility filter — caller supplied
+  // a specific course id (single-scope, not list-scope). Matches the
+  // legacy data:getCourseFiles handler's no-visibility-filter behaviour.
+  ipcMain.handle('data:getFileEntitiesByCourse', (_event, courseId: number) => {
+    try {
+      const provider = getFileEntityProvider();
+      if (!provider) return [];
+      return provider.findByCourseIds([courseId]);
+    } catch (error) {
+      logger.error(`Failed to get file entities for course ${courseId}: ${error}`);
+      throw error;
+    }
+  });
+
+  // All FileEntities across all visible courses. List-scope endpoint —
+  // composes with VisibilityOracle.getVisibleCourseIds() per ADR-0007.
+  ipcMain.handle('data:getFileEntitiesForVisibleCourses', () => {
+    try {
+      const provider = getFileEntityProvider();
+      const oracle = getVisibilityOracle();
+      if (!provider || !oracle) return [];
+      const visibleIds = oracle.getVisibleCourseIds();
+      if (visibleIds.length === 0) return [];
+      return provider.findByCourseIds(visibleIds);
+    } catch (error) {
+      logger.error(`Failed to get file entities for visible courses: ${error}`);
       throw error;
     }
   });

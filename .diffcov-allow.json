@@ -2,5 +2,7 @@
   "_comment": "Per-PR diff-coverage allowlist. Paths listed here are exempt from the diff-coverage check (PR-Gate-1 slice 3). Use SPARINGLY — only for files where adding tests is genuinely impossible (e.g., pure Electron lifecycle entry points where mocking is more brittle than the bug we'd be catching) or for type-only modules where coverage is meaningless.",
   "_format": "Each path is a posix-style repo-relative path. No glob support yet; list specific files.",
   "_audit": "When adding an entry: include a one-line comment-style key (e.g., \"_why_<filename>\") in the same JSON object explaining the reason. Future readers grep for `_why_` to find the rationales.",
-  "paths": []
+  "_why_src_lifecycle_AppLifecycle_ts": "Electron app lifecycle entry. Constructs L1/L2/L4 services and wires them into IpcContext at boot. Mocking the Electron app/BrowserWindow/IPC platform here is more brittle than the bug we'd be catching — broken wiring surfaces at app launch in /verify or /manual-test-launch, and the wired services have their own behavioural tests. Specific risks: typo in the FileEntityProvider construction (PR-F.3) would crash at boot; typo in a getter (e.g., returning the wrong field) would surface the moment any handler uses it.",
+  "_why_src_preload_ts": "Electron preload script. One-line `ipcRenderer.invoke` bindings that expose IPC channels to the renderer's contextBridge. Cannot be exercised in jest — contextBridge + ipcRenderer require the Electron runtime. The bindings are mechanical wrappers; the real behaviour lives in the IPC handlers (which ARE tested).",
+  "paths": ["src/lifecycle/AppLifecycle.ts", "src/preload.ts"]
 }
