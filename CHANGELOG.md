@@ -49,6 +49,7 @@ AND deleted_at IS NULL` — it was returning **hidden courses** and **ignoring
 
 ### Added
 
+- `2026-05-28 03:26 UTC` — `FileEntity` IPC contract type (ADR-0008 PR-F.1 — Status: Proposed). A unified read-time view of a Canvas-side file blob, keyed by Canvas File ID (`canvasId`), with canonical fields once at the top level (`filename`, `displayName`, `sizeBytes`, `contentType`, `uuid`, `courseId`) plus a `presences` record collapsing the two physical row sources — `canvasFile` (nullable; the `resources` row when present) and `attachments` (array; one entry per announcement that attaches the blob). A Zod refinement enforces "at least one presence is populated" at parse time. **Contract-only this PR** — `FileEntityProvider` and the IPC handlers that produce/consume these land in PR-F.2 and PR-F.3 respectively. Unblocks Issue [#29](https://github.com/MorrisXDS/CanvasAssistant/issues/29) (clickable announcement-body file links). CONTEXT.md updated to define the term and supersede the "same blob, two entities" open ambiguity.
 - `2026-05-27 04:30 UTC` — Domain glossary at `CONTEXT.md` (repo root). ~52 canonical terms
   across 9 sections (cross-cutting states, courses, files & references, tasks & accept
   queue, announcements, sync, grades, calendar, course content) plus a "settings, coordination,

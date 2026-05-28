@@ -44,7 +44,7 @@ The schema's "notification" name dates from when the table was designed to be a 
 
 ### Files & references
 
-The codebase has two physically distinct file entities (different tables, different lifecycles, different identity) plus a separate concept for _pointers to_ them. The glossary keeps these distinct rather than unifying them under a single `File` umbrella, because their identities and lifecycles genuinely differ.
+The codebase has two physically distinct file entities (different tables, different lifecycles, different identity), plus a separate concept for _pointers to_ them, plus — as of [ADR-0008](docs/adr/0008-file-entity-unification.md) — a **read-time** unification (**FileEntity**) that collapses the two physical entities under a single Canvas-ID-keyed view. The physical entities (CanvasFile, AnnouncementAttachment) remain distinct at the storage layer; FileEntity is what consumers downstream of `FileEntityProvider` see.
 
 **CanvasFile**:
 A file inside a course's content area — a PDF in a module, an upload under the Files section, a syllabus attachment. Has a Canvas-side identity (external ID) and an optional local download. Stored in the `resources` table with `type='file'`. Carries built-in provenance: `context_type` and `context_id` record where the file was first surfaced (`page`/`assignment`/`syllabus`/`module`/`announcement`/`files`); `first_referenced_by` adds a finer-grained source key in the form `'assignment:123'` or `'page:front-page'`. Has a `remote_updated_at` column recording the Canvas-side modification time — this is a real staleness signal but is not currently consulted by the UI. A `version` column supports optimistic locking on writes. Lives as long as the course row is unarchived; the row outlives Canvas-side file deletion if no sweeper revisits it.
@@ -53,6 +53,12 @@ _Avoid_: "resource", "FileResource", "course file"
 **AnnouncementAttachment**:
 A file attached to an announcement when that announcement was posted on Canvas. Owned by exactly one announcement; dies with the announcement (FK cascade). Stored in the `notification_attachments` table. Carries an explicit `downloadStatus` lifecycle (pending / downloading / completed / failed) that CanvasFiles don't have. As with CanvasFile, the row outlives Canvas-side file deletion if the announcement still exists.
 _Avoid_: "notification attachment", "FileAttachment", "attachment" (bare — too ambiguous)
+
+**FileEntity**:
+The unified read-time view of a single Canvas file blob, identified by the Canvas File ID (`canvasId`). Produced by `FileEntityProvider` (an L1 service introduced in PR-F.2) by composing reads against the two physical tables. **Not a row** — has no backing table; it's a synthesized shape. Combines canonical fields (`filename`, `displayName`, `sizeBytes`, `contentType`, `uuid`, `courseId`) once at the top level with a `presences` discriminated record: `canvasFile` (nullable; at most one — the `resources` row) and `attachments` (array, possibly empty — one entry per announcement that attaches the blob). At least one presence must be populated. The shape's purpose is to give consumers (Issue #29's clickable announcement-body file links, future Files-page consolidation) a single Canvas-ID-keyed lookup that doesn't force them to decide which physical table to query. The wire schema lives in `src/shared/ipc-contract.ts`; the design rationale lives in [ADR-0008](docs/adr/0008-file-entity-unification.md).
+
+The premise — that the same Canvas blob receives the same `external_id` across both sync paths — is held at ~85% confidence based on Canvas API URL patterns and the codebase's modeling; not yet directly observed in production data. PR-F.2's provider implementation will log any divergence at startup so the assumption becomes a live monitored invariant.
+_Avoid_: "File" (bare — too generic; matches the avoidance on CanvasFile/AnnouncementAttachment), "CanvasBlob" (the older name used in FOLLOWUPS during the design exploration; not the canonical term)
 
 **FileReference**:
 A pointer from a parent entity to a file. Has provenance (which parent) and, sometimes, position (where in the parent). Resolves to either a CanvasFile or an AnnouncementAttachment. Three subtypes today; the umbrella term exists so consumers (e.g. a renderer turning embedded links into Files-page navigations) can talk generically.
@@ -373,11 +379,16 @@ A Task has FKs to **both** (`task_group_id` and `assignment_group_id`) and they 
 
 An announcement-body link can be stored simultaneously in **both** `announcement_file_references` (with HTML character offsets) **and** `content_file_references` (with download-status tracking) — two rows describing the same conceptual pointer with different metadata. Modules have a parallel split between `module_items` (the user-facing item) and `content_file_references` (the download tracking). No code currently enforces consistency between the two rows. Whether this dual encoding is a deliberate separation of concerns (positional pointer vs downloadable target) or accidental legacy coexistence is unverified — see [docs/FOLLOWUPS.md](docs/FOLLOWUPS.md).
 
-#### Flagged ambiguity — same blob, two entities
+#### Flagged ambiguity — same blob, two entities (resolved at read-time by FileEntity)
 
-A single Canvas file (the underlying physical PDF / DOCX / etc.) can exist locally as **both** a CanvasFile (because it's in a course's Files area) **and** an AnnouncementAttachment (because an announcement attached it). There is no system-level link between the two rows, and they download independently — the same bytes can land on disk twice, under different paths. The Files page lists both. The "render announcement-body references as clickable Files-page links" feature (tracked as [#29](https://github.com/MorrisXDS/CanvasAssistant/issues/29)) navigates to the AnnouncementAttachment because that's what the announcement-body link literally points at.
+A single Canvas file (the underlying physical PDF / DOCX / etc.) can exist locally as **both** a CanvasFile (because it's in a course's Files area) **and** an AnnouncementAttachment (because an announcement attached it). There is no system-level FK link between the two rows at the storage layer, and they download independently — the same bytes can still land on disk twice, under different paths.
 
-Whether to unify under a deeper `CanvasBlob` concept is an open architectural question — see [docs/FOLLOWUPS.md](docs/FOLLOWUPS.md). It depends on whether Canvas returns a stable file ID across both sync paths, which has not yet been verified.
+The **read-time** unification is **FileEntity** (see entry above), introduced by [ADR-0008](docs/adr/0008-file-entity-unification.md). Consumers that need a Canvas-ID-keyed view (Issue [#29](https://github.com/MorrisXDS/CanvasAssistant/issues/29)'s clickable announcement-body file links, future Files-page consolidation) go through `FileEntityProvider`. The two physical rows still exist; FileEntity just collapses them under `canvasId` for consumers that don't care which table the blob currently lives in.
+
+What's still open / out of scope of ADR-0008:
+
+- **Write-side unification.** Sync still writes to both physical tables independently. Same blob, two writes. A future ADR could introduce a backing `file_entities` table that both physical rows FK to (Shape C in the ADR-0008 trade-off matrix), but PR-F's scope stops at the read model.
+- **Download dedup.** The same blob still downloads twice if it appears in both a course's Files area and an announcement attachment. The local file system still receives two copies. A future PR could route both downloads to a shared local path via `canvasId` — not addressed by PR-F.
 
 ### Settings, coordination, exports, credentials
 
