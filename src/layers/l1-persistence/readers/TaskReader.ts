@@ -55,6 +55,15 @@ export class TaskReader {
   }
 
   /**
+   * Every row in `tasks`. Intended for debug/admin endpoints only —
+   * production callers should scope by course via `getByCourseIds`.
+   * Includes soft-deleted rows.
+   */
+  getAll(): TaskRow[] {
+    return this.db.executeRead<TaskRow>(`SELECT * FROM tasks`);
+  }
+
+  /**
    * User-created tasks in one course that have not been linked to a
    * Canvas task — i.e. candidate merge targets for a QueuedTask.
    * Filters: `source_type='user'`, `external_id IS NULL`, `deleted_at IS NULL`.

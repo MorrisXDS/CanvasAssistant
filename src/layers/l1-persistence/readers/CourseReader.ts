@@ -46,6 +46,15 @@ export class CourseReader {
   }
 
   /**
+   * Every row in `courses`. Intended for debug/admin endpoints only —
+   * production callers should compose with `VisibilityOracle` and use
+   * `getByIds`. Includes archived/hidden/deleted rows.
+   */
+  getAll(): CourseRow[] {
+    return this.db.executeRead<CourseRow>(`SELECT * FROM courses`);
+  }
+
+  /**
    * Get archived courses sorted by their enrollment term's end date (most
    * recent first), then alphabetically by name. Excludes soft-deleted rows.
    *

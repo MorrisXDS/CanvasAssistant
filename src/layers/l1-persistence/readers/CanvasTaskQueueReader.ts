@@ -40,8 +40,18 @@ export class CanvasTaskQueueReader {
     return this.db.executeRead<CanvasTaskQueueRow>(
       `SELECT * FROM canvas_task_queue
        WHERE course_id IN (${placeholders}) ${statusClause}
-       ORDER BY first_seen_at DESC`,
+       ORDER BY due_at ASC, first_seen_at ASC`,
       params
+    );
+  }
+
+  /**
+   * Every row in `canvas_task_queue`. Intended for debug/admin endpoints
+   * only — production callers should scope by course.
+   */
+  getAll(): CanvasTaskQueueRow[] {
+    return this.db.executeRead<CanvasTaskQueueRow>(
+      `SELECT * FROM canvas_task_queue ORDER BY due_at ASC, first_seen_at ASC`
     );
   }
 

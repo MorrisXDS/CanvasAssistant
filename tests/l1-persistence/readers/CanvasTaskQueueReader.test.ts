@@ -50,26 +50,42 @@ describe('CanvasTaskQueueReader', () => {
       expect(rows.map((r) => r.external_id).sort()).toEqual(['p1', 'p2']);
     });
 
-    test('orders by first_seen_at DESC (newest first)', () => {
+    test('orders by due_at ASC, first_seen_at ASC (most urgent first)', () => {
       seedQueue(db, {
         courseId: 1,
-        externalId: 'old',
+        externalId: 'late',
+        dueAt: '2026-12-01T00:00:00Z',
         firstSeenAt: '2026-01-01T00:00:00Z',
       });
       seedQueue(db, {
         courseId: 1,
-        externalId: 'new',
-        firstSeenAt: '2026-05-01T00:00:00Z',
+        externalId: 'soon',
+        dueAt: '2026-06-01T00:00:00Z',
+        firstSeenAt: '2026-01-01T00:00:00Z',
       });
       seedQueue(db, {
         courseId: 1,
-        externalId: 'mid',
-        firstSeenAt: '2026-03-01T00:00:00Z',
+        externalId: 'nodue-early',
+        dueAt: null,
+        firstSeenAt: '2026-01-01T00:00:00Z',
+      });
+      seedQueue(db, {
+        courseId: 1,
+        externalId: 'nodue-late',
+        dueAt: null,
+        firstSeenAt: '2026-05-01T00:00:00Z',
       });
 
       const rows = reader.getByCourseIds([1]);
 
-      expect(rows.map((r) => r.external_id)).toEqual(['new', 'mid', 'old']);
+      // SQLite orders NULL first by default with ASC. So nodue rows come
+      // before due rows, tied on due_at NULL → broken by first_seen_at ASC.
+      expect(rows.map((r) => r.external_id)).toEqual([
+        'nodue-early',
+        'nodue-late',
+        'soon',
+        'late',
+      ]);
     });
 
     test('returns empty for empty input', () => {
@@ -119,17 +135,19 @@ function seedQueue(
     externalId: string;
     status?: 'pending' | 'accepted' | 'rejected' | 'merged';
     firstSeenAt?: string;
+    dueAt?: string | null;
   }
 ): void {
   db.executeWrite(
     `INSERT INTO canvas_task_queue (
-       course_id, external_id, title, status, first_seen_at, last_synced_at, canvas_data
-     ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+       course_id, external_id, title, status, due_at, first_seen_at, last_synced_at, canvas_data
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       data.courseId,
       data.externalId,
       `Title ${data.externalId}`,
       data.status ?? 'pending',
+      data.dueAt === undefined ? null : data.dueAt,
       data.firstSeenAt ?? '2026-01-01T00:00:00Z',
       data.firstSeenAt ?? '2026-01-01T00:00:00Z',
       JSON.stringify({ id: data.externalId, name: `Title ${data.externalId}` }),
