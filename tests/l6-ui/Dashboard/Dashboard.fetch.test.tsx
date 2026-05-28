@@ -121,4 +121,40 @@ describe('Dashboard integration — IPC → store → component chain', () => {
     expect(screen.getByText('Visible Note')).toBeInTheDocument();
     expect(screen.queryByText('Stale Note')).not.toBeInTheDocument();
   });
+
+  it('mid-session course removal via re-fetch propagates to Dashboard', async () => {
+    // Initial: two visible courses, each with a notification.
+    env.api.getCourses.mockResolvedValue([
+      makeCourse({ id: 1, code: 'CS101' }),
+      makeCourse({ id: 2, code: 'MAT201' }),
+    ]);
+    env.api.getNotifications.mockResolvedValue([
+      makeNotification({ id: 10, courseId: 1, title: 'Note One' }),
+      makeNotification({ id: 11, courseId: 2, title: 'Note Two' }),
+    ]);
+
+    renderDashboard();
+
+    await act(async () => {
+      await useStore.getState().fetchCourses();
+      await useStore.getState().fetchNotifications();
+    });
+
+    expect(screen.getByText('Note One')).toBeInTheDocument();
+    expect(screen.getByText('Note Two')).toBeInTheDocument();
+
+    // User hides course 2 (or auto-archive runs). The IPC's next getCourses
+    // call returns only course 1. Notifications are NOT re-fetched yet —
+    // the staleness window the selector exists to defend.
+    env.api.getCourses.mockResolvedValue([makeCourse({ id: 1, code: 'CS101' })]);
+
+    await act(async () => {
+      await useStore.getState().fetchCourses();
+    });
+
+    // Note One stays — course 1 still visible.
+    expect(screen.getByText('Note One')).toBeInTheDocument();
+    // Note Two drops — its course is gone from state, selector filters it out.
+    expect(screen.queryByText('Note Two')).not.toBeInTheDocument();
+  });
 });
