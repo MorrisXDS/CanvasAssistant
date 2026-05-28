@@ -7,10 +7,16 @@ import { ipcMain } from 'electron';
 import type { IpcContext } from './IpcContext';
 import type { TaskRow, CanvasTaskQueueRow } from '../../layers/l1-persistence';
 import {
+  TaskReader,
+  CanvasTaskQueueReader,
+  CourseReader,
+} from '../../layers/l1-persistence';
+import {
   AcceptQueuedTaskCommand,
   RejectQueuedTaskCommand,
   BulkAcceptQueuedTasksCommand,
   MergeQueuedTaskCommand,
+  DeleteTaskCommand,
 } from '../../layers/l4-controller';
 import { createSimulationContext } from '../../layers/l4-controller/types';
 import {
@@ -141,58 +147,39 @@ export function registerTaskDataHandlers(ctx: IpcContext): void {
   const logger = ctx.getLogger();
   const getVisibilityOracle = ctx.getVisibilityOracle;
 
+  // L1 readers — per ADR-0007 / ADR-0008 PR-D, no raw `database.execute*`
+  // calls in this handler file. SQL lives in these reader classes.
+  const taskReader = new TaskReader(database);
+  const queueReader = new CanvasTaskQueueReader(database);
+  const courseReader = new CourseReader(database);
+
   ipcMain.handle(
     'data:getTasks',
     (_event, options?: { courseIds?: number[] } | number) => {
       try {
-        // Use VisibilityOracle as single source of truth for visibility
-        // This ensures consistent filtering across all services
-        let sql: string;
-        let params: number[] = [];
-
         if (typeof options === 'number') {
-          // Legacy: single courseId - verify it's visible first
+          // Legacy: single courseId. Verify visible, then read.
           if (getVisibilityOracle() && !getVisibilityOracle()!.isCourseVisible(options)) {
-            return []; // Course not visible, return empty
+            return [];
           }
-          sql = `SELECT t.* FROM tasks t
-                 WHERE t.course_id = ?
-                   AND (t.deleted_at IS NULL)
-                 ORDER BY t.priority_score DESC`;
-          params = [options];
-        } else if (
+          return taskReader.getByCourseIds([options]).map(mapTaskRowToResponse);
+        }
+
+        const visibleIds = getVisibilityOracle()?.getVisibleCourseIds() ?? [];
+        if (visibleIds.length === 0) return [];
+
+        if (
           options?.courseIds &&
           Array.isArray(options.courseIds) &&
           options.courseIds.length > 0
         ) {
-          // Filter provided courseIds to only visible ones
-          const visibleIds = getVisibilityOracle()?.getVisibleCourseIds() ?? [];
           const visibleSet = new Set(visibleIds);
-          const filteredCourseIds = options.courseIds.filter((id) => visibleSet.has(id));
-
-          if (filteredCourseIds.length === 0) return [];
-
-          const placeholders = filteredCourseIds.map(() => '?').join(', ');
-          sql = `SELECT t.* FROM tasks t
-                 WHERE t.course_id IN (${placeholders})
-                   AND (t.deleted_at IS NULL)
-                 ORDER BY t.priority_score DESC`;
-          params = filteredCourseIds;
-        } else {
-          // No filter - return tasks from all visible courses
-          const visibleIds = getVisibilityOracle()?.getVisibleCourseIds() ?? [];
-          if (visibleIds.length === 0) return [];
-
-          const placeholders = visibleIds.map(() => '?').join(', ');
-          sql = `SELECT t.* FROM tasks t
-                 WHERE t.course_id IN (${placeholders})
-                   AND (t.deleted_at IS NULL)
-                 ORDER BY t.priority_score DESC`;
-          params = visibleIds;
+          const filtered = options.courseIds.filter((id) => visibleSet.has(id));
+          if (filtered.length === 0) return [];
+          return taskReader.getByCourseIds(filtered).map(mapTaskRowToResponse);
         }
 
-        const rows = database.executeRead<TaskRow>(sql, params);
-        return rows.map(mapTaskRowToResponse);
+        return taskReader.getByCourseIds(visibleIds).map(mapTaskRowToResponse);
       } catch (error) {
         logger.error(`Failed to get tasks: ${error}`);
         throw error;
@@ -200,16 +187,13 @@ export function registerTaskDataHandlers(ctx: IpcContext): void {
     }
   );
 
-  // Get tasks for an archived course (bypasses visibility filtering)
-  // Archived courses are local-only sandboxes - users can view/edit without affecting active workflows
+  // Get tasks for an archived course (bypasses visibility filtering).
+  // Archived courses are local-only sandboxes — users can view/edit
+  // without affecting active workflows. Includes soft-deleted rows so
+  // the archive view is complete.
   ipcMain.handle('data:getTasksForArchivedCourse', (_event, courseId: number) => {
     try {
-      // Verify the course is actually archived
-      const course = database.executeReadOne<{ archived_at: string | null }>(
-        'SELECT archived_at FROM courses WHERE id = ?',
-        [courseId]
-      );
-
+      const course = courseReader.getById(courseId);
       if (!course?.archived_at) {
         logger.error(
           `Attempted to get tasks for non-archived course ${courseId} via archived endpoint`
@@ -217,12 +201,9 @@ export function registerTaskDataHandlers(ctx: IpcContext): void {
         return [];
       }
 
-      const rows = database.executeRead<TaskRow>(
-        `SELECT * FROM tasks WHERE course_id = ? ORDER BY priority_score DESC`,
-        [courseId]
-      );
-
-      return rows.map(mapTaskRowToResponse);
+      return taskReader
+        .getByCourseIds([courseId], { includeDeleted: true })
+        .map(mapTaskRowToResponse);
     } catch (error) {
       logger.error(`Failed to get tasks for archived course: ${error}`);
       throw error;
@@ -256,75 +237,50 @@ export function registerTaskDataHandlers(ctx: IpcContext): void {
     };
   }
 
-  // Get all pending queue entries (filtered by visibility)
+  // Get queue entries (filtered by visibility). Defaults to status='pending'.
   ipcMain.handle('data:getTaskQueue', (_event, options?: { status?: string }) => {
     try {
       const visibleIds = getVisibilityOracle()?.getVisibleCourseIds() ?? [];
       if (visibleIds.length === 0) return [];
-
-      const placeholders = visibleIds.map(() => '?').join(', ');
-      let sql = `SELECT * FROM canvas_task_queue WHERE course_id IN (${placeholders})`;
-      const params: (string | number)[] = [...visibleIds];
-
-      if (options?.status) {
-        sql += ' AND status = ?';
-        params.push(options.status);
-      } else {
-        // Default to pending only
-        sql += " AND status = 'pending'";
-      }
-
-      sql += ' ORDER BY due_at ASC, first_seen_at ASC';
-
-      const rows = database.executeRead<CanvasTaskQueueRow>(sql, params);
-      return rows.map(mapQueueRowToResponse);
+      const status = (options?.status ?? 'pending') as
+        | 'pending'
+        | 'accepted'
+        | 'rejected'
+        | 'merged';
+      return queueReader
+        .getByCourseIds(visibleIds, { status })
+        .map(mapQueueRowToResponse);
     } catch (error) {
       logger.error(`Failed to get task queue: ${error}`);
       throw error;
     }
   });
 
-  // Get queue count (for badges)
+  // Get queue count (for badges). Hardcoded to status='pending'.
   ipcMain.handle('data:getTaskQueueCount', (_event, options?: { courseId?: number }) => {
     try {
       const visibleIds = getVisibilityOracle()?.getVisibleCourseIds() ?? [];
       if (visibleIds.length === 0) return 0;
 
-      let sql: string;
-      let params: number[];
-
       if (options?.courseId) {
-        // Verify course is visible
         if (!visibleIds.includes(options.courseId)) return 0;
-        sql = `SELECT COUNT(*) as count FROM canvas_task_queue WHERE course_id = ? AND status = 'pending'`;
-        params = [options.courseId];
-      } else {
-        const placeholders = visibleIds.map(() => '?').join(', ');
-        sql = `SELECT COUNT(*) as count FROM canvas_task_queue WHERE course_id IN (${placeholders}) AND status = 'pending'`;
-        params = visibleIds;
+        return queueReader.countByCourseIds([options.courseId], { status: 'pending' });
       }
-
-      const result = database.executeReadOne<{ count: number }>(sql, params);
-      return result?.count ?? 0;
+      return queueReader.countByCourseIds(visibleIds, { status: 'pending' });
     } catch (error) {
       logger.error(`Failed to get task queue count: ${error}`);
       throw error;
     }
   });
 
-  // Get queue entries for a specific course
+  // Get queue entries for one course (must be visible). Status='pending'.
   ipcMain.handle('data:getTaskQueueForCourse', (_event, courseId: number) => {
     try {
-      // Verify course is visible
       const visibleIds = getVisibilityOracle()?.getVisibleCourseIds() ?? [];
       if (!visibleIds.includes(courseId)) return [];
-
-      const rows = database.executeRead<CanvasTaskQueueRow>(
-        `SELECT * FROM canvas_task_queue WHERE course_id = ? AND status = 'pending'
-         ORDER BY due_at ASC, first_seen_at ASC`,
-        [courseId]
-      );
-      return rows.map(mapQueueRowToResponse);
+      return queueReader
+        .getByCourseIds([courseId], { status: 'pending' })
+        .map(mapQueueRowToResponse);
     } catch (error) {
       logger.error(`Failed to get task queue for course: ${error}`);
       throw error;
@@ -337,47 +293,34 @@ export function registerTaskDataHandlers(ctx: IpcContext): void {
     (_event, items: CheckDuplicateInput[]): DuplicateCheckResult[] => {
       try {
         return items.map((item) => {
-          type TaskLookupRow = {
-            id: number;
-            title: string;
-            due_at: string | null;
-            weight: number | null;
-            task_type: string | null;
-          };
+          // Reader returns the FULL TaskRow shape; locally narrow to what
+          // the matching logic needs.
+          const candidates = taskReader.findUnlinkedUserTasksInCourse(item.courseId);
 
-          // 1. Exact title match (case-insensitive)
-          const exactMatches = database.executeRead<TaskLookupRow>(
-            `SELECT id, title, due_at, weight, task_type FROM tasks
-             WHERE course_id = ? AND LOWER(title) = LOWER(?)
-               AND source_type = 'user' AND external_id IS NULL AND deleted_at IS NULL`,
-            [item.courseId, item.title]
+          // 1. Exact title match (case-insensitive). Done in JS now —
+          //    same set of candidates, same case-insensitive equality.
+          const exact = candidates.find(
+            (t) => t.title.toLowerCase() === item.title.toLowerCase()
           );
-
-          if (exactMatches.length > 0) {
-            const matched = exactMatches[0];
+          if (exact) {
             return {
               queueId: item.queueId,
               match: {
                 type: 'exact' as const,
                 task: {
-                  id: matched.id,
-                  title: matched.title,
-                  dueAt: matched.due_at,
-                  weight: matched.weight,
-                  taskType: matched.task_type,
+                  id: exact.id,
+                  title: exact.title,
+                  dueAt: exact.due_at,
+                  weight: exact.weight,
+                  taskType: exact.task_type ?? null,
                 },
-                conflictingFields: computeConflictingFields(item, matched),
+                conflictingFields: computeConflictingFields(item, exact),
               },
             };
           }
 
-          // 2. Fuzzy match via TaskMatcher
-          const userTasks = database.executeRead<TaskLookupRow>(
-            `SELECT id, title, due_at, weight, task_type FROM tasks
-             WHERE course_id = ? AND source_type = 'user'
-               AND external_id IS NULL AND deleted_at IS NULL`,
-            [item.courseId]
-          );
+          // 2. Fuzzy match via TaskMatcher across the same candidate set.
+          const userTasks = candidates;
 
           const canvasEntry = {
             id: item.queueId,
@@ -387,7 +330,7 @@ export function registerTaskDataHandlers(ctx: IpcContext): void {
             sourceType: 'canvas' as const,
           };
 
-          let bestMatch: { task: TaskLookupRow; confidence: number } | null = null;
+          let bestMatch: { task: TaskRow; confidence: number } | null = null;
           for (const ut of userTasks) {
             const result = findMatchingCanvasTask(
               {
@@ -417,7 +360,7 @@ export function registerTaskDataHandlers(ctx: IpcContext): void {
                   title: bestMatch.task.title,
                   dueAt: bestMatch.task.due_at,
                   weight: bestMatch.task.weight,
-                  taskType: bestMatch.task.task_type,
+                  taskType: bestMatch.task.task_type ?? null,
                 },
                 conflictingFields: computeConflictingFields(item, bestMatch.task),
               },
@@ -536,42 +479,44 @@ export function registerTaskDataHandlers(ctx: IpcContext): void {
   // DEBUG: Check course auto-accept settings
   ipcMain.handle('debug:getCourseSettings', (_event) => {
     try {
-      const courses = database.executeRead<{
-        id: number;
-        name: string;
-        auto_accept_canvas_tasks: number | null;
-      }>('SELECT id, name, auto_accept_canvas_tasks FROM courses');
-
-      return courses.map((c) => ({
+      return courseReader.getAll().map((c) => ({
         id: c.id,
         name: c.name,
-        autoAccept: c.auto_accept_canvas_tasks,
+        autoAccept: c.auto_accept_canvas_tasks ?? null,
       }));
     } catch (error) {
       return { error: String(error) };
     }
   });
 
-  // DEBUG: Force delete a task by ID (bypasses all checks)
-  ipcMain.handle('debug:forceDeleteTask', (_event, taskId: number) => {
+  // DEBUG: Force delete a task by ID (bypasses all checks).
+  // Routes through DeleteTaskCommand({force:true}) — same path as the
+  // production delete with the force flag set; this also tidies up
+  // link_suggestions referencing the task.
+  ipcMain.handle('debug:forceDeleteTask', async (_event, taskId: number) => {
     try {
-      // Get task info first
-      const task = database.executeReadOne<{
-        id: number;
-        title: string;
-        external_id: string;
-      }>('SELECT id, title, external_id FROM tasks WHERE id = ?', [taskId]);
-
+      const task = taskReader.getById(taskId);
       if (!task) {
         return { success: false, error: 'Task not found' };
       }
 
-      // Hard delete
-      database.executeWrite('DELETE FROM tasks WHERE id = ?', [taskId], 'tasks');
+      const command = new DeleteTaskCommand();
+      const result = await command.execute(
+        { db: database, simulationContext: createSimulationContext() },
+        { taskId, force: true }
+      );
+
+      if (!result.success) {
+        return { success: false, error: result.error ?? 'Delete failed' };
+      }
 
       return {
         success: true,
-        deleted: { id: task.id, title: task.title, externalId: task.external_id },
+        deleted: {
+          id: task.id,
+          title: task.title,
+          externalId: task.external_id ?? null,
+        },
       };
     } catch (error) {
       return { success: false, error: String(error) };
@@ -581,28 +526,13 @@ export function registerTaskDataHandlers(ctx: IpcContext): void {
   // DEBUG: Check queue and task state
   ipcMain.handle('debug:getQueueState', (_event, courseId?: number) => {
     try {
-      // Get all queue entries (including non-pending)
-      const queueEntries = database.executeRead<CanvasTaskQueueRow>(
-        courseId
-          ? 'SELECT * FROM canvas_task_queue WHERE course_id = ?'
-          : 'SELECT * FROM canvas_task_queue',
-        courseId ? [courseId] : []
-      );
+      const queueEntries = courseId
+        ? queueReader.getByCourseIds([courseId])
+        : queueReader.getAll();
 
-      // Get tasks with their acceptance status
-      const tasks = database.executeRead<{
-        id: number;
-        external_id: string;
-        title: string;
-        course_id: number;
-        source_type: string;
-        acceptance_method: string | null;
-      }>(
-        courseId
-          ? 'SELECT id, external_id, title, course_id, source_type, acceptance_method FROM tasks WHERE course_id = ?'
-          : 'SELECT id, external_id, title, course_id, source_type, acceptance_method FROM tasks',
-        courseId ? [courseId] : []
-      );
+      const tasks = courseId
+        ? taskReader.getByCourseIds([courseId], { includeDeleted: true })
+        : taskReader.getAll();
 
       return {
         queueEntries: queueEntries.map((q) => ({
@@ -614,10 +544,12 @@ export function registerTaskDataHandlers(ctx: IpcContext): void {
         })),
         tasks: tasks.map((t) => ({
           id: t.id,
-          externalId: t.external_id,
+          externalId: t.external_id ?? null,
           title: t.title,
-          sourceType: t.source_type,
-          acceptanceMethod: t.acceptance_method,
+          sourceType: t.source_type ?? null,
+          acceptanceMethod:
+            (t as TaskRow & { acceptance_method?: string | null }).acceptance_method ??
+            null,
           courseId: t.course_id,
         })),
       };
