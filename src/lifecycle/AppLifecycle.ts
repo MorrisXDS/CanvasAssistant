@@ -24,6 +24,9 @@ import {
   MigrationRunner,
   coreMigrations,
   VisibilityOracle,
+  CanvasFileReader,
+  AnnouncementAttachmentReader,
+  FileEntityProvider,
   runPostImportRepairs,
 } from '../layers/l1-persistence';
 
@@ -138,6 +141,7 @@ export class AppLifecycle {
 
   // Mutable state - lazy-initialized services
   private visibilityOracle: VisibilityOracle | null = null;
+  private fileEntityProvider: FileEntityProvider | null = null;
   private htmlLocalPathManager: HtmlLocalPathManager | null = null;
   private operationCoordinator: OperationCoordinator | null = null;
   private commandDispatcher: CommandDispatcher | null = null;
@@ -448,6 +452,13 @@ export class AppLifecycle {
 
       // Initialize L1 VisibilityOracle
       this.visibilityOracle = new VisibilityOracle(this.database);
+
+      // Initialize L1 FileEntityProvider (ADR-0008) and its readers
+      this.fileEntityProvider = new FileEntityProvider(
+        new CanvasFileReader(this.database),
+        new AnnouncementAttachmentReader(this.database),
+        this.logger.child('FileEntityProvider')
+      );
 
       // Initialize OperationCoordinator
       this.operationCoordinator = new OperationCoordinator({
@@ -836,6 +847,7 @@ export class AppLifecycle {
       getHealthCheck: () => this.healthCheck,
       getSystemMonitor: () => this.systemMonitor,
       getVisibilityOracle: () => this.visibilityOracle,
+      getFileEntityProvider: () => this.fileEntityProvider,
       getCanvasClient: () => this.getCanvasClient(),
       getSyncEngine: () => this.getSyncEngine(),
       getOperationCoordinator: () => this.operationCoordinator,
