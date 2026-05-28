@@ -37,6 +37,7 @@ export { CanvasFileReader } from './readers/CanvasFileReader';
 export { AnnouncementAttachmentReader } from './readers/AnnouncementAttachmentReader';
 export { TaskReader } from './readers/TaskReader';
 export { CanvasTaskQueueReader } from './readers/CanvasTaskQueueReader';
+export { NotificationReader } from './readers/NotificationReader';
 
 // L1 Providers — see docs/adr/0008 (ADR-0008)
 export { FileEntityProvider } from './FileEntityProvider';
