@@ -36,3 +36,6 @@ export type {
   ConflictRow,
   LinkSuggestionRow,
 } from './syncScenarios';
+
+export { setupTestEnv } from './testEnv';
+export type { TestEnv } from './testEnv';

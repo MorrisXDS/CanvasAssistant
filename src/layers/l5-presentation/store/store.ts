@@ -64,28 +64,46 @@ const initialState: StoreState = {
 };
 
 /**
- * Create the Zustand store by composing all slices
+ * Build a fresh Zustand store by composing all slices.
+ *
+ * Production code uses the module-singleton `useStore` exported below.
+ * `createStore()` is **primarily a test utility** — `tests/test-utils/testEnv.ts`
+ * calls it to spin up an isolated store per test, sidestepping the singleton
+ * that would otherwise leak state across cases.
+ *
+ * Intentionally NOT re-exported from `store/index.ts` — production consumers
+ * should only see `useStore`. Test utilities reach into this deeper path to
+ * get the factory.
  */
-export const useStore = create<Store>()(
-  devtools(
-    subscribeWithSelector((zustandSet, zustandGet) => {
-      // Cast Zustand's set/get to our simplified slice types.
-      // Zustand's set is a superset of StoreSet (accepts additional args like replace, action)
-      // so this cast is safe - slices only use the subset we define.
-      const set = zustandSet as unknown as StoreSet;
-      const get = zustandGet as StoreGet;
+export function createStore() {
+  return create<Store>()(
+    devtools(
+      subscribeWithSelector((zustandSet, zustandGet) => {
+        // Cast Zustand's set/get to our simplified slice types.
+        // Zustand's set is a superset of StoreSet (accepts additional args like replace, action)
+        // so this cast is safe - slices only use the subset we define.
+        const set = zustandSet as unknown as StoreSet;
+        const get = zustandGet as StoreGet;
 
-      return {
-        ...initialState,
-        ...createCoreDataSlice(set, get),
-        ...createTaskQueueSlice(set, get),
-        ...createCalendarSlice(set, get),
-        ...createTaskActionsSlice(set, get),
-        ...createSyncSlice(set, get),
-        ...createEventHandlerSlice(set, get),
-        ...createSyncUpdatesSlice(set, get),
-      } as Store;
-    }),
-    { name: 'canvas-store' }
-  )
-);
+        return {
+          ...initialState,
+          ...createCoreDataSlice(set, get),
+          ...createTaskQueueSlice(set, get),
+          ...createCalendarSlice(set, get),
+          ...createTaskActionsSlice(set, get),
+          ...createSyncSlice(set, get),
+          ...createEventHandlerSlice(set, get),
+          ...createSyncUpdatesSlice(set, get),
+        } as Store;
+      }),
+      { name: 'canvas-store' }
+    )
+  );
+}
+
+/**
+ * The production Zustand store — a single shared instance for the whole
+ * renderer process. Imperative consumers (storeSubscriptions, useSettingsSync)
+ * depend on this being a module singleton; the factory above is purely additive.
+ */
+export const useStore = createStore();
