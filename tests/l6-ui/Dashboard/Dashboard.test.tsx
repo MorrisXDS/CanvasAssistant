@@ -24,7 +24,7 @@
  */
 
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, act } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { ModalStackProvider } from '../../../src/layers/l6-ui/contexts/ModalStackContext';
 import { Dashboard } from '../../../src/layers/l6-ui/components/Dashboard/Dashboard';
@@ -126,5 +126,25 @@ describe('Dashboard integration — visibleNotifications selector', () => {
     expect(screen.getByText('System Note')).toBeInTheDocument();
     // Staleness: notification for a course not in state — must NOT render.
     expect(screen.queryByText('Stale Note')).not.toBeInTheDocument();
+  });
+
+  it('re-renders when a course leaves state.courses (notification drops out)', () => {
+    // Seed: one course visible, one notification tied to it.
+    useStore.setState({
+      courses: [makeCourse({ id: 1, code: 'CS101' })],
+      notifications: [makeNotification({ id: 10, courseId: 1, title: 'Will Drop' })],
+    });
+
+    renderDashboard();
+
+    expect(screen.getByText('Will Drop')).toBeInTheDocument();
+
+    // Simulate the staleness window: course leaves state.courses before
+    // notifications get re-fetched. Selector defends; UI drops the row.
+    act(() => {
+      useStore.setState({ courses: [] });
+    });
+
+    expect(screen.queryByText('Will Drop')).not.toBeInTheDocument();
   });
 });
