@@ -91,6 +91,43 @@ describe('AnnouncementAttachmentReader', () => {
     });
   });
 
+  describe('getByNotificationId', () => {
+    test('returns all attachments for one announcement ordered by display_name', () => {
+      const a1 = seedAnnouncement(db, 1);
+      seedAttachment(db, {
+        notifId: a1,
+        courseId: 1,
+        externalId: '222',
+        filename: 'beta.pdf',
+      });
+      seedAttachment(db, {
+        notifId: a1,
+        courseId: 1,
+        externalId: '111',
+        filename: 'alpha.pdf',
+      });
+
+      const rows = reader.getByNotificationId(a1);
+
+      expect(rows.map((r) => r.filename)).toEqual(['alpha.pdf', 'beta.pdf']);
+    });
+
+    test('returns empty array when the announcement has no attachments', () => {
+      const a1 = seedAnnouncement(db, 1);
+      expect(reader.getByNotificationId(a1)).toEqual([]);
+    });
+
+    test('does not return attachments of other announcements', () => {
+      const a1 = seedAnnouncement(db, 1);
+      const a2 = seedAnnouncement(db, 1);
+      seedAttachment(db, { notifId: a1, courseId: 1, externalId: '111' });
+      seedAttachment(db, { notifId: a2, courseId: 1, externalId: '222' });
+
+      expect(reader.getByNotificationId(a1)).toHaveLength(1);
+      expect(reader.getByNotificationId(a2)).toHaveLength(1);
+    });
+  });
+
   describe('getByCourseIds', () => {
     test('returns attachments only in the given courses', () => {
       seedCourse(db, 2, 'MAT201');

@@ -17,7 +17,7 @@ import type {
   OperationCoordinator,
 } from '../../layers/l2-daemon';
 import type { CommandDispatcher } from '../../layers/l4-controller';
-import type { VisibilityOracle } from '../../layers/l1-persistence';
+import type { VisibilityOracle, FileEntityProvider } from '../../layers/l1-persistence';
 import type { CrashProtectionManager } from '../CrashProtectionManager';
 
 /**
@@ -39,6 +39,7 @@ export interface IpcContext {
 
   // L1 - Persistence
   getVisibilityOracle: () => VisibilityOracle | null;
+  getFileEntityProvider: () => FileEntityProvider | null;
 
   // L2 - Daemon
   getCanvasClient: () => CanvasClient | null;

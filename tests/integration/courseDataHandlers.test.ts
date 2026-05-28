@@ -208,6 +208,9 @@ function buildCtx(database: Database, oracle: VisibilityOracle): IpcContext {
         }),
       }) as unknown as ReturnType<IpcContext['getLogger']>,
     getVisibilityOracle: () => oracle,
+    getFileEntityProvider: unused(
+      'getFileEntityProvider'
+    ) as IpcContext['getFileEntityProvider'],
     // Everything else: not used by course handlers, surface accidental coupling.
     getMainWindow: unused('getMainWindow') as IpcContext['getMainWindow'],
     getMetricsCollector: unused(
