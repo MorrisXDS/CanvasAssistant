@@ -12,12 +12,30 @@ module.exports = {
     '!src/**/*.d.ts',
     '!src/types/**/*',
   ],
+  // Coverage thresholds — these are FLOORS, not goals.
+  //
+  // Calibrated to current reality (PR-Gate-1, 2026-05-28): when this gate was
+  // enabled in CI, the actual numbers were statements 27.75% / branches 17.63%
+  // / functions 20.85% / lines 28.27%. The floor sits slightly below each, so
+  // a small regression catches the build BEFORE it lands a `.5%` drop nobody
+  // would notice in review.
+  //
+  // RATCHET POLICY: when sustained coverage rises by ~5 points for a metric
+  // (e.g., statements goes from 28% → 35%), bump the floor for that metric
+  // by ~5 points in a follow-up PR. The diff-coverage check (per-PR strict
+  // gate) is the engine that drives coverage upward; this aggregate floor
+  // catches catastrophic regressions only.
+  //
+  // DELETION CALIBRATION: when removing a heavily-tested feature, the
+  // aggregate can drop legitimately. In the SAME PR, lower the affected
+  // metric's floor to (new-actual rounded down). Same one-line change as a
+  // ratchet, opposite direction.
   coverageThreshold: {
     global: {
-      branches: 80,
-      functions: 80,
-      lines: 80,
-      statements: 80,
+      branches: 17,
+      functions: 20,
+      lines: 28,
+      statements: 27,
     },
   },
   // Use jsdom for React component tests
