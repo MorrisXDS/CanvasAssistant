@@ -35,6 +35,7 @@ export {
 export { CourseReader } from './readers/CourseReader';
 export { CanvasFileReader } from './readers/CanvasFileReader';
 export { AnnouncementAttachmentReader } from './readers/AnnouncementAttachmentReader';
+export { TaskReader } from './readers/TaskReader';
 
 // L1 Providers — see docs/adr/0008 (ADR-0008)
 export { FileEntityProvider } from './FileEntityProvider';
