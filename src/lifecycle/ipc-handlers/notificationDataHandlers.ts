@@ -1,10 +1,30 @@
 /**
  * Notification Data IPC Handlers
- * Handlers for notification data operations
+ *
+ * Per ADR-0007 / PR-E: no `database.execute*` calls in this file —
+ * all reads route through `NotificationReader`. Visibility filtering
+ * is composed at the handler layer via `VisibilityOracle`.
  */
 
 import { ipcMain } from 'electron';
 import type { IpcContext } from './IpcContext';
+import { NotificationReader } from '../../layers/l1-persistence';
+import type { NotificationRow } from '../../layers/l1-persistence/DatabaseRowTypes';
+
+function mapNotificationRowToResponse(row: NotificationRow) {
+  return {
+    id: row.id,
+    sourceType: row.source_type,
+    sourceId: row.source_id,
+    courseId: row.course_id,
+    title: row.title,
+    message: row.message,
+    messageHtml: row.message_html,
+    publishedAt: row.published_at,
+    dismissedAt: row.dismissed_at,
+    url: row.url,
+  };
+}
 
 /**
  * Register notification data handlers
@@ -14,73 +34,33 @@ export function registerNotificationDataHandlers(ctx: IpcContext): void {
   const logger = ctx.getLogger();
   const getVisibilityOracle = ctx.getVisibilityOracle;
 
+  const reader = new NotificationReader(database);
+
+  // List notifications: caller may scope to specific course ids. We
+  // always include system notifications (course_id IS NULL). Visibility
+  // composes via the Oracle — if no visible courses, only system
+  // notifications are returned.
   ipcMain.handle(
     'data:getNotifications',
     (_event, options?: { courseIds?: number[] }) => {
       try {
-        // Use VisibilityOracle as single source of truth for visibility
-        // Always include system notifications (course_id IS NULL)
         const visibleIds = getVisibilityOracle()?.getVisibleCourseIds() ?? [];
-        let sql: string;
-        let params: number[] = [];
 
+        let scopeIds: number[];
         if (
           options?.courseIds &&
           Array.isArray(options.courseIds) &&
           options.courseIds.length > 0
         ) {
-          // Filter provided courseIds to only visible ones
           const visibleSet = new Set(visibleIds);
-          const filteredCourseIds = options.courseIds.filter((id) => visibleSet.has(id));
-
-          if (filteredCourseIds.length === 0) {
-            // Only system notifications when no visible courses match
-            sql = `SELECT * FROM notifications WHERE course_id IS NULL ORDER BY published_at DESC`;
-          } else {
-            const placeholders = filteredCourseIds.map(() => '?').join(', ');
-            sql = `SELECT * FROM notifications
-                   WHERE course_id IS NULL OR course_id IN (${placeholders})
-                   ORDER BY published_at DESC`;
-            params = filteredCourseIds;
-          }
+          scopeIds = options.courseIds.filter((id) => visibleSet.has(id));
         } else {
-          // No filter - return notifications from all visible courses + system
-          if (visibleIds.length === 0) {
-            sql = `SELECT * FROM notifications WHERE course_id IS NULL ORDER BY published_at DESC`;
-          } else {
-            const placeholders = visibleIds.map(() => '?').join(', ');
-            sql = `SELECT * FROM notifications
-                   WHERE course_id IS NULL OR course_id IN (${placeholders})
-                   ORDER BY published_at DESC`;
-            params = visibleIds;
-          }
+          scopeIds = visibleIds;
         }
 
-        const rows = database.executeRead<{
-          id: number;
-          source_type: string;
-          source_id: string;
-          course_id: number | null;
-          title: string;
-          message: string;
-          message_html: string | null;
-          published_at: string;
-          dismissed_at: string | null;
-          url: string | null;
-        }>(sql, params);
-
-        return rows.map((row) => ({
-          id: row.id,
-          sourceType: row.source_type,
-          sourceId: row.source_id,
-          courseId: row.course_id,
-          title: row.title,
-          message: row.message,
-          messageHtml: row.message_html,
-          publishedAt: row.published_at,
-          dismissedAt: row.dismissed_at,
-          url: row.url,
-        }));
+        return reader
+          .getByCourseIdsIncludingSystem(scopeIds)
+          .map(mapNotificationRowToResponse);
       } catch (error) {
         logger.error(`Failed to get notifications: ${error}`);
         throw error;
@@ -88,74 +68,24 @@ export function registerNotificationDataHandlers(ctx: IpcContext): void {
     }
   );
 
-  // Get a single notification by ID
+  // Single-id lookup. Bypasses visibility (ADR-0007 sub-decision α).
   ipcMain.handle('data:getNotification', (_event, notificationId: number) => {
     try {
-      const row = database.executeReadOne<{
-        id: number;
-        source_type: string;
-        source_id: string;
-        course_id: number | null;
-        title: string;
-        message: string;
-        message_html: string | null;
-        published_at: string;
-        dismissed_at: string | null;
-        url: string | null;
-      }>('SELECT * FROM notifications WHERE id = ?', [notificationId]);
-
-      if (!row) {
-        return null;
-      }
-
-      return {
-        id: row.id,
-        sourceType: row.source_type,
-        sourceId: row.source_id,
-        courseId: row.course_id,
-        title: row.title,
-        message: row.message,
-        messageHtml: row.message_html,
-        publishedAt: row.published_at,
-        dismissedAt: row.dismissed_at,
-        url: row.url,
-      };
+      const row = reader.getById(notificationId);
+      return row ? mapNotificationRowToResponse(row) : null;
     } catch (error) {
       logger.error(`Failed to get notification: ${error}`);
       throw error;
     }
   });
 
-  // Get announcements for a specific course
+  // Notifications for one specific course. Caller knew the course id;
+  // no visibility filter applied at the reader layer (matches legacy
+  // behaviour — this endpoint returns the course's notifications even
+  // when the course is hidden, useful for archived-course views).
   ipcMain.handle('data:getCourseNotifications', (_event, courseId: number) => {
     try {
-      const rows = database.executeRead<{
-        id: number;
-        source_type: string;
-        source_id: string;
-        course_id: number | null;
-        title: string;
-        message: string;
-        message_html: string | null;
-        published_at: string;
-        dismissed_at: string | null;
-        url: string | null;
-      }>('SELECT * FROM notifications WHERE course_id = ? ORDER BY published_at DESC', [
-        courseId,
-      ]);
-
-      return rows.map((row) => ({
-        id: row.id,
-        sourceType: row.source_type,
-        sourceId: row.source_id,
-        courseId: row.course_id,
-        title: row.title,
-        message: row.message,
-        messageHtml: row.message_html,
-        publishedAt: row.published_at,
-        dismissedAt: row.dismissed_at,
-        url: row.url,
-      }));
+      return reader.getByCourseId(courseId).map(mapNotificationRowToResponse);
     } catch (error) {
       logger.error(`Failed to get course notifications: ${error}`);
       throw error;
