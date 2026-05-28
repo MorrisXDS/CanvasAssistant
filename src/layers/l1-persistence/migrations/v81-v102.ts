@@ -579,4 +579,23 @@ export const migrationsV81toV102: Migration[] = [
       SELECT 1;
     `,
   },
+  // Migration 104: Index notification_attachments.external_id (ADR-0008 PR-F.2)
+  //
+  // FileEntityProvider.findByCanvasId looks up attachments by external_id;
+  // without this index the query path is SCAN over the whole table. The
+  // schema's existing UNIQUE(notification_id, external_id) does not help
+  // for lookups that filter on external_id alone. Safe additive change —
+  // non-unique index, allows the existing duplicate external_id rows
+  // (one per announcement) to coexist.
+  {
+    version: 104,
+    description: 'Index notification_attachments.external_id for FileEntity lookups',
+    up: `
+      CREATE INDEX IF NOT EXISTS idx_notification_attachments_external_id
+        ON notification_attachments(external_id);
+    `,
+    down: `
+      DROP INDEX IF EXISTS idx_notification_attachments_external_id;
+    `,
+  },
 ];

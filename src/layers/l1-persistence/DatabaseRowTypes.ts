@@ -433,6 +433,58 @@ export interface ResourceRow {
   mime_type: string | null;
 }
 
+/**
+ * Full Canvas-file row from `resources` table where `type='file'` (ADR-0008).
+ *
+ * Used by `CanvasFileReader` and `FileEntityProvider` — they need more
+ * columns than the minimal `ResourceRow` above. Mirrors the schema as
+ * created in `migrations/schema-core.ts` (resources table).
+ */
+export interface CanvasFileRow {
+  id: number;
+  external_id: string;
+  course_id: number;
+  parent_folder_id: number | null;
+  type: string;
+  title: string;
+  url: string | null;
+  local_path: string | null;
+  size_bytes: number | null;
+  mime_type: string | null;
+  unlock_at: string | null;
+  synced_at: string | null;
+  created_at: string;
+  updated_at: string;
+  folder_path: string | null;
+  remote_updated_at: string | null;
+  context_type: string | null;
+  context_id: string | null;
+  first_referenced_by: string | null;
+  version: number;
+}
+
+/**
+ * Full announcement-attachment row from `notification_attachments` (ADR-0008).
+ *
+ * Used by `AnnouncementAttachmentReader` and `FileEntityProvider`. Mirrors
+ * the schema in `migrations/schema-core.ts` (notification_attachments).
+ */
+export interface NotificationAttachmentRow {
+  id: number;
+  notification_id: number;
+  course_id: number;
+  external_id: string;
+  display_name: string;
+  filename: string;
+  url: string;
+  size_bytes: number | null;
+  content_type: string | null;
+  local_path: string | null;
+  download_status: 'pending' | 'downloading' | 'completed' | 'failed';
+  downloaded_at: string | null;
+  created_at: string;
+}
+
 // =============================================================================
 // Download Queue Rows
 // =============================================================================
