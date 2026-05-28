@@ -61,6 +61,20 @@ export class AnnouncementAttachmentReader {
   }
 
   /**
+   * All attachments belonging to one announcement (`notifications.id`).
+   * Ordered by display_name. Visibility is not applied — caller knew
+   * the notification id.
+   */
+  getByNotificationId(notificationId: number): NotificationAttachmentRow[] {
+    return this.db.executeRead<NotificationAttachmentRow>(
+      `SELECT * FROM notification_attachments
+       WHERE notification_id = ?
+       ORDER BY display_name`,
+      [notificationId]
+    );
+  }
+
+  /**
    * All attachments belonging to the given course ids. Caller composes
    * visibility via `VisibilityOracle.getVisibleCourseIds()` first.
    */

@@ -33,6 +33,11 @@ export {
 
 // L1 Readers — see docs/adr/0007 (ADR-0007)
 export { CourseReader } from './readers/CourseReader';
+export { CanvasFileReader } from './readers/CanvasFileReader';
+export { AnnouncementAttachmentReader } from './readers/AnnouncementAttachmentReader';
+
+// L1 Providers — see docs/adr/0008 (ADR-0008)
+export { FileEntityProvider } from './FileEntityProvider';
 
 // Repositories
 export {
