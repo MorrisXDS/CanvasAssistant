@@ -7,19 +7,38 @@
  * `jest.fn().mockResolvedValue(undefined)`. Zero maintenance as the
  * 176-method IPC surface grows.
  *
- * Intended use (PR-T5+):
+ * Two distinct use patterns — pick the right one for your test:
  *
- *   describe('Dashboard', () => {
- *     let env: TestEnv;
- *     beforeEach(() => { env = setupTestEnv(); });
- *     afterEach(() => { env.cleanup(); });
+ * 1. **Slice-level tests (PR-T3 pattern)** — testing store actions
+ *    in isolation. Use `env.store` directly:
  *
- *     it('shows visible-course notifications', () => {
- *       env.api.getCourses.mockResolvedValue([…]);
- *       env.store.setState({ courses: […], notifications: […] });
- *       // … render component, assert DOM …
- *     });
- *   });
+ *      const env = setupTestEnv();
+ *      env.api.getCourses.mockResolvedValue([…]);
+ *      await myAction(env.store.setState, env.store.getState);
+ *      expect(env.store.getState().courses).toEqual([…]);
+ *
+ * 2. **Component-integration tests (PR-T5 pattern)** — mounting a real
+ *    React component. Components import the production `useStore`
+ *    singleton, NOT this fresh `env.store`. They cannot read from
+ *    `env.store`. Use the singleton directly via `useStore.setState`:
+ *
+ *      import { useStore } from '@/layers/l5-presentation/store';
+ *
+ *      beforeEach(() => { env = setupTestEnv(); });
+ *      afterEach(() => {
+ *        useStore.setState({ courses: [], notifications: [] }); // reset keys you touched
+ *        env.cleanup();
+ *      });
+ *
+ *      it('renders…', () => {
+ *        env.api.getCourses.mockResolvedValue([…]);
+ *        useStore.setState({ courses: […], notifications: […] });
+ *        render(<MyComponent />); // reads from singleton via useStore()
+ *      });
+ *
+ *    In pattern 2, `env.store` goes unused — it's a separate Zustand
+ *    instance that the component never reads from. The valuable part of
+ *    setupTestEnv() for component tests is `env.api`.
  *
  * This file is consumed only by tests. It imports `createStore` from
  * `store/store.ts` directly (not via the `store/index.ts` barrel) — the
