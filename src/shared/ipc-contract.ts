@@ -430,6 +430,85 @@ export const FilesDataSchema = z.object({
 });
 export type FilesData = z.infer<typeof FilesDataSchema>;
 
+// ============================================================================
+// FileEntity — unified read model for Canvas-side file blobs (ADR-0008)
+// ============================================================================
+//
+// A FileEntity is the unified view of a single Canvas file blob, keyed by the
+// Canvas File ID (`canvasId`). The same blob can have two kinds of local
+// presence:
+//
+//   - canvasFile  — a row in `resources` (the blob appears in the course's
+//                   Files area)
+//   - attachments — one or more rows in `notification_attachments` (one per
+//                   announcement that attaches the blob)
+//
+// The two are unified at read time by `FileEntityProvider` (introduced in
+// PR-F.2). PR-F.1 (this PR) only defines the wire contract.
+//
+// Canonical fields (`filename`, `displayName`, `sizeBytes`, `contentType`,
+// `uuid`) live once on FileEntity and are sourced from `canvasFile` if
+// present, otherwise from the first `attachments` entry. The values are
+// expected to agree across presences per Canvas's data model; divergence is
+// a sync bug worth surfacing.
+
+export const FileEntityCanvasFilePresenceSchema = z.object({
+  /** Local `resources.id` — for Files-page navigation. */
+  resourceRowId: z.number(),
+  /** Where the blob was first surfaced. Mirrors `resources.context_type`. */
+  contextType: z.string().nullable(),
+  /** Files-page folder path. Null when the blob isn't in a folder hierarchy. */
+  folderPath: z.string().nullable(),
+  /** Local download path; null when not yet downloaded. */
+  localPath: z.string().nullable(),
+  /** Canvas-side modification timestamp (ISO string). */
+  remoteUpdatedAt: z.string().nullable(),
+});
+export type FileEntityCanvasFilePresence = z.infer<
+  typeof FileEntityCanvasFilePresenceSchema
+>;
+
+export const FileEntityAttachmentPresenceSchema = z.object({
+  /** Local `notification_attachments.id`. */
+  attachmentRowId: z.number(),
+  /** The announcement (`notifications.id`) that attaches this blob. */
+  notificationId: z.number(),
+  downloadStatus: DownloadStatusSchema,
+  /** Local download path; null when not yet downloaded. */
+  localPath: z.string().nullable(),
+  downloadedAt: z.string().nullable(),
+});
+export type FileEntityAttachmentPresence = z.infer<
+  typeof FileEntityAttachmentPresenceSchema
+>;
+
+export const FileEntitySchema = z.object({
+  /** Canvas File ID. Stable across sync paths. The natural key. */
+  canvasId: z.string(),
+  /** Canvas-provided UUID. Companion to canvasId; not used for lookup. */
+  uuid: z.string().nullable(),
+  /** Canonical filename. */
+  filename: z.string(),
+  /** Canonical user-facing label. */
+  displayName: z.string(),
+  sizeBytes: z.number().nullable(),
+  contentType: z.string().nullable(),
+  /** Course this file belongs to. */
+  courseId: z.number(),
+  /** Per-source presence records. At least one must be populated. */
+  presences: z
+    .object({
+      /** Non-null iff this blob has a row in the course Files area. */
+      canvasFile: FileEntityCanvasFilePresenceSchema.nullable(),
+      /** One entry per announcement that attaches this blob. May be empty. */
+      attachments: z.array(FileEntityAttachmentPresenceSchema),
+    })
+    .refine((p) => p.canvasFile !== null || p.attachments.length > 0, {
+      message: 'FileEntity must have at least one presence',
+    }),
+});
+export type FileEntity = z.infer<typeof FileEntitySchema>;
+
 export const UserProfileSchema = z.object({
   name: z.string(),
   email: z.string().nullable(),
