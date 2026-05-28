@@ -1,0 +1,10 @@
+#!/usr/bin/env sh
+
+# 1. Conventional Commits format (commitlint).
+# Blocks if the message doesn't follow type(scope?): subject shape, with the
+# type from the enum in commitlint.config.cjs.
+npx --no -- commitlint --edit "$1" || exit 1
+
+# 2. Test-deletion correspondence: every deleted *.test.{ts,tsx} file must be
+# acknowledged via a "Test-deletion: <reason>" trailer in the commit message.
+sh scripts/test-deletion-check.sh "$1" || exit 1
