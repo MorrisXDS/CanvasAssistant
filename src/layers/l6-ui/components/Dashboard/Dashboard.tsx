@@ -164,7 +164,16 @@ export function Dashboard() {
   // Filter notifications to only show those from visible courses (or system notifications).
   // Uses the centralized selector (per CLAUDE.md §8) — closes the brief staleness
   // window between `fetchCourses` and `fetchNotifications` re-fetches.
-  const visibleNotifications = useStore(selectors.visibleNotifications);
+  //
+  // useMemo-wrap is essential: `selectors.visibleNotifications` returns a fresh
+  // array on every call, which without memoization would re-trigger every
+  // downstream `useMemo`/`useEffect` that depends on this reference — surfaced
+  // by PR-T5's Dashboard integration test as an infinite re-render loop in dev
+  // mode. Stable references via React's useMemo bypass that hazard.
+  const visibleNotifications = useMemo(
+    () => selectors.visibleNotifications(state),
+    [state.courses, state.notifications]
+  );
 
   // Top row = Stats; bottom row = the four grid lists (see availableBottomLists below)
   const TOP_LISTS: DashboardListId[] = ['stats'];
