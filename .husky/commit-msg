@@ -1,0 +1,8 @@
+#!/usr/bin/env sh
+
+# 1. Conventional Commits format (commitlint).
+# Blocks if the message doesn't follow type(scope?): subject shape, with the
+# type from the enum in commitlint.config.cjs.
+npx --no -- commitlint --edit "$1" || exit 1
+
+# 2. (Slice 2 will append a test-deletion correspondence check here.)
