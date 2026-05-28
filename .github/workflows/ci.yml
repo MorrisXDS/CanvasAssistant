@@ -10,6 +10,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Full history so the diff-coverage step (added below) can compute
+          # `git diff origin/main`. Default is shallow (depth=1) which leaves
+          # origin/main unavailable.
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -34,8 +39,16 @@ jobs:
 
       # Blocking gate: unit tests must pass.
       # `pretest` (ensure-native-modules) rebuilds better-sqlite3 for the Node ABI.
+      # `--coverage` activates jest.config.js's coverageThreshold (the aggregate
+      # floor; per-PR strict gating happens in the diff-coverage step below).
       - name: Unit tests
-        run: npm test
+        run: npm test -- --coverage --coverageReporters=json --coverageReporters=text-summary
+
+      # Per-PR strict gate: every added/modified line under src/ must be
+      # exercised by a test. See scripts/diff-coverage-check.js for the
+      # algorithm + escape hatches (.diffcov-allow.json).
+      - name: Diff coverage
+        run: node scripts/diff-coverage-check.js
 
   # NOTE: e2e is NOT in CI — it needs the dev's real DB, an onboarded OS keychain,
   # and a real Electron window. Run `npm run test:e2e` locally before shipping.

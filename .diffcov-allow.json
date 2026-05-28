@@ -1,0 +1,6 @@
+{
+  "_comment": "Per-PR diff-coverage allowlist. Paths listed here are exempt from the diff-coverage check (PR-Gate-1 slice 3). Use SPARINGLY — only for files where adding tests is genuinely impossible (e.g., pure Electron lifecycle entry points where mocking is more brittle than the bug we'd be catching) or for type-only modules where coverage is meaningless.",
+  "_format": "Each path is a posix-style repo-relative path. No glob support yet; list specific files.",
+  "_audit": "When adding an entry: include a one-line comment-style key (e.g., \"_why_<filename>\") in the same JSON object explaining the reason. Future readers grep for `_why_` to find the rationales.",
+  "paths": []
+}
