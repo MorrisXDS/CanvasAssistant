@@ -1,0 +1,26 @@
+{
+  "_comment": "Per-file ceiling for raw `database.execute*` / `database.upsert` calls in `src/lifecycle/ipc-handlers/**`. Enforced by `tests/integration/ipc-handlers-no-raw-sql.test.ts` (ADR-0007 Final PR). Adding a NEW violation to an existing file OR adding a NEW file with violations fails the test. Removing violations decrements the ceiling — once at zero, the file is fully migrated; remove its entry to lock that file's clean state forever.",
+  "_format": "{ paths: { 'posix/relative/path.ts': maxAllowedCount } }",
+  "_audit": "Snapshot from .cache/generate-ceiling.js on 2026-05-28. Migration train PR-B/PR-D/PR-E/PR-F.3/PR-H already migrated courseDataHandlers, taskDataHandlers, notificationDataHandlers, fileDataHandlers (partial), data/policyHandlers — those files don't appear here. The 19 entries below are the unmigrated remainder. Ratchet DOWN as further migration PRs land. See ADR-0007 in docs/adr/.",
+  "paths": {
+    "src/lifecycle/ipc-handlers/backupScheduleHandlers.ts": 3,
+    "src/lifecycle/ipc-handlers/calendar/calendarCrudHandlers.ts": 10,
+    "src/lifecycle/ipc-handlers/calendar/calendarEventHandlers.ts": 14,
+    "src/lifecycle/ipc-handlers/calendar/calendarMigrationUtils.ts": 1,
+    "src/lifecycle/ipc-handlers/courseExportHandlers.ts": 9,
+    "src/lifecycle/ipc-handlers/csvExportHandlers.ts": 2,
+    "src/lifecycle/ipc-handlers/data/courseAuthorityHandlers.ts": 1,
+    "src/lifecycle/ipc-handlers/data/taskLinkHandlers.ts": 9,
+    "src/lifecycle/ipc-handlers/databaseExportHandlers.ts": 1,
+    "src/lifecycle/ipc-handlers/exportHandlers.ts": 4,
+    "src/lifecycle/ipc-handlers/fileHandlers.ts": 10,
+    "src/lifecycle/ipc-handlers/htmlDependencyHandlers.ts": 7,
+    "src/lifecycle/ipc-handlers/htmlExportHandlers.ts": 2,
+    "src/lifecycle/ipc-handlers/pagesHandlers.ts": 5,
+    "src/lifecycle/ipc-handlers/resourceHandlers.ts": 4,
+    "src/lifecycle/ipc-handlers/settingsHandlers.ts": 4,
+    "src/lifecycle/ipc-handlers/syncHandlers.ts": 6,
+    "src/lifecycle/ipc-handlers/syncUpdatesHandlers.ts": 11,
+    "src/lifecycle/ipc-handlers/taskTypesHandlers.ts": 2
+  }
+}
