@@ -40,9 +40,15 @@ jobs:
       # Blocking gate: unit tests must pass.
       # `pretest` (ensure-native-modules) rebuilds better-sqlite3 for the Node ABI.
       # `--coverage` activates jest.config.js's coverageThreshold (the aggregate
-      # floor; per-PR strict gating arrives via the diff-coverage step below).
+      # floor; per-PR strict gating happens in the diff-coverage step below).
       - name: Unit tests
-        run: npm test -- --coverage
+        run: npm test -- --coverage --coverageReporters=json --coverageReporters=text-summary
+
+      # Per-PR strict gate: every added/modified line under src/ must be
+      # exercised by a test. See scripts/diff-coverage-check.js for the
+      # algorithm + escape hatches (.diffcov-allow.json).
+      - name: Diff coverage
+        run: node scripts/diff-coverage-check.js
 
   # NOTE: e2e is NOT in CI — it needs the dev's real DB, an onboarded OS keychain,
   # and a real Electron window. Run `npm run test:e2e` locally before shipping.
