@@ -60,6 +60,36 @@ describe('RecordExportHistoryCommand', () => {
     });
   });
 
+  it('persists the full column set (encrypted, courses, files, error)', async () => {
+    const result = await command.execute(context, {
+      exportType: 'selective',
+      filePath: '/tmp/x.cbk',
+      fileSize: 9,
+      encrypted: true,
+      coursesIncluded: [3, 7],
+      tasksExported: 2,
+      filesExported: 5,
+      status: 'failed',
+      errorMessage: 'boom',
+    });
+    expect(result.success).toBe(true);
+
+    const row = db.executeReadOne<{
+      encrypted: number;
+      courses_included: string;
+      files_exported: number;
+      status: string;
+      error_message: string;
+    }>('SELECT * FROM export_history WHERE id = ?', [result.data!.id]);
+    expect(row).toMatchObject({
+      encrypted: 1,
+      courses_included: '[3,7]',
+      files_exported: 5,
+      status: 'failed',
+      error_message: 'boom',
+    });
+  });
+
   it('applies defaults for omitted optional fields', async () => {
     const result = await command.execute(context, { exportType: 'full' });
     expect(result.success).toBe(true);

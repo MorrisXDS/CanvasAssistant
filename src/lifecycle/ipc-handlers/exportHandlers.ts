@@ -11,15 +11,27 @@ import { ipcMain, dialog, app } from 'electron';
 import fs from 'fs';
 import path from 'path';
 import { ExportManager } from '../../layers/l2-daemon';
+import { ExportHistoryReader } from '../../layers/l1-persistence';
+import { RecordExportHistoryCommand } from '../../layers/l4-controller';
+import { createSimulationContext } from '../../layers/l4-controller/types';
 import type { IpcContext } from './IpcContext';
 
 /**
  * Register export-related IPC handlers for selective exports, encrypted imports,
  * scheduled backups, and export history
+ *
+ * Per ADR-0007, this file holds no raw `database.execute*` calls. The
+ * export-history read routes through `ExportHistoryReader`; writes through
+ * `RecordExportHistoryCommand`; the WAL checkpoint uses `database.checkpoint()`.
  */
 export function registerExportHandlers(ctx: IpcContext): void {
   const database = ctx.getDatabase();
   const logger = ctx.getLogger();
+  const exportHistoryReader = new ExportHistoryReader(database);
+  const runContext = () => ({
+    db: database,
+    simulationContext: createSimulationContext(),
+  });
   const metricsCollector = ctx.getMetricsCollector();
   const getMainWindow = ctx.getMainWindow;
   const getDbPath = ctx.getDbPath;
@@ -112,19 +124,15 @@ export function registerExportHandlers(ctx: IpcContext): void {
 
         if (exportResult.success) {
           // Log to export history
-          database.executeWrite(
-            `INSERT INTO export_history (export_type, file_path, file_size, encrypted, courses_included, tasks_exported, files_exported, status)
-             VALUES ('selective', ?, ?, ?, ?, ?, ?, 'completed')`,
-            [
-              dialogResult.filePath,
-              exportResult.fileSize || 0,
-              options.encrypt ? 1 : 0,
-              JSON.stringify(options.courses || []),
-              exportResult.tasksExported || 0,
-              exportResult.filesExported || 0,
-            ],
-            'export_history'
-          );
+          await new RecordExportHistoryCommand().execute(runContext(), {
+            exportType: 'selective',
+            filePath: dialogResult.filePath,
+            fileSize: exportResult.fileSize || 0,
+            encrypted: Boolean(options.encrypt),
+            coursesIncluded: options.courses || [],
+            tasksExported: exportResult.tasksExported || 0,
+            filesExported: exportResult.filesExported || 0,
+          });
           metricsCollector.increment('data.export.selective');
         }
 
@@ -198,19 +206,18 @@ export function registerExportHandlers(ctx: IpcContext): void {
       const DB_PATH = getDbPath();
 
       // Checkpoint WAL before copying
-      database.executeWrite('PRAGMA wal_checkpoint(TRUNCATE)', [], 'system');
+      database.checkpoint();
 
       // Copy database file
       fs.copyFileSync(DB_PATH, backupPath);
 
       // Log to export history
       const fileStats = fs.statSync(backupPath);
-      database.executeWrite(
-        `INSERT INTO export_history (export_type, file_path, file_size, status)
-         VALUES ('scheduled', ?, ?, 'completed')`,
-        [backupPath, fileStats.size],
-        'export_history'
-      );
+      await new RecordExportHistoryCommand().execute(runContext(), {
+        exportType: 'scheduled',
+        filePath: backupPath,
+        fileSize: fileStats.size,
+      });
 
       logger.info(`Scheduled backup created: ${backupPath}`);
       metricsCollector.increment('data.export.scheduled');
@@ -221,12 +228,11 @@ export function registerExportHandlers(ctx: IpcContext): void {
 
       // Log failure to history
       try {
-        database.executeWrite(
-          `INSERT INTO export_history (export_type, status, error_message)
-           VALUES ('scheduled', 'failed', ?)`,
-          [String(error)],
-          'export_history'
-        );
+        await new RecordExportHistoryCommand().execute(runContext(), {
+          exportType: 'scheduled',
+          status: 'failed',
+          errorMessage: String(error),
+        });
       } catch {
         // Ignore secondary error
       }
@@ -239,19 +245,7 @@ export function registerExportHandlers(ctx: IpcContext): void {
 
   ipcMain.handle('data:getExportHistory', () => {
     try {
-      const history = database.executeRead<{
-        id: number;
-        export_type: string;
-        file_path: string;
-        file_size: number;
-        encrypted: number;
-        courses_included: string;
-        tasks_exported: number;
-        files_exported: number;
-        status: string;
-        error_message: string | null;
-        created_at: string;
-      }>('SELECT * FROM export_history ORDER BY created_at DESC LIMIT 50');
+      const history = exportHistoryReader.getRecent(50);
       return { success: true, data: history };
     } catch (error) {
       logger.error('Failed to get export history:', error as Error);

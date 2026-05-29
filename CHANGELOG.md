@@ -34,6 +34,14 @@ AND deleted_at IS NULL` — it was returning **hidden courses** and **ignoring
 
 ### Changed
 
+- `2026-05-29 22:35 UTC` — `exportHandlers` migrated off raw SQL (ADR-0007).
+  Selective-export and scheduled-backup history writes now route through the
+  shared `RecordExportHistoryCommand` (extended to cover the full
+  `export_history` column set — encrypted, courses_included, files_exported,
+  error_message); `data:getExportHistory` reads through a new
+  `ExportHistoryReader`; and the pre-backup WAL checkpoint uses the existing
+  `database.checkpoint()` instead of a raw `PRAGMA wal_checkpoint`. No
+  `database.execute*` calls remain; the ceiling entry (was 4) is removed.
 - `2026-05-29 22:20 UTC` — `csvExportHandlers` migrated off raw SQL (ADR-0007).
   The export-history logging in `data:exportTasksCsv` / `data:exportGradesCsv`
   now routes through a new reusable `RecordExportHistoryCommand` (L4) instead of
