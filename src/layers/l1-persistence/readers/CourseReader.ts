@@ -72,4 +72,26 @@ export class CourseReader {
        ORDER BY et.end_at DESC NULLS LAST, c.name ASC`
     );
   }
+
+  /**
+   * Per-course settings (auto-assign due date + allow-guessed-override),
+   * or null if the course doesn't exist. Narrow projection used by the
+   * `course:getSettings` IPC endpoint.
+   */
+  getSettingsById(
+    id: number
+  ): {
+    auto_assign_due_date: number | null;
+    allow_guessed_override: number | null;
+  } | null {
+    return (
+      this.db.executeReadOne<{
+        auto_assign_due_date: number | null;
+        allow_guessed_override: number | null;
+      }>(
+        `SELECT auto_assign_due_date, allow_guessed_override FROM courses WHERE id = ?`,
+        [id]
+      ) ?? null
+    );
+  }
 }

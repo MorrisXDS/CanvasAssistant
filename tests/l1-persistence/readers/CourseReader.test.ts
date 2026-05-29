@@ -184,6 +184,34 @@ describe('CourseReader', () => {
       expect(reader.getArchivedSortedByTermEnd()).toEqual([]);
     });
   });
+
+  describe('getSettingsById', () => {
+    test('returns per-course settings (schema defaults)', () => {
+      seedCourse(db, { id: 1 });
+
+      expect(reader.getSettingsById(1)).toEqual({
+        auto_assign_due_date: null,
+        allow_guessed_override: 1,
+      });
+    });
+
+    test('reflects updated setting values', () => {
+      seedCourse(db, { id: 1 });
+      db.executeWrite(
+        `UPDATE courses SET auto_assign_due_date = 1, allow_guessed_override = 0 WHERE id = 1`,
+        []
+      );
+
+      expect(reader.getSettingsById(1)).toEqual({
+        auto_assign_due_date: 1,
+        allow_guessed_override: 0,
+      });
+    });
+
+    test('returns null for a missing course', () => {
+      expect(reader.getSettingsById(9999)).toBeNull();
+    });
+  });
 });
 
 // =============================================================================

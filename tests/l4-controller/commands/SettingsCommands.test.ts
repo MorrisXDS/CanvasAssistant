@@ -1,0 +1,140 @@
+/**
+ * SettingsCommands Tests (ADR-0007)
+ *
+ * - SetUserPreferenceCommand
+ * - UpdateCourseSettingsCommand
+ */
+
+import { Database } from '../../../src/layers/l1-persistence/Database';
+import {
+  MigrationRunner,
+  coreMigrations,
+} from '../../../src/layers/l1-persistence/MigrationRunner';
+import { SetUserPreferenceCommand } from '../../../src/layers/l4-controller/commands/settings/SetUserPreferenceCommand';
+import { UpdateCourseSettingsCommand } from '../../../src/layers/l4-controller/commands/settings/UpdateCourseSettingsCommand';
+import {
+  CommandContext,
+  createSimulationContext,
+} from '../../../src/layers/l4-controller/types';
+
+function seedCourse(db: Database, id: number): void {
+  db.executeWrite(
+    `INSERT INTO courses (id, external_id, code, name, target_grade) VALUES (?, ?, ?, ?, 85)`,
+    [id, `ext_${id}`, `C${id}`, `Course ${id}`]
+  );
+}
+
+describe('Settings Commands', () => {
+  let db: Database;
+  let context: CommandContext;
+
+  beforeEach(() => {
+    db = new Database({ dbPath: ':memory:', verbose: false });
+    db.initialize();
+    const runner = new MigrationRunner(db);
+    runner.loadMigrations(coreMigrations);
+    runner.runAll();
+    context = { db, simulationContext: createSimulationContext() };
+  });
+
+  afterEach(() => {
+    db.close();
+  });
+
+  describe('SetUserPreferenceCommand', () => {
+    const command = new SetUserPreferenceCommand();
+
+    it('rejects an empty key', async () => {
+      expect(command.validate({ key: '', value: 'x' })).toEqual({
+        valid: false,
+        error: 'Preference key is required',
+      });
+      const result = await command.execute(context, { key: '', value: 'x' });
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('required');
+    });
+
+    it('inserts a new preference', async () => {
+      const result = await command.execute(context, { key: 'k', value: 'v1' });
+      expect(result.success).toBe(true);
+
+      const row = db.executeReadOne<{ value: string }>(
+        'SELECT value FROM user_preferences WHERE key = ?',
+        ['k']
+      );
+      expect(row?.value).toBe('v1');
+    });
+
+    it('upserts (overwrites) an existing preference', async () => {
+      await command.execute(context, { key: 'k', value: 'v1' });
+      await command.execute(context, { key: 'k', value: 'v2' });
+
+      const rows = db.executeRead<{ value: string }>(
+        'SELECT value FROM user_preferences WHERE key = ?',
+        ['k']
+      );
+      expect(rows).toHaveLength(1);
+      expect(rows[0].value).toBe('v2');
+    });
+
+    it('reports failure when the write throws', async () => {
+      db.close();
+      const result = await command.execute(context, { key: 'k', value: 'v' });
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Failed to set user preference');
+    });
+  });
+
+  describe('UpdateCourseSettingsCommand', () => {
+    const command = new UpdateCourseSettingsCommand();
+
+    beforeEach(() => seedCourse(db, 1));
+
+    it('updates only the fields provided', async () => {
+      const result = await command.execute(context, {
+        courseId: 1,
+        autoAssignDueDate: 1,
+      });
+      expect(result.success).toBe(true);
+
+      const row = db.executeReadOne<{
+        auto_assign_due_date: number | null;
+        allow_guessed_override: number | null;
+      }>(
+        'SELECT auto_assign_due_date, allow_guessed_override FROM courses WHERE id = 1',
+        []
+      );
+      expect(row?.auto_assign_due_date).toBe(1);
+      // unchanged — schema default
+      expect(row?.allow_guessed_override).toBe(1);
+    });
+
+    it('coerces a null allowGuessedOverride to the default of 1', async () => {
+      const result = await command.execute(context, {
+        courseId: 1,
+        allowGuessedOverride: 0,
+      });
+      expect(result.success).toBe(true);
+      const row = db.executeReadOne<{ allow_guessed_override: number }>(
+        'SELECT allow_guessed_override FROM courses WHERE id = 1',
+        []
+      );
+      expect(row?.allow_guessed_override).toBe(0);
+    });
+
+    it('is a no-op success when no fields are provided', async () => {
+      const result = await command.execute(context, { courseId: 1 });
+      expect(result.success).toBe(true);
+    });
+
+    it('reports failure when the write throws', async () => {
+      db.close();
+      const result = await command.execute(context, {
+        courseId: 1,
+        autoAssignDueDate: 1,
+      });
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Failed to update course settings');
+    });
+  });
+});

@@ -32,6 +32,9 @@ export {
   RejectLinkSuggestionParams,
   ManuallyLinkTasksParams,
   UnlinkTasksParams,
+  // Settings command param types
+  SetUserPreferenceParams,
+  UpdateCourseSettingsParams,
   TriggerSyncParams,
   SimulateGradeParams,
   ClearSimulationParams,
@@ -77,6 +80,9 @@ export {
   RejectLinkSuggestionCommand,
   ManuallyLinkTasksCommand,
   UnlinkTasksCommand,
+  // Settings commands
+  SetUserPreferenceCommand,
+  UpdateCourseSettingsCommand,
   // Queue commands
   AcceptQueuedTaskCommand,
   RejectQueuedTaskCommand,

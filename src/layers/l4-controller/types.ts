@@ -221,6 +221,28 @@ export interface UnlinkTasksParams {
 }
 
 // =============================================================================
+// Settings Command Params
+// =============================================================================
+
+/**
+ * Upsert a single key/value row in `user_preferences`. The value is the
+ * already-serialized string the caller wants stored verbatim.
+ */
+export interface SetUserPreferenceParams {
+  key: string;
+  value: string;
+}
+
+/**
+ * Update per-course settings. Omitted fields are left unchanged.
+ */
+export interface UpdateCourseSettingsParams {
+  courseId: number;
+  autoAssignDueDate?: number | null;
+  allowGuessedOverride?: number;
+}
+
+// =============================================================================
 // Canvas Task Queue Command Params
 // =============================================================================
 

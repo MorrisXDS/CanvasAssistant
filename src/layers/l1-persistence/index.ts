@@ -41,6 +41,7 @@ export { NotificationReader } from './readers/NotificationReader';
 export { PolicyReader } from './readers/PolicyReader';
 export { TaskTypeReader } from './readers/TaskTypeReader';
 export { LinkSuggestionReader } from './readers/LinkSuggestionReader';
+export { UserPreferencesReader } from './readers/UserPreferencesReader';
 
 // L1 Providers — see docs/adr/0008 (ADR-0008)
 export { FileEntityProvider } from './FileEntityProvider';
