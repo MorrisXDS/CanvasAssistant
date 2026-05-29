@@ -10,10 +10,18 @@ import {
   coreMigrations,
 } from '../../../src/layers/l1-persistence/MigrationRunner';
 import { RecordExportHistoryCommand } from '../../../src/layers/l4-controller/commands/export/RecordExportHistoryCommand';
+import { UpsertHtmlExportCommand } from '../../../src/layers/l4-controller/commands/export/UpsertHtmlExportCommand';
 import {
   CommandContext,
   createSimulationContext,
 } from '../../../src/layers/l4-controller/types';
+
+function seedCourse(db: Database, id: number): void {
+  db.executeWrite(
+    `INSERT INTO courses (id, external_id, code, name, target_grade) VALUES (?, ?, ?, ?, 85)`,
+    [id, `ext_${id}`, `C${id}`, `Course ${id}`]
+  );
+}
 
 describe('RecordExportHistoryCommand', () => {
   let db: Database;
@@ -113,5 +121,82 @@ describe('RecordExportHistoryCommand', () => {
     const result = await command.execute(context, { exportType: 'csv' });
     expect(result.success).toBe(false);
     expect(result.error).toContain('Failed to record export history');
+  });
+});
+
+describe('UpsertHtmlExportCommand', () => {
+  let db: Database;
+  let context: CommandContext;
+  const command = new UpsertHtmlExportCommand();
+
+  beforeEach(() => {
+    db = new Database({ dbPath: ':memory:', verbose: false });
+    db.initialize();
+    const runner = new MigrationRunner(db);
+    runner.loadMigrations(coreMigrations);
+    runner.runAll();
+    context = { db, simulationContext: createSimulationContext() };
+    seedCourse(db, 1);
+  });
+
+  afterEach(() => {
+    db.close();
+  });
+
+  it('inserts a new export row', async () => {
+    const result = await command.execute(context, {
+      courseId: 1,
+      sourceType: 'page',
+      sourceId: '42',
+      title: 'Week 1',
+      contentHash: 'abc',
+      localPath: '/files/w1.html',
+    });
+    expect(result.success).toBe(true);
+
+    const row = db.executeReadOne<{ title: string; local_path: string }>(
+      'SELECT title, local_path FROM html_exports WHERE course_id = 1 AND source_type = ? AND source_id = ?',
+      ['page', '42']
+    );
+    expect(row).toMatchObject({ title: 'Week 1', local_path: '/files/w1.html' });
+  });
+
+  it('updates on conflict (same course/type/id) without duplicating', async () => {
+    const base = {
+      courseId: 1,
+      sourceType: 'page',
+      sourceId: '42',
+      contentHash: 'h1',
+      localPath: '/files/old.html',
+      title: 'Old',
+    };
+    await command.execute(context, base);
+    await command.execute(context, {
+      ...base,
+      title: 'New',
+      contentHash: 'h2',
+      localPath: '/files/new.html',
+    });
+
+    const rows = db.executeRead<{ title: string; local_path: string }>(
+      'SELECT title, local_path FROM html_exports WHERE course_id = 1',
+      []
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ title: 'New', local_path: '/files/new.html' });
+  });
+
+  it('reports failure when the write throws', async () => {
+    db.close();
+    const result = await command.execute(context, {
+      courseId: 1,
+      sourceType: 'page',
+      sourceId: '1',
+      title: 't',
+      contentHash: 'h',
+      localPath: '/p',
+    });
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Failed to record HTML export');
   });
 });

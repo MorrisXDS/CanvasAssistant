@@ -263,6 +263,19 @@ export interface RecordExportHistoryParams {
   errorMessage?: string | null;
 }
 
+/**
+ * Register (insert-or-update) an HTML export in `html_exports`, keyed by
+ * (course_id, source_type, source_id).
+ */
+export interface UpsertHtmlExportParams {
+  courseId: number;
+  sourceType: string;
+  sourceId: string;
+  title: string;
+  contentHash: string;
+  localPath: string;
+}
+
 // =============================================================================
 // Canvas Task Queue Command Params
 // =============================================================================

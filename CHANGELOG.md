@@ -34,6 +34,11 @@ AND deleted_at IS NULL` — it was returning **hidden courses** and **ignoring
 
 ### Changed
 
+- `2026-05-29 22:48 UTC` — `htmlExportHandlers` migrated off raw SQL (ADR-0007).
+  `pages:exportHtml` / `html:exportBatch` / `html:getExports` now read course
+  info via `CourseReader` and `html_exports` rows via a new `HtmlExportReader`,
+  and the export upsert routes through a new `UpsertHtmlExportCommand` (L4). No
+  `database.execute*` calls remain; the ceiling entry (was 2) is removed.
 - `2026-05-29 22:35 UTC` — `exportHandlers` migrated off raw SQL (ADR-0007).
   Selective-export and scheduled-backup history writes now route through the
   shared `RecordExportHistoryCommand` (extended to cover the full
