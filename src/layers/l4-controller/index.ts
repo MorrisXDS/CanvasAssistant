@@ -25,6 +25,8 @@ export {
   UpdateCoursePreferencesParams,
   DismissNotificationParams,
   MarkTaskCompleteParams,
+  CreateTaskTypeParams,
+  DeleteTaskTypeParams,
   TriggerSyncParams,
   SimulateGradeParams,
   ClearSimulationParams,
@@ -62,6 +64,9 @@ export {
   UpdateTaskCommand,
   DeleteTaskCommand,
   MarkTaskCompleteCommand,
+  CreateTaskTypeCommand,
+  CreateTaskTypeResult,
+  DeleteTaskTypeCommand,
   // Queue commands
   AcceptQueuedTaskCommand,
   RejectQueuedTaskCommand,

@@ -21,7 +21,12 @@ import { DeleteTaskCommand } from '../../../src/layers/l4-controller/commands/ta
 import { MarkTaskCompleteCommand } from '../../../src/layers/l4-controller/commands/task/MarkTaskCompleteCommand';
 import { UpdateTaskCommand } from '../../../src/layers/l4-controller/commands/task/UpdateTaskCommand';
 import { DuplicateTaskCommand } from '../../../src/layers/l4-controller/commands/task/DuplicateTaskCommand';
-import { CommandContext, createSimulationContext } from '../../../src/layers/l4-controller/types';
+import { CreateTaskTypeCommand } from '../../../src/layers/l4-controller/commands/task/CreateTaskTypeCommand';
+import { DeleteTaskTypeCommand } from '../../../src/layers/l4-controller/commands/task/DeleteTaskTypeCommand';
+import {
+  CommandContext,
+  createSimulationContext,
+} from '../../../src/layers/l4-controller/types';
 
 // Test directory for database
 const TEST_DIR = path.join(__dirname, '../../temp-l4-commands');
@@ -244,10 +249,7 @@ describe('Task Commands', () => {
         expect(result.data?.deleted).toBe(true);
 
         // Verify task was deleted
-        const task = db.executeReadOne(
-          'SELECT id FROM tasks WHERE id = ?',
-          [userTaskId]
-        );
+        const task = db.executeReadOne('SELECT id FROM tasks WHERE id = ?', [userTaskId]);
         expect(task).toBeUndefined();
       });
 
@@ -616,10 +618,13 @@ describe('Task Commands', () => {
         expect(result.success).toBe(true);
         expect(result.data?.taskId).toBeGreaterThan(originalTaskId);
 
-        const task = db.executeReadOne<{ title: string; description: string; weight: number }>(
-          'SELECT title, description, weight FROM tasks WHERE id = ?',
-          [result.data?.taskId]
-        );
+        const task = db.executeReadOne<{
+          title: string;
+          description: string;
+          weight: number;
+        }>('SELECT title, description, weight FROM tasks WHERE id = ?', [
+          result.data?.taskId,
+        ]);
         expect(task?.title).toBe('Original Task (Copy)');
         expect(task?.description).toBe('Original description');
         expect(task?.weight).toBe(25);
@@ -732,6 +737,133 @@ describe('Task Commands', () => {
         );
         expect(task?.course_id).toBe(otherCourseId);
       });
+    });
+  });
+
+  describe('CreateTaskTypeCommand', () => {
+    let command: CreateTaskTypeCommand;
+
+    beforeEach(() => {
+      command = new CreateTaskTypeCommand();
+    });
+
+    describe('validate', () => {
+      it('should reject a missing name', () => {
+        const result = command.validate({ name: '', displayName: 'Lab' });
+        expect(result.valid).toBe(false);
+        expect(result.error).toContain('required');
+      });
+
+      it('should reject a missing display name', () => {
+        const result = command.validate({ name: 'lab', displayName: '' });
+        expect(result.valid).toBe(false);
+        expect(result.error).toContain('required');
+      });
+
+      it('should accept a valid name + display name', () => {
+        expect(command.validate({ name: 'lab', displayName: 'Lab' })).toEqual({
+          valid: true,
+        });
+      });
+    });
+
+    it('should fail execute when validation fails', async () => {
+      const result = await command.execute(context, { name: '', displayName: '' });
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('required');
+    });
+
+    it('should create a global task type and normalize the name', async () => {
+      const result = await command.execute(context, {
+        name: 'Lab Report',
+        displayName: 'Lab Report',
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.data?.name).toBe('lab_report');
+      expect(result.data?.displayName).toBe('Lab Report');
+      expect(result.data?.courseId).toBeNull();
+
+      const row = db.executeReadOne<{ name: string; course_id: number | null }>(
+        'SELECT name, course_id FROM custom_task_types WHERE id = ?',
+        [result.data?.id]
+      );
+      expect(row?.name).toBe('lab_report');
+      expect(row?.course_id).toBeNull();
+    });
+
+    it('should scope a task type to a course when courseId is given', async () => {
+      const result = await command.execute(context, {
+        name: 'midterm',
+        displayName: 'Midterm',
+        courseId: testCourseId,
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.data?.courseId).toBe(testCourseId);
+    });
+
+    it('should reject a duplicate (normalized) name', async () => {
+      await command.execute(context, { name: 'lab report', displayName: 'Lab Report' });
+      const dup = await command.execute(context, {
+        name: 'LAB  REPORT',
+        displayName: 'Another',
+      });
+
+      expect(dup.success).toBe(false);
+      expect(dup.error).toContain('already exists');
+    });
+  });
+
+  describe('DeleteTaskTypeCommand', () => {
+    let createCommand: CreateTaskTypeCommand;
+    let deleteCommand: DeleteTaskTypeCommand;
+
+    beforeEach(() => {
+      createCommand = new CreateTaskTypeCommand();
+      deleteCommand = new DeleteTaskTypeCommand();
+    });
+
+    describe('validate', () => {
+      it('should reject a non-positive id', () => {
+        const result = deleteCommand.validate({ id: 0 });
+        expect(result.valid).toBe(false);
+        expect(result.error).toContain('Invalid');
+      });
+
+      it('should accept a positive id', () => {
+        expect(deleteCommand.validate({ id: 5 })).toEqual({ valid: true });
+      });
+    });
+
+    it('should fail execute when validation fails', async () => {
+      const result = await deleteCommand.execute(context, { id: -1 });
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Invalid');
+    });
+
+    it('should return not-found for an unknown id', async () => {
+      const result = await deleteCommand.execute(context, { id: 9999 });
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('not found');
+    });
+
+    it('should delete an existing task type', async () => {
+      const created = await createCommand.execute(context, {
+        name: 'quiz',
+        displayName: 'Quiz',
+      });
+      const id = created.data!.id;
+
+      const result = await deleteCommand.execute(context, { id });
+      expect(result.success).toBe(true);
+      expect(result.data?.deleted).toBe(true);
+
+      const row = db.executeReadOne<{ id: number }>(
+        'SELECT id FROM custom_task_types WHERE id = ?',
+        [id]
+      );
+      expect(row).toBeUndefined();
     });
   });
 });

@@ -169,6 +169,23 @@ export interface DeleteTaskParams {
   force?: boolean;
 }
 
+/**
+ * Create a user-defined (custom) task type. `courseId` scopes the type to
+ * a single course; omit it for a global type available everywhere.
+ */
+export interface CreateTaskTypeParams {
+  name: string;
+  displayName: string;
+  courseId?: number;
+}
+
+/**
+ * Delete a custom task type by id.
+ */
+export interface DeleteTaskTypeParams {
+  id: number;
+}
+
 // =============================================================================
 // Canvas Task Queue Command Params
 // =============================================================================

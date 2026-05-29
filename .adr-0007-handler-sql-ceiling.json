@@ -20,7 +20,6 @@
     "src/lifecycle/ipc-handlers/resourceHandlers.ts": 4,
     "src/lifecycle/ipc-handlers/settingsHandlers.ts": 4,
     "src/lifecycle/ipc-handlers/syncHandlers.ts": 6,
-    "src/lifecycle/ipc-handlers/syncUpdatesHandlers.ts": 11,
-    "src/lifecycle/ipc-handlers/taskTypesHandlers.ts": 2
+    "src/lifecycle/ipc-handlers/syncUpdatesHandlers.ts": 11
   }
 }
