@@ -34,6 +34,16 @@ AND deleted_at IS NULL` — it was returning **hidden courses** and **ignoring
 
 ### Changed
 
+- `2026-05-29 23:09 UTC` — `courseExportHandlers` import pipeline migrated off raw
+  SQL (ADR-0007). The entire `data:importCourseData` orchestration — 8 entity
+  `upsert`s plus the old→new foreign-key remapping across courses / tasks /
+  notifications / pages / policies / resources / syllabuses / grace tokens +
+  usage — moved verbatim into a new `ImportCourseDataCommand` (L4); the handler
+  is now a thin read-file → command → return adapter. The file's ceiling entry
+  (was 9) is removed. The `data:exportCourseData` reads (generic-typed, so
+  uncounted by the ratchet) remain and are tracked for a follow-up in
+  `docs/FOLLOWUPS.md`. Import behavior preserved verbatim — including the exact
+  `||`/`??` field-selection semantics.
 - `2026-05-29 22:48 UTC` — `htmlExportHandlers` migrated off raw SQL (ADR-0007).
   `pages:exportHtml` / `html:exportBatch` / `html:getExports` now read course
   info via `CourseReader` and `html_exports` rows via a new `HtmlExportReader`,

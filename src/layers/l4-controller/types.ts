@@ -276,6 +276,28 @@ export interface UpsertHtmlExportParams {
   localPath: string;
 }
 
+/**
+ * Import a previously-exported course-data payload (the JSON produced by
+ * `data:exportCourseData`). The payload is loosely typed — the command
+ * validates its shape and tolerates both camelCase and snake_case keys.
+ */
+export interface ImportCourseDataParams {
+  importData: Record<string, unknown>;
+}
+
+/** Per-entity counts of rows imported. */
+export interface ImportCourseDataResult {
+  coursesImported: number;
+  tasksImported: number;
+  notificationsImported: number;
+  pagesImported: number;
+  policiesImported: number;
+  resourcesImported: number;
+  syllabusesImported: number;
+  graceTokensImported: number;
+  graceTokenUsageImported: number;
+}
+
 // =============================================================================
 // Canvas Task Queue Command Params
 // =============================================================================
