@@ -247,14 +247,20 @@ export interface UpdateCourseSettingsParams {
 // =============================================================================
 
 /**
- * Record a completed/failed export in `export_history`.
+ * Record a completed/failed export in `export_history`. Optional fields
+ * fall back to the table's defaults (encrypted=0, files=0, no error).
  */
 export interface RecordExportHistoryParams {
   exportType: 'full' | 'selective' | 'csv' | 'scheduled';
   filePath?: string | null;
   fileSize?: number | null;
+  encrypted?: boolean;
+  /** Course ids included in the export; stored as a JSON array string. */
+  coursesIncluded?: number[];
   tasksExported?: number;
+  filesExported?: number;
   status?: 'completed' | 'failed' | 'deleted';
+  errorMessage?: string | null;
 }
 
 // =============================================================================

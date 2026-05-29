@@ -42,6 +42,8 @@ export { PolicyReader } from './readers/PolicyReader';
 export { TaskTypeReader } from './readers/TaskTypeReader';
 export { LinkSuggestionReader } from './readers/LinkSuggestionReader';
 export { UserPreferencesReader } from './readers/UserPreferencesReader';
+export { ExportHistoryReader } from './readers/ExportHistoryReader';
+export type { ExportHistoryRow } from './readers/ExportHistoryReader';
 
 // L1 Providers — see docs/adr/0008 (ADR-0008)
 export { FileEntityProvider } from './FileEntityProvider';
