@@ -9,14 +9,27 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import type { IpcContext } from './IpcContext';
+import { CourseReader, HtmlExportReader } from '../../layers/l1-persistence';
+import { UpsertHtmlExportCommand } from '../../layers/l4-controller';
+import { createSimulationContext } from '../../layers/l4-controller/types';
 
 /**
  * Register all HTML export related IPC handlers
+ *
+ * Per ADR-0007, this file holds no raw `database.execute*` calls. Reads
+ * route through `CourseReader` / `HtmlExportReader` (L1); the html_exports
+ * upsert routes through `UpsertHtmlExportCommand` (L4).
  */
 export function registerHtmlExportHandlers(ctx: IpcContext): void {
   const database = ctx.getDatabase();
   const logger = ctx.getLogger();
   const getFilesDir = ctx.getFilesDir;
+  const courseReader = new CourseReader(database);
+  const htmlExportReader = new HtmlExportReader(database);
+  const runContext = () => ({
+    db: database,
+    simulationContext: createSimulationContext(),
+  });
 
   // Export page as HTML file (auto-saves to Files directory, registers in html_exports)
   ipcMain.handle(
@@ -33,10 +46,7 @@ export function registerHtmlExportHandlers(ctx: IpcContext): void {
       const FILES_DIR = getFilesDir();
 
       // Get course info
-      const course = database.executeRead<{ code: string }>(
-        'SELECT code FROM courses WHERE id = ?',
-        [options.courseId]
-      )[0];
+      const course = courseReader.getById(options.courseId);
 
       if (!course) {
         return { success: false, error: 'Course not found' };
@@ -50,10 +60,11 @@ export function registerHtmlExportHandlers(ctx: IpcContext): void {
       const sourceId = options.pageId === -1 ? 'syllabus' : String(options.pageId);
 
       // Check if there's an existing export in html_exports
-      const existingExport = database.executeRead<{ local_path: string }>(
-        'SELECT local_path FROM html_exports WHERE course_id = ? AND source_type = ? AND source_id = ?',
-        [options.courseId, sourceType, sourceId]
-      )[0];
+      const existingExport = htmlExportReader.getByContext(
+        options.courseId,
+        sourceType,
+        sourceId
+      );
 
       let localPath: string;
 
@@ -123,17 +134,14 @@ export function registerHtmlExportHandlers(ctx: IpcContext): void {
           .digest('hex');
 
         // Register/update in html_exports table
-        database.executeWrite(
-          `INSERT INTO html_exports (course_id, source_type, source_id, title, content_hash, local_path, exported_at)
-           VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-           ON CONFLICT(course_id, source_type, source_id) DO UPDATE SET
-             title = excluded.title,
-             content_hash = excluded.content_hash,
-             local_path = excluded.local_path,
-             exported_at = CURRENT_TIMESTAMP`,
-          [options.courseId, sourceType, sourceId, options.title, contentHash, localPath],
-          'html_exports'
-        );
+        await new UpsertHtmlExportCommand().execute(runContext(), {
+          courseId: options.courseId,
+          sourceType,
+          sourceId,
+          title: options.title,
+          contentHash,
+          localPath,
+        });
 
         logger.info(`Page exported to Files: ${localPath}`);
         return { success: true, data: { filePath: localPath } };
@@ -162,10 +170,7 @@ export function registerHtmlExportHandlers(ctx: IpcContext): void {
       const FILES_DIR = getFilesDir();
 
       // Get course info
-      const course = database.executeRead<{ code: string; external_id: string }>(
-        'SELECT code, external_id FROM courses WHERE id = ?',
-        [params.courseId]
-      )[0];
+      const course = courseReader.getById(params.courseId);
 
       if (!course) {
         return { success: false, error: 'Course not found' };
@@ -242,24 +247,14 @@ export function registerHtmlExportHandlers(ctx: IpcContext): void {
             .digest('hex');
 
           // Update html_exports table
-          database.executeWrite(
-            `INSERT INTO html_exports (course_id, source_type, source_id, title, content_hash, local_path, exported_at)
-             VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-             ON CONFLICT(course_id, source_type, source_id) DO UPDATE SET
-               title = excluded.title,
-               content_hash = excluded.content_hash,
-               local_path = excluded.local_path,
-               exported_at = CURRENT_TIMESTAMP`,
-            [
-              params.courseId,
-              item.sourceType,
-              item.sourceId,
-              item.title,
-              contentHash,
-              localPath,
-            ],
-            'html_exports'
-          );
+          await new UpsertHtmlExportCommand().execute(runContext(), {
+            courseId: params.courseId,
+            sourceType: item.sourceType,
+            sourceId: item.sourceId,
+            title: item.title,
+            contentHash,
+            localPath,
+          });
 
           results.push({
             sourceType: item.sourceType,
@@ -305,19 +300,12 @@ export function registerHtmlExportHandlers(ctx: IpcContext): void {
       _event,
       courseId: number
     ): Promise<Array<{ sourceType: string; sourceId: string; localPath: string }>> => {
-      const exports = database.executeRead<{
-        source_type: string;
-        source_id: string;
-        local_path: string;
-      }>(
-        'SELECT source_type, source_id, local_path FROM html_exports WHERE course_id = ? AND local_path IS NOT NULL',
-        [courseId]
-      );
+      const exports = htmlExportReader.getByCourseWithPath(courseId);
 
       return exports.map((e) => ({
         sourceType: e.source_type,
         sourceId: e.source_id,
-        localPath: e.local_path,
+        localPath: e.local_path ?? '',
       }));
     }
   );
