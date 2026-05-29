@@ -38,6 +38,8 @@ export {
   // Export command param types
   RecordExportHistoryParams,
   UpsertHtmlExportParams,
+  ImportCourseDataParams,
+  ImportCourseDataResult,
   TriggerSyncParams,
   SimulateGradeParams,
   ClearSimulationParams,
@@ -89,6 +91,7 @@ export {
   // Export commands
   RecordExportHistoryCommand,
   UpsertHtmlExportCommand,
+  ImportCourseDataCommand,
   // Queue commands
   AcceptQueuedTaskCommand,
   RejectQueuedTaskCommand,
