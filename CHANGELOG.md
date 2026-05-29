@@ -12,6 +12,13 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ### Fixed
 
+- `2026-05-29 21:51 UTC` — `settings:setDefaultTargetGrade` was silently broken:
+  it did `require('../layers/l1-persistence/repositories')` from
+  `src/lifecycle/ipc-handlers/`, which resolves to the non-existent
+  `src/lifecycle/layers/…` — so changing the default target grade threw
+  "Cannot find module" at runtime. Replaced the mis-pathed inline `require`
+  with a top-level `CourseRepository` import (discovered during the ADR-0007
+  migration of this handler).
 - `2026-05-27 18:03 UTC` — Two silent course-visibility bugs (ADR-0007 PR-B).
   `data:getCourses` previously ran raw SQL filtering only `archived_at IS NULL
 AND deleted_at IS NULL` — it was returning **hidden courses** and **ignoring
@@ -27,6 +34,14 @@ AND deleted_at IS NULL` — it was returning **hidden courses** and **ignoring
 
 ### Changed
 
+- `2026-05-29 21:51 UTC` — `settingsHandlers` migrated off raw SQL (ADR-0007).
+  The `user_preferences` key-value reads/writes (`localHtmlPathsSettings`,
+  `academicSettings`/default target grade, `canvasTimezone`) now route through a
+  new `UserPreferencesReader` (L1) + `SetUserPreferenceCommand` (L4); the
+  per-course `course:getSettings` / `course:updateSettings` route through
+  `CourseReader.getSettingsById` + a new `UpdateCourseSettingsCommand`. No
+  `database.execute*` calls remain; the ceiling entry (was 4) is removed.
+  Renderer response shapes unchanged.
 - `2026-05-29 20:35 UTC` — `taskLinkHandlers` migrated off raw SQL (ADR-0007).
   The link-suggestion / manual-linking IPC handlers (`data:getLinkSuggestions`,
   `:acceptLinkSuggestion`, `:rejectLinkSuggestion`, `:getPendingSuggestionCount`,

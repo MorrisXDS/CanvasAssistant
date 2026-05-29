@@ -12,13 +12,33 @@ import { ipcMain, app, dialog } from 'electron';
 import fs from 'fs';
 import path from 'path';
 import type { IpcContext } from './IpcContext';
+import {
+  CourseReader,
+  CourseRepository,
+  UserPreferencesReader,
+} from '../../layers/l1-persistence';
+import {
+  SetUserPreferenceCommand,
+  UpdateCourseSettingsCommand,
+} from '../../layers/l4-controller';
+import { createSimulationContext } from '../../layers/l4-controller/types';
 
 /**
  * Register all settings-related IPC handlers
+ *
+ * Per ADR-0007, this file holds no raw `database.execute*` calls. Reads
+ * route through `UserPreferencesReader` / `CourseReader` (L1); writes route
+ * through `SetUserPreferenceCommand` / `UpdateCourseSettingsCommand` (L4).
  */
 export function registerSettingsHandlers(ctx: IpcContext): void {
   const database = ctx.getDatabase();
   const logger = ctx.getLogger();
+  const prefsReader = new UserPreferencesReader(database);
+  const courseReader = new CourseReader(database);
+  const runContext = () => ({
+    db: database,
+    simulationContext: createSimulationContext(),
+  });
   const getVisibilityOracle = ctx.getVisibilityOracle;
   const getMainWindow = ctx.getMainWindow;
   const getWindowBehavior = ctx.getWindowBehavior;
@@ -37,7 +57,7 @@ export function registerSettingsHandlers(ctx: IpcContext): void {
 
   ipcMain.handle(
     'settings:setLocalHtmlPathsSettings',
-    (
+    async (
       _event,
       settings: {
         enabled: boolean;
@@ -46,12 +66,13 @@ export function registerSettingsHandlers(ctx: IpcContext): void {
       }
     ) => {
       try {
-        database.executeWrite(
-          `INSERT INTO user_preferences (key, value) VALUES ('localHtmlPathsSettings', ?)
-           ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
-          [JSON.stringify(settings)],
-          'user_preferences'
-        );
+        const result = await new SetUserPreferenceCommand().execute(runContext(), {
+          key: 'localHtmlPathsSettings',
+          value: JSON.stringify(settings),
+        });
+        if (!result.success) {
+          return { success: false, error: result.error };
+        }
 
         logger.info(
           `Local HTML paths settings updated: enabled=${settings.enabled}, autoRegenerate=${settings.autoRegenerate}`
@@ -68,11 +89,9 @@ export function registerSettingsHandlers(ctx: IpcContext): void {
 
   ipcMain.handle('settings:getDefaultTargetGrade', () => {
     try {
-      const prefs = database.executeReadOne<{ value: string }>(
-        "SELECT value FROM user_preferences WHERE key = 'academicSettings'"
-      );
-      if (prefs?.value) {
-        const settings = JSON.parse(prefs.value);
+      const value = prefsReader.get('academicSettings');
+      if (value) {
+        const settings = JSON.parse(value);
         return { defaultTargetGrade: settings.defaultTargetGrade ?? 85 };
       }
       return { defaultTargetGrade: 85 };
@@ -81,34 +100,35 @@ export function registerSettingsHandlers(ctx: IpcContext): void {
     }
   });
 
-  ipcMain.handle('settings:setDefaultTargetGrade', (_event, targetGrade: number) => {
-    try {
-      const existing = database.executeReadOne<{ value: string }>(
-        "SELECT value FROM user_preferences WHERE key = 'academicSettings'"
-      );
-      const settings = existing?.value ? JSON.parse(existing.value) : {};
-      settings.defaultTargetGrade = targetGrade;
+  ipcMain.handle(
+    'settings:setDefaultTargetGrade',
+    async (_event, targetGrade: number) => {
+      try {
+        const existing = prefsReader.get('academicSettings');
+        const settings = existing ? JSON.parse(existing) : {};
+        settings.defaultTargetGrade = targetGrade;
 
-      database.executeWrite(
-        `INSERT INTO user_preferences (key, value) VALUES ('academicSettings', ?)
-         ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
-        [JSON.stringify(settings)],
-        'user_preferences'
-      );
+        const result = await new SetUserPreferenceCommand().execute(runContext(), {
+          key: 'academicSettings',
+          value: JSON.stringify(settings),
+        });
+        if (!result.success) {
+          return { success: false, error: result.error };
+        }
 
-      const { CourseRepository } = require('../layers/l1-persistence/repositories');
-      const courseRepo = new CourseRepository(database);
-      const updatedCount = courseRepo.updateDefaultTargetGrades(targetGrade);
+        const courseRepo = new CourseRepository(database);
+        const updatedCount = courseRepo.updateDefaultTargetGrades(targetGrade);
 
-      logger.info(
-        `Default target grade updated to ${targetGrade}%, propagated to ${updatedCount} courses`
-      );
-      return { success: true, data: { updatedCourses: updatedCount } };
-    } catch (error) {
-      logger.error('Failed to save default target grade:', error as Error);
-      return { success: false, error: String(error) };
+        logger.info(
+          `Default target grade updated to ${targetGrade}%, propagated to ${updatedCount} courses`
+        );
+        return { success: true, data: { updatedCourses: updatedCount } };
+      } catch (error) {
+        logger.error('Failed to save default target grade:', error as Error);
+        return { success: false, error: String(error) };
+      }
     }
-  });
+  );
 
   // ============ Visibility Settings Handlers ============
 
@@ -229,13 +249,7 @@ export function registerSettingsHandlers(ctx: IpcContext): void {
 
   ipcMain.handle('course:getSettings', (_event, courseId: number) => {
     try {
-      const course = database.executeReadOne<{
-        auto_assign_due_date: number | null;
-        allow_guessed_override: number | null;
-      }>(
-        'SELECT auto_assign_due_date, allow_guessed_override FROM courses WHERE id = ?',
-        [courseId]
-      );
+      const course = courseReader.getSettingsById(courseId);
 
       if (!course) {
         return { success: false, error: 'Course not found' };
@@ -255,7 +269,7 @@ export function registerSettingsHandlers(ctx: IpcContext): void {
 
   ipcMain.handle(
     'course:updateSettings',
-    (
+    async (
       _event,
       courseId: number,
       settings: {
@@ -264,30 +278,13 @@ export function registerSettingsHandlers(ctx: IpcContext): void {
       }
     ) => {
       try {
-        const updates: string[] = [];
-        const values: (number | null)[] = [];
-
-        if ('autoAssignDueDate' in settings) {
-          updates.push('auto_assign_due_date = ?');
-          values.push(settings.autoAssignDueDate ?? null);
+        const result = await new UpdateCourseSettingsCommand().execute(runContext(), {
+          courseId,
+          ...settings,
+        });
+        if (!result.success) {
+          return { success: false, error: result.error };
         }
-
-        if ('allowGuessedOverride' in settings) {
-          updates.push('allow_guessed_override = ?');
-          values.push(settings.allowGuessedOverride ?? 1);
-        }
-
-        if (updates.length === 0) {
-          return { success: true };
-        }
-
-        values.push(courseId);
-        database.executeWrite(
-          `UPDATE courses SET ${updates.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-          values,
-          'courses'
-        );
-
         return { success: true };
       } catch (error) {
         logger.error('Failed to update course settings:', error as Error);
@@ -377,7 +374,7 @@ export function registerSettingsHandlers(ctx: IpcContext): void {
    */
   ipcMain.handle(
     'settings:syncCanvasTimezone',
-    (_event, params: { timezone: string }) => {
+    async (_event, params: { timezone: string }) => {
       const { timezone } = params;
 
       if (!timezone) {
@@ -386,12 +383,13 @@ export function registerSettingsHandlers(ctx: IpcContext): void {
 
       try {
         // Store in user_preferences for persistence
-        database.executeWrite(
-          `INSERT INTO user_preferences (key, value) VALUES ('canvasTimezone', ?)
-           ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
-          [JSON.stringify({ timezone, syncedAt: new Date().toISOString() })],
-          'user_preferences'
-        );
+        const result = await new SetUserPreferenceCommand().execute(runContext(), {
+          key: 'canvasTimezone',
+          value: JSON.stringify({ timezone, syncedAt: new Date().toISOString() }),
+        });
+        if (!result.success) {
+          return { success: false, error: result.error };
+        }
 
         logger.info(`Canvas timezone synced: ${timezone}`);
         return { success: true, data: { timezone } };
@@ -407,11 +405,9 @@ export function registerSettingsHandlers(ctx: IpcContext): void {
    */
   ipcMain.handle('settings:getCanvasTimezone', () => {
     try {
-      const row = database.executeReadOne<{ value: string }>(
-        "SELECT value FROM user_preferences WHERE key = 'canvasTimezone'"
-      );
-      if (row?.value) {
-        const data = JSON.parse(row.value);
+      const value = prefsReader.get('canvasTimezone');
+      if (value) {
+        const data = JSON.parse(value);
         return { success: true, data };
       }
       return { success: true, data: null };
