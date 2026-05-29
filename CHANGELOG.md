@@ -27,6 +27,14 @@ AND deleted_at IS NULL` — it was returning **hidden courses** and **ignoring
 
 ### Changed
 
+- `2026-05-29 20:14 UTC` — `taskTypesHandlers` migrated off raw SQL (ADR-0007).
+  The custom-task-type IPC handlers (`taskTypes:getAll` / `:create` / `:delete`)
+  now route reads through a new `TaskTypeReader` (L1) and writes through new
+  `CreateTaskTypeCommand` / `DeleteTaskTypeCommand` (L4) — no `database.execute*`
+  calls remain in the handler file, so its ceiling entry is removed and locked
+  at zero. Renderer-facing DTO shapes are unchanged. New `CustomTaskTypeRow`
+  added to `DatabaseRowTypes.ts`. Covered by `TaskTypeReader` unit tests,
+  Create/DeleteTaskType command tests, and a `taskTypesHandlers` integration test.
 - `2026-05-27 22:08 UTC` — Visibility-defense filtering moved into centralized
   Zustand selectors (ADR-0007 PR-C). Components no longer re-derive the
   `notifications.filter(n => courseMap.has(n.courseId))` defense inline — they

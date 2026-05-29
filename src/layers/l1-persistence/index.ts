@@ -39,6 +39,7 @@ export { TaskReader } from './readers/TaskReader';
 export { CanvasTaskQueueReader } from './readers/CanvasTaskQueueReader';
 export { NotificationReader } from './readers/NotificationReader';
 export { PolicyReader } from './readers/PolicyReader';
+export { TaskTypeReader } from './readers/TaskTypeReader';
 
 // L1 Providers — see docs/adr/0008 (ADR-0008)
 export { FileEntityProvider } from './FileEntityProvider';
@@ -70,6 +71,7 @@ export type {
   TaskRowWithFieldSources,
   PolicyRow,
   PolicyRowMinimal,
+  CustomTaskTypeRow,
   NotificationRow,
   // Grace token rows
   GraceTokenRowMinimal,

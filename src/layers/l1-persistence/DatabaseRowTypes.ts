@@ -234,6 +234,18 @@ export interface PolicyRowMinimal {
 }
 
 /**
+ * Custom (user-defined) task type row from the `custom_task_types` table.
+ * A `course_id` of null means the type is global (available to all courses).
+ */
+export interface CustomTaskTypeRow {
+  id: number;
+  name: string;
+  display_name: string;
+  course_id: number | null;
+  created_at: string;
+}
+
+/**
  * Notification row from notifications table
  */
 export interface NotificationRow {
