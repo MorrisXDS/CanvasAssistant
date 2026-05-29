@@ -164,6 +164,64 @@ describe('TaskReader', () => {
       expect(rows.map((r) => r.title)).toEqual(['cs']);
     });
   });
+
+  describe('findUnlinkedCanvasTasksInCourse', () => {
+    test('returns unlinked Canvas tasks ordered by due_at DESC', () => {
+      seedTask(db, {
+        courseId: 1,
+        title: 'early',
+        sourceType: 'canvas',
+        dueAt: '2026-01-01',
+      });
+      seedTask(db, {
+        courseId: 1,
+        title: 'late',
+        sourceType: 'canvas',
+        dueAt: '2026-03-01',
+      });
+
+      const rows = reader.findUnlinkedCanvasTasksInCourse(1);
+
+      expect(rows.map((r) => r.title)).toEqual(['late', 'early']);
+    });
+
+    test('excludes user-sourced tasks', () => {
+      seedTask(db, { courseId: 1, title: 'mine', sourceType: 'user', externalId: null });
+
+      expect(reader.findUnlinkedCanvasTasksInCourse(1)).toHaveLength(0);
+    });
+
+    test('excludes Canvas tasks already linked to a user task', () => {
+      seedTask(db, {
+        courseId: 1,
+        title: 'linked',
+        sourceType: 'canvas',
+        linkedFrom: 'user_ext_1',
+      });
+
+      expect(reader.findUnlinkedCanvasTasksInCourse(1)).toHaveLength(0);
+    });
+
+    test('excludes soft-deleted Canvas tasks', () => {
+      seedTask(db, {
+        courseId: 1,
+        title: 'gone',
+        sourceType: 'canvas',
+        deletedAt: '2026-01-01',
+      });
+
+      expect(reader.findUnlinkedCanvasTasksInCourse(1)).toHaveLength(0);
+    });
+
+    test('scopes by course', () => {
+      seedTask(db, { courseId: 1, title: 'cs', sourceType: 'canvas' });
+      seedTask(db, { courseId: 2, title: 'mat', sourceType: 'canvas' });
+
+      expect(reader.findUnlinkedCanvasTasksInCourse(1).map((r) => r.title)).toEqual([
+        'cs',
+      ]);
+    });
+  });
 });
 
 function seedCourse(db: Database, id: number, code: string): void {
@@ -185,13 +243,15 @@ function seedTask(
     externalId?: string | null;
     priorityScore?: number;
     deletedAt?: string | null;
+    dueAt?: string | null;
+    linkedFrom?: string | null;
   }
 ): number {
   const externalId =
     data.externalId === null ? null : (data.externalId ?? `ext_task_${extCounter++}`);
   const result = db.executeWrite(
-    `INSERT INTO tasks (course_id, external_id, source_type, title, priority_score, deleted_at)
-     VALUES (?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO tasks (course_id, external_id, source_type, title, priority_score, deleted_at, due_at, linked_from_user_task)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       data.courseId,
       externalId,
@@ -199,6 +259,8 @@ function seedTask(
       data.title ?? 'task',
       data.priorityScore ?? 0,
       data.deletedAt ?? null,
+      data.dueAt ?? null,
+      data.linkedFrom ?? null,
     ]
   );
   return Number(result.lastInsertRowid);

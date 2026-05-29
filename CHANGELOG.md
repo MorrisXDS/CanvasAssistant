@@ -27,6 +27,17 @@ AND deleted_at IS NULL` — it was returning **hidden courses** and **ignoring
 
 ### Changed
 
+- `2026-05-29 20:35 UTC` — `taskLinkHandlers` migrated off raw SQL (ADR-0007).
+  The link-suggestion / manual-linking IPC handlers (`data:getLinkSuggestions`,
+  `:acceptLinkSuggestion`, `:rejectLinkSuggestion`, `:getPendingSuggestionCount`,
+  `:getCanvasTasksForLinking`, `:manuallyLinkTasks`, `:unlinkTasks`) now route
+  reads through a new `LinkSuggestionReader` (L1) + `TaskReader.findUnlinkedCanvasTasksInCourse`,
+  and the four write paths through new L4 commands (`AcceptLinkSuggestion`,
+  `RejectLinkSuggestion`, `ManuallyLinkTasks`, `UnlinkTasks`). No `database.execute*`
+  calls remain in the handler file; its ceiling entry (was 9) is removed and locked
+  at zero. Renderer response shapes unchanged. New `LinkSuggestionWithTasksRow`
+  join-projection type in `DatabaseRowTypes.ts`. Covered by reader unit tests,
+  a `LinkCommands` suite, and a `taskLinkHandlers` integration test.
 - `2026-05-29 20:14 UTC` — `taskTypesHandlers` migrated off raw SQL (ADR-0007).
   The custom-task-type IPC handlers (`taskTypes:getAll` / `:create` / `:delete`)
   now route reads through a new `TaskTypeReader` (L1) and writes through new

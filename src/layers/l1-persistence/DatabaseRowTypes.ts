@@ -622,6 +622,24 @@ export interface LinkSuggestionRow {
   resolved_by: string | null; // 'user' | 'auto' | 'manual'
 }
 
+/**
+ * Link suggestion joined with its user/Canvas task titles and the owning
+ * course — the shape the link-suggestions list endpoint needs. Produced by
+ * `LinkSuggestionReader.getByStatusWithTasks`, not a base table row.
+ */
+export interface LinkSuggestionWithTasksRow {
+  id: number;
+  user_task_id: number;
+  canvas_task_id: number;
+  confidence: number;
+  status: string;
+  created_at: string;
+  user_task_title: string;
+  canvas_task_title: string;
+  course_id: number;
+  course_name: string;
+}
+
 // =============================================================================
 // Canvas Task Queue Rows (v89)
 // =============================================================================

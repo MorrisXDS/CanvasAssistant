@@ -10,7 +10,6 @@
     "src/lifecycle/ipc-handlers/courseExportHandlers.ts": 9,
     "src/lifecycle/ipc-handlers/csvExportHandlers.ts": 2,
     "src/lifecycle/ipc-handlers/data/courseAuthorityHandlers.ts": 1,
-    "src/lifecycle/ipc-handlers/data/taskLinkHandlers.ts": 9,
     "src/lifecycle/ipc-handlers/databaseExportHandlers.ts": 1,
     "src/lifecycle/ipc-handlers/exportHandlers.ts": 4,
     "src/lifecycle/ipc-handlers/fileHandlers.ts": 10,
