@@ -35,6 +35,8 @@ export {
   // Settings command param types
   SetUserPreferenceParams,
   UpdateCourseSettingsParams,
+  // Export command param types
+  RecordExportHistoryParams,
   TriggerSyncParams,
   SimulateGradeParams,
   ClearSimulationParams,
@@ -83,6 +85,8 @@ export {
   // Settings commands
   SetUserPreferenceCommand,
   UpdateCourseSettingsCommand,
+  // Export commands
+  RecordExportHistoryCommand,
   // Queue commands
   AcceptQueuedTaskCommand,
   RejectQueuedTaskCommand,

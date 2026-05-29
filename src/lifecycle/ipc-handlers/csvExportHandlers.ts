@@ -5,14 +5,23 @@
 
 import { ipcMain, dialog } from 'electron';
 import { ExportManager } from '../../layers/l2-daemon';
+import { RecordExportHistoryCommand } from '../../layers/l4-controller';
+import { createSimulationContext } from '../../layers/l4-controller/types';
 import type { IpcContext } from './IpcContext';
 
 /**
  * Register CSV export IPC handlers
+ *
+ * Per ADR-0007, this file holds no raw `database.execute*` calls — the
+ * export-history write routes through `RecordExportHistoryCommand` (L4).
  */
 export function registerCsvExportHandlers(ctx: IpcContext): void {
   const database = ctx.getDatabase();
   const logger = ctx.getLogger();
+  const runContext = () => ({
+    db: database,
+    simulationContext: createSimulationContext(),
+  });
   const metricsCollector = ctx.getMetricsCollector();
   const getMainWindow = ctx.getMainWindow;
   const getFilesDir = ctx.getFilesDir;
@@ -62,16 +71,12 @@ export function registerCsvExportHandlers(ctx: IpcContext): void {
 
         if (exportResult.success) {
           // Log to export history
-          database.executeWrite(
-            `INSERT INTO export_history (export_type, file_path, file_size, tasks_exported, status)
-             VALUES ('csv', ?, ?, ?, 'completed')`,
-            [
-              dialogResult.filePath,
-              exportResult.fileSize || 0,
-              exportResult.tasksExported || 0,
-            ],
-            'export_history'
-          );
+          await new RecordExportHistoryCommand().execute(runContext(), {
+            exportType: 'csv',
+            filePath: dialogResult.filePath,
+            fileSize: exportResult.fileSize || 0,
+            tasksExported: exportResult.tasksExported || 0,
+          });
           metricsCollector.increment('data.export.csv.tasks');
         }
 
@@ -124,16 +129,12 @@ export function registerCsvExportHandlers(ctx: IpcContext): void {
 
         if (exportResult.success) {
           // Log to export history
-          database.executeWrite(
-            `INSERT INTO export_history (export_type, file_path, file_size, tasks_exported, status)
-             VALUES ('csv', ?, ?, ?, 'completed')`,
-            [
-              dialogResult.filePath,
-              exportResult.fileSize || 0,
-              exportResult.tasksExported || 0,
-            ],
-            'export_history'
-          );
+          await new RecordExportHistoryCommand().execute(runContext(), {
+            exportType: 'csv',
+            filePath: dialogResult.filePath,
+            fileSize: exportResult.fileSize || 0,
+            tasksExported: exportResult.tasksExported || 0,
+          });
           metricsCollector.increment('data.export.csv.grades');
         }
 

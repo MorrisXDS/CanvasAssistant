@@ -243,6 +243,21 @@ export interface UpdateCourseSettingsParams {
 }
 
 // =============================================================================
+// Export Command Params
+// =============================================================================
+
+/**
+ * Record a completed/failed export in `export_history`.
+ */
+export interface RecordExportHistoryParams {
+  exportType: 'full' | 'selective' | 'csv' | 'scheduled';
+  filePath?: string | null;
+  fileSize?: number | null;
+  tasksExported?: number;
+  status?: 'completed' | 'failed' | 'deleted';
+}
+
+// =============================================================================
 // Canvas Task Queue Command Params
 // =============================================================================
 

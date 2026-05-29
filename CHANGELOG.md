@@ -34,6 +34,13 @@ AND deleted_at IS NULL` — it was returning **hidden courses** and **ignoring
 
 ### Changed
 
+- `2026-05-29 22:20 UTC` — `csvExportHandlers` migrated off raw SQL (ADR-0007).
+  The export-history logging in `data:exportTasksCsv` / `data:exportGradesCsv`
+  now routes through a new reusable `RecordExportHistoryCommand` (L4) instead of
+  a raw `INSERT INTO export_history`. No `database.execute*` calls remain; the
+  ceiling entry (was 2) is removed. The command is shared infrastructure the
+  remaining export handlers (`exportHandlers`, `courseExportHandlers`,
+  `htmlExportHandlers`, `databaseExportHandlers`) can adopt as they migrate.
 - `2026-05-29 21:51 UTC` — `settingsHandlers` migrated off raw SQL (ADR-0007).
   The `user_preferences` key-value reads/writes (`localHtmlPathsSettings`,
   `academicSettings`/default target grade, `canvasTimezone`) now route through a
