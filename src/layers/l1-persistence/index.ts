@@ -40,6 +40,7 @@ export { CanvasTaskQueueReader } from './readers/CanvasTaskQueueReader';
 export { NotificationReader } from './readers/NotificationReader';
 export { PolicyReader } from './readers/PolicyReader';
 export { TaskTypeReader } from './readers/TaskTypeReader';
+export { LinkSuggestionReader } from './readers/LinkSuggestionReader';
 
 // L1 Providers — see docs/adr/0008 (ADR-0008)
 export { FileEntityProvider } from './FileEntityProvider';
@@ -106,6 +107,7 @@ export type {
   AssignmentGroupRow,
   // Link suggestion rows
   LinkSuggestionRow,
+  LinkSuggestionWithTasksRow,
   // Field source tracking
   TaskTypeFieldSource,
 } from './DatabaseRowTypes';

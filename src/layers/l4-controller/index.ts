@@ -27,6 +27,11 @@ export {
   MarkTaskCompleteParams,
   CreateTaskTypeParams,
   DeleteTaskTypeParams,
+  // Task linking command param types
+  AcceptLinkSuggestionParams,
+  RejectLinkSuggestionParams,
+  ManuallyLinkTasksParams,
+  UnlinkTasksParams,
   TriggerSyncParams,
   SimulateGradeParams,
   ClearSimulationParams,
@@ -67,6 +72,11 @@ export {
   CreateTaskTypeCommand,
   CreateTaskTypeResult,
   DeleteTaskTypeCommand,
+  // Task linking commands
+  AcceptLinkSuggestionCommand,
+  RejectLinkSuggestionCommand,
+  ManuallyLinkTasksCommand,
+  UnlinkTasksCommand,
   // Queue commands
   AcceptQueuedTaskCommand,
   RejectQueuedTaskCommand,

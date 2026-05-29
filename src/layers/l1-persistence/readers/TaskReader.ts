@@ -80,4 +80,22 @@ export class TaskReader {
       [courseId]
     );
   }
+
+  /**
+   * Canvas tasks in one course that are available as manual-link targets —
+   * i.e. not yet linked to a user task. Filters: `source_type='canvas'`,
+   * `deleted_at IS NULL`, `linked_from_user_task IS NULL`. Ordered by
+   * `due_at DESC`. Returns full TaskRow shape; callers project to DTOs.
+   */
+  findUnlinkedCanvasTasksInCourse(courseId: number): TaskRow[] {
+    return this.db.executeRead<TaskRow>(
+      `SELECT * FROM tasks
+       WHERE course_id = ?
+         AND source_type = 'canvas'
+         AND deleted_at IS NULL
+         AND linked_from_user_task IS NULL
+       ORDER BY due_at DESC`,
+      [courseId]
+    );
+  }
 }

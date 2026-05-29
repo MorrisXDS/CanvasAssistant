@@ -4,6 +4,7 @@
 
 export * from './course';
 export * from './task';
+export * from './link';
 export * from './queue';
 export * from './grade';
 export * from './notification';

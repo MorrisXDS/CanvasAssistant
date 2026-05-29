@@ -187,6 +187,40 @@ export interface DeleteTaskTypeParams {
 }
 
 // =============================================================================
+// Task Linking Command Params
+// =============================================================================
+
+/**
+ * Accept an auto-generated link suggestion, linking its user task to the
+ * matched Canvas task.
+ */
+export interface AcceptLinkSuggestionParams {
+  suggestionId: number;
+}
+
+/**
+ * Reject (dismiss) an auto-generated link suggestion.
+ */
+export interface RejectLinkSuggestionParams {
+  suggestionId: number;
+}
+
+/**
+ * Manually link a user-created task to a Canvas task.
+ */
+export interface ManuallyLinkTasksParams {
+  userTaskId: number;
+  canvasTaskId: number;
+}
+
+/**
+ * Unlink a Canvas task, restoring the previously-linked user task.
+ */
+export interface UnlinkTasksParams {
+  canvasTaskId: number;
+}
+
+// =============================================================================
 // Canvas Task Queue Command Params
 // =============================================================================
 
