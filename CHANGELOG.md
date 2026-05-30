@@ -34,6 +34,14 @@ AND deleted_at IS NULL` — it was returning **hidden courses** and **ignoring
 
 ### Changed
 
+- `2026-05-30 02:13 UTC` — `backupScheduleHandlers` migrated off raw SQL (ADR-0007).
+  `backup:getSchedule` reads `app_settings` via a new `AppSettingsReader`;
+  `backup:setSchedule` writes (schedule + encryption password, or password
+  delete) route through new `SetAppSettingCommand` / `DeleteAppSettingCommand`
+  (L4); `backup:getHistory` reads via a new `ExportHistoryReader.getByType`.
+  No `database.execute*` calls remain; the ceiling entry (was 3) is removed.
+  (`app_settings` is a distinct key-value table from `user_preferences`, which
+  keeps its own reader/command.)
 - `2026-05-30 01:32 UTC` — `calendarMigrationUtils` relocated out of the IPC-handler
   folder (ADR-0007). `recomputeCalendarHashes` was never an IPC handler — it's a
   one-time calendar-hash migration utility — so it moved verbatim to

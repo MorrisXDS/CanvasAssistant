@@ -253,6 +253,22 @@ export interface UpdateCourseAuthorityParams {
   gradeCalcMode?: 'canvas' | 'local' | 'both';
 }
 
+/**
+ * Upsert a single key/value row in `app_settings`. The value is the
+ * already-serialized string the caller wants stored verbatim.
+ */
+export interface SetAppSettingParams {
+  key: string;
+  value: string;
+}
+
+/**
+ * Delete a single key from `app_settings`.
+ */
+export interface DeleteAppSettingParams {
+  key: string;
+}
+
 // =============================================================================
 // Export Command Params
 // =============================================================================
