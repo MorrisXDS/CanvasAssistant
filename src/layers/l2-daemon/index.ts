@@ -88,6 +88,7 @@ export {
   type CalendarEventRecord,
   type ExpandedEvent,
 } from './calendar/RRuleExpander';
+export { recomputeCalendarHashes } from './calendar/recomputeCalendarHashes';
 
 // HTML (content sync, extraction, rewriting)
 export {

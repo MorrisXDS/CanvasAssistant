@@ -9,3 +9,4 @@ export {
   type CalendarEventRecord,
   type ExpandedEvent,
 } from './RRuleExpander';
+export { recomputeCalendarHashes } from './recomputeCalendarHashes';

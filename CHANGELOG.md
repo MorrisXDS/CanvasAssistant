@@ -34,6 +34,14 @@ AND deleted_at IS NULL` — it was returning **hidden courses** and **ignoring
 
 ### Changed
 
+- `2026-05-30 01:32 UTC` — `calendarMigrationUtils` relocated out of the IPC-handler
+  folder (ADR-0007). `recomputeCalendarHashes` was never an IPC handler — it's a
+  one-time calendar-hash migration utility — so it moved verbatim to
+  `src/layers/l2-daemon/calendar/recomputeCalendarHashes.ts` (alongside
+  `ICSParser`), where raw SQL is legitimately allowed (the daemon carve-out).
+  This removes it from the ratchet's scope (ceiling entry deleted) without
+  rewriting working migration logic. Added a first-time test suite for it
+  during the move. Caller import updated; behavior unchanged.
 - `2026-05-30 01:17 UTC` — `databaseExportHandlers` migrated off raw SQL (ADR-0007).
   `data:getDatabaseDiagnostics` reads (per-table row counts + imported-calendar
   detail + calendar-events-by-type) route through a new `DiagnosticsReader`
