@@ -34,6 +34,11 @@ AND deleted_at IS NULL` — it was returning **hidden courses** and **ignoring
 
 ### Changed
 
+- `2026-05-30 01:04 UTC` — `data/courseAuthorityHandlers` migrated off raw SQL
+  (ADR-0007). `data:getCourseAuthority` reads via a new
+  `CourseReader.getAuthorityById`; `data:updateCourseAuthority` writes via a new
+  `UpdateCourseAuthorityCommand` (L4). No `database.execute*` calls remain; the
+  ceiling entry (was 1) is removed.
 - `2026-05-29 23:09 UTC` — `courseExportHandlers` import pipeline migrated off raw
   SQL (ADR-0007). The entire `data:importCourseData` orchestration — 8 entity
   `upsert`s plus the old→new foreign-key remapping across courses / tasks /

@@ -212,6 +212,36 @@ describe('CourseReader', () => {
       expect(reader.getSettingsById(9999)).toBeNull();
     });
   });
+
+  describe('getAuthorityById', () => {
+    test('returns the authority columns (schema defaults)', () => {
+      seedCourse(db, { id: 1 });
+
+      expect(reader.getAuthorityById(1)).toEqual({
+        late_penalty_authority: 'canvas',
+        drop_lowest_authority: 'canvas',
+        grade_calc_mode: 'canvas',
+      });
+    });
+
+    test('reflects updated authority values', () => {
+      seedCourse(db, { id: 1 });
+      db.executeWrite(
+        `UPDATE courses SET late_penalty_authority = 'local', drop_lowest_authority = 'off', grade_calc_mode = 'both' WHERE id = 1`,
+        []
+      );
+
+      expect(reader.getAuthorityById(1)).toEqual({
+        late_penalty_authority: 'local',
+        drop_lowest_authority: 'off',
+        grade_calc_mode: 'both',
+      });
+    });
+
+    test('returns null for a missing course', () => {
+      expect(reader.getAuthorityById(9999)).toBeNull();
+    });
+  });
 });
 
 // =============================================================================

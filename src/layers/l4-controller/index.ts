@@ -35,6 +35,7 @@ export {
   // Settings command param types
   SetUserPreferenceParams,
   UpdateCourseSettingsParams,
+  UpdateCourseAuthorityParams,
   // Export command param types
   RecordExportHistoryParams,
   UpsertHtmlExportParams,
@@ -88,6 +89,7 @@ export {
   // Settings commands
   SetUserPreferenceCommand,
   UpdateCourseSettingsCommand,
+  UpdateCourseAuthorityCommand,
   // Export commands
   RecordExportHistoryCommand,
   UpsertHtmlExportCommand,

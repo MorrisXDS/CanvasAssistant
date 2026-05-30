@@ -7,7 +7,6 @@
     "src/lifecycle/ipc-handlers/calendar/calendarCrudHandlers.ts": 10,
     "src/lifecycle/ipc-handlers/calendar/calendarEventHandlers.ts": 14,
     "src/lifecycle/ipc-handlers/calendar/calendarMigrationUtils.ts": 1,
-    "src/lifecycle/ipc-handlers/data/courseAuthorityHandlers.ts": 1,
     "src/lifecycle/ipc-handlers/databaseExportHandlers.ts": 1,
     "src/lifecycle/ipc-handlers/fileHandlers.ts": 10,
     "src/lifecycle/ipc-handlers/htmlDependencyHandlers.ts": 7,

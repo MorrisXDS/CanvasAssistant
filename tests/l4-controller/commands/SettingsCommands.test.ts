@@ -12,6 +12,7 @@ import {
 } from '../../../src/layers/l1-persistence/MigrationRunner';
 import { SetUserPreferenceCommand } from '../../../src/layers/l4-controller/commands/settings/SetUserPreferenceCommand';
 import { UpdateCourseSettingsCommand } from '../../../src/layers/l4-controller/commands/settings/UpdateCourseSettingsCommand';
+import { UpdateCourseAuthorityCommand } from '../../../src/layers/l4-controller/commands/settings/UpdateCourseAuthorityCommand';
 import {
   CommandContext,
   createSimulationContext,
@@ -135,6 +136,49 @@ describe('Settings Commands', () => {
       });
       expect(result.success).toBe(false);
       expect(result.error).toContain('Failed to update course settings');
+    });
+  });
+
+  describe('UpdateCourseAuthorityCommand', () => {
+    const command = new UpdateCourseAuthorityCommand();
+
+    beforeEach(() => seedCourse(db, 1));
+
+    it('updates only the provided authority fields', async () => {
+      const result = await command.execute(context, {
+        courseId: 1,
+        latePenaltyAuthority: 'local',
+        gradeCalcMode: 'both',
+      });
+      expect(result.success).toBe(true);
+
+      const row = db.executeReadOne<{
+        late_penalty_authority: string | null;
+        drop_lowest_authority: string | null;
+        grade_calc_mode: string | null;
+      }>(
+        'SELECT late_penalty_authority, drop_lowest_authority, grade_calc_mode FROM courses WHERE id = 1',
+        []
+      );
+      expect(row?.late_penalty_authority).toBe('local');
+      expect(row?.grade_calc_mode).toBe('both');
+      // not provided → unchanged (schema default 'canvas')
+      expect(row?.drop_lowest_authority).toBe('canvas');
+    });
+
+    it('is a no-op success when no fields are provided', async () => {
+      const result = await command.execute(context, { courseId: 1 });
+      expect(result.success).toBe(true);
+    });
+
+    it('reports failure when the write throws', async () => {
+      db.close();
+      const result = await command.execute(context, {
+        courseId: 1,
+        latePenaltyAuthority: 'local',
+      });
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Failed to update course authority');
     });
   });
 });
