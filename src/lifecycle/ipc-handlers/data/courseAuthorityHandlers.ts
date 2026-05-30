@@ -5,25 +5,30 @@
 
 import { ipcMain } from 'electron';
 import type { IpcContext } from '../IpcContext';
+import { CourseReader } from '../../../layers/l1-persistence';
+import { UpdateCourseAuthorityCommand } from '../../../layers/l4-controller';
+import { createSimulationContext } from '../../../layers/l4-controller/types';
 
 /**
  * Register course authority-related IPC handlers
+ *
+ * Per ADR-0007, this file holds no raw `database.execute*` calls. The read
+ * routes through `CourseReader.getAuthorityById`; the write through
+ * `UpdateCourseAuthorityCommand` (L4).
  */
 export function registerCourseAuthorityHandlers(ctx: IpcContext): void {
   const database = ctx.getDatabase();
   const logger = ctx.getLogger();
+  const courseReader = new CourseReader(database);
+  const runContext = () => ({
+    db: database,
+    simulationContext: createSimulationContext(),
+  });
 
   // Get course authority settings
   ipcMain.handle('data:getCourseAuthority', (_event, courseId: number) => {
     try {
-      const course = database.executeReadOne<{
-        late_penalty_authority: string | null;
-        drop_lowest_authority: string | null;
-        grade_calc_mode: string | null;
-      }>(
-        'SELECT late_penalty_authority, drop_lowest_authority, grade_calc_mode FROM courses WHERE id = ?',
-        [courseId]
-      );
+      const course = courseReader.getAuthorityById(courseId);
 
       if (!course) {
         return null;
@@ -43,7 +48,7 @@ export function registerCourseAuthorityHandlers(ctx: IpcContext): void {
   // Update course authority settings
   ipcMain.handle(
     'data:updateCourseAuthority',
-    (
+    async (
       _event,
       courseId: number,
       settings: {
@@ -53,31 +58,13 @@ export function registerCourseAuthorityHandlers(ctx: IpcContext): void {
       }
     ) => {
       try {
-        const updates: string[] = [];
-        const params: (string | number)[] = [];
-
-        if (settings.latePenaltyAuthority) {
-          updates.push('late_penalty_authority = ?');
-          params.push(settings.latePenaltyAuthority);
+        const result = await new UpdateCourseAuthorityCommand().execute(runContext(), {
+          courseId,
+          ...settings,
+        });
+        if (!result.success) {
+          return { success: false, error: result.error };
         }
-        if (settings.dropLowestAuthority) {
-          updates.push('drop_lowest_authority = ?');
-          params.push(settings.dropLowestAuthority);
-        }
-        if (settings.gradeCalcMode) {
-          updates.push('grade_calc_mode = ?');
-          params.push(settings.gradeCalcMode);
-        }
-
-        if (updates.length > 0) {
-          params.push(courseId);
-          database.executeWrite(
-            `UPDATE courses SET ${updates.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-            params,
-            'courses'
-          );
-        }
-
         return { success: true };
       } catch (error) {
         logger.error(`Failed to update course authority settings: ${error}`);

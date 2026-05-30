@@ -242,6 +242,17 @@ export interface UpdateCourseSettingsParams {
   allowGuessedOverride?: number;
 }
 
+/**
+ * Update per-course grade-authority settings. Omitted fields are left
+ * unchanged.
+ */
+export interface UpdateCourseAuthorityParams {
+  courseId: number;
+  latePenaltyAuthority?: 'canvas' | 'local' | 'both';
+  dropLowestAuthority?: 'canvas' | 'local' | 'off';
+  gradeCalcMode?: 'canvas' | 'local' | 'both';
+}
+
 // =============================================================================
 // Export Command Params
 // =============================================================================

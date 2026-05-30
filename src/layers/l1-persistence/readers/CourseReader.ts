@@ -78,9 +78,7 @@ export class CourseReader {
    * or null if the course doesn't exist. Narrow projection used by the
    * `course:getSettings` IPC endpoint.
    */
-  getSettingsById(
-    id: number
-  ): {
+  getSettingsById(id: number): {
     auto_assign_due_date: number | null;
     allow_guessed_override: number | null;
   } | null {
@@ -90,6 +88,28 @@ export class CourseReader {
         allow_guessed_override: number | null;
       }>(
         `SELECT auto_assign_due_date, allow_guessed_override FROM courses WHERE id = ?`,
+        [id]
+      ) ?? null
+    );
+  }
+
+  /**
+   * Per-course grade-authority settings (which source wins for late penalty,
+   * drop-lowest, and grade calc), or null if the course doesn't exist.
+   * Narrow projection used by the `data:getCourseAuthority` IPC endpoint.
+   */
+  getAuthorityById(id: number): {
+    late_penalty_authority: string | null;
+    drop_lowest_authority: string | null;
+    grade_calc_mode: string | null;
+  } | null {
+    return (
+      this.db.executeReadOne<{
+        late_penalty_authority: string | null;
+        drop_lowest_authority: string | null;
+        grade_calc_mode: string | null;
+      }>(
+        `SELECT late_penalty_authority, drop_lowest_authority, grade_calc_mode FROM courses WHERE id = ?`,
         [id]
       ) ?? null
     );
