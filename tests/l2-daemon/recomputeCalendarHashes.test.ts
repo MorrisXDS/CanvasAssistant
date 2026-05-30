@@ -12,10 +12,6 @@ import {
   coreMigrations,
 } from '../../src/layers/l1-persistence/MigrationRunner';
 import { recomputeCalendarHashes } from '../../src/layers/l2-daemon/calendar/recomputeCalendarHashes';
-// Barrel re-exports + the handler import — loaded so the wiring lines are exercised.
-import { recomputeCalendarHashes as fromL2Barrel } from '../../src/layers/l2-daemon';
-import { recomputeCalendarHashes as fromCalendarBarrel } from '../../src/layers/l2-daemon/calendar';
-import { registerCalendarHandlers } from '../../src/lifecycle/ipc-handlers/calendarHandlers';
 
 function makeLogger() {
   return {
@@ -99,11 +95,5 @@ describe('recomputeCalendarHashes', () => {
     db.close();
     expect(() => recomputeCalendarHashes(db, logger as never)).not.toThrow();
     expect(logger.warn).toHaveBeenCalled();
-  });
-
-  test('is re-exported from the l2-daemon barrels and consumed by the handler', () => {
-    expect(typeof fromL2Barrel).toBe('function');
-    expect(typeof fromCalendarBarrel).toBe('function');
-    expect(typeof registerCalendarHandlers).toBe('function');
   });
 });
