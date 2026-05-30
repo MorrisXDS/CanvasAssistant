@@ -46,6 +46,7 @@ export { ExportHistoryReader } from './readers/ExportHistoryReader';
 export type { ExportHistoryRow } from './readers/ExportHistoryReader';
 export { HtmlExportReader } from './readers/HtmlExportReader';
 export type { HtmlExportRow } from './readers/HtmlExportReader';
+export { DiagnosticsReader } from './readers/DiagnosticsReader';
 
 // L1 Providers — see docs/adr/0008 (ADR-0008)
 export { FileEntityProvider } from './FileEntityProvider';
