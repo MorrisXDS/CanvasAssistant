@@ -34,6 +34,14 @@ AND deleted_at IS NULL` — it was returning **hidden courses** and **ignoring
 
 ### Changed
 
+- `2026-05-30 01:17 UTC` — `databaseExportHandlers` migrated off raw SQL (ADR-0007).
+  `data:getDatabaseDiagnostics` reads (per-table row counts + imported-calendar
+  detail + calendar-events-by-type) route through a new `DiagnosticsReader`
+  (which owns its fixed table list so no table name is interpolated from input),
+  and the pre-export WAL checkpoint uses `database.checkpoint()` instead of a raw
+  `PRAGMA wal_checkpoint`. No `database.execute*` calls on the app DB remain
+  (the import path's separate `better-sqlite3` connection on the _backup_ file
+  is unaffected). The ceiling entry (was 1) is removed.
 - `2026-05-30 01:04 UTC` — `data/courseAuthorityHandlers` migrated off raw SQL
   (ADR-0007). `data:getCourseAuthority` reads via a new
   `CourseReader.getAuthorityById`; `data:updateCourseAuthority` writes via a new

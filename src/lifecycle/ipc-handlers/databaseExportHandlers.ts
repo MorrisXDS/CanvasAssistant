@@ -8,6 +8,7 @@ import fs from 'fs';
 import path from 'path';
 import BetterSqlite3 from 'better-sqlite3';
 import { ExportManager } from '../../layers/l2-daemon';
+import { DiagnosticsReader } from '../../layers/l1-persistence';
 import type { IpcContext } from './IpcContext';
 
 /**
@@ -59,6 +60,7 @@ function clearMissingFilePaths(
 export function registerDatabaseExportHandlers(ctx: IpcContext): void {
   const database = ctx.getDatabase();
   const logger = ctx.getLogger();
+  const diagnosticsReader = new DiagnosticsReader(database);
   const metricsCollector = ctx.getMetricsCollector();
   const getMainWindow = ctx.getMainWindow;
   const getDbPath = ctx.getDbPath;
@@ -91,7 +93,7 @@ export function registerDatabaseExportHandlers(ctx: IpcContext): void {
 
     try {
       const DB_PATH = getDbPath();
-      database.executeWrite('PRAGMA wal_checkpoint(TRUNCATE)', [], 'system');
+      database.checkpoint();
       fs.copyFileSync(DB_PATH, result.filePath);
       logger.info(`Database exported to: ${result.filePath}`);
       metricsCollector.increment('data.export.database');
@@ -258,48 +260,14 @@ export function registerDatabaseExportHandlers(ctx: IpcContext): void {
   // Diagnostic handler to verify database contents after import
   ipcMain.handle('data:getDatabaseDiagnostics', () => {
     try {
-      const diagnostics: Record<string, unknown> = {};
-
-      // Count rows in key tables
-      const tables = [
-        'courses',
-        'tasks',
-        'calendar_events',
-        'imported_calendars',
-        'notifications',
-        'resources',
-      ];
-
-      for (const table of tables) {
-        try {
-          const result = database.executeReadOne<{ count: number }>(
-            `SELECT COUNT(*) as count FROM ${table}`
-          );
-          diagnostics[table] = result?.count ?? 0;
-        } catch {
-          diagnostics[table] = 'error';
-        }
-      }
-
-      // Get schema version
-      diagnostics.schemaVersion = database.getSchemaVersion();
-
-      // Check imported calendars detail
-      const calendars = database.executeRead<{
-        id: number;
-        name: string;
-        event_count: number;
-      }>('SELECT id, name, event_count FROM imported_calendars');
-      diagnostics.importedCalendarsDetail = calendars;
-
-      // Count calendar events by source type
-      const eventsByType = database.executeRead<{
-        source_type: string;
-        count: number;
-      }>(
-        `SELECT source_type, COUNT(*) as count FROM calendar_events GROUP BY source_type`
-      );
-      diagnostics.calendarEventsByType = eventsByType;
+      const diagnostics: Record<string, unknown> = {
+        // Row counts for each diagnostic entity table
+        ...diagnosticsReader.getEntityCounts(),
+        // Schema version (a Database method, not SQL)
+        schemaVersion: database.getSchemaVersion(),
+        importedCalendarsDetail: diagnosticsReader.getImportedCalendarsDetail(),
+        calendarEventsByType: diagnosticsReader.getCalendarEventsByType(),
+      };
 
       logger.info(`Database diagnostics: ${JSON.stringify(diagnostics)}`);
       return { success: true, data: diagnostics };
