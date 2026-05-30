@@ -4,4 +4,3 @@
 
 export { registerCalendarCrudHandlers } from './calendarCrudHandlers';
 export { registerCalendarEventHandlers } from './calendarEventHandlers';
-export { recomputeCalendarHashes } from './calendarMigrationUtils';

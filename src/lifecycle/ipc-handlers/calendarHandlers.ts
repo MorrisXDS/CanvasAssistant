@@ -7,11 +7,8 @@
  */
 
 import type { IpcContext } from './IpcContext';
-import {
-  registerCalendarCrudHandlers,
-  registerCalendarEventHandlers,
-  recomputeCalendarHashes,
-} from './calendar';
+import { registerCalendarCrudHandlers, registerCalendarEventHandlers } from './calendar';
+import { recomputeCalendarHashes } from '../../layers/l2-daemon';
 
 /**
  * Register all calendar-related IPC handlers

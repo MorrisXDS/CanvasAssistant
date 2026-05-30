@@ -1,16 +1,22 @@
 /**
- * Calendar Migration Utilities
- * Recomputes content hashes for existing calendars (one-time migration)
+ * Calendar Migration Utility — recomputes content hashes for existing
+ * calendars (one-time migration from old full-file MD5 hashes to the new
+ * content-based hash format).
+ *
+ * Lives in L2 (calendar daemon) alongside `ICSParser`: it is calendar domain
+ * logic, not an IPC handler, so it is correctly outside the ADR-0007
+ * thin-adapter scope and may issue SQL directly (same carve-out as the rest
+ * of the sync/daemon code). Invoked once at startup from
+ * `registerCalendarHandlers`.
  */
 
-import { ICSParser } from '../../../layers/l2-daemon';
-import type { ParsedICSEvent } from '../../../layers/l2-daemon/calendar/ICSParser';
-import type { Database } from '../../../layers/l1-persistence';
-import type { Logger } from '../../../layers/l0-utilities';
+import { ICSParser } from './ICSParser';
+import type { ParsedICSEvent } from './ICSParser';
+import type { Database } from '../../l1-persistence';
+import type { Logger } from '../../l0-utilities';
 
 /**
- * Recompute content hashes for existing calendars
- * This migrates old full-file MD5 hashes to the new content-based hash format
+ * Recompute content hashes for existing calendars.
  */
 export function recomputeCalendarHashes(database: Database, logger: Logger): void {
   try {
