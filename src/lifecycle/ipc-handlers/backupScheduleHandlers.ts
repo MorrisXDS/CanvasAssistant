@@ -10,6 +10,12 @@ import path from 'path';
 import type { IpcContext } from './IpcContext';
 import type { ExportSchedule } from '../../layers/l5-presentation/settings/settingsSchema';
 import { DEFAULT_EXPORT_SCHEDULE } from '../../layers/l5-presentation/settings/settingsSchema';
+import { AppSettingsReader, ExportHistoryReader } from '../../layers/l1-persistence';
+import {
+  SetAppSettingCommand,
+  DeleteAppSettingCommand,
+} from '../../layers/l4-controller';
+import { createSimulationContext } from '../../layers/l4-controller/types';
 
 interface BackupHistoryRow {
   id: number;
@@ -69,16 +75,20 @@ function calculateNextRun(schedule: ExportSchedule): string | undefined {
 export function registerBackupScheduleHandlers(ctx: IpcContext): void {
   const database = ctx.getDatabase();
   const logger = ctx.getLogger();
+  const appSettingsReader = new AppSettingsReader(database);
+  const exportHistoryReader = new ExportHistoryReader(database);
+  const runContext = () => ({
+    db: database,
+    simulationContext: createSimulationContext(),
+  });
 
   // Get backup schedule
   ipcMain.handle('backup:getSchedule', () => {
     try {
-      const row = database.executeReadOne<{ value: string }>(
-        "SELECT value FROM app_settings WHERE key = 'exportSchedule'"
-      );
+      const value = appSettingsReader.get('exportSchedule');
 
-      if (row?.value) {
-        const schedule: ExportSchedule = JSON.parse(row.value);
+      if (value) {
+        const schedule: ExportSchedule = JSON.parse(value);
         // Calculate next run if enabled
         if (schedule.enabled && schedule.frequency !== 'never') {
           schedule.nextRun = calculateNextRun(schedule);
@@ -98,7 +108,7 @@ export function registerBackupScheduleHandlers(ctx: IpcContext): void {
   // Set backup schedule
   ipcMain.handle(
     'backup:setSchedule',
-    (_event, schedule: ExportSchedule & { encryptionPassword?: string }) => {
+    async (_event, schedule: ExportSchedule & { encryptionPassword?: string }) => {
       try {
         // Calculate next run if enabled
         if (schedule.enabled && schedule.frequency !== 'never') {
@@ -111,28 +121,22 @@ export function registerBackupScheduleHandlers(ctx: IpcContext): void {
         const scheduleToStore = { ...schedule };
         delete scheduleToStore.encryptionPassword;
 
-        database.executeWrite(
-          `INSERT INTO app_settings (key, value) VALUES ('exportSchedule', ?)
-         ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
-          [JSON.stringify(scheduleToStore)],
-          'app_settings'
-        );
+        await new SetAppSettingCommand().execute(runContext(), {
+          key: 'exportSchedule',
+          value: JSON.stringify(scheduleToStore),
+        });
 
         // Store encryption password separately if provided
         if (schedule.encrypt && schedule.encryptionPassword) {
-          database.executeWrite(
-            `INSERT INTO app_settings (key, value) VALUES ('backupEncryptionPassword', ?)
-           ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
-            [schedule.encryptionPassword],
-            'app_settings'
-          );
+          await new SetAppSettingCommand().execute(runContext(), {
+            key: 'backupEncryptionPassword',
+            value: schedule.encryptionPassword,
+          });
         } else if (!schedule.encrypt) {
           // Remove password if encryption disabled
-          database.executeWrite(
-            "DELETE FROM app_settings WHERE key = 'backupEncryptionPassword'",
-            [],
-            'app_settings'
-          );
+          await new DeleteAppSettingCommand().execute(runContext(), {
+            key: 'backupEncryptionPassword',
+          });
         }
 
         logger.info(
@@ -149,12 +153,16 @@ export function registerBackupScheduleHandlers(ctx: IpcContext): void {
   // Get backup history
   ipcMain.handle('backup:getHistory', (_event, limit = 10) => {
     try {
-      const history = database.executeRead<BackupHistoryRow>(
-        `SELECT id, file_path, file_size, status, error_message, created_at
-         FROM export_history WHERE export_type = 'scheduled'
-         ORDER BY created_at DESC LIMIT ?`,
-        [limit]
-      );
+      const history: BackupHistoryRow[] = exportHistoryReader
+        .getByType('scheduled', limit)
+        .map((r) => ({
+          id: r.id,
+          file_path: r.file_path,
+          file_size: r.file_size,
+          status: r.status,
+          error_message: r.error_message,
+          created_at: r.created_at,
+        }));
 
       // Check which files still exist
       const historyWithExists = history.map((h) => ({

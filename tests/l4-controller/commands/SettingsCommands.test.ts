@@ -13,6 +13,8 @@ import {
 import { SetUserPreferenceCommand } from '../../../src/layers/l4-controller/commands/settings/SetUserPreferenceCommand';
 import { UpdateCourseSettingsCommand } from '../../../src/layers/l4-controller/commands/settings/UpdateCourseSettingsCommand';
 import { UpdateCourseAuthorityCommand } from '../../../src/layers/l4-controller/commands/settings/UpdateCourseAuthorityCommand';
+import { SetAppSettingCommand } from '../../../src/layers/l4-controller/commands/settings/SetAppSettingCommand';
+import { DeleteAppSettingCommand } from '../../../src/layers/l4-controller/commands/settings/DeleteAppSettingCommand';
 import {
   CommandContext,
   createSimulationContext,
@@ -179,6 +181,65 @@ describe('Settings Commands', () => {
       });
       expect(result.success).toBe(false);
       expect(result.error).toContain('Failed to update course authority');
+    });
+  });
+
+  describe('SetAppSettingCommand', () => {
+    const command = new SetAppSettingCommand();
+
+    it('rejects an empty key', async () => {
+      expect(command.validate({ key: '', value: 'x' }).valid).toBe(false);
+      const result = await command.execute(context, { key: '', value: 'x' });
+      expect(result.success).toBe(false);
+    });
+
+    it('inserts then upserts a key', async () => {
+      await command.execute(context, { key: 'k', value: 'v1' });
+      await command.execute(context, { key: 'k', value: 'v2' });
+
+      const rows = db.executeRead<{ value: string }>(
+        'SELECT value FROM app_settings WHERE key = ?',
+        ['k']
+      );
+      expect(rows).toHaveLength(1);
+      expect(rows[0].value).toBe('v2');
+    });
+
+    it('reports failure when the write throws', async () => {
+      db.close();
+      const result = await command.execute(context, { key: 'k', value: 'v' });
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Failed to set app setting');
+    });
+  });
+
+  describe('DeleteAppSettingCommand', () => {
+    const command = new DeleteAppSettingCommand();
+
+    it('rejects an empty key', async () => {
+      expect(command.validate({ key: '' }).valid).toBe(false);
+      const result = await command.execute(context, { key: '' });
+      expect(result.success).toBe(false);
+    });
+
+    it('removes the key', async () => {
+      db.executeWrite(`INSERT INTO app_settings (key, value) VALUES ('k', 'v')`, []);
+
+      const result = await command.execute(context, { key: 'k' });
+      expect(result.success).toBe(true);
+
+      const row = db.executeReadOne<{ value: string }>(
+        'SELECT value FROM app_settings WHERE key = ?',
+        ['k']
+      );
+      expect(row).toBeUndefined();
+    });
+
+    it('reports failure when the write throws', async () => {
+      db.close();
+      const result = await command.execute(context, { key: 'k' });
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Failed to delete app setting');
     });
   });
 });

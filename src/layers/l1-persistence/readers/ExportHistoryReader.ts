@@ -37,4 +37,16 @@ export class ExportHistoryReader {
       [limit]
     );
   }
+
+  /**
+   * Most-recent rows of a given `export_type` (e.g. `'scheduled'`), newest
+   * first, capped at `limit`.
+   */
+  getByType(exportType: string, limit = 10): ExportHistoryRow[] {
+    return this.db.executeRead<ExportHistoryRow>(
+      `SELECT * FROM export_history WHERE export_type = ?
+       ORDER BY created_at DESC LIMIT ?`,
+      [exportType, limit]
+    );
+  }
 }
