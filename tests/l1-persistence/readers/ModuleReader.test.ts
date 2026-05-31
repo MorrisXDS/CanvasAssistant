@@ -35,7 +35,7 @@ describe('ModuleReader', () => {
         'module_items'
       );
       const row = reader.getModuleItemById(10);
-      expect(row).toMatchObject({
+      expect(row).toEqual({
         id: 10,
         module_id: 5,
         title: 'My Page',
@@ -43,9 +43,6 @@ describe('ModuleReader', () => {
         page_url: 'my-page',
         url: 'https://x/courses/1/pages/my-page',
       });
-      // ModuleItemRow (shared type) also carries content_id / position
-      expect(row).toHaveProperty('content_id');
-      expect(row).toHaveProperty('position');
     });
 
     test('returns null when not found', () => {

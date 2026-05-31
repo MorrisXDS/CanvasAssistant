@@ -58,7 +58,7 @@ export type {
 export { ImportedCalendarReader } from './readers/ImportedCalendarReader';
 export type { ImportedCalendarRow } from './readers/ImportedCalendarReader';
 export { ModuleReader } from './readers/ModuleReader';
-export type { ModuleInfoRow } from './readers/ModuleReader';
+export type { ModuleItemReaderRow, ModuleInfoRow } from './readers/ModuleReader';
 
 // L1 Providers — see docs/adr/0008 (ADR-0008)
 export { FileEntityProvider } from './FileEntityProvider';
