@@ -29,8 +29,8 @@ describe('ModuleReader', () => {
   describe('getModuleItemById', () => {
     test('returns the projected row when found', () => {
       db.executeWrite(
-        `INSERT INTO module_items (id, external_id, course_id, module_id, title, item_type, page_url, url)
-         VALUES (10, 'mi1', 1, 5, 'My Page', 'Page', 'my-page', 'https://x/courses/1/pages/my-page')`,
+        `INSERT INTO module_items (id, external_id, module_id, title, item_type, page_url, url)
+         VALUES (10, 'mi1', 5, 'My Page', 'Page', 'my-page', 'https://x/courses/1/pages/my-page')`,
         [],
         'module_items'
       );
@@ -52,6 +52,12 @@ describe('ModuleReader', () => {
 
   describe('getModuleById', () => {
     test('returns course_id + name when found', () => {
+      // modules.course_id has a FK to courses(id)
+      db.executeWrite(
+        `INSERT INTO courses (id, external_id, code, name) VALUES (7, 'e7', 'CS7', 'Course 7')`,
+        [],
+        'courses'
+      );
       db.executeWrite(
         `INSERT INTO modules (id, external_id, course_id, name) VALUES (5, 'm1', 7, 'Week 1')`,
         [],
