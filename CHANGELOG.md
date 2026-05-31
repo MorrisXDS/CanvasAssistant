@@ -12,6 +12,19 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ### Changed
 
+- `2026-05-30 04:33 UTC` — Migrated `calendarCrudHandlers` (imported-ICS
+  calendars) off raw SQL (ADR-0007). The seven channels
+  (`getImportedCalendars`, `parseICSPreview`, `importICS`, `deleteCalendar`,
+  `updateCalendar`, `toggleVisibility`, `reimport`) no longer touch the
+  database directly: reads route through the new `ImportedCalendarReader`
+  (L1) and writes through five new L4 commands (Import / Reimport / Delete /
+  Update / ToggleVisibility). The ~100-line title→course auto-match
+  heuristic became a directly-testable pure function (`matchTitleToCourse`),
+  and `CourseReader` gained `getForCalendarMatching()`. ICS parsing for the
+  read-only preview stays in the handler; import/reimport parsing moved into
+  the commands. Behaviour preserved exactly (duplicate-by-hash detection,
+  transactional insert/replace, no course re-match on reimport). Ceiling
+  drops 7 → 6 entries.
 - `2026-05-30 03:49 UTC` — Migrated `calendarEventHandlers` off raw SQL
   (ADR-0007). The six calendar-event channels (`getEventsForRange`,
   `createEvent`, `updateEvent`, `deleteEvent`, `addEventException`,
