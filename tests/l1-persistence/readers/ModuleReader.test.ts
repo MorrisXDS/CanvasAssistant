@@ -28,6 +28,17 @@ describe('ModuleReader', () => {
 
   describe('getModuleItemById', () => {
     test('returns the projected row when found', () => {
+      // FK chain: module_items.module_id -> modules.id -> courses.id
+      db.executeWrite(
+        `INSERT INTO courses (id, external_id, code, name) VALUES (1, 'e1', 'CS101', 'Intro')`,
+        [],
+        'courses'
+      );
+      db.executeWrite(
+        `INSERT INTO modules (id, external_id, course_id, name) VALUES (5, 'm1', 1, 'Week 1')`,
+        [],
+        'modules'
+      );
       db.executeWrite(
         `INSERT INTO module_items (id, external_id, module_id, title, item_type, page_url, url)
          VALUES (10, 'mi1', 5, 'My Page', 'Page', 'my-page', 'https://x/courses/1/pages/my-page')`,
