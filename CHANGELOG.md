@@ -10,6 +10,21 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ## [Unreleased]
 
+### Changed
+
+- `2026-05-30 03:49 UTC` — Migrated `calendarEventHandlers` off raw SQL
+  (ADR-0007). The six calendar-event channels (`getEventsForRange`,
+  `createEvent`, `updateEvent`, `deleteEvent`, `addEventException`,
+  `exportBatch`) no longer touch the database directly: reads route through
+  the new `CalendarReader` (L1) and writes through new L4 commands
+  (`CreateCalendarEventCommand`, `UpdateCalendarEventCommand`,
+  `DeleteCalendarEventCommand`, `AddCalendarEventExceptionCommand`). The
+  delicate behaviour is preserved exactly — `updateEvent`'s cascade-sync of
+  fields to a linked task, `deleteEvent`'s "can't delete Canvas-synced
+  events" guard, and `createEvent`'s migration-70-safe optional-column
+  update. Recurrence expansion (`RRuleExpander`) and ICS generation stay in
+  the handler. Ceiling drops 8 → 7 entries.
+
 ### Fixed
 
 - `2026-05-29 21:51 UTC` — `settings:setDefaultTargetGrade` was silently broken:
