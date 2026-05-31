@@ -74,6 +74,27 @@ export class CourseReader {
   }
 
   /**
+   * Non-archived courses that have a code, projected to the fields the
+   * imported-calendar title matcher needs. Used by the ICS import flow to
+   * auto-detect which course an imported event belongs to.
+   */
+  getForCalendarMatching(): Array<{
+    id: number;
+    code: string;
+    name: string;
+    nickname: string | null;
+  }> {
+    return this.db.executeRead<{
+      id: number;
+      code: string;
+      name: string;
+      nickname: string | null;
+    }>(
+      'SELECT id, code, name, nickname FROM courses WHERE code IS NOT NULL AND archived_at IS NULL'
+    );
+  }
+
+  /**
    * Per-course settings (auto-assign due date + allow-guessed-override),
    * or null if the course doesn't exist. Narrow projection used by the
    * `course:getSettings` IPC endpoint.

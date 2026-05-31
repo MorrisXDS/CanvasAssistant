@@ -55,6 +55,8 @@ export type {
   GetEventsForRangeOptions,
   GetExportEventsOptions,
 } from './readers/CalendarReader';
+export { ImportedCalendarReader } from './readers/ImportedCalendarReader';
+export type { ImportedCalendarRow } from './readers/ImportedCalendarReader';
 
 // L1 Providers — see docs/adr/0008 (ADR-0008)
 export { FileEntityProvider } from './FileEntityProvider';
