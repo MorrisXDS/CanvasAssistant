@@ -100,8 +100,8 @@ describe('pagesHandlers (ADR-0007)', () => {
   }
   function seedModuleItem(itemType = 'Page'): void {
     db.executeWrite(
-      `INSERT INTO module_items (id, external_id, course_id, module_id, title, item_type, page_url, url)
-       VALUES (10, 'mi1', 1, 5, 'My Page', ?, 'my-page', 'https://canvas.example.com/courses/4242/pages/my-page')`,
+      `INSERT INTO module_items (id, external_id, module_id, title, item_type, page_url, url)
+       VALUES (10, 'mi1', 5, 'My Page', ?, 'my-page', 'https://canvas.example.com/courses/4242/pages/my-page')`,
       [itemType],
       'module_items'
     );
