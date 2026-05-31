@@ -17,11 +17,15 @@ import {
   extractCanvasFileReferences,
   extractHtmlReferences,
 } from '../../layers/l2-daemon/html/HtmlFileExtractor';
+// Deep import from PathBuilder (not the l0-utilities barrel): the barrel
+// re-exports FileWatcher, which pulls in chokidar (ESM-only) and breaks the
+// jest transform when this handler is loaded in a test. PathBuilder itself
+// only depends on `path`.
 import {
   createPathBuilder,
   sanitizeCourseCode,
   sanitizeTitle,
-} from '../../layers/l0-utilities';
+} from '../../layers/l0-utilities/PathBuilder';
 import { ModuleReader, CourseReader } from '../../layers/l1-persistence';
 import {
   UpsertCoursePageCommand,

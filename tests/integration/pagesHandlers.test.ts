@@ -37,7 +37,7 @@ import {
 } from '../../src/layers/l1-persistence/MigrationRunner';
 import { registerPagesHandlers } from '../../src/lifecycle/ipc-handlers/pagesHandlers';
 import type { IpcContext } from '../../src/lifecycle/ipc-handlers/IpcContext';
-import { createPathBuilder } from '../../src/layers/l0-utilities';
+import { createPathBuilder } from '../../src/layers/l0-utilities/PathBuilder';
 
 interface IpcMainMock {
   __getHandler: (channel: string) => ((...args: unknown[]) => unknown) | undefined;
@@ -114,6 +114,22 @@ describe('pagesHandlers (ADR-0007)', () => {
     );
   }
 
+  /**
+   * Run a seeding fn with FK enforcement off, so we can insert orphan rows
+   * (a module_item whose module is missing, or a module whose course is
+   * missing) to exercise the handler's defensive "not found" guards. Those
+   * branches are otherwise unreachable because the schema's FKs forbid the
+   * orphan rows.
+   */
+  function withFkOff(fn: () => void): void {
+    db.executeWrite('PRAGMA foreign_keys = OFF', []);
+    try {
+      fn();
+    } finally {
+      db.executeWrite('PRAGMA foreign_keys = ON', []);
+    }
+  }
+
   /** Re-register handlers with a custom token + download manager (file-dep tests). */
   function reregister(dlm: DownloadManagerStub): void {
     mockIpc.__reset();
@@ -153,6 +169,10 @@ describe('pagesHandlers (ADR-0007)', () => {
     });
 
     test('module item is not a Page type', async () => {
+      // item_type is checked before the module lookup; seed the full valid
+      // chain so the module_item insert satisfies its FK.
+      seedCourse();
+      seedModule();
       seedModuleItem('Assignment');
       expect(await invoke('pages:downloadContent', 10)).toEqual({
         success: false,
@@ -161,7 +181,8 @@ describe('pagesHandlers (ADR-0007)', () => {
     });
 
     test('module not found', async () => {
-      seedModuleItem();
+      // Orphan module_item (module 5 does not exist) → defensive guard.
+      withFkOff(() => seedModuleItem());
       expect(await invoke('pages:downloadContent', 10)).toEqual({
         success: false,
         error: 'Module not found',
@@ -169,8 +190,11 @@ describe('pagesHandlers (ADR-0007)', () => {
     });
 
     test('course not found', async () => {
-      seedModuleItem();
-      seedModule();
+      // Orphan module (course 1 does not exist) + its item → defensive guard.
+      withFkOff(() => {
+        seedModule();
+        seedModuleItem();
+      });
       expect(await invoke('pages:downloadContent', 10)).toEqual({
         success: false,
         error: 'Course not found',
