@@ -61,6 +61,39 @@ export class AnnouncementAttachmentReader {
   }
 
   /**
+   * One attachment by primary key, or null. Bypasses visibility — caller
+   * knew the id. Used by the attachment download/open file handlers.
+   */
+  getById(id: number): NotificationAttachmentRow | null {
+    return (
+      this.db.executeReadOne<NotificationAttachmentRow>(
+        `SELECT * FROM notification_attachments WHERE id = ?`,
+        [id]
+      ) ?? null
+    );
+  }
+
+  /** local_path + url for one attachment by id (the `attachment:open` path). */
+  getOpenInfoById(id: number): { local_path: string | null; url: string } | null {
+    return (
+      this.db.executeReadOne<{ local_path: string | null; url: string }>(
+        `SELECT local_path, url FROM notification_attachments WHERE id = ?`,
+        [id]
+      ) ?? null
+    );
+  }
+
+  /** Just the local_path for one attachment by id. */
+  getLocalPathById(id: number): { local_path: string | null } | null {
+    return (
+      this.db.executeReadOne<{ local_path: string | null }>(
+        `SELECT local_path FROM notification_attachments WHERE id = ?`,
+        [id]
+      ) ?? null
+    );
+  }
+
+  /**
    * All attachments belonging to one announcement (`notifications.id`).
    * Ordered by display_name. Visibility is not applied — caller knew
    * the notification id.

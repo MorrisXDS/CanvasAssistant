@@ -60,6 +60,17 @@ export interface ResourceHtmlDownloadRow {
   folder_path: string | null;
 }
 
+/** Download projection including `local_path` (`canvas-file:open`). */
+export interface ResourceDownloadWithLocalPathRow {
+  id: number;
+  course_id: number;
+  external_id: string;
+  title: string;
+  url: string | null;
+  local_path: string | null;
+  folder_path: string | null;
+}
+
 export class ResourceReader {
   constructor(private readonly db: Database) {}
 
@@ -139,6 +150,44 @@ export class ResourceReader {
     return (
       this.db.executeReadOne<ResourceHtmlDownloadRow>(
         `SELECT id, local_path, url, title, folder_path FROM resources WHERE external_id = ?`,
+        [externalId]
+      ) ?? null
+    );
+  }
+
+  /** Just the local_path for a resource by primary key, or null. */
+  getLocalPathById(id: number): { local_path: string | null } | null {
+    return (
+      this.db.executeReadOne<{ local_path: string | null }>(
+        `SELECT local_path FROM resources WHERE id = ?`,
+        [id]
+      ) ?? null
+    );
+  }
+
+  /** local_path + external_id for a resource by primary key, or null. */
+  getLocalPathExternalById(
+    id: number
+  ): { local_path: string | null; external_id: string } | null {
+    return (
+      this.db.executeReadOne<{ local_path: string | null; external_id: string }>(
+        `SELECT local_path, external_id FROM resources WHERE id = ?`,
+        [id]
+      ) ?? null
+    );
+  }
+
+  /**
+   * Full download projection (including `local_path`) for a resource by
+   * external_id, or null. Used by `canvas-file:open`, which both opens an
+   * existing local file and falls back to downloading it.
+   */
+  getDownloadInfoWithLocalPathByExternalId(
+    externalId: string
+  ): ResourceDownloadWithLocalPathRow | null {
+    return (
+      this.db.executeReadOne<ResourceDownloadWithLocalPathRow>(
+        `SELECT id, course_id, external_id, title, url, local_path, folder_path FROM resources WHERE external_id = ?`,
         [externalId]
       ) ?? null
     );

@@ -66,6 +66,7 @@ export type {
   ResourceOpenByIdRow,
   ResourceDependencyFileRow,
   ResourceHtmlDownloadRow,
+  ResourceDownloadWithLocalPathRow,
 } from './readers/ResourceReader';
 export { CoursePageReader } from './readers/CoursePageReader';
 export type {

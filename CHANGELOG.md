@@ -12,6 +12,21 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ### Changed
 
+- `2026-06-01 17:30 UTC` — Migrated `fileHandlers` off raw SQL (ADR-0007). The
+  DB-touching channels (`attachment:download` / `open` / `showInFolder`,
+  `files:clearSync`, `resource:showInFolder` / `showInFolderByExternalId` /
+  `deleteLocal`, `canvas-file:open`) no longer touch the database directly.
+  Reads route through `AnnouncementAttachmentReader` (new by-id projections),
+  `ResourceReader` (new `getLocalPathById` / `getLocalPathExternalById` /
+  `getDownloadInfoWithLocalPathByExternalId`), and the existing `CourseReader`.
+  Attachment status writes route through a new `UpdateAttachmentDownloadCommand`
+  (`setStatus` / `markDownloaded`); the multi-table `files:clearSync` wipe moved
+  into a new transactional `ClearSyncedFilesCommand`; the resource `local_path`
+  writes reuse `UpdateResourceLocalPathCommand` (`clear` / `setLocalPath`). The
+  directory-management, dialog, and file-save channels (no DB access) are
+  unchanged. Behaviour preserved exactly. Ceiling drops 2 → 1 entry —
+  `fileHandlers` removed and locked at zero; only `syncHandlers` remains.
+
 - `2026-06-01 17:00 UTC` — Migrated `htmlDependencyHandlers` off raw SQL (ADR-0007).
   Both channels (`html:checkDependencies`, `html:downloadDependencies`) no
   longer touch the database directly. All 19 SQL calls (7 ratchet-counted
