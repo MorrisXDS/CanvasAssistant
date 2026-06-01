@@ -1,11 +1,26 @@
 /**
  * Sync Updates IPC Handlers
  * Handles sync update notifications, marking items as seen, and conflict resolution
+ *
+ * Per ADR-0007, this file holds no raw `database.execute*` calls. Reads route
+ * through `SyncUpdateReader` (L1); writes route through the sync-update
+ * commands (L4). The handler keeps the visibility composition, result shaping
+ * / logging, and the test-data orchestration. The post-write affected-row
+ * counts come straight from the command return values (better-sqlite3's
+ * `changes`, identical to the `SELECT changes()` the handler previously ran).
  */
 
 import { ipcMain } from 'electron';
 import type { IpcContext, IpcHandlerRegistrar } from './IpcContext';
-import type { SyncUpdateRowWithCourse, SyncUpdateRow } from '../../layers/l1-persistence';
+import type { SyncUpdateRowWithCourse } from '../../layers/l1-persistence';
+import { SyncUpdateReader } from '../../layers/l1-persistence';
+import {
+  MarkSyncUpdatesSeenCommand,
+  ResolveSyncConflictCommand,
+  CleanupSyncUpdatesCommand,
+  SyncTestDataCommand,
+  type TestSyncUpdateInput,
+} from '../../layers/l4-controller/commands/syncUpdate';
 
 /**
  * Map database row to API response format
@@ -48,6 +63,12 @@ export const registerSyncUpdatesHandlers: IpcHandlerRegistrar = (ctx: IpcContext
   const db = ctx.getDatabase();
   const logger = ctx.getLogger();
 
+  const syncUpdateReader = new SyncUpdateReader(db);
+  const markSeenCommand = new MarkSyncUpdatesSeenCommand(db);
+  const resolveConflictCommand = new ResolveSyncConflictCommand(db);
+  const cleanupCommand = new CleanupSyncUpdatesCommand(db);
+  const testDataCommand = new SyncTestDataCommand(db);
+
   /**
    * Get all unseen sync updates (grouped by course in UI)
    */
@@ -66,30 +87,11 @@ export const registerSyncUpdatesHandlers: IpcHandlerRegistrar = (ctx: IpcContext
           return [];
         }
 
-        const placeholders = visibleCourseIds.map(() => '?').join(', ');
-        const seenCondition = includeResolved
-          ? ''
-          : 'AND (su.seen_at IS NULL OR (su.entity_type = ? AND su.resolved_at IS NULL))';
-
-        const params = includeResolved
-          ? [...visibleCourseIds, limit]
-          : [...visibleCourseIds, 'conflict', limit];
-
-        const sql = `
-          SELECT
-            su.*,
-            c.code as course_code,
-            c.name as course_name,
-            c.color as course_color
-          FROM sync_updates su
-          JOIN courses c ON su.course_id = c.id
-          WHERE su.course_id IN (${placeholders})
-          ${seenCondition}
-          ORDER BY su.created_at DESC
-          LIMIT ?
-        `;
-
-        const rows = db.executeRead<SyncUpdateRowWithCourse>(sql, params);
+        const rows = syncUpdateReader.getAllWithCourse(
+          visibleCourseIds,
+          includeResolved,
+          limit
+        );
         return rows.map(mapSyncUpdateRow);
       } catch (error) {
         logger.error('Failed to get sync updates', toError(error));
@@ -120,89 +122,15 @@ export const registerSyncUpdatesHandlers: IpcHandlerRegistrar = (ctx: IpcContext
         };
       }
 
-      const placeholders = visibleCourseIds.map(() => '?').join(', ');
-
-      // Count unseen informational updates (NOT action-required, NOT conflicts)
-      const informationalSql = `
-        SELECT COUNT(*) as count FROM sync_updates
-        WHERE course_id IN (${placeholders})
-        AND seen_at IS NULL
-        AND entity_type != 'conflict'
-        AND (is_action_required IS NULL OR is_action_required = 0)
-      `;
-      const informationalResult = db.executeRead<{ count: number }>(
-        informationalSql,
-        visibleCourseIds
-      );
-      const informational = informationalResult[0]?.count ?? 0;
-
-      // Count unresolved conflicts
-      const conflictsSql = `
-        SELECT COUNT(*) as count FROM sync_updates
-        WHERE course_id IN (${placeholders})
-        AND entity_type = 'conflict'
-        AND resolved_at IS NULL
-      `;
-      const conflictsResult = db.executeRead<{ count: number }>(
-        conflictsSql,
-        visibleCourseIds
-      );
-      const conflicts = conflictsResult[0]?.count ?? 0;
-
-      // Count action-required items (queued tasks that need accept/dismiss)
-      // Exclude conflicts since they're counted separately
-      const actionRequiredSql = `
-        SELECT COUNT(*) as count FROM sync_updates
-        WHERE course_id IN (${placeholders})
-        AND seen_at IS NULL
-        AND is_action_required = 1
-        AND entity_type != 'conflict'
-      `;
-      const actionRequiredResult = db.executeRead<{ count: number }>(
-        actionRequiredSql,
-        visibleCourseIds
-      );
-      const actionRequired = actionRequiredResult[0]?.count ?? 0;
-
-      // Count by course
-      const byCourseSql = `
-        SELECT course_id, COUNT(*) as count FROM sync_updates
-        WHERE course_id IN (${placeholders})
-        AND (seen_at IS NULL OR (entity_type = 'conflict' AND resolved_at IS NULL))
-        GROUP BY course_id
-      `;
-      const byCourseResult = db.executeRead<{ course_id: number; count: number }>(
-        byCourseSql,
-        visibleCourseIds
-      );
-      const byCourse: Record<string, number> = {};
-      for (const row of byCourseResult) {
-        byCourse[String(row.course_id)] = row.count;
-      }
-
-      // Count by type
-      const byTypeSql = `
-        SELECT entity_type, COUNT(*) as count FROM sync_updates
-        WHERE course_id IN (${placeholders})
-        AND (seen_at IS NULL OR (entity_type = 'conflict' AND resolved_at IS NULL))
-        GROUP BY entity_type
-      `;
-      const byTypeResult = db.executeRead<{ entity_type: string; count: number }>(
-        byTypeSql,
-        visibleCourseIds
-      );
-      const byType: Record<string, number> = {};
-      for (const row of byTypeResult) {
-        byType[row.entity_type] = row.count;
-      }
+      const counts = syncUpdateReader.getCounts(visibleCourseIds);
 
       const result = {
-        total: informational + conflicts + actionRequired,
-        conflicts,
-        informational,
-        actionRequired,
-        byCourse,
-        byType,
+        total: counts.informational + counts.conflicts + counts.actionRequired,
+        conflicts: counts.conflicts,
+        informational: counts.informational,
+        actionRequired: counts.actionRequired,
+        byCourse: counts.byCourse,
+        byType: counts.byType,
       };
       logger.info(
         `[syncUpdates:getCount] Returning: total=${result.total}, conflicts=${result.conflicts}, informational=${result.informational}, actionRequired=${result.actionRequired}`
@@ -229,17 +157,8 @@ export const registerSyncUpdatesHandlers: IpcHandlerRegistrar = (ctx: IpcContext
         return { success: true, data: { marked: 0 } };
       }
 
-      const placeholders = params.ids.map(() => '?').join(', ');
-      const sql = `
-        UPDATE sync_updates
-        SET seen_at = CURRENT_TIMESTAMP
-        WHERE id IN (${placeholders}) AND seen_at IS NULL
-      `;
-      db.executeWrite(sql, params.ids, 'sync_updates');
-
-      const result = db.executeRead<{ changes: number }>('SELECT changes() as changes');
-
-      return { success: true, data: { marked: result[0]?.changes ?? 0 } };
+      const marked = markSeenCommand.byIds(params.ids);
+      return { success: true, data: { marked } };
     } catch (error) {
       logger.error('Failed to mark sync updates as seen', toError(error));
       return { success: false, error: String(error) };
@@ -261,9 +180,6 @@ export const registerSyncUpdatesHandlers: IpcHandlerRegistrar = (ctx: IpcContext
       }
     ) => {
       try {
-        const conditions: string[] = ['seen_at IS NULL'];
-        const values: (number | string)[] = [];
-
         // Get visible course IDs
         const visibilityOracle = ctx.getVisibilityOracle();
         const visibleCourseIds = visibilityOracle?.getVisibleCourseIds() ?? [];
@@ -272,40 +188,14 @@ export const registerSyncUpdatesHandlers: IpcHandlerRegistrar = (ctx: IpcContext
           return { success: true, data: { marked: 0 } };
         }
 
-        const placeholders = visibleCourseIds.map(() => '?').join(', ');
-        conditions.push(`course_id IN (${placeholders})`);
-        values.push(...visibleCourseIds);
+        const marked = markSeenCommand.all(visibleCourseIds, {
+          courseId: params?.courseId,
+          entityType: params?.entityType,
+          excludeConflicts: params?.excludeConflicts,
+          excludeActionRequired: params?.excludeActionRequired,
+        });
 
-        if (params?.courseId !== undefined) {
-          conditions.push('course_id = ?');
-          values.push(params.courseId);
-        }
-
-        if (params?.entityType) {
-          conditions.push('entity_type = ?');
-          values.push(params.entityType);
-        }
-
-        if (params?.excludeConflicts) {
-          conditions.push("entity_type != 'conflict'");
-        }
-
-        // Exclude action-required items (queued tasks that need accept/dismiss)
-        if (params?.excludeActionRequired !== false) {
-          // Default to excluding action-required when marking informational as read
-          conditions.push('(is_action_required IS NULL OR is_action_required = 0)');
-        }
-
-        const sql = `
-          UPDATE sync_updates
-          SET seen_at = CURRENT_TIMESTAMP
-          WHERE ${conditions.join(' AND ')}
-        `;
-        db.executeWrite(sql, values, 'sync_updates');
-
-        const result = db.executeRead<{ changes: number }>('SELECT changes() as changes');
-
-        return { success: true, data: { marked: result[0]?.changes ?? 0 } };
+        return { success: true, data: { marked } };
       } catch (error) {
         logger.error('Failed to mark all sync updates as seen', toError(error));
         return { success: false, error: String(error) };
@@ -320,16 +210,8 @@ export const registerSyncUpdatesHandlers: IpcHandlerRegistrar = (ctx: IpcContext
     'syncUpdates:markSeenByEntity',
     async (_event, params: { entityType: string; entityId: number }) => {
       try {
-        const sql = `
-          UPDATE sync_updates
-          SET seen_at = CURRENT_TIMESTAMP
-          WHERE entity_type = ? AND entity_id = ? AND seen_at IS NULL
-        `;
-        db.executeWrite(sql, [params.entityType, params.entityId], 'sync_updates');
-
-        const result = db.executeRead<{ changes: number }>('SELECT changes() as changes');
-
-        return { success: true, data: { marked: result[0]?.changes ?? 0 } };
+        const marked = markSeenCommand.byEntity(params.entityType, params.entityId);
+        return { success: true, data: { marked } };
       } catch (error) {
         logger.error('Failed to mark sync update by entity', toError(error));
         return { success: false, error: String(error) };
@@ -352,69 +234,22 @@ export const registerSyncUpdatesHandlers: IpcHandlerRegistrar = (ctx: IpcContext
     ) => {
       try {
         // Get the conflict details first
-        const conflictSql = `
-          SELECT * FROM sync_updates WHERE id = ? AND entity_type = 'conflict'
-        `;
-        const conflicts = db.executeRead<SyncUpdateRow>(conflictSql, [params.updateId]);
+        const conflict = syncUpdateReader.getConflictById(params.updateId);
 
-        if (conflicts.length === 0) {
+        if (!conflict) {
           return { success: false, error: 'Conflict not found' };
         }
 
-        const conflict = conflicts[0];
-
-        // Mark conflict as resolved
-        const updateSql = `
-          UPDATE sync_updates
-          SET
-            conflict_resolution = ?,
-            remember_choice = ?,
-            resolved_at = CURRENT_TIMESTAMP,
-            seen_at = COALESCE(seen_at, CURRENT_TIMESTAMP)
-          WHERE id = ?
-        `;
-        db.executeWrite(
-          updateSql,
-          [params.resolution, params.rememberChoice ? 1 : 0, params.updateId],
-          'sync_updates'
+        resolveConflictCommand.execute(
+          params.updateId,
+          params.resolution,
+          params.rememberChoice ?? false,
+          conflict
         );
-
-        // If rememberChoice, save to sync_preferences table
-        if (params.rememberChoice && conflict.conflict_field) {
-          const prefSql = `
-            INSERT OR REPLACE INTO sync_preferences
-            (entity, entity_id, field, prefer_local, created_at)
-            VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
-          `;
-          db.executeWrite(
-            prefSql,
-            [
-              conflict.entity_type,
-              conflict.entity_id,
-              conflict.conflict_field,
-              params.resolution === 'local' ? 1 : 0,
-            ],
-            'sync_preferences'
-          );
-        }
 
         // Mark informational updates for the SAME FIELD as seen
         // Only clears updates related to the specific field that was in conflict
         if (conflict.entity_id && conflict.conflict_field) {
-          const markRelatedSql = `
-            UPDATE sync_updates
-            SET seen_at = CURRENT_TIMESTAMP
-            WHERE entity_id = ?
-            AND changed_field = ?
-            AND entity_type != 'conflict'
-            AND seen_at IS NULL
-          `;
-          db.executeWrite(
-            markRelatedSql,
-            [conflict.entity_id, conflict.conflict_field],
-            'sync_updates'
-          );
-
           logger.info(
             `[syncUpdates:resolveConflict] Marked updates as seen for entity_id=${conflict.entity_id}, field=${conflict.conflict_field}`
           );
@@ -440,29 +275,8 @@ export const registerSyncUpdatesHandlers: IpcHandlerRegistrar = (ctx: IpcContext
     async (_event, params: { olderThanDays?: number }) => {
       try {
         const days = params.olderThanDays ?? 30;
-
-        // Delete seen updates older than X days
-        const deleteUpdatesSql = `
-          DELETE FROM sync_updates
-          WHERE seen_at IS NOT NULL
-          AND datetime(seen_at) < datetime('now', '-' || ? || ' days')
-        `;
-        db.executeWrite(deleteUpdatesSql, [days], 'sync_updates');
-
-        const updatesResult = db.executeRead<{ changes: number }>(
-          'SELECT changes() as changes'
-        );
-        const deletedUpdates = updatesResult[0]?.changes ?? 0;
-
-        // Delete old sync sessions with no remaining updates
-        const deleteSessionsSql = `
-          DELETE FROM sync_sessions
-          WHERE id NOT IN (SELECT DISTINCT sync_session_id FROM sync_updates)
-          AND datetime(created_at) < datetime('now', '-' || ? || ' days')
-        `;
-        db.executeWrite(deleteSessionsSql, [days], 'sync_sessions');
-
-        return { success: true, data: { deleted: deletedUpdates } };
+        const deleted = cleanupCommand.execute(days);
+        return { success: true, data: { deleted } };
       } catch (error) {
         logger.error('Failed to cleanup sync updates', toError(error));
         return { success: false, error: String(error) };
@@ -489,16 +303,10 @@ export const registerSyncUpdatesHandlers: IpcHandlerRegistrar = (ctx: IpcContext
       const courseId = visibleCourseIds[0];
 
       // Get a task from this course
-      const task = db.executeRead<{ id: number; title: string }>(
-        'SELECT id, title FROM tasks WHERE course_id = ? LIMIT 1',
-        [courseId]
-      )[0];
+      const task = syncUpdateReader.getFirstTaskInCourse(courseId);
 
       // Get a file from this course
-      const file = db.executeRead<{ id: number; title: string }>(
-        'SELECT id, title FROM resources WHERE course_id = ? LIMIT 1',
-        [courseId]
-      )[0];
+      const file = syncUpdateReader.getFirstResourceInCourse(courseId);
 
       if (!task) {
         return { success: false, error: 'No tasks found in visible courses' };
@@ -507,22 +315,13 @@ export const registerSyncUpdatesHandlers: IpcHandlerRegistrar = (ctx: IpcContext
       const now = new Date().toISOString();
 
       // Create a test sync session first (required by sync_updates.sync_session_id NOT NULL)
-      db.executeWrite(
-        `INSERT INTO sync_sessions (status, started_at, created_at)
-         VALUES ('completed', ?, ?)`,
-        [now, now],
-        'sync_sessions'
-      );
-      const sessionResult = db.executeRead<{ id: number }>(
-        'SELECT last_insert_rowid() as id'
-      );
-      const syncSessionId = sessionResult[0]?.id;
+      const syncSessionId = testDataCommand.createTestSession(now);
 
       if (!syncSessionId) {
         return { success: false, error: 'Failed to create test sync session' };
       }
 
-      const testUpdates = [
+      const testUpdates: TestSyncUpdateInput[] = [
         // Blue dot: task field updated (due_at)
         {
           sync_session_id: syncSessionId,
@@ -575,37 +374,18 @@ export const registerSyncUpdatesHandlers: IpcHandlerRegistrar = (ctx: IpcContext
           entity_type: 'file',
           entity_id: file.id,
           change_type: 'new',
-          changed_field: null as unknown as string,
+          changed_field: null,
           title: `[TEST] ${file.title}`,
           subtitle: 'New file',
-          old_value: null as unknown as string,
-          new_value: null as unknown as string,
+          old_value: null,
+          new_value: null,
           created_at: now,
         });
       }
 
       // Insert test updates
       for (const update of testUpdates) {
-        db.executeWrite(
-          `INSERT INTO sync_updates (
-            sync_session_id, course_id, entity_type, entity_id, change_type, changed_field,
-            title, subtitle, old_value, new_value, created_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [
-            update.sync_session_id,
-            update.course_id,
-            update.entity_type,
-            update.entity_id,
-            update.change_type,
-            update.changed_field,
-            update.title,
-            update.subtitle,
-            update.old_value,
-            update.new_value,
-            update.created_at,
-          ],
-          'sync_updates'
-        );
+        testDataCommand.insertTestUpdate(update);
       }
 
       logger.info(
@@ -633,11 +413,7 @@ export const registerSyncUpdatesHandlers: IpcHandlerRegistrar = (ctx: IpcContext
    */
   ipcMain.handle('syncUpdates:clearTestData', async () => {
     try {
-      const sql = `DELETE FROM sync_updates WHERE title LIKE '[TEST]%'`;
-      db.executeWrite(sql, [], 'sync_updates');
-
-      const result = db.executeRead<{ changes: number }>('SELECT changes() as changes');
-      const deleted = result[0]?.changes ?? 0;
+      const deleted = testDataCommand.clearTestData();
 
       logger.info(`[syncUpdates:clearTestData] Cleared ${deleted} test updates`);
 
@@ -653,29 +429,13 @@ export const registerSyncUpdatesHandlers: IpcHandlerRegistrar = (ctx: IpcContext
    */
   ipcMain.handle('syncUpdates:getStatus', async () => {
     try {
-      const stats = db.executeRead<{
-        change_type: string;
-        total: number;
-        unseen: number;
-      }>(`
-        SELECT
-          change_type,
-          COUNT(*) as total,
-          SUM(CASE WHEN seen_at IS NULL THEN 1 ELSE 0 END) as unseen
-        FROM sync_updates
-        GROUP BY change_type
-      `);
-
-      const totalUnseen =
-        db.executeRead<{ count: number }>(
-          'SELECT COUNT(*) as count FROM sync_updates WHERE seen_at IS NULL'
-        )[0]?.count ?? 0;
+      const status = syncUpdateReader.getStatus();
 
       return {
         success: true,
         data: {
-          totalUnseen,
-          byType: stats,
+          totalUnseen: status.totalUnseen,
+          byType: status.byType,
         },
       };
     } catch (error) {

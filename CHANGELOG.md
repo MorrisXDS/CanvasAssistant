@@ -12,6 +12,21 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ### Changed
 
+- `2026-06-01 06:00 UTC` — Migrated `syncUpdatesHandlers` off raw SQL (ADR-0007).
+  All ten sync-update channels (`getAll`, `getCount`, `markSeen`,
+  `markAllSeen`, `markSeenByEntity`, `resolveConflict`, `cleanup`, plus the
+  three debug channels) no longer touch the database directly. The 28 SQL
+  calls moved to a new L1 `SyncUpdateReader` (feed query, the five badge
+  aggregations, conflict lookup, debug status) and four L4 commands
+  (`MarkSyncUpdatesSeenCommand` with `byIds`/`all`/`byEntity`,
+  `ResolveSyncConflictCommand`, `CleanupSyncUpdatesCommand`,
+  `SyncTestDataCommand`). The six post-write `SELECT changes()` /
+  `last_insert_rowid()` reads collapse into the command return values
+  (better-sqlite3's `changes`, identical semantics). Behaviour preserved
+  exactly, including the dynamic `markAllSeen` WHERE assembly and the
+  `sync_preferences.prefer_local` write. Ceiling drops 4 → 3 entries —
+  `syncUpdatesHandlers` removed and locked at zero.
+
 - `2026-06-01 05:00 UTC` — Migrated `resourceHandlers` off raw SQL (ADR-0007).
   The four resource channels (`resource:download`, `resource:downloadByExternalId`,
   `resource:openByExternalId`, `resource:open`) no longer touch the database
