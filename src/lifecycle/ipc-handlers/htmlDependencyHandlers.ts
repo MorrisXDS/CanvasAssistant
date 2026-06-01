@@ -15,10 +15,30 @@ import {
 } from '../../layers/l2-daemon/html/HtmlFileExtractor';
 import { mapPage } from '../../layers/l2-daemon';
 import type { CanvasPage } from '../../layers/l2-daemon';
+import {
+  ResourceReader,
+  CoursePageReader,
+  HtmlDependencyReader,
+  CourseReader,
+  TaskReader,
+} from '../../layers/l1-persistence';
+import {
+  UpsertCoursePageCommand,
+  UpsertResourceCommand,
+} from '../../layers/l4-controller/commands/page';
+import { UpdateResourceLocalPathCommand } from '../../layers/l4-controller/commands/resource';
+import { HtmlDependencyWriteCommand } from '../../layers/l4-controller/commands/htmlDependency';
 import type { IpcContext } from './IpcContext';
 
 /**
  * Register all HTML dependency related IPC handlers
+ *
+ * Per ADR-0007, this file holds no raw `database.execute*` / `upsert` calls.
+ * Reads route through L1 readers; writes through L4 commands. The handler keeps
+ * the Canvas API calls, file IO, HTML rewriting, recursive dependency-walking,
+ * and OperationCoordinator session orchestration. (`HtmlDependencyResolver` is
+ * an L2 service that owns its own SQL — passing the `database` to its
+ * constructor is allowed; only direct `database.execute*` calls are not.)
  */
 export function registerHtmlDependencyHandlers(ctx: IpcContext): void {
   const database = ctx.getDatabase();
@@ -28,6 +48,16 @@ export function registerHtmlDependencyHandlers(ctx: IpcContext): void {
   const getOperationCoordinator = ctx.getOperationCoordinator;
   const getSyncPreferences = ctx.getSyncPreferences;
   const getFilesDir = ctx.getFilesDir;
+
+  const resourceReader = new ResourceReader(database);
+  const coursePageReader = new CoursePageReader(database);
+  const htmlDependencyReader = new HtmlDependencyReader(database);
+  const courseReader = new CourseReader(database);
+  const taskReader = new TaskReader(database);
+  const upsertCoursePageCommand = new UpsertCoursePageCommand(database);
+  const upsertResourceCommand = new UpsertResourceCommand(database);
+  const updateResourceLocalPathCommand = new UpdateResourceLocalPathCommand(database);
+  const htmlDependencyWriteCommand = new HtmlDependencyWriteCommand(database);
 
   // Check HTML dependencies without opening
   ipcMain.handle('html:checkDependencies', (_event, resourceId: number) => {
@@ -48,23 +78,13 @@ export function registerHtmlDependencyHandlers(ctx: IpcContext): void {
       };
     }
 
-    const resource = database.executeReadOne<{
-      local_path: string | null;
-      external_id: string;
-      course_id: number;
-      title: string;
-    }>('SELECT local_path, external_id, course_id, title FROM resources WHERE id = ?', [
-      resourceId,
-    ]);
+    const resource = resourceReader.getOpenInfoById(resourceId);
 
     if (!resource) {
       return { success: false, error: 'Resource not found' };
     }
 
-    const course = database.executeReadOne<{ external_id: string; code: string }>(
-      'SELECT external_id, code FROM courses WHERE id = ?',
-      [resource.course_id]
-    );
+    const course = courseReader.getById(resource.course_id);
 
     if (!course) {
       return { success: false, error: 'Course not found' };
@@ -141,24 +161,13 @@ export function registerHtmlDependencyHandlers(ctx: IpcContext): void {
       };
     }
 
-    const resource = database.executeReadOne<{
-      local_path: string | null;
-      external_id: string;
-      course_id: number;
-      title: string;
-    }>('SELECT local_path, external_id, course_id, title FROM resources WHERE id = ?', [
-      resourceId,
-    ]);
+    const resource = resourceReader.getOpenInfoById(resourceId);
 
     if (!resource || !resource.local_path) {
       return { success: false, error: 'Resource not found or not downloaded' };
     }
 
-    const course = database.executeReadOne<{
-      external_id: string;
-      code: string;
-      id: number;
-    }>('SELECT external_id, code, id FROM courses WHERE id = ?', [resource.course_id]);
+    const course = courseReader.getById(resource.course_id);
 
     if (!course) {
       return { success: false, error: 'Course not found' };
@@ -175,31 +184,18 @@ export function registerHtmlDependencyHandlers(ctx: IpcContext): void {
     // Helper: Get content hash for an HTML source to detect changes during download
     const getContentHash = (type: string, id: string): string | null => {
       if (type === 'page') {
-        const page = database.executeReadOne<{
-          body_html: string | null;
-          content_hash: string | null;
-        }>('SELECT body_html, content_hash FROM course_pages WHERE external_id = ?', [
-          id,
-        ]);
+        const page = coursePageReader.getHashSourceByExternalId(id);
         // Use stored hash if available, otherwise compute from content
         if (page?.content_hash) return page.content_hash;
         if (page?.body_html)
           return crypto.createHash('md5').update(page.body_html).digest('hex');
       } else if (type === 'assignment') {
-        const task = database.executeReadOne<{
-          description: string | null;
-          description_hash: string | null;
-        }>('SELECT description, description_hash FROM tasks WHERE external_id = ?', [id]);
+        const task = taskReader.getDescriptionHashSourceByExternalId(id);
         if (task?.description_hash) return task.description_hash;
         if (task?.description)
           return crypto.createHash('md5').update(task.description).digest('hex');
       } else if (type === 'syllabus') {
-        const syllabus = database.executeReadOne<{
-          syllabus_body: string | null;
-          syllabus_hash: string | null;
-        }>('SELECT syllabus_body, syllabus_hash FROM courses WHERE external_id = ?', [
-          id,
-        ]);
+        const syllabus = courseReader.getSyllabusHashSourceByExternalId(id);
         if (syllabus?.syllabus_hash) return syllabus.syllabus_hash;
         if (syllabus?.syllabus_body)
           return crypto.createHash('md5').update(syllabus.syllabus_body).digest('hex');
@@ -256,45 +252,33 @@ export function registerHtmlDependencyHandlers(ctx: IpcContext): void {
     ) => {
       // Only delete dependencies that don't have a session ID or have the same session ID
       // This protects dependencies being used by another concurrent download
-      database.executeWrite(
-        `DELETE FROM html_dependencies
-         WHERE parent_source_type = ? AND parent_source_id = ?
-         AND (download_session_id IS NULL OR download_session_id = ?)`,
-        [htmlSourceType, htmlSourceId, opSessionId ?? null],
-        'html_dependencies'
+      htmlDependencyWriteCommand.deleteForParentInSession(
+        htmlSourceType,
+        htmlSourceId,
+        opSessionId
       );
 
       // Record file dependencies with session ID and content hash
       for (const fileId of fileIds) {
-        database.executeWrite(
-          `INSERT OR REPLACE INTO html_dependencies
-           (parent_source_type, parent_source_id, child_source_type, child_source_id, is_cycle, download_session_id, recorded_content_hash)
-           VALUES (?, ?, 'file', ?, 0, ?, ?)`,
-          [
-            htmlSourceType,
-            htmlSourceId,
-            fileId,
-            opSessionId ?? null,
-            contentHash ?? null,
-          ],
-          'html_dependencies'
+        htmlDependencyWriteCommand.replaceChild(
+          htmlSourceType,
+          htmlSourceId,
+          'file',
+          fileId,
+          opSessionId,
+          contentHash
         );
       }
 
       // Record page dependencies with session ID and content hash
       for (const pageId of pageIds) {
-        database.executeWrite(
-          `INSERT OR REPLACE INTO html_dependencies
-           (parent_source_type, parent_source_id, child_source_type, child_source_id, is_cycle, download_session_id, recorded_content_hash)
-           VALUES (?, ?, 'page', ?, 0, ?, ?)`,
-          [
-            htmlSourceType,
-            htmlSourceId,
-            pageId,
-            opSessionId ?? null,
-            contentHash ?? null,
-          ],
-          'html_dependencies'
+        htmlDependencyWriteCommand.replaceChild(
+          htmlSourceType,
+          htmlSourceId,
+          'page',
+          pageId,
+          opSessionId,
+          contentHash
         );
       }
 
@@ -346,16 +330,7 @@ export function registerHtmlDependencyHandlers(ctx: IpcContext): void {
       if (processedFiles.has(fileId)) return null;
       processedFiles.add(fileId);
 
-      const depResource = database.executeReadOne<{
-        id: number;
-        local_path: string | null;
-        url: string | null;
-        title: string;
-        folder_path: string | null;
-      }>(
-        'SELECT id, local_path, url, title, folder_path FROM resources WHERE external_id = ?',
-        [fileId]
-      );
+      const depResource = resourceReader.getHtmlDownloadInfoByExternalId(fileId);
 
       // Return existing local path if already downloaded
       if (depResource?.local_path && fs.existsSync(depResource.local_path)) {
@@ -418,11 +393,7 @@ export function registerHtmlDependencyHandlers(ctx: IpcContext): void {
 
       const localPath = await downloadPromise;
       if (localPath) {
-        database.executeWrite(
-          'UPDATE resources SET local_path = ? WHERE id = ?',
-          [localPath, depResource.id],
-          'resources'
-        );
+        updateResourceLocalPathCommand.setLocalPath(depResource.id, localPath);
         totalFilesDownloaded++;
         logger.info(`[html:downloadDependencies] Downloaded file: ${depResource.title}`);
       }
@@ -440,17 +411,7 @@ export function registerHtmlDependencyHandlers(ctx: IpcContext): void {
       processedPages.add(pageKey);
 
       // Look up page by slug in course_pages to get Canvas external_id
-      const page = database.executeReadOne<{
-        id: number;
-        external_id: string;
-        title: string;
-        body_html: string | null;
-        url_slug: string;
-      }>(
-        `SELECT id, external_id, title, body_html, url_slug FROM course_pages
-         WHERE course_id = ? AND (url_slug = ? OR external_id = ?)`,
-        [course.id, pageSlug, pageSlug]
-      );
+      const page = coursePageReader.getContentWithSlug(course.id, pageSlug);
 
       // Extract local vars from existing row (may be null if page not synced yet)
       let pageBodyHtml = page?.body_html ?? null;
@@ -476,19 +437,10 @@ export function registerHtmlDependencyHandlers(ctx: IpcContext): void {
           );
           const response = await canvasClient.get<CanvasPage>(endpoint);
           const localPage = mapPage(response.data, course.id, 'module_item');
-          database.upsert('course_pages', localPage);
+          upsertCoursePageCommand.execute(localPage);
 
           // Re-read the upserted row to get the id and all fields
-          const freshPage = database.executeReadOne<{
-            id: number;
-            external_id: string;
-            title: string;
-            body_html: string | null;
-          }>(
-            `SELECT id, external_id, title, body_html FROM course_pages
-             WHERE course_id = ? AND (url_slug = ? OR external_id = ?)`,
-            [course.id, pageSlug, pageSlug]
-          );
+          const freshPage = coursePageReader.getContent(course.id, pageSlug);
 
           if (freshPage?.body_html) {
             pageBodyHtml = freshPage.body_html;
@@ -516,9 +468,7 @@ export function registerHtmlDependencyHandlers(ctx: IpcContext): void {
 
       // Check if HTML file already exists in resources (registered via HtmlContentSync)
       const pageResourceId = `html-page-${pageExternalId}`;
-      const existingResource = database.executeReadOne<{
-        local_path: string | null;
-      }>('SELECT local_path FROM resources WHERE external_id = ?', [pageResourceId]);
+      const existingResource = resourceReader.getLocalPathByExternalId(pageResourceId);
 
       if (existingResource?.local_path && fs.existsSync(existingResource.local_path)) {
         logger.info(
@@ -540,24 +490,15 @@ export function registerHtmlDependencyHandlers(ctx: IpcContext): void {
 
       // Register in resources table for tracking
       const stats = fs.statSync(htmlPath);
-      database.executeWrite(
-        `INSERT INTO resources (external_id, course_id, type, title, local_path, folder_path, size_bytes, mime_type, context_type, context_id, synced_at)
-         VALUES (?, ?, 'page', ?, ?, ?, ?, 'text/html', 'page', ?, CURRENT_TIMESTAMP)
-         ON CONFLICT(external_id) DO UPDATE SET
-           local_path = excluded.local_path,
-           size_bytes = excluded.size_bytes,
-           synced_at = CURRENT_TIMESTAMP`,
-        [
-          pageResourceId,
-          course.id,
-          pageTitle,
-          htmlPath,
-          path.basename(targetDir),
-          stats.size,
-          pageId,
-        ],
-        'resources'
-      );
+      upsertResourceCommand.upsertPageContent({
+        externalId: pageResourceId,
+        courseId: course.id,
+        title: pageTitle,
+        localPath: htmlPath,
+        folderPath: path.basename(targetDir),
+        sizeBytes: stats.size,
+        contextId: pageId,
+      });
 
       // Recursively process this page's dependencies and record them
       await processHtmlDependencies(htmlPath, targetDir, 'page', pageExternalId);
@@ -585,14 +526,9 @@ export function registerHtmlDependencyHandlers(ctx: IpcContext): void {
       // This handles the case where HTML was already rewritten with local paths
       let usedRecordedDeps = false;
       if (htmlSourceType && htmlSourceId) {
-        const recordedDeps = database.executeRead<{
-          child_source_type: string;
-          child_source_id: string;
-          recorded_content_hash: string | null;
-        }>(
-          `SELECT child_source_type, child_source_id, recorded_content_hash FROM html_dependencies
-           WHERE parent_source_type = ? AND parent_source_id = ?`,
-          [htmlSourceType, htmlSourceId]
+        const recordedDeps = htmlDependencyReader.getChildrenWithHash(
+          htmlSourceType,
+          htmlSourceId
         );
 
         if (recordedDeps.length > 0) {
@@ -607,12 +543,7 @@ export function registerHtmlDependencyHandlers(ctx: IpcContext): void {
                 `(recordedHash=${recordedHash ?? 'null'}, currentHash=${currentHash ?? 'null'}). Re-parsing HTML.`
             );
             // Delete stale records so we fall through to the parse path
-            database.executeWrite(
-              `DELETE FROM html_dependencies
-               WHERE parent_source_type = ? AND parent_source_id = ?`,
-              [htmlSourceType, htmlSourceId],
-              'html_dependencies'
-            );
+            htmlDependencyWriteCommand.deleteAllForParent(htmlSourceType, htmlSourceId);
             // usedRecordedDeps remains false → falls through to parse path
           } else {
             logger.info(

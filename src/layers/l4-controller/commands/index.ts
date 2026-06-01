@@ -14,3 +14,4 @@ export * from './settings';
 export * from './export';
 export * from './resource';
 export * from './syncUpdate';
+export * from './htmlDependency';

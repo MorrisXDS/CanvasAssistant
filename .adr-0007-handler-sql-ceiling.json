@@ -4,7 +4,6 @@
   "_audit": "Snapshot from .cache/generate-ceiling.js on 2026-05-28. Migration train PR-B/PR-D/PR-E/PR-F.3/PR-H already migrated courseDataHandlers, taskDataHandlers, notificationDataHandlers, fileDataHandlers (partial), data/policyHandlers — those files don't appear here. The 19 entries below are the unmigrated remainder. Ratchet DOWN as further migration PRs land. See ADR-0007 in docs/adr/.",
   "paths": {
     "src/lifecycle/ipc-handlers/fileHandlers.ts": 10,
-    "src/lifecycle/ipc-handlers/htmlDependencyHandlers.ts": 7,
     "src/lifecycle/ipc-handlers/syncHandlers.ts": 6
   }
 }

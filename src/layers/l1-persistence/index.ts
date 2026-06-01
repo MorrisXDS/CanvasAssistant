@@ -65,14 +65,20 @@ export type {
   ResourceOpenByExternalIdRow,
   ResourceOpenByIdRow,
   ResourceDependencyFileRow,
+  ResourceHtmlDownloadRow,
 } from './readers/ResourceReader';
 export { CoursePageReader } from './readers/CoursePageReader';
 export type {
   CoursePageUrlSlugRow,
   CoursePageContentRow,
+  CoursePageContentWithSlugRow,
+  CoursePageHashSourceRow,
 } from './readers/CoursePageReader';
 export { HtmlDependencyReader } from './readers/HtmlDependencyReader';
-export type { HtmlDependencyChildRow } from './readers/HtmlDependencyReader';
+export type {
+  HtmlDependencyChildRow,
+  HtmlDependencyChildWithHashRow,
+} from './readers/HtmlDependencyReader';
 export { SyncUpdateReader } from './readers/SyncUpdateReader';
 export type {
   SyncUpdateCounts,

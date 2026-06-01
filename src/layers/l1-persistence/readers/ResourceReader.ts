@@ -51,6 +51,15 @@ export interface ResourceDependencyFileRow {
   url: string | null;
 }
 
+/** Fields needed to download an HTML dependency file (`html:downloadDependencies`). */
+export interface ResourceHtmlDownloadRow {
+  id: number;
+  local_path: string | null;
+  url: string | null;
+  title: string;
+  folder_path: string | null;
+}
+
 export class ResourceReader {
   constructor(private readonly db: Database) {}
 
@@ -116,6 +125,20 @@ export class ResourceReader {
     return (
       this.db.executeReadOne<{ local_path: string | null }>(
         `SELECT local_path FROM resources WHERE external_id = ?`,
+        [externalId]
+      ) ?? null
+    );
+  }
+
+  /**
+   * Download fields for an HTML dependency file by external_id, or null. Used
+   * by `html:downloadDependencies` (which needs `local_path` to skip already-
+   * downloaded files and `folder_path` for the download's context folder).
+   */
+  getHtmlDownloadInfoByExternalId(externalId: string): ResourceHtmlDownloadRow | null {
+    return (
+      this.db.executeReadOne<ResourceHtmlDownloadRow>(
+        `SELECT id, local_path, url, title, folder_path FROM resources WHERE external_id = ?`,
         [externalId]
       ) ?? null
     );

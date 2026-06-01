@@ -115,6 +115,25 @@ export class CourseReader {
   }
 
   /**
+   * Syllabus body + stored hash for a course identified by its Canvas
+   * `external_id`, or null. Used by `html:downloadDependencies` to compute a
+   * content hash for change-detection on a syllabus HTML source.
+   */
+  getSyllabusHashSourceByExternalId(externalId: string): {
+    syllabus_body: string | null;
+    syllabus_hash: string | null;
+  } | null {
+    return (
+      this.db.executeReadOne<{
+        syllabus_body: string | null;
+        syllabus_hash: string | null;
+      }>(`SELECT syllabus_body, syllabus_hash FROM courses WHERE external_id = ?`, [
+        externalId,
+      ]) ?? null
+    );
+  }
+
+  /**
    * Per-course grade-authority settings (which source wins for late penalty,
    * drop-lowest, and grade calc), or null if the course doesn't exist.
    * Narrow projection used by the `data:getCourseAuthority` IPC endpoint.

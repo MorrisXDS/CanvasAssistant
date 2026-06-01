@@ -12,6 +12,25 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ### Changed
 
+- `2026-06-01 17:00 UTC` — Migrated `htmlDependencyHandlers` off raw SQL (ADR-0007).
+  Both channels (`html:checkDependencies`, `html:downloadDependencies`) no
+  longer touch the database directly. All 19 SQL calls (7 ratchet-counted
+  writes/upsert + 12 generic reads) moved out. High reuse of the
+  pages/resources infra: reads extend `ResourceReader` / `CoursePageReader` /
+  `HtmlDependencyReader` / `CourseReader` / `TaskReader` with narrow new
+  projections (content-hash sources for page/assignment/syllabus,
+  download-info-by-external-id, content-with-slug, children-with-hash); writes
+  reuse `UpsertCoursePageCommand`, extend `UpdateResourceLocalPathCommand`
+  (`setLocalPath`, no synced_at touch) and `UpsertResourceCommand`
+  (`upsertPageContent`, conflict refreshes local_path/size only), and add a new
+  `HtmlDependencyWriteCommand` for the session-aware `html_dependencies` writes
+  (session-scoped delete, insert-or-replace with session + content hash, and
+  full-parent delete). The handler keeps the Canvas API calls, file IO, HTML
+  rewriting, recursive dependency-walking, and OperationCoordinator session
+  orchestration (the L2 `HtmlDependencyResolver` continues to own its own SQL).
+  Behaviour preserved exactly. Ceiling drops 3 → 2 entries —
+  `htmlDependencyHandlers` removed and locked at zero.
+
 - `2026-06-01 06:00 UTC` — Migrated `syncUpdatesHandlers` off raw SQL (ADR-0007).
   All ten sync-update channels (`getAll`, `getCount`, `markSeen`,
   `markAllSeen`, `markSeenByEntity`, `resolveConflict`, `cleanup`, plus the
