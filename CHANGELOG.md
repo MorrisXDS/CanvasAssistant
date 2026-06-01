@@ -12,6 +12,20 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ### Changed
 
+- `2026-06-01 05:00 UTC` — Migrated `resourceHandlers` off raw SQL (ADR-0007).
+  The four resource channels (`resource:download`, `resource:downloadByExternalId`,
+  `resource:openByExternalId`, `resource:open`) no longer touch the database
+  directly. All 21 SQL calls moved out: reads route through three new L1
+  readers (`ResourceReader`, `CoursePageReader`, `HtmlDependencyReader`) plus
+  the existing `CourseReader`; the two `local_path` writes route through a new
+  L4 `UpdateResourceLocalPathCommand` (`markDownloaded` / `clear`). The
+  handler keeps the Canvas download queue, file IO, HTML rewriting, and the
+  recursive dependency-walking orchestration. Behaviour preserved exactly
+  (the `SELECT *` download lookup is narrowed to the six columns the handler
+  actually read; the `(url_slug OR external_id)` page-match predicate is
+  preserved). Ceiling drops 5 → 4 entries — `resourceHandlers` removed and
+  locked at zero.
+
 - `2026-05-31 05:33 UTC` — Migrated `pagesHandlers` off raw SQL (ADR-0007).
   The two page channels (`pages:downloadContent`, `pages:openFile`) no
   longer touch the database directly: reads route through the new

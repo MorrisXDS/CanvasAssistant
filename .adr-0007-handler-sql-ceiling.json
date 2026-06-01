@@ -5,7 +5,6 @@
   "paths": {
     "src/lifecycle/ipc-handlers/fileHandlers.ts": 10,
     "src/lifecycle/ipc-handlers/htmlDependencyHandlers.ts": 7,
-    "src/lifecycle/ipc-handlers/resourceHandlers.ts": 4,
     "src/lifecycle/ipc-handlers/syncHandlers.ts": 6,
     "src/lifecycle/ipc-handlers/syncUpdatesHandlers.ts": 11
   }

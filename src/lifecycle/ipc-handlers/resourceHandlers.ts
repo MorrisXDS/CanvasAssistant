@@ -2,6 +2,13 @@
  * Resource IPC Handlers
  * Handlers for resource download and open operations:
  * - resource:download, resource:open
+ *
+ * Per ADR-0007, this file holds no raw `database.execute*` / `upsert` calls.
+ * Reads route through `ResourceReader` / `CoursePageReader` /
+ * `HtmlDependencyReader` / `CourseReader` (L1); the `local_path` writes route
+ * through `UpdateResourceLocalPathCommand` (L4). The handler keeps the Canvas
+ * API calls, file IO, HTML rewriting, and recursive dependency-walking
+ * orchestration.
  */
 
 import { ipcMain, shell } from 'electron';
@@ -11,6 +18,13 @@ import {
   extractCanvasFileReferences,
   extractHtmlReferences,
 } from '../../layers/l2-daemon/html/HtmlFileExtractor';
+import {
+  ResourceReader,
+  CoursePageReader,
+  HtmlDependencyReader,
+  CourseReader,
+} from '../../layers/l1-persistence';
+import { UpdateResourceLocalPathCommand } from '../../layers/l4-controller/commands/resource';
 import type { IpcContext } from './IpcContext';
 
 /**
@@ -28,16 +42,15 @@ export function registerResourceHandlers(ctx: IpcContext): void {
   const getLocalHtmlPathsSettings = ctx.getLocalHtmlPathsSettings;
   const getFilesDir = ctx.getFilesDir;
 
+  const resourceReader = new ResourceReader(database);
+  const coursePageReader = new CoursePageReader(database);
+  const htmlDependencyReader = new HtmlDependencyReader(database);
+  const courseReader = new CourseReader(database);
+  const updateResourceLocalPathCommand = new UpdateResourceLocalPathCommand(database);
+
   // Download a resource (Canvas file or HTML content)
   ipcMain.handle('resource:download', async (_event, resourceId: number) => {
-    const resource = database.executeReadOne<{
-      id: number;
-      course_id: number;
-      external_id: string;
-      title: string;
-      url: string | null;
-      folder_path: string | null;
-    }>('SELECT * FROM resources WHERE id = ?', [resourceId]);
+    const resource = resourceReader.getDownloadInfoById(resourceId);
 
     if (!resource) {
       return { success: false, error: 'Resource not found' };
@@ -76,10 +89,7 @@ export function registerResourceHandlers(ctx: IpcContext): void {
     }
 
     // Get course code for folder organization
-    const course = database.executeReadOne<{ code: string }>(
-      'SELECT code FROM courses WHERE id = ?',
-      [resource.course_id]
-    );
+    const course = courseReader.getById(resource.course_id);
 
     const courseCode = course?.code || 'unknown';
 
@@ -110,10 +120,10 @@ export function registerResourceHandlers(ctx: IpcContext): void {
 
         if (result.success && result.localPath) {
           // Update database with local path
-          database.executeWrite(
-            'UPDATE resources SET local_path = ?, synced_at = ? WHERE id = ?',
-            [result.localPath, new Date().toISOString(), resourceId],
-            'resources'
+          updateResourceLocalPathCommand.markDownloaded(
+            resourceId,
+            result.localPath,
+            new Date().toISOString()
           );
           metricsCollector.increment('resource.download.success');
           resolve({ success: true, localPath: result.localPath });
@@ -151,17 +161,7 @@ export function registerResourceHandlers(ctx: IpcContext): void {
   // Download a resource by external_id (for module items that reference resources)
   ipcMain.handle('resource:downloadByExternalId', async (_event, externalId: string) => {
     // Look up resource by external_id
-    const resource = database.executeReadOne<{
-      id: number;
-      course_id: number;
-      external_id: string;
-      title: string;
-      url: string | null;
-      folder_path: string | null;
-    }>(
-      'SELECT id, course_id, external_id, title, url, folder_path FROM resources WHERE external_id = ?',
-      [externalId]
-    );
+    const resource = resourceReader.getDownloadInfoByExternalId(externalId);
 
     if (!resource) {
       logger.warn(
@@ -202,10 +202,7 @@ export function registerResourceHandlers(ctx: IpcContext): void {
     }
 
     // Get course code for folder organization
-    const course = database.executeReadOne<{ code: string }>(
-      'SELECT code FROM courses WHERE id = ?',
-      [resource.course_id]
-    );
+    const course = courseReader.getById(resource.course_id);
 
     const courseCode = course?.code || 'unknown';
 
@@ -236,10 +233,10 @@ export function registerResourceHandlers(ctx: IpcContext): void {
 
         if (result.success && result.localPath) {
           // Update database with local path
-          database.executeWrite(
-            'UPDATE resources SET local_path = ?, synced_at = ? WHERE id = ?',
-            [result.localPath, new Date().toISOString(), resource.id],
-            'resources'
+          updateResourceLocalPathCommand.markDownloaded(
+            resource.id,
+            result.localPath,
+            new Date().toISOString()
           );
           metricsCollector.increment('resource.download.success');
           resolve({ success: true, localPath: result.localPath });
@@ -280,11 +277,7 @@ export function registerResourceHandlers(ctx: IpcContext): void {
   ipcMain.handle('resource:openByExternalId', (_event, externalId: string) => {
     logger.debug(`[resource:openByExternalId] START externalId=${externalId}`);
 
-    const resource = database.executeReadOne<{
-      id: number;
-      local_path: string | null;
-      title: string;
-    }>('SELECT id, local_path, title FROM resources WHERE external_id = ?', [externalId]);
+    const resource = resourceReader.getOpenInfoByExternalId(externalId);
 
     if (!resource) {
       logger.warn(
@@ -303,11 +296,7 @@ export function registerResourceHandlers(ctx: IpcContext): void {
       logger.warn(
         `[resource:openByExternalId] File not found on disk, clearing local_path: ${resource.local_path}`
       );
-      database.executeWrite(
-        'UPDATE resources SET local_path = NULL WHERE id = ?',
-        [resource.id],
-        'resources'
-      );
+      updateResourceLocalPathCommand.clear(resource.id);
       return {
         success: false,
         error: 'File was deleted from disk. Please re-download.',
@@ -332,16 +321,7 @@ export function registerResourceHandlers(ctx: IpcContext): void {
       logger.debug(
         `[resource:open] START resourceId=${resourceId}, skipDependencyCheck=${skipDependencyCheck}`
       );
-      const resource = database.executeReadOne<{
-        local_path: string | null;
-        external_id: string;
-        course_id: number;
-        title: string;
-        mime_type: string | null;
-      }>(
-        'SELECT local_path, external_id, course_id, title, mime_type FROM resources WHERE id = ?',
-        [resourceId]
-      );
+      const resource = resourceReader.getOpenInfoById(resourceId);
 
       if (!resource?.local_path) {
         logger.debug('[resource:open] No local_path');
@@ -354,11 +334,7 @@ export function registerResourceHandlers(ctx: IpcContext): void {
           `[resource:open] File not found on disk, clearing local_path: ${resource.local_path}`
         );
         // Clear the local_path since file was deleted
-        database.executeWrite(
-          'UPDATE resources SET local_path = NULL WHERE id = ?',
-          [resourceId],
-          'resources'
-        );
+        updateResourceLocalPathCommand.clear(resourceId);
         return {
           success: false,
           error: 'File was deleted from disk. Please re-download.',
@@ -396,10 +372,7 @@ export function registerResourceHandlers(ctx: IpcContext): void {
             const baseUrl = canvasClient.getBaseUrl();
 
             // Get Canvas course ID (external_id), not internal DB ID
-            const courseForUrl = database.executeReadOne<{ external_id: string }>(
-              'SELECT external_id FROM courses WHERE id = ?',
-              [resource.course_id]
-            );
+            const courseForUrl = courseReader.getById(resource.course_id);
 
             if (courseForUrl) {
               const canvasCourseId = courseForUrl.external_id;
@@ -407,10 +380,7 @@ export function registerResourceHandlers(ctx: IpcContext): void {
 
               if (sourceType === 'page') {
                 // Get page slug to construct URL
-                const page = database.executeReadOne<{ url_slug: string | null }>(
-                  `SELECT url_slug FROM course_pages WHERE course_id = ? AND (external_id = ? OR url_slug = ?)`,
-                  [resource.course_id, sourceId, sourceId]
-                );
+                const page = coursePageReader.getUrlSlug(resource.course_id, sourceId);
                 if (page?.url_slug) {
                   canvasUrl = `${baseUrl}/courses/${canvasCourseId}/pages/${page.url_slug}`;
                 }
@@ -461,10 +431,7 @@ export function registerResourceHandlers(ctx: IpcContext): void {
           );
 
           // Get course info for page lookups
-          const courseInfo = database.executeReadOne<{ id: number; external_id: string }>(
-            'SELECT id, external_id FROM courses WHERE id = ?',
-            [resource.course_id]
-          );
+          const courseInfo = courseReader.getById(resource.course_id);
 
           // Track all missing dependencies across all levels
           const allMissingDeps: Array<{
@@ -498,13 +465,9 @@ export function registerResourceHandlers(ctx: IpcContext): void {
             }
 
             // Query recorded dependencies from html_dependencies table
-            const deps = database.executeRead<{
-              child_source_type: string;
-              child_source_id: string;
-            }>(
-              `SELECT child_source_type, child_source_id FROM html_dependencies
-             WHERE parent_source_type = ? AND parent_source_id = ?`,
-              [parentSourceType, parentSourceId]
+            const deps = htmlDependencyReader.getChildren(
+              parentSourceType,
+              parentSourceId
             );
 
             logger.info(
@@ -517,15 +480,8 @@ export function registerResourceHandlers(ctx: IpcContext): void {
                 if (visitedFiles.has(dep.child_source_id)) continue;
                 visitedFiles.add(dep.child_source_id);
 
-                const fileResource = database.executeReadOne<{
-                  id: number;
-                  local_path: string | null;
-                  title: string;
-                  size_bytes: number | null;
-                  url: string | null;
-                }>(
-                  'SELECT id, local_path, title, size_bytes, url FROM resources WHERE external_id = ?',
-                  [dep.child_source_id]
+                const fileResource = resourceReader.getDependencyFileByExternalId(
+                  dep.child_source_id
                 );
 
                 const isDownloaded =
@@ -550,15 +506,9 @@ export function registerResourceHandlers(ctx: IpcContext): void {
                 visitedPages.add(dep.child_source_id);
 
                 // Look up page info
-                const page = database.executeReadOne<{
-                  id: number;
-                  external_id: string;
-                  title: string;
-                  body_html: string | null;
-                }>(
-                  `SELECT id, external_id, title, body_html FROM course_pages
-                 WHERE course_id = ? AND (url_slug = ? OR external_id = ?)`,
-                  [courseInfo?.id, dep.child_source_id, dep.child_source_id]
+                const page = coursePageReader.getContent(
+                  courseInfo?.id,
+                  dep.child_source_id
                 );
 
                 if (!page) {
@@ -570,11 +520,8 @@ export function registerResourceHandlers(ctx: IpcContext): void {
 
                 // Check if page HTML file exists
                 const pageResourceId = `html-page-${page.external_id}`;
-                const pageResource = database.executeReadOne<{
-                  local_path: string | null;
-                }>('SELECT local_path FROM resources WHERE external_id = ?', [
-                  pageResourceId,
-                ]);
+                const pageResource =
+                  resourceReader.getLocalPathByExternalId(pageResourceId);
 
                 const pageExists =
                   pageResource?.local_path && fs.existsSync(pageResource.local_path);
@@ -619,14 +566,8 @@ export function registerResourceHandlers(ctx: IpcContext): void {
               if (visitedFiles.has(ref.canvasFileId)) continue;
               visitedFiles.add(ref.canvasFileId);
 
-              const existingResource = database.executeReadOne<{
-                id: number;
-                local_path: string | null;
-                title: string;
-                size_bytes: number | null;
-              }>(
-                'SELECT id, local_path, title, size_bytes FROM resources WHERE external_id = ?',
-                [ref.canvasFileId]
+              const existingResource = resourceReader.getDependencyFileByExternalId(
+                ref.canvasFileId
               );
 
               const isDownloaded =
@@ -675,16 +616,7 @@ export function registerResourceHandlers(ctx: IpcContext): void {
               visitedPages.add(ref.pageSlug);
 
               // Look up page by slug
-              const page = database.executeReadOne<{
-                id: number;
-                external_id: string;
-                title: string;
-                body_html: string | null;
-              }>(
-                `SELECT id, external_id, title, body_html FROM course_pages
-               WHERE course_id = ? AND (url_slug = ? OR external_id = ?)`,
-                [courseInfo.id, ref.pageSlug, ref.pageSlug]
-              );
+              const page = coursePageReader.getContent(courseInfo.id, ref.pageSlug);
 
               if (!page || !page.body_html) {
                 logger.warn(`[resource:open] Page not synced: ${ref.pageSlug}`);
@@ -693,10 +625,8 @@ export function registerResourceHandlers(ctx: IpcContext): void {
 
               // Check if HTML file exists
               const pageResourceExternalId = `html-page-${page.external_id}`;
-              const pageResource = database.executeReadOne<{ local_path: string | null }>(
-                `SELECT local_path FROM resources WHERE external_id = ?`,
-                [pageResourceExternalId]
-              );
+              const pageResource =
+                resourceReader.getLocalPathByExternalId(pageResourceExternalId);
 
               logger.info(
                 `[resource:open] Page ${ref.pageSlug}: external_id=${pageResourceExternalId}, local_path=${pageResource?.local_path}, exists=${pageResource?.local_path ? fs.existsSync(pageResource.local_path) : false}`
@@ -729,11 +659,8 @@ export function registerResourceHandlers(ctx: IpcContext): void {
             // First, check if we have recorded dependencies for this HTML
             let hasRecordedDeps = false;
             if (htmlSourceType && htmlSourceId) {
-              const depCount = database.executeReadOne<{ count: number }>(
-                'SELECT COUNT(*) as count FROM html_dependencies WHERE parent_source_type = ? AND parent_source_id = ?',
-                [htmlSourceType, htmlSourceId]
-              );
-              hasRecordedDeps = (depCount?.count ?? 0) > 0;
+              hasRecordedDeps =
+                htmlDependencyReader.countChildren(htmlSourceType, htmlSourceId) > 0;
             }
 
             if (hasRecordedDeps) {
