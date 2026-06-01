@@ -71,8 +71,67 @@ export interface ResourceDownloadWithLocalPathRow {
   folder_path: string | null;
 }
 
+/** File/page resource row for the Files-page listings. */
+export interface ResourceFileRow {
+  id: number;
+  external_id: string;
+  course_id: number;
+  parent_folder_id: number | null;
+  folder_path: string | null;
+  type: string;
+  title: string;
+  url: string | null;
+  local_path: string | null;
+  size_bytes: number | null;
+  mime_type: string | null;
+  synced_at: string | null;
+}
+
+const RESOURCE_FILE_COLUMNS =
+  'id, external_id, course_id, parent_folder_id, folder_path, type, title, url, local_path, size_bytes, mime_type, synced_at';
+
 export class ResourceReader {
   constructor(private readonly db: Database) {}
+
+  /**
+   * File + page resources for one course, folder then title (`data:getCourseFiles`).
+   */
+  getFilesAndPagesByCourse(courseId: number): ResourceFileRow[] {
+    return this.db.executeRead<ResourceFileRow>(
+      `SELECT ${RESOURCE_FILE_COLUMNS} FROM resources
+       WHERE course_id = ? AND type IN ('file', 'page')
+       ORDER BY folder_path, title`,
+      [courseId]
+    );
+  }
+
+  /**
+   * File + page resources across all non-archived, non-deleted courses
+   * (`data:getFiles`). The course JOIN is only the archived/deleted gate; the
+   * caller maps resource fields only.
+   */
+  getVisibleFilesAndPages(): ResourceFileRow[] {
+    return this.db.executeRead<ResourceFileRow>(
+      `SELECT ${RESOURCE_FILE_COLUMNS.split(', ')
+        .map((c) => `r.${c}`)
+        .join(', ')}
+       FROM resources r
+       JOIN courses c ON r.course_id = c.id
+       WHERE r.type IN ('file', 'page')
+         AND c.archived_at IS NULL AND c.deleted_at IS NULL
+       ORDER BY r.course_id, r.folder_path, r.title`
+    );
+  }
+
+  /** external_id + course_id for a resource by primary key, or null. */
+  getExternalIdCourseById(id: number): { external_id: string; course_id: number } | null {
+    return (
+      this.db.executeReadOne<{ external_id: string; course_id: number }>(
+        `SELECT external_id, course_id FROM resources WHERE id = ?`,
+        [id]
+      ) ?? null
+    );
+  }
 
   /**
    * Download-relevant fields for a resource by primary key, or null.
