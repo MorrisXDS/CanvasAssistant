@@ -276,7 +276,7 @@ What used to be three intelligence-leftover zombie tables here has now been reso
 - **`grade_replacements`** / **`weight_transfers`** — **dropped** in migration 105 (#75). Encoded "drop-lowest"/"best-of-N" and weight-transfer policy rules; no writers or readers remained after ADR-0003.
 - **`grade_history`** — **wired up** (2026-06-01, not dropped). `SyncCourseOperations.recordGradeChange` now records a row on each grade transition, making the long-stubbed `GradeHistoryCard` grade-over-time chart a live feature. See the "Removed/Resolved" note below.
 
-The `effective_grade` column on Task remains a vestige: it persists but isn't actively recomputed by current sync code; the value is whatever the last writer left there. Decide whether to recompute it live or drop the column — see [docs/FOLLOWUPS.md](docs/FOLLOWUPS.md).
+The `effective_grade` column on Task was **dropped in migration 107 (2026-06-01)** — it was never read (the simulator's `effectiveGrade` is computed live, not stored). See the vestigial-columns list below.
 
 ### Course content (modules, pages)
 
@@ -537,11 +537,11 @@ A complete inventory of tables present in the schema with **no live writers and 
 
 **Vestigial columns (not tables):**
 
-- `tasks.effective_grade` — persists but isn't actively recomputed; consumer of `effective_grade` gets a stale value
-- `courses.grade_volatility` — schema-present, code-absent (no writers, no readers)
-- `tasks.lock_at` — Canvas's "no more submissions after" date. Added in v41 migration; appears only in `DatabaseRowTypes.ts` as a type field with no live writer or reader. Companion to the live `unlock_at` (when Canvas reveals the assignment) but never populated.
-- `tasks.pain_index`, `tasks.penalty_severity`, `tasks.has_safety_net`, `tasks.days_until_cutoff` — old ROI/priority scoring inputs (v30 migration). All zombie per ADR-0003; columns persist in schema.
-- `sync_preferences.prefer_local` — original v38 column; superseded by the runtime-added `prefer_canvas`. Still exists in DBs but unused. See **SyncPreference** above.
+- ~~`tasks.effective_grade`~~ — **DROPPED (migration 107, 2026-06-01).** The live `effectiveGrade` used by the grade simulator is COMPUTED (`getEffectiveGrade` / `simulation ?? task.grade`), never this column — which only ever appeared in migrations.
+- ~~`courses.grade_volatility`~~ — **DROPPED (migration 107).** Schema-present since v1, never read or written.
+- ~~`tasks.pain_index` / `penalty_severity` / `has_safety_net` / `days_until_cutoff`~~ — **DROPPED (migration 107).** Old ROI/priority scoring inputs (v30/v41); only ever written by the import-restore path (that write was removed too), no readers. The `idx_tasks_pain_index` index went with them.
+- `tasks.lock_at` — **NOT vestigial (earlier note here was wrong).** Canvas's "no more submissions after" date is a live, Canvas-authoritative field: mapped in `taskMappers`, synced by `TaskSyncStrategy`/Accept/Merge, and exported. Stays.
+- `sync_preferences.prefer_local` — original v38 column; superseded by the runtime-added `prefer_canvas`. **Still WRITTEN verbatim** by `ResolveSyncConflictCommand` + `RememberConflictPreferenceCommand` (write-only, never read). Dropping needs those commands edited first + the runtime-ALTER table handled — deferred. See **SyncPreference** above.
 - `course_policies.scope_type`, `course_policies.target_group_id`, `course_policies.target_task_id`, `course_policies.applicable_types`, `course_policies.excluded_types` — Policy targeting columns added in v31 migration; all dead with the rest of the Policy zombie family. (`target_group_id` FKs `course_task_groups`, which is why neither can be dropped without the other.)
 
 ## Example dialogue
