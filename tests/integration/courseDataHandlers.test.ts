@@ -173,6 +173,30 @@ describe('courseDataHandlers (ADR-0007 PR-B)', () => {
       expect(result.every((c) => c.archivedAt !== null)).toBe(true);
     });
   });
+
+  describe('data:getEnrollmentTerms', () => {
+    test('returns all terms mapped to camelCase, newest start first', async () => {
+      seedEnrollmentTerm(db, {
+        external_id: 't1',
+        name: 'Fall 2025',
+        start_at: '2025-09-01',
+      });
+      seedEnrollmentTerm(db, {
+        external_id: 't2',
+        name: 'Winter 2026',
+        start_at: '2026-01-05',
+      });
+
+      const result = (await invoke('data:getEnrollmentTerms')) as Array<{
+        externalId: string;
+        name: string;
+        startAt: string | null;
+      }>;
+
+      expect(result.map((t) => t.externalId)).toEqual(['t2', 't1']);
+      expect(result[0]).toMatchObject({ name: 'Winter 2026', startAt: '2026-01-05' });
+    });
+  });
 });
 
 // =============================================================================
@@ -301,11 +325,11 @@ function seedCourse(
 
 function seedEnrollmentTerm(
   database: Database,
-  data: { external_id: string; name: string; end_at: string }
+  data: { external_id: string; name: string; end_at?: string; start_at?: string }
 ): number {
   const result = database.executeWrite(
-    `INSERT INTO enrollment_terms (external_id, name, end_at) VALUES (?, ?, ?)`,
-    [data.external_id, data.name, data.end_at]
+    `INSERT INTO enrollment_terms (external_id, name, end_at, start_at) VALUES (?, ?, ?, ?)`,
+    [data.external_id, data.name, data.end_at ?? null, data.start_at ?? null]
   );
   return Number(result.lastInsertRowid);
 }

@@ -80,6 +80,8 @@ export type {
   HtmlDependencyChildRow,
   HtmlDependencyChildWithHashRow,
 } from './readers/HtmlDependencyReader';
+export { EnrollmentTermReader } from './readers/EnrollmentTermReader';
+export type { EnrollmentTermRow } from './readers/EnrollmentTermReader';
 export { CourseExportReader } from './readers/CourseExportReader';
 export type { CourseExportRow, CourseExportBundle } from './readers/CourseExportReader';
 export { SyncMetadataReader } from './readers/SyncMetadataReader';

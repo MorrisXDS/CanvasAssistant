@@ -18,6 +18,7 @@
 import { ipcMain } from 'electron';
 import type { IpcContext } from './IpcContext';
 import { CourseReader } from '../../layers/l1-persistence/readers/CourseReader';
+import { EnrollmentTermReader } from '../../layers/l1-persistence/readers/EnrollmentTermReader';
 import { mapCourseRowToListDto, mapCourseRowToDetailDto } from './mappers/courseMapper';
 
 /**
@@ -27,20 +28,13 @@ export function registerCourseDataHandlers(ctx: IpcContext): void {
   const database = ctx.getDatabase();
   const logger = ctx.getLogger();
   const courseReader = new CourseReader(database);
+  const enrollmentTermReader = new EnrollmentTermReader(database);
 
   // ============ Enrollment Terms ============
 
   ipcMain.handle('data:getEnrollmentTerms', () => {
     try {
-      const rows = database.executeRead<{
-        id: number;
-        external_id: string;
-        name: string;
-        start_at: string | null;
-        end_at: string | null;
-      }>('SELECT * FROM enrollment_terms ORDER BY start_at DESC');
-
-      return rows.map((row) => ({
+      return enrollmentTermReader.getAll().map((row) => ({
         id: row.id,
         externalId: row.external_id,
         name: row.name,
@@ -52,10 +46,6 @@ export function registerCourseDataHandlers(ctx: IpcContext): void {
       throw error;
     }
   });
-  // TODO(ADR-0007): enrollment_terms reader belongs to a future PR. The above
-  // handler still does raw SQL because `enrollment_terms` isn't course-scoped
-  // and isn't part of PR-B's surface; it will be migrated when the
-  // enforcement test forces it (final PR of the Option 5 sequence).
 
   // ============ Courses ============
 

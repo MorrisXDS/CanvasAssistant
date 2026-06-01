@@ -12,6 +12,14 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ### Changed
 
+- `2026-06-01 18:45 UTC` — Migrated `courseDataHandlers`'s last raw read off SQL
+  (ADR-0007 literal-zero closeout, 1 of 3). `data:getEnrollmentTerms` routed its
+  one `database.executeRead<…>` (a generic-typed call the ratchet never counted)
+  through a new tiny `EnrollmentTermReader.getAll()`. The stale TODO is gone; the
+  file is now genuinely SQL-free. One step toward making `ipc-handlers/**`
+  literally raw-SQL-free so the enforcement test can flip to a hard zero (two
+  files remain — `data/courseContentHandlers`, `fileDataHandlers`).
+
 - `2026-06-01 18:30 UTC` — Migrated `courseExportHandlers`'s export _reads_ off
   raw SQL (ADR-0007 follow-up). `data:exportCourseData`'s 9 generic-typed
   `executeRead<…>` calls (ratchet-invisible, so the file passed the enforcement
