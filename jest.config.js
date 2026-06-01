@@ -2,6 +2,15 @@ module.exports = {
   preset: 'ts-jest',
   testEnvironment: 'node',
   roots: ['<rootDir>/tests'],
+  // Memory containment (2026-06-01): Jest defaults to (cores - 1) workers — on
+  // a 32-core dev box that's 31 worker processes, each loading ts-jest + the
+  // full module graph + native better-sqlite3 + per-test in-memory DBs, which
+  // spikes RAM hard enough to OOM the machine. Cap the pool to 2 workers and
+  // recycle any worker that grows past 512 MB. Trade-off is a slower run; that
+  // is intentional. Bump `maxWorkers` (e.g. to 4) if you have memory headroom
+  // and want more speed. CI runners are 2-core, so this does not slow CI.
+  maxWorkers: 2,
+  workerIdleMemoryLimit: '512MB',
   transform: {
     '^.+\\.tsx?$': ['ts-jest', { tsconfig: 'tsconfig.test.json' }],
   },
