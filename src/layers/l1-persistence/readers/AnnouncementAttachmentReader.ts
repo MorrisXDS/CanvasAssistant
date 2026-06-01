@@ -17,6 +17,13 @@
 import type { Database } from '../Database';
 import type { NotificationAttachmentRow } from '../DatabaseRowTypes';
 
+/** Attachment row plus its course + announcement display context (`data:getFiles`). */
+export interface AttachmentWithContextRow extends NotificationAttachmentRow {
+  course_code: string;
+  course_name: string;
+  notification_title: string;
+}
+
 export class AnnouncementAttachmentReader {
   constructor(private readonly db: Database) {}
 
@@ -104,6 +111,39 @@ export class AnnouncementAttachmentReader {
        WHERE notification_id = ?
        ORDER BY display_name`,
       [notificationId]
+    );
+  }
+
+  /** All attachments for one course, ordered by display_name (`data:getCourseFiles`). */
+  getByCourseOrderedByName(courseId: number): NotificationAttachmentRow[] {
+    return this.db.executeRead<NotificationAttachmentRow>(
+      `SELECT na.* FROM notification_attachments na WHERE na.course_id = ? ORDER BY na.display_name`,
+      [courseId]
+    );
+  }
+
+  /**
+   * All attachments across non-archived, non-deleted courses, joined to their
+   * course + announcement title (`data:getFiles`). Ordered by course then name.
+   */
+  getAllWithCourseAndNotification(): AttachmentWithContextRow[] {
+    return this.db.executeRead<AttachmentWithContextRow>(
+      `SELECT na.*, c.code as course_code, c.name as course_name, n.title as notification_title
+        FROM notification_attachments na
+        JOIN courses c ON na.course_id = c.id
+        JOIN notifications n ON na.notification_id = n.id
+        WHERE c.archived_at IS NULL AND c.deleted_at IS NULL
+        ORDER BY na.course_id, na.display_name`
+    );
+  }
+
+  /** external_id + course_id for an attachment by primary key, or null. */
+  getExternalIdCourseById(id: number): { external_id: string; course_id: number } | null {
+    return (
+      this.db.executeReadOne<{ external_id: string; course_id: number }>(
+        `SELECT external_id, course_id FROM notification_attachments WHERE id = ?`,
+        [id]
+      ) ?? null
     );
   }
 

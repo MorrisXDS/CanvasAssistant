@@ -5,8 +5,15 @@
 
 import { ipcMain } from 'electron';
 import type { IpcContext } from './IpcContext';
-import type { Database } from '../../layers/l1-persistence/Database';
-import { AnnouncementAttachmentReader } from '../../layers/l1-persistence';
+import {
+  AnnouncementAttachmentReader,
+  AnnouncementFileReferenceReader,
+  ResourceReader,
+  CoursePageReader,
+  CourseReader,
+  TaskReader,
+  ModuleReader,
+} from '../../layers/l1-persistence';
 
 /** Maps html-{sourceType} to Canvas URL path segment */
 const HTML_SOURCE_PATHS: Record<string, string> = {
@@ -26,7 +33,7 @@ function buildCanvasResourceUrl(
   courseExternalId: string,
   resourceExternalId: string,
   courseId: number,
-  database: Database
+  coursePageReader: CoursePageReader
 ): string {
   const courseBase = `${baseUrl}/courses/${courseExternalId}`;
   const htmlMatch = resourceExternalId.match(/^html-(\w+)-(.+)$/);
@@ -39,10 +46,7 @@ function buildCanvasResourceUrl(
 
   // Pages need a slug lookup
   if (sourceType === 'page') {
-    const page = database.executeReadOne<{ url_slug: string | null }>(
-      `SELECT url_slug FROM course_pages WHERE course_id = ? AND (external_id = ? OR url_slug = ?)`,
-      [courseId, sourceId, sourceId]
-    );
+    const page = coursePageReader.getUrlSlug(courseId, sourceId);
     return `${courseBase}/pages/${page?.url_slug || sourceId}`;
   }
 
@@ -70,53 +74,26 @@ export function registerFileDataHandlers(ctx: IpcContext): void {
   const getFileEntityProvider = ctx.getFileEntityProvider;
   const getCanvasClient = ctx.getCanvasClient;
 
+  const resourceReader = new ResourceReader(database);
+  const coursePageReader = new CoursePageReader(database);
+  const courseReader = new CourseReader(database);
+  const taskReader = new TaskReader(database);
+  const moduleReader = new ModuleReader(database);
+  const announcementAttachmentReader = new AnnouncementAttachmentReader(database);
+  const announcementFileReferenceReader = new AnnouncementFileReferenceReader(database);
+
   // ============ File Data Handlers ============
 
   // Get files for a specific course (for syllabus selection)
   ipcMain.handle('data:getCourseFiles', (_event, courseId: number) => {
     try {
-      const resources = database.executeRead<{
-        id: number;
-        external_id: string;
-        course_id: number;
-        parent_folder_id: number | null;
-        folder_path: string | null;
-        type: string;
-        title: string;
-        url: string | null;
-        local_path: string | null;
-        size_bytes: number | null;
-        mime_type: string | null;
-        synced_at: string | null;
-        remote_updated_at: string | null;
-      }>(
-        `SELECT * FROM resources
-         WHERE course_id = ? AND type IN ('file', 'page')
-         ORDER BY folder_path, title`,
-        [courseId]
-      );
+      const resources = resourceReader.getFilesAndPagesByCourse(courseId);
 
       logger.info(
         `getCourseFiles for course ${courseId}: found ${resources.length} resources`
       );
 
-      const attachments = database.executeRead<{
-        id: number;
-        notification_id: number;
-        course_id: number;
-        external_id: string;
-        display_name: string;
-        filename: string;
-        url: string;
-        size_bytes: number | null;
-        content_type: string | null;
-        local_path: string | null;
-        download_status: string;
-        downloaded_at: string | null;
-      }>(
-        `SELECT na.* FROM notification_attachments na WHERE na.course_id = ? ORDER BY na.display_name`,
-        [courseId]
-      );
+      const attachments = announcementAttachmentReader.getByCourseOrderedByName(courseId);
 
       const resourceFiles = resources.map((row) => ({
         id: row.id,
@@ -160,52 +137,9 @@ export function registerFileDataHandlers(ctx: IpcContext): void {
   // Get all files (resources + notification attachments)
   ipcMain.handle('data:getFiles', () => {
     try {
-      const resources = database.executeRead<{
-        id: number;
-        external_id: string;
-        course_id: number;
-        parent_folder_id: number | null;
-        folder_path: string | null;
-        type: string;
-        title: string;
-        url: string | null;
-        local_path: string | null;
-        size_bytes: number | null;
-        mime_type: string | null;
-        synced_at: string | null;
-      }>(`
-        SELECT r.*, c.code as course_code, c.name as course_name
-        FROM resources r
-        JOIN courses c ON r.course_id = c.id
-        WHERE r.type IN ('file', 'page')
-          AND c.archived_at IS NULL AND c.deleted_at IS NULL
-        ORDER BY r.course_id, r.folder_path, r.title
-      `);
+      const resources = resourceReader.getVisibleFilesAndPages();
 
-      const attachments = database.executeRead<{
-        id: number;
-        notification_id: number;
-        course_id: number;
-        external_id: string;
-        display_name: string;
-        filename: string;
-        url: string;
-        size_bytes: number | null;
-        content_type: string | null;
-        local_path: string | null;
-        download_status: string;
-        downloaded_at: string | null;
-        course_code: string;
-        course_name: string;
-        notification_title: string;
-      }>(`
-        SELECT na.*, c.code as course_code, c.name as course_name, n.title as notification_title
-        FROM notification_attachments na
-        JOIN courses c ON na.course_id = c.id
-        JOIN notifications n ON na.notification_id = n.id
-        WHERE c.archived_at IS NULL AND c.deleted_at IS NULL
-        ORDER BY na.course_id, na.display_name
-      `);
+      const attachments = announcementAttachmentReader.getAllWithCourseAndNotification();
 
       const downloadedResources = resources.filter((r) => r.local_path !== null).length;
       const downloadedAttachments = attachments.filter(
@@ -263,54 +197,7 @@ export function registerFileDataHandlers(ctx: IpcContext): void {
       const visibleIds = getVisibilityOracle()?.getVisibleCourseIds() ?? [];
       if (visibleIds.length === 0) return [];
 
-      const placeholders = visibleIds.map(() => '?').join(', ');
-      const rows = database.executeRead<{
-        id: number;
-        external_id: string;
-        title: string;
-        item_type: string;
-        content_id: string | null;
-        url: string | null;
-        external_url: string | null;
-        page_url: string | null;
-        position: number;
-        indent: number;
-        module_name: string;
-        module_position: number;
-        course_id: number;
-        course_code: string;
-        course_name: string;
-        has_local_content: number;
-      }>(
-        `SELECT
-          mi.id, mi.external_id, mi.title, mi.item_type,
-          mi.content_id, mi.url, mi.external_url, mi.page_url,
-          mi.position, mi.indent,
-          m.name as module_name, m.position as module_position,
-          c.id as course_id, c.code as course_code, c.name as course_name,
-          CASE
-            WHEN mi.item_type = 'Page' THEN (
-              SELECT CASE WHEN cp.body_html IS NOT NULL THEN 1 ELSE 0 END
-              FROM course_pages cp
-              WHERE (cp.url_slug = mi.page_url OR cp.title = mi.title) AND cp.course_id = c.id
-              LIMIT 1
-            )
-            WHEN mi.item_type = 'File' THEN (
-              SELECT CASE WHEN r.local_path IS NOT NULL THEN 1 ELSE 0 END
-              FROM resources r
-              WHERE r.external_id = mi.content_id
-              LIMIT 1
-            )
-            ELSE 0
-          END as has_local_content
-        FROM module_items mi
-        JOIN modules m ON mi.module_id = m.id
-        JOIN courses c ON m.course_id = c.id
-        WHERE c.id IN (${placeholders})
-          AND mi.item_type != 'SubHeader'
-        ORDER BY c.id, m.position, mi.position`,
-        visibleIds
-      );
+      const rows = moduleReader.getItemsForCourses(visibleIds);
 
       return rows.map((row) => ({
         id: row.id,
@@ -342,17 +229,12 @@ export function registerFileDataHandlers(ctx: IpcContext): void {
 
   // Get attachments for a notification.
   //
-  // Per ADR-0007/ADR-0008 (PR-F.3): routes through AnnouncementAttachmentReader
-  // composed inside FileEntityProvider. No raw SQL in the handler.
+  // Per ADR-0007/ADR-0008: routes through AnnouncementAttachmentReader. The
+  // provider doesn't expose getByNotificationId — that's a reader concern, not
+  // a "unified entity" concern — so we use the shared reader instance directly.
   ipcMain.handle('data:getAttachments', (_event, notificationId: number) => {
     try {
-      // The provider doesn't expose getByNotificationId directly — that's a
-      // reader concern, not a "unified entity" concern. We pull the reader
-      // out via the provider's collaborator-injection. Simpler: ctx exposes
-      // the provider; we instantiate a fresh reader on the database here.
-      // (PR-F.2's slice-1 added the reader to the L1 barrel.)
-      const reader = new AnnouncementAttachmentReader(database);
-      const rows = reader.getByNotificationId(notificationId);
+      const rows = announcementAttachmentReader.getByNotificationId(notificationId);
 
       return rows.map((row) => ({
         id: row.id,
@@ -425,38 +307,7 @@ export function registerFileDataHandlers(ctx: IpcContext): void {
   // Get file references for a notification (with attachment details if linked)
   ipcMain.handle('data:getFileReferences', (_event, notificationId: number) => {
     try {
-      const rows = database.executeRead<{
-        id: number;
-        notification_id: number;
-        attachment_id: number | null;
-        start_position: number;
-        end_position: number;
-        matched_text: string;
-        original_url: string | null;
-        att_id: number | null;
-        att_external_id: string | null;
-        att_display_name: string | null;
-        att_filename: string | null;
-        att_url: string | null;
-        att_size_bytes: number | null;
-        att_content_type: string | null;
-        att_local_path: string | null;
-        att_download_status: string | null;
-        att_downloaded_at: string | null;
-      }>(
-        `SELECT
-          fr.id, fr.notification_id, fr.attachment_id, fr.start_position, fr.end_position,
-          fr.matched_text, fr.original_url,
-          a.id as att_id, a.external_id as att_external_id, a.display_name as att_display_name,
-          a.filename as att_filename, a.url as att_url, a.size_bytes as att_size_bytes,
-          a.content_type as att_content_type, a.local_path as att_local_path,
-          a.download_status as att_download_status, a.downloaded_at as att_downloaded_at
-        FROM announcement_file_references fr
-        LEFT JOIN notification_attachments a ON fr.attachment_id = a.id
-        WHERE fr.notification_id = ?
-        ORDER BY fr.start_position`,
-        [notificationId]
-      );
+      const rows = announcementFileReferenceReader.getByNotificationId(notificationId);
 
       return rows.map((row) => ({
         id: row.id,
@@ -503,20 +354,13 @@ export function registerFileDataHandlers(ctx: IpcContext): void {
         const baseUrl = canvasClient.getBaseUrl();
 
         if (source === 'resource') {
-          const result = database.executeRead<{
-            external_id: string;
-            course_id: number;
-          }>('SELECT external_id, course_id FROM resources WHERE id = ?', [resourceId]);
+          const resource = resourceReader.getExternalIdCourseById(resourceId);
 
-          if (!result[0]) {
+          if (!resource) {
             return { success: false, error: 'Resource not found' };
           }
 
-          const resource = result[0];
-          const course = database.executeReadOne<{ external_id: string }>(
-            'SELECT external_id FROM courses WHERE id = ?',
-            [resource.course_id]
-          );
+          const course = courseReader.getById(resource.course_id);
 
           if (!course) {
             return { success: false, error: 'Course not found' };
@@ -528,26 +372,18 @@ export function registerFileDataHandlers(ctx: IpcContext): void {
             course.external_id,
             resource.external_id,
             resource.course_id,
-            database
+            coursePageReader
           );
           return { success: true, data: { canvasUrl } };
         } else if (source === 'attachment') {
-          const result = database.executeRead<{
-            external_id: string;
-            course_id: number;
-          }>('SELECT external_id, course_id FROM notification_attachments WHERE id = ?', [
-            resourceId,
-          ]);
+          const attachment =
+            announcementAttachmentReader.getExternalIdCourseById(resourceId);
 
-          if (!result[0]) {
+          if (!attachment) {
             return { success: false, error: 'Attachment not found' };
           }
 
-          const attachment = result[0];
-          const course = database.executeReadOne<{ external_id: string }>(
-            'SELECT external_id FROM courses WHERE id = ?',
-            [attachment.course_id]
-          );
+          const course = courseReader.getById(attachment.course_id);
 
           if (!course) {
             return { success: false, error: 'Course not found' };
@@ -575,20 +411,13 @@ export function registerFileDataHandlers(ctx: IpcContext): void {
 
       const baseUrl = canvasClient.getBaseUrl();
 
-      const result = database.executeRead<{
-        external_id: string;
-        course_id: number;
-      }>('SELECT external_id, course_id FROM tasks WHERE id = ?', [taskId]);
+      const task = taskReader.getById(taskId);
 
-      if (!result[0]) {
+      if (!task) {
         return { success: false, error: 'Task not found' };
       }
 
-      const task = result[0];
-      const course = database.executeReadOne<{ external_id: string }>(
-        'SELECT external_id FROM courses WHERE id = ?',
-        [task.course_id]
-      );
+      const course = courseReader.getById(task.course_id);
 
       if (!course) {
         return { success: false, error: 'Course not found' };

@@ -12,6 +12,25 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ### Changed
 
+- `2026-06-01 19:30 UTC` — Migrated `fileDataHandlers` off raw SQL and **flipped
+  the ADR-0007 enforcement test to a hard zero-violations gate** (literal-zero
+  closeout, 3 of 3 — `src/lifecycle/ipc-handlers/**` is now genuinely
+  raw-SQL-free). `fileDataHandlers`'s 13 generic-typed reads (files/attachments
+  listings, module-items with the `has_local_content` subqueries, file
+  references, Canvas-URL lookups) moved to L1 readers: new
+  `AnnouncementFileReferenceReader`; `ResourceReader.getFilesAndPagesByCourse` /
+  `getVisibleFilesAndPages` / `getExternalIdCourseById`;
+  `AnnouncementAttachmentReader.getByCourseOrderedByName` /
+  `getAllWithCourseAndNotification` / `getExternalIdCourseById`;
+  `ModuleReader.getItemsForCourses`; reuse of `CourseReader` / `TaskReader.getById`
+  and `CoursePageReader.getUrlSlug` (in `buildCanvasResourceUrl`). The
+  enforcement test (`ipc-handlers-no-raw-sql.test.ts`) is rewritten from the
+  per-file ratchet to a single assertion that matches **both** `db.executeRead(`
+  and the generic `db.executeRead<T>(` form (the latter is what hid ~30 reads
+  from the old regex), and `.adr-0007-handler-sql-ceiling.json` is deleted.
+  `database.transaction` / `.checkpoint` remain allowed. Behaviour preserved
+  exactly. **ADR-0007 is fully closed.**
+
 - `2026-06-01 19:00 UTC` — Migrated `data/courseContentHandlers` off raw SQL
   (ADR-0007 literal-zero closeout, 2 of 3). All 8 generic-typed reads across the
   five channels (`data:getCourseSyllabus`, `data:getGradeHistory`,

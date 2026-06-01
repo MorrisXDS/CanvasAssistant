@@ -35,6 +35,9 @@ export {
 export { CourseReader } from './readers/CourseReader';
 export { CanvasFileReader } from './readers/CanvasFileReader';
 export { AnnouncementAttachmentReader } from './readers/AnnouncementAttachmentReader';
+export type { AttachmentWithContextRow } from './readers/AnnouncementAttachmentReader';
+export { AnnouncementFileReferenceReader } from './readers/AnnouncementFileReferenceReader';
+export type { FileReferenceRow } from './readers/AnnouncementFileReferenceReader';
 export { TaskReader } from './readers/TaskReader';
 export { CanvasTaskQueueReader } from './readers/CanvasTaskQueueReader';
 export { NotificationReader } from './readers/NotificationReader';
@@ -58,7 +61,11 @@ export type {
 export { ImportedCalendarReader } from './readers/ImportedCalendarReader';
 export type { ImportedCalendarRow } from './readers/ImportedCalendarReader';
 export { ModuleReader } from './readers/ModuleReader';
-export type { ModuleItemReaderRow, ModuleInfoRow } from './readers/ModuleReader';
+export type {
+  ModuleItemReaderRow,
+  ModuleInfoRow,
+  ModuleItemListRow,
+} from './readers/ModuleReader';
 export { ResourceReader } from './readers/ResourceReader';
 export type {
   ResourceDownloadRow,
@@ -67,6 +74,7 @@ export type {
   ResourceDependencyFileRow,
   ResourceHtmlDownloadRow,
   ResourceDownloadWithLocalPathRow,
+  ResourceFileRow,
 } from './readers/ResourceReader';
 export { CoursePageReader } from './readers/CoursePageReader';
 export type {
