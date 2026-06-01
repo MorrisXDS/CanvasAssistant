@@ -1,13 +1,14 @@
 /**
- * courseExportHandlers — import-handler behavior tests (ADR-0007).
+ * courseExportHandlers — handler behavior tests (ADR-0007).
  *
- * Covers the migrated `data:importCourseData` path: the handler reads the
- * file, then delegates to ImportCourseDataCommand. The open dialog and
- * filesystem are mocked. (The export handler's reads are a follow-up PR and
- * are not exercised here.)
+ * Covers both migrated paths: `data:exportCourseData` (reads via
+ * CourseExportReader, then writes the JSON file) and `data:importCourseData`
+ * (delegates to ImportCourseDataCommand). Dialogs and the filesystem are
+ * mocked.
  */
 
 const mockShowOpenDialog = jest.fn();
+const mockShowSaveDialog = jest.fn();
 
 jest.mock('electron', () => {
   const handlers = new Map<string, (...args: unknown[]) => unknown>();
@@ -19,14 +20,22 @@ jest.mock('electron', () => {
       __getHandler: (channel: string) => handlers.get(channel),
       __reset: () => handlers.clear(),
     },
-    dialog: { showOpenDialog: (...a: unknown[]) => mockShowOpenDialog(...a) },
+    dialog: {
+      showOpenDialog: (...a: unknown[]) => mockShowOpenDialog(...a),
+      showSaveDialog: (...a: unknown[]) => mockShowSaveDialog(...a),
+    },
   };
 });
 
 const mockReadFileSync = jest.fn();
+const mockWriteFileSync = jest.fn();
 jest.mock('fs', () => {
   const actual = jest.requireActual('fs');
-  return { ...actual, readFileSync: (...a: unknown[]) => mockReadFileSync(...a) };
+  return {
+    ...actual,
+    readFileSync: (...a: unknown[]) => mockReadFileSync(...a),
+    writeFileSync: (...a: unknown[]) => mockWriteFileSync(...a),
+  };
 });
 
 import { ipcMain } from 'electron';
@@ -51,7 +60,9 @@ describe('courseExportHandlers — data:importCourseData (ADR-0007)', () => {
   beforeEach(() => {
     mockIpc.__reset();
     mockShowOpenDialog.mockReset();
+    mockShowSaveDialog.mockReset();
     mockReadFileSync.mockReset();
+    mockWriteFileSync.mockReset();
     db = new Database({ dbPath: ':memory:', verbose: false });
     db.initialize();
     const runner = new MigrationRunner(db);
@@ -62,6 +73,47 @@ describe('courseExportHandlers — data:importCourseData (ADR-0007)', () => {
 
   afterEach(() => {
     db.close();
+  });
+
+  describe('data:exportCourseData', () => {
+    test('gathers the bundle and writes the JSON file', async () => {
+      db.executeWrite(
+        `INSERT INTO courses (id, external_id, code, name) VALUES (1, 'c1', 'CS', 'Intro')`,
+        [],
+        'courses'
+      );
+      db.executeWrite(
+        `INSERT INTO tasks (id, external_id, course_id, title) VALUES (5, 't1', 1, 'HW')`,
+        [],
+        'tasks'
+      );
+      mockShowSaveDialog.mockResolvedValue({
+        canceled: false,
+        filePath: '/tmp/export.json',
+      });
+
+      const res = (await invoke('data:exportCourseData', {})) as {
+        success: boolean;
+        data: { courseCount: number; taskCount: number; filePath: string };
+      };
+
+      expect(res.success).toBe(true);
+      expect(res.data).toMatchObject({ courseCount: 1, taskCount: 1 });
+      // the bundle was serialized to disk (CourseExportReader.gather delegation)
+      expect(mockWriteFileSync).toHaveBeenCalledTimes(1);
+      const written = JSON.parse(mockWriteFileSync.mock.calls[0][1] as string);
+      expect(written.courses[0].code).toBe('CS');
+      expect(written.tasks).toHaveLength(1);
+    });
+
+    test('no courses → error before opening the save dialog', async () => {
+      const res = (await invoke('data:exportCourseData', {
+        courseIds: [999],
+      })) as { success: boolean; error: string };
+      expect(res.success).toBe(false);
+      expect(res.error).toBe('No courses found to export');
+      expect(mockShowSaveDialog).not.toHaveBeenCalled();
+    });
   });
 
   test('imports a valid payload and returns counts', async () => {

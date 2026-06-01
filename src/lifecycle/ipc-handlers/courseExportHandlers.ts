@@ -8,20 +8,21 @@ import fs from 'fs';
 import type { IpcContext } from './IpcContext';
 import { ImportCourseDataCommand } from '../../layers/l4-controller';
 import { createSimulationContext } from '../../layers/l4-controller/types';
+import { CourseExportReader } from '../../layers/l1-persistence';
 
 /**
  * Register course data export/import IPC handlers
  *
- * ADR-0007 migration is in progress for this file: the import pipeline now
- * routes through `ImportCourseDataCommand` (L4). The export reads are slated
- * for a follow-up PR (they use generic-typed `executeRead`, so the ratchet
- * does not count them yet).
+ * Per ADR-0007, this file holds no raw `database.execute*` / `upsert` calls.
+ * The export reads route through `CourseExportReader` (L1); the import pipeline
+ * through `ImportCourseDataCommand` (L4).
  */
 export function registerCourseExportHandlers(ctx: IpcContext): void {
   const database = ctx.getDatabase();
   const logger = ctx.getLogger();
   const metricsCollector = ctx.getMetricsCollector();
   const getMainWindow = ctx.getMainWindow;
+  const courseExportReader = new CourseExportReader(database);
   const runContext = () => ({
     db: database,
     simulationContext: createSimulationContext(),
@@ -36,78 +37,22 @@ export function registerCourseExportHandlers(ctx: IpcContext): void {
       }
 
       try {
-        // Build course filter
-        let courseFilter = '';
-        const courseIds = params?.courseIds;
-        if (courseIds && courseIds.length > 0) {
-          courseFilter = ` WHERE id IN (${courseIds.join(',')})`;
-        }
-
-        // Fetch courses with all fields
-        const courses = database.executeRead<{
-          id: number;
-          external_id: string;
-          code: string;
-          name: string;
-          nickname: string | null;
-          color: string | null;
-          enrollment_term_id: number | null;
-          target_grade: number | null;
-          target_grade_source: string | null;
-          is_hidden: number;
-          current_grade: number | null;
-          assessed_grade: number | null;
-          total_weight: number | null;
-          syllabus_body: string | null;
-          field_sources: string | null;
-          allow_guessed_override: number | null;
-          auto_assign_due_date: number | null;
-        }>(`SELECT * FROM courses${courseFilter}`);
+        // Gather the full export bundle (course-scoped or all courses)
+        const {
+          courses,
+          tasks,
+          notifications,
+          pages,
+          policies,
+          resources,
+          syllabuses,
+          graceTokens,
+          graceTokenUsage,
+        } = courseExportReader.gather(params?.courseIds);
 
         if (courses.length === 0) {
           return { success: false, error: 'No courses found to export' };
         }
-
-        const courseIdList = courses.map((c) => c.id).join(',');
-
-        // Fetch related data
-        const tasks = database.executeRead<Record<string, unknown>>(
-          `SELECT * FROM tasks WHERE course_id IN (${courseIdList})`
-        );
-
-        const notifications = database.executeRead<Record<string, unknown>>(
-          `SELECT * FROM notifications WHERE course_id IN (${courseIdList})`
-        );
-
-        const pages = database.executeRead<Record<string, unknown>>(
-          `SELECT * FROM course_pages WHERE course_id IN (${courseIdList})`
-        );
-
-        const policies = database.executeRead<Record<string, unknown>>(
-          `SELECT * FROM course_policies WHERE course_id IN (${courseIdList})`
-        );
-
-        const resources = database.executeRead<Record<string, unknown>>(
-          `SELECT id, external_id, course_id, folder_path, type, title, url, size_bytes, mime_type FROM resources WHERE course_id IN (${courseIdList})`
-        );
-
-        // Fetch course_syllabuses
-        const syllabuses = database.executeRead<Record<string, unknown>>(
-          `SELECT * FROM course_syllabuses WHERE course_id IN (${courseIdList})`
-        );
-
-        // Fetch grace_tokens and grace_token_usage
-        const graceTokens = database.executeRead<Record<string, unknown>>(
-          `SELECT * FROM grace_tokens WHERE course_id IN (${courseIdList})`
-        );
-
-        const graceTokenIds = graceTokens.map((g) => g.id).filter(Boolean);
-        const graceTokenUsage =
-          graceTokenIds.length > 0
-            ? database.executeRead<Record<string, unknown>>(
-                `SELECT * FROM grace_token_usage WHERE grace_token_id IN (${graceTokenIds.join(',')})`
-              )
-            : [];
 
         const exportData = {
           exportedAt: new Date().toISOString(),

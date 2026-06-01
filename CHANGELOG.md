@@ -12,6 +12,20 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ### Changed
 
+- `2026-06-01 18:30 UTC` — Migrated `courseExportHandlers`'s export _reads_ off
+  raw SQL (ADR-0007 follow-up). `data:exportCourseData`'s 9 generic-typed
+  `executeRead<…>` calls (ratchet-invisible, so the file passed the enforcement
+  test with its ceiling entry already removed, but real raw SQL remained) now
+  route through a new `CourseExportReader.gather(courseIds?)` that returns the
+  full export bundle (courses + tasks/notifications/pages/policies/resources/
+  syllabuses/grace-tokens/usage). DTO shaping stays in the handler. The numeric
+  id sets are coerced to integers before the `IN (...)` interpolation, so the
+  export filter can no longer carry injected SQL. Behaviour preserved exactly
+  (including the empty-courses early return that avoids an invalid `IN ()`).
+  Note: this does NOT yet make the handler dir literally SQL-free — three files
+  (`fileDataHandlers`, `data/courseContentHandlers`, `courseDataHandlers`) still
+  hold ratchet-invisible generic reads; see `docs/FOLLOWUPS.md`.
+
 - `2026-06-01 18:00 UTC` — Migrated `syncHandlers` off raw SQL (ADR-0007) —
   **the final handler; the ratchet's `paths` map is now empty and every IPC
   handler is migrated.** The conflict-resolution `UPDATE ${table} SET ${field}`
