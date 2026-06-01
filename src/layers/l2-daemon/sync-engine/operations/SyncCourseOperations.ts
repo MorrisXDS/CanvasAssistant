@@ -148,6 +148,13 @@ export class SyncCourseOperations {
               preservedFields
             );
 
+            // Record a grade-history point whenever the course's overall grade
+            // changes between syncs. We compare the value we just wrote against
+            // the previously-stored one so the history captures the grade's
+            // trajectory (one row per distinct transition) rather than a flat
+            // line of identical points on every sync.
+            this.recordGradeChange(existing, localCourse.external_id, finalData);
+
             if (this.ctx.diagnosticsEnabled) {
               this.helpers.logDiagnostic({
                 entity: 'course',
@@ -198,6 +205,47 @@ export class SyncCourseOperations {
       });
       return createSyncResult('courses', count, errors, startTime);
     }
+  }
+
+  /**
+   * Append a row to `grade_history` when a course's overall grade changed since
+   * the last sync. No-ops when the new grade is absent (null/non-numeric) or
+   * unchanged, so the table accrues exactly one point per distinct grade
+   * transition. Runs inside the caller's course-sync transaction.
+   */
+  private recordGradeChange(
+    existing: Record<string, unknown> | undefined,
+    externalId: string,
+    finalData: Record<string, unknown>
+  ): void {
+    const next =
+      typeof finalData.current_grade === 'number' &&
+      Number.isFinite(finalData.current_grade)
+        ? finalData.current_grade
+        : null;
+    if (next === null) return;
+
+    const prev =
+      typeof existing?.current_grade === 'number' ? existing.current_grade : null;
+    if (next === prev) return;
+
+    // Resolve the local course id. For an update it's already on `existing`;
+    // for a first-time insert we look it up by the external id we just wrote.
+    let courseId = typeof existing?.id === 'number' ? existing.id : null;
+    if (courseId === null) {
+      const row = this.ctx.db.executeReadOne<{ id: number }>(
+        'SELECT id FROM courses WHERE external_id = ?',
+        [externalId]
+      );
+      courseId = row?.id ?? null;
+    }
+    if (courseId === null) return;
+
+    this.ctx.db.executeWrite(
+      'INSERT INTO grade_history (course_id, grade) VALUES (?, ?)',
+      [courseId, next],
+      'grade_history'
+    );
   }
 
   /**

@@ -126,6 +126,71 @@ describe('SyncEngine', () => {
       expect(result.errors.length).toBeGreaterThan(0);
       expect(result.errors[0]).toContain('Network error');
     });
+
+    it('should record a grade_history point on first sync when a grade exists', async () => {
+      mockGetAll.mockResolvedValue([
+        {
+          id: 12345,
+          name: 'Introduction to Computer Science',
+          course_code: 'CSC108',
+          enrollment_term_id: 1,
+          enrollments: [{ type: 'student', computed_current_score: 87.5 }],
+        },
+      ]);
+
+      await syncEngine.syncCourses();
+
+      const history = db.executeRead<{ grade: number; course_id: number }>(
+        'SELECT grade, course_id FROM grade_history'
+      );
+      expect(history).toHaveLength(1);
+      expect(history[0].grade).toBe(87.5);
+    });
+
+    it('should NOT record grade_history when the course has no grade', async () => {
+      mockGetAll.mockResolvedValue([
+        {
+          id: 12346,
+          name: 'Linear Algebra',
+          course_code: 'MAT223',
+          enrollment_term_id: 1,
+        },
+      ]);
+
+      await syncEngine.syncCourses();
+
+      const history = db.executeRead('SELECT * FROM grade_history');
+      expect(history).toHaveLength(0);
+    });
+
+    it('should append a new point only when the grade changes across syncs', async () => {
+      const courseAt = (score: number) => [
+        {
+          id: 12345,
+          name: 'Introduction to Computer Science',
+          course_code: 'CSC108',
+          enrollment_term_id: 1,
+          enrollments: [{ type: 'student', computed_current_score: score }],
+        },
+      ];
+
+      // First sync: 80 → one point.
+      mockGetAll.mockResolvedValue(courseAt(80));
+      await syncEngine.syncCourses();
+
+      // Second sync: unchanged 80 → still one point (no duplicate).
+      mockGetAll.mockResolvedValue(courseAt(80));
+      await syncEngine.syncCourses();
+
+      // Third sync: 90 → a second point.
+      mockGetAll.mockResolvedValue(courseAt(90));
+      await syncEngine.syncCourses();
+
+      const history = db.executeRead<{ grade: number }>(
+        'SELECT grade FROM grade_history ORDER BY id ASC'
+      );
+      expect(history.map((h) => h.grade)).toEqual([80, 90]);
+    });
   });
 
   describe('Task sync', () => {

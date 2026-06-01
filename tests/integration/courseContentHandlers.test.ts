@@ -115,17 +115,27 @@ describe('courseContentHandlers (ADR-0007)', () => {
     });
   });
 
-  test('data:getGradeHistory returns mapped rows oldest-first', async () => {
+  test('data:getGradeHistory returns mapped rows oldest-first with id + courseId', async () => {
     db.executeWrite(
-      `INSERT INTO grade_history (course_id, grade, recorded_at) VALUES (1, 88, '2026-03-01'), (1, 91, '2026-01-01')`,
+      `INSERT INTO grade_history (id, course_id, grade, recorded_at) VALUES (1, 1, 88, '2026-03-01'), (2, 1, 91, '2026-01-01')`,
       [],
       'grade_history'
     );
     const res = (await invoke('data:getGradeHistory', 1)) as Array<{
+      id: number;
+      courseId: number;
       recordedAt: string;
       grade: number;
     }>;
     expect(res.map((r) => r.grade)).toEqual([91, 88]);
+    // id + courseId are required by GradeHistoryEntrySchema and used as the
+    // React key in GradeHistoryCard — verify they survive the mapping.
+    expect(res[0]).toEqual({
+      id: 2,
+      courseId: 1,
+      recordedAt: '2026-01-01',
+      grade: 91,
+    });
   });
 
   describe('pages:getByCourse', () => {
