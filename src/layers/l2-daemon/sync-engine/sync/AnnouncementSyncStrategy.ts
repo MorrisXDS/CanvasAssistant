@@ -5,18 +5,11 @@
  */
 
 import { BaseSyncStrategy, SyncResult, SyncContext } from './SyncStrategy';
-import {
-  mapAnnouncement,
-  CanvasAnnouncement,
-  detectPolicyKeywords,
-  calculatePolicyConfidence,
-} from '../../data/DataMappers';
+import { mapAnnouncement, CanvasAnnouncement } from '../../data/DataMappers';
 
 export interface AnnouncementSyncOptions {
   /** Callback for attachments pending download */
   onAttachmentsPending?: (event: AttachmentsPendingEvent) => void;
-  /** Callback for policy detection */
-  onPolicyDetected?: (event: PolicyDetectedEvent) => void;
 }
 
 export interface AttachmentsPendingEvent {
@@ -25,24 +18,14 @@ export interface AttachmentsPendingEvent {
   attachmentCount: number;
 }
 
-export interface PolicyDetectedEvent {
-  notificationId: number;
-  courseId: number;
-  title: string;
-  keywords: string[];
-  confidence: number;
-}
-
 export class AnnouncementSyncStrategy extends BaseSyncStrategy {
   readonly entityType = 'announcements';
 
   private onAttachmentsPending?: (event: AttachmentsPendingEvent) => void;
-  private onPolicyDetected?: (event: PolicyDetectedEvent) => void;
 
   constructor(context: SyncContext, options: AnnouncementSyncOptions = {}) {
     super(context);
     this.onAttachmentsPending = options.onAttachmentsPending;
-    this.onPolicyDetected = options.onPolicyDetected;
   }
 
   async syncForCourse(
@@ -93,12 +76,6 @@ export class AnnouncementSyncStrategy extends BaseSyncStrategy {
             if (notificationRow) {
               this.processAttachments(notificationRow.id, localCourseId, mapped);
               this.processFileReferences(notificationRow.id, mapped);
-              this.processPolicyDetection(
-                notificationRow.id,
-                localCourseId,
-                announcement,
-                mapped
-              );
             }
           } catch (error) {
             errors.push(
@@ -197,52 +174,5 @@ export class AnnouncementSyncStrategy extends BaseSyncStrategy {
         'announcement_file_references'
       );
     }
-  }
-
-  private processPolicyDetection(
-    notificationId: number,
-    courseId: number,
-    announcement: CanvasAnnouncement,
-    mapped: ReturnType<typeof mapAnnouncement>
-  ): void {
-    if (!mapped.notification.is_policy_related) return;
-
-    const detection = detectPolicyKeywords(
-      announcement.title + ' ' + announcement.message
-    );
-    const confidence = calculatePolicyConfidence(
-      announcement.title + ' ' + announcement.message,
-      detection.keywords
-    );
-
-    this.db.executeWrite(
-      `INSERT INTO policy_announcements
-       (notification_id, course_id, detected_policy_type, confidence_score, extracted_rules, is_confirmed)
-       VALUES (?, ?, ?, ?, ?, ?)
-       ON CONFLICT(notification_id) DO UPDATE SET
-         detected_policy_type = excluded.detected_policy_type,
-         confidence_score = excluded.confidence_score,
-         extracted_rules = excluded.extracted_rules`,
-      [
-        notificationId,
-        courseId,
-        detection.categories[0] || null,
-        confidence,
-        JSON.stringify({
-          keywords: detection.keywords,
-          categories: detection.categories,
-        }),
-        0,
-      ],
-      'policy_announcements'
-    );
-
-    this.onPolicyDetected?.({
-      notificationId,
-      courseId,
-      title: announcement.title,
-      keywords: detection.keywords,
-      confidence,
-    });
   }
 }

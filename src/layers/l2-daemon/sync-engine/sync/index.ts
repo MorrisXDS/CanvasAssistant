@@ -30,7 +30,4 @@ export {
 // Re-export commonly used types
 export type { TaskDiagnosticEntry, TaskMergedEvent } from './TaskSyncStrategy';
 
-export type {
-  AttachmentsPendingEvent,
-  PolicyDetectedEvent,
-} from './AnnouncementSyncStrategy';
+export type { AttachmentsPendingEvent } from './AnnouncementSyncStrategy';

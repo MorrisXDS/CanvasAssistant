@@ -15,8 +15,6 @@ import {
   mapModule,
   mapModuleItem,
   mapPage,
-  detectPolicyKeywords,
-  calculatePolicyConfidence,
 } from '../../data/DataMappers';
 
 export class SyncContentOperations {
@@ -141,47 +139,6 @@ export class SyncContentOperations {
                     'announcement_file_references'
                   );
                 }
-              }
-
-              // Handle policy detection
-              if (mapped.notification.is_policy_related) {
-                const detection = detectPolicyKeywords(
-                  announcement.title + ' ' + announcement.message
-                );
-                const confidence = calculatePolicyConfidence(
-                  announcement.title + ' ' + announcement.message,
-                  detection.keywords
-                );
-
-                this.ctx.db.executeWrite(
-                  `INSERT INTO policy_announcements
-                   (notification_id, course_id, detected_policy_type, confidence_score, extracted_rules, is_confirmed)
-                   VALUES (?, ?, ?, ?, ?, ?)
-                   ON CONFLICT(notification_id) DO UPDATE SET
-                     detected_policy_type = excluded.detected_policy_type,
-                     confidence_score = excluded.confidence_score,
-                     extracted_rules = excluded.extracted_rules`,
-                  [
-                    notificationRow.id,
-                    localCourseId,
-                    detection.categories[0] || null,
-                    confidence,
-                    JSON.stringify({
-                      keywords: detection.keywords,
-                      categories: detection.categories,
-                    }),
-                    0,
-                  ],
-                  'policy_announcements'
-                );
-
-                this.ctx.emitter.emit('policy-detected', {
-                  notificationId: notificationRow.id,
-                  courseId: localCourseId,
-                  title: announcement.title,
-                  keywords: detection.keywords,
-                  confidence,
-                });
               }
             }
           } catch (error) {

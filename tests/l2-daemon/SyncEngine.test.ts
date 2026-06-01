@@ -335,7 +335,7 @@ describe('SyncEngine', () => {
       expect(notifications[0].is_policy_related).toBeFalsy();
     });
 
-    it('should detect policy-related announcements', async () => {
+    it('should flag policy-related announcements via is_policy_related', async () => {
       const mockAnnouncements = [
         {
           id: 66666,
@@ -348,34 +348,18 @@ describe('SyncEngine', () => {
 
       mockGetAll.mockResolvedValue(mockAnnouncements);
 
-      // Listen for policy detection event
-      const policyDetectedHandler = jest.fn();
-      syncEngine.on('policy-detected', policyDetectedHandler);
-
       const result = await syncEngine.syncAnnouncements(12345, 1);
 
       expect(result.success).toBe(true);
 
-      // Verify notification is marked as policy-related
+      // The notification is still tagged with the policy-keyword flag.
+      // The downstream `policy_announcements` write + `policy-detected` event
+      // were removed (ADR-0003 cleanup — migration 106 drops the table); only
+      // the flag on the notification row survives.
       const notifications = db.executeRead<{ title: string; is_policy_related: number }>(
         'SELECT title, is_policy_related FROM notifications'
       );
       expect(notifications[0].is_policy_related).toBeTruthy();
-
-      // Verify policy_announcements entry created
-      const policyAnnouncements = db.executeRead<{ confidence_score: number }>(
-        'SELECT confidence_score FROM policy_announcements'
-      );
-      expect(policyAnnouncements).toHaveLength(1);
-      expect(policyAnnouncements[0].confidence_score).toBeGreaterThan(0);
-
-      // Verify event was emitted
-      expect(policyDetectedHandler).toHaveBeenCalledWith(
-        expect.objectContaining({
-          courseId: 1,
-          keywords: expect.any(Array),
-        })
-      );
     });
   });
 

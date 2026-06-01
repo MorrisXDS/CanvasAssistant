@@ -330,30 +330,6 @@ describe('SyncStrategies', () => {
       });
     });
 
-    it('should detect policy-related announcements', async () => {
-      mockClient.getAll.mockResolvedValueOnce([
-        {
-          id: 1,
-          title: 'Late Assignment Policy',
-          message: '<p>All late submissions will receive a 10% penalty per day.</p>',
-          posted_at: '2024-01-15T10:00:00Z',
-        },
-      ]);
-
-      mockDb.executeReadOne.mockReturnValue({ id: 100 });
-
-      const onPolicyDetected = jest.fn();
-      const strategyWithCallback = new AnnouncementSyncStrategy(context, {
-        onPolicyDetected,
-      });
-
-      await strategyWithCallback.syncForCourse(123, 1);
-
-      // Policy detection depends on mapAnnouncement detecting keywords
-      // The callback will be called if is_policy_related is true
-      expect(mockDb.upsert).toHaveBeenCalled();
-    });
-
     it('should upsert notifications with correct conflict keys', async () => {
       mockClient.getAll.mockResolvedValueOnce([
         {

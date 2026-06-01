@@ -12,6 +12,15 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ### Removed
 
+- `2026-06-01 20:30 UTC` — Dropped the `policy_announcements` table (migration 106),
+  ADR-0003 cleanup. It was the lone "live-writer-but-no-consumer" zombie — sync wrote
+  a detection row for every policy-flagged announcement, but nothing has read the table
+  since the intelligence layer that turned detections into `course_policies` rows was
+  removed. Removed both orphan writers (`SyncContentOperations` policy block,
+  `AnnouncementSyncStrategy.processPolicyDetection`) and the dead `policy-detected`
+  event / `onPolicyDetected` / `PolicyDetectedEvent` plumbing. Reversible (`down`
+  recreates the table + its two indexes). The `is_policy_related` notification flag
+  is left in place but is now likewise unconsumed (micro-followup in `docs/FOLLOWUPS.md`).
 - `2026-06-01 20:00 UTC` — Dropped 11 dead/zombie schema tables (migration 105),
   ADR-0003 cleanup. An audit confirmed each has no production writer or reader
   AND no inbound FK from a live table: the 7 L3-intelligence leftovers

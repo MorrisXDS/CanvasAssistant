@@ -26,10 +26,8 @@ _Avoid_: "overridden", "patched", "annotated"
 A message posted by an instructor in a course — Canvas's discussion-topic-with-`only_announcements`. Stored in the `notifications` table (vestigial name — see ambiguity below) with `source_type='announcement'`. Has a title, message body (plain + HTML — `messageHtml` is the canonical content; `message` is a plain extract; FileReference extraction depends on `messageHtml`), publish timestamp, and supports the cross-cutting **Dismissed** state. Can carry zero or more AnnouncementAttachments and zero or more embedded FileReferences in its HTML body. The HTML body is **LocallyEdited**-capable (`message_html_original` preserves the Canvas-authoritative version if the user has overridden the body). May also carry policy-detection metadata (`is_policy_related`, `policy_keywords` JSON, `linked_policy_id` FK — though `course_policies` is a dead ADR-0003 zombie).
 _Avoid_: "notification" (overloaded — see flagged ambiguity), "post", "discussion topic"
 
-**PolicyAnnouncement**:
-A detection record written when sync sees an announcement flagged with `is_policy_related=true` — captures the detected policy type, a confidence score, and extracted keywords/rules. Stored in `policy_announcements` keyed by `notification_id`. One per announcement, max.
-
-**The write is live but the consumer is dead.** Sync writes a row every time it processes a policy-related announcement; no downstream code reads `policy_announcements` to create or update a `course_policies` row. The detection is leftover from the intelligence-layer subsystem removed per [ADR-0003](docs/adr/0003-removal-of-l3-intelligence-layer.md). Listed here because rows still accumulate; see [docs/FOLLOWUPS.md](docs/FOLLOWUPS.md).
+**PolicyAnnouncement** _(removed — table dropped in migration 106, 2026-06-01)_:
+Formerly a detection record written when sync saw an announcement flagged with `is_policy_related=true`, stored in `policy_announcements` keyed by `notification_id`. The write was live but the consumer was dead — nothing read it to create/update a `course_policies` row since the intelligence layer was removed per [ADR-0003](docs/adr/0003-removal-of-l3-intelligence-layer.md). The two orphan sync writers, the dead `policy-detected` event, and the table itself were removed. The `is_policy_related` flag on the notification row survives (still computed by `detectPolicyKeywords`) but is now likewise unconsumed — a harmless leftover boolean (micro-followup: stop computing it).
 _Avoid_: "policy detection", "detected policy"
 
 #### Flagged ambiguity — "Notification" means three different things
@@ -534,9 +532,9 @@ A complete inventory of tables present in the schema with **no live writers and 
 - `grace_token_usage` — token usage history
 - `grade_history` — per-grade-change audit trail. **Read-but-never-written**: `GradeHistoryReader` → `data:getGradeHistory` → `CourseDetail.tsx` renders it, but no production code writes the table, so the chart is always empty. Removal needs the reader chain + UI removed first.
 
-**Live-writer-but-no-consumer (one step less dead):**
+**Removed (migration 106, 2026-06-01):**
 
-- `policy_announcements` — already detailed under **PolicyAnnouncement** above; sync writes rows every run, no downstream reads them since ADR-0003 removed the consumer
+- `policy_announcements` — was the lone "live-writer-but-no-consumer" zombie; sync wrote rows every run, nothing read them since ADR-0003 removed the consumer. The two orphan writers + dead `policy-detected` event removed alongside the table. The `is_policy_related` notification flag survives but is now also unconsumed (micro-followup).
 
 **Vestigial columns (not tables):**
 

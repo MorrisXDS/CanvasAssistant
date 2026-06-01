@@ -850,4 +850,35 @@ export const migrationsV81toV102: Migration[] = [
       CREATE INDEX idx_field_modifications_entity ON field_modifications(table_name, entity_id);
     `,
   },
+  // Migration 106: Drop `policy_announcements` (ADR-0003 cleanup). The table was
+  // written every sync (announcement policy-keyword detection) but read by
+  // nothing since ADR-0003 removed the consumer that turned detections into
+  // `course_policies` rows. The two orphan writers + the dead `policy-detected`
+  // event are removed in the same change. No table FKs to it (its own FKs to
+  // notifications/courses just go away). Reversible — `down` recreates it.
+  {
+    version: 106,
+    description: 'Drop policy_announcements (ADR-0003 orphan-writer cleanup)',
+    up: `
+      DROP INDEX IF EXISTS idx_policy_announcements_notification;
+      DROP INDEX IF EXISTS idx_policy_announcements_course;
+      DROP TABLE IF EXISTS policy_announcements;
+    `,
+    down: `
+      CREATE TABLE policy_announcements (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        notification_id INTEGER NOT NULL UNIQUE,
+        course_id INTEGER NOT NULL,
+        detected_policy_type TEXT,
+        confidence_score REAL DEFAULT 0.0,
+        extracted_rules TEXT,
+        is_confirmed BOOLEAN DEFAULT FALSE,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(notification_id) REFERENCES notifications(id),
+        FOREIGN KEY(course_id) REFERENCES courses(id)
+      );
+      CREATE INDEX idx_policy_announcements_notification ON policy_announcements(notification_id);
+      CREATE INDEX idx_policy_announcements_course ON policy_announcements(course_id);
+    `,
+  },
 ];
