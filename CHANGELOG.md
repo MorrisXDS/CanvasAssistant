@@ -12,6 +12,16 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ### Removed
 
+- `2026-06-01 22:00 UTC` — Dropped 6 vestigial scoring/value columns (migration 107,
+  ADR-0003 cleanup): `tasks.effective_grade` (the live `effectiveGrade` is computed
+  by the grade simulator, never this column), `courses.grade_volatility` (never read
+  or written), and the old ROI/priority inputs `tasks.pain_index` /
+  `penalty_severity` / `has_safety_net` / `days_until_cutoff` (only the import-restore
+  path wrote them — that write was removed too). The `idx_tasks_pain_index` index went
+  with them. Direct `ALTER TABLE DROP COLUMN` (no rebuild); reversible. NOT touched:
+  `tasks.lock_at` (alive — Canvas-authoritative, synced + exported; an earlier doc note
+  calling it vestigial was wrong) and `sync_preferences.prefer_local` (still written
+  verbatim by the conflict commands; deferred).
 - `2026-06-01 21:30 UTC` — Removed the dead `course_policies` read chain (ADR-0003
   cleanup, slice 1 of the policy-family retirement). `data:getPolicies` /
   `data:getAllPolicies` always returned empty lists — `course_policies` has no INSERT

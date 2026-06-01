@@ -881,4 +881,39 @@ export const migrationsV81toV102: Migration[] = [
       CREATE INDEX idx_policy_announcements_course ON policy_announcements(course_id);
     `,
   },
+  // Migration 107: Drop vestigial scoring/value columns (ADR-0003 cleanup).
+  // All six are write-only-or-dead: no app code reads them.
+  //   - tasks.pain_index / penalty_severity / has_safety_net / days_until_cutoff
+  //     — old ROI/priority scoring inputs (v30). Only ever written by the
+  //     import-restore path (now stopped); no readers. `idx_tasks_pain_index`
+  //     is dropped first (can't DROP an indexed column).
+  //   - tasks.effective_grade — the live `effectiveGrade` used by the grade
+  //     simulator is COMPUTED (getEffectiveGrade / simulation ?? task.grade),
+  //     never this column. The column only ever appeared in migrations.
+  //   - courses.grade_volatility — schema-present since v1, never read or written.
+  // NOT touched: tasks.lock_at (alive — Canvas-authoritative, synced + exported)
+  // and sync_preferences.prefer_local (still written verbatim by the conflict
+  // commands; deferred). Reversible — `down` re-adds the columns + index.
+  {
+    version: 107,
+    description: 'Drop vestigial task/course scoring columns (ADR-0003 cleanup)',
+    up: `
+      DROP INDEX IF EXISTS idx_tasks_pain_index;
+      ALTER TABLE tasks DROP COLUMN pain_index;
+      ALTER TABLE tasks DROP COLUMN penalty_severity;
+      ALTER TABLE tasks DROP COLUMN has_safety_net;
+      ALTER TABLE tasks DROP COLUMN days_until_cutoff;
+      ALTER TABLE tasks DROP COLUMN effective_grade;
+      ALTER TABLE courses DROP COLUMN grade_volatility;
+    `,
+    down: `
+      ALTER TABLE courses ADD COLUMN grade_volatility REAL DEFAULT 0.0;
+      ALTER TABLE tasks ADD COLUMN effective_grade REAL;
+      ALTER TABLE tasks ADD COLUMN pain_index REAL DEFAULT 0.0;
+      ALTER TABLE tasks ADD COLUMN penalty_severity REAL DEFAULT 0.0;
+      ALTER TABLE tasks ADD COLUMN has_safety_net BOOLEAN DEFAULT FALSE;
+      ALTER TABLE tasks ADD COLUMN days_until_cutoff INTEGER;
+      CREATE INDEX idx_tasks_pain_index ON tasks(pain_index DESC);
+    `,
+  },
 ];

@@ -148,10 +148,6 @@ export class ImportCourseDataCommand implements Command<
             task_type: task.task_type || task.taskType,
             task_group_id: task.task_group_id || task.taskGroupId,
             field_sources: task.field_sources || task.fieldSources,
-            pain_index: task.pain_index ?? task.painIndex ?? 0,
-            penalty_severity: task.penalty_severity ?? task.penaltySeverity ?? 0,
-            has_safety_net: task.has_safety_net ?? task.hasSafetyNet ?? 0,
-            days_until_cutoff: task.days_until_cutoff ?? task.daysUntilCutoff,
           },
           'external_id'
         );
