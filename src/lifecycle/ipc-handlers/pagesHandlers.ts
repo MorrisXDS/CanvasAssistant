@@ -2,6 +2,11 @@
  * Pages IPC Handlers
  * Handlers for page content operations:
  * - pages:downloadContent, pages:openFile
+ *
+ * Per ADR-0007, this file holds no raw `database.execute*` / `upsert`
+ * calls. Reads route through `ModuleReader` / `CourseReader` (L1); writes
+ * route through the page commands (L4). The handler keeps the Canvas API
+ * calls, file IO, HTML rewriting, and dependency-walking orchestration.
  */
 
 import { ipcMain, shell } from 'electron';
@@ -12,11 +17,21 @@ import {
   extractCanvasFileReferences,
   extractHtmlReferences,
 } from '../../layers/l2-daemon/html/HtmlFileExtractor';
+// Deep import from PathBuilder (not the l0-utilities barrel): the barrel
+// re-exports FileWatcher, which pulls in chokidar (ESM-only) and breaks the
+// jest transform when this handler is loaded in a test. PathBuilder itself
+// only depends on `path`.
 import {
   createPathBuilder,
   sanitizeCourseCode,
   sanitizeTitle,
-} from '../../layers/l0-utilities';
+} from '../../layers/l0-utilities/PathBuilder';
+import { ModuleReader, CourseReader } from '../../layers/l1-persistence';
+import {
+  UpsertCoursePageCommand,
+  UpsertResourceCommand,
+  RecordHtmlDependencyCommand,
+} from '../../layers/l4-controller/commands/page';
 import type { IpcContext } from './IpcContext';
 
 /**
@@ -30,6 +45,12 @@ export function registerPagesHandlers(ctx: IpcContext): void {
   const getCanvasClient = ctx.getCanvasClient;
   const getLocalHtmlPathsSettings = ctx.getLocalHtmlPathsSettings;
   const getFilesDir = ctx.getFilesDir;
+
+  const moduleReader = new ModuleReader(database);
+  const courseReader = new CourseReader(database);
+  const upsertCoursePageCommand = new UpsertCoursePageCommand(database);
+  const upsertResourceCommand = new UpsertResourceCommand(database);
+  const recordHtmlDependencyCommand = new RecordHtmlDependencyCommand(database);
 
   // Download page content on demand (for module items of type Page)
   // Fetches the page HTML from Canvas and saves it as an HTML file to the course folder
@@ -46,17 +67,7 @@ export function registerPagesHandlers(ctx: IpcContext): void {
         }
 
         // Get module item to find page_url and course info
-        const moduleItem = database.executeReadOne<{
-          id: number;
-          module_id: number;
-          title: string;
-          item_type: string;
-          page_url: string | null;
-          url: string | null;
-        }>(
-          'SELECT id, module_id, title, item_type, page_url, url FROM module_items WHERE id = ?',
-          [moduleItemId]
-        );
+        const moduleItem = moduleReader.getModuleItemById(moduleItemId);
 
         if (!moduleItem) {
           return { success: false, error: 'Module item not found' };
@@ -67,22 +78,13 @@ export function registerPagesHandlers(ctx: IpcContext): void {
         }
 
         // Get course info through module -> course chain
-        const moduleInfo = database.executeReadOne<{
-          course_id: number;
-          name: string;
-        }>('SELECT course_id, name FROM modules WHERE id = ?', [moduleItem.module_id]);
+        const moduleInfo = moduleReader.getModuleById(moduleItem.module_id);
 
         if (!moduleInfo) {
           return { success: false, error: 'Module not found' };
         }
 
-        const course = database.executeReadOne<{
-          id: number;
-          external_id: string;
-          code: string;
-        }>('SELECT id, external_id, code FROM courses WHERE id = ?', [
-          moduleInfo.course_id,
-        ]);
+        const course = courseReader.getById(moduleInfo.course_id);
 
         if (!course) {
           return { success: false, error: 'Course not found' };
@@ -123,7 +125,7 @@ export function registerPagesHandlers(ctx: IpcContext): void {
 
         // Store in course_pages for offline access
         const localPage = mapPage(response.data, course.id, 'module_item');
-        database.upsert('course_pages', localPage);
+        upsertCoursePageCommand.execute(localPage);
 
         // Use centralized path builder for consistent path construction
         const pathBuilder = createPathBuilder(getFilesDir());
@@ -224,25 +226,16 @@ export function registerPagesHandlers(ctx: IpcContext): void {
                         // Create/update resource entry for this file so dependency check can find it
                         try {
                           const fileStats = fs.statSync(localFilePath);
-                          database.executeWrite(
-                            `INSERT INTO resources (external_id, course_id, type, title, local_path, folder_path, size_bytes, mime_type, context_type, context_id, synced_at)
-                             VALUES (?, ?, 'file', ?, ?, ?, ?, ?, 'page_dependency', ?, CURRENT_TIMESTAMP)
-                             ON CONFLICT(external_id) DO UPDATE SET
-                               local_path = excluded.local_path,
-                               size_bytes = excluded.size_bytes,
-                               synced_at = CURRENT_TIMESTAMP`,
-                            [
-                              fileId,
-                              course.id,
-                              safeFileName,
-                              localFilePath,
-                              `${moduleInfo.name}/${safeTitle}_files`,
-                              fileStats.size,
-                              mimeType,
-                              pageSlug,
-                            ],
-                            'resources'
-                          );
+                          upsertResourceCommand.upsertPageDependency({
+                            externalId: fileId,
+                            courseId: course.id,
+                            title: safeFileName,
+                            localPath: localFilePath,
+                            folderPath: `${moduleInfo.name}/${safeTitle}_files`,
+                            sizeBytes: fileStats.size,
+                            mimeType,
+                            contextId: pageSlug,
+                          });
                         } catch (dbErr) {
                           logger.warn(
                             `[pages:downloadContent] Failed to create resource entry for ${fileId}: ${dbErr}`
@@ -301,13 +294,7 @@ export function registerPagesHandlers(ctx: IpcContext): void {
               `[pages:downloadContent] Recording ${downloadedFileIds.length} file dependencies in html_dependencies`
             );
             for (const fileId of downloadedFileIds) {
-              database.executeWrite(
-                `INSERT INTO html_dependencies (parent_source_type, parent_source_id, child_source_type, child_source_id)
-                 VALUES ('page', ?, 'file', ?)
-                 ON CONFLICT(parent_source_type, parent_source_id, child_source_type, child_source_id) DO NOTHING`,
-                [pageSlug, fileId],
-                'html_dependencies'
-              );
+              recordHtmlDependencyCommand.execute('page', pageSlug, 'file', fileId);
             }
           }
         }
@@ -323,12 +310,11 @@ export function registerPagesHandlers(ctx: IpcContext): void {
           );
           for (const link of pageLinks) {
             if (link.pageSlug) {
-              database.executeWrite(
-                `INSERT INTO html_dependencies (parent_source_type, parent_source_id, child_source_type, child_source_id)
-                 VALUES ('page', ?, 'page', ?)
-                 ON CONFLICT(parent_source_type, parent_source_id, child_source_type, child_source_id) DO NOTHING`,
-                [pageSlug, link.pageSlug],
-                'html_dependencies'
+              recordHtmlDependencyCommand.execute(
+                'page',
+                pageSlug,
+                'page',
+                link.pageSlug
               );
             }
           }
@@ -390,26 +376,15 @@ export function registerPagesHandlers(ctx: IpcContext): void {
         // Register/update in resources table for Files page visibility
         const externalId = `html-page-${pageSlug}`;
         const fileStats = fs.statSync(localPath);
-        database.executeWrite(
-          `INSERT INTO resources (external_id, course_id, type, title, local_path, folder_path, size_bytes, mime_type, context_type, context_id, synced_at)
-           VALUES (?, ?, 'page', ?, ?, ?, ?, 'text/html', 'page', ?, CURRENT_TIMESTAMP)
-           ON CONFLICT(external_id) DO UPDATE SET
-             title = excluded.title,
-             local_path = excluded.local_path,
-             folder_path = excluded.folder_path,
-             size_bytes = excluded.size_bytes,
-             synced_at = CURRENT_TIMESTAMP`,
-          [
-            externalId,
-            course.id,
-            moduleItem.title,
-            localPath,
-            folderPath,
-            fileStats.size,
-            pageSlug,
-          ],
-          'resources'
-        );
+        upsertResourceCommand.upsertPage({
+          externalId,
+          courseId: course.id,
+          title: moduleItem.title,
+          localPath,
+          folderPath,
+          sizeBytes: fileStats.size,
+          contextId: pageSlug,
+        });
 
         logger.info(
           `[pages:downloadContent] Saved page "${moduleItem.title}" to ${localPath} (folder: ${folderPath}, ${urlRewrites.size} dependencies downloaded)`
@@ -446,36 +421,20 @@ export function registerPagesHandlers(ctx: IpcContext): void {
     }> => {
       try {
         // Get module item info including page_url for Canvas URL construction
-        const moduleItem = database.executeReadOne<{
-          id: number;
-          module_id: number;
-          title: string;
-          item_type: string;
-          page_url: string | null;
-          url: string | null;
-        }>(
-          'SELECT id, module_id, title, item_type, page_url, url FROM module_items WHERE id = ?',
-          [moduleItemId]
-        );
+        const moduleItem = moduleReader.getModuleItemById(moduleItemId);
 
         if (!moduleItem) {
           return { success: false, error: 'Module item not found' };
         }
 
         // Get course info through module -> course chain
-        const moduleInfo = database.executeReadOne<{
-          course_id: number;
-          name: string;
-        }>('SELECT course_id, name FROM modules WHERE id = ?', [moduleItem.module_id]);
+        const moduleInfo = moduleReader.getModuleById(moduleItem.module_id);
 
         if (!moduleInfo) {
           return { success: false, error: 'Module not found' };
         }
 
-        const course = database.executeReadOne<{
-          code: string;
-          external_id: string;
-        }>('SELECT code, external_id FROM courses WHERE id = ?', [moduleInfo.course_id]);
+        const course = courseReader.getById(moduleInfo.course_id);
 
         if (!course) {
           return { success: false, error: 'Course not found' };

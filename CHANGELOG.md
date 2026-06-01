@@ -12,6 +12,19 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ### Changed
 
+- `2026-05-31 05:33 UTC` — Migrated `pagesHandlers` off raw SQL (ADR-0007).
+  The two page channels (`pages:downloadContent`, `pages:openFile`) no
+  longer touch the database directly: reads route through the new
+  `ModuleReader` (+ existing `CourseReader`) and writes through three new L4
+  page commands (`UpsertCoursePageCommand`, `UpsertResourceCommand` with
+  distinct `upsertPageDependency` / `upsertPage` paths, and
+  `RecordHtmlDependencyCommand`). The handler keeps the Canvas API calls,
+  file IO, HTML rewriting, and recursive dependency-walking orchestration.
+  `ModuleReader` reuses the shared `ModuleItemRow` type to avoid schema
+  drift. Behaviour preserved exactly (distinct ON CONFLICT column sets for
+  the two resource upserts; idempotent dependency edges). Ceiling drops
+  6 → 5 entries.
+
 - `2026-05-30 04:33 UTC` — Migrated `calendarCrudHandlers` (imported-ICS
   calendars) off raw SQL (ADR-0007). The seven channels
   (`getImportedCalendars`, `parseICSPreview`, `importICS`, `deleteCalendar`,
