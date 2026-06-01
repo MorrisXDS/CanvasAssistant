@@ -148,6 +148,36 @@ export class SyncUpdateReader {
     return { informational, conflicts, actionRequired, byCourse, byType };
   }
 
+  /**
+   * An unresolved conflict update by its `external_id` (entity_type =
+   * 'conflict', resolved_at IS NULL), projected to the fields `sync:resolveConflict`
+   * needs to reconstruct the conflict. Null if none.
+   */
+  getUnresolvedConflictByExternalId(externalId: string): {
+    id: number;
+    entity_id: number;
+    conflict_field: string;
+    old_value: string | null;
+    new_value: string | null;
+    external_id: string | null;
+  } | null {
+    return (
+      this.db.executeReadOne<{
+        id: number;
+        entity_id: number;
+        conflict_field: string;
+        old_value: string | null;
+        new_value: string | null;
+        external_id: string | null;
+      }>(
+        `SELECT id, entity_id, conflict_field, old_value, new_value, external_id
+         FROM sync_updates
+         WHERE external_id = ? AND entity_type = 'conflict' AND resolved_at IS NULL`,
+        [externalId]
+      ) ?? null
+    );
+  }
+
   /** A single conflict update by id (entity_type = 'conflict'), or null. */
   getConflictById(updateId: number): SyncUpdateRow | null {
     return (

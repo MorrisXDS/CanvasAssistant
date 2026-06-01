@@ -1,8 +1,6 @@
 {
   "_comment": "Per-file ceiling for raw `database.execute*` / `database.upsert` calls in `src/lifecycle/ipc-handlers/**`. Enforced by `tests/integration/ipc-handlers-no-raw-sql.test.ts` (ADR-0007 Final PR). Adding a NEW violation to an existing file OR adding a NEW file with violations fails the test. Removing violations decrements the ceiling — once at zero, the file is fully migrated; remove its entry to lock that file's clean state forever.",
   "_format": "{ paths: { 'posix/relative/path.ts': maxAllowedCount } }",
-  "_audit": "Snapshot from .cache/generate-ceiling.js on 2026-05-28. Migration train PR-B/PR-D/PR-E/PR-F.3/PR-H already migrated courseDataHandlers, taskDataHandlers, notificationDataHandlers, fileDataHandlers (partial), data/policyHandlers — those files don't appear here. The 19 entries below are the unmigrated remainder. Ratchet DOWN as further migration PRs land. See ADR-0007 in docs/adr/.",
-  "paths": {
-    "src/lifecycle/ipc-handlers/syncHandlers.ts": 6
-  }
+  "_audit": "Snapshot from .cache/generate-ceiling.js on 2026-05-28. The migration train has now fully migrated EVERY IPC handler off raw SQL — `paths` is empty (2026-06-01, syncHandlers was the last). With an empty allow-list the enforcement test is an effective hard-zero gate: any `database.execute*` / `upsert` in `src/lifecycle/ipc-handlers/**` fails it. Follow-up: simplify `tests/integration/ipc-handlers-no-raw-sql.test.ts` to a plain zero-violations assertion and retire this file. See ADR-0007 in docs/adr/.",
+  "paths": {}
 }

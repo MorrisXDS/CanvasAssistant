@@ -16,3 +16,4 @@ export * from './resource';
 export * from './syncUpdate';
 export * from './htmlDependency';
 export * from './file';
+export * from './syncConflict';

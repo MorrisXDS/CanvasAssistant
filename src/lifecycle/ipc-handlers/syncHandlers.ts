@@ -9,10 +9,32 @@
  */
 
 import { ipcMain } from 'electron';
+import {
+  ResourceReader,
+  CourseReader,
+  TaskReader,
+  SyncUpdateReader,
+  SyncMetadataReader,
+  UserPreferencesReader,
+} from '../../layers/l1-persistence';
+import {
+  ApplyConflictResolutionCommand,
+  RememberConflictPreferenceCommand,
+  MarkConflictResolvedCommand,
+} from '../../layers/l4-controller/commands/syncConflict';
+import { SetUserPreferenceCommand } from '../../layers/l4-controller/commands/settings';
+import { createSimulationContext } from '../../layers/l4-controller/types';
 import type { IpcContext } from './IpcContext';
 
 /**
  * Register all sync-related IPC handlers
+ *
+ * Per ADR-0007, this file holds no raw `database.execute*` / `upsert` calls.
+ * Reads route through L1 readers; writes through L4 commands. The conflict
+ * resolution `UPDATE ${table} SET ${field}` is hardened behind
+ * `ApplyConflictResolutionCommand` (table allow-list + real-column check).
+ * `database.transaction` (control flow, not SQL) stays in the bulk-resolve
+ * handler so its per-row writes + sync-engine calls stay atomic.
  */
 export function registerSyncHandlers(ctx: IpcContext): void {
   const database = ctx.getDatabase();
@@ -23,6 +45,22 @@ export function registerSyncHandlers(ctx: IpcContext): void {
   const getSyncPreferences = ctx.getSyncPreferences;
   const startAutoSync = ctx.startAutoSync;
   const stopAutoSync = ctx.stopAutoSync;
+
+  const resourceReader = new ResourceReader(database);
+  const courseReader = new CourseReader(database);
+  const taskReader = new TaskReader(database);
+  const syncUpdateReader = new SyncUpdateReader(database);
+  const syncMetadataReader = new SyncMetadataReader(database);
+  const userPreferencesReader = new UserPreferencesReader(database);
+  const applyConflictResolutionCommand = new ApplyConflictResolutionCommand(database);
+  const rememberConflictPreferenceCommand = new RememberConflictPreferenceCommand(
+    database
+  );
+  const markConflictResolvedCommand = new MarkConflictResolvedCommand(database);
+  const runContext = () => ({
+    db: database,
+    simulationContext: createSimulationContext(),
+  });
 
   // ============ Full Sync ============
 
@@ -182,13 +220,9 @@ export function registerSyncHandlers(ctx: IpcContext): void {
 
       try {
         // Look up the folder's Canvas ID from database
-        const folder = database.executeReadOne<{
-          external_id: string;
-          course_id: number;
-        }>(
-          `SELECT external_id, course_id FROM resources
-           WHERE course_id = ? AND folder_path = ? AND type = 'folder'`,
-          [params.courseId, params.folderPath]
+        const folder = resourceReader.getFolderByCoursePath(
+          params.courseId,
+          params.folderPath
         );
 
         if (!folder) {
@@ -200,10 +234,7 @@ export function registerSyncHandlers(ctx: IpcContext): void {
         }
 
         // Get the Canvas course ID from the local course
-        const course = database.executeReadOne<{ external_id: string }>(
-          'SELECT external_id FROM courses WHERE id = ?',
-          [params.courseId]
-        );
+        const course = courseReader.getById(params.courseId);
 
         if (!course) {
           return { success: false, error: 'Course not found' };
@@ -259,18 +290,8 @@ export function registerSyncHandlers(ctx: IpcContext): void {
 
         // If not in memory, load from sync_updates table
         if (!conflict) {
-          const syncUpdate = database.executeReadOne<{
-            id: number;
-            entity_id: number;
-            conflict_field: string;
-            old_value: string | null;
-            new_value: string | null;
-            external_id: string | null;
-          }>(
-            `SELECT id, entity_id, conflict_field, old_value, new_value, external_id
-             FROM sync_updates
-             WHERE external_id = ? AND entity_type = 'conflict' AND resolved_at IS NULL`,
-            [resolution.conflictId]
+          const syncUpdate = syncUpdateReader.getUnresolvedConflictByExternalId(
+            resolution.conflictId
           );
 
           if (!syncUpdate) {
@@ -279,15 +300,9 @@ export function registerSyncHandlers(ctx: IpcContext): void {
 
           // Determine entity type by checking which table has this ID
           let entityType: 'course' | 'task' | 'notification' = 'task';
-          const taskCheck = database.executeReadOne<{ id: number }>(
-            'SELECT id FROM tasks WHERE id = ?',
-            [syncUpdate.entity_id]
-          );
+          const taskCheck = taskReader.getById(syncUpdate.entity_id);
           if (!taskCheck) {
-            const courseCheck = database.executeReadOne<{ id: number }>(
-              'SELECT id FROM courses WHERE id = ?',
-              [syncUpdate.entity_id]
-            );
+            const courseCheck = courseReader.getById(syncUpdate.entity_id);
             entityType = courseCheck ? 'course' : 'notification';
           }
 
@@ -322,10 +337,11 @@ export function registerSyncHandlers(ctx: IpcContext): void {
           ? resolvedConflict.canvasValue
           : resolvedConflict.localValue;
 
-        database.executeWrite(
-          `UPDATE ${tableName} SET ${resolvedConflict.field} = ? WHERE id = ?`,
-          [resolvedValue, resolvedConflict.entityId],
-          tableName
+        applyConflictResolutionCommand.apply(
+          tableName,
+          resolvedConflict.field,
+          resolvedValue,
+          resolvedConflict.entityId
         );
 
         // Try to resolve via SyncConflictResolver if available (handles preferences)
@@ -335,21 +351,13 @@ export function registerSyncHandlers(ctx: IpcContext): void {
           } catch {
             // If conflict not in memory, just save preference manually if needed
             if (resolution.rememberChoice) {
-              database.executeWrite(
-                `INSERT INTO sync_preferences (entity, entity_id, field, prefer_canvas, created_at, expires_at)
-                 VALUES (?, ?, ?, ?, datetime('now'), ?)
-                 ON CONFLICT(entity, entity_id, field) DO UPDATE SET
-                   prefer_canvas = excluded.prefer_canvas,
-                   expires_at = excluded.expires_at`,
-                [
-                  resolvedConflict.entity,
-                  resolution.rememberForAll ? null : resolvedConflict.entityId,
-                  resolvedConflict.field,
-                  resolution.useCanvasValue ? 1 : 0,
-                  resolution.expiresAt ?? null,
-                ],
-                'sync_preferences'
-              );
+              rememberConflictPreferenceCommand.execute({
+                entity: resolvedConflict.entity,
+                entityId: resolution.rememberForAll ? null : resolvedConflict.entityId,
+                field: resolvedConflict.field,
+                preferCanvas: resolution.useCanvasValue,
+                expiresAt: resolution.expiresAt ?? null,
+              });
             }
           }
 
@@ -366,14 +374,9 @@ export function registerSyncHandlers(ctx: IpcContext): void {
         }
 
         // Mark the sync_update entry as resolved
-        database.executeWrite(
-          `UPDATE sync_updates
-           SET seen_at = datetime('now'),
-               resolved_at = datetime('now'),
-               conflict_resolution = ?
-           WHERE external_id = ? AND entity_type = 'conflict'`,
-          [resolution.useCanvasValue ? 'canvas' : 'local', resolution.conflictId],
-          'sync_updates'
+        markConflictResolvedCommand.byExternalId(
+          resolution.conflictId,
+          resolution.useCanvasValue ? 'canvas' : 'local'
         );
 
         return { success: true };
@@ -407,10 +410,11 @@ export function registerSyncHandlers(ctx: IpcContext): void {
                 : conflict.entity === 'task'
                   ? 'tasks'
                   : 'notifications';
-            database.executeWrite(
-              `UPDATE ${tableName} SET ${result.field} = ? WHERE id = ?`,
-              [result.value, conflict.entityId],
-              tableName
+            applyConflictResolutionCommand.apply(
+              tableName,
+              result.field,
+              result.value,
+              conflict.entityId
             );
 
             // Clear the modified flag if using Canvas value
@@ -423,16 +427,10 @@ export function registerSyncHandlers(ctx: IpcContext): void {
             }
 
             // Mark the sync_update entry as resolved
-            database.executeWrite(
-              `UPDATE sync_updates
-               SET seen_at = datetime('now'),
-                   conflict_resolution = ?
-               WHERE entity_type = 'conflict'
-                 AND entity_id = ?
-                 AND conflict_field = ?
-                 AND seen_at IS NULL`,
-              [useCanvasValues ? 'canvas' : 'local', conflict.entityId, conflict.field],
-              'sync_updates'
+            markConflictResolvedCommand.byEntityField(
+              conflict.entityId,
+              conflict.field,
+              useCanvasValues ? 'canvas' : 'local'
             );
           }
         }
@@ -475,10 +473,7 @@ export function registerSyncHandlers(ctx: IpcContext): void {
   ipcMain.handle('sync:getLastSyncTime', () => {
     try {
       // Get the most recent sync time from sync_metadata table
-      const result = database.executeReadOne<{ last_synced_at: string }>(
-        'SELECT MAX(last_synced_at) as last_synced_at FROM sync_metadata'
-      );
-      return result?.last_synced_at || null;
+      return syncMetadataReader.getLastSyncedAt() || null;
     } catch (_e) {
       return null;
     }
@@ -488,11 +483,9 @@ export function registerSyncHandlers(ctx: IpcContext): void {
 
   ipcMain.handle('sync:getAutoSyncPreferences', () => {
     try {
-      const prefs = database.executeReadOne<{ value: string }>(
-        "SELECT value FROM user_preferences WHERE key = 'syncPreferences'"
-      );
-      if (prefs?.value) {
-        return JSON.parse(prefs.value);
+      const value = userPreferencesReader.get('syncPreferences');
+      if (value) {
+        return JSON.parse(value);
       }
       return { autoSyncEnabled: true, autoSyncInterval: 15, autoAssignDueDate: false };
     } catch (_e) {
@@ -502,7 +495,7 @@ export function registerSyncHandlers(ctx: IpcContext): void {
 
   ipcMain.handle(
     'sync:setAutoSyncPreferences',
-    (
+    async (
       _event,
       prefs: {
         autoSyncEnabled: boolean;
@@ -520,12 +513,13 @@ export function registerSyncHandlers(ctx: IpcContext): void {
         const existingPrefs = getSyncPreferences();
         const mergedPrefs = { ...existingPrefs, ...prefs };
 
-        database.executeWrite(
-          `INSERT INTO user_preferences (key, value) VALUES ('syncPreferences', ?)
-           ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
-          [JSON.stringify(mergedPrefs)],
-          'user_preferences'
-        );
+        const writeResult = await new SetUserPreferenceCommand().execute(runContext(), {
+          key: 'syncPreferences',
+          value: JSON.stringify(mergedPrefs),
+        });
+        if (!writeResult.success) {
+          return { success: false, error: writeResult.error };
+        }
 
         if (mergedPrefs.autoSyncEnabled) {
           startAutoSync();

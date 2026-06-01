@@ -80,6 +80,7 @@ export type {
   HtmlDependencyChildRow,
   HtmlDependencyChildWithHashRow,
 } from './readers/HtmlDependencyReader';
+export { SyncMetadataReader } from './readers/SyncMetadataReader';
 export { SyncUpdateReader } from './readers/SyncUpdateReader';
 export type {
   SyncUpdateCounts,
