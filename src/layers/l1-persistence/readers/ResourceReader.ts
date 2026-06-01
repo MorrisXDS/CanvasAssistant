@@ -192,4 +192,21 @@ export class ResourceReader {
       ) ?? null
     );
   }
+
+  /**
+   * A folder resource (`type = 'folder'`) by course + folder_path, or null.
+   * Used by `sync:folderByPath` to resolve a folder's Canvas id.
+   */
+  getFolderByCoursePath(
+    courseId: number,
+    folderPath: string
+  ): { external_id: string; course_id: number } | null {
+    return (
+      this.db.executeReadOne<{ external_id: string; course_id: number }>(
+        `SELECT external_id, course_id FROM resources
+         WHERE course_id = ? AND folder_path = ? AND type = 'folder'`,
+        [courseId, folderPath]
+      ) ?? null
+    );
+  }
 }

@@ -12,6 +12,23 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ### Changed
 
+- `2026-06-01 18:00 UTC` — Migrated `syncHandlers` off raw SQL (ADR-0007) —
+  **the final handler; the ratchet's `paths` map is now empty and every IPC
+  handler is migrated.** The conflict-resolution `UPDATE ${table} SET ${field}`
+  (previously built by string interpolation from conflict records) is hardened
+  behind a new `ApplyConflictResolutionCommand` that validates the table against
+  a fixed allow-list (`courses`/`tasks`/`notifications`) AND the field against
+  both an identifier regex and the table's real columns (PRAGMA table_info,
+  cached) — interpolation can no longer carry injected SQL. Other writes route
+  through `RememberConflictPreferenceCommand` (the live `sync_preferences.prefer_canvas`
+  write) and `MarkConflictResolvedCommand`; reads through `SyncUpdateReader`
+  (new unresolved-conflict-by-external-id), `ResourceReader.getFolderByCoursePath`,
+  the new `SyncMetadataReader`, plus reuse of `CourseReader` / `TaskReader` /
+  `UserPreferencesReader` / `SetUserPreferenceCommand`. The bulk-resolve
+  `database.transaction` (control flow, not SQL) stays in the handler so its
+  per-row writes + sync-engine calls remain atomic. Behaviour preserved exactly.
+  Ceiling drops 1 → 0 — `syncHandlers` removed; the migration train is complete.
+
 - `2026-06-01 17:30 UTC` — Migrated `fileHandlers` off raw SQL (ADR-0007). The
   DB-touching channels (`attachment:download` / `open` / `showInFolder`,
   `files:clearSync`, `resource:showInFolder` / `showInFolderByExternalId` /
