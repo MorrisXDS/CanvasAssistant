@@ -78,7 +78,6 @@ export async function resetAppState(
     database.executeWrite('DELETE FROM modules', [], 'modules');
 
     // Notification-related tables
-    database.executeWrite('DELETE FROM policy_announcements', [], 'policy_announcements');
     database.executeWrite(
       'DELETE FROM announcement_file_references',
       [],
