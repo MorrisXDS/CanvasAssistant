@@ -71,11 +71,6 @@ const api = {
   getFileReferences: (notificationId: number) =>
     ipcRenderer.invoke('data:getFileReferences', notificationId),
 
-  getPolicies: (courseId: number) => ipcRenderer.invoke('data:getPolicies', courseId),
-
-  getAllPolicies: (options?: { courseIds?: number[] }) =>
-    ipcRenderer.invoke('data:getAllPolicies', options),
-
   getCourseAuthority: (courseId: number) =>
     ipcRenderer.invoke('data:getCourseAuthority', courseId),
 

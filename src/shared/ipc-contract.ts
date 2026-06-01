@@ -808,18 +808,6 @@ export const IpcContract = {
     params: z.number(),
     result: z.array(AnnouncementFileReferenceSchema),
   },
-  'data:getPolicies': {
-    params: z.number(),
-    result: z.array(PolicySchema),
-  },
-  'data:getAllPolicies': {
-    params: z
-      .object({
-        courseIds: z.array(z.number()).optional(),
-      })
-      .optional(),
-    result: z.array(PolicySchema),
-  },
   'data:getGradeHistory': {
     params: z.number(),
     result: z.array(GradeHistoryEntrySchema),
