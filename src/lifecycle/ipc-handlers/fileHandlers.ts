@@ -9,10 +9,24 @@
 import { ipcMain, dialog, shell } from 'electron';
 import fs from 'fs';
 import path from 'path';
+import {
+  AnnouncementAttachmentReader,
+  ResourceReader,
+  CourseReader,
+} from '../../layers/l1-persistence';
+import {
+  UpdateAttachmentDownloadCommand,
+  ClearSyncedFilesCommand,
+} from '../../layers/l4-controller/commands/file';
+import { UpdateResourceLocalPathCommand } from '../../layers/l4-controller/commands/resource';
 import type { IpcContext } from './IpcContext';
 
 /**
  * Register all file-related IPC handlers
+ *
+ * Per ADR-0007, this file holds no raw `database.execute*` / `upsert` calls.
+ * Reads route through L1 readers; writes through L4 commands. The handler keeps
+ * the Canvas download queue wiring, file IO, dialogs, and directory management.
  */
 export function registerFileHandlers(ctx: IpcContext): void {
   const database = ctx.getDatabase();
@@ -22,30 +36,25 @@ export function registerFileHandlers(ctx: IpcContext): void {
   const fileDownloadManager = ctx.getFileDownloadManager();
   const getMainWindow = ctx.getMainWindow;
 
+  const announcementAttachmentReader = new AnnouncementAttachmentReader(database);
+  const resourceReader = new ResourceReader(database);
+  const courseReader = new CourseReader(database);
+  const updateAttachmentDownloadCommand = new UpdateAttachmentDownloadCommand(database);
+  const clearSyncedFilesCommand = new ClearSyncedFilesCommand(database);
+  const updateResourceLocalPathCommand = new UpdateResourceLocalPathCommand(database);
+
   // ============ Attachment Handlers ============
 
   // Download an attachment
   ipcMain.handle('attachment:download', async (_event, attachmentId: number) => {
-    const attachment = database.executeReadOne<{
-      id: number;
-      notification_id: number;
-      course_id: number;
-      external_id: string;
-      display_name: string;
-      filename: string;
-      url: string;
-      download_status: string;
-    }>('SELECT * FROM notification_attachments WHERE id = ?', [attachmentId]);
+    const attachment = announcementAttachmentReader.getById(attachmentId);
 
     if (!attachment) {
       return { success: false, error: 'Attachment not found' };
     }
 
     // Get course code for folder organization
-    const course = database.executeReadOne<{ code: string }>(
-      'SELECT code FROM courses WHERE id = ?',
-      [attachment.course_id]
-    );
+    const course = courseReader.getById(attachment.course_id);
 
     const courseCode = course?.code || 'unknown';
 
@@ -56,11 +65,7 @@ export function registerFileHandlers(ctx: IpcContext): void {
     }
 
     // Update status to downloading
-    database.executeWrite(
-      'UPDATE notification_attachments SET download_status = ? WHERE id = ?',
-      ['downloading', attachmentId],
-      'notification_attachments'
-    );
+    updateAttachmentDownloadCommand.setStatus(attachmentId, 'downloading');
 
     // Queue the download
     return new Promise((resolve) => {
@@ -83,19 +88,15 @@ export function registerFileHandlers(ctx: IpcContext): void {
 
         if (result.success && result.localPath) {
           // Update database with local path
-          database.executeWrite(
-            'UPDATE notification_attachments SET download_status = ?, local_path = ?, downloaded_at = ? WHERE id = ?',
-            ['completed', result.localPath, new Date().toISOString(), attachmentId],
-            'notification_attachments'
+          updateAttachmentDownloadCommand.markDownloaded(
+            attachmentId,
+            result.localPath,
+            new Date().toISOString()
           );
           metricsCollector.increment('attachment.download.success');
           resolve({ success: true, localPath: result.localPath });
         } else {
-          database.executeWrite(
-            'UPDATE notification_attachments SET download_status = ? WHERE id = ?',
-            ['failed', attachmentId],
-            'notification_attachments'
-          );
+          updateAttachmentDownloadCommand.setStatus(attachmentId, 'failed');
           metricsCollector.increment('attachment.download.failure');
           resolve({ success: false, error: result.error || 'Download failed' });
         }
@@ -127,12 +128,7 @@ export function registerFileHandlers(ctx: IpcContext): void {
 
   // Open a downloaded attachment file
   ipcMain.handle('attachment:open', (_event, attachmentId: number) => {
-    const attachment = database.executeReadOne<{
-      local_path: string | null;
-      url: string;
-    }>('SELECT local_path, url FROM notification_attachments WHERE id = ?', [
-      attachmentId,
-    ]);
+    const attachment = announcementAttachmentReader.getOpenInfoById(attachmentId);
 
     logger.debug(
       `[attachment:open] Attachment: ${JSON.stringify({ attachmentId, localPath: attachment?.local_path, url: attachment?.url })}`
@@ -176,10 +172,7 @@ export function registerFileHandlers(ctx: IpcContext): void {
 
   // Show attachment file in folder
   ipcMain.handle('attachment:showInFolder', (_event, attachmentId: number) => {
-    const attachment = database.executeReadOne<{ local_path: string | null }>(
-      'SELECT local_path FROM notification_attachments WHERE id = ?',
-      [attachmentId]
-    );
+    const attachment = announcementAttachmentReader.getLocalPathById(attachmentId);
 
     if (!attachment?.local_path) {
       return { success: false, error: 'File not downloaded' };
@@ -328,22 +321,7 @@ export function registerFileHandlers(ctx: IpcContext): void {
   ipcMain.handle('files:clearSync', () => {
     logger.info('Clearing synced files data');
     try {
-      database.transaction(() => {
-        // Clear resources (Canvas files/folders)
-        database.executeWrite('DELETE FROM resources', [], 'resources');
-        // Clear notification attachments
-        database.executeWrite(
-          'DELETE FROM notification_attachments',
-          [],
-          'notification_attachments'
-        );
-        // Clear sync metadata for files/folders endpoints
-        database.executeWrite(
-          "DELETE FROM sync_metadata WHERE endpoint LIKE '%/files' OR endpoint LIKE '%/folders'",
-          [],
-          'sync_metadata'
-        );
-      });
+      clearSyncedFilesCommand.execute();
       logger.info('Synced files data cleared successfully');
       return { success: true };
     } catch (error) {
@@ -355,10 +333,7 @@ export function registerFileHandlers(ctx: IpcContext): void {
   // ============ Resource Handlers ============
 
   ipcMain.handle('resource:showInFolder', (_event, resourceId: number) => {
-    const resource = database.executeReadOne<{ local_path: string | null }>(
-      'SELECT local_path FROM resources WHERE id = ?',
-      [resourceId]
-    );
+    const resource = resourceReader.getLocalPathById(resourceId);
 
     if (!resource?.local_path) {
       return { success: false, error: 'File not downloaded' };
@@ -369,11 +344,7 @@ export function registerFileHandlers(ctx: IpcContext): void {
       logger.warn(
         `[resource:showInFolder] File not found on disk, clearing local_path: ${resource.local_path}`
       );
-      database.executeWrite(
-        'UPDATE resources SET local_path = NULL WHERE id = ?',
-        [resourceId],
-        'resources'
-      );
+      updateResourceLocalPathCommand.clear(resourceId);
       return { success: false, error: 'File was deleted from disk. Please re-download.' };
     }
 
@@ -383,10 +354,7 @@ export function registerFileHandlers(ctx: IpcContext): void {
 
   // Show resource in folder by external_id (for module items)
   ipcMain.handle('resource:showInFolderByExternalId', (_event, externalId: string) => {
-    const resource = database.executeReadOne<{ id: number; local_path: string | null }>(
-      'SELECT id, local_path FROM resources WHERE external_id = ?',
-      [externalId]
-    );
+    const resource = resourceReader.getOpenInfoByExternalId(externalId);
 
     if (!resource?.local_path) {
       return { success: false, error: 'File not downloaded' };
@@ -397,11 +365,7 @@ export function registerFileHandlers(ctx: IpcContext): void {
       logger.warn(
         `[resource:showInFolderByExternalId] File not found on disk, clearing local_path: ${resource.local_path}`
       );
-      database.executeWrite(
-        'UPDATE resources SET local_path = NULL WHERE id = ?',
-        [resource.id],
-        'resources'
-      );
+      updateResourceLocalPathCommand.clear(resource.id);
       return { success: false, error: 'File was deleted from disk. Please re-download.' };
     }
 
@@ -413,10 +377,7 @@ export function registerFileHandlers(ctx: IpcContext): void {
     logger.debug(`[resource:deleteLocal] START resourceId=${resourceId}`);
     const mainWindow = getMainWindow();
 
-    const resource = database.executeReadOne<{
-      local_path: string | null;
-      external_id: string;
-    }>('SELECT local_path, external_id FROM resources WHERE id = ?', [resourceId]);
+    const resource = resourceReader.getLocalPathExternalById(resourceId);
 
     if (!resource?.local_path) {
       return { success: false, error: 'File not downloaded' };
@@ -428,11 +389,7 @@ export function registerFileHandlers(ctx: IpcContext): void {
         logger.info(`[resource:deleteLocal] Deleted file: ${resource.local_path}`);
       }
 
-      database.executeWrite(
-        'UPDATE resources SET local_path = NULL WHERE id = ?',
-        [resourceId],
-        'resources'
-      );
+      updateResourceLocalPathCommand.clear(resourceId);
 
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('file-status-changed', {
@@ -463,18 +420,8 @@ export function registerFileHandlers(ctx: IpcContext): void {
     logger.debug(`[canvas-file:open] START canvasFileId=${canvasFileId}`);
 
     // Look up the resource by external_id
-    const resource = database.executeReadOne<{
-      id: number;
-      course_id: number;
-      external_id: string;
-      title: string;
-      url: string | null;
-      local_path: string | null;
-      folder_path: string | null;
-    }>(
-      'SELECT id, course_id, external_id, title, url, local_path, folder_path FROM resources WHERE external_id = ?',
-      [canvasFileId]
-    );
+    const resource =
+      resourceReader.getDownloadInfoWithLocalPathByExternalId(canvasFileId);
 
     if (!resource) {
       logger.warn(`[canvas-file:open] Resource not found: ${canvasFileId}`);
@@ -506,10 +453,7 @@ export function registerFileHandlers(ctx: IpcContext): void {
     }
 
     // Get course code for folder organization
-    const course = database.executeReadOne<{ code: string }>(
-      'SELECT code FROM courses WHERE id = ?',
-      [resource.course_id]
-    );
+    const course = courseReader.getById(resource.course_id);
     const courseCode = course?.code || 'unknown';
 
     // Download the file
@@ -530,11 +474,7 @@ export function registerFileHandlers(ctx: IpcContext): void {
           cleanup();
 
           // Update database with local path
-          database.executeWrite(
-            'UPDATE resources SET local_path = ? WHERE id = ?',
-            [result.localPath, resource.id],
-            'resources'
-          );
+          updateResourceLocalPathCommand.setLocalPath(resource.id, result.localPath);
 
           resolve({ success: true, localPath: result.localPath });
         }
