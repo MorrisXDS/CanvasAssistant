@@ -40,6 +40,32 @@ export interface CoursePageHashSourceRow {
   content_hash: string | null;
 }
 
+/** Full page projection used by the course-content list/detail endpoints. */
+export interface CoursePageFullRow {
+  id: number;
+  external_id: string | null;
+  course_id: number;
+  page_type: string;
+  title: string;
+  url_slug: string | null;
+  body_html: string | null;
+  body_text: string | null;
+  is_front_page: number;
+  published: number;
+  last_synced_at: string | null;
+}
+
+/** Syllabus-page identity used by `data:getCourseSyllabus`'s page fallback. */
+export interface CourseSyllabusPageRow {
+  id: number;
+  title: string;
+  external_id: string;
+  url_slug: string | null;
+}
+
+const PAGE_FULL_COLUMNS =
+  'id, external_id, course_id, page_type, title, url_slug, body_html, body_text, is_front_page, published, last_synced_at';
+
 export class CoursePageReader {
   constructor(private readonly db: Database) {}
 
@@ -100,6 +126,47 @@ export class CoursePageReader {
       this.db.executeReadOne<CoursePageHashSourceRow>(
         `SELECT body_html, content_hash FROM course_pages WHERE external_id = ?`,
         [externalId]
+      ) ?? null
+    );
+  }
+
+  /** All pages for a course, front-page first then title (`pages:getByCourse`). */
+  getAllByCourse(courseId: number): CoursePageFullRow[] {
+    return this.db.executeRead<CoursePageFullRow>(
+      `SELECT ${PAGE_FULL_COLUMNS} FROM course_pages
+       WHERE course_id = ? ORDER BY is_front_page DESC, title`,
+      [courseId]
+    );
+  }
+
+  /** One page by primary key, or null (`pages:get`). */
+  getById(pageId: number): CoursePageFullRow | null {
+    return (
+      this.db.executeReadOne<CoursePageFullRow>(
+        `SELECT ${PAGE_FULL_COLUMNS} FROM course_pages WHERE id = ?`,
+        [pageId]
+      ) ?? null
+    );
+  }
+
+  /** One page by title within a course, or null (`pages:getByTitle`). */
+  getByTitleInCourse(title: string, courseId: number): CoursePageFullRow | null {
+    return (
+      this.db.executeReadOne<CoursePageFullRow>(
+        `SELECT ${PAGE_FULL_COLUMNS} FROM course_pages WHERE title = ? AND course_id = ?`,
+        [title, courseId]
+      ) ?? null
+    );
+  }
+
+  /** The course's syllabus-typed page, or null (`data:getCourseSyllabus` fallback). */
+  getSyllabusPageByCourse(courseId: number): CourseSyllabusPageRow | null {
+    return (
+      this.db.executeReadOne<CourseSyllabusPageRow>(
+        `SELECT id, title, external_id, url_slug
+         FROM course_pages
+         WHERE course_id = ? AND page_type = 'syllabus'`,
+        [courseId]
       ) ?? null
     );
   }

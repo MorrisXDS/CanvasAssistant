@@ -74,7 +74,13 @@ export type {
   CoursePageContentRow,
   CoursePageContentWithSlugRow,
   CoursePageHashSourceRow,
+  CoursePageFullRow,
+  CourseSyllabusPageRow,
 } from './readers/CoursePageReader';
+export { CourseSyllabusReader } from './readers/CourseSyllabusReader';
+export type { SyllabusDesignationRow } from './readers/CourseSyllabusReader';
+export { GradeHistoryReader } from './readers/GradeHistoryReader';
+export type { GradeHistoryRow } from './readers/GradeHistoryReader';
 export { HtmlDependencyReader } from './readers/HtmlDependencyReader';
 export type {
   HtmlDependencyChildRow,

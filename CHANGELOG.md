@@ -12,6 +12,18 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ### Changed
 
+- `2026-06-01 19:00 UTC` — Migrated `data/courseContentHandlers` off raw SQL
+  (ADR-0007 literal-zero closeout, 2 of 3). All 8 generic-typed reads across the
+  five channels (`data:getCourseSyllabus`, `data:getGradeHistory`,
+  `pages:getByCourse`, `pages:get`, `pages:getByTitle`) now route through L1
+  readers: new `CourseSyllabusReader` (syllabus designation) and
+  `GradeHistoryReader`; `ResourceReader.getSyllabusInfoById`; four new
+  `CoursePageReader` methods (`getAllByCourse` / `getById` / `getByTitleInCourse`
+  / `getSyllabusPageByCourse`); reuse of `CourseReader.getById`. DTO shaping and
+  the Canvas-URL construction stay in the handler. Behaviour preserved exactly.
+  One file (`fileDataHandlers`) remains before the enforcement test can flip to
+  literal-zero.
+
 - `2026-06-01 18:45 UTC` — Migrated `courseDataHandlers`'s last raw read off SQL
   (ADR-0007 literal-zero closeout, 1 of 3). `data:getEnrollmentTerms` routed its
   one `database.executeRead<…>` (a generic-typed call the ratchet never counted)

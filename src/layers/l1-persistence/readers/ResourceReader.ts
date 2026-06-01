@@ -194,6 +194,30 @@ export class ResourceReader {
   }
 
   /**
+   * Syllabus-display fields for a resource by primary key, or null. Used by
+   * `data:getCourseSyllabus` to render a designated syllabus file.
+   */
+  getSyllabusInfoById(id: number): {
+    id: number;
+    title: string;
+    url: string | null;
+    local_path: string | null;
+    synced_at: string | null;
+  } | null {
+    return (
+      this.db.executeReadOne<{
+        id: number;
+        title: string;
+        url: string | null;
+        local_path: string | null;
+        synced_at: string | null;
+      }>(`SELECT id, title, url, local_path, synced_at FROM resources WHERE id = ?`, [
+        id,
+      ]) ?? null
+    );
+  }
+
+  /**
    * A folder resource (`type = 'folder'`) by course + folder_path, or null.
    * Used by `sync:folderByPath` to resolve a folder's Canvas id.
    */
