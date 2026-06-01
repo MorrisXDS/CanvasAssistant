@@ -269,15 +269,14 @@ _Avoid_: "simulation", "what-if state" (in conversation OK; in code use Simulati
 The string label for a percentage grade on the UofT scale (`A+` for ≥90, `A` for ≥85, `A-` for ≥80, etc., down to `F` for <50). Derived purely from a numeric percentage by the `getLetterGrade()` formatter in `formatters.ts`; not stored anywhere. UofT-specific — institutions with different grading scales would need to swap the formatter.
 _Avoid_: "grade letter", "letter mark"
 
-#### Zombie tables (no live writers or readers)
+#### Zombie tables — mostly cleaned up (ADR-0003 follow-through, 2026-06-01)
 
-Three tables present in the schema have **no live writers and no live readers** in current code — all are leftover from the L3 intelligence subsystem removed per [ADR-0003](docs/adr/0003-removal-of-l3-intelligence-layer.md):
+What used to be three intelligence-leftover zombie tables here has now been resolved:
 
-- **`grade_history`** — was intended to record each grade change over time for trend visualization.
-- **`grade_replacements`** — was intended to encode "drop-lowest" and "best-of-N" policy rules per course (the Policy → grade-replacement pipeline).
-- **`weight_transfers`** — was intended to encode "if you miss assignment X, weight transfers to assignment Y" policy rules.
+- **`grade_replacements`** / **`weight_transfers`** — **dropped** in migration 105 (#75). Encoded "drop-lowest"/"best-of-N" and weight-transfer policy rules; no writers or readers remained after ADR-0003.
+- **`grade_history`** — **wired up** (2026-06-01, not dropped). `SyncCourseOperations.recordGradeChange` now records a row on each grade transition, making the long-stubbed `GradeHistoryCard` grade-over-time chart a live feature. See the "Removed/Resolved" note below.
 
-The `effective_grade` column on Task is a fourth vestige: it persists but isn't actively recomputed by any current sync code; the value is whatever the last writer left there. Decide whether to drop the tables and recompute `effective_grade` live, restore consumers, or accept the schema bloat — see [docs/FOLLOWUPS.md](docs/FOLLOWUPS.md) under the policy-orphan section.
+The `effective_grade` column on Task remains a vestige: it persists but isn't actively recomputed by current sync code; the value is whatever the last writer left there. Decide whether to recompute it live or drop the column — see [docs/FOLLOWUPS.md](docs/FOLLOWUPS.md).
 
 ### Course content (modules, pages)
 
@@ -530,7 +529,7 @@ A complete inventory of tables present in the schema with **no live writers and 
 - `course_task_groups` — the legacy "TaskGroup" table; dead (no writers/readers) BUT `tasks.task_group_id` and `course_policies.target_group_id` still FK to it and `TaskRepository` writes `task_group_id`, so dropping it needs those FK columns removed first (a tasks-table rebuild). Deliberately NOT dropped in migration 105.
 - `grace_tokens` — student late-token allowances
 - `grace_token_usage` — token usage history
-- `grade_history` — per-grade-change audit trail. **Read-but-never-written**: `GradeHistoryReader` → `data:getGradeHistory` → `CourseDetail.tsx` renders it, but no production code writes the table, so the chart is always empty. Removal needs the reader chain + UI removed first.
+- ~~`grade_history` — per-grade-change audit trail. Read-but-never-written.~~ **WIRED UP (2026-06-01).** `SyncCourseOperations.recordGradeChange` now appends a row whenever a course's `current_grade` changes between syncs (one point per distinct transition, skipping null/unchanged grades). The full chain (`GradeHistoryReader` → `data:getGradeHistory` → `GradeHistoryCard` on `CourseDetail.tsx`) is now a live grade-over-time feature. No longer a zombie.
 
 **Removed (migration 106, 2026-06-01):**
 

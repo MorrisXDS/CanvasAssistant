@@ -57,14 +57,14 @@ describe('courseContent migration readers', () => {
   describe('GradeHistoryReader.getByCourse', () => {
     test('returns rows oldest-first', () => {
       db.executeWrite(
-        `INSERT INTO grade_history (course_id, grade, recorded_at) VALUES
-           (1, 88, '2026-03-01'), (1, 91, '2026-01-01')`,
+        `INSERT INTO grade_history (id, course_id, grade, recorded_at) VALUES
+           (1, 1, 88, '2026-03-01'), (2, 1, 91, '2026-01-01')`,
         [],
         'grade_history'
       );
       expect(new GradeHistoryReader(db).getByCourse(1)).toEqual([
-        { recorded_at: '2026-01-01', grade: 91 },
-        { recorded_at: '2026-03-01', grade: 88 },
+        { id: 2, course_id: 1, recorded_at: '2026-01-01', grade: 91 },
+        { id: 1, course_id: 1, recorded_at: '2026-03-01', grade: 88 },
       ]);
     });
   });

@@ -10,6 +10,19 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ## [Unreleased]
 
+### Added
+
+- `2026-06-01 21:00 UTC` — **Grade-history trend is now a live feature.** The
+  `grade_history` table + `GradeHistoryCard` chart on each course's detail page had
+  a display half but no recording half, so the chart was permanently empty. Added
+  `SyncCourseOperations.recordGradeChange`, which appends a grade point whenever a
+  course's overall grade changes between syncs (one point per distinct transition;
+  null/unchanged grades are skipped, so the chart shows the trajectory, not a flat
+  line). Also fixed a latent shape bug exposed by real data: the reader/handler now
+  return `id` + `courseId` (required by `GradeHistoryEntrySchema` and used as the
+  card's React key) — previously `{recordedAt, grade}`, which would have failed
+  result validation the first time a row existed.
+
 ### Removed
 
 - `2026-06-01 20:30 UTC` — Dropped the `policy_announcements` table (migration 106),

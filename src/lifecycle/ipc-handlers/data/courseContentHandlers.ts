@@ -88,6 +88,8 @@ export function registerCourseContentHandlers(ctx: IpcContext): void {
   ipcMain.handle('data:getGradeHistory', (_event, courseId: number) => {
     try {
       return gradeHistoryReader.getByCourse(courseId).map((row) => ({
+        id: row.id,
+        courseId: row.course_id,
         recordedAt: row.recorded_at,
         grade: row.grade,
       }));
