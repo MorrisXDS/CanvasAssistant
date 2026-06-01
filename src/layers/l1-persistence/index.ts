@@ -41,7 +41,6 @@ export type { FileReferenceRow } from './readers/AnnouncementFileReferenceReader
 export { TaskReader } from './readers/TaskReader';
 export { CanvasTaskQueueReader } from './readers/CanvasTaskQueueReader';
 export { NotificationReader } from './readers/NotificationReader';
-export { PolicyReader } from './readers/PolicyReader';
 export { TaskTypeReader } from './readers/TaskTypeReader';
 export { LinkSuggestionReader } from './readers/LinkSuggestionReader';
 export { UserPreferencesReader } from './readers/UserPreferencesReader';

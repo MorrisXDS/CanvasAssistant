@@ -318,7 +318,7 @@ Syllabus content can live in **two places**:
 The CourseSyllabusBody glossary entry (in cluster #1) describes the column. Whether the page-typed row remains a meaningful fallback or is vestigial is unverified.
 
 **Policy** (zombie — schema present, code absent):
-The `course_policies` table was designed to record per-course grading policies (e.g. "drop the lowest quiz", "10% per day late") extracted from announcements / syllabi by L3 intelligence and confirmed by the user. Per [ADR-0003](docs/adr/0003-removal-of-l3-intelligence-layer.md), that subsystem was removed. **No live INSERT writer exists** — only one UPDATE (in `MarkSyllabusReviewedCommand`) that touches `based_on_syllabus_reviewed_at` on existing rows that nothing creates. The IPC contract still exposes a `Policy` Zod schema and `data:getPolicies` / `data:getAllPolicies` IPC handlers; both return empty lists in practice today. Related zombie tables (`policy_rules`, `grade_replacements`, `weight_transfers`, `grace_tokens`, `grace_token_usage`) share the same status. See [docs/FOLLOWUPS.md](docs/FOLLOWUPS.md).
+The `course_policies` table was designed to record per-course grading policies (e.g. "drop the lowest quiz", "10% per day late") extracted from announcements / syllabi by L3 intelligence and confirmed by the user. Per [ADR-0003](docs/adr/0003-removal-of-l3-intelligence-layer.md), that subsystem was removed. **No live INSERT writer exists** — only one UPDATE (in `MarkSyllabusReviewedCommand`) that touches `based_on_syllabus_reviewed_at` on existing rows that nothing creates. The `data:getPolicies` / `data:getAllPolicies` IPC handlers + `PolicyReader` (which always returned empty lists, no UI consumer) were **removed 2026-06-01**; the `Policy` Zod schema/type stays (still used by export/import + l4 mappers). Related zombie tables `grade_replacements`/`weight_transfers` were dropped in migration 105; `policy_rules`, `grace_tokens`, `grace_token_usage` remain and share the same dead-but-FK-entangled status. See [docs/FOLLOWUPS.md](docs/FOLLOWUPS.md).
 _Avoid_: "course policy" (in conversation OK), "grading rule"
 
 ### Sync
@@ -524,7 +524,7 @@ A complete inventory of tables present in the schema with **no live writers and 
 
 **Policy/grading-rules leftovers (also ADR-0003-adjacent), still present:**
 
-- `course_policies` — already detailed under **Policy** above; only an UPDATE writer, no INSERT, and its readers (`PolicyReader` / `data:getPolicies`) reach no UI. Removal needs the reader + handlers + export branches retired first.
+- `course_policies` — already detailed under **Policy** above; only an UPDATE writer, no INSERT. Its dead read chain (`PolicyReader` + `data:getPolicies`/`data:getAllPolicies` handlers + contract/preload entries) was **removed 2026-06-01** (no UI ever called it). The TABLE itself still stands — dropping it needs the export/import policy branches retired AND the inbound FK columns gone (`notifications.linked_policy_id`, `grace_tokens.policy_id`, `policy_rules.policy_id`), i.e. a notifications + grace_tokens rebuild. Same FK-blocker class as `course_task_groups`.
 - `policy_rules` — sub-table of `course_policies` for individual policy rule definitions
 - `course_task_groups` — the legacy "TaskGroup" table; dead (no writers/readers) BUT `tasks.task_group_id` and `course_policies.target_group_id` still FK to it and `TaskRepository` writes `task_group_id`, so dropping it needs those FK columns removed first (a tasks-table rebuild). Deliberately NOT dropped in migration 105.
 - `grace_tokens` — student late-token allowances

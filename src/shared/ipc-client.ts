@@ -90,7 +90,6 @@ export interface TypedApi {
   getFileReferences: (
     notificationId: number
   ) => Promise<IpcResult<'data:getFileReferences'>>;
-  getPolicies: (courseId: number) => Promise<IpcResult<'data:getPolicies'>>;
   getGradeHistory: (courseId: number) => Promise<IpcResult<'data:getGradeHistory'>>;
   getFiles: () => Promise<IpcResult<'data:getFiles'>>;
 

@@ -10,6 +10,18 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ## [Unreleased]
 
+### Removed
+
+- `2026-06-01 21:30 UTC` — Removed the dead `course_policies` read chain (ADR-0003
+  cleanup, slice 1 of the policy-family retirement). `data:getPolicies` /
+  `data:getAllPolicies` always returned empty lists — `course_policies` has no INSERT
+  writer and no UI ever called either handler. Deleted `PolicyReader`, both handlers,
+  their contract/preload/ipc-client entries, and the 2 dead test files. The `Policy`
+  Zod schema/type stays (still used by export/import + l4 mappers). The table itself
+  is **not** dropped yet — it's FK'd by live tables (`notifications.linked_policy_id`,
+  `grace_tokens.policy_id`, `policy_rules.policy_id`), so the drop needs a
+  notifications + grace_tokens rebuild (tracked in `docs/FOLLOWUPS.md`).
+
 ### Added
 
 - `2026-06-01 21:00 UTC` — **Grade-history trend is now a live feature.** The

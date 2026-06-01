@@ -6,7 +6,6 @@
 
 import { ipcMain } from 'electron';
 import type { IpcContext } from './IpcContext';
-import { registerPolicyHandlers } from './data/policyHandlers';
 import { registerCourseAuthorityHandlers } from './data/courseAuthorityHandlers';
 import { registerTaskLinkHandlers } from './data/taskLinkHandlers';
 import { registerCourseContentHandlers } from './data/courseContentHandlers';
@@ -19,7 +18,6 @@ export function registerDataHandlers(ctx: IpcContext): void {
   const resetAppState = ctx.resetAppState;
 
   // Delegate to submodules
-  registerPolicyHandlers(ctx);
   registerCourseAuthorityHandlers(ctx);
   registerTaskLinkHandlers(ctx);
   registerCourseContentHandlers(ctx);
