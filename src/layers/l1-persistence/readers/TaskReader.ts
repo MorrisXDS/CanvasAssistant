@@ -35,6 +35,25 @@ export class TaskReader {
   }
 
   /**
+   * Assignment description + stored hash for a task identified by its Canvas
+   * `external_id`, or null. Used by `html:downloadDependencies` to compute a
+   * content hash for change-detection on an assignment HTML source.
+   */
+  getDescriptionHashSourceByExternalId(externalId: string): {
+    description: string | null;
+    description_hash: string | null;
+  } | null {
+    return (
+      this.db.executeReadOne<{
+        description: string | null;
+        description_hash: string | null;
+      }>(`SELECT description, description_hash FROM tasks WHERE external_id = ?`, [
+        externalId,
+      ]) ?? null
+    );
+  }
+
+  /**
    * Tasks across a course-id set, ordered by `priority_score DESC` (the
    * default UI ordering). Defaults to non-soft-deleted rows; pass
    * `{ includeDeleted: true }` to include them.

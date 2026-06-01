@@ -25,6 +25,21 @@ export interface CoursePageContentRow {
   body_html: string | null;
 }
 
+/** Page identity + body + slug, used by the HTML download/processing flow. */
+export interface CoursePageContentWithSlugRow {
+  id: number;
+  external_id: string;
+  title: string;
+  body_html: string | null;
+  url_slug: string;
+}
+
+/** Body + stored hash, used to detect page content changes during download. */
+export interface CoursePageHashSourceRow {
+  body_html: string | null;
+  content_hash: string | null;
+}
+
 export class CoursePageReader {
   constructor(private readonly db: Database) {}
 
@@ -58,6 +73,33 @@ export class CoursePageReader {
         `SELECT id, external_id, title, body_html FROM course_pages
          WHERE course_id = ? AND (url_slug = ? OR external_id = ?)`,
         [courseId ?? null, slugOrExternalId, slugOrExternalId]
+      ) ?? null
+    );
+  }
+
+  /**
+   * Same predicate as `getContent` but also returns `url_slug` — the HTML
+   * download flow needs the slug to register the generated page resource.
+   */
+  getContentWithSlug(
+    courseId: number | null | undefined,
+    slugOrExternalId: string
+  ): CoursePageContentWithSlugRow | null {
+    return (
+      this.db.executeReadOne<CoursePageContentWithSlugRow>(
+        `SELECT id, external_id, title, body_html, url_slug FROM course_pages
+         WHERE course_id = ? AND (url_slug = ? OR external_id = ?)`,
+        [courseId ?? null, slugOrExternalId, slugOrExternalId]
+      ) ?? null
+    );
+  }
+
+  /** Body + stored content_hash for a page by external_id, or null. */
+  getHashSourceByExternalId(externalId: string): CoursePageHashSourceRow | null {
+    return (
+      this.db.executeReadOne<CoursePageHashSourceRow>(
+        `SELECT body_html, content_hash FROM course_pages WHERE external_id = ?`,
+        [externalId]
       ) ?? null
     );
   }

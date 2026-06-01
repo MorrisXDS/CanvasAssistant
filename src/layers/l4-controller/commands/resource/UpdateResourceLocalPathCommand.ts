@@ -24,6 +24,18 @@ export class UpdateResourceLocalPathCommand {
     );
   }
 
+  /**
+   * Set just the local_path (no synced_at touch). Used by
+   * `html:downloadDependencies` when caching a downloaded dependency file.
+   */
+  setLocalPath(id: number, localPath: string): void {
+    this.db.executeWrite(
+      'UPDATE resources SET local_path = ? WHERE id = ?',
+      [localPath, id],
+      'resources'
+    );
+  }
+
   /** Clear a resource's local_path (file deleted from disk). */
   clear(id: number): void {
     this.db.executeWrite(

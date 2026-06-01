@@ -34,6 +34,21 @@ export interface UpsertPageResourceInput {
   contextId: string;
 }
 
+/**
+ * Input for `upsertPageContent`. Distinct from `UpsertPageResourceInput` only
+ * in `contextId`, which the HTML download path supplies as the page's numeric
+ * id (`course_pages.id`) rather than a slug string.
+ */
+export interface UpsertPageContentInput {
+  externalId: string;
+  courseId: number;
+  title: string;
+  localPath: string;
+  folderPath: string;
+  sizeBytes: number;
+  contextId: number | null;
+}
+
 export class UpsertResourceCommand {
   constructor(private readonly db: Database) {}
 
@@ -54,6 +69,34 @@ export class UpsertResourceCommand {
         input.folderPath,
         input.sizeBytes,
         input.mimeType,
+        input.contextId,
+      ],
+      'resources'
+    );
+  }
+
+  /**
+   * Upsert a generated page-HTML resource where, on conflict, ONLY
+   * local_path / size_bytes / synced_at refresh (title + folder_path are
+   * left as-is). Distinct from `upsertPage`, which also refreshes title +
+   * folder_path. Used by `html:downloadDependencies` when registering a page
+   * it generated mid-download. SQL preserved verbatim from that handler.
+   */
+  upsertPageContent(input: UpsertPageContentInput): void {
+    this.db.executeWrite(
+      `INSERT INTO resources (external_id, course_id, type, title, local_path, folder_path, size_bytes, mime_type, context_type, context_id, synced_at)
+       VALUES (?, ?, 'page', ?, ?, ?, ?, 'text/html', 'page', ?, CURRENT_TIMESTAMP)
+       ON CONFLICT(external_id) DO UPDATE SET
+         local_path = excluded.local_path,
+         size_bytes = excluded.size_bytes,
+         synced_at = CURRENT_TIMESTAMP`,
+      [
+        input.externalId,
+        input.courseId,
+        input.title,
+        input.localPath,
+        input.folderPath,
+        input.sizeBytes,
         input.contextId,
       ],
       'resources'
