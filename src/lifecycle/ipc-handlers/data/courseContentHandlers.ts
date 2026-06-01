@@ -6,14 +6,30 @@
 
 import { ipcMain } from 'electron';
 import type { IpcContext } from '../IpcContext';
+import {
+  CourseSyllabusReader,
+  ResourceReader,
+  CoursePageReader,
+  GradeHistoryReader,
+  CourseReader,
+} from '../../../layers/l1-persistence';
 
 /**
  * Register course content-related IPC handlers
+ *
+ * Per ADR-0007, this file holds no raw `database.execute*` calls. Reads route
+ * through L1 readers; the handler keeps DTO shaping + the Canvas-URL construction.
  */
 export function registerCourseContentHandlers(ctx: IpcContext): void {
   const database = ctx.getDatabase();
   const logger = ctx.getLogger();
   const getCanvasClient = ctx.getCanvasClient;
+
+  const courseSyllabusReader = new CourseSyllabusReader(database);
+  const resourceReader = new ResourceReader(database);
+  const coursePageReader = new CoursePageReader(database);
+  const gradeHistoryReader = new GradeHistoryReader(database);
+  const courseReader = new CourseReader(database);
 
   // ============ Syllabus ============
 
@@ -21,31 +37,12 @@ export function registerCourseContentHandlers(ctx: IpcContext): void {
   ipcMain.handle('data:getCourseSyllabus', (_event, courseId: number) => {
     try {
       // Check course_syllabuses table for user-designated syllabus file
-      const syllabusDesignation = database.executeReadOne<{
-        resource_id: number;
-        source_type: string;
-        last_reviewed_at: string;
-        change_detected_at: string | null;
-        marked_at: string;
-      }>(
-        `SELECT resource_id, source_type, last_reviewed_at, change_detected_at, marked_at
-         FROM course_syllabuses
-         WHERE course_id = ?`,
-        [courseId]
-      );
+      const syllabusDesignation = courseSyllabusReader.getDesignationByCourse(courseId);
 
       if (syllabusDesignation?.resource_id) {
         // Get resource details
-        const resource = database.executeReadOne<{
-          id: number;
-          title: string;
-          url: string | null;
-          local_path: string | null;
-          synced_at: string | null;
-        }>(
-          `SELECT id, title, url, local_path, synced_at
-           FROM resources WHERE id = ?`,
-          [syllabusDesignation.resource_id]
+        const resource = resourceReader.getSyllabusInfoById(
+          syllabusDesignation.resource_id
         );
 
         if (resource) {
@@ -66,17 +63,7 @@ export function registerCourseContentHandlers(ctx: IpcContext): void {
       }
 
       // Check for page with page_type = 'syllabus' as fallback
-      const syllabusPage = database.executeReadOne<{
-        id: number;
-        title: string;
-        external_id: string;
-        url_slug: string | null;
-      }>(
-        `SELECT id, title, external_id, url_slug
-         FROM course_pages
-         WHERE course_id = ? AND page_type = 'syllabus'`,
-        [courseId]
-      );
+      const syllabusPage = coursePageReader.getSyllabusPageByCourse(courseId);
 
       if (syllabusPage) {
         return {
@@ -100,17 +87,7 @@ export function registerCourseContentHandlers(ctx: IpcContext): void {
   // Get grade history for a course
   ipcMain.handle('data:getGradeHistory', (_event, courseId: number) => {
     try {
-      const rows = database.executeRead<{
-        recorded_at: string;
-        grade: number;
-      }>(
-        `SELECT recorded_at, grade FROM grade_history
-         WHERE course_id = ?
-         ORDER BY recorded_at ASC`,
-        [courseId]
-      );
-
-      return rows.map((row) => ({
+      return gradeHistoryReader.getByCourse(courseId).map((row) => ({
         recordedAt: row.recorded_at,
         grade: row.grade,
       }));
@@ -124,30 +101,10 @@ export function registerCourseContentHandlers(ctx: IpcContext): void {
 
   // Get all pages for a course (wiki pages + syllabus)
   ipcMain.handle('pages:getByCourse', (_event, courseId: number) => {
-    const pages = database.executeRead<{
-      id: number;
-      external_id: string | null;
-      course_id: number;
-      page_type: string;
-      title: string;
-      url_slug: string | null;
-      body_html: string | null;
-      body_text: string | null;
-      is_front_page: number;
-      published: number;
-      last_synced_at: string | null;
-    }>(
-      'SELECT * FROM course_pages WHERE course_id = ? ORDER BY is_front_page DESC, title',
-      [courseId]
-    );
+    const pages = coursePageReader.getAllByCourse(courseId);
 
     // Also check if course has syllabus_body
-    const course = database.executeRead<{
-      id: number;
-      code: string;
-      name: string;
-      syllabus_body: string | null;
-    }>('SELECT id, code, name, syllabus_body FROM courses WHERE id = ?', [courseId])[0];
+    const course = courseReader.getById(courseId);
 
     const result = pages.map((p) => ({
       id: p.id,
@@ -192,18 +149,7 @@ export function registerCourseContentHandlers(ctx: IpcContext): void {
       return { success: false, error: 'Use pages:getByCourse to get syllabus' };
     }
 
-    const page = database.executeRead<{
-      id: number;
-      external_id: string | null;
-      course_id: number;
-      page_type: string;
-      title: string;
-      url_slug: string | null;
-      body_html: string | null;
-      body_text: string | null;
-      is_front_page: number;
-      published: number;
-    }>('SELECT * FROM course_pages WHERE id = ?', [pageId])[0];
+    const page = coursePageReader.getById(pageId);
 
     if (!page) {
       return { success: false, error: 'Page not found' };
@@ -236,18 +182,7 @@ export function registerCourseContentHandlers(ctx: IpcContext): void {
 
   // Get page by title (for module items linking to pages)
   ipcMain.handle('pages:getByTitle', (_event, title: string, courseId: number) => {
-    const page = database.executeReadOne<{
-      id: number;
-      external_id: string | null;
-      course_id: number;
-      page_type: string;
-      title: string;
-      url_slug: string | null;
-      body_html: string | null;
-      body_text: string | null;
-      is_front_page: number;
-      published: number;
-    }>('SELECT * FROM course_pages WHERE title = ? AND course_id = ?', [title, courseId]);
+    const page = coursePageReader.getByTitleInCourse(title, courseId);
 
     if (!page) {
       return { success: false, error: 'Page not found' };
