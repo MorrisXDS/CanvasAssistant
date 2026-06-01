@@ -358,12 +358,12 @@ Runtime state of the sync engine, emitted to the UI. Values: `'idle' | 'syncing'
 **SyncCheckpoint**:
 A resumable-progress marker that lets a partial sync continue after interruption (crash, user-paused-for-conflict, network drop). Stored in `sync_checkpoints`. Surfaces in the user-visible "Resuming sync…" state.
 
-**FieldModification** (zombie — schema present, code absent):
-The `field_modifications` table was designed as a per-edit audit trail of user field changes. In current code it has **no live writers and no live readers** — only a DELETE in `resetAppState`. The actual "this field is locally modified" signal lives elsewhere (column-level flags like `local_modified_at` on the source row and the `fieldSources` map on Task). Listed here so the dead table isn't mistaken for the live modification-tracking mechanism. See [docs/FOLLOWUPS.md](docs/FOLLOWUPS.md).
+**FieldModification** (removed — dropped in migration 105):
+The `field_modifications` table was designed as a per-edit audit trail of user field changes but was never wired up (no writers/readers). **Dropped in migration 105 (2026-06-01).** The actual "this field is locally modified" signal lives elsewhere (column-level flags like `local_modified_at` on the source row and the `fieldSources` map on Task). Kept in the glossary so the term isn't mistaken for the live modification-tracking mechanism; if a per-edit audit trail is ever wanted, design it fresh.
 _Avoid_: "field change", "edit history"
 
-**FieldNotificationSuppression** (zombie — never wired up):
-The `field_notification_suppressions` table was designed to suppress **data-completeness alerts** — i.e. when the L3 `DataCompletenessAnalyzer` warns "Task X is missing a due date," a row here would record "user dismissed this warning until `expires_at`." Schema: a single `field_key TEXT UNIQUE` plus `suppressed_at` and `expires_at` timestamps. **Not** related to the Conflict resolution `remember_choice` feature — that's SyncPreference. The DataCompletenessAnalyzer is one of the L3 services that survived [ADR-0003](docs/adr/0003-removal-of-l3-intelligence-layer.md), but its suppression mechanism was never wired up — the table has zero live writers and readers, only a DELETE in `resetAppState`. Listed here so future readers don't confuse this with SyncPreference, and so the alert-suppression feature is visible as available-but-unbuilt.
+**FieldNotificationSuppression** (removed — dropped in migration 105):
+The `field_notification_suppressions` table was designed to suppress **data-completeness alerts** — i.e. when the L3 `DataCompletenessAnalyzer` warns "Task X is missing a due date," a row here would record "user dismissed this warning until `expires_at`." It was never wired up and was **dropped in migration 105 (2026-06-01).** **Not** related to the Conflict resolution `remember_choice` feature — that's SyncPreference (alive). Kept in the glossary so future readers don't confuse the term with SyncPreference; if alert-suppression is ever built, design it fresh.
 _Avoid_: "suppressed conflict" (this isn't for conflicts), "muted field", any conflation with SyncPreference
 
 #### Flagged ambiguity — two grouping mechanisms
@@ -516,34 +516,23 @@ _Avoid_: "schema repair" without qualification — the pattern is preventive, no
 
 ### Zombie schema inventory
 
-A complete inventory of tables present in the schema with **no live writers and no live readers** in current code (only DELETE statements in `resetAppState`). Most are leftovers from the L3 intelligence subsystem removed per [ADR-0003](docs/adr/0003-removal-of-l3-intelligence-layer.md); a few are from earlier designs that were superseded. Listed here so `/improve-codebase-architecture` (and future readers) sees the full set at once. All are candidates for removal in a single schema-cleanup migration — see [docs/FOLLOWUPS.md](docs/FOLLOWUPS.md).
+A complete inventory of tables present in the schema with **no live writers and no live readers** in current code (only DELETE statements in `resetAppState`). Most are leftovers from the L3 intelligence subsystem removed per [ADR-0003](docs/adr/0003-removal-of-l3-intelligence-layer.md); a few are from earlier designs that were superseded.
 
-**ADR-0003 leftovers (the removed L3 intelligence/recommendation/policy subsystem):**
+**✅ DROPPED in migration 105 (2026-06-01)** — the first holistic cleanup removed eleven of these (no writers/readers AND no inbound FK from a live table): `task_completion_events`, `user_behavior_patterns`, `effort_estimations`, `workload_snapshots`, `recommendations`, `user_insights`, `adaptive_weight_adjustments` (the 7 L3 intelligence tables), plus `grade_replacements`, `weight_transfers` (policy grade-rule children), and `field_modifications`, `field_notification_suppressions`. Their `DatabaseRowTypes` interfaces were removed too. The remaining zombies below await further cleanup.
 
-- `task_completion_events` — was for pattern analysis (when/how the user finishes work)
-- `user_behavior_patterns` — was for aggregated insights from the completion events
-- `effort_estimations` — was for the effort/time-to-complete predictor
-- `workload_snapshots` — was for daily aggregate workload tracking
-- `recommendations` — was for the recommendation generator
-- `user_insights` — was for the insight surfacing system
-- `adaptive_weight_adjustments` — was for the priority-weight learning system
+**ADR-0003 leftovers still present:**
+
 - `message_display_history` — was for deduplicating recommendation/insight display
 - `content_analysis` — was for document intelligence (extracted text, entities, embeddings); the L3 content-analysis _service_ is mentioned as surviving in ADR-0003 but the table is unused (analysis runs in-memory when at all)
 
-**Policy/grading-rules leftovers (also ADR-0003-adjacent):**
+**Policy/grading-rules leftovers (also ADR-0003-adjacent), still present:**
 
-- `course_policies` — already detailed under **Policy** above; only an UPDATE writer, no INSERT
+- `course_policies` — already detailed under **Policy** above; only an UPDATE writer, no INSERT, and its readers (`PolicyReader` / `data:getPolicies`) reach no UI. Removal needs the reader + handlers + export branches retired first.
 - `policy_rules` — sub-table of `course_policies` for individual policy rule definitions
-- `grade_replacements` — drop-lowest / best-of-N replacement rules
-- `weight_transfers` — "if you miss X, weight transfers to Y" rules
+- `course_task_groups` — the legacy "TaskGroup" table; dead (no writers/readers) BUT `tasks.task_group_id` and `course_policies.target_group_id` still FK to it and `TaskRepository` writes `task_group_id`, so dropping it needs those FK columns removed first (a tasks-table rebuild). Deliberately NOT dropped in migration 105.
 - `grace_tokens` — student late-token allowances
 - `grace_token_usage` — token usage history
-- `grade_history` — per-grade-change audit trail
-
-**Pre-existing tables superseded by later designs:**
-
-- `field_modifications` — already detailed under **FieldModification** above; superseded by `local_modified_at`/`local_modified_fields`/`fieldSources`
-- `field_notification_suppressions` — already detailed under **FieldNotificationSuppression** above; the data-completeness-alert suppression feature was never wired up
+- `grade_history` — per-grade-change audit trail. **Read-but-never-written**: `GradeHistoryReader` → `data:getGradeHistory` → `CourseDetail.tsx` renders it, but no production code writes the table, so the chart is always empty. Removal needs the reader chain + UI removed first.
 
 **Live-writer-but-no-consumer (one step less dead):**
 
@@ -556,8 +545,7 @@ A complete inventory of tables present in the schema with **no live writers and 
 - `tasks.lock_at` — Canvas's "no more submissions after" date. Added in v41 migration; appears only in `DatabaseRowTypes.ts` as a type field with no live writer or reader. Companion to the live `unlock_at` (when Canvas reveals the assignment) but never populated.
 - `tasks.pain_index`, `tasks.penalty_severity`, `tasks.has_safety_net`, `tasks.days_until_cutoff` — old ROI/priority scoring inputs (v30 migration). All zombie per ADR-0003; columns persist in schema.
 - `sync_preferences.prefer_local` — original v38 column; superseded by the runtime-added `prefer_canvas`. Still exists in DBs but unused. See **SyncPreference** above.
-- `course_policies.scope_type`, `course_policies.target_group_id`, `course_policies.target_task_id`, `course_policies.applicable_types`, `course_policies.excluded_types` — Policy targeting columns added in v31 migration; all dead with the rest of the Policy zombie family.
-- `recommendations.suppressed_forever`, `user_insights.suppressed_forever` — added to already-zombie tables; further-dead.
+- `course_policies.scope_type`, `course_policies.target_group_id`, `course_policies.target_task_id`, `course_policies.applicable_types`, `course_policies.excluded_types` — Policy targeting columns added in v31 migration; all dead with the rest of the Policy zombie family. (`target_group_id` FKs `course_task_groups`, which is why neither can be dropped without the other.)
 
 ## Example dialogue
 

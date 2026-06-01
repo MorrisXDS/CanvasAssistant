@@ -598,4 +598,256 @@ export const migrationsV81toV102: Migration[] = [
       DROP INDEX IF EXISTS idx_notification_attachments_external_id;
     `,
   },
+  // Migration 105: Drop dead/zombie tables left behind by ADR-0003 (L3
+  // intelligence removal) and never-wired-up features. Audited 2026-06-01 —
+  // each has no production writer/reader AND no inbound FK from a live table;
+  // their only references were teardown DELETEs in resetAppState (removed in the
+  // same change). The `down` recreates each table from its original DDL for a
+  // faithful, reversible migration.
+  //
+  // NOT dropped here: `course_task_groups` — although the table itself is dead,
+  // `tasks.task_group_id` and `course_policies.target_group_id` still carry FK
+  // columns pointing at it (and TaskRepository writes task_group_id), so
+  // removing it safely needs those columns dropped first (a tasks-table rebuild).
+  // Deferred to its own PR. (grade_replacements / weight_transfers DO reference
+  // course_task_groups, but they are the children — dropping them is safe.)
+  {
+    version: 105,
+    description:
+      'Drop dead/zombie tables (ADR-0003 intelligence + grade + field leftovers)',
+    up: `
+      -- grade-layer policy children (FK→course_policies/course_task_groups; nothing references them)
+      DROP INDEX IF EXISTS idx_grade_replacements_policy;
+      DROP INDEX IF EXISTS idx_grade_replacements_course;
+      DROP TABLE IF EXISTS grade_replacements;
+
+      DROP INDEX IF EXISTS idx_weight_transfers_policy;
+      DROP INDEX IF EXISTS idx_weight_transfers_course;
+      DROP TABLE IF EXISTS weight_transfers;
+
+      -- intelligence-layer leftovers (PriorityEngine/ROI/recommendations, removed per ADR-0003)
+      DROP INDEX IF EXISTS idx_adaptive_weights_type;
+      DROP INDEX IF EXISTS idx_adaptive_weights_course;
+      DROP INDEX IF EXISTS idx_adaptive_weights_factor;
+      DROP TABLE IF EXISTS adaptive_weight_adjustments;
+
+      DROP INDEX IF EXISTS idx_user_insights_expires;
+      DROP INDEX IF EXISTS idx_user_insights_acknowledged;
+      DROP INDEX IF EXISTS idx_user_insights_severity;
+      DROP INDEX IF EXISTS idx_user_insights_type;
+      DROP TABLE IF EXISTS user_insights;
+
+      DROP INDEX IF EXISTS idx_recommendations_dismissed;
+      DROP INDEX IF EXISTS idx_recommendations_valid;
+      DROP INDEX IF EXISTS idx_recommendations_course;
+      DROP INDEX IF EXISTS idx_recommendations_task;
+      DROP INDEX IF EXISTS idx_recommendations_type;
+      DROP TABLE IF EXISTS recommendations;
+
+      DROP INDEX IF EXISTS idx_workload_snapshots_date;
+      DROP TABLE IF EXISTS workload_snapshots;
+
+      DROP INDEX IF EXISTS idx_effort_estimations_type;
+      DROP INDEX IF EXISTS idx_effort_estimations_course;
+      DROP INDEX IF EXISTS idx_effort_estimations_task;
+      DROP TABLE IF EXISTS effort_estimations;
+
+      DROP INDEX IF EXISTS idx_user_behavior_patterns_type;
+      DROP TABLE IF EXISTS user_behavior_patterns;
+
+      DROP INDEX IF EXISTS idx_task_completion_events_completed;
+      DROP INDEX IF EXISTS idx_task_completion_events_type;
+      DROP INDEX IF EXISTS idx_task_completion_events_course;
+      DROP INDEX IF EXISTS idx_task_completion_events_task;
+      DROP TABLE IF EXISTS task_completion_events;
+
+      -- never-wired-up field zombies
+      DROP INDEX IF EXISTS idx_field_suppressions_expires;
+      DROP INDEX IF EXISTS idx_field_suppressions_key;
+      DROP TABLE IF EXISTS field_notification_suppressions;
+
+      DROP INDEX IF EXISTS idx_field_modifications_entity;
+      DROP TABLE IF EXISTS field_modifications;
+    `,
+    down: `
+      CREATE TABLE grade_replacements (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        policy_id INTEGER NOT NULL,
+        course_id INTEGER NOT NULL,
+        source_task_id INTEGER,
+        source_group_id INTEGER,
+        target_task_id INTEGER,
+        target_group_id INTEGER,
+        replacement_type TEXT CHECK(replacement_type IN ('if_higher', 'always', 'best_of')) NOT NULL,
+        replacement_ratio REAL DEFAULT 1.0,
+        is_active BOOLEAN DEFAULT TRUE,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(policy_id) REFERENCES course_policies(id) ON DELETE CASCADE,
+        FOREIGN KEY(course_id) REFERENCES courses(id) ON DELETE CASCADE,
+        FOREIGN KEY(source_task_id) REFERENCES tasks(id),
+        FOREIGN KEY(source_group_id) REFERENCES course_task_groups(id),
+        FOREIGN KEY(target_task_id) REFERENCES tasks(id),
+        FOREIGN KEY(target_group_id) REFERENCES course_task_groups(id)
+      );
+      CREATE INDEX idx_grade_replacements_policy ON grade_replacements(policy_id);
+      CREATE INDEX idx_grade_replacements_course ON grade_replacements(course_id);
+
+      CREATE TABLE weight_transfers (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        policy_id INTEGER NOT NULL,
+        course_id INTEGER NOT NULL,
+        source_task_id INTEGER,
+        source_group_id INTEGER,
+        target_task_id INTEGER,
+        target_group_id INTEGER,
+        transfer_type TEXT CHECK(transfer_type IN ('full', 'partial', 'conditional')) NOT NULL,
+        transfer_percent REAL DEFAULT 100.0,
+        condition_type TEXT CHECK(condition_type IN ('missed', 'lower', 'always')),
+        is_active BOOLEAN DEFAULT TRUE,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(policy_id) REFERENCES course_policies(id) ON DELETE CASCADE,
+        FOREIGN KEY(course_id) REFERENCES courses(id) ON DELETE CASCADE,
+        FOREIGN KEY(source_task_id) REFERENCES tasks(id),
+        FOREIGN KEY(source_group_id) REFERENCES course_task_groups(id),
+        FOREIGN KEY(target_task_id) REFERENCES tasks(id),
+        FOREIGN KEY(target_group_id) REFERENCES course_task_groups(id)
+      );
+      CREATE INDEX idx_weight_transfers_policy ON weight_transfers(policy_id);
+      CREATE INDEX idx_weight_transfers_course ON weight_transfers(course_id);
+
+      CREATE TABLE task_completion_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+        course_id INTEGER NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+        task_type TEXT NOT NULL,
+        started_at DATETIME,
+        completed_at DATETIME NOT NULL,
+        due_at DATETIME,
+        time_to_complete_minutes INTEGER,
+        day_of_week INTEGER NOT NULL,
+        hour_of_day INTEGER NOT NULL,
+        days_before_due INTEGER,
+        was_late BOOLEAN DEFAULT FALSE,
+        score_achieved REAL,
+        points_possible REAL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX idx_task_completion_events_task ON task_completion_events(task_id);
+      CREATE INDEX idx_task_completion_events_course ON task_completion_events(course_id);
+      CREATE INDEX idx_task_completion_events_type ON task_completion_events(task_type);
+      CREATE INDEX idx_task_completion_events_completed ON task_completion_events(completed_at);
+
+      CREATE TABLE user_behavior_patterns (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        pattern_type TEXT NOT NULL,
+        pattern_key TEXT NOT NULL,
+        pattern_value TEXT NOT NULL,
+        sample_size INTEGER DEFAULT 0,
+        confidence REAL DEFAULT 0.0,
+        last_updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(pattern_type, pattern_key)
+      );
+      CREATE INDEX idx_user_behavior_patterns_type ON user_behavior_patterns(pattern_type);
+
+      CREATE TABLE effort_estimations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+        course_id INTEGER NOT NULL REFERENCES courses(id),
+        task_type TEXT NOT NULL,
+        points_possible REAL,
+        estimated_minutes INTEGER NOT NULL,
+        actual_minutes INTEGER,
+        estimation_method TEXT NOT NULL,
+        confidence REAL DEFAULT 0.5,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(task_id)
+      );
+      CREATE INDEX idx_effort_estimations_task ON effort_estimations(task_id);
+      CREATE INDEX idx_effort_estimations_course ON effort_estimations(course_id);
+      CREATE INDEX idx_effort_estimations_type ON effort_estimations(task_type);
+
+      CREATE TABLE workload_snapshots (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        snapshot_date DATE NOT NULL UNIQUE,
+        total_tasks_due INTEGER DEFAULT 0,
+        total_estimated_minutes INTEGER DEFAULT 0,
+        tasks_by_course TEXT,
+        tasks_by_urgency TEXT,
+        deadline_clustering_score REAL DEFAULT 0.0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX idx_workload_snapshots_date ON workload_snapshots(snapshot_date);
+
+      CREATE TABLE recommendations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        recommendation_type TEXT NOT NULL,
+        task_id INTEGER REFERENCES tasks(id) ON DELETE CASCADE,
+        course_id INTEGER REFERENCES courses(id),
+        title TEXT NOT NULL,
+        description TEXT NOT NULL,
+        reasoning TEXT NOT NULL,
+        priority_score REAL DEFAULT 50.0,
+        valid_from DATETIME NOT NULL,
+        valid_until DATETIME NOT NULL,
+        dismissed_at DATETIME,
+        acted_on_at DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX idx_recommendations_type ON recommendations(recommendation_type);
+      CREATE INDEX idx_recommendations_task ON recommendations(task_id);
+      CREATE INDEX idx_recommendations_course ON recommendations(course_id);
+      CREATE INDEX idx_recommendations_valid ON recommendations(valid_from, valid_until);
+      CREATE INDEX idx_recommendations_dismissed ON recommendations(dismissed_at);
+
+      CREATE TABLE user_insights (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        insight_type TEXT NOT NULL,
+        title TEXT NOT NULL,
+        description TEXT NOT NULL,
+        severity TEXT CHECK(severity IN ('info', 'warning', 'critical')) DEFAULT 'info',
+        data_json TEXT NOT NULL,
+        acknowledged_at DATETIME,
+        expires_at DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX idx_user_insights_type ON user_insights(insight_type);
+      CREATE INDEX idx_user_insights_severity ON user_insights(severity);
+      CREATE INDEX idx_user_insights_acknowledged ON user_insights(acknowledged_at);
+      CREATE INDEX idx_user_insights_expires ON user_insights(expires_at);
+
+      CREATE TABLE adaptive_weight_adjustments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        factor_name TEXT NOT NULL,
+        course_id INTEGER REFERENCES courses(id),
+        task_type TEXT,
+        weight_multiplier REAL DEFAULT 1.0,
+        adjustment_reason TEXT,
+        sample_size INTEGER DEFAULT 0,
+        last_updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(factor_name, course_id, task_type)
+      );
+      CREATE INDEX idx_adaptive_weights_factor ON adaptive_weight_adjustments(factor_name);
+      CREATE INDEX idx_adaptive_weights_course ON adaptive_weight_adjustments(course_id);
+      CREATE INDEX idx_adaptive_weights_type ON adaptive_weight_adjustments(task_type);
+
+      CREATE TABLE field_notification_suppressions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        field_key TEXT NOT NULL UNIQUE,
+        suppressed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        expires_at DATETIME
+      );
+      CREATE INDEX idx_field_suppressions_key ON field_notification_suppressions(field_key);
+      CREATE INDEX idx_field_suppressions_expires ON field_notification_suppressions(expires_at);
+
+      CREATE TABLE field_modifications (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        table_name TEXT NOT NULL,
+        entity_id INTEGER NOT NULL,
+        field TEXT NOT NULL,
+        modified_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(table_name, entity_id, field)
+      );
+      CREATE INDEX idx_field_modifications_entity ON field_modifications(table_name, entity_id);
+    `,
+  },
 ];

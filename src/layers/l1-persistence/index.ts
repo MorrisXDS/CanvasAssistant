@@ -142,13 +142,6 @@ export type {
   // Grace token rows
   GraceTokenRowMinimal,
   GraceTokenRow,
-  // Intelligence layer rows
-  InsightRow,
-  RecommendationRow,
-  WorkloadSnapshotRow,
-  CompletionEventRow,
-  BehaviorPatternRow,
-  WeightAdjustmentRow,
   CourseSyllabusRow,
   // Content analysis rows
   ContentAnalysisRow,
