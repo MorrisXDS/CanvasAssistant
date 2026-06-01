@@ -59,6 +59,20 @@ export { ImportedCalendarReader } from './readers/ImportedCalendarReader';
 export type { ImportedCalendarRow } from './readers/ImportedCalendarReader';
 export { ModuleReader } from './readers/ModuleReader';
 export type { ModuleItemReaderRow, ModuleInfoRow } from './readers/ModuleReader';
+export { ResourceReader } from './readers/ResourceReader';
+export type {
+  ResourceDownloadRow,
+  ResourceOpenByExternalIdRow,
+  ResourceOpenByIdRow,
+  ResourceDependencyFileRow,
+} from './readers/ResourceReader';
+export { CoursePageReader } from './readers/CoursePageReader';
+export type {
+  CoursePageUrlSlugRow,
+  CoursePageContentRow,
+} from './readers/CoursePageReader';
+export { HtmlDependencyReader } from './readers/HtmlDependencyReader';
+export type { HtmlDependencyChildRow } from './readers/HtmlDependencyReader';
 
 // L1 Providers — see docs/adr/0008 (ADR-0008)
 export { FileEntityProvider } from './FileEntityProvider';

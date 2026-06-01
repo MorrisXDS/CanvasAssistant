@@ -1,0 +1,1 @@
+export { UpdateResourceLocalPathCommand } from './UpdateResourceLocalPathCommand';

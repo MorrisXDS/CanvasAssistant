@@ -12,3 +12,4 @@ export * from './syllabus';
 export * from './sync';
 export * from './settings';
 export * from './export';
+export * from './resource';
