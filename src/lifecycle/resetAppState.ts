@@ -57,30 +57,6 @@ export async function resetAppState(
       [],
       'message_display_history'
     );
-    database.executeWrite(
-      'DELETE FROM field_notification_suppressions',
-      [],
-      'field_notification_suppressions'
-    );
-    database.executeWrite(
-      'DELETE FROM adaptive_weight_adjustments',
-      [],
-      'adaptive_weight_adjustments'
-    );
-    database.executeWrite('DELETE FROM user_insights', [], 'user_insights');
-    database.executeWrite('DELETE FROM recommendations', [], 'recommendations');
-    database.executeWrite('DELETE FROM workload_snapshots', [], 'workload_snapshots');
-    database.executeWrite('DELETE FROM effort_estimations', [], 'effort_estimations');
-    database.executeWrite(
-      'DELETE FROM user_behavior_patterns',
-      [],
-      'user_behavior_patterns'
-    );
-    database.executeWrite(
-      'DELETE FROM task_completion_events',
-      [],
-      'task_completion_events'
-    );
 
     // Content/file reference tables (reference resources/courses)
     database.executeWrite('DELETE FROM html_exports', [], 'html_exports');
@@ -91,8 +67,6 @@ export async function resetAppState(
     );
 
     // Policy-related child tables
-    database.executeWrite('DELETE FROM grade_replacements', [], 'grade_replacements');
-    database.executeWrite('DELETE FROM weight_transfers', [], 'weight_transfers');
     database.executeWrite('DELETE FROM grace_token_usage', [], 'grace_token_usage');
     database.executeWrite('DELETE FROM policy_rules', [], 'policy_rules');
     database.executeWrite('DELETE FROM grace_tokens', [], 'grace_tokens');
@@ -144,7 +118,6 @@ export async function resetAppState(
         'pending_sync_conflicts'
       );
     }
-    database.executeWrite('DELETE FROM field_modifications', [], 'field_modifications');
   });
 
   // 2. Clear in-memory pending conflicts (database already cleared in transaction)

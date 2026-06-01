@@ -10,6 +10,24 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ## [Unreleased]
 
+### Removed
+
+- `2026-06-01 20:00 UTC` — Dropped 11 dead/zombie schema tables (migration 105),
+  ADR-0003 cleanup. An audit confirmed each has no production writer or reader
+  AND no inbound FK from a live table: the 7 L3-intelligence leftovers
+  (`task_completion_events`, `user_behavior_patterns`, `effort_estimations`,
+  `workload_snapshots`, `recommendations`, `user_insights`,
+  `adaptive_weight_adjustments`), the two policy grade-rule children
+  (`grade_replacements`, `weight_transfers`), and two never-wired-up field tables
+  (`field_modifications`, `field_notification_suppressions`). Their unused
+  `DatabaseRowTypes` interfaces and `resetAppState` teardown DELETEs were removed
+  too. The migration is reversible (`down` recreates each from original DDL).
+  Deliberately NOT dropped: `course_task_groups` — although dead, `tasks.task_group_id`
+  and `course_policies.target_group_id` still FK to it (needs a column-removing
+  rebuild first; deferred). Remaining schema zombies (`policy_announcements`,
+  `course_policies`, `grade_history`, vestigial columns) tracked in
+  `docs/FOLLOWUPS.md`.
+
 ### Changed
 
 - `2026-06-01 19:30 UTC` — Migrated `fileDataHandlers` off raw SQL and **flipped
