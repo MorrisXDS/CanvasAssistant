@@ -13,3 +13,4 @@ export * from './sync';
 export * from './settings';
 export * from './export';
 export * from './resource';
+export * from './syncUpdate';

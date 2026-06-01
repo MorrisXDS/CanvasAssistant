@@ -73,6 +73,13 @@ export type {
 } from './readers/CoursePageReader';
 export { HtmlDependencyReader } from './readers/HtmlDependencyReader';
 export type { HtmlDependencyChildRow } from './readers/HtmlDependencyReader';
+export { SyncUpdateReader } from './readers/SyncUpdateReader';
+export type {
+  SyncUpdateCounts,
+  SyncUpdateStatus,
+  SyncUpdateStatusStat,
+  SyncSeedEntityRow,
+} from './readers/SyncUpdateReader';
 
 // L1 Providers — see docs/adr/0008 (ADR-0008)
 export { FileEntityProvider } from './FileEntityProvider';
