@@ -6,9 +6,10 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { AlertTriangle, X, Calendar, Clock } from 'lucide-react';
+import { AlertTriangle, Calendar, Clock } from 'lucide-react';
 import { styles } from './SyncConflictModal.styles';
 import { formatFieldValue } from '../../constants';
+import { Modal } from '../primitives/Modal';
 
 /**
  * User-friendly field name mappings
@@ -167,15 +168,6 @@ export function SyncConflictModal({
   const [customExpirationDate, setCustomExpirationDate] = useState('');
   const [showCustomDatePicker, setShowCustomDatePicker] = useState(false);
 
-  // Close on Escape key
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', handler);
-    return () => document.removeEventListener('keydown', handler);
-  }, [onClose]);
-
   // Reset currentIndex when modal opens or clamp when conflicts array shrinks
   useEffect(() => {
     if (isOpen) {
@@ -248,19 +240,13 @@ export function SyncConflictModal({
   };
 
   return (
-    <div style={styles.overlay} onClick={onClose}>
-      <div style={styles.modal} role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
-        {/* Header */}
-        <div style={styles.header}>
-          <div style={styles.headerLeft}>
-            <AlertTriangle size={20} color="var(--color-warning)" />
-            <h2 style={styles.title}>Sync Conflict</h2>
-          </div>
-          <button style={styles.closeButton} onClick={onClose}>
-            <X size={20} />
-          </button>
-        </div>
-
+    <Modal isOpen={isOpen} onClose={onClose} size="lg" zIndex={1100}>
+      <Modal.Header
+        title="Sync Conflict"
+        icon={<AlertTriangle size={20} color="var(--color-warning)" />}
+        onClose={onClose}
+      />
+      <Modal.Content>
         {/* Progress */}
         <div style={styles.progress}>
           <span style={styles.progressText}>
@@ -277,167 +263,163 @@ export function SyncConflictModal({
         </div>
 
         {/* Conflict Details */}
-        <div style={styles.content}>
-          <div style={styles.entityInfo}>
-            <span style={styles.entityType}>
-              {getEntityLabel(currentConflict.entity)}
-            </span>
-            {currentConflict.courseName && (
-              <span style={styles.courseBadge}>{currentConflict.courseName}</span>
-            )}
-            <span style={styles.entityName}>{currentConflict.entityName}</span>
-          </div>
-
-          <div style={styles.fieldInfo}>
-            <span style={styles.fieldLabel}>
-              {getFieldLabel(currentConflict.entity, currentConflict.field)}
-            </span>
-          </div>
-
-          {/* Values comparison */}
-          {(() => {
-            const labels = getValueLabels(currentConflict.field);
-            return (
-              <div style={styles.valuesContainer}>
-                <div style={styles.valueBox}>
-                  <div style={styles.valueHeader}>
-                    <span style={styles.valueLabel}>{labels.local}</span>
-                  </div>
-                  <div style={styles.valueContent}>
-                    {formatValue(
-                      currentConflict.entity,
-                      currentConflict.field,
-                      currentConflict.localValue
-                    )}
-                  </div>
-                  <button
-                    style={{ ...styles.choiceButton, ...styles.localButton }}
-                    onClick={() => handleResolve(false)}
-                  >
-                    Keep Mine
-                  </button>
-                </div>
-
-                <div style={styles.valueDivider}>
-                  <span style={styles.vsText}>vs</span>
-                </div>
-
-                <div style={styles.valueBox}>
-                  <div style={styles.valueHeader}>
-                    <span style={styles.valueLabel}>{labels.canvas}</span>
-                  </div>
-                  <div style={styles.valueContent}>
-                    {formatValue(
-                      currentConflict.entity,
-                      currentConflict.field,
-                      currentConflict.canvasValue
-                    )}
-                  </div>
-                  <button
-                    style={{ ...styles.choiceButton, ...styles.canvasButton }}
-                    onClick={() => handleResolve(true)}
-                  >
-                    Use Canvas
-                  </button>
-                </div>
-              </div>
-            );
-          })()}
-
-          {/* Remember options */}
-          <div style={styles.rememberOptions}>
-            <label style={styles.checkbox}>
-              <input
-                type="checkbox"
-                checked={rememberChoice}
-                onChange={(e) => {
-                  setRememberChoice(e.target.checked);
-                  if (!e.target.checked) setRememberForAll(false);
-                }}
-              />
-              <span>
-                Remember my choice for{' '}
-                {getFieldLabel(currentConflict.entity, currentConflict.field)} for{' '}
-                {currentConflict.entityName} in future syncs
-              </span>
-            </label>
-
-            {rememberChoice && (
-              <>
-                <label style={{ ...styles.checkbox, marginLeft: 'var(--space-4)' }}>
-                  <input
-                    type="checkbox"
-                    checked={rememberForAll}
-                    onChange={(e) => setRememberForAll(e.target.checked)}
-                  />
-                  <span>
-                    Apply to all{' '}
-                    {currentConflict.entity === 'task'
-                      ? 'coursework in this course'
-                      : currentConflict.entity === 'notification'
-                        ? 'announcements'
-                        : 'courses'}
-                  </span>
-                </label>
-
-                {/* Expiration selector */}
-                <div style={styles.expirationSection}>
-                  <div style={styles.expirationLabel}>
-                    <Clock size={14} />
-                    <span>Remember until:</span>
-                  </div>
-                  <select
-                    value={expirationPreset}
-                    onChange={(e) => {
-                      const preset = e.target.value as ExpirationPreset;
-                      setExpirationPreset(preset);
-                      setShowCustomDatePicker(preset === 'custom');
-                    }}
-                    style={styles.expirationSelect}
-                  >
-                    {termEndDate && (
-                      <option value="term-end">
-                        End of term ({new Date(termEndDate).toLocaleDateString()})
-                      </option>
-                    )}
-                    <option value="1-week">1 week</option>
-                    <option value="1-month">1 month</option>
-                    <option value="3-months">3 months</option>
-                    <option value="never">Always</option>
-                    <option value="custom">Custom date...</option>
-                  </select>
-
-                  {showCustomDatePicker && (
-                    <div style={styles.customDatePicker}>
-                      <Calendar size={14} color="var(--text-secondary)" />
-                      <input
-                        type="date"
-                        value={customExpirationDate}
-                        onChange={(e) => setCustomExpirationDate(e.target.value)}
-                        min={new Date().toISOString().split('T')[0]}
-                        style={styles.dateInput}
-                      />
-                    </div>
-                  )}
-                </div>
-              </>
-            )}
-          </div>
+        <div style={styles.entityInfo}>
+          <span style={styles.entityType}>{getEntityLabel(currentConflict.entity)}</span>
+          {currentConflict.courseName && (
+            <span style={styles.courseBadge}>{currentConflict.courseName}</span>
+          )}
+          <span style={styles.entityName}>{currentConflict.entityName}</span>
         </div>
 
-        {/* Footer with bulk actions - only show for multiple conflicts */}
-        {conflicts.length > 1 && (
-          <div style={styles.footer}>
-            <button style={styles.bulkButton} onClick={() => onResolveAll(false)}>
-              Keep All Mine ({conflicts.length})
-            </button>
-            <button style={styles.bulkButton} onClick={() => onResolveAll(true)}>
-              Use All Canvas ({conflicts.length})
-            </button>
-          </div>
-        )}
-      </div>
-    </div>
+        <div style={styles.fieldInfo}>
+          <span style={styles.fieldLabel}>
+            {getFieldLabel(currentConflict.entity, currentConflict.field)}
+          </span>
+        </div>
+
+        {/* Values comparison */}
+        {(() => {
+          const labels = getValueLabels(currentConflict.field);
+          return (
+            <div style={styles.valuesContainer}>
+              <div style={styles.valueBox}>
+                <div style={styles.valueHeader}>
+                  <span style={styles.valueLabel}>{labels.local}</span>
+                </div>
+                <div style={styles.valueContent}>
+                  {formatValue(
+                    currentConflict.entity,
+                    currentConflict.field,
+                    currentConflict.localValue
+                  )}
+                </div>
+                <button
+                  style={{ ...styles.choiceButton, ...styles.localButton }}
+                  onClick={() => handleResolve(false)}
+                >
+                  Keep Mine
+                </button>
+              </div>
+
+              <div style={styles.valueDivider}>
+                <span style={styles.vsText}>vs</span>
+              </div>
+
+              <div style={styles.valueBox}>
+                <div style={styles.valueHeader}>
+                  <span style={styles.valueLabel}>{labels.canvas}</span>
+                </div>
+                <div style={styles.valueContent}>
+                  {formatValue(
+                    currentConflict.entity,
+                    currentConflict.field,
+                    currentConflict.canvasValue
+                  )}
+                </div>
+                <button
+                  style={{ ...styles.choiceButton, ...styles.canvasButton }}
+                  onClick={() => handleResolve(true)}
+                >
+                  Use Canvas
+                </button>
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* Remember options */}
+        <div style={styles.rememberOptions}>
+          <label style={styles.checkbox}>
+            <input
+              type="checkbox"
+              checked={rememberChoice}
+              onChange={(e) => {
+                setRememberChoice(e.target.checked);
+                if (!e.target.checked) setRememberForAll(false);
+              }}
+            />
+            <span>
+              Remember my choice for{' '}
+              {getFieldLabel(currentConflict.entity, currentConflict.field)} for{' '}
+              {currentConflict.entityName} in future syncs
+            </span>
+          </label>
+
+          {rememberChoice && (
+            <>
+              <label style={{ ...styles.checkbox, marginLeft: 'var(--space-4)' }}>
+                <input
+                  type="checkbox"
+                  checked={rememberForAll}
+                  onChange={(e) => setRememberForAll(e.target.checked)}
+                />
+                <span>
+                  Apply to all{' '}
+                  {currentConflict.entity === 'task'
+                    ? 'coursework in this course'
+                    : currentConflict.entity === 'notification'
+                      ? 'announcements'
+                      : 'courses'}
+                </span>
+              </label>
+
+              {/* Expiration selector */}
+              <div style={styles.expirationSection}>
+                <div style={styles.expirationLabel}>
+                  <Clock size={14} />
+                  <span>Remember until:</span>
+                </div>
+                <select
+                  value={expirationPreset}
+                  onChange={(e) => {
+                    const preset = e.target.value as ExpirationPreset;
+                    setExpirationPreset(preset);
+                    setShowCustomDatePicker(preset === 'custom');
+                  }}
+                  style={styles.expirationSelect}
+                >
+                  {termEndDate && (
+                    <option value="term-end">
+                      End of term ({new Date(termEndDate).toLocaleDateString()})
+                    </option>
+                  )}
+                  <option value="1-week">1 week</option>
+                  <option value="1-month">1 month</option>
+                  <option value="3-months">3 months</option>
+                  <option value="never">Always</option>
+                  <option value="custom">Custom date...</option>
+                </select>
+
+                {showCustomDatePicker && (
+                  <div style={styles.customDatePicker}>
+                    <Calendar size={14} color="var(--text-secondary)" />
+                    <input
+                      type="date"
+                      value={customExpirationDate}
+                      onChange={(e) => setCustomExpirationDate(e.target.value)}
+                      min={new Date().toISOString().split('T')[0]}
+                      style={styles.dateInput}
+                    />
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      </Modal.Content>
+
+      {/* Footer with bulk actions - only show for multiple conflicts */}
+      {conflicts.length > 1 && (
+        <Modal.Footer align="center">
+          <button style={styles.bulkButton} onClick={() => onResolveAll(false)}>
+            Keep All Mine ({conflicts.length})
+          </button>
+          <button style={styles.bulkButton} onClick={() => onResolveAll(true)}>
+            Use All Canvas ({conflicts.length})
+          </button>
+        </Modal.Footer>
+      )}
+    </Modal>
   );
 }
 
