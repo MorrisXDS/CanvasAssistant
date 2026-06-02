@@ -48,6 +48,13 @@ describe('syncUpdatesHandlers (ADR-0007)', () => {
     runner.loadMigrations(coreMigrations);
     runner.runAll();
 
+    // `prefer_canvas` is added to sync_preferences at runtime by
+    // SyncConflictResolver.ensureTable, not by a migration (migration 108 dropped
+    // the old `prefer_local`). Mirror it so the resolve-conflict write lands.
+    db.exec(
+      'ALTER TABLE sync_preferences ADD COLUMN prefer_canvas INTEGER NOT NULL DEFAULT 1'
+    );
+
     db.executeWrite(
       `INSERT INTO courses (id, external_id, code, name, color) VALUES (1, '4242', 'CS101', 'Intro', '#abc')`,
       [],
@@ -317,10 +324,11 @@ describe('syncUpdatesHandlers (ADR-0007)', () => {
         rememberChoice: true,
       });
       expect(res).toEqual({ success: true });
-      const pref = db.executeReadOne<{ prefer_local: number }>(
-        `SELECT prefer_local FROM sync_preferences WHERE field = 'due_at'`
+      // 'local' → prefer_canvas = 0 (the column the resolver actually reads).
+      const pref = db.executeReadOne<{ prefer_canvas: number }>(
+        `SELECT prefer_canvas FROM sync_preferences WHERE field = 'due_at'`
       );
-      expect(pref?.prefer_local).toBe(1);
+      expect(pref?.prefer_canvas).toBe(0);
     });
   });
 

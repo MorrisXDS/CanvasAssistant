@@ -2,10 +2,10 @@
  * RememberConflictPreferenceCommand — persists a "remember my choice" conflict
  * preference into `sync_preferences`, extracted from syncHandlers (ADR-0007).
  *
- * NOTE: this writes the `prefer_canvas` column (the live conflict-resolution
- * preference), distinct from the syncUpdates `ResolveSyncConflictCommand`, which
- * writes the vestigial `prefer_local`. SQL preserved verbatim, including the
- * `expires_at` support and the rememberForAll → NULL entity_id convention.
+ * Writes the `prefer_canvas` column (the live conflict-resolution preference)
+ * with `expires_at` support and the rememberForAll → NULL entity_id convention.
+ * `ResolveSyncConflictCommand` now writes the same column (it previously wrote
+ * the vestigial `prefer_local`, dropped in migration 108).
  */
 
 import type { Database } from '../../../l1-persistence/Database';
