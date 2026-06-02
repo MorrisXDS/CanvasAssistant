@@ -28,6 +28,11 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      # `--changedSince` and the diff-coverage step both diff against origin/main;
+      # make sure that remote-tracking ref exists (checkout fetches the PR/merge ref).
+      - name: Fetch main
+        run: git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+
       # Blocking gate: tsc + vite build must succeed.
       - name: Build
         run: npm run build
@@ -37,16 +42,55 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      # Blocking gate: unit tests must pass.
-      # `pretest` (ensure-native-modules) rebuilds better-sqlite3 for the Node ABI.
-      # `--coverage` activates jest.config.js's coverageThreshold (the aggregate
-      # floor; per-PR strict gating happens in the diff-coverage step below).
-      - name: Unit tests
+      # Decide how much of the test suite to run:
+      #   - push to main           → FULL suite + aggregate coverage floor (the
+      #                              post-merge safety net; catches anything the
+      #                              affected-only PR run missed).
+      #   - PR touching test infra → FULL suite (jest/tsconfig/lockfile/setup/
+      #                              test-utils/mocks/CI/diff-cov can invalidate
+      #                              ANY test, which --changedSince can't map).
+      #   - PR otherwise           → AFFECTED only: every test whose module graph
+      #                              reaches a file changed vs origin/main.
+      - name: Determine test scope
+        id: scope
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "mode=full" >> "$GITHUB_OUTPUT"
+            echo "scope: full (push to main)"
+            exit 0
+          fi
+          CHANGED="$(git diff --name-only origin/main...HEAD)"
+          echo "changed files vs origin/main:"; echo "$CHANGED"
+          if echo "$CHANGED" | grep -qE '^(jest\.config\.js|tsconfig[^/]*\.json|package\.json|package-lock\.json|\.github/workflows/ci\.yml|scripts/diff-coverage-check\.js|\.diffcov-allow\.json|tests/setup-[^/]*|tests/test-utils/|tests/__mocks__/)'; then
+            echo "mode=full" >> "$GITHUB_OUTPUT"
+            echo "scope: full (shared test infra changed)"
+          else
+            echo "mode=affected" >> "$GITHUB_OUTPUT"
+            echo "scope: affected only (PR)"
+          fi
+
+      # FULL suite + aggregate floor. `pretest` (ensure-native-modules) rebuilds
+      # better-sqlite3 for the Node ABI. `JEST_AGGREGATE_FLOOR=1` activates
+      # jest.config.js's coverageThreshold (meaningful only over the whole suite).
+      - name: Unit tests (full)
+        if: steps.scope.outputs.mode == 'full'
+        env:
+          JEST_AGGREGATE_FLOOR: '1'
         run: npm test -- --coverage --coverageReporters=json --coverageReporters=text-summary
 
-      # Per-PR strict gate: every added/modified line under src/ must be
-      # exercised by a test. See scripts/diff-coverage-check.js for the
-      # algorithm + escape hatches (.diffcov-allow.json).
+      # AFFECTED tests only — every test whose module graph reaches a file changed
+      # vs origin/main. The aggregate floor is intentionally NOT enforced (a partial
+      # report would make it meaningless; the push-to-main job enforces it).
+      # `--passWithNoTests`: a change with no test-reachable code (e.g. docs) is fine —
+      # the diff-coverage gate below still catches any uncovered changed src lines.
+      - name: Unit tests (affected)
+        if: steps.scope.outputs.mode == 'affected'
+        run: npm test -- --changedSince=origin/main --coverage --coverageReporters=json --coverageReporters=text-summary --passWithNoTests
+
+      # Per-PR strict gate: every added/modified line under src/ must be exercised
+      # by a test. Inspects only the changed lines (which the affected tests run),
+      # so it works under both scopes. See scripts/diff-coverage-check.js +
+      # .diffcov-allow.json.
       - name: Diff coverage
         run: node scripts/diff-coverage-check.js
 

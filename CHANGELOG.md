@@ -10,6 +10,20 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ## [Unreleased]
 
+### Changed
+
+- `2026-06-02 05:00 UTC` — **CI runs affected tests only on ordinary PRs** instead of
+  the full ~2300-test suite. `jest --changedSince=origin/main` runs every test whose
+  module graph reaches a changed/created/deleted file (its transitive dependents). The
+  **full suite + aggregate coverage floor** still runs on **push-to-main** (post-merge
+  safety net) and on PRs that touch shared test infra (`jest.config`, `tsconfig*`,
+  `package(-lock).json`, `tests/setup-*`, `tests/test-utils/**`, `tests/__mocks__/**`,
+  `scripts/diff-coverage-check.js`, `.diffcov-allow.json`, `ci.yml`). The aggregate
+  floor is now gated behind `JEST_AGGREGATE_FLOOR` so it only applies to full runs; the
+  per-PR diff-coverage gate still runs on every PR. Trade-off: a green PR no longer
+  guarantees the full suite passed — a graph-missed regression is caught post-merge on
+  `main`.
+
 ### Removed
 
 - `2026-06-02 04:30 UTC` — Swept the dead policy code left behind by the
