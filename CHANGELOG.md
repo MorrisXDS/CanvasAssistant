@@ -10,8 +10,32 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ## [Unreleased]
 
+### Fixed
+
+- `2026-06-02 23:40 UTC` — **"Select None" is clickable again in the Custom Export dialog** (and a
+  0-course export is now reachable). Migrating `ExportDialog` to read courses via
+  `selectors.visibleCourses` briefly broke deselection: that selector returns a fresh array on every
+  call, so passing it straight to `useStore(...)` handed the component a new `courses` reference each
+  render, which re-fired the "select all courses" init effect on every render where the selection was
+  empty — clicking "Select None" was immediately undone. Fixed by subscribing to the store and
+  memoizing the selector against the stable `state.courses` reference
+  (`useMemo(() => selectors.visibleCourses(state), [state.courses])`), the same §8 pattern Dashboard
+  already uses for `selectors.visibleNotifications`.
+
 ### Changed
 
+- `2026-06-02 23:40 UTC` — Migrated the **Custom Export dialog** (`ExportDialog`) to the shared
+  `<Modal>` primitive (`Modal.Header`/`Content`/`Footer`, `size="lg"`), replacing its hand-rolled
+  overlay/box/header/footer chrome. Because this dialog is rendered as a **child stacked above the
+  Settings modal**, it uses `zIndex={1200}` (one tier above the parent's `1100`) plus
+  `closeOnEscape={false}` and a single **capture-phase** `document` Escape listener that
+  `stopPropagation()`s before closing — so Escape closes only the export dialog, not the Settings
+  modal underneath (a genuine fix over the old bubble-phase listener, which let both close). The
+  course subscription now reads via the centralized `selectors.visibleCourses` (§8); 7 dead chrome
+  style objects were trimmed. Behaviour and public props are otherwise unchanged. Fourth of the
+  remaining handwritten-modal migrations tracked in `docs/FOLLOWUPS.md` (1 consumer modal left:
+  `EventFormModal`). Added `tests/l6-ui/ExportDialog.test.tsx` (26 cases) for the previously-untested
+  component.
 - `2026-06-02 23:02 UTC` — Migrated the **Sync Conflict dialog** (`SyncConflictModal`) to the
   shared `<Modal>` primitive (`Modal.Header`/`Content`/`Footer`, `size="lg"`, `zIndex={1100}`),
   replacing its hand-rolled overlay/box chrome and removing the hand-rolled `document` Escape
