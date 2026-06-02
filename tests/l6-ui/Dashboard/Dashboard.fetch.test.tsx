@@ -92,8 +92,13 @@ describe('Dashboard integration — IPC → store → component chain', () => {
     env.api.getCalendarEventsForRange.mockResolvedValue([]);
   });
 
-  afterEach(() => {
-    useStore.setState({ courses: [], notifications: [] });
+  afterEach(async () => {
+    // async act(): the store reset re-renders the still-mounted Dashboard and
+    // can re-trigger async effects; flushing them here avoids "not wrapped in
+    // act" warnings.
+    await act(async () => {
+      useStore.setState({ courses: [], notifications: [] });
+    });
     env.cleanup();
   });
 

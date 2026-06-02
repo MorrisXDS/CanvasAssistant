@@ -8,7 +8,7 @@
  */
 
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, act } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { FilesPage } from '../../../src/layers/l6-ui/components/Files/FilesPage';
 import { useStore } from '../../../src/layers/l5-presentation/store';
@@ -31,7 +31,12 @@ describe('FilesPage — smoke mount', () => {
   });
 
   afterEach(() => {
-    useStore.setState({ courses: [] });
+    // Wrapped in act(): this resets the singleton store while FilesPage is
+    // still mounted (RTL's auto-unmount runs after this describe-level
+    // afterEach), so the store-driven re-render must be acted.
+    act(() => {
+      useStore.setState({ courses: [] });
+    });
     env.cleanup();
   });
 
