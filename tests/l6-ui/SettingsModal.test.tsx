@@ -46,12 +46,26 @@ const mockCourses = [
   },
 ];
 
+// The store barrel is consumed two ways in this subtree:
+//   - SettingsModalContent destructures: `const { courses, ... } = useStore()`.
+//   - The nested ExportDialog selects: `useStore(selectors.visibleCourses)`.
+// So `useStore(selector?)` must return the selected slice when a selector is
+// passed and the whole fake state otherwise, and the barrel must export
+// `selectors` (ExportDialog reads `selectors.visibleCourses`).
+const mockStoreState = {
+  courses: mockCourses,
+  fetchCourses: jest.fn(),
+  setAuthenticated: jest.fn(),
+};
+
 jest.mock('../../src/layers/l5-presentation/store', () => ({
-  useStore: jest.fn(() => ({
-    courses: mockCourses,
-    fetchCourses: jest.fn(),
-    setAuthenticated: jest.fn(),
-  })),
+  selectors: {
+    visibleCourses: (state: { courses: typeof mockCourses }) =>
+      state.courses.filter((c) => !c.isHidden),
+  },
+  useStore: jest.fn((selector?: (s: typeof mockStoreState) => unknown) =>
+    selector ? selector(mockStoreState) : mockStoreState
+  ),
 }));
 
 // Mock window.api
