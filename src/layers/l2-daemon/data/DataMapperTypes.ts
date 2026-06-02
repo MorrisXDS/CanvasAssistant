@@ -225,10 +225,7 @@ export interface LocalNotification {
   message: string;
   message_html: string | null; // Original HTML content for display
   url: string | null;
-  priority_level: 'critical' | 'high' | 'medium' | 'low';
   published_at: string;
-  is_policy_related: number; // SQLite boolean: 0 or 1
-  policy_keywords: string | null;
 }
 
 export interface LocalNotificationAttachment {

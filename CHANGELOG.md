@@ -12,6 +12,18 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ### Removed
 
+- `2026-06-02 00:30 UTC` — Removed the dead announcement policy-keyword detection
+  (ADR-0003 cleanup, completes the #76 micro-followup). The keyword scan in the
+  announcement mapper produced three notification columns — `is_policy_related`,
+  `policy_keywords`, and a `priority_level` "high" bump — **all of which were
+  unconsumed** (no reader anywhere). Deleted the detection block, the
+  `policyDetection.ts` module (`POLICY_KEYWORDS` + the never-called
+  `detectPolicyKeywords`/`calculatePolicyConfidence`), the `DataMappers`
+  re-exports, and the three fields from the `LocalNotification` type. The columns
+  themselves persist (dropping them needs a `notifications` rebuild, blocked on the
+  migration-runner FK-OFF limitation) but are no longer written. No behavior change —
+  nothing read any of them.
+
 - `2026-06-01 23:00 UTC` — Dropped the dead `grace_tokens`, `grace_token_usage`, and
   `policy_rules` tables (migration 109, ADR-0003 cleanup). All three are unreachable —
   no live writer or reader; only the course export/import round-trip touched the grace

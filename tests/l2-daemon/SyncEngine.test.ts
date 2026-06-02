@@ -393,38 +393,11 @@ describe('SyncEngine', () => {
       expect(result.count).toBe(1);
 
       // Verify notification in database
-      const notifications = db.executeRead<{ title: string; is_policy_related: number }>(
-        'SELECT title, is_policy_related FROM notifications'
+      const notifications = db.executeRead<{ title: string }>(
+        'SELECT title FROM notifications'
       );
       expect(notifications).toHaveLength(1);
-      expect(notifications[0].is_policy_related).toBeFalsy();
-    });
-
-    it('should flag policy-related announcements via is_policy_related', async () => {
-      const mockAnnouncements = [
-        {
-          id: 66666,
-          title: 'Late Submission Policy Update',
-          message: '<p>The grace period is now 48 hours with no penalty.</p>',
-          posted_at: '2024-01-10T12:00:00Z',
-          context_code: 'course_12345',
-        },
-      ];
-
-      mockGetAll.mockResolvedValue(mockAnnouncements);
-
-      const result = await syncEngine.syncAnnouncements(12345, 1);
-
-      expect(result.success).toBe(true);
-
-      // The notification is still tagged with the policy-keyword flag.
-      // The downstream `policy_announcements` write + `policy-detected` event
-      // were removed (ADR-0003 cleanup — migration 106 drops the table); only
-      // the flag on the notification row survives.
-      const notifications = db.executeRead<{ title: string; is_policy_related: number }>(
-        'SELECT title, is_policy_related FROM notifications'
-      );
-      expect(notifications[0].is_policy_related).toBeTruthy();
+      expect(notifications[0].title).toBe('Welcome to the course');
     });
   });
 
