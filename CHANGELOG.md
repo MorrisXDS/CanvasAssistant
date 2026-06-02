@@ -12,6 +12,18 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ### Changed
 
+- `2026-06-02 23:02 UTC` — Migrated the **Sync Conflict dialog** (`SyncConflictModal`) to the
+  shared `<Modal>` primitive (`Modal.Header`/`Content`/`Footer`, `size="lg"`, `zIndex={1100}`),
+  replacing its hand-rolled overlay/box chrome and removing the hand-rolled `document` Escape
+  listener (the primitive now owns backdrop, Esc, body-scroll-lock, and z-index stacking). The
+  progress bar moved to the top of `Modal.Content`; the bulk-resolve buttons render in a
+  conditional `Modal.Footer` (only when more than one conflict). Behaviour and public props are
+  unchanged; 8 now-dead chrome style objects were trimmed. Not user-visible yet — the component
+  has no active consumer (the `Layout.tsx` render site is commented out; conflicts are currently
+  handled on the Updates page) — so this is §2-compliance plus future-reuse readiness. Third of
+  the remaining handwritten-modal migrations tracked in `docs/FOLLOWUPS.md` (2 consumer modals
+  left: `ExportDialog`, `EventFormModal`). Added `tests/l6-ui/SyncConflictModal.test.tsx`
+  (17 cases) covering the previously-untested component.
 - `2026-06-02 20:01 UTC` — Migrated the **Settings dialog** (`SettingsModal`) to the shared
   `<Modal>` primitive. The overlay (non-full-page) branch now renders inside
   `<Modal><Modal.Content padded={false} scrollable={false}>` — the primitive owns the

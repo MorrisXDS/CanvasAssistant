@@ -6,60 +6,6 @@
 import type React from 'react';
 
 export const styles: Record<string, React.CSSProperties> = {
-  overlay: {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 1100,
-  },
-  modal: {
-    backgroundColor: 'var(--bg-card)',
-    borderRadius: 'var(--radius-lg)',
-    boxShadow: 'var(--shadow-lg)',
-    width: '90%',
-    maxWidth: '600px',
-    maxHeight: '90vh',
-    display: 'flex',
-    flexDirection: 'column',
-    overflow: 'hidden',
-  },
-  header: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 'var(--space-4) var(--space-5)',
-    borderBottom: '1px solid var(--border-light)',
-  },
-  headerLeft: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 'var(--space-2)',
-  },
-  title: {
-    fontSize: 'var(--text-lg)',
-    fontWeight: 'var(--font-semibold)',
-    color: 'var(--text-primary)',
-    margin: 0,
-  },
-  closeButton: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: '32px',
-    height: '32px',
-    padding: 0,
-    background: 'none',
-    border: 'none',
-    cursor: 'pointer',
-    color: 'var(--text-muted)',
-    borderRadius: 'var(--radius-md)',
-  },
   progress: {
     padding: 'var(--space-3) var(--space-5)',
     backgroundColor: 'var(--bg-secondary)',
@@ -80,11 +26,6 @@ export const styles: Record<string, React.CSSProperties> = {
     height: '100%',
     backgroundColor: 'var(--color-blue)',
     transition: 'width 0.3s ease',
-  },
-  content: {
-    padding: 'var(--space-5)',
-    overflowY: 'auto',
-    flex: 1,
   },
   entityInfo: {
     display: 'flex',
@@ -252,14 +193,6 @@ export const styles: Record<string, React.CSSProperties> = {
     borderRadius: 'var(--radius-md)',
     backgroundColor: 'var(--bg-card)',
     color: 'var(--text-primary)',
-  },
-  footer: {
-    display: 'flex',
-    justifyContent: 'center',
-    gap: 'var(--space-3)',
-    padding: 'var(--space-4) var(--space-5)',
-    borderTop: '1px solid var(--border-light)',
-    backgroundColor: 'var(--bg-secondary)',
   },
   bulkButton: {
     padding: 'var(--space-2) var(--space-4)',
