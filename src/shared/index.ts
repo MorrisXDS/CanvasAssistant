@@ -22,7 +22,6 @@ export {
   NotificationSchema,
   NotificationAttachmentSchema,
   AnnouncementFileReferenceSchema,
-  PolicySchema,
   GradeHistoryEntrySchema,
 
   // Simulation
@@ -79,7 +78,6 @@ export type {
   Notification,
   NotificationAttachment,
   AnnouncementFileReference,
-  Policy,
   GradeHistoryEntry,
 
   // Simulation

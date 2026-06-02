@@ -28,7 +28,6 @@ export type {
   ICSImportPreview,
   PriorityItem,
   CourseSummary,
-  Policy,
   GradeHistoryEntry,
   FileResource,
   FileAttachment,

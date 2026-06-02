@@ -206,34 +206,6 @@ export interface TaskRowWithFieldSources extends TaskRowMinimal {
 }
 
 /**
- * Policy row from policies table
- */
-export interface PolicyRow {
-  id: number;
-  course_id: number;
-  policy_type: string;
-  policy_name: string;
-  policy_config: string;
-  raw_text: string | null;
-  is_user_verified: number;
-  is_active: number;
-  created_at: string;
-  updated_at: string;
-}
-
-/**
- * Minimal policy row for priority calculations
- */
-export interface PolicyRowMinimal {
-  id: number;
-  course_id: number;
-  policy_type: string;
-  policy_name: string;
-  policy_config: string;
-  is_active: number;
-}
-
-/**
  * Custom (user-defined) task type row from the `custom_task_types` table.
  * A `course_id` of null means the type is global (available to all courses).
  */

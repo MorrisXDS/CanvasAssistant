@@ -365,20 +365,6 @@ export const CourseSummarySchema = z.object({
 });
 export type CourseSummary = z.infer<typeof CourseSummarySchema>;
 
-export const PolicySchema = z.object({
-  id: z.number(),
-  courseId: z.number(),
-  policyType: z.string(),
-  policyName: z.string(),
-  policyConfig: z.record(z.string(), z.unknown()),
-  rawText: z.string().nullable(),
-  isUserVerified: z.boolean(),
-  isActive: z.boolean(),
-  createdAt: z.string(),
-  updatedAt: z.string(),
-});
-export type Policy = z.infer<typeof PolicySchema>;
-
 export const GradeHistoryEntrySchema = z.object({
   id: z.number(),
   courseId: z.number(),

@@ -21,7 +21,6 @@ export type {
   CircuitBreakerConfig as DaemonCircuitBreakerConfig,
   SyncConfig,
   HtmlContentSyncConfig,
-  PolicyDetectionConfig,
   InputValidatorConfig as DaemonInputValidatorConfig,
 } from './DaemonConfig';
 export { DEFAULT_DAEMON_CONFIG } from './DaemonConfig';

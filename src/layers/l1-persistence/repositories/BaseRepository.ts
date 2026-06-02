@@ -8,7 +8,7 @@
 import type { Database } from '../Database';
 
 // Re-export row types from centralized location for backwards compatibility
-export type { CourseRow, TaskRow, PolicyRow, NotificationRow } from '../DatabaseRowTypes';
+export type { CourseRow, TaskRow, NotificationRow } from '../DatabaseRowTypes';
 
 /**
  * Base class for repositories providing common database operations.
