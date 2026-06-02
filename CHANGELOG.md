@@ -12,6 +12,15 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ### Changed
 
+- `2026-06-02 20:01 UTC` — Migrated the **Settings dialog** (`SettingsModal`) to the shared
+  `<Modal>` primitive. The overlay (non-full-page) branch now renders inside
+  `<Modal><Modal.Content padded={false} scrollable={false}>` — the primitive owns the
+  backdrop, Escape, body-scroll-lock, sizing, and z-index, while `SettingsModalContent` keeps
+  its own header/search/footer chrome. The full-page branch (the route rendered by
+  `SettingsPage`) is unchanged, and its hand-rolled Escape listener is now gated to that branch
+  only so the overlay's Esc no longer double-fires `onClose`. Behaviour and public props are
+  unchanged; 2 dead chrome style objects were trimmed. Second of the remaining handwritten-modal
+  migrations tracked in `docs/FOLLOWUPS.md` (3 consumer modals left).
 - `2026-06-02 19:33 UTC` — Migrated the calendar **Import Confirmation dialog** to the
   shared `<Modal>` primitive (`Modal.Header`/`Content`/`Footer`, `size="lg"`,
   `zIndex={1100}`), replacing its hand-rolled overlay/box chrome and removing the
