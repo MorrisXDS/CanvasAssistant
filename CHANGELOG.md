@@ -26,14 +26,18 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ### Removed
 
+- `2026-06-02 17:47 UTC` — Dropped the three dead `notifications` policy columns —
+  `is_policy_related`, `policy_keywords`, `priority_level` — via an FK-off table rebuild
+  (migration 111, ADR-0009), and removed their stale entries from
+  `NOTIFICATION_CANVAS_FIELDS`. These columns went unwritten/unread after the
+  policy-detection removal (#82); this finishes the ADR-0003 schema-zombie cleanup.
+  `priority_score` (a live REAL column, distinct from the dropped `priority_level` TEXT
+  enum) is unaffected.
 - `2026-06-02 04:30 UTC` — Swept the dead policy code left behind by the
   `course_policies` drop (#85) and the policy-detection removal (#82): deleted the
   now-unconsumed `Policy` Zod schema/type, `PolicyRow`/`PolicyRowMinimal` row types,
   `mapPolicyRowToEntity`, and the dead `DaemonConfig.PolicyDetectionConfig` (interface +
   default + re-export). All confirmed to have zero remaining importers/callers.
-  (The three now-unwritten `notifications` policy columns — `is_policy_related`,
-  `policy_keywords`, `priority_level` — still persist; dropping them needs another
-  `notifications` rebuild, deferred.)
 
 ### Added
 
