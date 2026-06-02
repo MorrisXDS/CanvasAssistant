@@ -56,7 +56,7 @@ describe('CourseExportReader', () => {
     const b = reader.gather([999]);
     expect(b.courses).toEqual([]);
     expect(b.tasks).toEqual([]);
-    expect(b.policies).toEqual([]);
+    expect(b.syllabuses).toEqual([]);
   });
 
   test('non-integer ids are coerced/dropped (no SQL injection via filter)', () => {

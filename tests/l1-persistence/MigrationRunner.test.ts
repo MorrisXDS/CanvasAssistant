@@ -309,7 +309,6 @@ describe('MigrationRunner', () => {
         'grade_history',
         'user_preferences',
         'sync_metadata',
-        'course_policies',
         'course_pages',
         'modules',
         'module_items',

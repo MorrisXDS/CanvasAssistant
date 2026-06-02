@@ -90,7 +90,6 @@ export async function resetAppState(
     // Course-related tables
     database.executeWrite('DELETE FROM grade_history', [], 'grade_history');
     database.executeWrite('DELETE FROM course_pages', [], 'course_pages');
-    database.executeWrite('DELETE FROM course_policies', [], 'course_policies');
     database.executeWrite('DELETE FROM resources', [], 'resources');
     database.executeWrite('DELETE FROM calendar_events', [], 'calendar_events');
     database.executeWrite('DELETE FROM imported_calendars', [], 'imported_calendars');

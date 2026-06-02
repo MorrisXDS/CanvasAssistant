@@ -9,7 +9,6 @@ import type {
   CourseRow,
   TaskRow,
   NotificationRow,
-  PolicyRow,
 } from '../../l1-persistence';
 import type { SelectiveExportOptions, SyncMetadataExport } from './ExportManagerTypes';
 
@@ -24,7 +23,6 @@ export interface CollectedExportData {
   courses: Record<string, unknown>[];
   tasks: Record<string, unknown>[];
   notifications: NotificationRow[];
-  policies: PolicyRow[];
   pages: Record<string, unknown>[];
   calendarEvents: Record<string, unknown>[];
   modules: Record<string, unknown>[];
@@ -230,12 +228,6 @@ export function collectExportData(
     deps.emitProgress('collecting', 35, `Found ${notifications.length} notifications`);
   }
 
-  // Collect policies
-  const policies = deps.db.executeRead<PolicyRow>(
-    `SELECT * FROM course_policies WHERE course_id IN (${placeholders})`,
-    courseIds
-  );
-
   // Collect pages
   const pages = deps.db.executeRead<Record<string, unknown>>(
     `SELECT * FROM course_pages WHERE course_id IN (${placeholders})`,
@@ -283,7 +275,6 @@ export function collectExportData(
     courses,
     tasks,
     notifications,
-    policies,
     pages,
     calendarEvents,
     modules,

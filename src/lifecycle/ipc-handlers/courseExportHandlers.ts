@@ -38,7 +38,7 @@ export function registerCourseExportHandlers(ctx: IpcContext): void {
 
       try {
         // Gather the full export bundle (course-scoped or all courses)
-        const { courses, tasks, notifications, pages, policies, resources, syllabuses } =
+        const { courses, tasks, notifications, pages, resources, syllabuses } =
           courseExportReader.gather(params?.courseIds);
 
         if (courses.length === 0) {
@@ -70,7 +70,6 @@ export function registerCourseExportHandlers(ctx: IpcContext): void {
           tasks,
           notifications,
           pages,
-          policies,
           resources: resources.map((r) => ({
             ...r,
             localPath: undefined, // Don't include local paths in export
@@ -147,7 +146,7 @@ export function registerCourseExportHandlers(ctx: IpcContext): void {
       const counts = result.data;
 
       logger.info(
-        `Data imported from: ${filePath} (${counts.coursesImported} courses, ${counts.tasksImported} tasks, ${counts.notificationsImported} notifications, ${counts.pagesImported} pages, ${counts.policiesImported} policies, ${counts.resourcesImported} resources, ${counts.syllabusesImported} syllabuses)`
+        `Data imported from: ${filePath} (${counts.coursesImported} courses, ${counts.tasksImported} tasks, ${counts.notificationsImported} notifications, ${counts.pagesImported} pages, ${counts.resourcesImported} resources, ${counts.syllabusesImported} syllabuses)`
       );
       metricsCollector.increment('data.import.courses');
 

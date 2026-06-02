@@ -318,7 +318,6 @@ export interface ImportCourseDataResult {
   tasksImported: number;
   notificationsImported: number;
   pagesImported: number;
-  policiesImported: number;
   resourcesImported: number;
   syllabusesImported: number;
 }

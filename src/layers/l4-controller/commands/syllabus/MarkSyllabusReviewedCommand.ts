@@ -60,16 +60,6 @@ export class MarkSyllabusReviewedCommand implements Command<
         'course_syllabuses'
       );
 
-      // Also update any policies to mark them as based on this review
-      context.db.executeWrite(
-        `UPDATE course_policies
-         SET based_on_syllabus_reviewed_at = ?
-         WHERE course_id = ?
-           AND based_on_syllabus_reviewed_at IS NULL`,
-        [now, params.courseId],
-        'course_policies'
-      );
-
       return {
         success: true,
         data: {
