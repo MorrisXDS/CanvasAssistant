@@ -38,17 +38,8 @@ export function registerCourseExportHandlers(ctx: IpcContext): void {
 
       try {
         // Gather the full export bundle (course-scoped or all courses)
-        const {
-          courses,
-          tasks,
-          notifications,
-          pages,
-          policies,
-          resources,
-          syllabuses,
-          graceTokens,
-          graceTokenUsage,
-        } = courseExportReader.gather(params?.courseIds);
+        const { courses, tasks, notifications, pages, policies, resources, syllabuses } =
+          courseExportReader.gather(params?.courseIds);
 
         if (courses.length === 0) {
           return { success: false, error: 'No courses found to export' };
@@ -85,8 +76,6 @@ export function registerCourseExportHandlers(ctx: IpcContext): void {
             localPath: undefined, // Don't include local paths in export
           })),
           syllabuses,
-          graceTokens,
-          graceTokenUsage,
         };
 
         const dialogResult = await dialog.showSaveDialog(mainWindow, {
@@ -158,7 +147,7 @@ export function registerCourseExportHandlers(ctx: IpcContext): void {
       const counts = result.data;
 
       logger.info(
-        `Data imported from: ${filePath} (${counts.coursesImported} courses, ${counts.tasksImported} tasks, ${counts.notificationsImported} notifications, ${counts.pagesImported} pages, ${counts.policiesImported} policies, ${counts.resourcesImported} resources, ${counts.syllabusesImported} syllabuses, ${counts.graceTokensImported} grace tokens)`
+        `Data imported from: ${filePath} (${counts.coursesImported} courses, ${counts.tasksImported} tasks, ${counts.notificationsImported} notifications, ${counts.pagesImported} pages, ${counts.policiesImported} policies, ${counts.resourcesImported} resources, ${counts.syllabusesImported} syllabuses)`
       );
       metricsCollector.increment('data.import.courses');
 

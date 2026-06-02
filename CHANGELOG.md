@@ -10,6 +10,20 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ## [Unreleased]
 
+### Removed
+
+- `2026-06-01 23:00 UTC` — Dropped the dead `grace_tokens`, `grace_token_usage`, and
+  `policy_rules` tables (migration 109, ADR-0003 cleanup). All three are unreachable —
+  no live writer or reader; only the course export/import round-trip touched the grace
+  tables, and that code is removed here too (`CourseExportReader` + `ExportDataCollector`
+  grace gather, `ImportCourseDataCommand` grace restore, the `graceTokens`/`graceTokenUsage`
+  export-bundle fields, and the `GraceTokenRow`/`GraceTokenRowMinimal`/`TokenUsageRow` types).
+  They're leaf tables (nothing FKs into them), so they drop cleanly without a rebuild.
+  Reversible. The remaining policy zombies (`course_policies`, `course_task_groups`) stay —
+  dropping them needs `notifications`/`tasks` table rebuilds, which the migration engine
+  can't do yet (it runs migrations inside a transaction where `PRAGMA foreign_keys` can't be
+  turned off); tracked in `docs/FOLLOWUPS.md`.
+
 ### Fixed
 
 - `2026-06-01 22:30 UTC` — **"Remember my choice" on the Updates-page conflict

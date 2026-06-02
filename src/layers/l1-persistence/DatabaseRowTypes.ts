@@ -266,32 +266,6 @@ export interface NotificationRow {
 // Grace Token Rows
 // =============================================================================
 
-/**
- * Grace token row for priority calculations (minimal)
- */
-export interface GraceTokenRowMinimal {
-  course_id: number;
-  total_tokens: number;
-  tokens_remaining: number;
-  hours_per_token: number;
-  max_tokens_per_task: number;
-}
-
-/**
- * Grace token row with full policy details (PolicyOrchestrator)
- */
-export interface GraceTokenRow {
-  id: number;
-  course_id: number;
-  policy_id: number;
-  total_tokens: number;
-  tokens_remaining: number;
-  hours_per_token: number;
-  max_tokens_per_task: number;
-  created_at: string;
-  updated_at: string;
-}
-
 // =============================================================================
 // Course Content Rows
 // =============================================================================
@@ -441,24 +415,6 @@ export interface DisplayHistoryRow {
   last_shown_at: string;
   grounded_until: string | null;
   quiet_period_start: string | null;
-}
-
-// =============================================================================
-// Grace Token Usage Rows
-// =============================================================================
-
-/**
- * Token usage row from grace_token_usage table
- * Used by: GraceTokenUsageRepository for tracking grace token consumption
- */
-export interface TokenUsageRow {
-  id: number;
-  grace_token_id: number;
-  task_id: number;
-  tokens_used: number;
-  hours_extended: number;
-  used_at: string;
-  notes: string | null;
 }
 
 // =============================================================================

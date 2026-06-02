@@ -120,18 +120,6 @@ describeFn('ExportManager', () => {
         updated_at TEXT DEFAULT CURRENT_TIMESTAMP
       );
 
-      CREATE TABLE grace_tokens (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        course_id INTEGER NOT NULL,
-        policy_id INTEGER,
-        total_tokens INTEGER DEFAULT 0,
-        tokens_remaining INTEGER DEFAULT 0,
-        hours_per_token INTEGER DEFAULT 24,
-        max_tokens_per_task INTEGER DEFAULT 1,
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-      );
-
       CREATE TABLE course_pages (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         course_id INTEGER NOT NULL,

@@ -138,9 +138,6 @@ export type {
   PolicyRowMinimal,
   CustomTaskTypeRow,
   NotificationRow,
-  // Grace token rows
-  GraceTokenRowMinimal,
-  GraceTokenRow,
   CourseSyllabusRow,
   // Content analysis rows
   ContentAnalysisRow,
@@ -150,8 +147,6 @@ export type {
   PendingDownloadRow,
   // Message display history rows
   DisplayHistoryRow,
-  // Grace token usage rows
-  TokenUsageRow,
   // Sync tracking rows
   SyncSessionRow,
   SyncUpdateRow,

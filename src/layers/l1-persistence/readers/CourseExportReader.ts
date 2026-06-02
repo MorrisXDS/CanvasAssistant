@@ -43,8 +43,6 @@ export interface CourseExportBundle {
   policies: Record<string, unknown>[];
   resources: Record<string, unknown>[];
   syllabuses: Record<string, unknown>[];
-  graceTokens: Record<string, unknown>[];
-  graceTokenUsage: Record<string, unknown>[];
 }
 
 const EMPTY_BUNDLE: CourseExportBundle = {
@@ -55,8 +53,6 @@ const EMPTY_BUNDLE: CourseExportBundle = {
   policies: [],
   resources: [],
   syllabuses: [],
-  graceTokens: [],
-  graceTokenUsage: [],
 };
 
 /** Coerce to a comma list of integers (defends the interpolated `IN (...)`). */
@@ -108,17 +104,6 @@ export class CourseExportReader {
     const syllabuses = this.db.executeRead<Record<string, unknown>>(
       `SELECT * FROM course_syllabuses WHERE course_id IN (${ids})`
     );
-    const graceTokens = this.db.executeRead<Record<string, unknown>>(
-      `SELECT * FROM grace_tokens WHERE course_id IN (${ids})`
-    );
-
-    const graceTokenIds = graceTokens.map((g) => g.id).filter(Boolean);
-    const graceTokenUsage =
-      graceTokenIds.length > 0
-        ? this.db.executeRead<Record<string, unknown>>(
-            `SELECT * FROM grace_token_usage WHERE grace_token_id IN (${intList(graceTokenIds)})`
-          )
-        : [];
 
     return {
       courses,
@@ -128,8 +113,6 @@ export class CourseExportReader {
       policies,
       resources,
       syllabuses,
-      graceTokens,
-      graceTokenUsage,
     };
   }
 }

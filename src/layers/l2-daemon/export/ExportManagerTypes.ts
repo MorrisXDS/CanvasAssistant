@@ -110,7 +110,6 @@ export interface ExportData {
   tasks: Record<string, unknown>[];
   notifications: Record<string, unknown>[];
   policies: Record<string, unknown>[];
-  graceTokens: Record<string, unknown>[];
   pages: Record<string, unknown>[];
   calendarEvents: Record<string, unknown>[];
   modules: Record<string, unknown>[];

@@ -67,9 +67,6 @@ export async function resetAppState(
     );
 
     // Policy-related child tables
-    database.executeWrite('DELETE FROM grace_token_usage', [], 'grace_token_usage');
-    database.executeWrite('DELETE FROM policy_rules', [], 'policy_rules');
-    database.executeWrite('DELETE FROM grace_tokens', [], 'grace_tokens');
     database.executeWrite('DELETE FROM course_task_groups', [], 'course_task_groups');
     database.executeWrite('DELETE FROM global_task_types', [], 'global_task_types');
 

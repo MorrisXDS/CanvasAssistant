@@ -62,8 +62,6 @@ export class ImportCourseDataCommand implements Command<
       let policiesImported = 0;
       let resourcesImported = 0;
       let syllabusesImported = 0;
-      let graceTokensImported = 0;
-      let graceTokenUsageImported = 0;
 
       // Build course ID mapping: old ID -> new ID (using external_id as key)
       const courseIdMap = new Map<number, number>();
@@ -322,69 +320,6 @@ export class ImportCourseDataCommand implements Command<
         syllabusesImported++;
       }
 
-      // Import grace tokens and usage (v1.1+)
-      const graceTokenIdMap = new Map<number, number>();
-
-      for (const token of asArray(importData.graceTokens)) {
-        const oldCourseId = asNumber(token.course_id ?? token.courseId);
-        const newCourseId = mapCourseId(oldCourseId);
-        if (!newCourseId) continue;
-
-        // Map policy_id to new ID, skip if policy doesn't exist
-        const oldPolicyId = asNumber(token.policy_id ?? token.policyId);
-        const newPolicyId = oldPolicyId ? policyIdMap.get(oldPolicyId) : null;
-        if (!newPolicyId) continue; // Skip if policy wasn't imported
-
-        const oldId = asNumber(token.id);
-
-        db.upsert(
-          'grace_tokens',
-          {
-            course_id: newCourseId,
-            policy_id: newPolicyId,
-            total_tokens: token.total_tokens || token.totalTokens,
-            tokens_remaining: token.tokens_remaining || token.tokensRemaining,
-            hours_per_token: token.hours_per_token ?? token.hoursPerToken ?? 24,
-            max_tokens_per_task: token.max_tokens_per_task ?? token.maxTokensPerTask ?? 2,
-          },
-          ['course_id', 'policy_id']
-        );
-
-        const dbToken = db.executeReadOne<{ id: number }>(
-          'SELECT id FROM grace_tokens WHERE course_id = ? AND policy_id = ?',
-          [newCourseId, newPolicyId]
-        );
-        if (dbToken && oldId != null) {
-          graceTokenIdMap.set(oldId, dbToken.id);
-        }
-        graceTokensImported++;
-      }
-
-      for (const usage of asArray(importData.graceTokenUsage)) {
-        const oldTokenId = asNumber(usage.grace_token_id ?? usage.graceTokenId);
-        const newTokenId = oldTokenId ? graceTokenIdMap.get(oldTokenId) : null;
-        if (!newTokenId) continue;
-
-        // Map task_id to new ID, skip if task doesn't exist
-        const oldTaskId = asNumber(usage.task_id ?? usage.taskId);
-        const newTaskId = oldTaskId ? taskIdMap.get(oldTaskId) : null;
-        if (!newTaskId) continue; // Skip if task wasn't imported
-
-        db.upsert(
-          'grace_token_usage',
-          {
-            grace_token_id: newTokenId,
-            task_id: newTaskId,
-            tokens_used: usage.tokens_used || usage.tokensUsed,
-            hours_extended: usage.hours_extended || usage.hoursExtended,
-            used_at: usage.used_at || usage.usedAt,
-          },
-          ['grace_token_id', 'task_id'],
-          false // grace_token_usage table has no updated_at column
-        );
-        graceTokenUsageImported++;
-      }
-
       return {
         success: true,
         data: {
@@ -395,8 +330,6 @@ export class ImportCourseDataCommand implements Command<
           policiesImported,
           resourcesImported,
           syllabusesImported,
-          graceTokensImported,
-          graceTokenUsageImported,
         },
       };
     } catch (error) {

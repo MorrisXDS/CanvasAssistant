@@ -67,12 +67,6 @@ describe('ImportCourseDataCommand', () => {
         { id: 400, external_id: 'r1', course_id: 100, type: 'file', title: 'F' },
       ],
       syllabuses: [{ course_id: 100, resource_id: 400, source_type: 'resource' }],
-      graceTokens: [
-        { id: 500, course_id: 100, policy_id: 300, total_tokens: 3, tokens_remaining: 3 },
-      ],
-      graceTokenUsage: [
-        { grace_token_id: 500, task_id: 200, tokens_used: 1, hours_extended: 24 },
-      ],
     };
 
     const res = await command.execute(context, { importData });
@@ -86,8 +80,6 @@ describe('ImportCourseDataCommand', () => {
       policiesImported: 1,
       resourcesImported: 1,
       syllabusesImported: 1,
-      graceTokensImported: 1,
-      graceTokenUsageImported: 1,
     });
 
     // Course got a fresh autoincrement id; the task should point at it.
@@ -100,13 +92,6 @@ describe('ImportCourseDataCommand', () => {
       ['t_ext_1']
     );
     expect(task?.course_id).toBe(course?.id);
-
-    // Grace token usage linked through remapped token + task ids.
-    const usageCount = db.executeReadOne<{ n: number }>(
-      'SELECT COUNT(*) as n FROM grace_token_usage',
-      []
-    );
-    expect(usageCount?.n).toBe(1);
   });
 
   it('skips entities whose dependencies are missing', async () => {
@@ -120,10 +105,6 @@ describe('ImportCourseDataCommand', () => {
       resources: [{ id: 4, external_id: 'r_skip', course_id: null, type: 'file' }],
       // resource_id 999 was never imported → skipped
       syllabuses: [{ course_id: 1, resource_id: 999 }],
-      // policy_id 999 never imported → skipped
-      graceTokens: [{ id: 5, course_id: 1, policy_id: 999 }],
-      // token/task never imported → skipped
-      graceTokenUsage: [{ grace_token_id: 999, task_id: 888 }],
     };
 
     const res = await command.execute(context, { importData });
@@ -136,8 +117,6 @@ describe('ImportCourseDataCommand', () => {
       policiesImported: 0,
       resourcesImported: 0,
       syllabusesImported: 0,
-      graceTokensImported: 0,
-      graceTokenUsageImported: 0,
     });
   });
 
