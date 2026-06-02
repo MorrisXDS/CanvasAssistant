@@ -1,133 +1,122 @@
 ---
 name: session-handoff
-description: Capture the current session's work, decisions, and open threads into the user's project memory file (`~/.claude/projects/E--CanvasAssistant/memory/MEMORY.md`) so a fresh Claude session picks up where this one left off — the memory file is auto-loaded on session start. Use when the user says "session handoff", "end of session", "save context for next time", "I'm starting a fresh session", "carry over context", or at the end of a multi-PR work block before the user steps away.
+description: Capture the current session's work, decisions, and open threads into a dedicated `docs/SESSION-HANDOFF.md`, which `CLAUDE.md` auto-loads via an `@SESSION-HANDOFF.md` import — so a fresh Claude session picks up where this one left off WITHOUT the handoff content living inline in CLAUDE.md. Also keeps a one-line pointer in MEMORY.md. Use when the user says "session handoff", "end of session", "save context for next time", "I'm starting a fresh session", "carry over context", or at the end of a multi-PR work block before the user steps away.
 ---
 
 # Session handoff
 
-`MEMORY.md` at `C:\Users\ROG\.claude\projects\E--CanvasAssistant\memory\MEMORY.md`
-is auto-loaded by Claude Code on every session start for this project.
-Anything written there is the cheapest, highest-leverage way to carry
-forward conversational context (the "why we did X" thread of reasoning,
-recent decisions, in-flight work) without the next session having to
-re-derive it from commit messages + CHANGELOG + FOLLOWUPS.
+Carry-forward context for the next session is written to a **separate
+document, `docs/SESSION-HANDOFF.md`** — never inlined into `CLAUDE.md`.
+`CLAUDE.md` only holds a one-line `@SESSION-HANDOFF.md` import that pulls
+that document into context at session start, so the handoff still
+auto-loads but stays out of the main rules file.
+
+## Where things go (three files, distinct roles)
+
+| File                                                                                  | Role                                                                                                                                                           | Auto-loads next session?                |
+| ------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
+| **`docs/SESSION-HANDOFF.md`**                                                         | The full handoff (the rich "why we did X" content). Prepend the newest session; keep ~1–2 most recent, prune older. **This is the document the skill writes.** | Yes — via the CLAUDE.md `@import` below |
+| **`docs/CLAUDE.md`**                                                                  | Holds ONLY a pointer section with `@SESSION-HANDOFF.md`. Added once (idempotent). **Never inline handoff content here.**                                       | Yes (it's the project memory)           |
+| **`MEMORY.md`** (`C:\Users\ROG\.claude\projects\E--CanvasAssistant\memory\MEMORY.md`) | A single index pointer line to the handoff doc (belt-and-suspenders; this file lives outside the repo and auto-loads independently).                           | Yes                                     |
+
+> Why a separate doc + `@import` instead of writing into CLAUDE.md: keeps
+> CLAUDE.md lean (Claude Code targets <200 lines) and keeps durable
+> architectural rules separate from transient session context, while still
+> auto-loading the handoff. The `@import` syntax is a documented Claude Code
+> feature; imported files load at launch alongside the file that references them.
 
 ## When to use
 
-- End of a multi-PR work block; the user is about to start a fresh
-  session or step away.
+- End of a multi-PR work block; the user is about to start a fresh session or step away.
 - The user says any of the trigger phrases.
-- A non-trivial decision was made that's worth preserving (e.g.
-  "we tried X but went with Y because Z") that wouldn't survive in
-  commit messages alone.
+- A non-trivial decision was made worth preserving ("we tried X but went with Y because Z") that wouldn't survive in commit messages alone.
 
 ## Do not use when
 
-- The work is trivial / one-off (a typo fix doesn't deserve a memory
-  entry).
-- The information is already captured in:
-  - `CLAUDE.md` (durable architectural rules)
-  - `docs/FOLLOWUPS.md` (cleanup work items)
-  - `CHANGELOG.md` (user-facing changes)
-  - The git history with descriptive commit messages
-  - A plan file under `~/.claude/plans/`
+- The work is trivial / one-off (a typo fix doesn't deserve a handoff entry).
+- The information is already captured in `CLAUDE.md` (durable rules), `docs/FOLLOWUPS.md` (cleanup items), `CHANGELOG.md` (user-facing changes), git history with descriptive commits, or a plan file under `~/.claude/plans/`. Duplicate captures go stale — worse than no capture.
 
-  Duplicate captures are worse than no capture — they go stale.
+## What auto-loads already (don't re-state)
 
-## What auto-loads (don't re-state)
+| Source                             | Contents                                                                    |
+| ---------------------------------- | --------------------------------------------------------------------------- |
+| `.claude/skills/`                  | Every project skill + its trigger phrases                                   |
+| `CLAUDE.md` + `.claude/rules/*.md` | Architectural rules (path-scoped rules load when working in matching paths) |
+| `MEMORY.md`                        | Durable cross-session index                                                 |
+| `docs/FOLLOWUPS.md`                | Open audit / cleanup work items                                             |
+| `CHANGELOG.md [Unreleased]`        | Recent user-facing changes                                                  |
+| `git log`                          | Commit messages                                                             |
 
-For context — these are already visible to a fresh session:
-
-| Source                      | Contents                                                                 |
-| --------------------------- | ------------------------------------------------------------------------ |
-| `.claude/skills/`           | Every project skill + its trigger phrases                                |
-| `CLAUDE.md`                 | Architectural rules (§2 SOPs, §7 testing, §8 visibility, §9 doc routing) |
-| `MEMORY.md` itself          | Previous handoff entries                                                 |
-| `docs/FOLLOWUPS.md`         | Open audit / cleanup work items                                          |
-| `CHANGELOG.md [Unreleased]` | Recent user-facing changes                                               |
-| `git log`                   | Commit messages (high-quality ones survive as docs)                      |
-
-MEMORY.md is for **conversational context that doesn't fit elsewhere.**
+`SESSION-HANDOFF.md` is for **conversational context that doesn't fit elsewhere.**
 
 ## What to capture
 
-Skip anything that's covered by the auto-loaded sources above. The
-remaining signal worth preserving:
+Skip anything covered by the auto-loaded sources above. The remaining signal:
 
-1. **Recent PRs by number with a one-line "why"** — git log has the
-   commits, but a brief tying-together helps a fresh agent orient fast.
-2. **Codified rules added this session** — point to the CLAUDE.md
-   section by name (don't restate the rule).
-3. **Open follow-ups by name** — point to `docs/FOLLOWUPS.md` sections;
-   note which ones a future session should pick up first.
-4. **Key gotchas / decisions** — the "we tried X but went with Y" stuff
-   that lives only in conversation. Examples from past sessions:
-   - "`var(--color-primary)` does NOT exist — use `--color-navy`."
-   - "better-sqlite3 ABI flip — `npm test` vs `npm run dev` flip the ABI."
-   - "`useHotkeys` attaches at document level; underlying page handlers
-     still fire when a modal is open unless explicitly suppressed."
+1. **Recent PRs by number with a one-line "why"** — git log has the commits; a brief tying-together orients a fresh agent fast.
+2. **Codified rules added this session** — point to the `CLAUDE.md` / `.claude/rules/` section by name (don't restate the rule).
+3. **Open follow-ups by name** — point to `docs/FOLLOWUPS.md` sections; note which to pick up first.
+4. **Key gotchas / decisions** — the "we tried X but went with Y" stuff that lives only in conversation.
 
-## How to write the entry
+## Write it conservatively
 
-Append a new section to `MEMORY.md` before the closing line. Section
-title: `## Recent session work (YYYY-MM-DD — <slug>)`. Use a tight,
-scannable format with sub-headings like:
-
-```md
-## Recent session work (YYYY-MM-DD — <short slug>)
-
-<one-paragraph "what we did this session, top-level">
-
-### PRs landed
-
-- **#N** (`<hash>`) — one line of _why_, not what (commit msg covers what).
-
-### Codified rules added
-
-- New SOP in CLAUDE.md §N — point to the section, don't restate.
-
-### Open follow-ups
-
-- Section name in docs/FOLLOWUPS.md — one line on next-step bias.
-
-### Key gotchas
-
-- Single-bullet items that aren't obvious from the codebase.
-```
-
-Then add additional sub-headings as needed (no template — capture
-what's actually useful).
-
-## How to write it conservatively
-
-- **Be terse.** This file is auto-loaded into every future session —
-  bloat costs context window. ~50 lines per session entry is plenty.
-- **Don't restate** anything that's in CLAUDE.md / FOLLOWUPS.md /
-  CHANGELOG.md / git log.
-- **Point, don't paste.** "See PR #16 / CLAUDE.md §2 / FOLLOWUPS.md
-  'state-duplication cleanup'" beats inlining the content.
-- **Prune old entries** as they age out (more than ~2 months old and
-  not referenced anymore? delete). Use the `consolidate-memory` skill
-  (in `anthropic-skills:`) for a periodic reflective pass.
+- **Be terse.** `SESSION-HANDOFF.md` is auto-loaded into every future session — bloat costs context window. ~50 lines per session entry is plenty.
+- **Don't restate** anything in CLAUDE.md / FOLLOWUPS.md / CHANGELOG.md / git log.
+- **Point, don't paste.** "See PR #16 / CLAUDE.md §2 / FOLLOWUPS.md 'state-duplication cleanup'" beats inlining.
+- **Prune** older session sections from `SESSION-HANDOFF.md` (keep ~1–2 most recent). Because the file auto-loads in full, it must not grow unbounded.
 
 ## Steps
 
-1. Read the current `MEMORY.md` to know what's already there and what
-   shape the existing entries take.
-2. Identify what to capture per the criteria above. **Ask the user**
-   if you're unsure whether a specific item is worth capturing — the
-   user has more context on what they want to remember.
-3. Compose the new section. Append before the last line of the file.
-4. Save. Done — next session auto-loads it.
+1. Read `docs/SESSION-HANDOFF.md` (if it exists) and `MEMORY.md` to see current state + the shape of existing entries.
+2. Identify what to capture per the criteria above. **Ask the user** if unsure whether a specific item is worth keeping.
+3. **Write the handoff to `docs/SESSION-HANDOFF.md`** — prepend a new dated section, then prune sections older than the ~1–2 most recent. Section shape:
+
+   ```md
+   ## Session handoff — YYYY-MM-DD (<short slug>)
+
+   <one-paragraph "what we did this session, top-level">
+
+   ### PRs landed
+
+   - **#N** (`<hash>`) — one line of _why_, not what.
+
+   ### Codified rules added
+
+   - New SOP in CLAUDE.md §N / `.claude/rules/<file>` — point, don't restate.
+
+   ### Open follow-ups
+
+   - Section name in docs/FOLLOWUPS.md — one line on next-step bias.
+
+   ### Key gotchas
+
+   - Single-bullet items not obvious from the codebase.
+   ```
+
+4. **Ensure `docs/CLAUDE.md` points to it (idempotent).** If `docs/CLAUDE.md` does **not** already contain `@SESSION-HANDOFF.md`, append this section at the very end:
+
+   ```md
+   ## Session handoff (auto-loaded)
+
+   > Latest cross-session working context lives in its own file, imported here so
+   > it loads at session start without bloating this file. Maintained by the
+   > `session-handoff` skill.
+
+   @SESSION-HANDOFF.md
+   ```
+
+   - Edit **`docs/CLAUDE.md`** directly — the repo-root `CLAUDE.md` is a symlink to it and refuses symlink writes.
+   - The import path is a **sibling**: `SESSION-HANDOFF.md` lives next to `CLAUDE.md` in `docs/`, and `@import` resolves relative to the real file's location.
+   - If the section already exists, leave it — never duplicate the import or inline the handoff content into CLAUDE.md.
+
+5. **Keep MEMORY.md in the loop (belt-and-suspenders).** Add/update a single pointer line in `MEMORY.md` (don't paste the full handoff there): e.g. under its index, `- Latest session handoff → docs/SESSION-HANDOFF.md (YYYY-MM-DD — <slug>)`.
 
 ## After saving
 
 Tell the user:
 
-- That the handoff is saved to `MEMORY.md`.
-- That a fresh session will see it immediately.
-- One sentence reminding them of any urgent open thread captured
-  (e.g. "PR #19 is still open and waiting on CI" if applicable).
+- The handoff is in **`docs/SESSION-HANDOFF.md`**, auto-loaded next session via the `@SESSION-HANDOFF.md` import in `CLAUDE.md`.
+- `MEMORY.md` has a one-line pointer.
+- One sentence on any urgent open thread (e.g. "PR #N is still open and waiting on CI").
 
-Do NOT push, commit, or modify any other file — `MEMORY.md` lives in
-the user's `~/.claude/projects/` directory, outside the repo.
+**Never inline handoff content into `CLAUDE.md`** — it gets only the `@import` pointer. `docs/` and `MEMORY.md` are private/local-only (gitignored / outside the repo); push/share at handoff per CLAUDE.md §9 if a fresh clone needs them.
