@@ -10,6 +10,17 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ## [Unreleased]
 
+### Removed
+
+- `2026-06-02 04:30 UTC` — Swept the dead policy code left behind by the
+  `course_policies` drop (#85) and the policy-detection removal (#82): deleted the
+  now-unconsumed `Policy` Zod schema/type, `PolicyRow`/`PolicyRowMinimal` row types,
+  `mapPolicyRowToEntity`, and the dead `DaemonConfig.PolicyDetectionConfig` (interface +
+  default + re-export). All confirmed to have zero remaining importers/callers.
+  (The three now-unwritten `notifications` policy columns — `is_policy_related`,
+  `policy_keywords`, `priority_level` — still persist; dropping them needs another
+  `notifications` rebuild, deferred.)
+
 ### Added
 
 - `2026-06-02 04:00 UTC` — **Announcement file references can jump to the Files page**

@@ -69,11 +69,6 @@ export interface HtmlContentSyncConfig {
   maxConcurrentDownloads: number;
 }
 
-export interface PolicyDetectionConfig {
-  /** Confidence boost for pattern matches */
-  patternBoost: number;
-}
-
 export interface InputValidatorConfig {
   /** Validation strictness: 'strict' | 'lenient' */
   strictness: 'strict' | 'lenient';
@@ -89,7 +84,6 @@ export interface DaemonConfig {
   circuitBreaker: CircuitBreakerConfig;
   sync: SyncConfig;
   htmlContentSync: HtmlContentSyncConfig;
-  policyDetection: PolicyDetectionConfig;
   inputValidator: InputValidatorConfig;
 }
 
@@ -128,9 +122,6 @@ export const DEFAULT_DAEMON_CONFIG: DaemonConfig = {
     downloadImages: true,
     downloadLinkedFiles: true,
     maxConcurrentDownloads: 3,
-  },
-  policyDetection: {
-    patternBoost: 0.15,
   },
   inputValidator: {
     strictness: 'lenient',

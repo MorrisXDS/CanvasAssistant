@@ -10,13 +10,12 @@ import type {
   CourseDetail,
   Task,
   Notification,
-  Policy,
   ImportedCalendar,
   DisplayCalendarEvent,
 } from '../../shared/ipc-contract';
 
 // Re-export types from centralized location for convenience
-export type { CourseRow, TaskRow, PolicyRow, NotificationRow } from '../l1-persistence';
+export type { CourseRow, TaskRow, NotificationRow } from '../l1-persistence';
 
 /**
  * Map a course database row to a Course entity.
@@ -180,35 +179,6 @@ export function mapNotificationRowToEntity(row: {
     publishedAt: row.published_at,
     dismissedAt: row.dismissed_at,
     url: row.url,
-  };
-}
-
-/**
- * Map a policy database row to a Policy entity.
- */
-export function mapPolicyRowToEntity(row: {
-  id: number;
-  course_id: number;
-  policy_type: string;
-  policy_name: string;
-  policy_config: string;
-  raw_text: string | null;
-  is_user_verified: number | boolean;
-  is_active: number | boolean;
-  created_at: string;
-  updated_at: string;
-}): Policy {
-  return {
-    id: row.id,
-    courseId: row.course_id,
-    policyType: row.policy_type,
-    policyName: row.policy_name,
-    policyConfig: JSON.parse(row.policy_config || '{}'),
-    rawText: row.raw_text,
-    isUserVerified: Boolean(row.is_user_verified),
-    isActive: Boolean(row.is_active),
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
   };
 }
 

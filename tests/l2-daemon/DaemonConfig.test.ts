@@ -62,7 +62,6 @@ describe('DaemonConfig', () => {
       expect(config).toHaveProperty('circuitBreaker');
       expect(config).toHaveProperty('sync');
       expect(config).toHaveProperty('htmlContentSync');
-      expect(config).toHaveProperty('policyDetection');
       expect(config).toHaveProperty('inputValidator');
     });
 

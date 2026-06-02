@@ -134,8 +134,6 @@ export type {
   TaskRowMinimal,
   TaskRowWithPriority,
   TaskRowWithFieldSources,
-  PolicyRow,
-  PolicyRowMinimal,
   CustomTaskTypeRow,
   NotificationRow,
   CourseSyllabusRow,
