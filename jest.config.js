@@ -76,6 +76,12 @@ module.exports = {
       transform: {
         '^.+\\.tsx?$': ['ts-jest', { tsconfig: 'tsconfig.test.json' }],
       },
+      // Stub CSS-module imports (`import styles from './X.module.css'`) — the
+      // Vite CSS-modules transform isn't available under jest. The mock returns
+      // each class name verbatim so tests can assert applied class names.
+      moduleNameMapper: {
+        '\\.(css|less|scss|sass)$': '<rootDir>/tests/__mocks__/styleMock.js',
+      },
       setupFilesAfterEnv: ['<rootDir>/tests/setup-jsdom.ts'],
     },
   ],

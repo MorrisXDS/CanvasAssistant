@@ -41,6 +41,7 @@ import { useFilesPageState } from './useFilesPageState';
 import { useFileSelection } from './useFileSelection';
 import { useFileDialogs } from './useFileDialogs';
 import { FileTreeRenderer } from './FileTreeRenderer';
+import { useFileReveal } from './useFileReveal';
 
 export function FilesPage() {
   const state = useFilesPageState();
@@ -71,6 +72,20 @@ export function FilesPage() {
     state.setDownloadingIds,
     state.markFileUpdateSeen
   );
+
+  // "Reveal in Files": when navigated here with a `revealFileKey` in router
+  // state (e.g. from an announcement file reference, issue #29), expand to +
+  // scroll to + highlight that file's row. Logic lives in the hook.
+  useFileReveal({
+    loading: state.loading,
+    sourceFilter: state.sourceFilter,
+    setSourceFilter: state.setSourceFilter,
+    expandedCourses: state.expandedCourses,
+    groupedFiles: state.groupedFiles,
+    isFolderExpanded: state.isFolderExpanded,
+    toggleCourse: state.toggleCourse,
+    toggleFolder: state.toggleFolder,
+  });
 
   // ---------------------------------------------------------------------------
   // Keyboard navigation — flat list of all currently visible tree rows

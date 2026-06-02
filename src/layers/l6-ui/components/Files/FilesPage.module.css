@@ -1584,3 +1584,25 @@
   background-color: var(--bg-hover);
   color: var(--text-primary);
 }
+
+/* "Reveal in Files" transient highlight (issue #29) — applied to a file row
+   when navigated to from an announcement file reference. */
+.revealHighlight {
+  animation: revealPulse 2.2s ease-out;
+  border-radius: 6px;
+}
+
+@keyframes revealPulse {
+  0% {
+    background-color: var(--color-info-bg);
+    box-shadow: 0 0 0 2px var(--color-info);
+  }
+  70% {
+    background-color: var(--color-info-bg);
+    box-shadow: 0 0 0 2px var(--color-info);
+  }
+  100% {
+    background-color: transparent;
+    box-shadow: 0 0 0 2px transparent;
+  }
+}

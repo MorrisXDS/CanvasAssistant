@@ -80,6 +80,8 @@ interface MessageWithFileLinksProps {
   message: string;
   fileReferences: AnnouncementFileReference[];
   onFileClick: (ref: AnnouncementFileReference) => void;
+  /** Secondary action: jump to this file's entry on the Files page. */
+  onRevealInFiles: (ref: AnnouncementFileReference) => void;
   loadingAttachment: number | null;
 }
 
@@ -87,6 +89,7 @@ function MessageWithFileLinks({
   message,
   fileReferences,
   onFileClick,
+  onRevealInFiles,
   loadingAttachment,
 }: MessageWithFileLinksProps) {
   if (fileReferences.length === 0) {
@@ -160,6 +163,28 @@ function MessageWithFileLinks({
       </span>
     );
 
+    // Resolved refs (linked to a real attachment) get a secondary "reveal in
+    // Files" affordance — left-click still downloads/opens inline; this jumps
+    // to the file's entry on the Files page (symlink-style, per issue #29).
+    if (hasAttachment) {
+      segments.push(
+        <button
+          key={`reveal-${i}`}
+          type="button"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onRevealInFiles(ref);
+          }}
+          title={`Show ${ref.matchedText} in the Files page`}
+          aria-label={`Show ${ref.matchedText} in the Files page`}
+          style={inlineStyles.revealInFiles}
+        >
+          <FolderOpen size={11} />
+        </button>
+      );
+    }
+
     lastIndex = ref.endPosition;
   });
 
@@ -197,6 +222,20 @@ const inlineStyles: Record<string, React.CSSProperties> = {
     backgroundColor: 'var(--bg-app)',
     color: 'var(--text-secondary)',
     border: '1px solid var(--border-default)',
+  },
+  revealInFiles: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 2,
+    marginRight: 2,
+    padding: 2,
+    border: 'none',
+    background: 'transparent',
+    color: 'var(--text-tertiary, var(--text-secondary))',
+    cursor: 'pointer',
+    borderRadius: 4,
+    verticalAlign: 'baseline',
   },
 };
 
@@ -430,6 +469,20 @@ export function AnnouncementDetail() {
     }
   };
 
+  // Secondary action: jump to the file's entry on the Files page (issue #29).
+  // The Files page keys every row by `getCanonicalFileId`, which for an
+  // announcement attachment is `attachment:<externalId>`; we pass that key plus
+  // the course id so the Files page can expand to + highlight the row.
+  const handleRevealInFiles = (ref: AnnouncementFileReference) => {
+    if (!ref.attachment) return;
+    navigate('/files', {
+      state: {
+        revealFileKey: `attachment:${ref.attachment.externalId}`,
+        revealCourseId: notification?.courseId ?? null,
+      },
+    });
+  };
+
   return (
     <div style={styles.pageWrapper}>
       <div style={styles.page}>
@@ -483,6 +536,7 @@ export function AnnouncementDetail() {
                 message={notification.message}
                 fileReferences={fileReferences}
                 onFileClick={handleFileReferenceClick}
+                onRevealInFiles={handleRevealInFiles}
                 loadingAttachment={loadingAttachment}
               />
             </div>
