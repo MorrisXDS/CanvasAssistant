@@ -7,7 +7,7 @@
  */
 
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom';
 import { AnnouncementDetail } from '../../src/layers/l6-ui/components/pages/AnnouncementDetail';
 import { useStore } from '../../src/layers/l5-presentation/store';
@@ -103,8 +103,15 @@ describe('AnnouncementDetail — reveal in Files (#29)', () => {
     });
   });
 
-  afterEach(() => {
-    useStore.setState({ courses: [], notifications: [] });
+  afterEach(async () => {
+    // Reset the singleton store while AnnouncementDetail is still mounted (RTL's
+    // auto-unmount runs after this afterEach). Clearing `notifications` flips
+    // `storeNotification` → undefined, which re-runs the fetch effect (an async
+    // getNotification whose `finally` setLoading resolves in a microtask). An
+    // ASYNC act flushes that microtask too, so no "not wrapped in act" warning.
+    await act(async () => {
+      useStore.setState({ courses: [], notifications: [] });
+    });
     env.cleanup();
   });
 

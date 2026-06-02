@@ -101,10 +101,15 @@ describe('Dashboard integration — visibleNotifications selector', () => {
     env.api.getCalendarEventsForRange.mockResolvedValue([]);
   });
 
-  afterEach(() => {
-    // Reset the singleton's state for keys this test touched. Other test
+  afterEach(async () => {
+    // Reset the singleton's state for keys this test touched. Wrapped in an
+    // async act() because the store reset re-renders the still-mounted Dashboard
+    // (+ its children) and can re-trigger async effects — the async act flushes
+    // those microtasks so there's no "not wrapped in act" warning. Other test
     // files that mount components must follow the same pattern.
-    useStore.setState({ courses: [], notifications: [] });
+    await act(async () => {
+      useStore.setState({ courses: [], notifications: [] });
+    });
     env.cleanup();
   });
 
