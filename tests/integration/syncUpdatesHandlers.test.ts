@@ -3,9 +3,9 @@
  *
  * Electron is mocked so the handler file (which imports `ipcMain`) loads in
  * the Node test environment. Exercises the visibility-gated reads, the seen /
- * conflict / cleanup write delegations, and the debug channels — including the
- * pre-existing `createTestData` schema bug (no `sync_sessions.status` column),
- * which is preserved verbatim and surfaces as a swallowed error.
+ * conflict / cleanup write delegations, and the debug channels — including
+ * `createTestData`, which now creates a session in the real `sync_sessions`
+ * shape (TEXT id, no `status` column) and succeeds.
  */
 
 jest.mock('electron', () => {
@@ -344,41 +344,11 @@ describe('syncUpdatesHandlers (ADR-0007)', () => {
   });
 
   describe('debug channels', () => {
-    test('createTestData surfaces the pre-existing schema bug as a swallowed error', async () => {
-      // No visible course guard passes (course 1 visible) and a task exists, so
-      // the handler reaches createTestSession, whose INSERT names the missing
-      // sync_sessions.status column → throws → caught → { success: false }.
-      db.executeWrite(
-        `INSERT INTO tasks (id, external_id, course_id, title) VALUES (200, 't1', 1, 'HW1')`,
-        [],
-        'tasks'
-      );
-      const res = (await invoke('syncUpdates:createTestData')) as { success: boolean };
-      expect(res.success).toBe(false);
-    });
-
-    test('createTestData: no visible courses → error', async () => {
-      visibleCourseIds = [];
-      expect(await invoke('syncUpdates:createTestData')).toEqual({
-        success: false,
-        error: 'No visible courses found',
-      });
-    });
-
-    test('createTestData: no tasks → error', async () => {
-      // Visible course but no tasks seeded.
-      expect(await invoke('syncUpdates:createTestData')).toEqual({
-        success: false,
-        error: 'No tasks found in visible courses',
-      });
-    });
-
-    test('createTestData happy path (patched schema) inserts the test updates', async () => {
-      // Give sync_sessions the `status` column the debug INSERT expects, and
-      // drop FK enforcement (the session row inserts a NULL TEXT id). This
-      // exercises the handler's test-update array build + insert loop.
-      db.executeWrite('ALTER TABLE sync_sessions ADD COLUMN status TEXT', []);
-      db.executeWrite('PRAGMA foreign_keys = OFF', []);
+    test('createTestData creates the test updates on the real schema', async () => {
+      // Regression for the fixed latent bug: createTestSession now inserts the
+      // real sync_sessions shape (TEXT id, no `status` column) and the
+      // sync_updates FK resolves, so the channel succeeds without any schema
+      // patching or FK-off hack.
       db.executeWrite(
         `INSERT INTO tasks (id, external_id, course_id, title) VALUES (200, 't1', 1, 'HW1')`,
         [],
@@ -400,6 +370,22 @@ describe('syncUpdatesHandlers (ADR-0007)', () => {
         "SELECT COUNT(*) as c FROM sync_updates WHERE title LIKE '[TEST]%'"
       );
       expect(count?.c).toBe(4);
+    });
+
+    test('createTestData: no visible courses → error', async () => {
+      visibleCourseIds = [];
+      expect(await invoke('syncUpdates:createTestData')).toEqual({
+        success: false,
+        error: 'No visible courses found',
+      });
+    });
+
+    test('createTestData: no tasks → error', async () => {
+      // Visible course but no tasks seeded.
+      expect(await invoke('syncUpdates:createTestData')).toEqual({
+        success: false,
+        error: 'No tasks found in visible courses',
+      });
     });
 
     test('clearTestData removes [TEST] rows', async () => {

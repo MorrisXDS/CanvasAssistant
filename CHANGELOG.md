@@ -38,6 +38,19 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ### Fixed
 
+- `2026-06-02 01:30 UTC` — Page-dependency files downloaded for offline pages now
+  actually persist. `UpsertResourceCommand.upsertPageDependency` wrote
+  `context_type='page_dependency'`, which the `resources.context_type` CHECK rejects —
+  so the INSERT threw (swallowed by the handler), the dependency row never landed, and
+  the file was re-downloaded on every page open. It now writes the allowed `'files'`
+  value. Trade-off: these dependency files (`type='file'`) now show in the Files page
+  (it lists `type IN ('file','page')`); the proper distinguishing fix needs a
+  `resources` table rebuild blocked by the migration-runner FK-OFF limitation.
+- `2026-06-02 01:30 UTC` — Fixed the dev-only `syncUpdates:createTestData` debug
+  channel (notification-dot test data). `SyncTestDataCommand.createTestSession` inserted
+  a non-existent `sync_sessions.status` column (and returned a rowid that didn't match
+  the TEXT `id` FK), so it always threw and created nothing. It now inserts the real
+  `sync_sessions` shape (`id`, `started_at`, `created_at`) and returns the TEXT id.
 - `2026-06-01 22:30 UTC` — **"Remember my choice" on the Updates-page conflict
   resolver now actually sticks.** `ResolveSyncConflictCommand` was writing the
   remembered preference into `sync_preferences.prefer_local` — a column nothing

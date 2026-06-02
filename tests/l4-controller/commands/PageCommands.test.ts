@@ -68,35 +68,63 @@ describe('Page Commands', () => {
   });
 
   describe('UpsertResourceCommand', () => {
-    // NOTE (latent bug, preserved verbatim by the ADR-0007 migration):
-    // `upsertPageDependency` writes context_type='page_dependency', but the
-    // resources.context_type CHECK only allows
-    // ('page','assignment','syllabus','module','announcement','files'). So
-    // this INSERT throws against the real schema. In production the page
-    // handler wraps the call in try/catch and only logs a warning, so the
-    // page download still succeeds — the dependency resource row just never
-    // lands. The migration keeps the exact original SQL; this test pins the
-    // current (buggy) behavior so a future schema fix flips it visibly.
-    // Tracked in docs/FOLLOWUPS.md.
-    test('upsertPageDependency throws on the current context_type CHECK (latent bug)', () => {
+    // Regression for the fixed latent bug: `upsertPageDependency` used to write
+    // context_type='page_dependency', which the resources.context_type CHECK
+    // rejects — so the row threw and never landed, and the dependency was
+    // re-downloaded on every page open. It now writes the allowed 'files' value,
+    // so the row persists. Tracked in docs/FOLLOWUPS.md.
+    test('upsertPageDependency persists the dependency resource (context_type=files)', () => {
       const cmd = new UpsertResourceCommand(db);
-      expect(() =>
-        cmd.upsertPageDependency({
-          externalId: 'file-1',
-          courseId: 1,
-          title: 'lecture.pdf',
-          localPath: '/tmp/a/lecture.pdf',
-          folderPath: 'Week 1/Page_files',
-          sizeBytes: 100,
-          mimeType: 'application/pdf',
-          contextId: 'my-page',
-        })
-      ).toThrow(/CHECK constraint failed: context_type/);
+      cmd.upsertPageDependency({
+        externalId: 'file-1',
+        courseId: 1,
+        title: 'lecture.pdf',
+        localPath: '/tmp/a/lecture.pdf',
+        folderPath: 'Week 1/Page_files',
+        sizeBytes: 100,
+        mimeType: 'application/pdf',
+        contextId: 'my-page',
+      });
 
-      // Nothing persisted.
-      expect(
-        db.executeReadOne("SELECT 1 FROM resources WHERE external_id = 'file-1'")
-      ).toBeUndefined();
+      const row = db.executeReadOne<{
+        type: string;
+        context_type: string;
+        local_path: string;
+      }>(
+        "SELECT type, context_type, local_path FROM resources WHERE external_id = 'file-1'"
+      );
+      expect(row?.type).toBe('file');
+      expect(row?.context_type).toBe('files');
+      expect(row?.local_path).toBe('/tmp/a/lecture.pdf');
+    });
+
+    test('upsertPageDependency refreshes local_path/size on conflict', () => {
+      const cmd = new UpsertResourceCommand(db);
+      const base = {
+        externalId: 'file-1',
+        courseId: 1,
+        title: 'lecture.pdf',
+        folderPath: 'Week 1/Page_files',
+        mimeType: 'application/pdf',
+        contextId: 'my-page',
+      };
+      cmd.upsertPageDependency({
+        ...base,
+        localPath: '/tmp/a/lecture.pdf',
+        sizeBytes: 100,
+      });
+      cmd.upsertPageDependency({
+        ...base,
+        localPath: '/tmp/b/lecture.pdf',
+        sizeBytes: 250,
+      });
+
+      const rows = db.executeRead<{ local_path: string; size_bytes: number }>(
+        "SELECT local_path, size_bytes FROM resources WHERE external_id = 'file-1'"
+      );
+      expect(rows).toHaveLength(1);
+      expect(rows[0].local_path).toBe('/tmp/b/lecture.pdf');
+      expect(rows[0].size_bytes).toBe(250);
     });
 
     test('upsertPage inserts a page resource, then refreshes title/path on conflict', () => {
