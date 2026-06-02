@@ -5,8 +5,6 @@ import {
   mapModule,
   mapModuleItem,
   mapPage,
-  detectPolicyKeywords,
-  calculatePolicyConfidence,
   CanvasCourse,
   CanvasAssignment,
   CanvasAnnouncement,
@@ -170,9 +168,6 @@ describe('DataMappers', () => {
       expect(result.notification.url).toBe(
         'https://utoronto.instructure.com/courses/12345/discussion_topics/55555'
       );
-      expect(result.notification.is_policy_related).toBe(0);
-      expect(result.notification.policy_keywords).toBeNull();
-      expect(result.notification.priority_level).toBe('medium');
       expect(result.attachments).toHaveLength(0);
     });
 
@@ -225,45 +220,6 @@ describe('DataMappers', () => {
       expect(result.attachments[0].content_type).toBe('application/pdf');
       expect(result.attachments[0].download_status).toBe('pending');
       expect(result.attachments[0].course_id).toBe(1);
-    });
-
-    it('should detect policy-related announcements', () => {
-      const canvasAnnouncement: CanvasAnnouncement = {
-        id: 66666,
-        title: 'Late Submission Policy Update',
-        message:
-          '<p>Due to feedback, the grace period is now 48 hours with no penalty.</p>',
-        posted_at: '2024-02-11T12:00:00Z',
-        context_code: 'course_12345',
-      };
-
-      const result = mapAnnouncement(canvasAnnouncement, 1, baseUrl, externalCourseId);
-
-      expect(result.notification.is_policy_related).toBe(1);
-      expect(result.notification.policy_keywords).not.toBeNull();
-      expect(result.notification.priority_level).toBe('high');
-
-      const keywords = JSON.parse(result.notification.policy_keywords!);
-      expect(keywords).toContain('late_submission:late');
-      expect(keywords).toContain('grace_period:grace');
-      expect(keywords).toContain('penalties:penalty');
-    });
-
-    it('should detect multiple policy categories', () => {
-      const canvasAnnouncement: CanvasAnnouncement = {
-        id: 77777,
-        title: 'Grading Policy Changes',
-        message: '<p>I will drop the lowest quiz and offer 5% extra credit bonus.</p>',
-        posted_at: '2024-02-12T12:00:00Z',
-        context_code: 'course_12345',
-      };
-
-      const result = mapAnnouncement(canvasAnnouncement, 1, baseUrl, externalCourseId);
-
-      expect(result.notification.is_policy_related).toBe(1);
-      const keywords = JSON.parse(result.notification.policy_keywords!);
-      expect(keywords.some((k: string) => k.includes('drops'))).toBe(true);
-      expect(keywords.some((k: string) => k.includes('bonus'))).toBe(true);
     });
   });
 
@@ -384,116 +340,6 @@ describe('DataMappers', () => {
 
       expect(result.is_front_page).toBe(1);
       expect(result.page_type).toBe('landing');
-    });
-  });
-
-  describe('detectPolicyKeywords', () => {
-    it('should detect late submission keywords', () => {
-      const text = 'The late submission penalty is 5% per day.';
-      const result = detectPolicyKeywords(text);
-
-      expect(result.isPolicy).toBe(true);
-      expect(result.keywords).toContain('late');
-      expect(result.categories).toContain('late_submission');
-    });
-
-    it('should detect grace period keywords', () => {
-      const text = 'You have 3 grace tokens, each worth 24 hours.';
-      const result = detectPolicyKeywords(text);
-
-      expect(result.isPolicy).toBe(true);
-      expect(result.keywords).toContain('grace');
-      expect(result.keywords).toContain('token');
-      expect(result.categories).toContain('grace_period');
-    });
-
-    it('should detect drop lowest keywords', () => {
-      const text = 'I will drop lowest quiz grade.';
-      const result = detectPolicyKeywords(text);
-
-      expect(result.isPolicy).toBe(true);
-      expect(result.keywords).toContain('drop lowest');
-      expect(result.categories).toContain('drops');
-    });
-
-    it('should detect bonus keywords', () => {
-      const text = 'Extra credit opportunities are available for up to 5% bonus.';
-      const result = detectPolicyKeywords(text);
-
-      expect(result.isPolicy).toBe(true);
-      expect(result.keywords).toContain('extra credit');
-      expect(result.keywords).toContain('bonus');
-      expect(result.categories).toContain('bonus');
-    });
-
-    it('should return false for non-policy text', () => {
-      const text =
-        'Please submit your assignment on time. The lecture will cover chapter 5.';
-      const result = detectPolicyKeywords(text);
-
-      expect(result.isPolicy).toBe(false);
-      expect(result.keywords).toHaveLength(0);
-    });
-
-    it('should be case insensitive', () => {
-      const text = 'LATE SUBMISSIONS will be PENALIZED by 10%.';
-      const result = detectPolicyKeywords(text);
-
-      expect(result.isPolicy).toBe(true);
-      expect(result.categories).toContain('late_submission');
-      expect(result.categories).toContain('penalties');
-    });
-
-    it('should handle HTML content', () => {
-      const text = '<p>The <strong>grace period</strong> is <em>48 hours</em>.</p>';
-      const result = detectPolicyKeywords(text);
-
-      expect(result.isPolicy).toBe(true);
-      expect(result.keywords).toContain('grace');
-    });
-  });
-
-  describe('calculatePolicyConfidence', () => {
-    it('should return 0 for no keywords', () => {
-      const confidence = calculatePolicyConfidence('No policy here', []);
-      expect(confidence).toBe(0);
-    });
-
-    it('should increase confidence with more keywords', () => {
-      const oneKeyword = calculatePolicyConfidence('Late submission', ['late']);
-      const twoKeywords = calculatePolicyConfidence('Late submission penalty', [
-        'late',
-        'penalty',
-      ]);
-
-      expect(twoKeywords).toBeGreaterThan(oneKeyword);
-    });
-
-    it('should boost confidence for strong patterns', () => {
-      const weakText = 'Something about late';
-      const strongText = 'Late submission policy: -10% penalty per day';
-
-      const weakConfidence = calculatePolicyConfidence(weakText, ['late']);
-      const strongConfidence = calculatePolicyConfidence(strongText, ['late', 'penalty']);
-
-      expect(strongConfidence).toBeGreaterThan(weakConfidence);
-    });
-
-    it('should cap confidence at 1.0', () => {
-      const text =
-        'Late submission grace period penalty drop lowest extension policy resubmit bonus';
-      const keywords = [
-        'late',
-        'grace',
-        'penalty',
-        'drop',
-        'extension',
-        'resubmit',
-        'bonus',
-      ];
-
-      const confidence = calculatePolicyConfidence(text, keywords);
-      expect(confidence).toBeLessThanOrEqual(1.0);
     });
   });
 });

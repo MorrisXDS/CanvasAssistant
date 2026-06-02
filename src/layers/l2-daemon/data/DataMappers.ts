@@ -54,10 +54,3 @@ export {
   extractHtmlLinks,
   detectFileReferences,
 } from './htmlParsingUtils';
-
-// Policy detection
-export {
-  POLICY_KEYWORDS,
-  detectPolicyKeywords,
-  calculatePolicyConfidence,
-} from './policyDetection';

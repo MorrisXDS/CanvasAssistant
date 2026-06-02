@@ -10,7 +10,6 @@ import {
   extractHtmlLinks,
   detectFileReferences,
 } from './htmlParsingUtils';
-import { POLICY_KEYWORDS } from './policyDetection';
 import type {
   CanvasAnnouncement,
   CanvasModule,
@@ -56,21 +55,6 @@ export function mapAnnouncement(
   // Convert HTML to clean plain text for storage
   const cleanMessage = htmlToPlainText(message);
 
-  // Strip HTML tags for policy analysis
-  const plainText = (title + ' ' + cleanMessage).toLowerCase();
-
-  // Detect policy-related keywords
-  const foundKeywords: string[] = [];
-  for (const [category, keywords] of Object.entries(POLICY_KEYWORDS)) {
-    for (const keyword of keywords) {
-      if (plainText.includes(keyword.toLowerCase())) {
-        foundKeywords.push(`${category}:${keyword}`);
-      }
-    }
-  }
-
-  const isPolicyRelated = foundKeywords.length > 0;
-
   const canvasUrl = `${baseUrl}/courses/${externalCourseId}/discussion_topics/${announcementId}`;
 
   const attachments: LocalNotificationAttachment[] = (canvas.attachments || []).map(
@@ -88,10 +72,7 @@ export function mapAnnouncement(
       message: cleanMessage,
       message_html: message || null,
       url: canvasUrl,
-      priority_level: isPolicyRelated ? 'high' : 'medium',
       published_at: postedAt || new Date().toISOString(),
-      is_policy_related: isPolicyRelated ? 1 : 0,
-      policy_keywords: foundKeywords.length > 0 ? JSON.stringify(foundKeywords) : null,
     },
     attachments,
     fileReferences,
