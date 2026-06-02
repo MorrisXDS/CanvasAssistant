@@ -74,14 +74,21 @@ function makeNotification(overrides: Partial<Notification> = {}): Notification {
   };
 }
 
-function renderDashboard() {
-  return render(
+async function renderDashboard() {
+  const result = render(
     <ModalStackProvider>
       <MemoryRouter>
         <Dashboard />
       </MemoryRouter>
     </ModalStackProvider>
   );
+  // Dashboard's children fetch calendars + events at mount (stubbed to []).
+  // Those promises resolve AFTER the synchronous render, so their setState
+  // would fire outside act() ("not wrapped in act" warnings). Flush the pending
+  // microtasks here, under act, so the components are fully settled before the
+  // test asserts.
+  await act(async () => {});
+  return result;
 }
 
 // =============================================================================
@@ -113,7 +120,7 @@ describe('Dashboard integration — visibleNotifications selector', () => {
     env.cleanup();
   });
 
-  it('renders notifications whose course is in state, filters staleness, passes system through', () => {
+  it('renders notifications whose course is in state, filters staleness, passes system through', async () => {
     useStore.setState({
       courses: [makeCourse({ id: 1, code: 'CS101' })],
       notifications: [
@@ -123,7 +130,7 @@ describe('Dashboard integration — visibleNotifications selector', () => {
       ],
     });
 
-    renderDashboard();
+    await renderDashboard();
 
     // Visible-course notification: rendered.
     expect(screen.getByText('Visible Note')).toBeInTheDocument();
@@ -133,14 +140,14 @@ describe('Dashboard integration — visibleNotifications selector', () => {
     expect(screen.queryByText('Stale Note')).not.toBeInTheDocument();
   });
 
-  it('re-renders when a course leaves state.courses (notification drops out)', () => {
+  it('re-renders when a course leaves state.courses (notification drops out)', async () => {
     // Seed: one course visible, one notification tied to it.
     useStore.setState({
       courses: [makeCourse({ id: 1, code: 'CS101' })],
       notifications: [makeNotification({ id: 10, courseId: 1, title: 'Will Drop' })],
     });
 
-    renderDashboard();
+    await renderDashboard();
 
     expect(screen.getByText('Will Drop')).toBeInTheDocument();
 
