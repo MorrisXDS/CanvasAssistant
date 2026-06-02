@@ -3,9 +3,8 @@
  * Shows a preview of ICS events before importing
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
-  X,
   Calendar,
   AlertTriangle,
   Repeat,
@@ -17,6 +16,7 @@ import {
 import type { ICSImportPreview, ParsedICSEvent } from '../../../l5-presentation/types';
 import { CALENDAR_COLORS, getNextCalendarColor } from '../../constants';
 import { ColorPicker } from '../primitives';
+import { Modal } from '../primitives/Modal';
 import { styles } from './ImportConfirmationModal.styles';
 import { useStore } from '../../../l5-presentation/store';
 import { formatTimeInEffectiveTimezone } from '../../../l5-presentation/settings';
@@ -42,14 +42,6 @@ export function ImportConfirmationModal({
   const [selectedColor, setSelectedColor] = useState<string>(() =>
     getNextCalendarColor(existingCount)
   );
-
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onCancel();
-    };
-    document.addEventListener('keydown', handler);
-    return () => document.removeEventListener('keydown', handler);
-  }, [onCancel]);
 
   // Update name and color when preview changes (new import)
   React.useEffect(() => {
@@ -87,101 +79,90 @@ export function ImportConfirmationModal({
   };
 
   return (
-    <div style={styles.overlay} onClick={onCancel}>
-      <div style={styles.modal} role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
-        {/* Header */}
-        <div style={styles.header}>
-          <div style={styles.headerLeft}>
-            <Calendar size={24} color="var(--color-blue)" />
-            <h2 style={styles.title}>Import Calendar</h2>
+    <Modal isOpen={isOpen} onClose={onCancel} size="lg" zIndex={1100}>
+      <Modal.Header
+        title="Import Calendar"
+        icon={<Calendar size={24} />}
+        onClose={onCancel}
+      />
+      <Modal.Content padded={false}>
+        {/* Summary */}
+        <div style={styles.summary}>
+          <div style={styles.summaryItem}>
+            <span style={styles.summaryLabel}>File:</span>
+            <span style={styles.summaryValue}>{preview.filename}</span>
           </div>
-          <button style={styles.closeButton} onClick={onCancel}>
-            <X size={20} />
-          </button>
-        </div>
-
-        {/* Scrollable body */}
-        <div style={styles.body}>
-          {/* Summary */}
-          <div style={styles.summary}>
-            <div style={styles.summaryItem}>
-              <span style={styles.summaryLabel}>File:</span>
-              <span style={styles.summaryValue}>{preview.filename}</span>
-            </div>
-            <div style={styles.summaryItem}>
-              <span style={styles.summaryLabel}>Events:</span>
-              <span style={styles.summaryValue}>{preview.events.length}</span>
-            </div>
-            {preview.dateRange && (
-              <div style={styles.summaryItem}>
-                <span style={styles.summaryLabel}>Date Range:</span>
-                <span style={styles.summaryValue}>
-                  {formatDate(preview.dateRange.start)} -{' '}
-                  {formatDate(preview.dateRange.end)}
-                </span>
-              </div>
-            )}
-            {preview.hasRecurringEvents && (
-              <div style={styles.recurringBadge}>
-                <Repeat size={14} />
-                Contains recurring events
-              </div>
-            )}
+          <div style={styles.summaryItem}>
+            <span style={styles.summaryLabel}>Events:</span>
+            <span style={styles.summaryValue}>{preview.events.length}</span>
           </div>
-
-          {/* Warnings */}
-          {preview.warnings.length > 0 && (
-            <div style={styles.warnings}>
-              <AlertTriangle size={16} color="var(--color-warning)" />
-              <div style={styles.warningsList}>
-                {preview.warnings.map((warning, i) => (
-                  <div key={i} style={styles.warningItem}>
-                    {warning}
-                  </div>
-                ))}
-              </div>
+          {preview.dateRange && (
+            <div style={styles.summaryItem}>
+              <span style={styles.summaryLabel}>Date Range:</span>
+              <span style={styles.summaryValue}>
+                {formatDate(preview.dateRange.start)} -{' '}
+                {formatDate(preview.dateRange.end)}
+              </span>
             </div>
           )}
-
-          {/* Calendar Name */}
-          <div style={styles.formGroup}>
-            <label style={styles.label}>Calendar Name</label>
-            <input
-              type="text"
-              value={calendarName}
-              onChange={(e) => setCalendarName(e.target.value)}
-              style={styles.input}
-              placeholder="Enter calendar name"
-            />
-          </div>
-
-          {/* Color Picker */}
-          <div style={styles.formGroup}>
-            <label style={styles.label}>Calendar Color</label>
-            <ColorPicker
-              value={selectedColor}
-              onChange={setSelectedColor}
-              presets={CALENDAR_COLORS}
-              allowCustom={true}
-              swatchSize={28}
-            />
-          </div>
-
-          {/* Events Preview */}
-          <EventsPreviewSection events={preview.events} color={selectedColor} />
+          {preview.hasRecurringEvents && (
+            <div style={styles.recurringBadge}>
+              <Repeat size={14} />
+              Contains recurring events
+            </div>
+          )}
         </div>
 
-        {/* Actions - pinned at bottom */}
-        <div style={styles.actions}>
-          <button style={styles.cancelButton} onClick={onCancel}>
-            Cancel
-          </button>
-          <button style={styles.confirmButton} onClick={handleConfirm}>
-            Import {preview.events.length} Events
-          </button>
+        {/* Warnings */}
+        {preview.warnings.length > 0 && (
+          <div style={styles.warnings}>
+            <AlertTriangle size={16} color="var(--color-warning)" />
+            <div style={styles.warningsList}>
+              {preview.warnings.map((warning, i) => (
+                <div key={i} style={styles.warningItem}>
+                  {warning}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Calendar Name */}
+        <div style={styles.formGroup}>
+          <label style={styles.label}>Calendar Name</label>
+          <input
+            type="text"
+            value={calendarName}
+            onChange={(e) => setCalendarName(e.target.value)}
+            style={styles.input}
+            placeholder="Enter calendar name"
+          />
         </div>
-      </div>
-    </div>
+
+        {/* Color Picker */}
+        <div style={styles.formGroup}>
+          <label style={styles.label}>Calendar Color</label>
+          <ColorPicker
+            value={selectedColor}
+            onChange={setSelectedColor}
+            presets={CALENDAR_COLORS}
+            allowCustom={true}
+            swatchSize={28}
+          />
+        </div>
+
+        {/* Events Preview */}
+        <EventsPreviewSection events={preview.events} color={selectedColor} />
+      </Modal.Content>
+      <Modal.Footer align="end">
+        <button style={styles.cancelButton} onClick={onCancel}>
+          Cancel
+        </button>
+        <button style={styles.confirmButton} onClick={handleConfirm}>
+          Import {preview.events.length} Events
+        </button>
+      </Modal.Footer>
+    </Modal>
   );
 }
 
