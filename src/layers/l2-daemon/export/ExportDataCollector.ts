@@ -10,7 +10,6 @@ import type {
   TaskRow,
   NotificationRow,
   PolicyRow,
-  GraceTokenRow,
 } from '../../l1-persistence';
 import type { SelectiveExportOptions, SyncMetadataExport } from './ExportManagerTypes';
 
@@ -26,7 +25,6 @@ export interface CollectedExportData {
   tasks: Record<string, unknown>[];
   notifications: NotificationRow[];
   policies: PolicyRow[];
-  graceTokens: GraceTokenRow[];
   pages: Record<string, unknown>[];
   calendarEvents: Record<string, unknown>[];
   modules: Record<string, unknown>[];
@@ -238,12 +236,6 @@ export function collectExportData(
     courseIds
   );
 
-  // Collect grace tokens
-  const graceTokens = deps.db.executeRead<GraceTokenRow>(
-    `SELECT * FROM grace_tokens WHERE course_id IN (${placeholders})`,
-    courseIds
-  );
-
   // Collect pages
   const pages = deps.db.executeRead<Record<string, unknown>>(
     `SELECT * FROM course_pages WHERE course_id IN (${placeholders})`,
@@ -292,7 +284,6 @@ export function collectExportData(
     tasks,
     notifications,
     policies,
-    graceTokens,
     pages,
     calendarEvents,
     modules,

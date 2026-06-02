@@ -56,37 +56,12 @@ describe('CourseExportReader', () => {
     const b = reader.gather([999]);
     expect(b.courses).toEqual([]);
     expect(b.tasks).toEqual([]);
-    expect(b.graceTokenUsage).toEqual([]);
+    expect(b.policies).toEqual([]);
   });
 
   test('non-integer ids are coerced/dropped (no SQL injection via filter)', () => {
     // A junk id mixed in must not break the query or leak SQL.
     const b = reader.gather(['1) OR 1=1 --' as unknown as number, 1]);
     expect(b.courses.map((c) => c.id)).toEqual([1]);
-  });
-
-  test('includes grace tokens + their usage', () => {
-    db.executeWrite(
-      `INSERT INTO course_policies (id, course_id, policy_type, policy_name, policy_config)
-       VALUES (5, 1, 'grace', 'Grace', '{}')`,
-      [],
-      'course_policies'
-    );
-    db.executeWrite(
-      `INSERT INTO grace_tokens (id, course_id, policy_id, total_tokens, tokens_remaining)
-       VALUES (20, 1, 5, 3, 2)`,
-      [],
-      'grace_tokens'
-    );
-    db.executeWrite(
-      `INSERT INTO grace_token_usage (id, grace_token_id, task_id, tokens_used, hours_extended)
-       VALUES (30, 20, 10, 1, 24)`,
-      [],
-      'grace_token_usage'
-    );
-
-    const b = reader.gather([1]);
-    expect(b.graceTokens.map((g) => g.id)).toEqual([20]);
-    expect(b.graceTokenUsage.map((u) => u.id)).toEqual([30]);
   });
 });

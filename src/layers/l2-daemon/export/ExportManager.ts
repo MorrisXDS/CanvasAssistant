@@ -195,7 +195,6 @@ export class ExportManager extends EventEmitter {
         tasks: data.tasks,
         notifications: data.notifications,
         policies: data.policies,
-        graceTokens: data.graceTokens,
         pages: data.pages,
         calendarEvents: data.calendarEvents,
         modules: data.modules,

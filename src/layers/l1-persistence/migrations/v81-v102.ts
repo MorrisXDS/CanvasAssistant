@@ -934,4 +934,66 @@ export const migrationsV81toV102: Migration[] = [
       ALTER TABLE sync_preferences ADD COLUMN prefer_local BOOLEAN DEFAULT FALSE;
     `,
   },
+  // Migration 109: Drop the dead grace-token + policy_rules leaf tables
+  // (ADR-0003 cleanup). All three are unreachable: no live writer or reader
+  // (only the export/import round-trip touched grace_tokens/grace_token_usage,
+  // now removed; policy_rules was never read or written). Crucially they are
+  // LEAF tables — nothing live FKs into them — so they drop cleanly under
+  // foreign_keys=ON without a table rebuild (dropped child-first). The
+  // parent `course_policies` / `course_task_groups` are NOT dropped here:
+  // they're still referenced by FK columns on live tables (notifications,
+  // tasks), which the MigrationRunner can't rebuild while it runs each
+  // migration inside a transaction with FK enforcement on. Reversible.
+  {
+    version: 109,
+    description: 'Drop dead grace_tokens / grace_token_usage / policy_rules tables',
+    up: `
+      DROP TABLE IF EXISTS grace_token_usage;
+      DROP TABLE IF EXISTS grace_tokens;
+      DROP TABLE IF EXISTS policy_rules;
+    `,
+    down: `
+      CREATE TABLE grace_tokens (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        course_id INTEGER NOT NULL,
+        policy_id INTEGER NOT NULL,
+        total_tokens INTEGER NOT NULL,
+        tokens_remaining INTEGER NOT NULL,
+        hours_per_token INTEGER DEFAULT 24,
+        max_tokens_per_task INTEGER DEFAULT 2,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(course_id) REFERENCES courses(id) ON DELETE CASCADE,
+        FOREIGN KEY(policy_id) REFERENCES course_policies(id) ON DELETE CASCADE,
+        UNIQUE(course_id, policy_id)
+      );
+
+      CREATE TABLE grace_token_usage (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        grace_token_id INTEGER NOT NULL,
+        task_id INTEGER NOT NULL,
+        tokens_used INTEGER NOT NULL,
+        hours_extended INTEGER NOT NULL,
+        used_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(grace_token_id) REFERENCES grace_tokens(id) ON DELETE CASCADE,
+        FOREIGN KEY(task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+        UNIQUE(grace_token_id, task_id)
+      );
+
+      CREATE TABLE policy_rules (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        policy_id INTEGER NOT NULL,
+        rule_key TEXT NOT NULL,
+        rule_value TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(policy_id) REFERENCES course_policies(id) ON DELETE CASCADE,
+        UNIQUE(policy_id, rule_key)
+      );
+
+      CREATE INDEX idx_grace_tokens_course ON grace_tokens(course_id);
+      CREATE INDEX idx_grace_token_usage_token ON grace_token_usage(grace_token_id);
+      CREATE INDEX idx_grace_token_usage_task ON grace_token_usage(task_id);
+      CREATE INDEX idx_policy_rules_policy ON policy_rules(policy_id);
+    `,
+  },
 ];

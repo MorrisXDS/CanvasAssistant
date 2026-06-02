@@ -321,8 +321,6 @@ export interface ImportCourseDataResult {
   policiesImported: number;
   resourcesImported: number;
   syllabusesImported: number;
-  graceTokensImported: number;
-  graceTokenUsageImported: number;
 }
 
 // =============================================================================
