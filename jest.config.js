@@ -39,14 +39,24 @@ module.exports = {
   // aggregate can drop legitimately. In the SAME PR, lower the affected
   // metric's floor to (new-actual rounded down). Same one-line change as a
   // ratchet, opposite direction.
-  coverageThreshold: {
-    global: {
-      branches: 17,
-      functions: 20,
-      lines: 28,
-      statements: 27,
-    },
-  },
+  //
+  // SCOPE GATE (2026-06-02): the aggregate floor is only meaningful over the
+  // WHOLE suite. CI runs the full suite (and sets `JEST_AGGREGATE_FLOOR=1`)
+  // only on push-to-main and on PRs that touch shared test infra; ordinary PRs
+  // run `--changedSince=origin/main` (affected tests only), where a partial
+  // coverage report would make this floor meaningless. So the floor is applied
+  // only when the env var is set — see `.github/workflows/ci.yml`. The per-PR
+  // diff-coverage gate (scripts/diff-coverage-check.js) still runs on every PR.
+  coverageThreshold: process.env.JEST_AGGREGATE_FLOOR
+    ? {
+        global: {
+          branches: 17,
+          functions: 20,
+          lines: 28,
+          statements: 27,
+        },
+      }
+    : undefined,
   // Use jsdom for React component tests
   projects: [
     {
