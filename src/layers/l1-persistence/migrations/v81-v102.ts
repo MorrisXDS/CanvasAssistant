@@ -1105,4 +1105,83 @@ export const migrationsV81toV102: Migration[] = [
       CREATE INDEX idx_notifications_dismissed ON notifications(dismissed_at);
     `,
   },
+  // Finishes the ADR-0003 schema-zombie cleanup: drops the three now-unwritten,
+  // unread policy columns left behind on `notifications` by v110 —
+  // `priority_level`, `is_policy_related`, `policy_keywords`. No live writer
+  // emits them (mapAnnouncement no longer maps them) and no reader consumes
+  // them. Like v110 this rebuilds `notifications` (a table with children:
+  // notification_attachments, announcement_file_references) so the old table
+  // can only be dropped under foreign_keys=OFF (ADR-0009). `priority_score`
+  // (a live REAL column) is explicitly KEPT — only the unrelated
+  // `priority_level` TEXT enum dies. The other 12 columns / the course FK /
+  // the UNIQUE constraint / the two indexes are preserved verbatim.
+  {
+    version: 111,
+    description:
+      'Drop dead notification policy columns (is_policy_related, policy_keywords, priority_level)',
+    disableForeignKeys: true,
+    up: `
+      CREATE TABLE notifications_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        source_type TEXT CHECK(source_type IN ('canvas', 'system')),
+        source_id TEXT,
+        course_id INTEGER,
+        title TEXT NOT NULL,
+        message TEXT NOT NULL,
+        message_html TEXT,
+        priority_score REAL DEFAULT 0.0,
+        published_at DATETIME NOT NULL,
+        dismissed_at DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        url TEXT,
+        message_html_original TEXT,
+        FOREIGN KEY(course_id) REFERENCES courses(id) ON DELETE CASCADE,
+        UNIQUE(source_type, source_id)
+      );
+      INSERT INTO notifications_new (id, source_type, source_id, course_id, title, message,
+        message_html, priority_score, published_at, dismissed_at, created_at,
+        url, message_html_original)
+        SELECT id, source_type, source_id, course_id, title, message,
+          message_html, priority_score, published_at, dismissed_at, created_at,
+          url, message_html_original
+        FROM notifications;
+      DROP TABLE notifications;
+      ALTER TABLE notifications_new RENAME TO notifications;
+      CREATE INDEX idx_notifications_course ON notifications(course_id);
+      CREATE INDEX idx_notifications_dismissed ON notifications(dismissed_at);
+    `,
+    down: `
+      CREATE TABLE notifications_old (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        source_type TEXT CHECK(source_type IN ('canvas', 'system')),
+        source_id TEXT,
+        course_id INTEGER,
+        title TEXT NOT NULL,
+        message TEXT NOT NULL,
+        message_html TEXT,
+        priority_level TEXT CHECK(priority_level IN ('critical', 'high', 'medium', 'low')) DEFAULT 'medium',
+        priority_score REAL DEFAULT 0.0,
+        published_at DATETIME NOT NULL,
+        dismissed_at DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        url TEXT,
+        is_policy_related BOOLEAN DEFAULT FALSE,
+        policy_keywords TEXT,
+        message_html_original TEXT,
+        FOREIGN KEY(course_id) REFERENCES courses(id) ON DELETE CASCADE,
+        UNIQUE(source_type, source_id)
+      );
+      INSERT INTO notifications_old (id, source_type, source_id, course_id, title, message,
+        message_html, priority_score, published_at, dismissed_at, created_at,
+        url, message_html_original)
+        SELECT id, source_type, source_id, course_id, title, message,
+          message_html, priority_score, published_at, dismissed_at, created_at,
+          url, message_html_original
+        FROM notifications;
+      DROP TABLE notifications;
+      ALTER TABLE notifications_old RENAME TO notifications;
+      CREATE INDEX idx_notifications_course ON notifications(course_id);
+      CREATE INDEX idx_notifications_dismissed ON notifications(dismissed_at);
+    `,
+  },
 ];

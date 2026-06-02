@@ -163,10 +163,7 @@ export const NOTIFICATION_CANVAS_FIELDS = [
   'message',
   'message_html',
   'url',
-  'priority_level',
   'published_at',
-  'is_policy_related',
-  'policy_keywords',
 ] as const;
 
 /**

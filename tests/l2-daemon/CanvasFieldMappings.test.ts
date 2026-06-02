@@ -91,6 +91,15 @@ describe('CanvasFieldMappings', () => {
       expect(NOTIFICATION_CANVAS_FIELDS).toContain('message_html');
       expect(NOTIFICATION_CANVAS_FIELDS).toContain('published_at');
     });
+
+    it('should NOT include the dropped dead policy fields (migration 111)', () => {
+      // These three columns were dropped from the `notifications` table by
+      // migration 111 and removed from this membership list. mapAnnouncement()
+      // never emitted them, so the entries were dead. Guard against re-adding.
+      expect(NOTIFICATION_CANVAS_FIELDS).not.toContain('priority_level');
+      expect(NOTIFICATION_CANVAS_FIELDS).not.toContain('is_policy_related');
+      expect(NOTIFICATION_CANVAS_FIELDS).not.toContain('policy_keywords');
+    });
   });
 
   describe('NOTIFICATION_LOCAL_FIELDS', () => {
