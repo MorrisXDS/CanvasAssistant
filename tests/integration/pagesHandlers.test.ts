@@ -315,13 +315,20 @@ describe('pagesHandlers (ADR-0007)', () => {
       const result = (await invoke('pages:downloadContent', 10)) as { success: boolean };
       expect(result.success).toBe(true);
 
-      // RecordHtmlDependencyCommand page→file edge (recorded even though the
-      // resources upsert hits the pre-existing context_type CHECK — see the
-      // FOLLOWUP note; the dependency id is pushed before the upsert).
+      // RecordHtmlDependencyCommand page→file edge.
       const dep = db.executeReadOne<{ child_source_id: string }>(
         "SELECT child_source_id FROM html_dependencies WHERE child_source_type = 'file'"
       );
       expect(dep?.child_source_id).toBe('555');
+
+      // The dependency resource row now persists (fixed latent bug): it used to
+      // throw on the resources.context_type CHECK (context_type='page_dependency')
+      // and never land; it now writes the allowed 'files' value.
+      const depResource = db.executeReadOne<{ context_type: string; local_path: string }>(
+        "SELECT context_type, local_path FROM resources WHERE type = 'file' AND course_id = 1"
+      );
+      expect(depResource?.context_type).toBe('files');
+      expect(depResource?.local_path).toContain('lecture.pdf');
     });
 
     test('a failed file download is tolerated (page still saves)', async () => {

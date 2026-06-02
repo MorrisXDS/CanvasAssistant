@@ -5,8 +5,15 @@
  * Extracted from pagesHandlers (ADR-0007). Two distinct upserts are
  * preserved verbatim because their ON CONFLICT update column sets differ:
  *   - `upsertPageDependency` — a file downloaded as a page's dependency
- *     (type 'file', context_type 'page_dependency'); on conflict refreshes
- *     local_path / size_bytes / synced_at only.
+ *     (type 'file', context_type 'files'); on conflict refreshes
+ *     local_path / size_bytes / synced_at only. (context_type was previously
+ *     'page_dependency', which the resources.context_type CHECK rejects — so
+ *     the row never landed and the dependency was re-downloaded each time. The
+ *     CHECK only allows page/assignment/syllabus/module/announcement/files, and
+ *     widening it needs a resources table rebuild that the migration engine
+ *     can't currently do under FK-on; 'files' is the closest allowed value.
+ *     Trade-off: these dependency files now appear in the Files page, which
+ *     lists `type IN ('file','page')`.)
  *   - `upsertPage` — the saved page HTML itself (type 'page',
  *     mime 'text/html'); on conflict also refreshes title / folder_path.
  */
@@ -56,7 +63,7 @@ export class UpsertResourceCommand {
   upsertPageDependency(input: UpsertPageDependencyInput): void {
     this.db.executeWrite(
       `INSERT INTO resources (external_id, course_id, type, title, local_path, folder_path, size_bytes, mime_type, context_type, context_id, synced_at)
-       VALUES (?, ?, 'file', ?, ?, ?, ?, ?, 'page_dependency', ?, CURRENT_TIMESTAMP)
+       VALUES (?, ?, 'file', ?, ?, ?, ?, ?, 'files', ?, CURRENT_TIMESTAMP)
        ON CONFLICT(external_id) DO UPDATE SET
          local_path = excluded.local_path,
          size_bytes = excluded.size_bytes,

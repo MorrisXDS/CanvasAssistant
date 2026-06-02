@@ -261,20 +261,43 @@ describe('SyncUpdate commands', () => {
   });
 
   describe('SyncTestDataCommand', () => {
-    test('createTestSession throws on the real schema (no sync_sessions.status column)', () => {
-      // PRE-EXISTING latent bug, preserved verbatim: production sync inserts
-      // sync_sessions (id, started_at, created_at); this debug INSERT names a
-      // `status` column that exists in no migration. See docs/FOLLOWUPS.md.
+    test('createTestSession creates a session in the real schema and returns its id', () => {
+      // Regression for the fixed latent bug: it now inserts the production
+      // sync_sessions shape (id, started_at, created_at) — no `status` column —
+      // and returns a TEXT id usable as sync_updates.sync_session_id.
       const cmd = new SyncTestDataCommand(db);
-      expect(() => cmd.createTestSession('2026-01-01T00:00:00Z')).toThrow(
-        /no column named status/
+      const sessionId = cmd.createTestSession('2026-01-01T00:00:00Z');
+      expect(sessionId).toBe('test-2026-01-01T00:00:00Z');
+
+      const session = db.executeReadOne<{ id: string; started_at: string }>(
+        'SELECT id, started_at FROM sync_sessions WHERE id = ?',
+        [sessionId]
       );
+      expect(session?.id).toBe(sessionId);
+      expect(session?.started_at).toBe('2026-01-01T00:00:00Z');
+
+      // The returned id resolves the sync_updates.sync_session_id FK.
+      expect(() =>
+        cmd.insertTestUpdate({
+          sync_session_id: sessionId,
+          course_id: 1,
+          entity_type: 'task',
+          entity_id: 100,
+          change_type: 'updated',
+          changed_field: 'due_at',
+          title: '[TEST] FK ok',
+          subtitle: null,
+          old_value: null,
+          new_value: null,
+          created_at: '2026-01-02',
+        })
+      ).not.toThrow();
     });
 
     test('insertTestUpdate writes a row; clearTestData removes [TEST] rows', () => {
       const cmd = new SyncTestDataCommand(db);
       cmd.insertTestUpdate({
-        sync_session_id: 's1' as unknown as number,
+        sync_session_id: 's1',
         course_id: 1,
         entity_type: 'task',
         entity_id: 100,

@@ -12,7 +12,7 @@ import type { Database } from '../../../l1-persistence/Database';
 
 /** One test sync-update row (column-for-column with the INSERT below). */
 export interface TestSyncUpdateInput {
-  sync_session_id: number;
+  sync_session_id: string;
   course_id: number;
   entity_type: string;
   entity_id: number;
@@ -29,17 +29,22 @@ export class SyncTestDataCommand {
   constructor(private readonly db: Database) {}
 
   /**
-   * Create a completed test sync session (required by the
-   * `sync_updates.sync_session_id` NOT NULL FK). Returns its rowid.
+   * Create a test sync session (required by the `sync_updates.sync_session_id`
+   * NOT NULL FK → `sync_sessions.id`). Mirrors the production shape in
+   * `SyncUpdateRecorder.createSyncSession` — a TEXT `id` (NOT a `status` column,
+   * which `sync_sessions` has never had) — and returns that id so the caller can
+   * use it as `sync_session_id`. `now` is an ISO timestamp string, which doubles
+   * as a unique enough id for this dev-only test harness.
    */
-  createTestSession(now: string): number {
-    const result = this.db.executeWrite(
-      `INSERT INTO sync_sessions (status, started_at, created_at)
-         VALUES ('completed', ?, ?)`,
-      [now, now],
+  createTestSession(now: string): string {
+    const sessionId = `test-${now}`;
+    this.db.executeWrite(
+      `INSERT OR IGNORE INTO sync_sessions (id, started_at, created_at)
+         VALUES (?, ?, ?)`,
+      [sessionId, now, now],
       'sync_sessions'
     );
-    return result.lastInsertRowid;
+    return sessionId;
   }
 
   /** Insert one test sync-update row. */
