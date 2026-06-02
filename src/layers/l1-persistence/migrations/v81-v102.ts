@@ -916,4 +916,22 @@ export const migrationsV81toV102: Migration[] = [
       CREATE INDEX idx_tasks_pain_index ON tasks(pain_index DESC);
     `,
   },
+  // Migration 108: Drop the vestigial `sync_preferences.prefer_local` column.
+  // The live conflict-preference path reads/writes `prefer_canvas` (added at
+  // runtime by SyncConflictResolver.ensureTable). `prefer_local` (the original
+  // v38 column) was only ever written by ResolveSyncConflictCommand — into a
+  // column nothing reads — which is corrected in the same change to write
+  // `prefer_canvas` instead. With that, `prefer_local` has no writers and no
+  // readers. Not part of any index/FK/unique (the UNIQUE is on
+  // (entity, entity_id, field)), so a direct DROP COLUMN is safe. Reversible.
+  {
+    version: 108,
+    description: 'Drop vestigial sync_preferences.prefer_local column',
+    up: `
+      ALTER TABLE sync_preferences DROP COLUMN prefer_local;
+    `,
+    down: `
+      ALTER TABLE sync_preferences ADD COLUMN prefer_local BOOLEAN DEFAULT FALSE;
+    `,
+  },
 ];

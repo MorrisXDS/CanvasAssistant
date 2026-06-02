@@ -26,6 +26,13 @@ describe('SyncUpdate commands', () => {
     runner.loadMigrations(coreMigrations);
     runner.runAll();
 
+    // Mirror production: `prefer_canvas` is added to sync_preferences at runtime
+    // by SyncConflictResolver.ensureTable, not by a migration. Migrations-only
+    // test DBs lack it (and migration 108 drops the old `prefer_local`).
+    db.exec(
+      'ALTER TABLE sync_preferences ADD COLUMN prefer_canvas INTEGER NOT NULL DEFAULT 1'
+    );
+
     db.executeWrite(
       `INSERT INTO courses (id, external_id, code, name) VALUES (1, '4242', 'CS101', 'Intro')`,
       [],
@@ -170,11 +177,58 @@ describe('SyncUpdate commands', () => {
       // sibling informational update cleared
       expect(seenAtOf(2)).not.toBeNull();
 
-      // preference persisted to sync_preferences (prefer_local = 1)
-      const pref = db.executeReadOne<{ prefer_local: number }>(
-        `SELECT prefer_local FROM sync_preferences WHERE entity = 'conflict' AND field = 'due_at'`
+      // preference persisted to the column the resolver reads: choosing 'local'
+      // means "don't prefer Canvas" → prefer_canvas = 0.
+      const pref = db.executeReadOne<{ prefer_canvas: number }>(
+        `SELECT prefer_canvas FROM sync_preferences WHERE entity = 'conflict' AND field = 'due_at'`
       );
-      expect(pref?.prefer_local).toBe(1);
+      expect(pref?.prefer_canvas).toBe(0);
+    });
+
+    test("choosing 'canvas' with rememberChoice stores prefer_canvas = 1", () => {
+      seedUpdate({
+        id: 1,
+        entityType: 'conflict',
+        changeType: 'conflict',
+        entityId: 100,
+        conflictField: 'due_at',
+      });
+      const conflict = db.executeReadOne<SyncUpdateRow>(
+        'SELECT * FROM sync_updates WHERE id = 1'
+      )!;
+      new ResolveSyncConflictCommand(db).execute(1, 'canvas', true, conflict);
+      const pref = db.executeReadOne<{ prefer_canvas: number }>(
+        `SELECT prefer_canvas FROM sync_preferences WHERE entity = 'conflict' AND field = 'due_at'`
+      );
+      expect(pref?.prefer_canvas).toBe(1);
+    });
+
+    test('upserts (updates in place) an existing preference instead of clobbering', () => {
+      // A pre-existing preference for the same (entity, entity_id, field).
+      db.executeWrite(
+        `INSERT INTO sync_preferences (entity, entity_id, field, prefer_canvas)
+         VALUES ('conflict', 100, 'due_at', 1)`,
+        [],
+        'sync_preferences'
+      );
+      seedUpdate({
+        id: 1,
+        entityType: 'conflict',
+        changeType: 'conflict',
+        entityId: 100,
+        conflictField: 'due_at',
+      });
+      const conflict = db.executeReadOne<SyncUpdateRow>(
+        'SELECT * FROM sync_updates WHERE id = 1'
+      )!;
+      new ResolveSyncConflictCommand(db).execute(1, 'local', true, conflict);
+
+      const rows = db.executeRead<{ prefer_canvas: number }>(
+        `SELECT prefer_canvas FROM sync_preferences WHERE entity = 'conflict' AND field = 'due_at'`
+      );
+      // Exactly one row, updated to the new choice (0 = prefer local).
+      expect(rows).toHaveLength(1);
+      expect(rows[0].prefer_canvas).toBe(0);
     });
 
     test('without rememberChoice, no sync_preferences row is written', () => {

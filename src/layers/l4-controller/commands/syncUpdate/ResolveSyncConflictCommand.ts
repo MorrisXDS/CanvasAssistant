@@ -9,9 +9,12 @@
  *      to `sync_preferences`.
  *   3. Mark sibling informational updates for the SAME field as seen.
  *
- * SQL preserved verbatim — note the `sync_preferences.prefer_local` column is
- * the one written here (the vestigial-but-live write path); do not "modernize"
- * it to `prefer_canvas` without a schema migration.
+ * The remembered choice is stored in `prefer_canvas` — the column the conflict
+ * resolver actually reads (SyncConflictResolver.loadPreferences). This used to
+ * write the vestigial `prefer_local` column (which nothing reads) via
+ * INSERT OR REPLACE, so a remembered choice never took effect and could even
+ * clobber an existing `prefer_canvas` row back to its default. `prefer_local`
+ * was dropped in migration 108.
  */
 
 import type { Database } from '../../../l1-persistence/Database';
@@ -39,17 +42,20 @@ export class ResolveSyncConflictCommand {
       'sync_updates'
     );
 
-    // 2. If rememberChoice, save to sync_preferences table
+    // 2. If rememberChoice, save to sync_preferences table. Write `prefer_canvas`
+    // (the column the resolver reads) and upsert on the unique key so an existing
+    // preference is updated in place rather than clobbered.
     if (rememberChoice && conflict.conflict_field) {
       this.db.executeWrite(
-        `INSERT OR REPLACE INTO sync_preferences
-            (entity, entity_id, field, prefer_local, created_at)
-            VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+        `INSERT INTO sync_preferences (entity, entity_id, field, prefer_canvas, created_at)
+            VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(entity, entity_id, field) DO UPDATE SET
+              prefer_canvas = excluded.prefer_canvas`,
         [
           conflict.entity_type,
           conflict.entity_id,
           conflict.conflict_field,
-          resolution === 'local' ? 1 : 0,
+          resolution === 'canvas' ? 1 : 0,
         ],
         'sync_preferences'
       );

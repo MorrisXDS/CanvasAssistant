@@ -10,6 +10,17 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ## [Unreleased]
 
+### Fixed
+
+- `2026-06-01 22:30 UTC` — **"Remember my choice" on the Updates-page conflict
+  resolver now actually sticks.** `ResolveSyncConflictCommand` was writing the
+  remembered preference into `sync_preferences.prefer_local` — a column nothing
+  reads (the sync conflict resolver reads `prefer_canvas`) — and via
+  `INSERT OR REPLACE`, which could even reset an existing `prefer_canvas`
+  preference back to its default. It now upserts `prefer_canvas`, so the
+  remembered choice lands in the column sync actually consults. The now-unused
+  `prefer_local` column was dropped (migration 108, reversible).
+
 ### Removed
 
 - `2026-06-01 22:00 UTC` — Dropped 6 vestigial scoring/value columns (migration 107,
