@@ -12,6 +12,13 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ### Changed
 
+- `2026-06-02 19:33 UTC` — Migrated the calendar **Import Confirmation dialog** to the
+  shared `<Modal>` primitive (`Modal.Header`/`Content`/`Footer`, `size="lg"`,
+  `zIndex={1100}`), replacing its hand-rolled overlay/box chrome and removing the
+  hand-rolled `document` Escape listener (the primitive now owns backdrop, Esc,
+  body-scroll-lock, and z-index stacking). Behaviour and public props are unchanged;
+  10 now-dead chrome style objects were trimmed. First of the 5 remaining
+  handwritten-modal migrations tracked in `docs/FOLLOWUPS.md`.
 - `2026-06-02 05:00 UTC` — **CI runs affected tests only on ordinary PRs** instead of
   the full ~2300-test suite. `jest --changedSince=origin/main` runs every test whose
   module graph reaches a changed/created/deleted file (its transitive dependents). The

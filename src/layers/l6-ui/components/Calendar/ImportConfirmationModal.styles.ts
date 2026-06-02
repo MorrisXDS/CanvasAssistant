@@ -6,70 +6,6 @@
 import type React from 'react';
 
 export const styles: Record<string, React.CSSProperties> = {
-  overlay: {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 50,
-  },
-
-  modal: {
-    backgroundColor: 'var(--bg-card)',
-    borderRadius: 'var(--radius-lg)',
-    width: '100%',
-    maxWidth: '560px',
-    maxHeight: '90vh',
-    overflow: 'hidden',
-    display: 'flex',
-    flexDirection: 'column',
-    boxShadow: 'var(--shadow-lg)',
-  },
-
-  body: {
-    flex: 1,
-    minHeight: 0,
-    overflowY: 'auto',
-  },
-
-  header: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 'var(--space-4) var(--space-6)',
-    borderBottom: '1px solid var(--border-default)',
-  },
-
-  headerLeft: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 'var(--space-3)',
-  },
-
-  title: {
-    fontSize: 'var(--text-xl)',
-    fontWeight: 'var(--font-semibold)',
-    color: 'var(--text-primary)',
-    margin: 0,
-  },
-
-  closeButton: {
-    background: 'none',
-    border: 'none',
-    padding: 'var(--space-2)',
-    cursor: 'pointer',
-    color: 'var(--text-secondary)',
-    borderRadius: 'var(--radius-md)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
   summary: {
     padding: 'var(--space-4) var(--space-6)',
     backgroundColor: 'var(--bg-app)',
@@ -143,19 +79,6 @@ export const styles: Record<string, React.CSSProperties> = {
     border: '1px solid var(--border-default)',
     backgroundColor: 'var(--bg-card)',
     color: 'var(--text-primary)',
-  },
-
-  colorPicker: {
-    display: 'flex',
-    gap: 'var(--space-2)',
-  },
-
-  colorOption: {
-    width: '32px',
-    height: '32px',
-    borderRadius: 'var(--radius-md)',
-    cursor: 'pointer',
-    transition: 'transform var(--transition-fast)',
   },
 
   eventsSection: {
@@ -286,14 +209,6 @@ export const styles: Record<string, React.CSSProperties> = {
     color: 'var(--text-secondary)',
     lineHeight: '1.5',
     whiteSpace: 'pre-wrap',
-  },
-
-  actions: {
-    display: 'flex',
-    justifyContent: 'flex-end',
-    gap: 'var(--space-3)',
-    padding: 'var(--space-4) var(--space-6)',
-    borderTop: '1px solid var(--border-default)',
   },
 
   cancelButton: {
