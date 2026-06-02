@@ -59,7 +59,6 @@ export class ImportCourseDataCommand implements Command<
       let tasksImported = 0;
       let notificationsImported = 0;
       let pagesImported = 0;
-      let policiesImported = 0;
       let resourcesImported = 0;
       let syllabusesImported = 0;
 
@@ -114,7 +113,6 @@ export class ImportCourseDataCommand implements Command<
 
       const taskIdMap = new Map<number, number>();
       const resourceIdMap = new Map<number, number>();
-      const policyIdMap = new Map<number, number>();
 
       // Import tasks and build mapping
       for (const task of asArray(importData.tasks)) {
@@ -215,43 +213,6 @@ export class ImportCourseDataCommand implements Command<
         pagesImported++;
       }
 
-      // Import policies and build ID mapping
-      for (const policy of asArray(importData.policies)) {
-        const oldCourseId = asNumber(policy.course_id ?? policy.courseId);
-        const newCourseId = mapCourseId(oldCourseId);
-        if (!newCourseId) continue;
-
-        const oldId = asNumber(policy.id);
-        const policyType = policy.policy_type || policy.policyType;
-        const policyName = policy.policy_name || policy.policyName || 'imported';
-
-        db.upsert(
-          'course_policies',
-          {
-            course_id: newCourseId,
-            policy_type: policyType,
-            policy_name: policyName,
-            policy_config:
-              policy.policy_config ||
-              policy.policyConfig ||
-              JSON.stringify({ value: policy.value }),
-            raw_text: policy.raw_text || policy.rawText,
-          },
-          ['course_id', 'policy_type', 'policy_name']
-        );
-
-        if (oldId != null) {
-          const dbPolicy = db.executeReadOne<{ id: number }>(
-            'SELECT id FROM course_policies WHERE course_id = ? AND policy_type = ? AND policy_name = ?',
-            [newCourseId, policyType, policyName]
-          );
-          if (dbPolicy) {
-            policyIdMap.set(oldId, dbPolicy.id);
-          }
-        }
-        policiesImported++;
-      }
-
       // Import resources (without local paths) and build ID mapping
       for (const resource of asArray(importData.resources)) {
         const oldCourseId = asNumber(resource.course_id ?? resource.courseId);
@@ -327,7 +288,6 @@ export class ImportCourseDataCommand implements Command<
           tasksImported,
           notificationsImported,
           pagesImported,
-          policiesImported,
           resourcesImported,
           syllabusesImported,
         },

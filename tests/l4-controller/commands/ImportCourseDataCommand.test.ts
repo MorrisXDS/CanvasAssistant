@@ -62,7 +62,6 @@ describe('ImportCourseDataCommand', () => {
       pages: [
         { external_id: 'p1', course_id: 100, title: 'Page', body_html: '<p>x</p>' },
       ],
-      policies: [{ id: 300, course_id: 100, policy_type: 'late', policy_name: 'Late' }],
       resources: [
         { id: 400, external_id: 'r1', course_id: 100, type: 'file', title: 'F' },
       ],
@@ -77,7 +76,6 @@ describe('ImportCourseDataCommand', () => {
       tasksImported: 1,
       notificationsImported: 1,
       pagesImported: 1,
-      policiesImported: 1,
       resourcesImported: 1,
       syllabusesImported: 1,
     });
@@ -101,7 +99,6 @@ describe('ImportCourseDataCommand', () => {
       // null course_id → mapCourseId returns null → skipped
       tasks: [{ id: 2, external_id: 't_skip', course_id: null, title: 'orphan' }],
       pages: [{ external_id: 'p_skip', course_id: null, title: 'orphan' }],
-      policies: [{ id: 3, course_id: null, policy_type: 'x' }],
       resources: [{ id: 4, external_id: 'r_skip', course_id: null, type: 'file' }],
       // resource_id 999 was never imported → skipped
       syllabuses: [{ course_id: 1, resource_id: 999 }],
@@ -114,7 +111,6 @@ describe('ImportCourseDataCommand', () => {
       coursesImported: 1,
       tasksImported: 0,
       pagesImported: 0,
-      policiesImported: 0,
       resourcesImported: 0,
       syllabusesImported: 0,
     });

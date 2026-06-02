@@ -14,7 +14,7 @@ import {
 const DROPPED = ['grace_tokens', 'grace_token_usage', 'policy_rules'];
 
 // Parents the dropped tables FK'd — not dropped here (blocked by live FK columns).
-const KEPT = ['course_policies', 'course_task_groups'];
+const KEPT = ['course_task_groups'];
 
 describe('migration 109: drop grace + policy_rules leaf tables', () => {
   let db: Database;

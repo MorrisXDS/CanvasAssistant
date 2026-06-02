@@ -78,7 +78,6 @@ export interface ExportManifest {
     notifications: number;
     files: number;
     pages: number;
-    policies: number;
     modules: number;
     resources: number;
     syncPreferences: number;
@@ -109,7 +108,6 @@ export interface ExportData {
   courses: Record<string, unknown>[];
   tasks: Record<string, unknown>[];
   notifications: Record<string, unknown>[];
-  policies: Record<string, unknown>[];
   pages: Record<string, unknown>[];
   calendarEvents: Record<string, unknown>[];
   modules: Record<string, unknown>[];

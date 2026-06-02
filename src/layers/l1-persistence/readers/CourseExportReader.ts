@@ -40,7 +40,6 @@ export interface CourseExportBundle {
   tasks: Record<string, unknown>[];
   notifications: Record<string, unknown>[];
   pages: Record<string, unknown>[];
-  policies: Record<string, unknown>[];
   resources: Record<string, unknown>[];
   syllabuses: Record<string, unknown>[];
 }
@@ -50,7 +49,6 @@ const EMPTY_BUNDLE: CourseExportBundle = {
   tasks: [],
   notifications: [],
   pages: [],
-  policies: [],
   resources: [],
   syllabuses: [],
 };
@@ -95,9 +93,6 @@ export class CourseExportReader {
     const pages = this.db.executeRead<Record<string, unknown>>(
       `SELECT * FROM course_pages WHERE course_id IN (${ids})`
     );
-    const policies = this.db.executeRead<Record<string, unknown>>(
-      `SELECT * FROM course_policies WHERE course_id IN (${ids})`
-    );
     const resources = this.db.executeRead<Record<string, unknown>>(
       `SELECT id, external_id, course_id, folder_path, type, title, url, size_bytes, mime_type FROM resources WHERE course_id IN (${ids})`
     );
@@ -110,7 +105,6 @@ export class CourseExportReader {
       tasks,
       notifications,
       pages,
-      policies,
       resources,
       syllabuses,
     };

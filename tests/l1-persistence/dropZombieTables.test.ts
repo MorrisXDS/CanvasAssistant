@@ -27,11 +27,10 @@ const DROPPED = [
 // Live tables that share neighbourhoods with the dropped ones and must remain.
 const KEPT = [
   'canvas_assignment_groups', // the live task-grouping table
-  // course_task_groups is dead too, but `tasks.task_group_id` /
-  // `course_policies.target_group_id` still FK to it — deferred to a PR that
-  // drops those columns first. Must NOT be dropped by migration 105.
+  // course_task_groups is dead too, but `tasks.task_group_id` still FKs it —
+  // deferred to a PR that drops that column first. Must NOT be dropped by
+  // migration 105. (course_policies was dropped later, in migration 110.)
   'course_task_groups',
-  'course_policies',
   'grade_history',
   'sync_preferences',
   'message_display_history',

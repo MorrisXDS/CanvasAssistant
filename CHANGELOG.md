@@ -10,6 +10,19 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ## [Unreleased]
 
+### Removed
+
+- `2026-06-02 03:00 UTC` — Dropped the `course_policies` zombie table (migration 110,
+  ADR-0003 cleanup) — the **first real use** of the ADR-0009 foreign-key-off rebuild.
+  `course_policies` never had a live INSERT writer; dropping it required first rebuilding
+  `notifications` (a flagged `disableForeignKeys` migration) to remove its only live
+  inbound FK, `linked_policy_id`. Also removed: `MarkSyllabusReviewedCommand`'s dead
+  `course_policies` UPDATE (its real work — marking `course_syllabuses` reviewed — is
+  unchanged), the `policies` branches in both export collectors + the import restore, and
+  the `policies` export-bundle field. The `Policy` Zod type + `mapPolicyRowToEntity` are
+  now unused leftovers (micro-followup). `course_task_groups` is the last remaining zombie
+  table (needs a `tasks` rebuild).
+
 ### Added
 
 - `2026-06-02 02:30 UTC` — **Migration engine can now do foreign-key-off table

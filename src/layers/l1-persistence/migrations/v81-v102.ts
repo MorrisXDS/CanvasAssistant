@@ -996,4 +996,113 @@ export const migrationsV81toV102: Migration[] = [
       CREATE INDEX idx_policy_rules_policy ON policy_rules(policy_id);
     `,
   },
+  // Migration 110: Drop the `course_policies` zombie table (ADR-0003 cleanup).
+  // First use of the ADR-0009 `disableForeignKeys` capability: dropping
+  // course_policies requires removing the only live inbound FK first —
+  // `notifications.linked_policy_id` — which means rebuilding `notifications`
+  // (a table with its own children: notification_attachments,
+  // announcement_file_references). That rebuild can only DROP the old table
+  // under foreign_keys=OFF. The `foreign_key_check` after the body verifies the
+  // children still resolve. Only `linked_policy_id` (+ its FK) is dropped from
+  // notifications; the other dead policy columns are left for a later rebuild.
+  {
+    version: 110,
+    description: 'Drop course_policies (rebuild notifications to drop linked_policy_id)',
+    disableForeignKeys: true,
+    up: `
+      CREATE TABLE notifications_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        source_type TEXT CHECK(source_type IN ('canvas', 'system')),
+        source_id TEXT,
+        course_id INTEGER,
+        title TEXT NOT NULL,
+        message TEXT NOT NULL,
+        message_html TEXT,
+        priority_level TEXT CHECK(priority_level IN ('critical', 'high', 'medium', 'low')) DEFAULT 'medium',
+        priority_score REAL DEFAULT 0.0,
+        published_at DATETIME NOT NULL,
+        dismissed_at DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        url TEXT,
+        is_policy_related BOOLEAN DEFAULT FALSE,
+        policy_keywords TEXT,
+        message_html_original TEXT,
+        FOREIGN KEY(course_id) REFERENCES courses(id) ON DELETE CASCADE,
+        UNIQUE(source_type, source_id)
+      );
+      INSERT INTO notifications_new (id, source_type, source_id, course_id, title, message,
+        message_html, priority_level, priority_score, published_at, dismissed_at, created_at,
+        url, is_policy_related, policy_keywords, message_html_original)
+        SELECT id, source_type, source_id, course_id, title, message,
+          message_html, priority_level, priority_score, published_at, dismissed_at, created_at,
+          url, is_policy_related, policy_keywords, message_html_original
+        FROM notifications;
+      DROP TABLE notifications;
+      ALTER TABLE notifications_new RENAME TO notifications;
+      CREATE INDEX idx_notifications_course ON notifications(course_id);
+      CREATE INDEX idx_notifications_dismissed ON notifications(dismissed_at);
+
+      DROP TABLE course_policies;
+    `,
+    down: `
+      CREATE TABLE course_policies (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        course_id INTEGER NOT NULL,
+        policy_type TEXT NOT NULL,
+        policy_name TEXT NOT NULL,
+        policy_config TEXT NOT NULL,
+        raw_text TEXT,
+        is_user_verified BOOLEAN DEFAULT FALSE,
+        is_active BOOLEAN DEFAULT TRUE,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        scope_type TEXT CHECK(scope_type IN ('course', 'group', 'task')) DEFAULT 'course',
+        target_group_id INTEGER REFERENCES course_task_groups(id),
+        target_task_id INTEGER REFERENCES tasks(id),
+        applicable_types TEXT,
+        excluded_types TEXT,
+        based_on_syllabus_reviewed_at DATETIME,
+        FOREIGN KEY(course_id) REFERENCES courses(id),
+        UNIQUE(course_id, policy_type, policy_name)
+      );
+      CREATE INDEX idx_course_policies_course ON course_policies(course_id);
+      CREATE INDEX idx_course_policies_type ON course_policies(policy_type);
+      CREATE INDEX idx_course_policies_scope ON course_policies(scope_type);
+      CREATE INDEX idx_course_policies_target_group ON course_policies(target_group_id);
+
+      CREATE TABLE notifications_old (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        source_type TEXT CHECK(source_type IN ('canvas', 'system')),
+        source_id TEXT,
+        course_id INTEGER,
+        title TEXT NOT NULL,
+        message TEXT NOT NULL,
+        message_html TEXT,
+        priority_level TEXT CHECK(priority_level IN ('critical', 'high', 'medium', 'low')) DEFAULT 'medium',
+        priority_score REAL DEFAULT 0.0,
+        published_at DATETIME NOT NULL,
+        dismissed_at DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        url TEXT,
+        is_policy_related BOOLEAN DEFAULT FALSE,
+        policy_keywords TEXT,
+        linked_policy_id INTEGER,
+        message_html_original TEXT,
+        FOREIGN KEY(course_id) REFERENCES courses(id) ON DELETE CASCADE,
+        FOREIGN KEY(linked_policy_id) REFERENCES course_policies(id),
+        UNIQUE(source_type, source_id)
+      );
+      INSERT INTO notifications_old (id, source_type, source_id, course_id, title, message,
+        message_html, priority_level, priority_score, published_at, dismissed_at, created_at,
+        url, is_policy_related, policy_keywords, message_html_original)
+        SELECT id, source_type, source_id, course_id, title, message,
+          message_html, priority_level, priority_score, published_at, dismissed_at, created_at,
+          url, is_policy_related, policy_keywords, message_html_original
+        FROM notifications;
+      DROP TABLE notifications;
+      ALTER TABLE notifications_old RENAME TO notifications;
+      CREATE INDEX idx_notifications_course ON notifications(course_id);
+      CREATE INDEX idx_notifications_dismissed ON notifications(dismissed_at);
+    `,
+  },
 ];

@@ -78,7 +78,6 @@ export async function createZipArchive(
           notifications: (exportData.notifications as unknown[])?.length || 0,
           files: 0,
           pages: (exportData.pages as unknown[])?.length || 0,
-          policies: (exportData.policies as unknown[])?.length || 0,
           modules: (exportData.modules as unknown[])?.length || 0,
           resources: (exportData.resources as unknown[])?.length || 0,
           syncPreferences: syncMeta?.preferences?.length || 0,
