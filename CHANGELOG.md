@@ -10,6 +10,18 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ## [Unreleased]
 
+### Added
+
+- `2026-06-02 04:00 UTC` — **Announcement file references can jump to the Files page**
+  ([#29](https://github.com/MorrisXDS/CanvasAssistant/issues/29)). A resolved file
+  reference in an announcement body now shows a small "reveal in Files" button
+  (folder icon) next to it; left-click still downloads/opens the file inline, the new
+  button navigates to the Files page and scrolls to + briefly highlights that file's
+  row (expanding its course/folders and clearing a hiding filter as needed). Built on
+  the existing `data-file-key` (`getCanonicalFileId`) row keys; the reveal logic lives
+  in a unit-tested `useFileReveal` hook (pure `planFileReveal` + DOM scroll). Also
+  added a CSS-module stub for jsdom component tests (`tests/__mocks__/styleMock.js`).
+
 ### Removed
 
 - `2026-06-02 03:00 UTC` — Dropped the `course_policies` zombie table (migration 110,
