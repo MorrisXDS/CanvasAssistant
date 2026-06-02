@@ -71,14 +71,12 @@ const mockApi = {
   setWindowBehavior: jest.fn().mockResolvedValue({ success: true }),
   connectCanvas: jest.fn().mockResolvedValue({ success: true }),
   deleteCredential: jest.fn().mockResolvedValue({ success: true }),
-  getBackupSchedule: jest
-    .fn()
-    .mockResolvedValue({
-      enabled: false,
-      frequency: 'daily',
-      time: '03:00',
-      maxBackups: 5,
-    }),
+  getBackupSchedule: jest.fn().mockResolvedValue({
+    enabled: false,
+    frequency: 'daily',
+    time: '03:00',
+    maxBackups: 5,
+  }),
   getBackupHistory: jest.fn().mockResolvedValue([]),
   getBackupDirectoryInfo: jest
     .fn()
@@ -350,6 +348,138 @@ describe('SettingsModal', () => {
 
       await waitFor(() => {
         expect(screen.getByText('Enable notifications')).toBeInTheDocument();
+      });
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Modal-primitive migration (refactor/modal-settings-primitive)
+  //
+  // The overlay branch (non-fullPage) now renders the shared <Modal> primitive;
+  // the full-page branch is an unchanged plain <div>. Esc is delegated to the
+  // primitive in the overlay branch and to a hand-rolled (gated) listener in the
+  // full-page branch. These cases pin both branches + the per-branch Esc
+  // decision (the load-bearing risk: no double-fire in overlay, Esc still works
+  // in full-page).
+  // ---------------------------------------------------------------------------
+  describe('Render branches & Esc handling', () => {
+    it('renders nothing when isOpen is false', () => {
+      const { container } = render(<SettingsModal isOpen={false} onClose={jest.fn()} />);
+      // Early `return null` — no dialog, no fullPage div, nothing rendered.
+      expect(container).toBeEmptyDOMElement();
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+
+    describe('Overlay branch (isFullPage omitted / false)', () => {
+      it('renders the Modal primitive (role=dialog + backdrop) with content', async () => {
+        render(<SettingsModal isOpen={true} onClose={jest.fn()} />);
+
+        // Flush the content's async mount effects first (jsdom act-guard).
+        await waitFor(() => {
+          expect(screen.getByText('Account')).toBeInTheDocument();
+        });
+
+        // Primitive container is role="dialog" aria-modal; backdrop is a
+        // div[aria-hidden] (narrowed from [aria-hidden] so it doesn't match the
+        // content's decorative aria-hidden lucide icon SVGs).
+        expect(screen.getByRole('dialog')).toBeInTheDocument();
+        const backdrop = document.querySelector('div[aria-hidden="true"]');
+        expect(backdrop).toBeInTheDocument();
+      });
+
+      it('Escape fires onClose exactly once (primitive only, no double-fire from the gated effect)', async () => {
+        const onClose = jest.fn();
+        render(<SettingsModal isOpen={true} onClose={onClose} />);
+
+        await waitFor(() => {
+          expect(screen.getByRole('dialog')).toBeInTheDocument();
+        });
+
+        act(() => {
+          fireEvent.keyDown(document, { key: 'Escape' });
+        });
+
+        // The hand-rolled listener is gated OFF in the overlay branch, so only
+        // the primitive's closeOnEscape fires. If it fired twice the gate is wrong.
+        expect(onClose).toHaveBeenCalledTimes(1);
+      });
+
+      it('backdrop click closes (primitive closeOnBackdropClick parity)', async () => {
+        const onClose = jest.fn();
+        render(<SettingsModal isOpen={true} onClose={onClose} />);
+
+        await waitFor(() => {
+          expect(screen.getByRole('dialog')).toBeInTheDocument();
+        });
+
+        const backdrop = document.querySelector('div[aria-hidden="true"]') as HTMLElement;
+        expect(backdrop).toBeInTheDocument();
+
+        act(() => {
+          fireEvent.click(backdrop);
+        });
+
+        expect(onClose).toHaveBeenCalledTimes(1);
+      });
+
+      it('header close button (aria-label="Close") closes', async () => {
+        const onClose = jest.fn();
+        render(<SettingsModal isOpen={true} onClose={onClose} />);
+
+        // The content's own close button is shown only in overlay (!isFullPage).
+        const closeBtn = await screen.findByLabelText('Close');
+        expect(closeBtn).toBeInTheDocument();
+
+        act(() => {
+          fireEvent.click(closeBtn);
+        });
+
+        expect(onClose).toHaveBeenCalledTimes(1);
+      });
+    });
+
+    describe('Full-page branch (isFullPage=true)', () => {
+      it('renders a plain div with NO Modal primitive backdrop / dialog', async () => {
+        render(<SettingsModal isOpen={true} isFullPage={true} onClose={jest.fn()} />);
+
+        // Flush the content's async mount effects first (jsdom act-guard).
+        await waitFor(() => {
+          expect(screen.getByText('Account')).toBeInTheDocument();
+        });
+
+        // Full-page embed is a plain <div> — no primitive backdrop (the Modal's
+        // backdrop is a div[aria-hidden]; the content's decorative icon SVGs are
+        // aria-hidden too, so narrow to div), no role=dialog.
+        expect(document.querySelector('div[aria-hidden="true"]')).not.toBeInTheDocument();
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      });
+
+      it('hides the content close button in full-page mode', async () => {
+        render(<SettingsModal isOpen={true} isFullPage={true} onClose={jest.fn()} />);
+
+        await waitFor(() => {
+          expect(screen.getByText('Account')).toBeInTheDocument();
+        });
+        // SettingsModalContent gates its close button to !isFullPage.
+        expect(screen.queryByLabelText('Close')).not.toBeInTheDocument();
+      });
+
+      it('Escape still fires onClose via the kept hand-rolled listener', async () => {
+        const onClose = jest.fn();
+        render(<SettingsModal isOpen={true} isFullPage={true} onClose={onClose} />);
+
+        await waitFor(() => {
+          expect(screen.getByText('Account')).toBeInTheDocument();
+        });
+
+        act(() => {
+          fireEvent.keyDown(document, { key: 'Escape' });
+        });
+
+        // The full-page branch is NOT a Modal, so the gated hand-rolled listener
+        // is the only Esc path — and it must still close (SettingsPage navigates
+        // back on close). Load-bearing: this listener must not be removed.
+        expect(onClose).toHaveBeenCalledTimes(1);
       });
     });
   });

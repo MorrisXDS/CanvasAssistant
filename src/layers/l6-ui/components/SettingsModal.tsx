@@ -8,6 +8,7 @@
 
 import React, { useEffect } from 'react';
 import { SettingsProvider, SettingsModalContent } from './Settings';
+import { Modal } from './primitives/Modal';
 import { styles } from './SettingsModalStyles';
 
 interface SettingsModalProps {
@@ -21,13 +22,19 @@ export function SettingsModal({
   onClose,
   isFullPage = false,
 }: SettingsModalProps) {
+  // Full-page branch renders a plain <div> (NOT the Modal primitive) and so has
+  // no built-in Esc handling — keep this hand-rolled listener, but ONLY for that
+  // branch. In the overlay branch the primitive's closeOnEscape (default true)
+  // already closes on Escape, so registering this listener there too would
+  // double-fire onClose.
   useEffect(() => {
+    if (!isOpen || !isFullPage) return;
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, [onClose]);
+  }, [isOpen, isFullPage, onClose]);
 
   if (!isOpen) return null;
 
@@ -37,16 +44,23 @@ export function SettingsModal({
     </SettingsProvider>
   );
 
+  // Full-page embed (SettingsPage route) — plain div, NO Modal primitive. Unchanged.
   if (isFullPage) {
     return <div style={styles.fullPage}>{content}</div>;
   }
 
+  // Overlay modal — the primitive owns backdrop / Esc / body-scroll-lock /
+  // centering / z-index. SettingsModalContent renders its OWN header + search +
+  // scrollable content + footer (a flex column), so we wrap it in a bare
+  // Modal.Content with padded={false} (the content blocks self-pad) and
+  // scrollable={false} (the inner styles.content div owns the scroll, flex:1).
+  // No Modal.Header / Modal.Footer — the content already has them.
   return (
-    <div style={styles.overlay} onClick={onClose}>
-      <div style={styles.modal} role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+    <Modal isOpen={isOpen} onClose={onClose} size="lg" zIndex={1100}>
+      <Modal.Content padded={false} scrollable={false}>
         {content}
-      </div>
-    </div>
+      </Modal.Content>
+    </Modal>
   );
 }
 
