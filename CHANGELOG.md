@@ -10,6 +10,19 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ## [Unreleased]
 
+### Added
+
+- `2026-06-02 02:30 UTC` — **Migration engine can now do foreign-key-off table
+  rebuilds** (ADR-0009). A migration may set `disableForeignKeys: true`;
+  `MigrationRunner` then runs it (and its `down`) with `PRAGMA foreign_keys = OFF`
+  (toggled outside the transaction — where it's otherwise a no-op — and restored in a
+  `finally`) plus a `PRAGMA foreign_key_check` after the body that aborts the migration
+  if the rebuild left any dangling references. Unflagged migrations are unchanged. This
+  unblocks the SQLite "12-step" rebuilds that were previously impossible — dropping a
+  column that participates in a foreign key (`notifications.linked_policy_id`,
+  `tasks.task_group_id`) or widening a CHECK (`resources.context_type`) — and so clears
+  the path to drop the last zombie tables (`course_policies`, `course_task_groups`).
+
 ### Removed
 
 - `2026-06-02 00:30 UTC` — Removed the dead announcement policy-keyword detection

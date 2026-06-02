@@ -8,6 +8,18 @@ export interface Migration {
   /** SQL string to run, or a function for complex migrations */
   up: string | ((db: Database) => void);
   down?: string;
+  /**
+   * Run this migration with `PRAGMA foreign_keys = OFF` (see ADR-0009). Required
+   * for SQLite "12-step" table rebuilds — dropping a column that participates in
+   * a foreign key, or changing a CHECK/constraint — because the rebuild must DROP
+   * the old table, which fails under FK-on when other tables reference it.
+   *
+   * Default (false/undefined): the migration runs inside the normal FK-on
+   * transaction, unchanged. Only set this for genuine table rebuilds; a
+   * `PRAGMA foreign_key_check` runs after the body and aborts the migration if it
+   * left any dangling references.
+   */
+  disableForeignKeys?: boolean;
 }
 
 /**
@@ -95,28 +107,70 @@ export class MigrationRunner {
    * Supports both SQL string and function-based migrations
    */
   private runMigration(migration: Migration): void {
-    this.db.transaction(() => {
-      try {
-        // Execute migration - either SQL string or function
-        if (typeof migration.up === 'function') {
-          migration.up(this.db);
-        } else {
-          this.db.exec(migration.up);
+    const runBody = (): void => {
+      this.db.transaction(() => {
+        try {
+          // Execute migration - either SQL string or function
+          if (typeof migration.up === 'function') {
+            migration.up(this.db);
+          } else {
+            this.db.exec(migration.up);
+          }
+        } catch (error) {
+          // Handle "duplicate column name" errors gracefully
+          // This happens when a column was manually added or migration was partially applied
+          const message = error instanceof Error ? error.message : String(error);
+          if (message.includes('duplicate column name')) {
+            // Column already exists - this is OK, continue with migration silently
+          } else {
+            throw error;
+          }
         }
-      } catch (error) {
-        // Handle "duplicate column name" errors gracefully
-        // This happens when a column was manually added or migration was partially applied
-        const message = error instanceof Error ? error.message : String(error);
-        if (message.includes('duplicate column name')) {
-          // Column already exists - this is OK, continue with migration silently
-        } else {
-          throw error;
-        }
-      }
 
-      // Record migration as applied
-      this.db.recordMigration(migration.version, migration.description);
-    });
+        // Verify a foreign-keys-off rebuild left no dangling references before
+        // it commits (see ADR-0009). Runs inside the transaction so a violation
+        // aborts the whole migration.
+        if (migration.disableForeignKeys) {
+          this.assertNoForeignKeyViolations(migration.version);
+        }
+
+        // Record migration as applied
+        this.db.recordMigration(migration.version, migration.description);
+      });
+    };
+
+    if (migration.disableForeignKeys) {
+      this.withForeignKeysOff(runBody);
+    } else {
+      runBody();
+    }
+  }
+
+  /**
+   * Run `fn` with `PRAGMA foreign_keys = OFF`, always restoring it afterwards
+   * (ADR-0009). The pragma must be toggled OUTSIDE a transaction — it is a no-op
+   * inside one — so this wraps the transaction, not the reverse.
+   */
+  private withForeignKeysOff(fn: () => void): void {
+    this.db.exec('PRAGMA foreign_keys = OFF');
+    try {
+      fn();
+    } finally {
+      this.db.exec('PRAGMA foreign_keys = ON');
+    }
+  }
+
+  /** Throw if `PRAGMA foreign_key_check` reports any dangling references. */
+  private assertNoForeignKeyViolations(version: number): void {
+    const violations = this.db.executeRead<Record<string, unknown>>(
+      'PRAGMA foreign_key_check'
+    );
+    if (violations.length > 0) {
+      throw new Error(
+        `Migration ${version} left ${violations.length} foreign-key violation(s): ` +
+          JSON.stringify(violations.slice(0, 5))
+      );
+    }
   }
 
   /**
@@ -143,13 +197,26 @@ export class MigrationRunner {
       }
 
       try {
-        this.db.transaction(() => {
-          this.db.exec(migration.down!);
-          // Use parameterized query to prevent SQL injection
-          this.db.executeWrite('DELETE FROM schema_version WHERE version = ?', [
-            migration.version,
-          ]);
-        });
+        const rollbackBody = (): void => {
+          this.db.transaction(() => {
+            this.db.exec(migration.down!);
+            if (migration.disableForeignKeys) {
+              this.assertNoForeignKeyViolations(migration.version);
+            }
+            // Use parameterized query to prevent SQL injection
+            this.db.executeWrite('DELETE FROM schema_version WHERE version = ?', [
+              migration.version,
+            ]);
+          });
+        };
+
+        // A foreign-keys-off migration's `down` (e.g. re-creating the rebuilt
+        // table) needs the same FK-off treatment as its `up` (ADR-0009).
+        if (migration.disableForeignKeys) {
+          this.withForeignKeysOff(rollbackBody);
+        } else {
+          rollbackBody();
+        }
         rolledBack++;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
