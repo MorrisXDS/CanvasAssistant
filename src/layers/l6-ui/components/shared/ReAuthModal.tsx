@@ -23,6 +23,7 @@ import { AlertTriangle, Key, Loader2, Check, XCircle, LogOut } from 'lucide-reac
 import { STORAGE_KEYS } from '../../../l5-presentation/settings';
 import { createLogger } from '../../utils/rendererLogger';
 import { Modal } from '../primitives/Modal';
+import { Z_INDEX } from '../../constants';
 
 const logger = createLogger('ReAuthModal');
 
@@ -117,7 +118,7 @@ export function ReAuthModal({ reason, onReauthSuccess, onDisconnect }: ReAuthMod
       closeOnEscape={false}
       closeOnBackdropClick={false}
       size="md"
-      zIndex={1100}
+      zIndex={Z_INDEX.modal}
     >
       <Modal.Header
         title="Canvas Token Expired"

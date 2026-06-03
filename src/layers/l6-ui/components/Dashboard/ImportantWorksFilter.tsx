@@ -11,7 +11,7 @@ import {
   DEFAULT_IMPORTANT_WORKS_FILTER,
   type ImportantWorksFilter as FilterType,
 } from '../../../l5-presentation/settings';
-import { TASK_TYPES } from '../../constants';
+import { TASK_TYPES, Z_INDEX } from '../../constants';
 
 interface ImportantWorksFilterProps {
   filter: FilterType;
@@ -455,7 +455,7 @@ const styles: Record<string, React.CSSProperties> = {
     border: '1px solid var(--border-default)',
     borderRadius: 'var(--radius-xl, 12px)',
     boxShadow: '0 12px 40px rgba(0, 0, 0, 0.3)',
-    zIndex: 10000,
+    zIndex: Z_INDEX.overlayChrome,
     overflow: 'hidden',
   },
 

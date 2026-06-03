@@ -23,6 +23,7 @@
 import React, { useState, useRef, useEffect, CSSProperties } from 'react';
 import { Check, Pipette, Palette } from 'lucide-react';
 import { COURSE_COLORS, getContrastTextColor } from '../../constants/colors';
+import { Z_INDEX } from '../../constants';
 
 export interface ColorPickerProps {
   /** Currently selected color */
@@ -498,7 +499,7 @@ function getStyles(swatchSize: number, compact: boolean) {
 const popupStyles: Record<string, CSSProperties> = {
   popup: {
     position: 'absolute',
-    zIndex: 1000,
+    zIndex: Z_INDEX.overlayChrome,
     backgroundColor: 'var(--bg-elevated)',
     border: '1px solid var(--border-default)',
     borderRadius: '8px',

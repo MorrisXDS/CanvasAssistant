@@ -8,6 +8,7 @@
 
 import React from 'react';
 import { Minus, Square, X } from 'lucide-react';
+import { Z_INDEX } from '../constants';
 
 const isMac = window.api?.platform === 'darwin';
 const MAC_TRAFFIC_LIGHT_WIDTH = 70; // px clearance for native close/minimize/fullscreen buttons
@@ -97,7 +98,7 @@ const styles: Record<string, React.CSSProperties> = {
     top: 0,
     left: 0,
     right: 0,
-    zIndex: 9999,
+    zIndex: Z_INDEX.titleBar,
   },
 
   sidebarSpacer: {

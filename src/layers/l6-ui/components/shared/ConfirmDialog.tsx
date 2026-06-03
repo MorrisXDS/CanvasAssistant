@@ -24,6 +24,7 @@
 import React from 'react';
 import { AlertTriangle, Info, CheckCircle, XCircle } from 'lucide-react';
 import { Modal } from '../primitives/Modal';
+import { Z_INDEX } from '../../constants';
 import { CONFIRM_DIALOG_SHORTCUTS } from '../../constants/modalShortcuts';
 
 type DialogType = 'danger' | 'warning' | 'info' | 'success';
@@ -129,7 +130,7 @@ export function ConfirmDialog({
       // Use a high z-index so ConfirmDialog can layer above any other modal
       // (the primitive's default is 1000; this matches the previous custom
       // chrome's z-indexes of 1000/1001).
-      zIndex={1100}
+      zIndex={Z_INDEX.modal}
       shortcuts={CONFIRM_DIALOG_SHORTCUTS}
     >
       {/* Single padded block — no Modal.Header / Modal.Footer so we don't

@@ -12,6 +12,7 @@ import React, { useState, useRef, useEffect, type ReactNode } from 'react';
 import { Info } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { Modal } from '../primitives/Modal';
+import { Z_INDEX } from '../../constants';
 
 export interface InfoTriggerProps {
   /** Brief summary shown on hover (1 sentence) */
@@ -112,7 +113,7 @@ export function InfoTrigger({
         isOpen={showModal}
         onClose={() => setShowModal(false)}
         size="md"
-        zIndex={1400}
+        zIndex={Z_INDEX.infoTrigger}
       >
         <Modal.Header title={title} onClose={() => setShowModal(false)} />
         <Modal.Content>{details}</Modal.Content>
@@ -157,7 +158,7 @@ const styles: Record<string, React.CSSProperties> = {
 
   tooltip: {
     position: 'fixed',
-    zIndex: 9999,
+    zIndex: Z_INDEX.overlayChrome,
     maxWidth: '250px',
     padding: 'var(--space-2) var(--space-3)',
     backgroundColor: 'var(--color-gray-800)',

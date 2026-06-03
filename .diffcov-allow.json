@@ -4,5 +4,23 @@
   "_audit": "When adding an entry: include a one-line comment-style key (e.g., \"_why_<filename>\") in the same JSON object explaining the reason. Future readers grep for `_why_` to find the rationales.",
   "_why_src_lifecycle_AppLifecycle_ts": "Electron app lifecycle entry. Constructs L1/L2/L4 services and wires them into IpcContext at boot. Mocking the Electron app/BrowserWindow/IPC platform here is more brittle than the bug we'd be catching — broken wiring surfaces at app launch in /verify or /manual-test-launch, and the wired services have their own behavioural tests. Specific risks: typo in the FileEntityProvider construction (PR-F.3) would crash at boot; typo in a getter (e.g., returning the wrong field) would surface the moment any handler uses it.",
   "_why_src_preload_ts": "Electron preload script. One-line `ipcRenderer.invoke` bindings that expose IPC channels to the renderer's contextBridge. Cannot be exercised in jest — contextBridge + ipcRenderer require the Electron runtime. The bindings are mechanical wrappers; the real behaviour lives in the IPC handlers (which ARE tested).",
-  "paths": ["src/lifecycle/AppLifecycle.ts", "src/preload.ts"]
+  "_why_zindex_constant_swap": "z-index centralization (refactor/zindex-constants-and-occlusion-fix): the diff lines flagged below are NOT behavioural — each is either an `import { Z_INDEX }` line or a `zIndex: Z_INDEX.*` / `zIndex={Z_INDEX.*}` style-property/JSX-prop swap replacing a raw literal of identical value. They live in modal/chrome/style components that have NO render-test harness (none existed pre-PR), and the value is byte-for-byte the same as before (modal=1100, modalChild=1200, etc. are frozen). Correctness of the SCALE is exercised by tests/l6-ui/zIndex.test.ts (ordering/ceiling/frozen-values), and the absence of stray literals by tests/integration/no-stray-high-zindex.test.ts (hard-zero source scan). Writing mount tests for 13 components purely to cover a no-op constant reference is churn with no behavioural assertion. Carve-out is the plan-sanctioned disposition (01_architect_plan.md §test-3, option b).",
+  "paths": [
+    "src/lifecycle/AppLifecycle.ts",
+    "src/preload.ts",
+    "src/layers/l6-ui/components/Calendar/DuplicateCalendarModal.tsx",
+    "src/layers/l6-ui/components/Queue/TaskLinkDialog.tsx",
+    "src/layers/l6-ui/components/Sidebar.tsx",
+    "src/layers/l6-ui/components/TitleBar.tsx",
+    "src/layers/l6-ui/components/layoutStyles.ts",
+    "src/layers/l6-ui/components/pages/CourseDetail.styles.ts",
+    "src/layers/l6-ui/components/shared/CloseBehaviorDialog.tsx",
+    "src/layers/l6-ui/components/shared/CorruptionDialog.tsx",
+    "src/layers/l6-ui/components/shared/DuplicateWarningModal.tsx",
+    "src/layers/l6-ui/components/shared/KeyboardShortcutsModal.tsx",
+    "src/layers/l6-ui/components/shared/ReAuthModal.tsx",
+    "src/layers/l6-ui/components/shared/RecoveryBanner.tsx",
+    "src/layers/l6-ui/components/shared/SyncUpdatesFAB.tsx",
+    "src/layers/l6-ui/components/welcomeGuideStyles.ts"
+  ]
 }

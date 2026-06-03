@@ -7,12 +7,14 @@
 
 import React from 'react';
 
+import { Z_INDEX } from '../constants';
+
 export const welcomeGuideStyles: Record<string, React.CSSProperties> = {
   // Full-page overlay
   container: {
     position: 'fixed',
     inset: 0,
-    zIndex: 9999,
+    zIndex: Z_INDEX.overlayChrome,
     minHeight: '100vh',
     display: 'flex',
     flexDirection: 'column',

@@ -37,7 +37,7 @@ import { ConfirmDialog } from '../shared/ConfirmDialog';
 import { ExportDialog } from '../shared/ExportDialog';
 import { Accordion, SearchInput, SettingsDock } from '../primitives';
 import { Modal } from '../primitives/Modal';
-import { SETTINGS_LABELS, MENU_LABELS } from '../../constants';
+import { SETTINGS_LABELS, MENU_LABELS, Z_INDEX } from '../../constants';
 import { styles } from '../SettingsModalStyles';
 import { STORAGE_KEYS, SettingsCategory } from '../../../l5-presentation/settings';
 import { createLogger } from '../../utils/rendererLogger';
@@ -273,7 +273,7 @@ export function SettingsModalContent() {
         isOpen={showTokenReplaceModal}
         onClose={() => setShowTokenReplaceModal(false)}
         size="md"
-        zIndex={1200}
+        zIndex={Z_INDEX.modalChild}
       >
         <Modal.Header
           title={SETTINGS_LABELS.tokenModal.title}
@@ -363,7 +363,7 @@ export function SettingsModalContent() {
         isOpen={showPasswordModal}
         onClose={handleCancelPasswordModal}
         size="md"
-        zIndex={1200}
+        zIndex={Z_INDEX.modalChild}
       >
         <Modal.Header
           title="Encrypted Backup"
@@ -421,7 +421,7 @@ export function SettingsModalContent() {
       <Modal
         isOpen={showRestartModal}
         size="md"
-        zIndex={1200}
+        zIndex={Z_INDEX.modalChild}
         closeOnEscape={false}
         closeOnBackdropClick={false}
       >

@@ -10,7 +10,12 @@ import { Card, Badge, BadgeVariant, RichTextEditor, NotificationDot } from '../s
 import { Modal, Button } from '../primitives';
 import { useStore } from '../../../l5-presentation/store';
 import { useTaskUpdates } from '../../hooks';
-import { formatSmartDate, getBadgeUrgency, getCleanCourseName } from '../../constants';
+import {
+  formatSmartDate,
+  getBadgeUrgency,
+  getCleanCourseName,
+  Z_INDEX,
+} from '../../constants';
 import type { Task, Course } from '../../../l5-presentation/types';
 import { TaskContextMenu } from '../Course/TaskContextMenu';
 import { createLogger } from '../../utils/rendererLogger';
@@ -460,7 +465,7 @@ export function TasksPage() {
         isOpen={showAddTask}
         onClose={() => setShowAddTask(false)}
         size="md"
-        zIndex={1100}
+        zIndex={Z_INDEX.modal}
       >
         <Modal.Header title="Add Task" onClose={() => setShowAddTask(false)} />
         <Modal.Content>

@@ -10,6 +10,7 @@ import React, { useState, useCallback, useMemo, useRef } from 'react';
 import { AlertTriangle, Link2, Plus, Check, Settings2 } from 'lucide-react';
 import type { DuplicateCheckResult } from '../../../l5-presentation/types';
 import { Modal } from '../primitives/Modal';
+import { Z_INDEX } from '../../constants';
 import { useModalHotkeys } from '../../hooks/useStackAwareHotkeys';
 import {
   DUPLICATE_WARNING_SHORTCUTS,
@@ -354,7 +355,7 @@ export function DuplicateWarningModal({
         isOpen
         onClose={onCancel}
         size="lg"
-        zIndex={1100}
+        zIndex={Z_INDEX.modal}
         // Our own keyboard hooks manage Esc so we can give the child editor
         // priority. Don't double-handle it.
         closeOnEscape={false}
@@ -644,7 +645,7 @@ export function DuplicateWarningModal({
           isOpen
           onClose={closeCustomizeCancel}
           size="md"
-          zIndex={1200}
+          zIndex={Z_INDEX.modalChild}
           closeOnEscape={false}
           shortcuts={DUPLICATE_WARNING_CUSTOMIZE_SHORTCUTS}
         >

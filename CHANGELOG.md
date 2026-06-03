@@ -12,6 +12,20 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ### Added
 
+- `2026-06-03 04:12 UTC` — **Centralized `Z_INDEX` stacking scale + a CI guard against stray high
+  z-indexes** — new `src/layers/l6-ui/constants/zIndex.ts` exports a single ascending `Z_INDEX` scale
+  with named, well-spaced bands (`base` → `raised` → `elevated` → `stickyHeader` → `sidebar` →
+  `overlayChrome` → `modal` 1100 → `modalChild` 1200 → `titleBar` 1300 → `infoTrigger` 1400 →
+  `help` 1500), giving the whole renderer one source of truth for "what sits above what". The modal
+  tier keeps its established literal values verbatim, so the change is a no-op for actual modal
+  rendering. ~26 modal-tier and mid-tier z-index literals were converted to `Z_INDEX.*`. A new
+  fitness-function test (`tests/integration/no-stray-high-zindex.test.ts`, modelled on
+  `ipc-handlers-no-raw-sql.test.ts`) is a **hard-zero gate**: it fails the suite if any `zIndex`
+  literal ≥ 1100 is reintroduced anywhere under `src/layers/l6-ui/**/*.{ts,tsx}` (so a future
+  `zIndex: 9999` gets caught), making "nothing non-modal sits above the modal tier" machine-enforced.
+  `titleBar: 1300` is the one deliberate, documented non-modal-above-modal exception (window controls
+  must stay grabbable above ordinary modals; still below Help).
+
 - `2026-06-03 03:03 UTC` — **CI guard against new handwritten modals** — a fitness-function test
   (`tests/integration/no-handwritten-modals.test.ts`, modelled on `ipc-handlers-no-raw-sql.test.ts`)
   that fails the suite if any file under `src/layers/l6-ui/components/**` reintroduces the
@@ -28,6 +42,16 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ### Fixed
 
+- `2026-06-03 04:12 UTC` — **Dropdowns, tooltips, the title bar, and the first-run guide can no longer
+  paint over open modals (including the always-on-top Help modal).** Four non-modal elements were
+  sitting at or above the modal/Help tier with raw `9999`/`10000` z-indexes: the dashboard
+  ImportantWorksFilter popover (`10000`), the InfoTrigger hover tooltip (`9999`), the TitleBar
+  (`9999`), and the WelcomeGuide first-run overlay (`9999`). Because `<Modal>` is not portaled, those
+  literals competed directly with modal backdrops in the same stacking context, so an open popover or
+  tooltip could occlude a dialog — including Help (1500). They are now rebanded via the new `Z_INDEX`
+  scale: popover/tooltip/welcome-guide drop to `overlayChrome` (1000, below every modal), and the
+  TitleBar moves to the new `titleBar` band (1300, above ordinary/child modals so window controls stay
+  grabbable, but below Help).
 - `2026-06-03 03:37 UTC` — **Manually-triggered scheduled backups now save to the canonical backup
   directory** (`BACKUP_DIR`), so they show up in backup management and are pruned by rotation. The
   `data:runScheduledBackup` handler was writing to a hardcoded `~/Documents/CanvasAssistant/backups`

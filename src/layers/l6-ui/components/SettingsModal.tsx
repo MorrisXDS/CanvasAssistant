@@ -10,6 +10,7 @@ import React, { useEffect } from 'react';
 import { SettingsProvider, SettingsModalContent } from './Settings';
 import { Modal } from './primitives/Modal';
 import { styles } from './SettingsModalStyles';
+import { Z_INDEX } from '../constants';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -56,7 +57,7 @@ export function SettingsModal({
   // scrollable={false} (the inner styles.content div owns the scroll, flex:1).
   // No Modal.Header / Modal.Footer — the content already has them.
   return (
-    <Modal isOpen={isOpen} onClose={onClose} size="lg" zIndex={1100}>
+    <Modal isOpen={isOpen} onClose={onClose} size="lg" zIndex={Z_INDEX.modal}>
       <Modal.Content padded={false} scrollable={false}>
         {content}
       </Modal.Content>

@@ -26,6 +26,7 @@ import { useStore, selectors } from '../../../l5-presentation/store';
 import { styles } from './ExportDialog.styles';
 import { createLogger } from '../../utils/rendererLogger';
 import { Modal } from '../primitives/Modal';
+import { Z_INDEX } from '../../constants';
 
 const logger = createLogger('ExportDialog');
 
@@ -314,7 +315,7 @@ export function ExportDialog({ isOpen, onClose }: ExportDialogProps) {
       isOpen={isOpen}
       onClose={onClose}
       size="lg"
-      zIndex={1200}
+      zIndex={Z_INDEX.modalChild}
       closeOnEscape={false}
     >
       <Modal.Header title="Custom Export" onClose={onClose} />
