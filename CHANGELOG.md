@@ -10,6 +10,18 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ## [Unreleased]
 
+### Added
+
+- `2026-06-03 22:02 UTC` — **Section-navigation foundation (no-op infra, ADR-0010 Phase 0).**
+  Added a reusable `useSectionScope` hook (`Q`/`E` cycle + uniform `Alt+1..N` direct-jump to the
+  Nth available section + re-scope-on-unavailable + broadcast to `KeyboardScopeContext`), a
+  presentational `SectionBar` indicator primitive, a backward-compatible `activeSections`
+  extension to `KeyboardScopeContext`, and a "This page's sections" block in the `?` help modal
+  (dormant until a page sets it). **No page is migrated and nothing changes visually** — this PR
+  only ships the building blocks for the uniform in-page section-navigation scheme; CourseDetail /
+  Calendar / CoursesPage keep their current inline keymaps untouched, and the Calendar `Alt+1-9`
+  course-filter rebind is deferred to Phase 2. See `docs/adr/0010-section-nav-direct-jump-modifier.md`.
+
 ### Changed
 
 - `2026-06-03 21:17 UTC` — **Fixed page-scoped keyboard help on Course-Detail / Announcement-Detail

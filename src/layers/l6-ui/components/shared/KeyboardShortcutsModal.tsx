@@ -27,7 +27,10 @@ import {
   getScopeForPath,
   type ShortcutCategory,
 } from '../../constants/keyboardShortcuts';
-import { KeyboardScopeContext } from '../../contexts/KeyboardScopeContext';
+import {
+  KeyboardScopeContext,
+  type ActiveSectionInfo,
+} from '../../contexts/KeyboardScopeContext';
 import { ModalIdContext, useModalStack } from '../../contexts/ModalStackContext';
 
 export interface KeyboardShortcutsModalProps {
@@ -51,9 +54,36 @@ function resolveKeyLabel(key: string): string {
       return isMac ? '⌫' : 'Del';
     case 'Space':
       return '␣';
+    case 'alt':
+      return isMac ? '⌥' : 'Alt';
     default:
       return key;
   }
+}
+
+/**
+ * "This page's sections" block — lists the active page's in-page sections
+ * (broadcast by `useSectionScope` to `KeyboardScopeContext`) with their
+ * `Alt+<index1>` direct-jump slots. Dormant until a page sets `activeSections`.
+ */
+function SectionsList({ sections }: { sections: ActiveSectionInfo[] }) {
+  return (
+    <div>
+      <div style={styles.categoryTitle}>This page&apos;s sections</div>
+      <div style={styles.shortcutList}>
+        {sections.map((section) => (
+          <div key={section.id} style={styles.shortcutRow}>
+            <span style={styles.label}>{section.label}</span>
+            <span style={styles.keys}>
+              <kbd style={styles.kbd}>{resolveKeyLabel('alt')}</kbd>
+              <span style={styles.separator}>+</span>
+              <kbd style={styles.kbd}>{section.index1}</kbd>
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function ShortcutList({ category }: { category: ShortcutCategory }) {
@@ -116,7 +146,7 @@ function KeyboardShortcutsContent({
   onClose,
 }: KeyboardShortcutsContentProps) {
   const location = useLocation();
-  const { activeSubscope } = useContext(KeyboardScopeContext);
+  const { activeSubscope, activeSections } = useContext(KeyboardScopeContext);
   const currentPageScope = getScopeForPath(location.pathname);
 
   // Read my own modal stack id (the help modal itself) so we can skip it when
@@ -158,19 +188,30 @@ function KeyboardShortcutsContent({
   // Modal shortcuts (if any) override page shortcuts for Tab 1.
   const tab1Category: ShortcutCategory | null = modalCategoryFromStack ?? pageCategory;
 
+  // The active page's in-page sections (ADR-0010), shown in Tab 1 below the
+  // shortcut list. A modal's shortcuts take precedence: when a modal owns Tab 1
+  // (modalCategoryFromStack), don't show the underlying page's sections.
+  const showSections =
+    modalCategoryFromStack === null &&
+    activeSections !== null &&
+    activeSections.length > 0;
+
+  // Tab 1 ("page") is offered whenever there's a category OR a sections block.
+  const hasPageTab = tab1Category !== null || showSections;
+
   const globalCategories = KEYBOARD_SHORTCUTS.filter((c) => !c.scope);
 
   type TabId = 'page' | 'global';
   const [activeTab, setActiveTab] = useState<TabId>(
-    forceGlobal || !tab1Category ? 'global' : 'page'
+    forceGlobal || !hasPageTab ? 'global' : 'page'
   );
 
-  // Re-evaluate the default tab when forceGlobal or the resolved tab1 category
-  // changes (which happens if a modal opens/closes underneath us mid-session,
-  // though that's rare).
+  // Re-evaluate the default tab when forceGlobal or the resolved page-tab
+  // availability changes (which happens if a modal opens/closes underneath us
+  // mid-session, though that's rare).
   useEffect(() => {
-    setActiveTab(forceGlobal || !tab1Category ? 'global' : 'page');
-  }, [forceGlobal, tab1Category]);
+    setActiveTab(forceGlobal || !hasPageTab ? 'global' : 'page');
+  }, [forceGlobal, hasPageTab]);
 
   const handleTabKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
@@ -179,7 +220,7 @@ function KeyboardShortcutsContent({
     }
   }, []);
 
-  const showTabs = tab1Category !== null;
+  const showTabs = hasPageTab;
   const tab1Label = tab1Category?.title ?? 'Page';
   const modKey = isMac ? '⌘' : 'Ctrl';
 
@@ -229,6 +270,9 @@ function KeyboardShortcutsContent({
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
             {activeTab === 'page' && tab1Category && (
               <ShortcutList category={tab1Category} />
+            )}
+            {activeTab === 'page' && showSections && activeSections && (
+              <SectionsList sections={activeSections} />
             )}
             {activeTab === 'global' &&
               (globalCategories.length > 0 ? (
