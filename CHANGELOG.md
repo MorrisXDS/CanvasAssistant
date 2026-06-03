@@ -46,6 +46,15 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ### Fixed
 
+- `2026-06-03 06:05 UTC` — **macOS sleep/wake no longer leaves the app inactive or wedged.** The
+  `IdleStateManager` (suspend/resume protector that pauses sync + the file watcher and checkpoints the
+  WAL on sleep, resumes them on wake) was dead code — defined but never wired in — so the app had zero
+  power-state handling. It is now constructed and started in `AppLifecycle`. Also fixed a state-machine
+  deadlock: when macOS froze the process mid-suspend the state stuck at `'suspending'`, and the resume
+  handler's `!== 'suspended'` guard then skipped resume entirely (sync/watchers never restarted); the
+  guard now resumes from both `'suspending'` and `'suspended'`. Plus `AutoSyncManager` wraps `syncAll()`
+  in a 5-minute liveness timeout so a sync in flight when the Mac slept can't hang the scheduler on wake.
+  macOS-only; verify on a real sleep/wake cycle.
 - `2026-06-03 04:12 UTC` — **Dropdowns, tooltips, the title bar, and the first-run guide can no longer
   paint over open modals (including the always-on-top Help modal).** Four non-modal elements were
   sitting at or above the modal/Help tier with raw `9999`/`10000` z-indexes: the dashboard

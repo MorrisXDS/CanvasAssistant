@@ -11,6 +11,9 @@ import type { SystemMonitor } from '../layers/l0-utilities/SystemMonitor';
 import type { SyncEngine } from '../layers/l2-daemon';
 import type { CrashProtectionManager } from './CrashProtectionManager';
 
+/** Maximum time to allow a single syncAll() call in the auto-sync loop (5 minutes) */
+const AUTO_SYNC_TIMEOUT_MS = 5 * 60 * 1000;
+
 export interface AutoSyncManagerConfig {
   database: Database;
   logger: Logger;
@@ -102,7 +105,15 @@ export class AutoSyncManager {
           mainWindow.webContents.send('sync:status', 'syncing');
         }
 
-        await syncEngine.syncAll();
+        await Promise.race([
+          syncEngine.syncAll(),
+          new Promise<never>((_, reject) =>
+            setTimeout(
+              () => reject(new Error('Auto-sync timed out')),
+              AUTO_SYNC_TIMEOUT_MS
+            )
+          ),
+        ]);
 
         // Notify renderer that sync completed
         const mainWindowAfter = this.getMainWindow();
@@ -157,7 +168,12 @@ export class AutoSyncManager {
         mainWindow.webContents.send('sync:status', 'syncing');
       }
 
-      await syncEngine.syncAll();
+      await Promise.race([
+        syncEngine.syncAll(),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('Auto-sync timed out')), AUTO_SYNC_TIMEOUT_MS)
+        ),
+      ]);
 
       const mainWindowAfter = this.getMainWindow();
       if (mainWindowAfter && !mainWindowAfter.isDestroyed()) {

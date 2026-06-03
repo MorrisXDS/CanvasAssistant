@@ -17,6 +17,7 @@ import type { MetricsCollector } from '../layers/l0-utilities/MetricsCollector';
 import type { HousekeepingManager } from '../layers/l0-utilities/HousekeepingManager';
 import type { FileDownloadManager } from '../layers/l0-utilities/FileDownloadManager';
 import type { FileWatcher } from '../layers/l0-utilities/FileWatcher';
+import { IdleStateManager } from '../layers/l0-utilities/IdleStateManager';
 
 // L1 - Persistence
 import {
@@ -149,6 +150,7 @@ export class AppLifecycle {
   private canvasClientManager: CanvasClientManager | null = null;
   private autoSyncManager: AutoSyncManager | null = null;
   private backupManager: BackupManager | null = null;
+  private idleStateManager: IdleStateManager | null = null;
 
   // Mutable flags
   private isQuitting = false;
@@ -612,6 +614,42 @@ export class AppLifecycle {
     this.fileWatcher.start();
     this.wireFileWatcherEvents();
 
+    // Start IdleStateManager — must be after app.whenReady(); wires suspend/resume protection
+    this.idleStateManager = new IdleStateManager({
+      logger: this.logger,
+      onSuspend: async () => {
+        this.logger.info('[AppLifecycle] Suspend: pausing sync and file watcher');
+        this.autoSyncManager?.stop();
+        this.fileWatcher.pause();
+        const syncEngine = this.getSyncEngine();
+        if (syncEngine) {
+          try {
+            syncEngine.abort();
+          } catch (err) {
+            this.logger.error(
+              '[AppLifecycle] Failed to abort sync on suspend',
+              err as Error
+            );
+          }
+        }
+      },
+      onResume: async () => {
+        this.logger.info('[AppLifecycle] Resume: restarting file watcher and sync');
+        this.fileWatcher.resume();
+        // Re-scan for any changes that occurred while paused
+        await this.fileWatcher.scanForChanges();
+        // Only restart auto-sync if the system monitor says sync is safe
+        if (this.systemMonitor.getState().canSync) {
+          this.autoSyncManager?.start();
+        }
+      },
+      onCheckpoint: () => {
+        this.database.checkpoint();
+        this.logger.info('[AppLifecycle] WAL checkpoint completed before suspend');
+      },
+    });
+    this.idleStateManager.start();
+
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) {
         this.windowManager?.createWindow();
@@ -695,6 +733,7 @@ export class AppLifecycle {
     // Stop managers
     this.autoSyncManager?.stop();
     this.backupManager?.stop();
+    this.idleStateManager?.stop();
 
     // Abort any in-flight sync operations
     const syncEngine = this.getSyncEngine();
