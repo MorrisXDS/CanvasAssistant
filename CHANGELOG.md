@@ -28,6 +28,13 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ### Fixed
 
+- `2026-06-03 03:37 UTC` — **Manually-triggered scheduled backups now save to the canonical backup
+  directory** (`BACKUP_DIR`), so they show up in backup management and are pruned by rotation. The
+  `data:runScheduledBackup` handler was writing to a hardcoded `~/Documents/CanvasAssistant/backups`
+  path that the backup-list UI never reads and rotation never prunes — manual backups reported success
+  but were orphaned there and accumulated unbounded. It now uses the same `ctx.getBackupDir()` accessor
+  the automatic `BackupManager`, the list UI, and rotation all use, restoring the "manual == automatic"
+  invariant.
 - `2026-06-02 23:40 UTC` — **"Select None" is clickable again in the Custom Export dialog** (and a
   0-course export is now reachable). Migrating `ExportDialog` to read courses via
   `selectors.visibleCourses` briefly broke deselection: that selector returns a fresh array on every

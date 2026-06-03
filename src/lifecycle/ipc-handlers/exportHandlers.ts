@@ -7,7 +7,7 @@
  * Note: CSV export handlers are in csvExportHandlers.ts
  */
 
-import { ipcMain, dialog, app } from 'electron';
+import { ipcMain, dialog } from 'electron';
 import fs from 'fs';
 import path from 'path';
 import { ExportManager } from '../../layers/l2-daemon';
@@ -35,6 +35,7 @@ export function registerExportHandlers(ctx: IpcContext): void {
   const metricsCollector = ctx.getMetricsCollector();
   const getMainWindow = ctx.getMainWindow;
   const getDbPath = ctx.getDbPath;
+  const getBackupDir = ctx.getBackupDir;
   const getFilesDir = ctx.getFilesDir;
   const getAppVersion = ctx.getAppVersion;
   const getVisibilityOracle = ctx.getVisibilityOracle;
@@ -190,8 +191,7 @@ export function registerExportHandlers(ctx: IpcContext): void {
   // Run scheduled backup manually
   ipcMain.handle('data:runScheduledBackup', async () => {
     try {
-      // Get backup destination from settings (via renderer localStorage sync or default)
-      const backupDir = path.join(app.getPath('documents'), 'CanvasAssistant', 'backups');
+      const backupDir = getBackupDir();
 
       // Ensure backup directory exists
       if (!fs.existsSync(backupDir)) {
