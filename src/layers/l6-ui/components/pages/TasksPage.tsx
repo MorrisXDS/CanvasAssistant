@@ -7,6 +7,7 @@ import React, { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Clock, AlertTriangle, CheckCircle, Circle, Plus } from 'lucide-react';
 import { Card, Badge, BadgeVariant, RichTextEditor, NotificationDot } from '../shared';
+import { Modal, Button } from '../primitives';
 import { useStore } from '../../../l5-presentation/store';
 import { useTaskUpdates } from '../../hooks';
 import { formatSmartDate, getBadgeUrgency, getCleanCourseName } from '../../constants';
@@ -455,83 +456,86 @@ export function TasksPage() {
       </Card>
 
       {/* Add Task Modal */}
-      {showAddTask && (
-        <div style={styles.modalOverlay} onClick={() => setShowAddTask(false)}>
-          <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
-            <h2 style={styles.modalTitle}>Add Task</h2>
-            <div style={styles.modalForm}>
+      <Modal
+        isOpen={showAddTask}
+        onClose={() => setShowAddTask(false)}
+        size="md"
+        zIndex={1100}
+      >
+        <Modal.Header title="Add Task" onClose={() => setShowAddTask(false)} />
+        <Modal.Content>
+          <div style={styles.modalForm}>
+            <select
+              value={newTaskCourseId}
+              onChange={(e) =>
+                setNewTaskCourseId(e.target.value ? Number(e.target.value) : '')
+              }
+              style={styles.formSelect}
+            >
+              <option value="">Select course...</option>
+              {courses.map((course) => (
+                <option key={course.id} value={course.id}>
+                  {course.code} - {course.nickname || getCleanCourseName(course.name)}
+                </option>
+              ))}
+            </select>
+            <input
+              type="text"
+              placeholder="Task title"
+              value={newTaskTitle}
+              onChange={(e) => setNewTaskTitle(e.target.value)}
+              style={styles.formInput}
+              autoFocus
+            />
+            <RichTextEditor
+              value={newTaskDescription}
+              onChange={setNewTaskDescription}
+              placeholder="Task description (optional)..."
+              minHeight={80}
+            />
+            <div style={styles.formRow}>
               <select
-                value={newTaskCourseId}
-                onChange={(e) =>
-                  setNewTaskCourseId(e.target.value ? Number(e.target.value) : '')
-                }
+                value={newTaskType}
+                onChange={(e) => setNewTaskType(e.target.value)}
                 style={styles.formSelect}
               >
-                <option value="">Select course...</option>
-                {courses.map((course) => (
-                  <option key={course.id} value={course.id}>
-                    {course.code} - {course.nickname || getCleanCourseName(course.name)}
-                  </option>
-                ))}
+                <option value="">Select type...</option>
+                <option value="assignment">Assignment</option>
+                <option value="quiz">Quiz</option>
+                <option value="discussion">Discussion</option>
+                <option value="exam">Exam</option>
               </select>
               <input
-                type="text"
-                placeholder="Task title"
-                value={newTaskTitle}
-                onChange={(e) => setNewTaskTitle(e.target.value)}
+                type="date"
+                value={newTaskDueDate}
+                onChange={(e) => setNewTaskDueDate(e.target.value)}
                 style={styles.formInput}
-                autoFocus
               />
-              <RichTextEditor
-                value={newTaskDescription}
-                onChange={setNewTaskDescription}
-                placeholder="Task description (optional)..."
-                minHeight={80}
+              <input
+                type="number"
+                placeholder="Weight %"
+                value={newTaskWeight}
+                onChange={(e) => setNewTaskWeight(e.target.value)}
+                style={styles.formInputSmall}
+                min="0"
+                max="100"
               />
-              <div style={styles.formRow}>
-                <select
-                  value={newTaskType}
-                  onChange={(e) => setNewTaskType(e.target.value)}
-                  style={styles.formSelect}
-                >
-                  <option value="">Select type...</option>
-                  <option value="assignment">Assignment</option>
-                  <option value="quiz">Quiz</option>
-                  <option value="discussion">Discussion</option>
-                  <option value="exam">Exam</option>
-                </select>
-                <input
-                  type="date"
-                  value={newTaskDueDate}
-                  onChange={(e) => setNewTaskDueDate(e.target.value)}
-                  style={styles.formInput}
-                />
-                <input
-                  type="number"
-                  placeholder="Weight %"
-                  value={newTaskWeight}
-                  onChange={(e) => setNewTaskWeight(e.target.value)}
-                  style={styles.formInputSmall}
-                  min="0"
-                  max="100"
-                />
-              </div>
-              <div style={styles.formActions}>
-                <button style={styles.cancelButton} onClick={() => setShowAddTask(false)}>
-                  Cancel
-                </button>
-                <button
-                  style={styles.saveButton}
-                  onClick={handleCreateTask}
-                  disabled={!newTaskTitle.trim() || !newTaskCourseId}
-                >
-                  Create Task
-                </button>
-              </div>
             </div>
           </div>
-        </div>
-      )}
+        </Modal.Content>
+        <Modal.Footer align="end">
+          <Button variant="ghost" onClick={() => setShowAddTask(false)}>
+            Cancel
+          </Button>
+          <Button
+            variant="primary"
+            onClick={handleCreateTask}
+            disabled={!newTaskTitle.trim() || !newTaskCourseId}
+          >
+            Create Task
+          </Button>
+        </Modal.Footer>
+      </Modal>
 
       {/* Task Context Menu */}
       {contextMenu && (
