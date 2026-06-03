@@ -567,49 +567,32 @@ export const styles: Record<string, React.CSSProperties> = {
     margin: '1px 2px',
   },
 
-  // Modal styles
-  modalOverlay: {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 1000,
-    animation: 'fadeIn 150ms ease',
-  },
-
-  modalContent: {
-    backgroundColor: 'var(--bg-card)',
-    borderRadius: 'var(--radius-lg)',
-    boxShadow: 'var(--shadow-lg)',
-    minWidth: '320px',
-    maxWidth: '480px',
-    maxHeight: '80vh',
-    overflow: 'hidden',
-    animation: 'slideUp 200ms ease',
-  },
-
-  modalHeader: {
+  // Detail modal styles — custom colored header chrome for the <Modal> primitive.
+  // The 6 former modal-chrome keys (modalOverlay/modalContent/modalHeader/
+  // modalTitle/modalClose/modalBody) were retired when renderDetailModal()
+  // migrated to <Modal>; the primitive owns backdrop/card/body. The detail-row
+  // keys below (modalRow/modalLabel/…) are still used inside Modal.Content.
+  detailHeader: {
     padding: 'var(--space-4)',
     color: 'white',
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
     gap: 'var(--space-2)',
+    // Round the top corners to match the Modal card (the primitive card has
+    // borderRadius var(--radius-xl); the header sits flush at the top edge).
+    borderTopLeftRadius: 'var(--radius-xl)',
+    borderTopRightRadius: 'var(--radius-xl)',
   },
 
-  modalTitle: {
+  detailTitle: {
     fontSize: 'var(--text-lg)',
     fontWeight: 'var(--font-semibold)',
     lineHeight: 1.3,
     flex: 1,
   },
 
-  modalClose: {
+  detailClose: {
     background: 'rgba(255, 255, 255, 0.2)',
     border: 'none',
     color: 'white',
@@ -623,15 +606,6 @@ export const styles: Record<string, React.CSSProperties> = {
     justifyContent: 'center',
     flexShrink: 0,
     transition: 'background-color 150ms ease',
-  },
-
-  modalBody: {
-    padding: 'var(--space-4)',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 'var(--space-3)',
-    maxHeight: '400px',
-    overflowY: 'auto',
   },
 
   modalRow: {

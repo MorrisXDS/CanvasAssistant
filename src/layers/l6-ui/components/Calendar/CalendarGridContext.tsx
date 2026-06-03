@@ -19,6 +19,7 @@ import React, {
 import type { Course } from '../../../l5-presentation/types';
 import { styles } from './CalendarGridStyles';
 import { getCourseColor } from '../../constants';
+import { Modal } from '../primitives/Modal';
 
 // Re-export types
 export type {
@@ -384,98 +385,97 @@ export function CalendarGridProvider({
     const hideDetailModal = () => setDetailModal(null);
 
     return (
-      <div style={styles.modalOverlay} onClick={hideDetailModal}>
-        <div
-          style={{
-            ...styles.modalContent,
-            opacity: isCompleted ? 0.85 : 1,
-          }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div style={{ ...styles.modalHeader, backgroundColor: effectiveColor }}>
-            <div
-              style={{
-                ...styles.modalTitle,
-                textDecoration: isCompleted ? 'line-through' : 'none',
+      <Modal isOpen onClose={hideDetailModal} size="md" zIndex={1100}>
+        {/* Custom colored header (mirrors TaskDetailModal — NOT Modal.Header,
+            because the event-color background + white text is structural chrome). */}
+        <div style={{ ...styles.detailHeader, backgroundColor: effectiveColor }}>
+          <div
+            style={{
+              ...styles.detailTitle,
+              textDecoration: isCompleted ? 'line-through' : 'none',
+            }}
+          >
+            {title}
+            {isCompleted && ' (Completed)'}
+          </div>
+          <button
+            style={styles.detailClose}
+            onClick={hideDetailModal}
+            aria-label="Close modal"
+          >
+            ×
+          </button>
+        </div>
+
+        <Modal.Content maxHeight="60vh">
+          {timeRange && (
+            <div style={styles.modalRow}>
+              <span style={styles.modalLabel}>Time</span>
+              <span style={styles.modalValue}>{timeRange}</span>
+            </div>
+          )}
+
+          <div style={styles.modalRow}>
+            <span style={styles.modalLabel}>{isTask ? 'Course' : 'Calendar'}</span>
+            <span style={styles.modalValue}>
+              {isTask ? event.course.name : event.event.calendarName || 'Imported'}
+            </span>
+          </div>
+
+          {isTask && (
+            <>
+              <div style={styles.modalRow}>
+                <span style={styles.modalLabel}>Type</span>
+                <span style={styles.modalValue}>{event.task.taskType}</span>
+              </div>
+              {event.task.weight > 0 && (
+                <div style={styles.modalRow}>
+                  <span style={styles.modalLabel}>Weight</span>
+                  <span style={styles.modalValue}>{event.task.weight}%</span>
+                </div>
+              )}
+            </>
+          )}
+
+          {!isTask && event.event.location && (
+            <div style={styles.modalRow}>
+              <span style={styles.modalLabel}>Location</span>
+              <span style={styles.modalValue}>{event.event.location}</span>
+            </div>
+          )}
+
+          {description && (
+            <div style={styles.modalDescription}>
+              <div style={styles.modalLabel}>Description</div>
+              <div style={styles.modalDescriptionText}>{description}</div>
+            </div>
+          )}
+
+          {courseMatch && (
+            <button
+              style={styles.modalCourseLink}
+              onClick={() => {
+                hideDetailModal();
+                onCourseClick?.(courseMatch.course.id);
               }}
             >
-              {title}
-              {isCompleted && ' (Completed)'}
-            </div>
-            <button style={styles.modalClose} onClick={hideDetailModal}>
-              ×
+              Go to {courseMatch.course.code} →
             </button>
-          </div>
-          <div style={styles.modalBody}>
-            {timeRange && (
-              <div style={styles.modalRow}>
-                <span style={styles.modalLabel}>Time</span>
-                <span style={styles.modalValue}>{timeRange}</span>
-              </div>
-            )}
+          )}
 
-            <div style={styles.modalRow}>
-              <span style={styles.modalLabel}>{isTask ? 'Course' : 'Calendar'}</span>
-              <span style={styles.modalValue}>
-                {isTask ? event.course.name : event.event.calendarName || 'Imported'}
-              </span>
-            </div>
-
-            {isTask && (
-              <>
-                <div style={styles.modalRow}>
-                  <span style={styles.modalLabel}>Type</span>
-                  <span style={styles.modalValue}>{event.task.taskType}</span>
-                </div>
-                {event.task.weight > 0 && (
-                  <div style={styles.modalRow}>
-                    <span style={styles.modalLabel}>Weight</span>
-                    <span style={styles.modalValue}>{event.task.weight}%</span>
-                  </div>
-                )}
-              </>
-            )}
-
-            {!isTask && event.event.location && (
-              <div style={styles.modalRow}>
-                <span style={styles.modalLabel}>Location</span>
-                <span style={styles.modalValue}>{event.event.location}</span>
-              </div>
-            )}
-
-            {description && (
-              <div style={styles.modalDescription}>
-                <div style={styles.modalLabel}>Description</div>
-                <div style={styles.modalDescriptionText}>{description}</div>
-              </div>
-            )}
-
-            {courseMatch && (
-              <button
-                style={styles.modalCourseLink}
-                onClick={() => {
-                  hideDetailModal();
-                  onCourseClick?.(courseMatch.course.id);
-                }}
-              >
-                Go to {courseMatch.course.code} →
-              </button>
-            )}
-
-            {isTask && (
-              <button
-                style={styles.modalCourseLink}
-                onClick={() => {
-                  hideDetailModal();
-                  onCourseClick?.(event.course.id);
-                }}
-              >
-                Go to {event.course.code} →
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
+          {isTask && (
+            <button
+              style={styles.modalCourseLink}
+              onClick={() => {
+                hideDetailModal();
+                onCourseClick?.(event.course.id);
+              }}
+            >
+              Go to {event.course.code} →
+            </button>
+          )}
+        </Modal.Content>
+      </Modal>
     );
   }, [detailModal, getEffectiveEventColor, onCourseClick]);
 
