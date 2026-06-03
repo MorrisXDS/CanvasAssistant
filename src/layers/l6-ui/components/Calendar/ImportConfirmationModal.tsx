@@ -14,7 +14,7 @@ import {
   FileText,
 } from 'lucide-react';
 import type { ICSImportPreview, ParsedICSEvent } from '../../../l5-presentation/types';
-import { CALENDAR_COLORS, getNextCalendarColor } from '../../constants';
+import { CALENDAR_COLORS, getNextCalendarColor, Z_INDEX } from '../../constants';
 import { ColorPicker } from '../primitives';
 import { Modal } from '../primitives/Modal';
 import { styles } from './ImportConfirmationModal.styles';
@@ -79,7 +79,7 @@ export function ImportConfirmationModal({
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onCancel} size="lg" zIndex={1100}>
+    <Modal isOpen={isOpen} onClose={onCancel} size="lg" zIndex={Z_INDEX.modal}>
       <Modal.Header
         title="Import Calendar"
         icon={<Calendar size={24} />}

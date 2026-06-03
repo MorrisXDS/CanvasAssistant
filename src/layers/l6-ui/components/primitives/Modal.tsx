@@ -22,6 +22,7 @@ import React, { useEffect, useCallback, createContext, useContext, useId } from 
 import { X } from 'lucide-react';
 import { ModalIdContext, useModalStack } from '../../contexts/ModalStackContext';
 import type { ShortcutCategory } from '../../constants/keyboardShortcuts';
+import { Z_INDEX } from '../../constants';
 
 // =============================================================================
 // TYPES
@@ -44,7 +45,7 @@ interface ModalProps {
   closeOnBackdropClick?: boolean;
   /** Close on Escape key (default: true) */
   closeOnEscape?: boolean;
-  /** Custom z-index (default: 1000) */
+  /** Custom z-index (default: Z_INDEX.overlayChrome === 1000) */
   zIndex?: number;
   /** Modal content */
   children: React.ReactNode;
@@ -124,7 +125,7 @@ export function Modal({
   size = 'md',
   closeOnBackdropClick = true,
   closeOnEscape = true,
-  zIndex = 1000,
+  zIndex = Z_INDEX.overlayChrome,
   children,
   className,
   shortcuts,

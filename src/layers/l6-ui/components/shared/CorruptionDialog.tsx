@@ -21,6 +21,7 @@
 import React, { useState } from 'react';
 import { Button } from './Button';
 import { Modal } from '../primitives/Modal';
+import { Z_INDEX } from '../../constants';
 
 export interface CorruptionInfo {
   errors: string[];
@@ -76,7 +77,7 @@ export function CorruptionDialog({
       closeOnEscape={false}
       closeOnBackdropClick={false}
       size="lg"
-      zIndex={1100}
+      zIndex={Z_INDEX.modal}
     >
       <Modal.Header
         title="Database Issue Detected"

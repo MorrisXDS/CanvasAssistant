@@ -21,6 +21,7 @@ import React, { useState, useEffect, useContext, useCallback } from 'react';
 import { Keyboard } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
 import { Modal } from '../primitives/Modal';
+import { Z_INDEX } from '../../constants';
 import {
   KEYBOARD_SHORTCUTS,
   getScopeForPath,
@@ -96,11 +97,10 @@ export function KeyboardShortcutsModal({
   forceGlobal = false,
 }: KeyboardShortcutsModalProps) {
   return (
-    // zIndex={1500} so the help always sits above any other modal:
-    // DuplicateWarningModal=1100, its Customize child=1200, ConfirmDialog=1100,
-    // TaskLinkDialog=1100. Future modals stacking above 1500 would need to
-    // coordinate (unlikely).
-    <Modal isOpen={isOpen} onClose={onClose} size="md" zIndex={1500}>
+    // Z_INDEX.help (1500) so the help always sits above any other modal:
+    // DuplicateWarningModal=modal, its Customize child=modalChild,
+    // ConfirmDialog=modal, TaskLinkDialog=modal. Help is the ceiling band.
+    <Modal isOpen={isOpen} onClose={onClose} size="md" zIndex={Z_INDEX.help}>
       <KeyboardShortcutsContent forceGlobal={forceGlobal} onClose={onClose} />
     </Modal>
   );

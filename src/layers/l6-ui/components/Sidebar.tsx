@@ -31,7 +31,7 @@ import {
   STORAGE_KEYS,
   SETTINGS_DEFAULTS,
 } from '../../l5-presentation/settings';
-import { formatTimeAgo } from '../constants';
+import { formatTimeAgo, Z_INDEX } from '../constants';
 import { layoutStyles as styles, TITLE_BAR_HEIGHT } from './layoutStyles';
 import { NotificationDotGroup } from './shared';
 import { useSidebarDots, useFileUpdateDots } from '../hooks';
@@ -550,7 +550,7 @@ export function Sidebar({ onToggle }: SidebarProps) {
               borderRadius: 'var(--radius-md)',
               boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
               padding: 'var(--space-2)',
-              zIndex: 1000,
+              zIndex: Z_INDEX.overlayChrome,
             }}
           >
             <button

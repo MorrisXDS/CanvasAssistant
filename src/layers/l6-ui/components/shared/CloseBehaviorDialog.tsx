@@ -19,6 +19,7 @@
 import React from 'react';
 import { Minus, Power } from 'lucide-react';
 import { Modal } from '../primitives/Modal';
+import { Z_INDEX } from '../../constants';
 
 interface CloseBehaviorDialogProps {
   isOpen: boolean;
@@ -37,7 +38,7 @@ export function CloseBehaviorDialog({ isOpen, onChoice }: CloseBehaviorDialogPro
       closeOnEscape={false}
       closeOnBackdropClick={false}
       size="md"
-      zIndex={1100}
+      zIndex={Z_INDEX.modal}
     >
       <Modal.Header
         title="Close Window"

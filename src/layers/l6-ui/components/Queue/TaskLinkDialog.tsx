@@ -33,7 +33,7 @@ import type {
   Task,
   DuplicateCheckResult,
 } from '../../../l5-presentation/types';
-import { TASK_TYPES, formatSmartDate } from '../../constants';
+import { TASK_TYPES, formatSmartDate, Z_INDEX } from '../../constants';
 import { Modal } from '../primitives/Modal';
 import {
   FieldMergeEditor,
@@ -565,7 +565,7 @@ export function TaskLinkDialog({
   const headerIcon = isSelectStep ? <Link2 size={20} /> : <GitMerge size={20} />;
 
   return (
-    <Modal isOpen={isOpen} onClose={onCancel} size="xl" zIndex={1100}>
+    <Modal isOpen={isOpen} onClose={onCancel} size="xl" zIndex={Z_INDEX.modal}>
       <Modal.Header
         title={headerTitle}
         subtitle={headerSubtitle}

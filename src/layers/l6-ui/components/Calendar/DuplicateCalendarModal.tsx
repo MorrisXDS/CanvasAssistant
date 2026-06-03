@@ -21,6 +21,7 @@
 import React from 'react';
 import { AlertTriangle, Calendar, RefreshCw, Eye } from 'lucide-react';
 import { Modal } from '../primitives/Modal';
+import { Z_INDEX } from '../../constants';
 
 interface ExistingCalendarInfo {
   id: number;
@@ -58,7 +59,7 @@ export function DuplicateCalendarModal({
   };
 
   return (
-    <Modal isOpen onClose={onCancel} size="md" zIndex={1100}>
+    <Modal isOpen onClose={onCancel} size="md" zIndex={Z_INDEX.modal}>
       {/* Single padded block — no Modal.Header/Footer (compact prompt). */}
       <div style={styles.body}>
         {/* Icon */}

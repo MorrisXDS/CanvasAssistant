@@ -24,7 +24,7 @@ import type { DisplayCalendarEvent, Course } from '../../../l5-presentation/type
 import { ConfirmDialog } from '../shared/ConfirmDialog';
 import { RichTextEditor } from '../shared/RichTextEditor';
 import { Modal } from '../primitives/Modal';
-import { getCleanCourseName, TASK_TYPES } from '../../constants';
+import { getCleanCourseName, TASK_TYPES, Z_INDEX } from '../../constants';
 import {
   eventFormModalStyles as styles,
   COLOR_OPTIONS,
@@ -441,7 +441,7 @@ export function EventFormModal({
       isOpen={isOpen}
       onClose={onClose}
       size="md"
-      zIndex={1100}
+      zIndex={Z_INDEX.modal}
       // The component owns Esc (plus Ctrl+Enter / Delete / Alt-key shortcuts)
       // via its own document keydown handler — keep the primitive's listener
       // disabled to avoid a double onClose. Matches TaskDetailModal.

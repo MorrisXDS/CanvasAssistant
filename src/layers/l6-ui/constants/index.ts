@@ -87,3 +87,6 @@ export {
   type ShortcutEntry,
   type ShortcutCategory,
 } from './keyboardShortcuts';
+
+// Z-Index scale
+export { Z_INDEX, type ZIndexBand } from './zIndex';

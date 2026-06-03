@@ -4,6 +4,7 @@
  */
 
 import type React from 'react';
+import { Z_INDEX } from '../constants';
 
 export const TITLE_BAR_HEIGHT = 32;
 
@@ -100,7 +101,7 @@ export const layoutStyles: Record<string, React.CSSProperties> = {
     borderRadius: 'var(--radius-md)',
     boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
     padding: 'var(--space-2)',
-    zIndex: 500,
+    zIndex: Z_INDEX.sidebar,
     marginTop: 'var(--space-1)',
   },
 

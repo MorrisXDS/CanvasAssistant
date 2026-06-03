@@ -5,6 +5,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { Button } from './Button';
+import { Z_INDEX } from '../../constants';
 
 export interface RecoveryStatus {
   safeMode: boolean;
@@ -79,7 +80,7 @@ export function RecoveryBanner({
     border: `1px solid ${isSafeMode ? 'var(--color-high-border)' : 'var(--border-default)'}`,
     minWidth: '240px',
     maxWidth: '320px',
-    zIndex: 1000,
+    zIndex: Z_INDEX.overlayChrome,
     transition: 'all 0.3s ease',
     opacity: isVisible ? 1 : 0,
     transform: isVisible ? 'translateY(0)' : 'translateY(-20px)',

@@ -5,6 +5,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Z_INDEX } from '../../constants';
 import {
   CheckCircle,
   X,
@@ -216,7 +217,7 @@ const styles: Record<string, React.CSSProperties> = {
     border: '1px solid var(--border-default)',
     minWidth: '280px',
     maxWidth: '380px',
-    zIndex: 1000,
+    zIndex: Z_INDEX.overlayChrome,
     transition: 'all 0.3s ease',
     overflow: 'hidden',
   },

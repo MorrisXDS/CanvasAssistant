@@ -4,6 +4,7 @@
  */
 
 import type React from 'react';
+import { Z_INDEX } from '../../constants';
 
 export const courseDetailStyles: Record<string, React.CSSProperties> = {
   pageWrapper: {
@@ -219,7 +220,7 @@ export const courseDetailStyles: Record<string, React.CSSProperties> = {
     left: 0,
     right: 0,
     bottom: 0,
-    zIndex: 1000,
+    zIndex: Z_INDEX.overlayChrome,
   },
 
   contextMenu: {
@@ -230,7 +231,7 @@ export const courseDetailStyles: Record<string, React.CSSProperties> = {
     boxShadow: 'var(--shadow-lg)',
     padding: 'var(--space-1)',
     minWidth: '160px',
-    zIndex: 1001,
+    zIndex: Z_INDEX.overlayChrome,
   },
 
   contextMenuItem: {

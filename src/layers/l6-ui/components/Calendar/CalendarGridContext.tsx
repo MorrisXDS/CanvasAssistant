@@ -18,7 +18,7 @@ import React, {
 } from 'react';
 import type { Course } from '../../../l5-presentation/types';
 import { styles } from './CalendarGridStyles';
-import { getCourseColor } from '../../constants';
+import { getCourseColor, Z_INDEX } from '../../constants';
 import { Modal } from '../primitives/Modal';
 
 // Re-export types
@@ -385,7 +385,7 @@ export function CalendarGridProvider({
     const hideDetailModal = () => setDetailModal(null);
 
     return (
-      <Modal isOpen onClose={hideDetailModal} size="md" zIndex={1100}>
+      <Modal isOpen onClose={hideDetailModal} size="md" zIndex={Z_INDEX.modal}>
         {/* Custom colored header (mirrors TaskDetailModal — NOT Modal.Header,
             because the event-color background + white text is structural chrome). */}
         <div style={{ ...styles.detailHeader, backgroundColor: effectiveColor }}>

@@ -23,6 +23,7 @@ import {
   type SyncUpdatesFabSettings,
   settingsManager,
 } from '../../../l5-presentation/settings';
+import { Z_INDEX } from '../../constants';
 
 // FAB dimensions - larger for better visibility
 const FAB_SIZE = 56;
@@ -306,7 +307,7 @@ export function SyncUpdatesFAB({ className = '' }: SyncUpdatesFABProps) {
   const getWrapperStyle = (): React.CSSProperties => {
     const style: React.CSSProperties = {
       position: 'fixed',
-      zIndex: 1000,
+      zIndex: Z_INDEX.overlayChrome,
     };
 
     if (shouldHide) {

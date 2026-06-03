@@ -18,7 +18,7 @@ import {
   Eye,
   Calendar,
 } from 'lucide-react';
-import { MENU_LABELS } from '../../constants';
+import { MENU_LABELS, Z_INDEX } from '../../constants';
 
 export interface TaskContextMenuProps {
   task: {
@@ -46,7 +46,7 @@ export interface TaskContextMenuProps {
 const styles = {
   contextMenu: {
     position: 'fixed' as const,
-    zIndex: 1000,
+    zIndex: Z_INDEX.overlayChrome,
     minWidth: '180px',
     backgroundColor: 'var(--bg-card)',
     border: '1px solid var(--border-default)',

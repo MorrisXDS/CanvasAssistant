@@ -8,7 +8,7 @@
 import React, { useState, useEffect } from 'react';
 import { AlertTriangle, Calendar, Clock } from 'lucide-react';
 import { styles } from './SyncConflictModal.styles';
-import { formatFieldValue } from '../../constants';
+import { formatFieldValue, Z_INDEX } from '../../constants';
 import { Modal } from '../primitives/Modal';
 
 /**
@@ -240,7 +240,7 @@ export function SyncConflictModal({
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} size="lg" zIndex={1100}>
+    <Modal isOpen={isOpen} onClose={onClose} size="lg" zIndex={Z_INDEX.modal}>
       <Modal.Header
         title="Sync Conflict"
         icon={<AlertTriangle size={20} color="var(--color-warning)" />}
