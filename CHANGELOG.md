@@ -12,6 +12,13 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ### Changed
 
+- `2026-06-03 07:10 UTC` — **Keyboard-shortcuts help is now accurate.** Five registry fixes so the
+  Help modal matches what the app actually does (zero key-behaviour change): added the missing `C`
+  (Customize merge fields) key + aligned the `A` label in the duplicate-warning section; removed two
+  dead Calendar entries (`Shift+W`/`Shift+S` and a phantom filter-panel `Enter`) that documented
+  behaviour the keymap never had; documented `Backspace` as the existing delete alias on Calendar and
+  CourseDetail. Rebinds + implement-vs-remove items (Announcement-Detail scope, Settings Esc, Dashboard
+  row-nav, Updates J/K→W/S) are parked for review.
 - `2026-06-03 05:33 UTC` — **Centralized straggler storage keys and color maps into existing modules** — the final safe chunk of the hardcoded-values audit. Three groups of literals that pre-dated or were missed when the centralized modules were first built are now routed through their single source of truth: (1) `syncSlice.ts` `'timezoneSettings'` → `STORAGE_KEYS.TIMEZONE`; (2) inline hex color maps in `NotificationDot.tsx` and `FileListItem.tsx` relocated to named exports (`UPDATE_TYPE_COLORS`, `UPDATE_TYPE_FALLBACK_COLOR`, `CONTENT_CATEGORY_COLORS`, `DEFAULT_COURSE_COLOR`) in `src/layers/l6-ui/constants/colors.ts`; (3) eight drag-drop/files `localStorage` key constants spread across five hooks and two utils files added to `STORAGE_KEYS` with byte-identical string values (no persisted-state reset). The `SettingsTypeMap` was extended for the new keys — reviewed and confirmed runtime-inert (read-only cache load, no schema, no default, no write). Zero behavior change throughout; all string values are verbatim copies of the literals they replace. Closes the user-approved scope of the hardcoded-values audit (Cat 5 hex→theme-vars + Cat 6 date formatters remain descoped).
 
 ### Added
