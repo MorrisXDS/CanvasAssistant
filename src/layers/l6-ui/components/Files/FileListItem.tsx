@@ -31,7 +31,7 @@ import {
   FileQuestion,
 } from 'lucide-react';
 import styles from './FilesPage.module.css';
-import { formatFileSize } from '../../constants';
+import { formatFileSize, CONTENT_CATEGORY_COLORS } from '../../constants';
 import { NotificationDot, type UpdateType } from '../shared';
 
 // Types
@@ -192,28 +192,7 @@ export function extractModuleContext(
 
 // Get category color
 export function getCategoryColor(category: ContentCategory): string {
-  switch (category) {
-    case 'Lecture Slides':
-      return '#1976D2';
-    case 'Lab Manual':
-      return '#7B1FA2';
-    case 'Assignment':
-      return '#E65100';
-    case 'Tutorial':
-      return '#00897B';
-    case 'Notes':
-      return '#558B2F';
-    case 'Reading':
-      return '#5D4037';
-    case 'Syllabus':
-      return '#C62828';
-    case 'Solution':
-      return '#00838F';
-    case 'Exam':
-      return '#AD1457';
-    default:
-      return '#616161';
-  }
+  return CONTENT_CATEGORY_COLORS[category] ?? CONTENT_CATEGORY_COLORS['default'];
 }
 
 // Get file name helper

@@ -6,12 +6,9 @@
 
 import { useState, useCallback, useEffect } from 'react';
 import { createLogger } from '../../utils/rendererLogger';
+import { STORAGE_KEYS } from '../../../l5-presentation/settings';
 
 const logger = createLogger('CourseDetailDragDrop');
-
-// localStorage keys
-const TASK_SECTION_ORDER_KEY = 'courseDetailTaskSectionOrder';
-const SIDEBAR_ORDER_KEY = 'courseDetailSidebarOrder';
 
 // Default section orders
 const DEFAULT_TASK_ORDER = ['pending', 'submitted', 'graded', 'info'];
@@ -163,8 +160,14 @@ function useDragGroup(
 }
 
 export function useCourseDetailDragDrop(): UseCourseDetailDragDropResult {
-  const taskGroup = useDragGroup(TASK_SECTION_ORDER_KEY, DEFAULT_TASK_ORDER);
-  const sidebarGroup = useDragGroup(SIDEBAR_ORDER_KEY, DEFAULT_SIDEBAR_ORDER);
+  const taskGroup = useDragGroup(
+    STORAGE_KEYS.COURSE_DETAIL_TASK_ORDER,
+    DEFAULT_TASK_ORDER
+  );
+  const sidebarGroup = useDragGroup(
+    STORAGE_KEYS.COURSE_DETAIL_SIDEBAR_ORDER,
+    DEFAULT_SIDEBAR_ORDER
+  );
 
   return {
     // Task sections

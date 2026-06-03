@@ -6,6 +6,7 @@
 import type { SyncResultSummary, SyncConflictItem } from '../../types';
 import { getApi, logUserAction, type SliceCreator } from '../storeUtils';
 import { createLogger } from '../../../l6-ui/utils/rendererLogger';
+import { STORAGE_KEYS } from '../../settings';
 
 const log = createLogger('syncSlice');
 
@@ -191,10 +192,10 @@ export const createSyncSlice: SliceCreator = (set, get) => ({
 
         // Update localStorage for renderer access
         const currentSettings = JSON.parse(
-          localStorage.getItem('timezoneSettings') || '{}'
+          localStorage.getItem(STORAGE_KEYS.TIMEZONE) || '{}'
         );
         localStorage.setItem(
-          'timezoneSettings',
+          STORAGE_KEYS.TIMEZONE,
           JSON.stringify({
             ...currentSettings,
             canvasTimezone: timezone,
@@ -205,7 +206,10 @@ export const createSyncSlice: SliceCreator = (set, get) => ({
         log.info(`Canvas timezone synced: ${timezone}`);
       }
     } catch (error) {
-      log.error('Failed to sync Canvas timezone', error instanceof Error ? error : undefined);
+      log.error(
+        'Failed to sync Canvas timezone',
+        error instanceof Error ? error : undefined
+      );
     }
   },
 
@@ -269,7 +273,10 @@ export const createSyncSlice: SliceCreator = (set, get) => ({
       // Refresh data after resolution
       await get().refreshAll();
     } catch (error) {
-      log.error('Failed to resolve sync conflict', error instanceof Error ? error : undefined);
+      log.error(
+        'Failed to resolve sync conflict',
+        error instanceof Error ? error : undefined
+      );
     }
   },
 
@@ -289,7 +296,10 @@ export const createSyncSlice: SliceCreator = (set, get) => ({
       // Refresh data after resolution
       await get().refreshAll();
     } catch (error) {
-      log.error('Failed to resolve all sync conflicts', error instanceof Error ? error : undefined);
+      log.error(
+        'Failed to resolve all sync conflicts',
+        error instanceof Error ? error : undefined
+      );
     }
   },
 

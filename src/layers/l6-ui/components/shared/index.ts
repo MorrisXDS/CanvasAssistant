@@ -68,12 +68,13 @@ export {
   NotificationDot,
   NotificationDotGroup,
   FieldNotificationDot,
-  UPDATE_TYPE_COLORS,
   UPDATE_TYPE_LABELS,
   FIELD_DISPLAY_LABELS,
   getUpdateTypePriority,
   getPriorityUpdateType,
 } from './NotificationDot';
+// UPDATE_TYPE_COLORS moved to colors.ts; re-exported here for backward compatibility
+export { UPDATE_TYPE_COLORS } from '../../constants/colors';
 export type {
   NotificationDotProps,
   NotificationDotGroupProps,

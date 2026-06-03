@@ -29,24 +29,23 @@ import { createLogger } from '../../utils/rendererLogger';
 
 const logger = createLogger('FilesUtils');
 
-// Storage keys
-export const EXPANDED_STATE_KEY = 'fileExplorerExpandedState';
-export const VIEW_PREFS_KEY = 'fileExplorerViewPrefs';
-
 // Storage helpers
 export function loadFileExplorerSettings(): FileExplorerSettings {
   try {
     const stored = localStorage.getItem(STORAGE_KEYS.FILE_EXPLORER);
     if (stored) return JSON.parse(stored);
   } catch (e) {
-    logger.error('Failed to load file explorer settings', e instanceof Error ? e : undefined);
+    logger.error(
+      'Failed to load file explorer settings',
+      e instanceof Error ? e : undefined
+    );
   }
   return { defaultState: 'remember', defaultViewMode: 'list' };
 }
 
 export function loadExpandedState(): ExpandedState {
   try {
-    const stored = localStorage.getItem(EXPANDED_STATE_KEY);
+    const stored = localStorage.getItem(STORAGE_KEYS.FILES_EXPANDED_STATE);
     if (stored) return JSON.parse(stored);
   } catch (e) {
     logger.error('Failed to load expanded state', e instanceof Error ? e : undefined);
@@ -57,7 +56,7 @@ export function loadExpandedState(): ExpandedState {
 export function saveExpandedState(courses: Set<number>, folders: Set<string>): void {
   try {
     localStorage.setItem(
-      EXPANDED_STATE_KEY,
+      STORAGE_KEYS.FILES_EXPANDED_STATE,
       JSON.stringify({
         courses: Array.from(courses),
         folders: Array.from(folders),
@@ -70,7 +69,7 @@ export function saveExpandedState(courses: Set<number>, folders: Set<string>): v
 
 export function loadViewPrefs(): ViewPreferences {
   try {
-    const stored = localStorage.getItem(VIEW_PREFS_KEY);
+    const stored = localStorage.getItem(STORAGE_KEYS.FILES_VIEW_PREFS);
     if (stored) return JSON.parse(stored);
   } catch (e) {
     logger.error('Failed to load view preferences', e instanceof Error ? e : undefined);
@@ -80,7 +79,7 @@ export function loadViewPrefs(): ViewPreferences {
 
 export function saveViewPrefs(prefs: ViewPreferences): void {
   try {
-    localStorage.setItem(VIEW_PREFS_KEY, JSON.stringify(prefs));
+    localStorage.setItem(STORAGE_KEYS.FILES_VIEW_PREFS, JSON.stringify(prefs));
   } catch (e) {
     logger.error('Failed to save view preferences', e instanceof Error ? e : undefined);
   }

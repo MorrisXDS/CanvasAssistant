@@ -21,6 +21,10 @@ export {
   withAlpha,
   type CourseColor,
   type CalendarColor,
+  UPDATE_TYPE_COLORS,
+  UPDATE_TYPE_FALLBACK_COLOR,
+  CONTENT_CATEGORY_COLORS,
+  DEFAULT_COURSE_COLOR,
 } from './colors';
 
 // Formatters

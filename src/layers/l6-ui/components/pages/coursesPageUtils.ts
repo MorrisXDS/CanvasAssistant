@@ -107,7 +107,7 @@ export function loadCourseSettings(): {
  */
 export function loadViewMode(pageKey: string, defaultMode: ViewMode): ViewMode {
   try {
-    const stored = localStorage.getItem(`viewMode:${pageKey}`);
+    const stored = localStorage.getItem(`${STORAGE_KEYS.VIEW_MODE_PREFIX}${pageKey}`);
     if (stored === 'grid' || stored === 'list') {
       return stored;
     }
@@ -122,7 +122,7 @@ export function loadViewMode(pageKey: string, defaultMode: ViewMode): ViewMode {
  */
 export function saveViewMode(pageKey: string, mode: ViewMode): void {
   try {
-    localStorage.setItem(`viewMode:${pageKey}`, mode);
+    localStorage.setItem(`${STORAGE_KEYS.VIEW_MODE_PREFIX}${pageKey}`, mode);
   } catch (e) {
     logger.error('Failed to save view mode', e instanceof Error ? e : undefined);
   }

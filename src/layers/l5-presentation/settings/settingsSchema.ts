@@ -114,6 +114,20 @@ export const STORAGE_KEYS = {
 
   // Updates page visibility in sidebar
   SHOW_UPDATES_IN_SIDEBAR: 'showUpdatesInSidebar',
+
+  // Files page explorer state (NOT settings-manager managed; raw localStorage)
+  FILES_EXPANDED_STATE: 'fileExplorerExpandedState',
+  FILES_VIEW_PREFS: 'fileExplorerViewPrefs',
+
+  // Drag-and-drop ordering (raw localStorage)
+  FILES_COURSE_ORDER: 'filesCourseOrder',
+  FOLDER_ORDER: 'folderOrder',
+  COURSE_ORDER: 'courseOrder',
+  COURSE_DETAIL_TASK_ORDER: 'courseDetailTaskSectionOrder',
+  COURSE_DETAIL_SIDEBAR_ORDER: 'courseDetailSidebarOrder',
+
+  // Dynamic/namespaced prefixes (append the dynamic part after)
+  VIEW_MODE_PREFIX: 'viewMode:', // usage: `${STORAGE_KEYS.VIEW_MODE_PREFIX}${pageKey}`
 } as const;
 
 export type StorageKey = (typeof STORAGE_KEYS)[keyof typeof STORAGE_KEYS];
@@ -576,6 +590,15 @@ export interface SettingsTypeMap {
   [STORAGE_KEYS.ARCHIVED_COURSE_WARNING_DISMISSED]: string;
   [STORAGE_KEYS.ARCHIVED_COURSE_WARNING_DISMISSED_IDS]: string;
   [STORAGE_KEYS.SHOW_UPDATES_IN_SIDEBAR]: boolean;
+  // Raw localStorage keys (not settings-manager managed — stored as JSON strings)
+  [STORAGE_KEYS.FILES_EXPANDED_STATE]: string;
+  [STORAGE_KEYS.FILES_VIEW_PREFS]: string;
+  [STORAGE_KEYS.FILES_COURSE_ORDER]: string;
+  [STORAGE_KEYS.FOLDER_ORDER]: string;
+  [STORAGE_KEYS.COURSE_ORDER]: string;
+  [STORAGE_KEYS.COURSE_DETAIL_TASK_ORDER]: string;
+  [STORAGE_KEYS.COURSE_DETAIL_SIDEBAR_ORDER]: string;
+  [STORAGE_KEYS.VIEW_MODE_PREFIX]: string; // Prefix key; dynamic keys not in map
 }
 
 // Default order for settings sections
