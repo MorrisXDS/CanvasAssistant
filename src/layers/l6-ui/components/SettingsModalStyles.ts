@@ -614,54 +614,8 @@ export const styles: Record<string, React.CSSProperties> = {
     borderTop: '1px solid var(--border-default)',
   },
 
-  // Token modal
-  tokenModalOverlay: {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 10001,
-  },
-
-  tokenModal: {
-    backgroundColor: 'var(--bg-card)',
-    borderRadius: 'var(--radius-lg)',
-    width: 'min(450px, 90vw)',
-    padding: 'var(--space-5)',
-    boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
-  },
-
-  tokenModalHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 'var(--space-3)',
-  },
-
-  tokenModalTitle: {
-    margin: 0,
-    fontSize: 'var(--text-lg)',
-    fontWeight: 'var(--font-semibold)',
-    color: 'var(--text-primary)',
-  },
-
-  tokenModalClose: {
-    background: 'none',
-    border: 'none',
-    padding: 'var(--space-1)',
-    cursor: 'pointer',
-    color: 'var(--text-secondary)',
-    borderRadius: 'var(--radius-sm)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
+  // Token modal — description paragraph (body content style; chrome now owned
+  // by the <Modal> primitive)
   tokenModalDesc: {
     margin: '0 0 var(--space-4) 0',
     fontSize: 'var(--text-sm)',
@@ -679,12 +633,6 @@ export const styles: Record<string, React.CSSProperties> = {
     borderRadius: 'var(--radius-md)',
     fontSize: 'var(--text-sm)',
     marginBottom: 'var(--space-3)',
-  },
-
-  tokenModalButtons: {
-    display: 'flex',
-    gap: 'var(--space-2)',
-    marginTop: 'var(--space-4)',
   },
 
   // Checkbox

@@ -36,6 +36,7 @@ import { DataSection } from './DataSection';
 import { ConfirmDialog } from '../shared/ConfirmDialog';
 import { ExportDialog } from '../shared/ExportDialog';
 import { Accordion, SearchInput, SettingsDock } from '../primitives';
+import { Modal } from '../primitives/Modal';
 import { SETTINGS_LABELS, MENU_LABELS } from '../../constants';
 import { styles } from '../SettingsModalStyles';
 import { STORAGE_KEYS, SettingsCategory } from '../../../l5-presentation/settings';
@@ -268,189 +269,178 @@ export function SettingsModalContent() {
       )}
 
       {/* Token Replacement Modal */}
-      {showTokenReplaceModal && (
-        <div
-          style={styles.tokenModalOverlay}
-          onClick={() => setShowTokenReplaceModal(false)}
-        >
-          <div style={styles.tokenModal} onClick={(e) => e.stopPropagation()}>
-            <div style={styles.tokenModalHeader}>
-              <h4 style={styles.tokenModalTitle}>{SETTINGS_LABELS.tokenModal.title}</h4>
-              <button
-                style={styles.tokenModalClose}
-                onClick={() => setShowTokenReplaceModal(false)}
-              >
-                <X size={18} />
-              </button>
-            </div>
-            <p style={styles.tokenModalDesc}>{SETTINGS_LABELS.tokenModal.description}</p>
-            <div style={styles.field}>
-              <label style={styles.label}>
-                {SETTINGS_LABELS.tokenModal.newTokenLabel}
-              </label>
-              <input
-                type="password"
-                value={newToken}
-                onChange={(e) => {
-                  setNewToken(e.target.value);
-                  setNewTokenValidation({ valid: null, userName: null, error: null });
-                }}
-                placeholder={SETTINGS_LABELS.placeholders.newToken}
-                style={styles.input}
-                autoFocus
-              />
-            </div>
-            {newTokenValidation.error && (
-              <div style={styles.error}>
-                <AlertCircle size={14} /> {newTokenValidation.error}
-              </div>
-            )}
-            {newTokenValidation.valid && (
-              <div style={styles.tokenSuccess}>
-                <Check size={14} />
-                {newTokenValidation.userName
-                  ? SETTINGS_LABELS.tokenModal.tokenValidFor(newTokenValidation.userName)
-                  : SETTINGS_LABELS.tokenModal.tokenValid}
-              </div>
-            )}
-            <div style={styles.tokenModalButtons}>
-              {!newTokenValidation.valid ? (
-                <button
-                  style={{
-                    ...styles.primaryButton,
-                    opacity: isValidatingNewToken || !newToken ? 0.6 : 1,
-                  }}
-                  onClick={handleValidateNewToken}
-                  disabled={isValidatingNewToken || !newToken}
-                >
-                  {isValidatingNewToken ? (
-                    <>
-                      <Loader2
-                        size={14}
-                        style={{ animation: 'spin 1s linear infinite' }}
-                      />{' '}
-                      {SETTINGS_LABELS.buttons.validating}
-                    </>
-                  ) : (
-                    <>
-                      <ShieldCheck size={14} /> {SETTINGS_LABELS.buttons.validateToken}
-                    </>
-                  )}
-                </button>
-              ) : (
-                <button
-                  style={{ ...styles.primaryButton, opacity: isReplacingToken ? 0.6 : 1 }}
-                  onClick={handleReplaceToken}
-                  disabled={isReplacingToken}
-                >
-                  {isReplacingToken ? (
-                    <>
-                      <Loader2
-                        size={14}
-                        style={{ animation: 'spin 1s linear infinite' }}
-                      />{' '}
-                      {SETTINGS_LABELS.buttons.replacing}
-                    </>
-                  ) : (
-                    <>
-                      <Key size={14} /> {SETTINGS_LABELS.buttons.replaceToken}
-                    </>
-                  )}
-                </button>
-              )}
-              <button
-                style={styles.cancelButton}
-                onClick={() => setShowTokenReplaceModal(false)}
-              >
-                {MENU_LABELS.common.cancel}
-              </button>
-            </div>
+      <Modal
+        isOpen={showTokenReplaceModal}
+        onClose={() => setShowTokenReplaceModal(false)}
+        size="md"
+        zIndex={1200}
+      >
+        <Modal.Header
+          title={SETTINGS_LABELS.tokenModal.title}
+          icon={<Key size={20} />}
+          onClose={() => setShowTokenReplaceModal(false)}
+        />
+        <Modal.Content>
+          <p style={styles.tokenModalDesc}>{SETTINGS_LABELS.tokenModal.description}</p>
+          <div style={styles.field}>
+            <label style={styles.label}>{SETTINGS_LABELS.tokenModal.newTokenLabel}</label>
+            <input
+              type="password"
+              value={newToken}
+              onChange={(e) => {
+                setNewToken(e.target.value);
+                setNewTokenValidation({ valid: null, userName: null, error: null });
+              }}
+              placeholder={SETTINGS_LABELS.placeholders.newToken}
+              style={styles.input}
+              autoFocus
+            />
           </div>
-        </div>
-      )}
+          {newTokenValidation.error && (
+            <div style={styles.error}>
+              <AlertCircle size={14} /> {newTokenValidation.error}
+            </div>
+          )}
+          {newTokenValidation.valid && (
+            <div style={styles.tokenSuccess}>
+              <Check size={14} />
+              {newTokenValidation.userName
+                ? SETTINGS_LABELS.tokenModal.tokenValidFor(newTokenValidation.userName)
+                : SETTINGS_LABELS.tokenModal.tokenValid}
+            </div>
+          )}
+        </Modal.Content>
+        <Modal.Footer align="end">
+          {!newTokenValidation.valid ? (
+            <button
+              style={{
+                ...styles.primaryButton,
+                opacity: isValidatingNewToken || !newToken ? 0.6 : 1,
+              }}
+              onClick={handleValidateNewToken}
+              disabled={isValidatingNewToken || !newToken}
+            >
+              {isValidatingNewToken ? (
+                <>
+                  <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />{' '}
+                  {SETTINGS_LABELS.buttons.validating}
+                </>
+              ) : (
+                <>
+                  <ShieldCheck size={14} /> {SETTINGS_LABELS.buttons.validateToken}
+                </>
+              )}
+            </button>
+          ) : (
+            <button
+              style={{ ...styles.primaryButton, opacity: isReplacingToken ? 0.6 : 1 }}
+              onClick={handleReplaceToken}
+              disabled={isReplacingToken}
+            >
+              {isReplacingToken ? (
+                <>
+                  <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />{' '}
+                  {SETTINGS_LABELS.buttons.replacing}
+                </>
+              ) : (
+                <>
+                  <Key size={14} /> {SETTINGS_LABELS.buttons.replaceToken}
+                </>
+              )}
+            </button>
+          )}
+          <button
+            style={styles.cancelButton}
+            onClick={() => setShowTokenReplaceModal(false)}
+          >
+            {MENU_LABELS.common.cancel}
+          </button>
+        </Modal.Footer>
+      </Modal>
 
       {/* Password Modal for Encrypted Imports */}
-      {showPasswordModal && (
-        <div style={styles.tokenModalOverlay} onClick={handleCancelPasswordModal}>
-          <div style={styles.tokenModal} onClick={(e) => e.stopPropagation()}>
-            <div style={styles.tokenModalHeader}>
-              <h4 style={styles.tokenModalTitle}>
-                <Lock size={18} style={{ marginRight: '8px' }} />
-                Encrypted Backup
-              </h4>
-              <button style={styles.tokenModalClose} onClick={handleCancelPasswordModal}>
-                <X size={18} />
-              </button>
-            </div>
-            <p style={styles.tokenModalDesc}>
-              This backup file is encrypted. Enter the password to decrypt it.
-            </p>
-            <div style={styles.field}>
-              <label style={styles.label}>Password</label>
-              <input
-                type="password"
-                value={importPassword}
-                onChange={(e) => setImportPassword(e.target.value)}
-                placeholder="Enter backup password"
-                style={styles.input}
-                autoFocus
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && importPassword) {
-                    handleDecryptImport();
-                  }
-                }}
-              />
-            </div>
-            <div style={styles.tokenModalButtons}>
-              <button
-                style={{
-                  ...styles.primaryButton,
-                  opacity: isDecrypting || !importPassword ? 0.6 : 1,
-                }}
-                onClick={handleDecryptImport}
-                disabled={isDecrypting || !importPassword}
-              >
-                {isDecrypting ? (
-                  <>
-                    <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />{' '}
-                    Decrypting...
-                  </>
-                ) : (
-                  <>
-                    <Lock size={14} /> Decrypt & Import
-                  </>
-                )}
-              </button>
-              <button style={styles.cancelButton} onClick={handleCancelPasswordModal}>
-                {MENU_LABELS.common.cancel}
-              </button>
-            </div>
+      <Modal
+        isOpen={showPasswordModal}
+        onClose={handleCancelPasswordModal}
+        size="md"
+        zIndex={1200}
+      >
+        <Modal.Header
+          title="Encrypted Backup"
+          icon={<Lock size={20} />}
+          onClose={handleCancelPasswordModal}
+        />
+        <Modal.Content>
+          <p style={styles.tokenModalDesc}>
+            This backup file is encrypted. Enter the password to decrypt it.
+          </p>
+          <div style={styles.field}>
+            <label style={styles.label}>Password</label>
+            <input
+              type="password"
+              value={importPassword}
+              onChange={(e) => setImportPassword(e.target.value)}
+              placeholder="Enter backup password"
+              style={styles.input}
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && importPassword) {
+                  handleDecryptImport();
+                }
+              }}
+            />
           </div>
-        </div>
-      )}
+        </Modal.Content>
+        <Modal.Footer align="end">
+          <button
+            style={{
+              ...styles.primaryButton,
+              opacity: isDecrypting || !importPassword ? 0.6 : 1,
+            }}
+            onClick={handleDecryptImport}
+            disabled={isDecrypting || !importPassword}
+          >
+            {isDecrypting ? (
+              <>
+                <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />{' '}
+                Decrypting...
+              </>
+            ) : (
+              <>
+                <Lock size={14} /> Decrypt & Import
+              </>
+            )}
+          </button>
+          <button style={styles.cancelButton} onClick={handleCancelPasswordModal}>
+            {MENU_LABELS.common.cancel}
+          </button>
+        </Modal.Footer>
+      </Modal>
 
-      {/* Restart Modal for Database Import */}
-      {showRestartModal && (
-        <div style={styles.tokenModalOverlay}>
-          <div style={styles.tokenModal} onClick={(e) => e.stopPropagation()}>
-            <div style={styles.tokenModalHeader}>
-              <h4 style={styles.tokenModalTitle}>
-                <Database size={18} style={{ marginRight: '8px' }} />
-                Database Imported
-              </h4>
-            </div>
-            <p style={styles.tokenModalDesc}>
-              Database imported successfully. The app needs to restart to apply the
-              changes.
-            </p>
-            <div style={styles.tokenModalButtons}>
-              <button style={styles.primaryButton} onClick={handleRestartApp}>
-                <RotateCcw size={14} /> Restart Now
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Restart Modal for Database Import (non-dismissible) */}
+      <Modal
+        isOpen={showRestartModal}
+        size="md"
+        zIndex={1200}
+        closeOnEscape={false}
+        closeOnBackdropClick={false}
+      >
+        <Modal.Header
+          title="Database Imported"
+          icon={<Database size={20} />}
+          showCloseButton={false}
+        />
+        <Modal.Content>
+          <p style={styles.tokenModalDesc}>
+            Database imported successfully. The app needs to restart to apply the changes.
+          </p>
+        </Modal.Content>
+        <Modal.Footer align="end">
+          <button style={styles.primaryButton} onClick={handleRestartApp}>
+            <RotateCcw size={14} /> Restart Now
+          </button>
+        </Modal.Footer>
+      </Modal>
 
       {/* Clear Data Confirmation */}
       <ConfirmDialog

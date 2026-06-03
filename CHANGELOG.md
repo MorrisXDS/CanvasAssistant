@@ -24,6 +24,20 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ### Changed
 
+- `2026-06-03 01:39 UTC` — Migrated the **three nested Settings sub-dialogs** inside
+  `SettingsModalContent` (Token Replacement, Encrypted-Backup Password, post-import Restart) from their
+  handwritten `position:'fixed'` + `rgba` overlay chrome to the shared `<Modal>` primitive
+  (`Modal.Header`/`Content`/`Footer`, `size="md"`, `zIndex={1200}` so they stack above the overlay-mode
+  SettingsModal at 1100). Token-replace and password dialogs are dismissible (backdrop / header-X / Esc —
+  Esc is a faithful upgrade, the old overlays had no keydown listener); the **Restart dialog stays
+  NON-dismissible** (`closeOnEscape={false}`, `closeOnBackdropClick={false}`, `showCloseButton={false}`,
+  no `onClose`) so the "you must restart" gate cannot be dismissed — only the "Restart Now" button exits.
+  The in-input Enter→decrypt handler is preserved verbatim. 6 dead chrome style keys were trimmed from
+  `SettingsModalStyles.ts` (`tokenModalDesc` kept — it styles the description body, not chrome). Behaviour
+  and public props are otherwise unchanged. **This closes the final carve-out of the codebase-wide
+  handwritten-modal cleanup — the nested Settings sub-dialogs deferred when SettingsModal itself migrated
+  (#95).** Extended `tests/l6-ui/SettingsModal.test.tsx` (+24 cases, incl. the load-bearing
+  Restart-non-dismissible contract).
 - `2026-06-03 01:12 UTC` — Migrated the **Event/Coursework form dialog** (`EventFormModal`, the
   909-line calendar create/edit form) to the shared `<Modal>` primitive
   (`Modal.Header`/`Content`/`Footer`, `size="md"`, `zIndex={1100}`), replacing its hand-rolled
