@@ -59,3 +59,6 @@ export {
 
 // Settings Dock
 export { SettingsDock } from './SettingsDock';
+
+// Section Bar — in-page section-navigation indicator (ADR-0010)
+export { SectionBar, type SectionBarItem, type SectionBarProps } from './SectionBar';

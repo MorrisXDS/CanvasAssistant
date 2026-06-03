@@ -6,21 +6,45 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 import React from 'react';
 
+/**
+ * One available section a page is currently exposing for in-page section
+ * navigation (broadcast by `useSectionScope`). The help modal renders these as
+ * the "This page's sections" block. `index1` is the 1-based `Alt+<index1>` slot
+ * among available sections.
+ */
+export interface ActiveSectionInfo {
+  id: string;
+  label: string;
+  index1: number;
+}
+
 interface KeyboardScopeContextValue {
   /** The active `subscope` value from keyboardShortcuts.ts, or null. */
   activeSubscope: string | null;
   setActiveSubscope: (subscope: string | null) => void;
+  /**
+   * The current page's available in-page sections (with their `Alt+<index1>`
+   * slots), or null when the active page has none. Broadcast by
+   * `useSectionScope`; read by `KeyboardShortcutsModal`.
+   */
+  activeSections: ActiveSectionInfo[] | null;
+  setActiveSections: (sections: ActiveSectionInfo[] | null) => void;
 }
 
 export const KeyboardScopeContext = createContext<KeyboardScopeContextValue>({
   activeSubscope: null,
   setActiveSubscope: () => {},
+  activeSections: null,
+  setActiveSections: () => {},
 });
 
 export function KeyboardScopeProvider({ children }: { children: React.ReactNode }) {
   const [activeSubscope, setActiveSubscope] = useState<string | null>(null);
+  const [activeSections, setActiveSections] = useState<ActiveSectionInfo[] | null>(null);
   return (
-    <KeyboardScopeContext.Provider value={{ activeSubscope, setActiveSubscope }}>
+    <KeyboardScopeContext.Provider
+      value={{ activeSubscope, setActiveSubscope, activeSections, setActiveSections }}
+    >
       {children}
     </KeyboardScopeContext.Provider>
   );
