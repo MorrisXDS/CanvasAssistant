@@ -64,6 +64,7 @@ module.exports = {
       testEnvironment: 'node',
       testMatch: [
         '<rootDir>/tests/bootstrap/**/*.test.ts',
+        '<rootDir>/tests/lifecycle/**/*.test.ts',
         '<rootDir>/tests/l0-utilities/**/*.test.ts',
         '<rootDir>/tests/l1-persistence/**/*.test.ts',
         '<rootDir>/tests/l2-daemon/**/*.test.ts',

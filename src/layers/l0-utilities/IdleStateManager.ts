@@ -121,7 +121,10 @@ export class IdleStateManager extends EventEmitter {
    * Handle system resume (waking from sleep)
    */
   private async handleResume(): Promise<void> {
-    if (this.powerState !== 'suspended') {
+    // Accept 'suspending' as well as 'suspended': on macOS the process can be
+    // frozen mid-onSuspend await, leaving powerState stuck at 'suspending'.
+    // If resume fires before onSuspend completed, we must still run onResume.
+    if (this.powerState === 'active' || this.powerState === 'resuming') {
       return;
     }
 
