@@ -9,8 +9,9 @@
  */
 
 import React, { useState, useRef, useEffect, type ReactNode } from 'react';
-import { Info, X } from 'lucide-react';
+import { Info } from 'lucide-react';
 import { createPortal } from 'react-dom';
+import { Modal } from '../primitives/Modal';
 
 export interface InfoTriggerProps {
   /** Brief summary shown on hover (1 sentence) */
@@ -107,60 +108,21 @@ export function InfoTrigger({
         )}
 
       {/* Modal (Level 2 - Click) */}
-      {showModal &&
-        createPortal(
-          <InfoModal title={title} onClose={() => setShowModal(false)}>
-            {details}
-          </InfoModal>,
-          document.body
-        )}
-    </>
-  );
-}
-
-/**
- * InfoModal - Internal modal component for detailed information
- */
-interface InfoModalProps {
-  title: string;
-  children: ReactNode;
-  onClose: () => void;
-}
-
-function InfoModal({ title, children, onClose }: InfoModalProps) {
-  // Close on Escape key
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onClose();
-      }
-    };
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
-
-  return (
-    <div style={styles.modalOverlay} onClick={onClose}>
-      <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
-        {/* Header */}
-        <div style={styles.modalHeader}>
-          <h3 style={styles.modalTitle}>{title}</h3>
-          <button style={styles.closeButton} onClick={onClose}>
-            <X size={20} />
-          </button>
-        </div>
-
-        {/* Content */}
-        <div style={styles.modalContent}>{children}</div>
-
-        {/* Footer */}
-        <div style={styles.modalFooter}>
-          <button style={styles.closeBtn} onClick={onClose}>
+      <Modal
+        isOpen={showModal}
+        onClose={() => setShowModal(false)}
+        size="md"
+        zIndex={1400}
+      >
+        <Modal.Header title={title} onClose={() => setShowModal(false)} />
+        <Modal.Content>{details}</Modal.Content>
+        <Modal.Footer align="end">
+          <button style={styles.closeBtn} onClick={() => setShowModal(false)}>
             Got it
           </button>
-        </div>
-      </div>
-    </div>
+        </Modal.Footer>
+      </Modal>
+    </>
   );
 }
 
@@ -205,78 +167,6 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 'var(--radius-md)',
     boxShadow: 'var(--shadow-lg)',
     pointerEvents: 'none',
-  },
-
-  modalOverlay: {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 10000,
-    padding: 'var(--space-4)',
-  },
-
-  modal: {
-    backgroundColor: 'var(--bg-card)',
-    borderRadius: 'var(--radius-lg)',
-    boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
-    maxWidth: '500px',
-    width: '100%',
-    maxHeight: '80vh',
-    display: 'flex',
-    flexDirection: 'column',
-    overflow: 'hidden',
-  },
-
-  modalHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 'var(--space-4) var(--space-5)',
-    borderBottom: '1px solid var(--border-default)',
-  },
-
-  modalTitle: {
-    fontSize: 'var(--text-lg)',
-    fontWeight: 'var(--font-semibold)',
-    color: 'var(--text-primary)',
-    margin: 0,
-  },
-
-  closeButton: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: '32px',
-    height: '32px',
-    padding: 0,
-    backgroundColor: 'transparent',
-    border: 'none',
-    borderRadius: 'var(--radius-md)',
-    color: 'var(--text-muted)',
-    cursor: 'pointer',
-    transition: 'background-color var(--transition-fast)',
-  },
-
-  modalContent: {
-    flex: 1,
-    padding: 'var(--space-5)',
-    overflow: 'auto',
-    fontSize: 'var(--text-sm)',
-    lineHeight: 'var(--leading-relaxed)',
-    color: 'var(--text-secondary)',
-  },
-
-  modalFooter: {
-    display: 'flex',
-    justifyContent: 'flex-end',
-    padding: 'var(--space-4) var(--space-5)',
-    borderTop: '1px solid var(--border-default)',
   },
 
   closeBtn: {

@@ -24,6 +24,20 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ### Changed
 
+- `2026-06-03 02:01 UTC` — Migrated the handwritten `InfoModal` inside the shared `InfoTrigger`
+  affordance (`src/layers/l6-ui/components/shared/InfoTrigger.tsx`) to the `<Modal>` primitive
+  (`Modal.Header`/`Content`/`Footer`, `size="md"`, `zIndex={1400}`). This is the **6th — and
+  previously-missed — handwritten modal**: `InfoTrigger` was earlier mis-triaged as a "tooltip false
+  positive" in the handwritten-modal cleanup, but only its hover _tooltip_ is a non-modal disclosure
+  affordance; the popup it opened on click was a genuine hand-rolled `position:'fixed'` + `rgba`
+  overlay (own Esc listener, backdrop-close, header/content/footer). The tooltip portal is left
+  entirely untouched; only the click-popup migrated. Also **fixes the modal's stacking order**: the old
+  `InfoModal` sat at `zIndex:10000` — _above_ the Help modal (`KeyboardShortcutsModal` @ `1500`),
+  violating the documented Help-always-on-top invariant. It now sits at `1400` (above the normal
+  1100/1200 modal tier so an `(i)` embedded inside a host modal still pops above it, but below Help).
+  The hand-rolled Esc `useEffect` (now primitive-owned), the orphaned `X` import, and 7 dead
+  modal-chrome style keys were removed; public `InfoTriggerProps` unchanged. New test
+  `tests/l6-ui/InfoTrigger.test.tsx` (8 cases, incl. the Esc-replacement + tooltip-untouched contracts).
 - `2026-06-03 01:39 UTC` — Migrated the **three nested Settings sub-dialogs** inside
   `SettingsModalContent` (Token Replacement, Encrypted-Backup Password, post-import Restart) from their
   handwritten `position:'fixed'` + `rgba` overlay chrome to the shared `<Modal>` primitive
