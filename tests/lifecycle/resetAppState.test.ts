@@ -1,11 +1,14 @@
 /**
  * resetAppState — regression guard for the "Reset all data" bug.
  *
- * Bug (fixed at src/lifecycle/resetAppState.ts:102): the reset transaction
- * cleared `user_preferences` but never `app_settings`, so the backup schedule
- * and encryption password survived a full app reset and `BackupManager`
- * resurrected the scheduler on next boot. The `DELETE FROM app_settings` line
- * is the fix; the `app_settings` assertion below FAILS on the old code.
+ * Original bug (#108): the reset transaction cleared `user_preferences` but
+ * never `app_settings`, so the backup schedule + encryption password survived a
+ * full reset and `BackupManager` resurrected the scheduler on next boot. As of
+ * migration 112 the duplicate `app_settings` table was consolidated INTO
+ * `user_preferences` and dropped, so the backup config (`exportSchedule`,
+ * `backupEncryptionPassword`) now lives in `user_preferences` — and the reset's
+ * `DELETE FROM user_preferences` covers it. This test now guards that the
+ * consolidated settings table is cleared on reset.
  *
  * No React / no electron import is needed — `resetAppState` takes a deps object,
  * and `getMainWindow` / `getSyncEngine` are supplied as stubs (null) so the IPC
@@ -42,11 +45,13 @@ describe('resetAppState', () => {
     runner.loadMigrations(coreMigrations);
     runner.runAll();
 
-    // Seed one row into each top-level settings table so both start non-empty.
+    // Seed the consolidated settings table with both a user-tuned setting and the
+    // backup config that formerly lived in the dropped `app_settings` table, so
+    // the reset must clear all of it.
     db.executeWrite(
-      "INSERT INTO app_settings (key, value) VALUES ('exportSchedule', '{\"enabled\":true}')",
+      "INSERT INTO user_preferences (key, value) VALUES ('exportSchedule', '{\"enabled\":true}')",
       [],
-      'app_settings'
+      'user_preferences'
     );
     db.executeWrite(
       "INSERT INTO user_preferences (key, value) VALUES ('syncPreferences', '{\"autoSyncEnabled\":true}')",
@@ -99,21 +104,23 @@ describe('resetAppState', () => {
     }
   });
 
-  it('clears app_settings on reset (regression: backup schedule must not survive a full reset)', async () => {
-    expect(countRows(db, 'app_settings')).toBe(1);
+  it('clears user_preferences (incl. consolidated backup config) on reset, so the backup schedule does not survive a full reset', async () => {
+    // Two rows seeded: the user-tuned `syncPreferences` and the backup
+    // `exportSchedule` that post-112 lives in user_preferences.
+    expect(countRows(db, 'user_preferences')).toBe(2);
 
     await resetAppState(deps, { deleteToken: false });
 
-    // The load-bearing assertion — fails on the pre-fix code that omitted
-    // `DELETE FROM app_settings`.
-    expect(countRows(db, 'app_settings')).toBe(0);
+    // The load-bearing assertion — the consolidated settings table is fully
+    // cleared, so the backup schedule/password cannot survive a reset (#108).
+    expect(countRows(db, 'user_preferences')).toBe(0);
   });
 
-  it('also clears user_preferences on reset (existing behavior, guarded against regression)', async () => {
-    expect(countRows(db, 'user_preferences')).toBe(1);
-
-    await resetAppState(deps, { deleteToken: false });
-
-    expect(countRows(db, 'user_preferences')).toBe(0);
+  it('the dropped app_settings table is gone after migration (no resurrection)', () => {
+    const exists =
+      db.executeRead<{ name: string }>(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name = 'app_settings'"
+      ).length > 0;
+    expect(exists).toBe(false);
   });
 });

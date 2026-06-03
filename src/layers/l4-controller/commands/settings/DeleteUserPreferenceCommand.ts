@@ -1,31 +1,34 @@
 /**
- * DeleteAppSettingCommand - Delete one key from `app_settings`.
+ * DeleteUserPreferenceCommand - Delete one key from `user_preferences`.
  *
  * Per ADR-0007 this is the write path the backup handler routes through to
  * clear a stored setting (e.g. the backup encryption password when
- * encryption is turned off).
+ * encryption is turned off). Mirror of `SetUserPreferenceCommand`.
  */
 
 import {
   Command,
   CommandContext,
   CommandResult,
-  DeleteAppSettingParams,
+  DeleteUserPreferenceParams,
 } from '../../types';
 
-export class DeleteAppSettingCommand implements Command<DeleteAppSettingParams, void> {
-  readonly name = 'DeleteAppSetting';
+export class DeleteUserPreferenceCommand implements Command<
+  DeleteUserPreferenceParams,
+  void
+> {
+  readonly name = 'DeleteUserPreference';
 
-  validate(params: DeleteAppSettingParams): { valid: boolean; error?: string } {
+  validate(params: DeleteUserPreferenceParams): { valid: boolean; error?: string } {
     if (!params.key) {
-      return { valid: false, error: 'Setting key is required' };
+      return { valid: false, error: 'Preference key is required' };
     }
     return { valid: true };
   }
 
   async execute(
     context: CommandContext,
-    params: DeleteAppSettingParams
+    params: DeleteUserPreferenceParams
   ): Promise<CommandResult<void>> {
     const validation = this.validate(params);
     if (!validation.valid) {
@@ -34,15 +37,15 @@ export class DeleteAppSettingCommand implements Command<DeleteAppSettingParams, 
 
     try {
       context.db.executeWrite(
-        `DELETE FROM app_settings WHERE key = ?`,
+        `DELETE FROM user_preferences WHERE key = ?`,
         [params.key],
-        'app_settings'
+        'user_preferences'
       );
       return { success: true };
     } catch (error) {
       return {
         success: false,
-        error: `Failed to delete app setting: ${error instanceof Error ? error.message : String(error)}`,
+        error: `Failed to delete user preference: ${error instanceof Error ? error.message : String(error)}`,
       };
     }
   }

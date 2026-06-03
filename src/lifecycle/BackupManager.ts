@@ -7,9 +7,12 @@ import { BrowserWindow } from 'electron';
 import fs from 'fs';
 import path from 'path';
 import type { Database } from '../layers/l1-persistence';
+import { UserPreferencesReader } from '../layers/l1-persistence';
 import type { Logger } from '../layers/l0-utilities/Logger';
 import type { MetricsCollector } from '../layers/l0-utilities/MetricsCollector';
 import { encryptBackup } from '../layers/l0-utilities/BackupEncryption';
+import { SetUserPreferenceCommand } from '../layers/l4-controller';
+import { createSimulationContext } from '../layers/l4-controller/types';
 
 export interface BackupManagerConfig {
   database: Database;
@@ -85,19 +88,18 @@ export class BackupManager {
    */
   async checkAndRunBackup(): Promise<void> {
     try {
-      // Read schedule from database
-      const scheduleRow = this.database.executeReadOne<{ value: string }>(
-        "SELECT value FROM app_settings WHERE key = 'exportSchedule'"
-      );
+      // Read schedule from user_preferences (SQL is authoritative for backup config)
+      const prefsReader = new UserPreferencesReader(this.database);
+      const scheduleValue = prefsReader.get('exportSchedule');
 
-      if (!scheduleRow) {
+      if (!scheduleValue) {
         return; // No schedule configured
       }
 
       let schedule: BackupSchedule;
 
       try {
-        schedule = JSON.parse(scheduleRow.value);
+        schedule = JSON.parse(scheduleValue);
       } catch {
         return; // Invalid schedule
       }
@@ -167,18 +169,12 @@ export class BackupManager {
       // Handle encryption if enabled
       let isEncrypted = false;
       if (schedule.encrypt) {
-        // Get encryption password from app_settings
-        const passwordRow = this.database.executeReadOne<{ value: string }>(
-          "SELECT value FROM app_settings WHERE key = 'backupEncryptionPassword'"
-        );
+        // Get encryption password from user_preferences
+        const passwordValue = prefsReader.get('backupEncryptionPassword');
 
-        if (passwordRow?.value) {
+        if (passwordValue) {
           const encryptedPath = backupPath.replace('.db', '.db.enc');
-          const encryptResult = encryptBackup(
-            backupPath,
-            encryptedPath,
-            passwordRow.value
-          );
+          const encryptResult = encryptBackup(backupPath, encryptedPath, passwordValue);
 
           if (encryptResult.success) {
             // Remove unencrypted version
@@ -209,10 +205,9 @@ export class BackupManager {
 
       // Update schedule with last run time
       schedule.lastRun = now.toISOString();
-      this.database.executeWrite(
-        "INSERT OR REPLACE INTO app_settings (key, value) VALUES ('exportSchedule', ?)",
-        [JSON.stringify(schedule)],
-        'app_settings'
+      await new SetUserPreferenceCommand().execute(
+        { db: this.database, simulationContext: createSimulationContext() },
+        { key: 'exportSchedule', value: JSON.stringify(schedule) }
       );
 
       // Rotate old backups (keep maxBackups most recent)

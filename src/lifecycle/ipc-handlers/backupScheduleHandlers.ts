@@ -10,10 +10,10 @@ import path from 'path';
 import type { IpcContext } from './IpcContext';
 import type { ExportSchedule } from '../../layers/l5-presentation/settings/settingsSchema';
 import { DEFAULT_EXPORT_SCHEDULE } from '../../layers/l5-presentation/settings/settingsSchema';
-import { AppSettingsReader, ExportHistoryReader } from '../../layers/l1-persistence';
+import { UserPreferencesReader, ExportHistoryReader } from '../../layers/l1-persistence';
 import {
-  SetAppSettingCommand,
-  DeleteAppSettingCommand,
+  SetUserPreferenceCommand,
+  DeleteUserPreferenceCommand,
 } from '../../layers/l4-controller';
 import { createSimulationContext } from '../../layers/l4-controller/types';
 
@@ -75,7 +75,7 @@ function calculateNextRun(schedule: ExportSchedule): string | undefined {
 export function registerBackupScheduleHandlers(ctx: IpcContext): void {
   const database = ctx.getDatabase();
   const logger = ctx.getLogger();
-  const appSettingsReader = new AppSettingsReader(database);
+  const userPreferencesReader = new UserPreferencesReader(database);
   const exportHistoryReader = new ExportHistoryReader(database);
   const runContext = () => ({
     db: database,
@@ -85,7 +85,7 @@ export function registerBackupScheduleHandlers(ctx: IpcContext): void {
   // Get backup schedule
   ipcMain.handle('backup:getSchedule', () => {
     try {
-      const value = appSettingsReader.get('exportSchedule');
+      const value = userPreferencesReader.get('exportSchedule');
 
       if (value) {
         const schedule: ExportSchedule = JSON.parse(value);
@@ -121,20 +121,20 @@ export function registerBackupScheduleHandlers(ctx: IpcContext): void {
         const scheduleToStore = { ...schedule };
         delete scheduleToStore.encryptionPassword;
 
-        await new SetAppSettingCommand().execute(runContext(), {
+        await new SetUserPreferenceCommand().execute(runContext(), {
           key: 'exportSchedule',
           value: JSON.stringify(scheduleToStore),
         });
 
         // Store encryption password separately if provided
         if (schedule.encrypt && schedule.encryptionPassword) {
-          await new SetAppSettingCommand().execute(runContext(), {
+          await new SetUserPreferenceCommand().execute(runContext(), {
             key: 'backupEncryptionPassword',
             value: schedule.encryptionPassword,
           });
         } else if (!schedule.encrypt) {
           // Remove password if encryption disabled
-          await new DeleteAppSettingCommand().execute(runContext(), {
+          await new DeleteUserPreferenceCommand().execute(runContext(), {
             key: 'backupEncryptionPassword',
           });
         }

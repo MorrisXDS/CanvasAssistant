@@ -399,21 +399,4 @@ export function registerSettingsHandlers(ctx: IpcContext): void {
       }
     }
   );
-
-  /**
-   * Get the Canvas timezone stored in the database
-   */
-  ipcMain.handle('settings:getCanvasTimezone', () => {
-    try {
-      const value = prefsReader.get('canvasTimezone');
-      if (value) {
-        const data = JSON.parse(value);
-        return { success: true, data };
-      }
-      return { success: true, data: null };
-    } catch (error) {
-      logger.error('Failed to get Canvas timezone:', error as Error);
-      return { success: false, error: String(error) };
-    }
-  });
 }

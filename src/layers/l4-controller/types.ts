@@ -254,18 +254,9 @@ export interface UpdateCourseAuthorityParams {
 }
 
 /**
- * Upsert a single key/value row in `app_settings`. The value is the
- * already-serialized string the caller wants stored verbatim.
+ * Delete a single key from `user_preferences`.
  */
-export interface SetAppSettingParams {
-  key: string;
-  value: string;
-}
-
-/**
- * Delete a single key from `app_settings`.
- */
-export interface DeleteAppSettingParams {
+export interface DeleteUserPreferenceParams {
   key: string;
 }
 
