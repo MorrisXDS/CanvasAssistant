@@ -268,7 +268,12 @@ export const KEYBOARD_SHORTCUTS: ShortcutCategory[] = [
     shortcuts: [
       {
         keys: ['Q', '/', 'E'],
-        label: 'Cycle sections (Tasks → Queue → Announcements → Preferences)',
+        label:
+          'Cycle sections (Tasks → Queue → Announcements → Preferences) — except in Tasks, where E = edit task',
+      },
+      {
+        keys: ['Alt', '1', '–', 'N'],
+        label: 'Jump directly to section N (available sections only)',
       },
       { keys: ['G'], label: 'Go back to previous page' },
       { keys: ['T'], label: 'Start editing Target grade in header' },
