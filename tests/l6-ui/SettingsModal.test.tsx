@@ -160,6 +160,29 @@ Object.defineProperty(window, 'matchMedia', {
 import { SettingsModal } from '../../src/layers/l6-ui/components/SettingsModal';
 import { SettingsManager } from '../../src/layers/l5-presentation/settings/SettingsManager';
 
+// For the sub-dialogs block we render SettingsModalContent directly and drive
+// the three open-flags through a stubbed useSettings (the flags live in
+// useCanvasConnection / useExportImport — internal useState that's awkward to
+// flip end-to-end in jsdom). We spy on the module namespace bindings (ts-jest
+// compiles `import { useSettings }` to `SettingsContext_1.useSettings(...)`, so
+// a spyOn intercepts it) and restore after each test, so the existing
+// real-provider SettingsModal tests above are untouched.
+import * as SettingsModalContentModule from '../../src/layers/l6-ui/components/Settings/SettingsModalContent';
+import * as SettingsContextModule from '../../src/layers/l6-ui/components/Settings/SettingsContext';
+import * as DisplaySectionModule from '../../src/layers/l6-ui/components/Settings/DisplaySection';
+import * as AcademicSectionModule from '../../src/layers/l6-ui/components/Settings/AcademicSection';
+import * as FilesContentSectionModule from '../../src/layers/l6-ui/components/Settings/FilesContentSection';
+import * as SyncSectionModule from '../../src/layers/l6-ui/components/Settings/SyncSection';
+import * as AccountSectionModule from '../../src/layers/l6-ui/components/Settings/AccountSection';
+import * as AppBehaviorSectionModule from '../../src/layers/l6-ui/components/Settings/AppBehaviorSection';
+import * as NotificationsSectionModule from '../../src/layers/l6-ui/components/Settings/NotificationsSection';
+import * as DataSectionModule from '../../src/layers/l6-ui/components/Settings/DataSection';
+import * as ConfirmDialogModule from '../../src/layers/l6-ui/components/shared/ConfirmDialog';
+import * as ExportDialogModule from '../../src/layers/l6-ui/components/shared/ExportDialog';
+import * as PrimitivesModule from '../../src/layers/l6-ui/components/primitives';
+import type { SettingsContextType } from '../../src/layers/l6-ui/components/Settings/settingsContextTypes';
+import { SETTINGS_LABELS } from '../../src/layers/l6-ui/constants';
+
 // Helper to find accordion section trigger by text
 function findAccordionTrigger(container: HTMLElement, text: string): HTMLElement | null {
   const buttons = Array.from(container.querySelectorAll('button'));
@@ -494,6 +517,456 @@ describe('SettingsModal', () => {
         // is the only Esc path — and it must still close (SettingsPage navigates
         // back on close). Load-bearing: this listener must not be removed.
         expect(onClose).toHaveBeenCalledTimes(1);
+      });
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Settings sub-dialogs (refactor/modal-settings-subdialogs-primitive)
+  //
+  // The three handwritten overlay sub-dialogs inside SettingsModalContent
+  // (Token Replacement, Password, Restart) are migrated to the shared <Modal>
+  // primitive. These cases pin, per dialog:
+  //   - open trigger renders the dialog with <Modal> chrome,
+  //   - the two dismissible ones (token, password) close via Esc + backdrop +
+  //     their Cancel / X (each closing path fires the right handler), and
+  //   - the LOAD-BEARING case: the Restart dialog is NON-dismissible (no Esc,
+  //     no backdrop close, no close button; only "Restart Now").
+  //
+  // We render SettingsModalContent directly and stub useSettings so we can
+  // drive each open-flag + capture its handler. The 8 section components,
+  // ConfirmDialog, ExportDialog, and the primitives barrel (Accordion /
+  // SearchInput / SettingsDock) are stubbed so only the three real <Modal>
+  // sub-dialogs (and the real Modal primitive, imported directly — NOT via the
+  // mocked barrel) render. Spies are restored after each test.
+  // ---------------------------------------------------------------------------
+  describe('Settings sub-dialogs', () => {
+    const { SettingsModalContent } = SettingsModalContentModule;
+
+    // A no-op section stub keyed by name so React devtools / errors are legible.
+    const stubSection = (label: string) => () =>
+      React.createElement('div', { 'data-stub-section': label });
+
+    /** Build a complete-enough SettingsContextType with overridable fields. */
+    function buildContext(overrides: Partial<SettingsContextType>): SettingsContextType {
+      const refs = {
+        display: { current: null },
+        academic: { current: null },
+        files: { current: null },
+        sync: { current: null },
+        account: { current: null },
+        behavior: { current: null },
+        notifications: { current: null },
+        data: { current: null },
+      };
+      const noop = jest.fn();
+      const base = {
+        isOpen: true,
+        onClose: jest.fn(),
+        isFullPage: false,
+        searchQuery: '',
+        setSearchQuery: jest.fn(),
+        hasSearchResults: false,
+        matchingCategories: new Set(),
+        isSearching: false,
+        openSections: [],
+        setOpenSections: jest.fn(),
+        dockAutoHide: false,
+        sectionOrder: [],
+        sectionRefs: refs,
+        filteredSettings: null,
+        // Token replacement (defaults: closed)
+        showTokenReplaceModal: false,
+        setShowTokenReplaceModal: jest.fn(),
+        newToken: '',
+        setNewToken: jest.fn(),
+        isValidatingNewToken: false,
+        newTokenValidation: { valid: null, userName: null, error: null },
+        setNewTokenValidation: jest.fn(),
+        isReplacingToken: false,
+        handleValidateNewToken: jest.fn().mockResolvedValue(undefined),
+        handleReplaceToken: jest.fn().mockResolvedValue(undefined),
+        // ClearData / Disconnect (unrelated, kept ConfirmDialogs — stubbed)
+        showClearDataConfirm: false,
+        setShowClearDataConfirm: jest.fn(),
+        deleteTokenOnClear: false,
+        setDeleteTokenOnClear: jest.fn(),
+        showDisconnectConfirm: false,
+        setShowDisconnectConfirm: jest.fn(),
+        handleDisconnect: jest.fn().mockResolvedValue(undefined),
+        // Export/import
+        isExporting: false,
+        exportMessage: null,
+        showExportDialog: false,
+        setShowExportDialog: jest.fn(),
+        handleExportDatabase: jest.fn().mockResolvedValue(undefined),
+        handleExportSettings: jest.fn().mockResolvedValue(undefined),
+        // Password modal (defaults: closed)
+        showPasswordModal: false,
+        importPassword: '',
+        setImportPassword: jest.fn(),
+        isDecrypting: false,
+        handleDecryptImport: jest.fn().mockResolvedValue(undefined),
+        handleCancelPasswordModal: jest.fn(),
+        // Restart modal (defaults: closed)
+        showRestartModal: false,
+        handleRestartApp: jest.fn().mockResolvedValue(undefined),
+        noop,
+      } as unknown as SettingsContextType;
+      return { ...base, ...overrides };
+    }
+
+    function renderContent(overrides: Partial<SettingsContextType>) {
+      const ctx = buildContext(overrides);
+      jest.spyOn(SettingsContextModule, 'useSettings').mockReturnValue(ctx);
+      render(<SettingsModalContent />);
+      return ctx;
+    }
+
+    beforeEach(() => {
+      // Stub the 8 section components, the two surviving ConfirmDialogs, the
+      // ExportDialog, and the primitives barrel (Accordion / SearchInput /
+      // SettingsDock) so only the three real <Modal> sub-dialogs render. The
+      // real Modal primitive is imported directly by SettingsModalContent (not
+      // via the mocked barrel), so it is NOT stubbed.
+      jest
+        .spyOn(DisplaySectionModule, 'DisplaySection')
+        .mockImplementation(stubSection('display'));
+      jest
+        .spyOn(AcademicSectionModule, 'AcademicSection')
+        .mockImplementation(stubSection('academic'));
+      jest
+        .spyOn(FilesContentSectionModule, 'FilesContentSection')
+        .mockImplementation(stubSection('files'));
+      jest
+        .spyOn(SyncSectionModule, 'SyncSection')
+        .mockImplementation(stubSection('sync'));
+      jest
+        .spyOn(AccountSectionModule, 'AccountSection')
+        .mockImplementation(stubSection('account'));
+      jest
+        .spyOn(AppBehaviorSectionModule, 'AppBehaviorSection')
+        .mockImplementation(stubSection('behavior'));
+      jest
+        .spyOn(NotificationsSectionModule, 'NotificationsSection')
+        .mockImplementation(stubSection('notifications'));
+      jest
+        .spyOn(DataSectionModule, 'DataSection')
+        .mockImplementation(stubSection('data'));
+      jest
+        .spyOn(ConfirmDialogModule, 'ConfirmDialog')
+        .mockImplementation(() => React.createElement(React.Fragment));
+      jest
+        .spyOn(ExportDialogModule, 'ExportDialog')
+        .mockImplementation(() => React.createElement(React.Fragment));
+      jest
+        .spyOn(PrimitivesModule, 'Accordion')
+        .mockImplementation(({ children }: { children?: React.ReactNode }) =>
+          React.createElement('div', { 'data-stub': 'accordion' }, children)
+        );
+      jest
+        .spyOn(PrimitivesModule, 'SearchInput')
+        .mockImplementation(() => React.createElement(React.Fragment));
+      jest
+        .spyOn(PrimitivesModule, 'SettingsDock')
+        .mockImplementation(() => React.createElement(React.Fragment));
+    });
+
+    afterEach(() => {
+      jest.restoreAllMocks();
+    });
+
+    // -------------------------------------------------------------------------
+    // 1-5: Token Replacement Modal (dismissible)
+    // -------------------------------------------------------------------------
+    describe('Token Replacement Modal', () => {
+      it('renders <Modal> chrome when showTokenReplaceModal is true', () => {
+        renderContent({ showTokenReplaceModal: true });
+
+        const dialog = screen.getByRole('dialog');
+        expect(dialog).toBeInTheDocument();
+        // Title from SETTINGS_LABELS.tokenModal.title
+        expect(screen.getByText('Replace Canvas Token')).toBeInTheDocument();
+        // New-token password input
+        expect(screen.getByText('New Access Token')).toBeInTheDocument();
+        // Validate button (state machine: not-yet-valid → Validate)
+        expect(screen.getByText(/Validate/i)).toBeInTheDocument();
+      });
+
+      it('does not render when showTokenReplaceModal is false', () => {
+        renderContent({ showTokenReplaceModal: false });
+        // No dialog (all three sub-dialogs closed; sections stubbed).
+        expect(screen.queryByText('Replace Canvas Token')).not.toBeInTheDocument();
+      });
+
+      it('shows the Replace button (not Validate) once newTokenValidation.valid', () => {
+        renderContent({
+          showTokenReplaceModal: true,
+          newToken: 'tok',
+          newTokenValidation: { valid: true, userName: 'Jane', error: null },
+        });
+        // Footer flips to the Replace state-machine branch + success row.
+        expect(screen.getByText(/Replace Token/i)).toBeInTheDocument();
+        expect(screen.getByText('Token valid for Jane')).toBeInTheDocument();
+      });
+
+      it('renders the error row when newTokenValidation.error is set', () => {
+        renderContent({
+          showTokenReplaceModal: true,
+          newTokenValidation: { valid: null, userName: null, error: 'Invalid token' },
+        });
+        expect(screen.getByText('Invalid token')).toBeInTheDocument();
+      });
+
+      it('Cancel button calls setShowTokenReplaceModal(false)', () => {
+        const ctx = renderContent({ showTokenReplaceModal: true });
+        const cancelBtn = screen.getByText('Cancel');
+
+        act(() => {
+          fireEvent.click(cancelBtn);
+        });
+
+        expect(ctx.setShowTokenReplaceModal).toHaveBeenCalledWith(false);
+      });
+
+      it('header X (aria-label="Close modal") calls setShowTokenReplaceModal(false)', () => {
+        const ctx = renderContent({ showTokenReplaceModal: true });
+        const closeBtn = screen.getByLabelText('Close modal');
+
+        act(() => {
+          fireEvent.click(closeBtn);
+        });
+
+        expect(ctx.setShowTokenReplaceModal).toHaveBeenCalledWith(false);
+      });
+
+      it('backdrop click calls setShowTokenReplaceModal(false)', () => {
+        const ctx = renderContent({ showTokenReplaceModal: true });
+        const backdrop = document.querySelector('div[aria-hidden="true"]') as HTMLElement;
+        expect(backdrop).toBeInTheDocument();
+
+        act(() => {
+          fireEvent.click(backdrop);
+        });
+
+        expect(ctx.setShowTokenReplaceModal).toHaveBeenCalledWith(false);
+      });
+
+      it('Escape closes it (primitive owns Esc — faithful upgrade)', () => {
+        const ctx = renderContent({ showTokenReplaceModal: true });
+
+        act(() => {
+          fireEvent.keyDown(document, { key: 'Escape' });
+        });
+
+        // onClose → setShowTokenReplaceModal(false). No parent Esc handler in
+        // this component, so exactly one call (no double-fire).
+        expect(ctx.setShowTokenReplaceModal).toHaveBeenCalledTimes(1);
+        expect(ctx.setShowTokenReplaceModal).toHaveBeenCalledWith(false);
+      });
+
+      it('Validate button invokes handleValidateNewToken', () => {
+        const ctx = renderContent({
+          showTokenReplaceModal: true,
+          newToken: 'tok',
+        });
+        const validateBtn = screen.getByText(/Validate/i).closest('button')!;
+
+        act(() => {
+          fireEvent.click(validateBtn);
+        });
+
+        expect(ctx.handleValidateNewToken).toHaveBeenCalled();
+      });
+
+      it('typing in the token input updates newToken + resets validation', () => {
+        const ctx = renderContent({
+          showTokenReplaceModal: true,
+          newTokenValidation: { valid: null, userName: null, error: 'stale' },
+        });
+        const input = screen.getByPlaceholderText(
+          SETTINGS_LABELS.placeholders.newToken
+        ) as HTMLInputElement;
+
+        act(() => {
+          fireEvent.change(input, { target: { value: 'new-tok' } });
+        });
+
+        // The inline onChange body runs both setters.
+        expect(ctx.setNewToken).toHaveBeenCalledWith('new-tok');
+        expect(ctx.setNewTokenValidation).toHaveBeenCalledWith({
+          valid: null,
+          userName: null,
+          error: null,
+        });
+      });
+    });
+
+    // -------------------------------------------------------------------------
+    // 6-7: Password Modal (dismissible — all paths → handleCancelPasswordModal)
+    // -------------------------------------------------------------------------
+    describe('Password Modal', () => {
+      it('renders <Modal> chrome when showPasswordModal is true', () => {
+        renderContent({ showPasswordModal: true });
+
+        expect(screen.getByRole('dialog')).toBeInTheDocument();
+        expect(screen.getByText('Encrypted Backup')).toBeInTheDocument();
+        expect(screen.getByText('Password')).toBeInTheDocument();
+        expect(screen.getByText(/Decrypt & Import/i)).toBeInTheDocument();
+      });
+
+      it('in-input Enter (with a password) calls handleDecryptImport', () => {
+        const ctx = renderContent({
+          showPasswordModal: true,
+          importPassword: 'secret',
+        });
+        const input = screen.getByPlaceholderText(
+          'Enter backup password'
+        ) as HTMLInputElement;
+
+        act(() => {
+          fireEvent.keyDown(input, { key: 'Enter' });
+        });
+
+        expect(ctx.handleDecryptImport).toHaveBeenCalled();
+      });
+
+      it('typing in the password input calls setImportPassword', () => {
+        const ctx = renderContent({ showPasswordModal: true });
+        const input = screen.getByPlaceholderText(
+          'Enter backup password'
+        ) as HTMLInputElement;
+
+        act(() => {
+          fireEvent.change(input, { target: { value: 'pw' } });
+        });
+
+        expect(ctx.setImportPassword).toHaveBeenCalledWith('pw');
+      });
+
+      it('in-input Enter with EMPTY password does NOT decrypt', () => {
+        const ctx = renderContent({
+          showPasswordModal: true,
+          importPassword: '',
+        });
+        const input = screen.getByPlaceholderText(
+          'Enter backup password'
+        ) as HTMLInputElement;
+
+        act(() => {
+          fireEvent.keyDown(input, { key: 'Enter' });
+        });
+
+        expect(ctx.handleDecryptImport).not.toHaveBeenCalled();
+      });
+
+      it('Decrypt & Import button calls handleDecryptImport', () => {
+        const ctx = renderContent({
+          showPasswordModal: true,
+          importPassword: 'secret',
+        });
+        const decryptBtn = screen.getByText(/Decrypt & Import/i).closest('button')!;
+
+        act(() => {
+          fireEvent.click(decryptBtn);
+        });
+
+        expect(ctx.handleDecryptImport).toHaveBeenCalled();
+      });
+
+      // Each closing path is its own test (single render each) so RTL's
+      // afterEach cleanup unmounts between them — multiple renders in one test
+      // would accumulate in document.body and duplicate the "Close modal" /
+      // backdrop matches.
+      it('Cancel button calls handleCancelPasswordModal', () => {
+        const ctx = renderContent({ showPasswordModal: true });
+        act(() => {
+          fireEvent.click(screen.getByText('Cancel'));
+        });
+        expect(ctx.handleCancelPasswordModal).toHaveBeenCalledTimes(1);
+      });
+
+      it('header X calls handleCancelPasswordModal', () => {
+        const ctx = renderContent({ showPasswordModal: true });
+        act(() => {
+          fireEvent.click(screen.getByLabelText('Close modal'));
+        });
+        expect(ctx.handleCancelPasswordModal).toHaveBeenCalledTimes(1);
+      });
+
+      it('backdrop click calls handleCancelPasswordModal', () => {
+        const ctx = renderContent({ showPasswordModal: true });
+        act(() => {
+          fireEvent.click(
+            document.querySelector('div[aria-hidden="true"]') as HTMLElement
+          );
+        });
+        expect(ctx.handleCancelPasswordModal).toHaveBeenCalledTimes(1);
+      });
+
+      it('Escape calls handleCancelPasswordModal', () => {
+        const ctx = renderContent({ showPasswordModal: true });
+        act(() => {
+          fireEvent.keyDown(document, { key: 'Escape' });
+        });
+        expect(ctx.handleCancelPasswordModal).toHaveBeenCalledTimes(1);
+      });
+    });
+
+    // -------------------------------------------------------------------------
+    // 8: Restart Modal (NON-dismissible — the load-bearing case)
+    // -------------------------------------------------------------------------
+    describe('Restart Modal (non-dismissible)', () => {
+      it('renders <Modal> chrome + "Restart Now" when showRestartModal is true', () => {
+        renderContent({ showRestartModal: true });
+
+        expect(screen.getByRole('dialog')).toBeInTheDocument();
+        expect(screen.getByText('Database Imported')).toBeInTheDocument();
+        expect(screen.getByText(/Restart Now/i)).toBeInTheDocument();
+      });
+
+      it('"Restart Now" calls handleRestartApp', () => {
+        const ctx = renderContent({ showRestartModal: true });
+        const restartBtn = screen.getByText(/Restart Now/i).closest('button')!;
+
+        act(() => {
+          fireEvent.click(restartBtn);
+        });
+
+        expect(ctx.handleRestartApp).toHaveBeenCalled();
+      });
+
+      it('has NO close (X) button (showCloseButton={false})', () => {
+        renderContent({ showRestartModal: true });
+        // The primitive close button uses aria-label="Close modal".
+        expect(screen.queryByLabelText('Close modal')).not.toBeInTheDocument();
+      });
+
+      it('Escape does NOT close it (closeOnEscape={false})', () => {
+        renderContent({ showRestartModal: true });
+        expect(screen.getByText('Database Imported')).toBeInTheDocument();
+
+        act(() => {
+          fireEvent.keyDown(document, { key: 'Escape' });
+        });
+
+        // Still mounted — Esc is disabled and no onClose is wired.
+        expect(screen.getByText('Database Imported')).toBeInTheDocument();
+        expect(screen.getByRole('dialog')).toBeInTheDocument();
+      });
+
+      it('backdrop click does NOT close it (closeOnBackdropClick={false})', () => {
+        renderContent({ showRestartModal: true });
+        const backdrop = document.querySelector('div[aria-hidden="true"]') as HTMLElement;
+        expect(backdrop).toBeInTheDocument();
+
+        act(() => {
+          fireEvent.click(backdrop);
+        });
+
+        // Still mounted — backdrop click is disabled.
+        expect(screen.getByText('Database Imported')).toBeInTheDocument();
+        expect(screen.getByRole('dialog')).toBeInTheDocument();
       });
     });
   });
