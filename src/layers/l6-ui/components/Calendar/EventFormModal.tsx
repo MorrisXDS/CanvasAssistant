@@ -5,7 +5,6 @@
 
 import React, { useState, useEffect } from 'react';
 import {
-  X,
   Calendar,
   MapPin,
   AlignLeft,
@@ -24,6 +23,7 @@ const logger = createLogger('EventFormModal');
 import type { DisplayCalendarEvent, Course } from '../../../l5-presentation/types';
 import { ConfirmDialog } from '../shared/ConfirmDialog';
 import { RichTextEditor } from '../shared/RichTextEditor';
+import { Modal } from '../primitives/Modal';
 import { getCleanCourseName, TASK_TYPES } from '../../constants';
 import {
   eventFormModalStyles as styles,
@@ -89,6 +89,12 @@ export function EventFormModal({
   // Event type selection (only for create mode)
   const [eventType, setEventType] = useState<EventType>('event');
 
+  // Child-dialog visibility flags. Declared before the keydown effect because
+  // that effect's guard + dep array reference them (the rest of the form's
+  // useState stays in its original block below).
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [validationAlert, setValidationAlert] = useState<string | null>(null);
+
   // Keyboard shortcuts: Escape closes, Ctrl/Cmd+Enter saves, Alt+1/2 toggle type,
   // Alt+letter jumps to fields, Alt+Delete triggers delete (edit mode only).
   // Save is triggered by submitting the form so validation paths stay consistent.
@@ -116,6 +122,11 @@ export function EventFormModal({
         tag === 'TEXTAREA' ||
         tag === 'SELECT' ||
         target?.isContentEditable === true;
+
+      // When a ConfirmDialog child (delete-confirm / validation-alert) is
+      // open, it owns the keyboard (capture-phase listener + stopPropagation).
+      // Yield ALL keys to it — matches the TaskDetailModal precedent.
+      if (showDeleteConfirm || validationAlert) return;
 
       if (e.key === 'Escape') {
         onClose();
@@ -180,7 +191,7 @@ export function EventFormModal({
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, [isOpen, onClose, isEditMode, onDelete]);
+  }, [isOpen, onClose, isEditMode, onDelete, showDeleteConfirm, validationAlert]);
 
   // Common fields
   const [title, setTitle] = useState('');
@@ -205,8 +216,6 @@ export function EventFormModal({
   const [reminderMinutes, setReminderMinutes] = useState<number>(0);
 
   const [isSaving, setIsSaving] = useState(false);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [validationAlert, setValidationAlert] = useState<string | null>(null);
 
   // Check if this is a task-generated event (has taskId)
   const isTaskEvent = Boolean(event?.taskId);
@@ -428,29 +437,33 @@ export function EventFormModal({
       : title.trim() && (startAt || isDeadlineTaskEvent);
 
   return (
-    <div style={styles.overlay} onClick={onClose}>
-      <div
-        role="dialog"
-        aria-modal="true"
-        style={styles.modal}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div style={styles.header}>
-          <h2 style={styles.title}>
-            {isEditMode
-              ? 'Edit Event'
-              : eventType === 'coursework'
-                ? 'New Coursework'
-                : 'New Event'}
-          </h2>
-          <button style={styles.closeButton} onClick={onClose} disabled={isSaving}>
-            <X size={20} />
-          </button>
-        </div>
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      size="md"
+      zIndex={1100}
+      // The component owns Esc (plus Ctrl+Enter / Delete / Alt-key shortcuts)
+      // via its own document keydown handler — keep the primitive's listener
+      // disabled to avoid a double onClose. Matches TaskDetailModal.
+      closeOnEscape={false}
+    >
+      <Modal.Header
+        title={
+          isEditMode
+            ? 'Edit Event'
+            : eventType === 'coursework'
+              ? 'New Coursework'
+              : 'New Event'
+        }
+        onClose={onClose}
+      />
 
-        {/* Form */}
-        <form ref={formRef} onSubmit={handleSubmit} style={styles.form}>
+      {/* The <form> wraps BOTH Modal.Content AND Modal.Footer so the
+          type="submit" Save button submits and Ctrl+Enter's
+          formRef.requestSubmit() reaches the form. Modal.Content owns the
+          scroll (the old styles.form wrapper is dropped). */}
+      <form ref={formRef} onSubmit={handleSubmit}>
+        <Modal.Content>
           {/* Event Type Selection (only for create mode) */}
           {!isEditMode && (
             <div style={styles.typeSelector}>
@@ -835,74 +848,77 @@ export function EventFormModal({
               />
             </div>
           )}
+        </Modal.Content>
 
-          {/* Delete Confirmation Dialog */}
-          <ConfirmDialog
-            isOpen={showDeleteConfirm}
-            title="Delete Event"
-            message={`Are you sure you want to delete "${title}"? This action cannot be undone.`}
-            type="danger"
-            confirmText="Delete"
-            cancelText="Cancel"
-            onConfirm={handleDelete}
-            onCancel={() => setShowDeleteConfirm(false)}
-          />
-
-          {/* Validation Alert Dialog */}
-          <ConfirmDialog
-            isOpen={!!validationAlert}
-            title="Missing Information"
-            message={validationAlert ?? ''}
-            type="warning"
-            confirmText="OK"
-            hideCancel
-            onConfirm={() => setValidationAlert(null)}
-            onCancel={() => setValidationAlert(null)}
-          />
-
-          {/* Footer Actions */}
-          <div style={styles.footer}>
-            {isEditMode && onDelete && (
-              <button
-                type="button"
-                style={styles.deleteTrigger}
-                onClick={() => setShowDeleteConfirm(true)}
-                disabled={isSaving}
-              >
-                Delete Event
-              </button>
-            )}
-            <div style={styles.footerRight}>
-              <button
-                type="button"
-                style={styles.secondaryButton}
-                onClick={onClose}
-                disabled={isSaving}
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                style={{
-                  ...styles.primaryButton,
-                  opacity: !canSubmit ? 0.5 : 1,
-                  cursor: !canSubmit ? 'not-allowed' : 'pointer',
-                }}
-                disabled={isSaving || !canSubmit}
-              >
-                {isSaving
-                  ? 'Saving...'
-                  : isEditMode
-                    ? 'Save Changes'
-                    : eventType === 'coursework'
-                      ? 'Create Coursework'
-                      : 'Create Event'}
-              </button>
-            </div>
+        {/* Footer Actions */}
+        <Modal.Footer align={isEditMode && onDelete ? 'between' : 'end'}>
+          {isEditMode && onDelete && (
+            <button
+              type="button"
+              style={styles.deleteTrigger}
+              onClick={() => setShowDeleteConfirm(true)}
+              disabled={isSaving}
+            >
+              Delete Event
+            </button>
+          )}
+          <div style={styles.footerRight}>
+            <button
+              type="button"
+              style={styles.secondaryButton}
+              onClick={onClose}
+              disabled={isSaving}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              style={{
+                ...styles.primaryButton,
+                opacity: !canSubmit ? 0.5 : 1,
+                cursor: !canSubmit ? 'not-allowed' : 'pointer',
+              }}
+              disabled={isSaving || !canSubmit}
+            >
+              {isSaving
+                ? 'Saving...'
+                : isEditMode
+                  ? 'Save Changes'
+                  : eventType === 'coursework'
+                    ? 'Create Coursework'
+                    : 'Create Event'}
+            </button>
           </div>
-        </form>
-      </div>
-    </div>
+        </Modal.Footer>
+      </form>
+
+      {/* ConfirmDialog children — siblings of Modal.Footer, OUTSIDE the
+          <form> (so they can't interfere with form submission) but inside
+          <Modal>. Each is already a <Modal>-based stacked child with its own
+          capture-phase Esc. Matches TaskDetailModal. */}
+      <ConfirmDialog
+        isOpen={showDeleteConfirm}
+        title="Delete Event"
+        message={`Are you sure you want to delete "${title}"? This action cannot be undone.`}
+        type="danger"
+        confirmText="Delete"
+        cancelText="Cancel"
+        onConfirm={handleDelete}
+        onCancel={() => setShowDeleteConfirm(false)}
+      />
+
+      {/* Validation Alert Dialog */}
+      <ConfirmDialog
+        isOpen={!!validationAlert}
+        title="Missing Information"
+        message={validationAlert ?? ''}
+        type="warning"
+        confirmText="OK"
+        hideCancel
+        onConfirm={() => setValidationAlert(null)}
+        onCancel={() => setValidationAlert(null)}
+      />
+    </Modal>
   );
 }
 

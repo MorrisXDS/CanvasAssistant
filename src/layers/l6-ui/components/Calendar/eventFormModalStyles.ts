@@ -32,71 +32,6 @@ export const REMINDER_OPTIONS = [
 ];
 
 export const eventFormModalStyles: Record<string, React.CSSProperties> = {
-  overlay: {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 1000,
-    padding: 'var(--space-4)',
-  },
-
-  modal: {
-    backgroundColor: 'var(--bg-card)',
-    borderRadius: 'var(--radius-lg)',
-    boxShadow: 'var(--shadow-lg)',
-    width: '100%',
-    maxWidth: '500px',
-    maxHeight: '85vh',
-    overflow: 'hidden',
-    display: 'flex',
-    flexDirection: 'column',
-  },
-
-  header: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 'var(--space-3) var(--space-4)',
-    borderBottom: '1px solid var(--border-light)',
-  },
-
-  title: {
-    fontSize: 'var(--text-base)',
-    fontWeight: 'var(--font-semibold)',
-    color: 'var(--text-primary)',
-    margin: 0,
-  },
-
-  closeButton: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: '28px',
-    height: '28px',
-    padding: 0,
-    background: 'none',
-    border: 'none',
-    borderRadius: 'var(--radius-md)',
-    color: 'var(--text-muted)',
-    cursor: 'pointer',
-  },
-
-  form: {
-    flex: 1,
-    overflow: 'auto',
-    padding: 'var(--space-3) var(--space-4)',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 'var(--space-3)',
-    minHeight: '520px',
-  },
-
   typeSelector: {
     display: 'flex',
     gap: 'var(--space-2)',
@@ -232,15 +167,6 @@ export const eventFormModalStyles: Record<string, React.CSSProperties> = {
     display: 'flex',
     flexDirection: 'column',
     gap: '4px',
-  },
-
-  footer: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingTop: 'var(--space-3)',
-    borderTop: '1px solid var(--border-light)',
-    marginTop: 'auto',
   },
 
   footerRight: {

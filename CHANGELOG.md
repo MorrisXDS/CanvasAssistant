@@ -24,6 +24,20 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ### Changed
 
+- `2026-06-03 01:12 UTC` — Migrated the **Event/Coursework form dialog** (`EventFormModal`, the
+  909-line calendar create/edit form) to the shared `<Modal>` primitive
+  (`Modal.Header`/`Content`/`Footer`, `size="md"`, `zIndex={1100}`), replacing its hand-rolled
+  overlay/box/header/footer chrome. The `<form>` now wraps BOTH `Modal.Content` and `Modal.Footer`
+  so the `type="submit"` Save button and the Ctrl/Cmd+Enter → `requestSubmit()` shortcut keep
+  working through the primitive split; `closeOnEscape={false}` plus the component's own keydown
+  handler means Esc still closes the form exactly once (no double-close), and a
+  `if (showDeleteConfirm || validationAlert) return;` keyboard-yield guard lets the stacked
+  delete-confirm / validation-alert `ConfirmDialog`s own the keyboard while open. 7 dead chrome
+  style objects were trimmed from `eventFormModalStyles.ts`; behaviour and public props are
+  otherwise unchanged. **This is the fifth and final consumer-modal migration — it completes the
+  codebase-wide handwritten-modal → `<Modal>` primitive cleanup tracked in `docs/FOLLOWUPS.md`
+  (0 actively-used handwritten modals remain).** Added `tests/l6-ui/EventFormModal.test.tsx`
+  (22 cases) for the previously-untested component.
 - `2026-06-02 23:40 UTC` — Migrated the **Custom Export dialog** (`ExportDialog`) to the shared
   `<Modal>` primitive (`Modal.Header`/`Content`/`Footer`, `size="lg"`), replacing its hand-rolled
   overlay/box/header/footer chrome. Because this dialog is rendered as a **child stacked above the
