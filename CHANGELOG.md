@@ -24,6 +24,15 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ### Changed
 
+- `2026-06-03 23:07 UTC` — **CourseDetail now uses the shared section-nav scheme (ADR-0010 Phase 1).**
+  Replaced CourseDetail's hand-rolled `sectionFocus` state machine (local `useState` + a `cycleSection`
+  callback + a re-scope effect + page-level `Q`/`E` bindings) with a single `useSectionScope` call.
+  Users now see a visible `SectionBar` indicator below the course header (rendered only when more than
+  one section is available) showing which section keyboard input is driving, can click a chip to jump,
+  and gain `Alt+1..N` direct-jump to the Nth available section on top of the existing `Q`/`E` cycle.
+  `E` still edits the focused task while the Tasks section is active (the hook suppresses its forward
+  cycle there). First real consumer of the section-nav foundation shipped in Phase 0.
+
 - `2026-06-03 21:17 UTC` — **Fixed page-scoped keyboard help on Course-Detail / Announcement-Detail
   and made Announcement-Detail nav modal-aware.** Fixed a pre-existing `getScopeForPath` trailing-slash
   bug: the `/course/` and `/announcement/` route-scope keys carried a trailing slash that broke the

@@ -8,6 +8,8 @@ import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, BookOpen, Archive } from 'lucide-react';
 import { useStackAwareHotkeys } from '../../hooks/useStackAwareHotkeys';
 import { useKeymap } from '../../hooks/useKeymap';
+import { useSectionScope } from '../../hooks/useSectionScope';
+import { SectionBar } from '../../components/primitives';
 import { KeyboardScopeContext } from '../../contexts/KeyboardScopeContext';
 import { ConfirmDialog } from '../shared';
 import { MissingDependenciesDialog } from '../Files/MissingDependenciesDialog';
@@ -178,12 +180,6 @@ export function CourseDetail() {
     setCourse,
     navigate,
   });
-
-  // Keyboard section focus — which sub-section on the page the user is
-  // currently driving with the keyboard. Tasks is the default; Queue and
-  // Announcements only become reachable via Q/E when they're visible.
-  type SectionFocus = 'tasks' | 'queue' | 'announcements' | 'preferences';
-  const [sectionFocus, setSectionFocus] = useState<SectionFocus>('tasks');
 
   // Confirm dialog state (declared early as other hooks depend on it)
   const [confirmDialog, setConfirmDialog] = useState<{
@@ -635,19 +631,20 @@ export function CourseDetail() {
   const announcementsAvailable = announcements.length > 0;
   const preferencesAvailable = showSettings;
 
-  // Section switching helper — shared by nav keymap and re-scope effect below
-  const cycleSection = useCallback(
-    (dir: 1 | -1) => {
-      const available: SectionFocus[] = ['tasks'];
-      if (queueAvailable) available.push('queue');
-      if (announcementsAvailable) available.push('announcements');
-      if (preferencesAvailable) available.push('preferences');
-      if (available.length <= 1) return;
-      const idx = available.indexOf(sectionFocus);
-      const next = (idx === -1 ? 0 : idx + dir + available.length) % available.length;
-      setSectionFocus(available[next]);
-    },
-    [queueAvailable, announcementsAvailable, preferencesAvailable, sectionFocus]
+  // Section navigation — the shared section-nav scheme (ADR-0010 / #112).
+  // Owns the active section, Q/E cycle, Alt+1..N direct jump, the re-scope
+  // effect, and the help-modal broadcast. The page's own `E` handler (edit
+  // task) wins while Tasks is active via `suppressForwardCycleInSection`.
+  // `cycle` is intentionally not destructured — the hook registers the Q/E
+  // cycle bindings itself; the page only needs `active`/`goTo`/`sections`.
+  const { active, goTo, sections } = useSectionScope(
+    [
+      { id: 'tasks', label: 'Tasks' },
+      { id: 'queue', label: 'Queue', available: queueAvailable },
+      { id: 'announcements', label: 'Announcements', available: announcementsAvailable },
+      { id: 'preferences', label: 'Preferences', available: preferencesAvailable },
+    ],
+    { suppressForwardCycleInSection: 'tasks', enableDirectJump: true }
   );
 
   // Broadcast active subscope to help modal (edit overrides prefs overrides nav)
@@ -701,16 +698,10 @@ export function CourseDetail() {
           e.preventDefault();
           handleSaveSettings();
         },
-        // Section cycling — E is blocked in tasks section (tasks section uses E = edit task)
-        q: (e) => {
-          e.preventDefault();
-          cycleSection(-1);
-        },
-        e: (e) => {
-          if (sectionFocus === 'tasks') return;
-          e.preventDefault();
-          cycleSection(1);
-        },
+        // NOTE: Q/E section cycling + Alt+1..N direct jump are now owned by
+        // `useSectionScope` above (the shared section-nav scheme). The page's
+        // own `e: editTask` (in the Tasks section) composes with the hook via
+        // `suppressForwardCycleInSection: 'tasks'`.
       },
     },
     {
@@ -719,14 +710,6 @@ export function CourseDetail() {
       // default (ADR-0006). Q/E/G/etc. won't fire while any modal is open.
     }
   );
-
-  // Re-scope sectionFocus when the underlying availability changes.
-  useEffect(() => {
-    if (sectionFocus === 'queue' && !queueAvailable) setSectionFocus('tasks');
-    if (sectionFocus === 'announcements' && !announcementsAvailable)
-      setSectionFocus('tasks');
-    if (sectionFocus === 'preferences' && !preferencesAvailable) setSectionFocus('tasks');
-  }, [sectionFocus, queueAvailable, announcementsAvailable, preferencesAvailable]);
 
   // ===== Task edit + preferences field-jump shortcuts =====
   const focusTaskEditField = (id: string) => {
@@ -826,8 +809,8 @@ export function CourseDetail() {
     }
   );
 
-  // Escape cascade: close open menus/forms/edits first, then sectionFocus
-  // back to tasks, else navigate back.
+  // Escape cascade: close open menus/forms/edits first, then reset the active
+  // section back to tasks, else navigate back.
   useStackAwareHotkeys(
     'esc',
     (e) => {
@@ -859,9 +842,9 @@ export function CourseDetail() {
         setShowSettings(false);
         return;
       }
-      if (sectionFocus !== 'tasks') {
+      if (active !== 'tasks') {
         e.preventDefault();
-        setSectionFocus('tasks');
+        goTo('tasks');
         return;
       }
       // Fall through: let Layout's Escape handler navigate(-1) on sub-pages.
@@ -878,7 +861,8 @@ export function CourseDetail() {
       setExpandedTaskId,
       showSettings,
       setShowSettings,
-      sectionFocus,
+      active,
+      goTo,
     ]
   );
 
@@ -997,6 +981,17 @@ export function CourseDetail() {
           onCancelSettings={() => setShowSettings(false)}
         />
 
+        {/* Section navigation indicator — only when >1 section is available.
+            `goTo` is no-op for unavailable ids, so the wider `(id: string)`
+            chip-click signature is safe. */}
+        {sections.filter((s) => s.isAvailable).length > 1 && (
+          <SectionBar
+            sections={sections}
+            active={active}
+            onSelect={(id) => goTo(id as typeof active)}
+          />
+        )}
+
         {/* Missing Syllabus Warning */}
         {!course.syllabusPromptDismissedAt && (
           <MissingSyllabusWarning
@@ -1089,7 +1084,7 @@ export function CourseDetail() {
               highlightQueueId ? parseInt(highlightQueueId, 10) : undefined
             }
             onHighlightClear={() => setSearchParams({}, { replace: true })}
-            keyboardEnabled={sectionFocus === 'queue'}
+            keyboardEnabled={active === 'queue'}
           />
         )}
 
@@ -1149,7 +1144,7 @@ export function CourseDetail() {
               handleTaskContextMenu={handleTaskContextMenu}
               handleOpenTaskInCanvas={handleOpenTaskInCanvas}
               handleToggleOptional={handleToggleOptional}
-              keyboardEnabled={sectionFocus === 'tasks'}
+              keyboardEnabled={active === 'tasks'}
               onFileDownloadRequest={(file, href) => {
                 setPendingFileDownload({
                   fileId: file.id,
@@ -1199,7 +1194,7 @@ export function CourseDetail() {
                     onDragOver={sidebarDragHandlers.onDragOver(sectionId)}
                     onDragLeave={sidebarDragHandlers.onDragLeave}
                     onDrop={sidebarDragHandlers.onDrop(sectionId)}
-                    keyboardEnabled={sectionFocus === 'announcements'}
+                    keyboardEnabled={active === 'announcements'}
                   />
                 );
               }
