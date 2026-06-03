@@ -202,35 +202,6 @@ export const styles: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
   },
 
-  modalOverlay: {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 1000,
-  },
-
-  modal: {
-    backgroundColor: 'var(--bg-card)',
-    borderRadius: 'var(--radius-lg)',
-    padding: 'var(--space-6)',
-    width: '100%',
-    maxWidth: '480px',
-    boxShadow: 'var(--shadow-lg)',
-  },
-
-  modalTitle: {
-    fontSize: 'var(--text-lg)',
-    fontWeight: 'var(--font-semibold)',
-    color: 'var(--text-primary)',
-    marginBottom: 'var(--space-4)',
-  },
-
   modalForm: {
     display: 'flex',
     flexDirection: 'column',
@@ -256,16 +227,6 @@ export const styles: Record<string, React.CSSProperties> = {
     color: 'var(--text-primary)',
   },
 
-  formTextarea: {
-    padding: 'var(--space-3)',
-    fontSize: 'var(--text-sm)',
-    border: '1px solid var(--border-default)',
-    borderRadius: 'var(--radius-md)',
-    backgroundColor: 'var(--bg-app)',
-    color: 'var(--text-primary)',
-    resize: 'vertical',
-  },
-
   formSelect: {
     flex: 1,
     padding: 'var(--space-2) var(--space-3)',
@@ -279,33 +240,5 @@ export const styles: Record<string, React.CSSProperties> = {
   formRow: {
     display: 'flex',
     gap: 'var(--space-3)',
-  },
-
-  formActions: {
-    display: 'flex',
-    justifyContent: 'flex-end',
-    gap: 'var(--space-2)',
-    marginTop: 'var(--space-2)',
-  },
-
-  cancelButton: {
-    padding: 'var(--space-2) var(--space-4)',
-    backgroundColor: 'transparent',
-    color: 'var(--text-secondary)',
-    border: '1px solid var(--border-default)',
-    borderRadius: 'var(--radius-md)',
-    fontSize: 'var(--text-sm)',
-    cursor: 'pointer',
-  },
-
-  saveButton: {
-    padding: 'var(--space-2) var(--space-4)',
-    backgroundColor: 'var(--color-navy)',
-    color: 'white',
-    border: 'none',
-    borderRadius: 'var(--radius-md)',
-    fontSize: 'var(--text-sm)',
-    fontWeight: 'var(--font-medium)',
-    cursor: 'pointer',
   },
 };

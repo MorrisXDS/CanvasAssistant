@@ -24,6 +24,21 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ### Changed
 
+- `2026-06-03 02:27 UTC` — Migrated the handwritten **Add-Task dialog on the Tasks page**
+  (`src/layers/l6-ui/components/pages/TasksPage.tsx`) to the `<Modal>` primitive
+  (`Modal.Header`/`Content`/`Footer`, `size="md"`, `zIndex={1100}`; Cancel/Create rebuilt on the
+  `Button` primitive). This is the **7th — and another previously-untracked — handwritten modal**,
+  surfaced by the same modal-guard sweep that found `InfoTrigger`: the original "5 named consumer
+  modals" cleanup list was incomplete, and the `position:'fixed'` + `rgba(0,0,0,0.5)` backdrop sweep
+  keeps turning up modals the named list never enumerated. Behaviour is preserved byte-for-byte —
+  the `window.api.dispatch('CreateTask', …)` payload, the reset-then-close order, and the
+  `!title.trim() || !courseId` disabled predicate are unchanged. The migration also **gains
+  ADR-0006 modal-stack hotkey suppression for free**: the dialog now registers on `ModalStackContext`,
+  so the page's `useKeymap` `'main'` shortcuts (`1-4`/`n`/`x`/`Enter`) correctly stop firing while it
+  is open (the handwritten overlay was never on the stack, so those shortcuts could leak through if
+  focus escaped the form). `useKeymap` was not touched. 7 dead modal-chrome style keys were removed
+  from `TasksPage.styles.ts`; new test `tests/l6-ui/pages/TasksPage.addTask.test.tsx` (7 cases:
+  open / fields / disabled predicate / dispatch+close / cancel / Esc / backdrop).
 - `2026-06-03 02:01 UTC` — Migrated the handwritten `InfoModal` inside the shared `InfoTrigger`
   affordance (`src/layers/l6-ui/components/shared/InfoTrigger.tsx`) to the `<Modal>` primitive
   (`Modal.Header`/`Content`/`Footer`, `size="md"`, `zIndex={1400}`). This is the **6th — and
