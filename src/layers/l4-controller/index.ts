@@ -34,10 +34,9 @@ export {
   UnlinkTasksParams,
   // Settings command param types
   SetUserPreferenceParams,
+  DeleteUserPreferenceParams,
   UpdateCourseSettingsParams,
   UpdateCourseAuthorityParams,
-  SetAppSettingParams,
-  DeleteAppSettingParams,
   // Export command param types
   RecordExportHistoryParams,
   UpsertHtmlExportParams,
@@ -90,10 +89,9 @@ export {
   UnlinkTasksCommand,
   // Settings commands
   SetUserPreferenceCommand,
+  DeleteUserPreferenceCommand,
   UpdateCourseSettingsCommand,
   UpdateCourseAuthorityCommand,
-  SetAppSettingCommand,
-  DeleteAppSettingCommand,
   // Export commands
   RecordExportHistoryCommand,
   UpsertHtmlExportCommand,

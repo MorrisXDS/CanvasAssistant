@@ -1184,4 +1184,45 @@ export const migrationsV81toV102: Migration[] = [
       CREATE INDEX idx_notifications_dismissed ON notifications(dismissed_at);
     `,
   },
+
+  // Migration 112: Consolidate the duplicate `app_settings` key-value table into
+  // `user_preferences`. `app_settings` (v75) and `user_preferences` (v7) have
+  // structurally-identical schemas (key TEXT PK, value TEXT NOT NULL, updated_at)
+  // and disjoint keys. `app_settings` held only backup config (`exportSchedule`,
+  // `backupEncryptionPassword`). We copy its rows into `user_preferences`, then
+  // drop it. No inbound FKs → no FK-off rebuild needed.
+  {
+    version: 112,
+    description:
+      'Consolidate app_settings into user_preferences and drop the duplicate table',
+    up: (db) => {
+      // app_settings is created by v75, so it always exists here. Copy every row
+      // into user_preferences (upsert on key — value wins, description preserved).
+      const rows = db.executeRead<{ key: string; value: string }>(
+        'SELECT key, value FROM app_settings'
+      );
+      for (const row of rows) {
+        db.executeWrite(
+          `INSERT INTO user_preferences (key, value) VALUES (?, ?)
+           ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+          [row.key, row.value],
+          'user_preferences'
+        );
+      }
+      db.exec('DROP TABLE IF EXISTS app_settings');
+    },
+    down: `
+      -- Recreate app_settings with the verbatim v75 DDL, then copy the two backup
+      -- keys back from user_preferences. Idempotent: we do NOT delete them from
+      -- user_preferences on down (low-risk; the keys are inert there).
+      CREATE TABLE IF NOT EXISTS app_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      );
+      INSERT OR REPLACE INTO app_settings (key, value)
+        SELECT key, value FROM user_preferences
+        WHERE key IN ('exportSchedule', 'backupEncryptionPassword');
+    `,
+  },
 ];

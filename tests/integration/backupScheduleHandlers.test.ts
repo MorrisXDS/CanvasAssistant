@@ -1,8 +1,9 @@
 /**
  * backupScheduleHandlers — IPC handler behavior tests (ADR-0007).
  *
- * The schedule read/write routes through AppSettingsReader +
- * Set/DeleteAppSettingCommand; history reads through
+ * The schedule read/write routes through UserPreferencesReader +
+ * Set/DeleteUserPreferenceCommand (migration 112 consolidated the former
+ * app_settings table into user_preferences); history reads through
  * ExportHistoryReader.getByType — no raw SQL in the handler. fs is mocked.
  */
 
@@ -59,7 +60,7 @@ describe('backupScheduleHandlers (ADR-0007)', () => {
 
   function appSetting(key: string): string | undefined {
     return db.executeReadOne<{ value: string }>(
-      'SELECT value FROM app_settings WHERE key = ?',
+      'SELECT value FROM user_preferences WHERE key = ?',
       [key]
     )?.value;
   }
@@ -109,7 +110,7 @@ describe('backupScheduleHandlers (ADR-0007)', () => {
 
     test('deletes the stored password when encryption is disabled', async () => {
       db.executeWrite(
-        `INSERT INTO app_settings (key, value) VALUES ('backupEncryptionPassword', 'old')`,
+        `INSERT INTO user_preferences (key, value) VALUES ('backupEncryptionPassword', 'old')`,
         []
       );
 

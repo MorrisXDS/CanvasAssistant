@@ -44,7 +44,6 @@ export { NotificationReader } from './readers/NotificationReader';
 export { TaskTypeReader } from './readers/TaskTypeReader';
 export { LinkSuggestionReader } from './readers/LinkSuggestionReader';
 export { UserPreferencesReader } from './readers/UserPreferencesReader';
-export { AppSettingsReader } from './readers/AppSettingsReader';
 export { ExportHistoryReader } from './readers/ExportHistoryReader';
 export type { ExportHistoryRow } from './readers/ExportHistoryReader';
 export { HtmlExportReader } from './readers/HtmlExportReader';

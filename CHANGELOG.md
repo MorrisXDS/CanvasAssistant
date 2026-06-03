@@ -12,6 +12,20 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ### Changed
 
+- `2026-06-03 20:22 UTC` — **Consolidated the duplicate `app_settings` settings table into
+  `user_preferences`; dropped the duplicate.** `app_settings` (v75) and `user_preferences` (v7)
+  had structurally-identical key-value schemas with disjoint keys; `app_settings` existed only to
+  hold backup config (`exportSchedule`, `backupEncryptionPassword`). Migration 112 copies those two
+  rows into `user_preferences` (reversible `down`) and drops `app_settings`. Deleted
+  `AppSettingsReader` / `SetAppSettingCommand` / `DeleteAppSettingCommand` (added
+  `DeleteUserPreferenceCommand`); repointed the backup-schedule IPC handler and `BackupManager` at
+  the `UserPreferences*` reader/commands. `exportSchedule` is now unambiguously SQL-authoritative —
+  removed its latent `localStorage` write path from `SETTINGS_DEFAULTS`/`SETTINGS_SCHEMAS` (the
+  Settings UI already read/wrote it via the `backup:getSchedule`/`backup:setSchedule` IPC). Removed
+  the dead `settings:getCanvasTimezone` read route + preload binding (the active timezone _writer_
+  is untouched, deferred to FOLLOWUPS). Removed the now-stale `DELETE FROM app_settings` line from
+  the reset path. CLAUDE.md §8 updated to a two-store boundary. One settings table, one
+  reader/command family, no dual-store.
 - `2026-06-03 07:10 UTC` — **Keyboard-shortcuts help is now accurate.** Five registry fixes so the
   Help modal matches what the app actually does (zero key-behaviour change): added the missing `C`
   (Customize merge fields) key + aligned the `A` label in the duplicate-warning section; removed two

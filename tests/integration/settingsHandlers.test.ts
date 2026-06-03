@@ -205,30 +205,6 @@ describe('settingsHandlers (ADR-0007)', () => {
       expect(res.success).toBe(false);
     });
   });
-
-  describe('settings:getCanvasTimezone', () => {
-    test('returns the stored timezone payload', async () => {
-      db.executeWrite(
-        `INSERT INTO user_preferences (key, value) VALUES ('canvasTimezone', ?)`,
-        [JSON.stringify({ timezone: 'UTC', syncedAt: '2026-01-01' })]
-      );
-      const res = (await invoke('settings:getCanvasTimezone')) as {
-        success: boolean;
-        data: { timezone: string } | null;
-      };
-      expect(res.success).toBe(true);
-      expect(res.data?.timezone).toBe('UTC');
-    });
-
-    test('returns null data when unset', async () => {
-      const res = (await invoke('settings:getCanvasTimezone')) as {
-        success: boolean;
-        data: unknown;
-      };
-      expect(res.success).toBe(true);
-      expect(res.data).toBeNull();
-    });
-  });
 });
 
 function invoke(channel: string, ...args: unknown[]): Promise<unknown> {

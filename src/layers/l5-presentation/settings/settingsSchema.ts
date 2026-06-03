@@ -626,7 +626,9 @@ export const SETTINGS_DEFAULTS: Partial<SettingsTypeMap> = {
   [STORAGE_KEYS.WINDOW_BEHAVIOR]: DEFAULT_WINDOW_BEHAVIOR_SETTINGS,
   [STORAGE_KEYS.DASHBOARD]: DEFAULT_DASHBOARD_SETTINGS,
   [STORAGE_KEYS.LOCAL_HTML_PATHS]: DEFAULT_LOCAL_HTML_PATHS_SETTINGS,
-  [STORAGE_KEYS.EXPORT_SCHEDULE]: DEFAULT_EXPORT_SCHEDULE,
+  // exportSchedule is SQL-authoritative (user_preferences) — read/written via the
+  // backup:getSchedule / backup:setSchedule IPC, not settingsManager/localStorage.
+  // Intentionally absent from SETTINGS_DEFAULTS / SETTINGS_SCHEMAS.
   [STORAGE_KEYS.TIMEZONE]: DEFAULT_TIMEZONE_SETTINGS,
   [STORAGE_KEYS.SYNC_UPDATES_FAB]: DEFAULT_SYNC_UPDATES_FAB_SETTINGS,
   [STORAGE_KEYS.CANVAS_URL]: '',
@@ -655,7 +657,7 @@ export const SETTINGS_SCHEMAS: Partial<Record<string, z.ZodType>> = {
   [STORAGE_KEYS.WINDOW_BEHAVIOR]: WindowBehaviorSettingsSchema,
   [STORAGE_KEYS.DASHBOARD]: DashboardSettingsSchema,
   [STORAGE_KEYS.LOCAL_HTML_PATHS]: LocalHtmlPathsSettingsSchema,
-  [STORAGE_KEYS.EXPORT_SCHEDULE]: ExportScheduleSchema,
+  // exportSchedule omitted — SQL-authoritative (see SETTINGS_DEFAULTS note above).
   [STORAGE_KEYS.TIMEZONE]: TimezoneSettingsSchema,
   [STORAGE_KEYS.SYNC_UPDATES_FAB]: SyncUpdatesFabSettingsSchema,
 };

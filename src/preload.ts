@@ -913,14 +913,6 @@ const api = {
       data?: { timezone: string };
     }>,
 
-  // Get Canvas timezone from database
-  getCanvasTimezone: () =>
-    ipcRenderer.invoke('settings:getCanvasTimezone') as Promise<{
-      success: boolean;
-      error?: string;
-      data?: { timezone: string; syncedAt: string } | null;
-    }>,
-
   // ============ Shell ============
 
   openExternal: (url: string) => ipcRenderer.send('shell:openExternal', url),
