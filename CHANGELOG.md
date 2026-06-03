@@ -46,6 +46,11 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ### Fixed
 
+- `2026-06-03 06:40 UTC` — **"Reset all data" now clears the backup schedule + encryption password.**
+  `resetAppState` deleted `user_preferences` but never `app_settings`, so after a full reset the backup
+  scheduler woke up and resumed from the surviving schedule row. Added `DELETE FROM app_settings` to the
+  reset transaction. (Also codified the three-store settings boundary — `user_preferences` vs
+  `app_settings` vs `localStorage` — in CLAUDE.md §8 so new settings stop being placed arbitrarily.)
 - `2026-06-03 06:05 UTC` — **macOS sleep/wake no longer leaves the app inactive or wedged.** The
   `IdleStateManager` (suspend/resume protector that pauses sync + the file watcher and checkpoints the
   WAL on sleep, resumes them on wake) was dead code — defined but never wired in — so the app had zero

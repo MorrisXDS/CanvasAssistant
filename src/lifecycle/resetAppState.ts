@@ -99,6 +99,7 @@ export async function resetAppState(
     // Top-level tables
     database.executeWrite('DELETE FROM enrollment_terms', [], 'enrollment_terms');
     database.executeWrite('DELETE FROM user_preferences', [], 'user_preferences');
+    database.executeWrite('DELETE FROM app_settings', [], 'app_settings');
     database.executeWrite('DELETE FROM sync_metadata', [], 'sync_metadata');
     database.executeWrite('DELETE FROM endpoint_backoff', [], 'endpoint_backoff');
     database.executeWrite('DELETE FROM sync_preferences', [], 'sync_preferences');
