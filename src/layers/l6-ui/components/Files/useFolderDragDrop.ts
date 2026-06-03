@@ -6,10 +6,9 @@
 
 import { useState, useCallback, useMemo } from 'react';
 import { createLogger } from '../../utils/rendererLogger';
+import { STORAGE_KEYS } from '../../../l5-presentation/settings';
 
 const log = createLogger('useFolderDragDrop');
-
-const STORAGE_KEY = 'folderOrder';
 
 interface FolderOrderMap {
   [courseId: number]: string[];
@@ -20,7 +19,7 @@ interface FolderOrderMap {
  */
 function loadFolderOrder(): FolderOrderMap {
   try {
-    const stored = localStorage.getItem(STORAGE_KEY);
+    const stored = localStorage.getItem(STORAGE_KEYS.FOLDER_ORDER);
     if (stored) {
       return JSON.parse(stored);
     }
@@ -35,7 +34,7 @@ function loadFolderOrder(): FolderOrderMap {
  */
 function saveFolderOrder(order: FolderOrderMap): void {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(order));
+    localStorage.setItem(STORAGE_KEYS.FOLDER_ORDER, JSON.stringify(order));
   } catch (e) {
     log.error('Failed to save folder order', e instanceof Error ? e : undefined);
   }
@@ -224,7 +223,7 @@ export function useFolderDragDrop() {
    */
   const resetAllOrders = useCallback(() => {
     setFolderOrderMap({});
-    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(STORAGE_KEYS.FOLDER_ORDER);
   }, []);
 
   /**

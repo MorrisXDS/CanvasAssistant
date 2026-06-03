@@ -10,7 +10,7 @@ import React, { useMemo, useState, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Bell, CheckCircle, AlertTriangle } from 'lucide-react';
 import { useStore } from '../../../l5-presentation/store';
-import { formatTimeAgo, getCleanCourseName } from '../../constants';
+import { formatTimeAgo, getCleanCourseName, DEFAULT_COURSE_COLOR } from '../../constants';
 import type { SyncUpdate } from '../../../l5-presentation/types';
 
 // Submodule imports
@@ -113,7 +113,7 @@ export function UpdatesPage() {
             id: update.courseId,
             code: update.courseCode || '',
             name: update.courseName || 'Unknown',
-            color: update.courseColor || '#6B7280',
+            color: update.courseColor || DEFAULT_COURSE_COLOR,
           },
           conflicts: [],
           tasks: [],
@@ -134,7 +134,7 @@ export function UpdatesPage() {
             id: update.courseId,
             code: update.courseCode || '',
             name: update.courseName || 'Unknown',
-            color: update.courseColor || '#6B7280',
+            color: update.courseColor || DEFAULT_COURSE_COLOR,
           },
           conflicts: [],
           tasks: [],
@@ -216,7 +216,7 @@ export function UpdatesPage() {
             id: update.courseId,
             code: update.courseCode || '',
             name: update.courseName || 'Unknown',
-            color: update.courseColor || '#6B7280',
+            color: update.courseColor || DEFAULT_COURSE_COLOR,
           },
           items: [],
           fileCount: 0,

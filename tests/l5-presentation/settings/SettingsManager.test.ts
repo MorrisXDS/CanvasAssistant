@@ -283,4 +283,73 @@ describe('SettingsManager', () => {
       expect(settingsManager).toBeInstanceOf(SettingsManager);
     });
   });
+
+  // Straggler centralization (chunk 7) regression guard.
+  //
+  // The drag-drop/files-explorer keys (FILES_COURSE_ORDER, FOLDER_ORDER,
+  // COURSE_ORDER, COURSE_DETAIL_* , FILES_EXPANDED_STATE, FILES_VIEW_PREFS)
+  // were added to SettingsTypeMap so SettingsManager.initialize() can iterate
+  // Object.values(STORAGE_KEYS) without a tsc error. They are NOT in
+  // SETTINGS_DEFAULTS and NOT in SETTINGS_SCHEMAS — they remain managed only by
+  // raw localStorage in the renderer hooks.
+  //
+  // initialize() must therefore be PURELY a read: it pre-loads into cache but
+  // must never write back / overwrite / migrate the persisted user values.
+  // If it ever clobbered them, users' saved drag-orderings would silently reset.
+  describe('initialize() must not clobber raw drag-drop localStorage values', () => {
+    it('leaves a pre-existing course-order value byte-identical after initialize()', () => {
+      const persisted = JSON.stringify(['101', '202', '303']);
+      localStorageMock.setItem(STORAGE_KEYS.COURSE_ORDER, persisted);
+      // Clear the setItem/removeItem call log from seeding so the assertions
+      // below observe ONLY what initialize() does.
+      jest.clearAllMocks();
+
+      const manager = SettingsManager.getInstance();
+      manager.initialize();
+
+      // The persisted value must be untouched — no overwrite, no re-serialize,
+      // no removal. setItem must not have been called for this key by initialize().
+      expect(localStorageMock.getItem(STORAGE_KEYS.COURSE_ORDER)).toBe(persisted);
+      expect(localStorageMock.setItem).not.toHaveBeenCalledWith(
+        STORAGE_KEYS.COURSE_ORDER,
+        expect.anything()
+      );
+      expect(localStorageMock.removeItem).not.toHaveBeenCalledWith(
+        STORAGE_KEYS.COURSE_ORDER
+      );
+    });
+
+    it('does not invent a value for an unset drag-drop key', () => {
+      // No value seeded for FOLDER_ORDER — initialize must not create one
+      // (there is no default for these keys, so nothing should be written).
+      const manager = SettingsManager.getInstance();
+      manager.initialize();
+
+      expect(localStorageMock.getItem(STORAGE_KEYS.FOLDER_ORDER)).toBeNull();
+      expect(localStorageMock.setItem).not.toHaveBeenCalledWith(
+        STORAGE_KEYS.FOLDER_ORDER,
+        expect.anything()
+      );
+    });
+
+    it('preserves all chunk-7 drag-drop keys across initialize()', () => {
+      const seeded: Array<[string, string]> = [
+        [STORAGE_KEYS.FILES_COURSE_ORDER, JSON.stringify(['c1', 'c2'])],
+        [STORAGE_KEYS.FOLDER_ORDER, JSON.stringify(['f1', 'f2'])],
+        [STORAGE_KEYS.COURSE_ORDER, JSON.stringify(['a', 'b'])],
+        [STORAGE_KEYS.COURSE_DETAIL_TASK_ORDER, JSON.stringify(['t1'])],
+        [STORAGE_KEYS.COURSE_DETAIL_SIDEBAR_ORDER, JSON.stringify(['s1'])],
+        [STORAGE_KEYS.FILES_EXPANDED_STATE, JSON.stringify({ '1': true })],
+        [STORAGE_KEYS.FILES_VIEW_PREFS, JSON.stringify({ mode: 'grid' })],
+      ];
+      seeded.forEach(([key, value]) => localStorageMock.setItem(key, value));
+
+      const manager = SettingsManager.getInstance();
+      manager.initialize();
+
+      seeded.forEach(([key, value]) => {
+        expect(localStorageMock.getItem(key)).toBe(value);
+      });
+    });
+  });
 });

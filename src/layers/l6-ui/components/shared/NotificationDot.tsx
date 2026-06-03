@@ -5,24 +5,17 @@
  */
 
 import React from 'react';
-import { formatFieldValue } from '../../constants';
+import {
+  formatFieldValue,
+  UPDATE_TYPE_COLORS,
+  UPDATE_TYPE_FALLBACK_COLOR,
+} from '../../constants';
 
 /**
  * Update type for notification dots
  * Priority: conflict > grade_changed > updated > new
  */
 export type UpdateType = 'new' | 'updated' | 'grade_changed' | 'conflict';
-
-/**
- * Colors for each update type
- * Used at item/field level for type-specific indicators
- */
-export const UPDATE_TYPE_COLORS: Record<UpdateType, string> = {
-  new: '#22C55E', // Green
-  updated: '#3B82F6', // Blue
-  grade_changed: '#F97316', // Orange
-  conflict: '#EF4444', // Red
-};
 
 /**
  * Human-readable labels for update types
@@ -106,7 +99,9 @@ export function NotificationDot({
   const dotSize = SIZE_MAP[size];
 
   // Use type color if updateType provided, otherwise use course color
-  const backgroundColor = updateType ? UPDATE_TYPE_COLORS[updateType] : color || '#666';
+  const backgroundColor = updateType
+    ? UPDATE_TYPE_COLORS[updateType]
+    : color || UPDATE_TYPE_FALLBACK_COLOR;
 
   // Auto-generate title if not provided and updateType is set
   const displayTitle = title || (updateType ? UPDATE_TYPE_LABELS[updateType] : undefined);

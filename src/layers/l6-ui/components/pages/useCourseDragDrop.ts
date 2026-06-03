@@ -5,17 +5,16 @@
 
 import { useState, useCallback, useEffect } from 'react';
 import { createLogger } from '../../utils/rendererLogger';
+import { STORAGE_KEYS } from '../../../l5-presentation/settings';
 
 const log = createLogger('useCourseDragDrop');
-
-const STORAGE_KEY = 'courseOrder';
 
 /**
  * Load course order from localStorage
  */
 function loadCourseOrder(): number[] {
   try {
-    const stored = localStorage.getItem(STORAGE_KEY);
+    const stored = localStorage.getItem(STORAGE_KEYS.COURSE_ORDER);
     if (stored) {
       return JSON.parse(stored);
     }
@@ -30,7 +29,7 @@ function loadCourseOrder(): number[] {
  */
 function saveCourseOrder(order: number[]): void {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(order));
+    localStorage.setItem(STORAGE_KEYS.COURSE_ORDER, JSON.stringify(order));
   } catch (e) {
     log.error('Failed to save course order', e instanceof Error ? e : undefined);
   }
@@ -139,7 +138,7 @@ export function useCourseDragDrop(courseIds: number[]) {
   // Reset custom order
   const resetOrder = useCallback(() => {
     setCustomOrder([]);
-    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(STORAGE_KEYS.COURSE_ORDER);
   }, []);
 
   return {

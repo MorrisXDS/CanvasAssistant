@@ -199,6 +199,42 @@ export function withAlpha(hexColor: string, alpha: number): string {
 }
 
 /**
+ * Update-type dot colors — used by NotificationDot
+ * Priority: conflict > grade_changed > updated > new
+ */
+export const UPDATE_TYPE_COLORS: Record<
+  'new' | 'updated' | 'grade_changed' | 'conflict',
+  string
+> = {
+  new: '#22C55E',
+  updated: '#3B82F6',
+  grade_changed: '#F97316',
+  conflict: '#EF4444',
+};
+
+/** Fallback color for NotificationDot when no updateType or course color is available */
+export const UPDATE_TYPE_FALLBACK_COLOR = '#666';
+
+/**
+ * Content-category colors — used by getCategoryColor() in FileListItem
+ */
+export const CONTENT_CATEGORY_COLORS: Record<string, string> = {
+  'Lecture Slides': '#1976D2',
+  'Lab Manual': '#7B1FA2',
+  Assignment: '#E65100',
+  Tutorial: '#00897B',
+  Notes: '#558B2F',
+  Reading: '#5D4037',
+  Syllabus: '#C62828',
+  Solution: '#00838F',
+  Exam: '#AD1457',
+  default: '#616161',
+};
+
+/** Default course color when a course has no assigned color (UpdatesPage fallback) */
+export const DEFAULT_COURSE_COLOR = '#6B7280';
+
+/**
  * Golden Angle color selection for imported calendars
  *
  * Uses the golden angle (≈137.508°) to distribute colors optimally.

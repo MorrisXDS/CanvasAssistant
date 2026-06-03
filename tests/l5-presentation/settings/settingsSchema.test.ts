@@ -45,6 +45,32 @@ describe('settingsSchema', () => {
       const uniqueValues = new Set(values);
       expect(uniqueValues.size).toBe(values.length);
     });
+
+    // Straggler centralization (chunks 1 + 7): these keys were previously raw
+    // local consts in the renderer hooks. Their string VALUE is the exact key
+    // already persisted in users' browsers — if any value drifted, the persisted
+    // drag-order / expanded-state / view-mode would silently orphan on next load.
+    // This is the persisted-state orphan guard; do NOT relax these literals.
+    it('should preserve the exact persisted string values for straggler keys', () => {
+      // Chunk 1 — timezone settings key
+      expect(STORAGE_KEYS.TIMEZONE).toBe('timezoneSettings');
+
+      // Chunk 7 — files explorer raw-localStorage state
+      expect(STORAGE_KEYS.FILES_EXPANDED_STATE).toBe('fileExplorerExpandedState');
+      expect(STORAGE_KEYS.FILES_VIEW_PREFS).toBe('fileExplorerViewPrefs');
+
+      // Chunk 7 — drag-and-drop ordering keys
+      expect(STORAGE_KEYS.FILES_COURSE_ORDER).toBe('filesCourseOrder');
+      expect(STORAGE_KEYS.FOLDER_ORDER).toBe('folderOrder');
+      expect(STORAGE_KEYS.COURSE_ORDER).toBe('courseOrder');
+      expect(STORAGE_KEYS.COURSE_DETAIL_TASK_ORDER).toBe('courseDetailTaskSectionOrder');
+      expect(STORAGE_KEYS.COURSE_DETAIL_SIDEBAR_ORDER).toBe('courseDetailSidebarOrder');
+
+      // Chunk 7 — dynamic prefix: the trailing colon is part of the stored key,
+      // so `${VIEW_MODE_PREFIX}courses` must equal the legacy `viewMode:courses`.
+      expect(STORAGE_KEYS.VIEW_MODE_PREFIX).toBe('viewMode:');
+      expect(`${STORAGE_KEYS.VIEW_MODE_PREFIX}courses`).toBe('viewMode:courses');
+    });
   });
 
   describe('SyncPreferencesSchema', () => {

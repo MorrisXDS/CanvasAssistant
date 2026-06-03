@@ -5,6 +5,7 @@
   "_why_src_lifecycle_AppLifecycle_ts": "Electron app lifecycle entry. Constructs L1/L2/L4 services and wires them into IpcContext at boot. Mocking the Electron app/BrowserWindow/IPC platform here is more brittle than the bug we'd be catching — broken wiring surfaces at app launch in /verify or /manual-test-launch, and the wired services have their own behavioural tests. Specific risks: typo in the FileEntityProvider construction (PR-F.3) would crash at boot; typo in a getter (e.g., returning the wrong field) would surface the moment any handler uses it.",
   "_why_src_preload_ts": "Electron preload script. One-line `ipcRenderer.invoke` bindings that expose IPC channels to the renderer's contextBridge. Cannot be exercised in jest — contextBridge + ipcRenderer require the Electron runtime. The bindings are mechanical wrappers; the real behaviour lives in the IPC handlers (which ARE tested).",
   "_why_zindex_constant_swap": "z-index centralization (refactor/zindex-constants-and-occlusion-fix): the diff lines flagged below are NOT behavioural — each is either an `import { Z_INDEX }` line or a `zIndex: Z_INDEX.*` / `zIndex={Z_INDEX.*}` style-property/JSX-prop swap replacing a raw literal of identical value. They live in modal/chrome/style components that have NO render-test harness (none existed pre-PR), and the value is byte-for-byte the same as before (modal=1100, modalChild=1200, etc. are frozen). Correctness of the SCALE is exercised by tests/l6-ui/zIndex.test.ts (ordering/ceiling/frozen-values), and the absence of stray literals by tests/integration/no-stray-high-zindex.test.ts (hard-zero source scan). Writing mount tests for 13 components purely to cover a no-op constant reference is churn with no behavioural assertion. Carve-out is the plan-sanctioned disposition (01_architect_plan.md §test-3, option b).",
+  "_why_straggler_centralization_swaps": "Straggler constant centralization (refactor/centralize-straggler-constants, chunks 1/4/7): every flagged diff line is either an import declaration or a constant-reference swap replacing one identifier with an imported alias of byte-identical value. No behavioral assertion is possible beyond testing the constant itself (covered in tests/l5-presentation/settings/settingsSchema.test.ts and tests/l6-ui/constants/colors.test.ts). The swap-site files (syncSlice.ts, drag-drop hooks, filesPageUtils.ts, coursesPageUtils.ts) have no existing render/unit test harness. The constant values are pinned by the new test assertions; writing mount tests purely to cover no-op identifier substitutions is churn with zero behavioral assertion.",
   "paths": [
     "src/lifecycle/AppLifecycle.ts",
     "src/preload.ts",
@@ -21,6 +22,17 @@
     "src/layers/l6-ui/components/shared/ReAuthModal.tsx",
     "src/layers/l6-ui/components/shared/RecoveryBanner.tsx",
     "src/layers/l6-ui/components/shared/SyncUpdatesFAB.tsx",
-    "src/layers/l6-ui/components/welcomeGuideStyles.ts"
+    "src/layers/l6-ui/components/welcomeGuideStyles.ts",
+    "src/layers/l5-presentation/store/slices/syncSlice.ts",
+    "src/layers/l6-ui/components/shared/NotificationDot.tsx",
+    "src/layers/l6-ui/components/Files/FileListItem.tsx",
+    "src/layers/l6-ui/components/pages/UpdatesPage.tsx",
+    "src/layers/l6-ui/components/Files/filesPageUtils.ts",
+    "src/layers/l6-ui/components/Files/useFilesCourseDragDrop.ts",
+    "src/layers/l6-ui/components/Files/useFolderDragDrop.ts",
+    "src/layers/l6-ui/components/pages/useCourseDragDrop.ts",
+    "src/layers/l6-ui/components/pages/useCourseDetailDragDrop.ts",
+    "src/layers/l6-ui/components/pages/coursesPageUtils.ts",
+    "src/layers/l6-ui/components/shared/index.ts"
   ]
 }
