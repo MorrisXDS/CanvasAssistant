@@ -47,6 +47,7 @@ jest.mock('fs', () => {
 });
 
 import fs from 'fs';
+import path from 'path';
 import { ipcMain } from 'electron';
 import { Database } from '../../src/layers/l1-persistence/Database';
 import {
@@ -150,6 +151,30 @@ describe('exportHandlers (ADR-0007)', () => {
       expect(rows).toHaveLength(1);
       expect(rows[0]).toMatchObject({ export_type: 'scheduled', status: 'failed' });
     });
+
+    // Regression (fix/scheduled-backup-wrong-dir): the manual scheduled backup
+    // used to write to a hardcoded ~/Documents/CanvasAssistant/backups path via
+    // app.getPath('documents') — invisible to the backup-list UI and never pruned
+    // by rotation. It must now write to the canonical BACKUP_DIR exposed by
+    // ctx.getBackupDir() (mocked to '/tmp/cid-backups' here). Without the fix the
+    // copy destination contains 'Documents'.
+    test('writes the backup into the configured backup dir, not ~/Documents', async () => {
+      const res = (await invoke('data:runScheduledBackup')) as {
+        success: boolean;
+        filePath: string;
+      };
+      expect(res.success).toBe(true);
+
+      // copyFileSync(src, dest): the DESTINATION (2nd arg) must be under the backup
+      // dir. The handler builds it with path.join, so the separator is OS-specific
+      // (\ on Windows, / elsewhere) — compare against a path.join'd prefix and the
+      // path.dirname so the regression holds on every platform.
+      const backupDir = path.join('/tmp/cid-backups');
+      const dest = (fs.copyFileSync as jest.Mock).mock.calls[0][1] as string;
+      expect(path.dirname(dest)).toBe(backupDir);
+      expect(dest).not.toContain('Documents');
+      expect(path.dirname(res.filePath)).toBe(backupDir);
+    });
   });
 
   describe('data:getExportHistory', () => {
@@ -228,7 +253,7 @@ function buildCtx(database: Database): IpcContext {
     getIsQuitting: unused('getIsQuitting') as IpcContext['getIsQuitting'],
     setIsQuitting: unused('setIsQuitting') as IpcContext['setIsQuitting'],
     getConfigDir: unused('getConfigDir') as IpcContext['getConfigDir'],
-    getBackupDir: unused('getBackupDir') as IpcContext['getBackupDir'],
+    getBackupDir: () => '/tmp/cid-backups',
     getSyncPreferences: unused('getSyncPreferences') as IpcContext['getSyncPreferences'],
     startAutoSync: unused('startAutoSync') as IpcContext['startAutoSync'],
     stopAutoSync: unused('stopAutoSync') as IpcContext['stopAutoSync'],
