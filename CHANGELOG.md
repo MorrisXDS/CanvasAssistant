@@ -24,6 +24,24 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ### Changed
 
+- `2026-06-03 02:47 UTC` — Migrated the handwritten **event-detail quick-view modal in
+  `CalendarGridContext`** (`src/layers/l6-ui/components/Calendar/CalendarGridContext.tsx`'s
+  `renderDetailModal()`) to the `<Modal>` primitive (custom colored header + `Modal.Content`,
+  `size="md"`, `zIndex={1100}`). This is the **8th — and another previously-untracked — handwritten
+  modal**, found by the same `position:'fixed'` + `rgba(0,0,0,0.5)` backdrop guard sweep (the
+  hand-maintained "named consumer modals" list never enumerated it). Behaviour is preserved in place:
+  every detail row, both `isTask` branches, the line-through-on-completed title + `(Completed)`
+  suffix, and both `Go to … →` course-nav links are byte-identical; the quick-view's state shape and
+  the `handleEventClick` fallback contract are untouched. Two small, intentional deltas: **Esc now
+  closes** (the old overlay had no Esc handler — gained from the primitive's default `closeOnEscape`),
+  and the whole-card `0.85` completed-opacity dim was **dropped** (the primitive owns the card; the
+  line-through title remains the completion signal). 6 dead modal-chrome style keys removed from
+  `CalendarGridStyles.ts` (3 `detail*` header keys added; the 6 detail-row keys kept). The quick-view
+  is currently unreachable in production (the sole `<CalendarGrid>` consumer always passes
+  `onEventClick` → `TaskDetailModal`); a dedup-vs-`TaskDetailModal` decision is deferred (see
+  `docs/FOLLOWUPS.md`). New test `tests/l6-ui/components/Calendar/CalendarGridContext.test.tsx` (11
+  cases). With this 8th modal done, the backdrop sweep now shows only the `Modal` primitive itself —
+  so the pending CI grep-guard can land with an allowlist of just `Modal.tsx`.
 - `2026-06-03 02:27 UTC` — Migrated the handwritten **Add-Task dialog on the Tasks page**
   (`src/layers/l6-ui/components/pages/TasksPage.tsx`) to the `<Modal>` primitive
   (`Modal.Header`/`Content`/`Footer`, `size="md"`, `zIndex={1100}`; Cancel/Create rebuilt on the
