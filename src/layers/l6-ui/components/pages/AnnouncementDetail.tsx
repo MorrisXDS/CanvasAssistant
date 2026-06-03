@@ -26,6 +26,7 @@ import {
   type LinkBehavior,
 } from '../../../l5-presentation/settings';
 import { formatFileSize } from '../../constants';
+import { useKeymap } from '../../hooks/useKeymap';
 import { styles } from './AnnouncementDetail.styles';
 import { createLogger } from '../../utils/rendererLogger';
 import type {
@@ -260,36 +261,34 @@ export function AnnouncementDetail() {
   // navigation; inside a detail view those bindings are gone, but we want to
   // guarantee scrolling works regardless of where native focus lands.
   // V opens the announcement on Canvas (when a url is available).
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement | null;
-      const tag = target?.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-      if (target?.isContentEditable) return;
-      if (e.ctrlKey || e.metaKey || e.altKey) return;
-
-      const key = e.key;
-      const isDown = key === 'ArrowDown' || key === 's' || key === 'S';
-      const isUp = key === 'ArrowUp' || key === 'w' || key === 'W';
-      if (isDown || isUp) {
-        const main = document.querySelector('main');
-        if (!main) return;
-        e.preventDefault();
-        main.scrollBy({ top: isDown ? 80 : -80, behavior: 'smooth' });
-        return;
-      }
-
-      if (key === 'v' || key === 'V') {
-        const url = notification?.url;
-        if (url) {
+  //
+  // Routed through `useKeymap` (not a raw listener) so it inherits the ADR-0006
+  // modal-stack gate (keys suppress while a modal is open over the page) and the
+  // built-in form-tag / `e.key` normalisation. Esc is intentionally NOT bound
+  // here — the global Layout handler already maps Esc → navigate(-1) for
+  // non-sidebar routes; adding a second Esc would double-fire.
+  useKeymap<'main'>(
+    {
+      main: {
+        'w,ArrowUp': (e) => {
           e.preventDefault();
-          window.api?.openExternal(url);
-        }
-      }
-    };
-    document.addEventListener('keydown', handler);
-    return () => document.removeEventListener('keydown', handler);
-  }, [notification?.url]);
+          document.querySelector('main')?.scrollBy({ top: -80, behavior: 'smooth' });
+        },
+        's,ArrowDown': (e) => {
+          e.preventDefault();
+          document.querySelector('main')?.scrollBy({ top: 80, behavior: 'smooth' });
+        },
+        v: (e) => {
+          const url = notification?.url;
+          if (url) {
+            e.preventDefault();
+            window.api?.openExternal(url);
+          }
+        },
+      },
+    },
+    { initialScope: 'main' }
+  );
 
   // Fetch notification if not in store
   useEffect(() => {

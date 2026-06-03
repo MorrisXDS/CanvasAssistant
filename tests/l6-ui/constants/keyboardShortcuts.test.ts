@@ -157,4 +157,103 @@ describe('keyboardShortcuts registry', () => {
       expect(getScopeForPath('/nonexistent-route')).toBeNull();
     });
   });
+
+  // 5.6 — regression for the trailing-slash bug. The ROUTE_SCOPE_MAP keys
+  // '/course/' and '/announcement/' already END in '/'. The old matcher did
+  // `pathname.startsWith(prefix + '/')` → `startsWith('/course//')`, which NEVER
+  // matches a real `/course/123` path — so the page-help scope on the Course
+  // Detail and Announcement Detail pages always resolved to `null`, and the `?`
+  // help modal showed the GLOBAL shortcuts instead of the page-specific ones.
+  // The fix normalises the needle so '/course/' keys produce '/course/' (not
+  // '/course//') while still keeping the trailing '/' that stops '/course/' from
+  // greedily swallowing '/courses'.
+  describe('getScopeForPath — 5.6 trailing-slash bug fix (regression)', () => {
+    it("resolves '/course/:id' to 'course-detail' (was null before the fix)", () => {
+      expect(getScopeForPath('/course/123')).toBe('course-detail');
+    });
+
+    it("resolves '/announcement/:id' to 'announcement-detail' (was null before the fix)", () => {
+      expect(getScopeForPath('/announcement/45')).toBe('announcement-detail');
+    });
+
+    // R1 — the load-bearing greedy-prefix guard. The trailing-slash fix must NOT
+    // let '/course/' match '/courses' or '/announcement/' match '/announcements'.
+    it("does NOT let '/course/' swallow '/courses' (R1 greedy-prefix guard)", () => {
+      expect(getScopeForPath('/courses')).toBe('courses');
+    });
+
+    it("does NOT let '/announcement/' swallow '/announcements' (R1 greedy-prefix guard)", () => {
+      expect(getScopeForPath('/announcements')).toBe('announcements');
+    });
+
+    // R2 — the '/' special-case must still resolve ONLY for exact root and not be
+    // dragged in by the refactored needle logic.
+    it("keeps '/' exact-only → 'dashboard'", () => {
+      expect(getScopeForPath('/')).toBe('dashboard');
+    });
+
+    it("resolves '/calendar' and a calendar sub-path", () => {
+      expect(getScopeForPath('/calendar')).toBe('calendar');
+      expect(getScopeForPath('/calendar/week')).toBe('calendar');
+    });
+
+    it('returns null for an unknown path', () => {
+      expect(getScopeForPath('/nope')).toBeNull();
+    });
+  });
+
+  // 5.2 — the Settings-scope Esc entry is relabelled to the honest 'Close'
+  // (SettingsModalContent only closes via the Modal primitive; it does not
+  // clear-search-then-close).
+  describe('5.2 — Settings Esc label is honest', () => {
+    it("the Settings-scope Escape entry label is exactly 'Close'", () => {
+      const settings = findCategory('settings');
+      expect(settings).toBeDefined();
+      const esc = settings!.shortcuts.find(
+        (s) => s.keys.length === 1 && s.keys[0] === 'Escape'
+      );
+      expect(esc).toBeDefined();
+      expect(esc!.label).toBe('Close');
+      expect(esc!.label).not.toBe('Clear search, then close');
+    });
+  });
+
+  // 5.3 — the 3 unimplemented Dashboard drift entries (backtick switch-row,
+  // Tab cycle-lists, Shift+Tab cycle-backward) are removed; the real entries
+  // (↑/W, ↓/S, X, Enter, D, V, R) survive.
+  describe('5.3 — Dashboard drift entries removed, real entries survive', () => {
+    it('contains no backtick / Tab / Shift+Tab entry', () => {
+      const dashboard = findCategory('dashboard');
+      expect(dashboard).toBeDefined();
+      const backtick = dashboard!.shortcuts.filter(
+        (s) => s.keys.length === 1 && s.keys[0] === '`'
+      );
+      const tabOnly = dashboard!.shortcuts.filter(
+        (s) => s.keys.length === 1 && s.keys[0] === 'Tab'
+      );
+      const shiftTab = dashboard!.shortcuts.filter(
+        (s) => hasKey(s, 'Shift') && hasKey(s, 'Tab')
+      );
+      expect(backtick).toEqual([]);
+      expect(tabOnly).toEqual([]);
+      expect(shiftTab).toEqual([]);
+    });
+
+    it('keeps the real Dashboard entries (↑/W, ↓/S, X, Enter, D, V, R)', () => {
+      const dashboard = findCategory('dashboard')!;
+      // Up/W previous, Down/S next.
+      expect(dashboard.shortcuts.some((s) => hasKey(s, '↑') && hasKey(s, 'W'))).toBe(
+        true
+      );
+      expect(dashboard.shortcuts.some((s) => hasKey(s, '↓') && hasKey(s, 'S'))).toBe(
+        true
+      );
+      // Single-key real entries.
+      for (const token of ['X', 'Enter', 'D', 'V', 'R']) {
+        expect(
+          dashboard.shortcuts.some((s) => s.keys.length === 1 && s.keys[0] === token)
+        ).toBe(true);
+      }
+    });
+  });
 });
