@@ -10,6 +10,22 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ## [Unreleased]
 
+### Added
+
+- `2026-06-03 03:03 UTC` — **CI guard against new handwritten modals** — a fitness-function test
+  (`tests/integration/no-handwritten-modals.test.ts`, modelled on `ipc-handlers-no-raw-sql.test.ts`)
+  that fails the suite if any file under `src/layers/l6-ui/components/**` reintroduces the
+  handwritten-modal backdrop signature (`position:'fixed'` + a `background`/`backgroundColor` set to
+  black `rgba(0,0,0,α)` with α ≥ 0.3) without an explicit, `why:`-justified allowlist entry. The
+  allowlist holds exactly one entry — the `<Modal>` primitive itself, which owns the canonical
+  backdrop. This makes the §2 "all dialogs MUST use the `<Modal>` primitive" rule **machine-enforced**
+  rather than reviewer-only, locking in the now-complete 8-modal cleanup (#94–#102). The α ≥ 0.3 floor
+  is the single discriminator that excludes non-modal `fixed`+rgba surfaces (TitleBar 0.05 hover tint,
+  ColorPicker 0.2 swatch overlay) and all `boxShadow`/`border`/`textShadow` rgba. Documented tripwire
+  limits (deliberate false negatives, with the §2 human reviewer-checklist as backstop): an 8-digit-hex
+  backdrop (`#00000080`) and a CSS-module/Tailwind class-based overlay are not caught. Test-only; a pure
+  detector + a test-of-the-test keep the guard's own logic under test.
+
 ### Fixed
 
 - `2026-06-02 23:40 UTC` — **"Select None" is clickable again in the Custom Export dialog** (and a
