@@ -12,6 +12,17 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ### Changed
 
+- `2026-06-03 21:17 UTC` — **Fixed page-scoped keyboard help on Course-Detail / Announcement-Detail
+  and made Announcement-Detail nav modal-aware.** Fixed a pre-existing `getScopeForPath` trailing-slash
+  bug: the `/course/` and `/announcement/` route-scope keys carried a trailing slash that broke the
+  sub-path match, so `/course/:id` and `/announcement/:id` always resolved to `null` and the `?` Help
+  modal showed only global shortcuts on those two pages — it now resolves and shows their page-specific
+  sections. Migrated Announcement-Detail's keyboard nav (↑/W·↓/S scroll, V view-on-Canvas) from a raw
+  `document` keydown listener to the centralized `useKeymap` hook, so it now respects the ADR-0006
+  modal-stack gate (keys no longer fire over an open modal); behaviour otherwise unchanged. Relabeled
+  the Settings-scope Esc help entry from `'Clear search, then close'` to the honest `'Close'`, and
+  removed three unimplemented Dashboard help entries (`` ` `` switch-row, `Tab` cycle-lists,
+  `Shift+Tab` cycle-backward). Zero change to any working shortcut's behaviour.
 - `2026-06-03 20:22 UTC` — **Consolidated the duplicate `app_settings` settings table into
   `user_preferences`; dropped the duplicate.** `app_settings` (v75) and `user_preferences` (v7)
   had structurally-identical key-value schemas with disjoint keys; `app_settings` existed only to

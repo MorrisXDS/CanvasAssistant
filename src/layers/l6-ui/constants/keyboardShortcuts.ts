@@ -50,13 +50,20 @@ export function getScopeForPath(pathname: string): string | null {
   // Check specific routes first (longer prefixes take priority)
   const sortedPrefixes = Object.keys(ROUTE_SCOPE_MAP).sort((a, b) => b.length - a.length);
   for (const prefix of sortedPrefixes) {
-    if (
-      pathname === prefix ||
-      pathname.startsWith(prefix + '/') ||
-      (prefix === '/' && pathname === '/')
-    ) {
-      // Special case: '/' should only match exact '/'
-      if (prefix === '/' && pathname !== '/') continue;
+    // '/' matches ONLY the exact root path (handled by the `pathname === prefix`
+    // clause below); never treat it as a descendant prefix.
+    if (prefix === '/') {
+      if (pathname === '/') return ROUTE_SCOPE_MAP[prefix];
+      continue;
+    }
+
+    // Build the descendant needle. Some ROUTE_SCOPE_MAP keys (e.g. '/course/',
+    // '/announcement/') already end in '/'; appending another '/' would produce
+    // '/course//' and never match '/course/123'. Normalise so the needle ends
+    // in exactly one '/'. The trailing '/' is what keeps '/course/' from greedily
+    // swallowing '/courses' ('/courses'.startsWith('/course/') === false).
+    const needle = prefix.endsWith('/') ? prefix : prefix + '/';
+    if (pathname === prefix || pathname.startsWith(needle)) {
       return ROUTE_SCOPE_MAP[prefix];
     }
   }
@@ -98,9 +105,6 @@ export const KEYBOARD_SHORTCUTS: ShortcutCategory[] = [
     title: 'Dashboard',
     scope: 'dashboard',
     shortcuts: [
-      { keys: ['`'], label: 'Switch between top (stats) and bottom (lists)' },
-      { keys: ['Tab'], label: 'Cycle lists within the current row' },
-      { keys: ['Shift', 'Tab'], label: 'Cycle backward' },
       { keys: ['↑', '/', 'W'], label: 'Focus previous item' },
       { keys: ['↓', '/', 'S'], label: 'Focus next item' },
       { keys: ['X'], label: 'Toggle task completion (tasks list)' },
@@ -385,7 +389,7 @@ export const KEYBOARD_SHORTCUTS: ShortcutCategory[] = [
       { keys: ['6'], label: 'Jump to App Behavior section' },
       { keys: ['7'], label: 'Jump to Notifications section' },
       { keys: ['8'], label: 'Jump to Data section' },
-      { keys: ['Escape'], label: 'Clear search, then close' },
+      { keys: ['Escape'], label: 'Close' },
     ],
   },
 ];
