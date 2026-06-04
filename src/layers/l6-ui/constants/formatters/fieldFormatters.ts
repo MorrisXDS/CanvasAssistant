@@ -90,20 +90,3 @@ export function getBadgeUrgency(
   if (daysUntilDue <= 7) return 'medium';
   return 'low';
 }
-
-/**
- * Get urgency color from days until due
- */
-export function getUrgencyColor(daysUntilDue: number | null): string {
-  const level = getUrgencyLevel(daysUntilDue);
-  switch (level) {
-    case 'danger':
-      return 'var(--color-danger)';
-    case 'warning':
-      return 'var(--color-warning)';
-    case 'info':
-      return 'var(--color-info)';
-    default:
-      return 'var(--color-text-secondary)';
-  }
-}

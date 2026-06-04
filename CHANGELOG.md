@@ -104,6 +104,18 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ### Removed
 
+- `2026-06-04 05:39 UTC` — **Dead L3 `Constants.ts` + dead `getUrgencyColor` formatter (no
+  behaviour change).** Deleted `src/layers/l3-intelligence/domain/Constants.ts` (389 lines) — all
+  17 of its exported constants (`HOURS`, `MS`, `DAY_NAMES`, effort/workload/weight/insight/
+  recommendation/behavior thresholds, task-type sets, `ORCHESTRATOR_DEFAULTS`, `GRADE_THRESHOLDS`)
+  became zero-consumer after the L3 priority/ROI/policy/recommendation systems were removed
+  (ADR-0003); the surviving Calendar `HOURS` is an unrelated local constant. Removed its two barrel
+  re-export blocks (`l3-intelligence/index.ts`, `domain/index.ts`) and the now-stale catalog entry
+  in CLAUDE.md §8 + `.claude/rules/centralized-modules.md`. Separately deleted the unused
+  `getUrgencyColor` export in `formatters/fieldFormatters.ts` (its would-be consumer `TaskItem.tsx`
+  uses its own local copy) and its two re-export lines. `getUrgencyLevel` (a tested sibling export)
+  is unaffected.
+
 - `2026-06-04 04:30 UTC` — **Two dead-code cleanups (no behaviour change).** (1) Removed the
   unreachable `CalendarGridContext` event-detail quick-view path — `renderDetailModal()`, the
   `detailModal`/`setDetailModal`/`DetailState` state, the `onEventClick`-absent `else` branch in
@@ -127,6 +139,14 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
   cascade (userOverride → canvasTimezone → local) is unaffected.
 
 ### Fixed
+
+- `2026-06-04 05:39 UTC` — **Dashboard row-navigation shortcuts were missing from the `?` Help
+  registry.** PR #111 removed the Dashboard backtick / `Tab` / `Shift+Tab` row-nav entries from the
+  keyboard registry as "unimplemented", but they are genuinely implemented and working in
+  `Dashboard.tsx` — so the Help modal silently omitted 3 working shortcuts. Re-added accurate
+  entries: `` ` `` switches between the top (stats) and bottom (lists) row; `Tab` cycles stat cards
+  on the top row / cycles lists on the bottom row; `Shift+Tab` cycles backward. Registry-only
+  honesty fix — no runtime behaviour changed.
 
 - `2026-06-04 03:31 UTC` — **Calendar's `Alt+Shift` cross-scope shortcuts fired over open modals (ADR-0006).**
   Calendar's `Alt+Shift+D`/`Alt+Shift+P` filter cycles, `Alt+Shift+C` clear, and `Alt+Shift+1-9`

@@ -107,6 +107,12 @@ export const KEYBOARD_SHORTCUTS: ShortcutCategory[] = [
     shortcuts: [
       { keys: ['↑', '/', 'W'], label: 'Focus previous item' },
       { keys: ['↓', '/', 'S'], label: 'Focus next item' },
+      { keys: ['`'], label: 'Switch between top (stats) and bottom (lists) row' },
+      {
+        keys: ['Tab'],
+        label: 'Cycle stat cards (top row) / cycle lists (bottom row)',
+      },
+      { keys: ['Shift', 'Tab'], label: 'Cycle backward' },
       { keys: ['X'], label: 'Toggle task completion (tasks list)' },
       { keys: ['Enter'], label: 'Open focused item' },
       { keys: ['D'], label: 'Dismiss announcement (announcements list)' },

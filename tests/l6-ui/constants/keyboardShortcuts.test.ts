@@ -267,25 +267,34 @@ describe('keyboardShortcuts registry', () => {
     });
   });
 
-  // 5.3 — the 3 unimplemented Dashboard drift entries (backtick switch-row,
-  // Tab cycle-lists, Shift+Tab cycle-backward) are removed; the real entries
-  // (↑/W, ↓/S, X, Enter, D, V, R) survive.
-  describe('5.3 — Dashboard drift entries removed, real entries survive', () => {
-    it('contains no backtick / Tab / Shift+Tab entry', () => {
+  // 5.3 — the 3 Dashboard row-nav entries (backtick switch-row, Tab cycle,
+  // Shift+Tab cycle-backward) are re-documented in the registry: they ARE
+  // implemented and live in `Dashboard.tsx:235-291` (two raw `document`
+  // keydown handlers), but PR #111 wrongly removed them from the registry as
+  // "unimplemented", so the Help modal silently omitted 3 working shortcuts.
+  // They are restored here alongside the other real entries (↑/W, ↓/S, X,
+  // Enter, D, V, R).
+  describe('5.3 — Dashboard row-nav entries present, real entries survive', () => {
+    it('contains the backtick / Tab / Shift+Tab row-nav entries with honest labels', () => {
       const dashboard = findCategory('dashboard');
       expect(dashboard).toBeDefined();
-      const backtick = dashboard!.shortcuts.filter(
+      const backtick = dashboard!.shortcuts.find(
         (s) => s.keys.length === 1 && s.keys[0] === '`'
       );
-      const tabOnly = dashboard!.shortcuts.filter(
+      const tabOnly = dashboard!.shortcuts.find(
         (s) => s.keys.length === 1 && s.keys[0] === 'Tab'
       );
-      const shiftTab = dashboard!.shortcuts.filter(
+      const shiftTab = dashboard!.shortcuts.find(
         (s) => hasKey(s, 'Shift') && hasKey(s, 'Tab')
       );
-      expect(backtick).toEqual([]);
-      expect(tabOnly).toEqual([]);
-      expect(shiftTab).toEqual([]);
+      expect(backtick).toBeDefined();
+      expect(backtick!.label).toBe('Switch between top (stats) and bottom (lists) row');
+      expect(tabOnly).toBeDefined();
+      expect(tabOnly!.label).toBe(
+        'Cycle stat cards (top row) / cycle lists (bottom row)'
+      );
+      expect(shiftTab).toBeDefined();
+      expect(shiftTab!.label).toBe('Cycle backward');
     });
 
     it('keeps the real Dashboard entries (↑/W, ↓/S, X, Enter, D, V, R)', () => {
