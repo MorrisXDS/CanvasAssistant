@@ -18,13 +18,11 @@ import React, {
 } from 'react';
 import type { Course } from '../../../l5-presentation/types';
 import { styles } from './CalendarGridStyles';
-import { getCourseColor, Z_INDEX } from '../../constants';
-import { Modal } from '../primitives/Modal';
+import { getCourseColor } from '../../constants';
 
 // Re-export types
 export type {
   PopupState,
-  DetailState,
   CalendarView,
   TaskCalendarEvent,
   ImportedCalendarEvent,
@@ -66,7 +64,6 @@ export {
 // Import types and helpers for use in provider
 import type {
   PopupState,
-  DetailState,
   CalendarView,
   CalendarEvent,
   CourseMatch,
@@ -78,7 +75,6 @@ import {
   getEventTitle,
   getEventFullLabel,
   getEventTimeRange,
-  getEventDescription,
   isCompletedTask,
   isSameDay,
   getWeekDays,
@@ -109,8 +105,6 @@ interface CalendarGridContextType {
   setPopup: React.Dispatch<React.SetStateAction<PopupState | null>>;
   hoveredEventId: string | null;
   setHoveredEventId: React.Dispatch<React.SetStateAction<string | null>>;
-  detailModal: DetailState | null;
-  setDetailModal: React.Dispatch<React.SetStateAction<DetailState | null>>;
   currentTime: Date;
 
   // Refs
@@ -138,7 +132,6 @@ interface CalendarGridContextType {
   getTodayColumnIndex: () => number;
 
   // Render helpers
-  renderDetailModal: () => React.ReactNode;
   renderPopup: () => React.ReactNode;
 }
 
@@ -190,7 +183,6 @@ export function CalendarGridProvider({
   // State
   const [popup, setPopup] = useState<PopupState | null>(null);
   const [hoveredEventId, setHoveredEventId] = useState<string | null>(null);
-  const [detailModal, setDetailModal] = useState<DetailState | null>(null);
   const [currentTime, setCurrentTime] = useState(new Date());
 
   // Refs
@@ -333,16 +325,9 @@ export function CalendarGridProvider({
   const handleEventClick = useCallback(
     (event: CalendarEvent) => {
       hidePopup();
-      if (onEventClick) {
-        onEventClick(event);
-      } else {
-        const eventId = getEventId(event);
-        const match =
-          event.type === 'imported' ? (courseMatches.get(eventId) ?? null) : null;
-        setDetailModal({ event, courseMatch: match });
-      }
+      onEventClick?.(event);
     },
-    [hidePopup, onEventClick, courseMatches]
+    [hidePopup, onEventClick]
   );
 
   // Time helpers
@@ -369,115 +354,6 @@ export function CalendarGridProvider({
     const weekDays = getWeekDays(currentDate);
     return weekDays.findIndex((d) => isSameDay(d, today));
   }, [currentDate]);
-
-  // Render detail modal
-  const renderDetailModal = useCallback(() => {
-    if (!detailModal) return null;
-
-    const { event, courseMatch } = detailModal;
-    const title = getEventTitle(event);
-    const timeRange = getEventTimeRange(event);
-    const description = getEventDescription(event);
-    const effectiveColor = getEffectiveEventColor(event);
-    const isTask = event.type === 'task';
-    const isCompleted = isCompletedTask(event);
-
-    const hideDetailModal = () => setDetailModal(null);
-
-    return (
-      <Modal isOpen onClose={hideDetailModal} size="md" zIndex={Z_INDEX.modal}>
-        {/* Custom colored header (mirrors TaskDetailModal — NOT Modal.Header,
-            because the event-color background + white text is structural chrome). */}
-        <div style={{ ...styles.detailHeader, backgroundColor: effectiveColor }}>
-          <div
-            style={{
-              ...styles.detailTitle,
-              textDecoration: isCompleted ? 'line-through' : 'none',
-            }}
-          >
-            {title}
-            {isCompleted && ' (Completed)'}
-          </div>
-          <button
-            style={styles.detailClose}
-            onClick={hideDetailModal}
-            aria-label="Close modal"
-          >
-            ×
-          </button>
-        </div>
-
-        <Modal.Content maxHeight="60vh">
-          {timeRange && (
-            <div style={styles.modalRow}>
-              <span style={styles.modalLabel}>Time</span>
-              <span style={styles.modalValue}>{timeRange}</span>
-            </div>
-          )}
-
-          <div style={styles.modalRow}>
-            <span style={styles.modalLabel}>{isTask ? 'Course' : 'Calendar'}</span>
-            <span style={styles.modalValue}>
-              {isTask ? event.course.name : event.event.calendarName || 'Imported'}
-            </span>
-          </div>
-
-          {isTask && (
-            <>
-              <div style={styles.modalRow}>
-                <span style={styles.modalLabel}>Type</span>
-                <span style={styles.modalValue}>{event.task.taskType}</span>
-              </div>
-              {event.task.weight > 0 && (
-                <div style={styles.modalRow}>
-                  <span style={styles.modalLabel}>Weight</span>
-                  <span style={styles.modalValue}>{event.task.weight}%</span>
-                </div>
-              )}
-            </>
-          )}
-
-          {!isTask && event.event.location && (
-            <div style={styles.modalRow}>
-              <span style={styles.modalLabel}>Location</span>
-              <span style={styles.modalValue}>{event.event.location}</span>
-            </div>
-          )}
-
-          {description && (
-            <div style={styles.modalDescription}>
-              <div style={styles.modalLabel}>Description</div>
-              <div style={styles.modalDescriptionText}>{description}</div>
-            </div>
-          )}
-
-          {courseMatch && (
-            <button
-              style={styles.modalCourseLink}
-              onClick={() => {
-                hideDetailModal();
-                onCourseClick?.(courseMatch.course.id);
-              }}
-            >
-              Go to {courseMatch.course.code} →
-            </button>
-          )}
-
-          {isTask && (
-            <button
-              style={styles.modalCourseLink}
-              onClick={() => {
-                hideDetailModal();
-                onCourseClick?.(event.course.id);
-              }}
-            >
-              Go to {event.course.code} →
-            </button>
-          )}
-        </Modal.Content>
-      </Modal>
-    );
-  }, [detailModal, getEffectiveEventColor, onCourseClick]);
 
   // Render popup
   const renderPopup = useCallback(() => {
@@ -571,8 +447,6 @@ export function CalendarGridProvider({
     setPopup,
     hoveredEventId,
     setHoveredEventId,
-    detailModal,
-    setDetailModal,
     currentTime,
     containerRef,
     weekGridRef,
@@ -590,7 +464,6 @@ export function CalendarGridProvider({
     getCurrentTimePosition,
     isTodayVisible,
     getTodayColumnIndex,
-    renderDetailModal,
     renderPopup,
   };
 

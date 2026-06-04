@@ -36,7 +36,6 @@ export function MonthView() {
     handleEventLeave,
     handleEventClick,
     renderPopup,
-    renderDetailModal,
   } = useCalendarGrid();
 
   // Convert Date to 'YYYY-MM-DD' for comparison with focusedDate
@@ -213,9 +212,6 @@ export function MonthView() {
 
       {/* Popup */}
       {renderPopup()}
-
-      {/* Detail Modal */}
-      {renderDetailModal()}
     </div>
   );
 }

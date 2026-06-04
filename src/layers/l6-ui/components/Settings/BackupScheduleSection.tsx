@@ -43,7 +43,6 @@ interface BackupSchedule {
   time?: string;
   dayOfWeek?: number;
   dayOfMonth?: number;
-  destination: string;
   maxBackups: number;
   encrypt: boolean;
   lastRun?: string;
@@ -104,7 +103,6 @@ const DEFAULT_SCHEDULE: BackupSchedule = {
   time: '03:00',
   dayOfWeek: 0,
   dayOfMonth: 1,
-  destination: 'default',
   maxBackups: 5,
   encrypt: false,
 };
@@ -152,7 +150,10 @@ export function BackupScheduleSection() {
       }
     } catch (err) {
       setError('Failed to load backup settings');
-      logger.error('Failed to load backup settings', err instanceof Error ? err : undefined);
+      logger.error(
+        'Failed to load backup settings',
+        err instanceof Error ? err : undefined
+      );
     } finally {
       setIsLoading(false);
     }
@@ -185,7 +186,10 @@ export function BackupScheduleSection() {
         }
       } catch (err) {
         setError('Failed to save schedule');
-        logger.error('Failed to save backup schedule', err instanceof Error ? err : undefined);
+        logger.error(
+          'Failed to save backup schedule',
+          err instanceof Error ? err : undefined
+        );
         setSchedule(schedule);
       } finally {
         setIsSaving(false);

@@ -292,8 +292,6 @@ export const ExportScheduleSchema = z.object({
   dayOfWeek: z.number().min(0).max(6).optional(),
   // Day of month for monthly backups (1-28)
   dayOfMonth: z.number().min(1).max(28).optional(),
-  // Backup destination ('default' uses app data directory)
-  destination: z.string(),
   // Maximum number of backups to keep (rotation)
   maxBackups: z.number().min(1).max(100),
   // Whether to encrypt backups with password
@@ -510,7 +508,6 @@ export const DEFAULT_LOCAL_HTML_PATHS_SETTINGS: LocalHtmlPathsSettings = {
 export const DEFAULT_EXPORT_SCHEDULE: ExportSchedule = {
   enabled: false, // Disabled by default - manual exports only
   frequency: 'never',
-  destination: 'default', // Uses app data directory
   maxBackups: 5, // Keep 5 most recent backups
   encrypt: false,
 };
