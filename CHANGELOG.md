@@ -39,6 +39,15 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ### Changed
 
+- `2026-06-04 19:42 UTC` — **De-duplicated the section-nav `Alt+1..N` rows in the `?` Help
+  modal — the dynamic "This page's sections" block is now the sole source.** The Calendar,
+  Courses, and Course Detail static `Alt+1`/`Alt+2`/`Alt+1–N` "jump to section" rows in the
+  keyboard registry were listed a second time by the live `useSectionScope` broadcast, so Help
+  showed each section-jump shortcut twice. Removed the static duplicates; the dynamic block
+  (which names each AVAILABLE section with its current slot) loses no information and is strictly
+  more accurate on Course Detail. The Calendar event-form `Alt+1`/`Alt+2` rows and the
+  `Alt+Shift+1..9` course-filter row are unrelated and untouched.
+
 - `2026-06-04 01:01 UTC` — **CoursesPage now uses the shared section-nav scheme — completes the
   ADR-0010 rollout (Phase 3 + codification).** CoursesPage joins the uniform in-page section-nav
   scheme: `Alt+1` jumps to the Courses grid, `Alt+2` to the Filter panel (while it is open), and a
@@ -147,6 +156,15 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
   cascade (userOverride → canvasTimezone → local) is unaffected.
 
 ### Fixed
+
+- `2026-06-04 19:42 UTC` — **`Alt+digit` / `Alt+Shift+digit` shortcuts now fire on macOS and
+  international glyph-composing keyboard layouts.** Both the `useSectionScope` section direct-jump
+  (`Alt+1..N`) and the Calendar course-filter toggle (`Alt+Shift+1..9`) read the pressed digit
+  with `parseInt(e.key)`, which returns `NaN` when Option/Alt composes the digit into a
+  typographic glyph (e.g. `¡`, `›`) — so the shortcut silently no-op'd on those layouts. Added a
+  layout-independent fallback to the physical key via `e.code` (`Digit1`/`Numpad1`) at both sites,
+  consulted only when `e.key` is not a plain digit so standard QWERTY is byte-for-byte unchanged.
+  A glyph with no recoverable `e.code` still no-ops (no behavior regression).
 
 - `2026-06-04 05:39 UTC` — **Dashboard row-navigation shortcuts were missing from the `?` Help
   registry.** PR #111 removed the Dashboard backtick / `Tab` / `Shift+Tab` row-nav entries from the

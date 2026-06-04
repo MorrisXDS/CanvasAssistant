@@ -189,6 +189,108 @@ describe('keyboardShortcuts registry', () => {
     });
   });
 
+  // C3 — the section-nav static rows were dropped from the registry; the dynamic
+  // "This page's sections" block (rendered by KeyboardShortcutsModal from
+  // useSectionScope's live broadcast) is now the SOLE source of the Alt+1..N
+  // section-jump help text. These negative assertions pin the deletion.
+  //
+  // CRITICAL TRAP: the Calendar EVENT-FORM rows use the SAME key array
+  // (['Alt','1'] / ['Alt','2']) as the dropped section rows but a DIFFERENT label
+  // ("Event form: select Regular/Coursework type"). The negative assertions MUST
+  // disambiguate by LABEL — asserting by the key array would wrongly flag the
+  // kept event-form rows as gone.
+  describe('C3 — section-nav static rows dropped (dynamic block owns them)', () => {
+    it('Calendar category has NO "Section:" static row, but KEEPS the event-form Alt+1/Alt+2 rows', () => {
+      // The Calendar events category is scope:'calendar', subscope:'events' —
+      // it held the dropped section rows AND keeps the event-form Alt+1/2 rows.
+      const calendar = findCategory('calendar', 'events');
+      expect(calendar).toBeDefined();
+
+      // Dropped: any entry whose label begins with 'Section:' (the two removed
+      // section-jump rows were 'Section: Calendar grid' / 'Section: Filter panel …').
+      const sectionRows = calendar!.shortcuts.filter((s) =>
+        s.label.startsWith('Section:')
+      );
+      expect(sectionRows).toEqual([]);
+
+      // KEPT (the trap): the event-form Alt+1 / Alt+2 rows share the ['Alt','1'] /
+      // ['Alt','2'] keys but carry a distinct 'Event form:' label — they survive.
+      const regularType = calendar!.shortcuts.find(
+        (s) => s.label === 'Event form: select Regular type'
+      );
+      const courseworkType = calendar!.shortcuts.find(
+        (s) => s.label === 'Event form: select Coursework type'
+      );
+      expect(regularType).toBeDefined();
+      expect(regularType!.keys).toEqual(['Alt', '1']);
+      expect(courseworkType).toBeDefined();
+      expect(courseworkType!.keys).toEqual(['Alt', '2']);
+    });
+
+    it('Calendar category KEEPS the Q/E grid entries and the Alt+Shift course-filter row', () => {
+      const calendar = findCategory('calendar', 'events')!;
+      // Q/E grid-nav entries survive (they were never section-cycle here).
+      expect(
+        calendar.shortcuts.some((s) => s.keys.length === 1 && s.keys[0] === 'Q')
+      ).toBe(true);
+      expect(
+        calendar.shortcuts.some((s) => s.keys.length === 1 && s.keys[0] === 'E')
+      ).toBe(true);
+      // The Alt+Shift+1..9 course-filter row (NOT section-nav) survives.
+      const courseFilter = calendar.shortcuts.find(
+        (s) => s.label === 'Toggle course filter by index'
+      );
+      expect(courseFilter).toBeDefined();
+      expect(hasKey(courseFilter!, 'Alt')).toBe(true);
+      expect(hasKey(courseFilter!, 'Shift')).toBe(true);
+    });
+
+    it('Courses category has NO "Jump to Courses/Filter section" rows, KEEPS the Alt+Shift filter cycles', () => {
+      const courses = findCategory('courses', 'courses');
+      expect(courses).toBeDefined();
+
+      // Dropped: 'Jump to Courses section' / 'Jump to Filter panel (when open)'.
+      const jumpRows = courses!.shortcuts.filter(
+        (s) =>
+          s.label === 'Jump to Courses section' ||
+          s.label === 'Jump to Filter panel (when open)'
+      );
+      expect(jumpRows).toEqual([]);
+      // Belt-and-suspenders: no bare ['Alt','1'] / ['Alt','2'] survive in Courses
+      // (unlike Calendar, this category has no legit event-form Alt+digit rows).
+      const bareAltDigit = courses!.shortcuts.filter(
+        (s) =>
+          s.keys.length === 2 &&
+          s.keys[0] === 'Alt' &&
+          (s.keys[1] === '1' || s.keys[1] === '2')
+      );
+      expect(bareAltDigit).toEqual([]);
+
+      // KEPT: the Alt+Shift+C/G/T/S/H filter cycles survive (e.g. Clear all filters).
+      const clear = courses!.shortcuts.find((s) => s.label === 'Clear all filters');
+      expect(clear).toBeDefined();
+      expect(hasKey(clear!, 'Alt')).toBe(true);
+      expect(hasKey(clear!, 'Shift')).toBe(true);
+    });
+
+    it('CourseDetail nav category has NO "Jump directly to section N" row, KEEPS the Q/E cycle entry', () => {
+      const nav = findCategory('course-detail', 'nav');
+      expect(nav).toBeDefined();
+
+      // Dropped: the single Alt+1–N summary row.
+      const summaryRow = nav!.shortcuts.filter(
+        (s) => s.label === 'Jump directly to section N (available sections only)'
+      );
+      expect(summaryRow).toEqual([]);
+
+      // KEPT: the Q/E section-cycle entry survives (label begins 'Cycle sections').
+      const cycle = nav!.shortcuts.find((s) => s.label.startsWith('Cycle sections'));
+      expect(cycle).toBeDefined();
+      expect(hasKey(cycle!, 'Q')).toBe(true);
+      expect(hasKey(cycle!, 'E')).toBe(true);
+    });
+  });
+
   describe('getScopeForPath — branch coverage', () => {
     it('resolves a matching prefix to its scope (exact + sub-path)', () => {
       // Exact-prefix match.
