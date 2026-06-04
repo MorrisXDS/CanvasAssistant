@@ -73,6 +73,15 @@ playwright-report/
 *H5_*/
 *Y1_*/
 
+# Agent scratch / workspace (local-only — feature-delivery team output, research briefs, audits)
+_workspace/
+_workspace_*/
+_workspace_*.md
+.agents/
+.cache/
+.codegraph/
+skills-lock.json
+
 # Miscellaneous artifacts
 \${match}
 nul
