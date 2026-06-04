@@ -449,7 +449,7 @@ styleElement.textContent = `
   }
 
   .sync-updates-fab:focus-visible {
-    outline: 2px solid var(--color-primary);
+    outline: 2px solid var(--color-navy);
     outline-offset: 2px;
   }
 `;

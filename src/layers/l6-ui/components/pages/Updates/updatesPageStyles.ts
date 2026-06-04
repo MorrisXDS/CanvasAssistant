@@ -252,7 +252,7 @@ export const styles: Record<string, React.CSSProperties> = {
   },
 
   viewButton: {
-    backgroundColor: 'var(--color-primary)',
+    backgroundColor: 'var(--color-navy)',
     color: 'white',
   },
 

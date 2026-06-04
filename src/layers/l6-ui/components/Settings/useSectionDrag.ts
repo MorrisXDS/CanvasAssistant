@@ -110,7 +110,7 @@ export function useSectionDrag() {
     ...(draggedSection === sectionId && { opacity: 0.5 }),
     ...(dragOverSection === sectionId &&
       draggedSection !== sectionId && {
-        boxShadow: '0 0 0 2px var(--color-primary)',
+        boxShadow: '0 0 0 2px var(--color-navy)',
       }),
   });
 

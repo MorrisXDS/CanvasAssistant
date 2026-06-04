@@ -106,8 +106,8 @@ export const styles: Record<string, React.CSSProperties> = {
   },
 
   actionButtonPrimary: {
-    backgroundColor: 'var(--color-primary)',
-    borderColor: 'var(--color-primary)',
+    backgroundColor: 'var(--color-navy)',
+    borderColor: 'var(--color-navy)',
     color: 'white',
   },
 
@@ -206,8 +206,8 @@ export const styles: Record<string, React.CSSProperties> = {
   },
 
   conflictButtonPrimary: {
-    backgroundColor: 'var(--color-primary)',
-    borderColor: 'var(--color-primary)',
+    backgroundColor: 'var(--color-navy)',
+    borderColor: 'var(--color-navy)',
     color: 'white',
   },
 
@@ -293,7 +293,7 @@ export const styles: Record<string, React.CSSProperties> = {
 
   updateIconNew: {
     backgroundColor: 'var(--color-primary-bg, #dbeafe)',
-    color: 'var(--color-primary)',
+    color: 'var(--color-navy)',
   },
 
   updateIconGrade: {
@@ -397,7 +397,7 @@ export const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     gap: 'var(--space-2)',
     padding: 'var(--space-2) var(--space-4)',
-    backgroundColor: 'var(--color-primary)',
+    backgroundColor: 'var(--color-navy)',
     border: 'none',
     borderRadius: 'var(--radius-md)',
     color: 'white',

@@ -177,7 +177,7 @@ export function SyncResultToast({
               </>
             ) : (
               <>
-                <Bell size={14} color="var(--color-primary)" />
+                <Bell size={14} color="var(--color-navy)" />
                 <span style={styles.updatesText}>
                   {totalUnseen} new update{totalUnseen !== 1 ? 's' : ''}
                 </span>
@@ -329,7 +329,7 @@ const styles: Record<string, React.CSSProperties> = {
 
   updatesLink: {
     fontSize: 'var(--text-xs)',
-    color: 'var(--color-primary)',
+    color: 'var(--color-navy)',
     fontWeight: 'var(--font-medium)',
   },
 };

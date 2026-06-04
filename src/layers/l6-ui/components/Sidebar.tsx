@@ -444,7 +444,7 @@ export function Sidebar({ onToggle }: SidebarProps) {
                           minWidth: '16px',
                           height: '16px',
                           padding: '0 4px',
-                          backgroundColor: 'var(--color-primary)',
+                          backgroundColor: 'var(--color-navy)',
                           color: 'white',
                           fontSize: '10px',
                           fontWeight: 600,

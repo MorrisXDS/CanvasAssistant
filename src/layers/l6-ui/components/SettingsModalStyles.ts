@@ -325,7 +325,7 @@ export const styles: Record<string, React.CSSProperties> = {
     gap: 'var(--space-2)',
     width: '100%',
     padding: 'var(--space-3) var(--space-4)',
-    backgroundColor: 'var(--color-primary)',
+    backgroundColor: 'var(--color-navy)',
     color: 'white',
     border: 'none',
     borderRadius: 'var(--radius-md)',
