@@ -12,12 +12,6 @@ export interface PopupState {
   label: string;
 }
 
-// Detail modal state type
-export interface DetailState {
-  event: CalendarEvent;
-  courseMatch: CourseMatch | null;
-}
-
 export type CalendarView = 'month' | 'week' | 'day';
 
 // Task-based event (from Canvas assignments)

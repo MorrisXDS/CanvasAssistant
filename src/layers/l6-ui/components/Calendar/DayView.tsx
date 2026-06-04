@@ -45,7 +45,6 @@ export function DayView() {
     handleEventClick,
     getCurrentTimePosition,
     isTodayVisible,
-    renderDetailModal,
   } = useCalendarGrid();
 
   const dayEvents = getEventsForDate(currentDate);
@@ -245,9 +244,6 @@ export function DayView() {
           </div>
         </div>
       </div>
-
-      {/* Detail Modal */}
-      {renderDetailModal()}
     </div>
   );
 }

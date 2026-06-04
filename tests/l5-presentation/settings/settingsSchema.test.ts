@@ -12,6 +12,7 @@ import {
   CourseSettingsSchema,
   CalendarSettingsSchema,
   ContentSettingsSchema,
+  ExportScheduleSchema,
   DEFAULT_SYNC_PREFERENCES,
   DEFAULT_APPEARANCE_SETTINGS,
   DEFAULT_NOTIFICATION_SETTINGS,
@@ -234,6 +235,52 @@ describe('settingsSchema', () => {
       expect(SETTINGS_DEFAULTS[STORAGE_KEYS.COURSES]).toEqual(DEFAULT_COURSE_SETTINGS);
       expect(SETTINGS_DEFAULTS[STORAGE_KEYS.CALENDAR]).toEqual(DEFAULT_CALENDAR_SETTINGS);
       expect(SETTINGS_DEFAULTS[STORAGE_KEYS.CONTENT]).toEqual(DEFAULT_CONTENT_SETTINGS);
+    });
+  });
+
+  describe('ExportScheduleSchema — destination field removal (regression)', () => {
+    // The dead `destination` field was removed from ExportScheduleSchema.
+    // `ExportScheduleSchema` is a plain `z.object()` (no `.strict()` / no
+    // `.passthrough()`), so a persisted schedule that still carries a stale
+    // `destination` key must parse cleanly with the key STRIPPED — never throw.
+    // This pins the "removal is parse-safe for already-persisted blobs" verdict.
+    it('parses a persisted schedule that still has a stale destination key (strips it)', () => {
+      const persistedWithStaleKey = {
+        enabled: true,
+        frequency: 'weekly' as const,
+        time: '03:00',
+        dayOfWeek: 1,
+        maxBackups: 5,
+        encrypt: false,
+        // Stale field from before the removal — must be ignored, not rejected.
+        destination: 'default',
+      };
+
+      const parsed = ExportScheduleSchema.parse(persistedWithStaleKey);
+
+      // Parse succeeds and the unknown key is stripped (z.object default).
+      expect(parsed).not.toHaveProperty('destination');
+      // The real fields survive untouched.
+      expect(parsed).toMatchObject({
+        enabled: true,
+        frequency: 'weekly',
+        time: '03:00',
+        dayOfWeek: 1,
+        maxBackups: 5,
+        encrypt: false,
+      });
+    });
+
+    it('parses a clean schedule (no destination key) unchanged', () => {
+      const clean = {
+        enabled: false,
+        frequency: 'never' as const,
+        maxBackups: 10,
+        encrypt: false,
+      };
+      const parsed = ExportScheduleSchema.parse(clean);
+      expect(parsed).not.toHaveProperty('destination');
+      expect(parsed).toEqual(clean);
     });
   });
 });

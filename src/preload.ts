@@ -694,7 +694,6 @@ const api = {
         time?: string;
         dayOfWeek?: number;
         dayOfMonth?: number;
-        destination: string;
         maxBackups: number;
         encrypt: boolean;
         lastRun?: string;
@@ -708,7 +707,6 @@ const api = {
     time?: string;
     dayOfWeek?: number;
     dayOfMonth?: number;
-    destination: string;
     maxBackups: number;
     encrypt: boolean;
     encryptionPassword?: string;

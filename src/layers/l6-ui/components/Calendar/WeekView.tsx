@@ -402,7 +402,6 @@ export function WeekView() {
     weekGridRef,
     hidePopupDelayed,
     renderPopup,
-    renderDetailModal,
   } = useCalendarGrid();
 
   // Sync the weekGridRef to the current week's scrollable container
@@ -431,9 +430,6 @@ export function WeekView() {
 
       {/* Popup */}
       {renderPopup()}
-
-      {/* Detail Modal */}
-      {renderDetailModal()}
     </div>
   );
 }

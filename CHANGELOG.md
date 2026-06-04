@@ -104,6 +104,19 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ### Removed
 
+- `2026-06-04 04:30 UTC` — **Two dead-code cleanups (no behaviour change).** (1) Removed the
+  unreachable `CalendarGridContext` event-detail quick-view path — `renderDetailModal()`, the
+  `detailModal`/`setDetailModal`/`DetailState` state, the `onEventClick`-absent `else` branch in
+  `handleEventClick`, and the three `{renderDetailModal()}` call sites in Month/Week/Day views. The
+  sole `<CalendarGrid>` consumer always passes `onEventClick` (clicks route to `TaskDetailModal`),
+  so this branch never fired in production; `handleEventClick` now simply delegates to the prop.
+  Also dropped the now-orphaned detail-modal-only styles. (2) Removed the dead
+  `ExportSchedule.destination` field (backups always target `BACKUP_DIR`; nothing read it) from the
+  zod schema, `DEFAULT_EXPORT_SCHEDULE`, the `preload` IPC contract types, and the Settings
+  `BackupScheduleSection` interface/default. Parse-safe — the schema is never `.parse()`d for
+  persisted schedules and `z.object()` strips unknown keys, so a stored schedule with a stale
+  `destination` key keeps working.
+
 - `2026-06-04 02:11 UTC` — **Dead write-only `canvasTimezone` SQL path.** The
   `settings:syncCanvasTimezone` IPC handler wrote a `canvasTimezone` row into `user_preferences` on
   every full sync, but nothing read it — its read route (`settings:getCanvasTimezone`) was removed in
