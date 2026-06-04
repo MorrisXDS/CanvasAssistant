@@ -145,11 +145,19 @@ export const KEYBOARD_SHORTCUTS: ShortcutCategory[] = [
         keys: ['Delete', '/', 'Backspace'],
         label: 'Delete focused event (confirms first)',
       },
-      { keys: ['F'], label: 'Open filter panel' },
+      { keys: ['F'], label: 'Open / close & focus filter panel' },
+      // Section navigation (ADR-0010 / Phase 2). Alt+1 = Calendar grid, Alt+2 =
+      // Filter panel (only while the panel is open). Q/E cycle is intentionally
+      // NOT bound here — those keys are owned by the grid (prev/next day column,
+      // edit event).
+      { keys: ['Alt', '1'], label: 'Section: Calendar grid' },
+      { keys: ['Alt', '2'], label: 'Section: Filter panel (when open)' },
       { keys: ['Alt', 'Shift', 'D'], label: 'Cycle deadline filter' },
       { keys: ['Alt', 'Shift', 'P'], label: 'Cycle priority filter' },
       { keys: ['Alt', 'Shift', 'C'], label: 'Clear all filters' },
-      { keys: ['Alt', '1', '..', '9'], label: 'Toggle course filter by index' },
+      // NOTE (one-time relearn): the course-filter toggle moved from Alt+1..9 to
+      // Alt+Shift+1..9 to free plain Alt+1..9 for section navigation (ADR-0010).
+      { keys: ['Alt', 'Shift', '1', '..', '9'], label: 'Toggle course filter by index' },
       // Event form
       { keys: ['mod', 'Enter'], label: 'Event form: save' },
       { keys: ['Escape'], label: 'Event form: close · clear event focus' },

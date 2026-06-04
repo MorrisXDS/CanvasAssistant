@@ -24,6 +24,19 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ### Changed
 
+- `2026-06-04 00:27 UTC` — **Calendar now uses the shared section-nav scheme + course-filter
+  shortcut rebind (ADR-0010 Phase 2).** Calendar joins the uniform in-page section-nav scheme:
+  `Alt+1` jumps to the Calendar grid, `Alt+2` to the Filter panel (while it is open), and a
+  `SectionBar` indicator appears below the header once the filter panel is open (showing which
+  section keyboard input drives; click a chip to jump). Pressing `F` now both opens AND focuses the
+  filter panel. **One-time muscle-memory change: the course-filter toggle moved from `Alt+1..9` to
+  `Alt+Shift+1..9`** to free plain `Alt+1..9` for section navigation — plain `Alt+1..9` no longer
+  toggles a course filter. (Internally, Calendar keeps its two intricate per-scope keymaps via
+  `useKeymap` but now mirrors the shared `useSectionScope` `active` state as the single source of
+  truth; the events keymap is otherwise unchanged.) `Q`/`E` are intentionally NOT bound to section
+  cycle on Calendar — they remain owned by the grid (prev/next day column, edit event). See
+  `docs/adr/0010-section-nav-direct-jump-modifier.md`.
+
 - `2026-06-03 23:07 UTC` — **CourseDetail now uses the shared section-nav scheme (ADR-0010 Phase 1).**
   Replaced CourseDetail's hand-rolled `sectionFocus` state machine (local `useState` + a `cycleSection`
   callback + a re-scope effect + page-level `Q`/`E` bindings) with a single `useSectionScope` call.
