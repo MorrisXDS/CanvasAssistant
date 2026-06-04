@@ -44,6 +44,7 @@ import { HtmlContent } from '../shared';
 import { ConfirmDialog } from '../shared/ConfirmDialog';
 import { useStore } from '../../../l5-presentation/store';
 import { Modal } from '../primitives/Modal';
+import { useModalHotkeys } from '../../hooks/useStackAwareHotkeys';
 import { TASK_DETAIL_MODAL_SHORTCUTS } from '../../constants/modalShortcuts';
 import { formatSmartDate } from '../../constants';
 
@@ -115,46 +116,6 @@ export function TaskDetailModal({
       directImportedEvent.sourceType === 'imported');
   const canDelete = !!onDelete && (event?.type === 'task' || isStandaloneCalendarEvent);
 
-  React.useEffect(() => {
-    if (!isOpen) return;
-    const handler = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement | null;
-      const tag = target?.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-      if (target?.isContentEditable) return;
-      if (e.ctrlKey || e.metaKey || e.altKey) return;
-
-      // When the delete ConfirmDialog is showing, it owns the keyboard
-      // (capture-phase listener + stopPropagation). Skip everything else.
-      if (showDeleteConfirm) return;
-
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        onClose();
-      } else if (e.key === 'e' || e.key === 'E') {
-        if (onEdit) {
-          e.preventDefault();
-          onEdit();
-        }
-      } else if (e.key === 'g' || e.key === 'G') {
-        e.preventDefault();
-        handleGoToCourse();
-      } else if (e.key === 'x' || e.key === 'X') {
-        if (task && onToggleComplete) {
-          e.preventDefault();
-          onToggleComplete(task);
-        }
-      } else if (e.key === 'Delete' || e.key === 'Backspace') {
-        if (canDelete) {
-          e.preventDefault();
-          setShowDeleteConfirm(true);
-        }
-      }
-    };
-    document.addEventListener('keydown', handler);
-    return () => document.removeEventListener('keydown', handler);
-  }, [isOpen, onClose, onEdit, onDelete, onToggleComplete, showDeleteConfirm, canDelete]);
-
   // Reset delete confirm state when modal closes
   React.useEffect(() => {
     if (!isOpen) {
@@ -211,6 +172,25 @@ export function TaskDetailModal({
       size="md"
       shortcuts={TASK_DETAIL_MODAL_SHORTCUTS}
     >
+      {/* Hotkeys live INSIDE <Modal> so useModalHotkeys can read
+          ModalIdContext and self-gate to "this modal is topmost" (ADR-0006).
+          Rendered as the FIRST child of <Modal> — NOT a sibling — because
+          ModalIdContext only propagates DOWN. Skipped while the delete
+          ConfirmDialog is open so it keeps keyboard ownership (defence-in-
+          depth: the ConfirmDialog is itself a <Modal> on the stack, so the
+          topmost-gate already disables these keys; the conditional render is
+          belt-and-suspenders). */}
+      {!showDeleteConfirm && (
+        <TaskDetailHotkeys
+          onClose={onClose}
+          onEdit={onEdit}
+          onToggleComplete={onToggleComplete}
+          task={task}
+          canDelete={canDelete}
+          onGoToCourse={handleGoToCourse}
+          onRequestDelete={() => setShowDeleteConfirm(true)}
+        />
+      )}
       {/* Custom header — color indicator on left edge is structural so we
           don't use Modal.Header here. */}
       <div style={styles.header}>
@@ -475,6 +455,69 @@ export function TaskDetailModal({
       />
     </Modal>
   );
+}
+
+// ---------------------------------------------------------------------------
+// Render-null inner component — its only job is to call `useModalHotkeys` from
+// INSIDE the <Modal> subtree so it can read `ModalIdContext` and self-gate to
+// the topmost modal (ADR-0006). Mirrors `DuplicateWarningModal.ParentHotkeys`.
+// The parent passes state/callbacks/derived flags down as props so each
+// handler acts on fresh values via React's normal re-render.
+//
+// Guards preserved from the former raw `document` listener:
+//   • INPUT/TEXTAREA/SELECT/contentEditable suppression → react-hotkeys-hook's
+//     default (`enableOnFormTags:false`, `enableOnContentEditable:false`); we
+//     do NOT pass `enableOnFormTags: true`.
+//   • Modifier-key skip (Ctrl/Meta/Alt) → bare-letter combos only match an
+//     unmodified press, so `Ctrl+E`/`Cmd+E`/`Alt+E` register as different
+//     combos and never fire these handlers.
+// ---------------------------------------------------------------------------
+interface TaskDetailHotkeysProps {
+  onClose: () => void;
+  onEdit?: () => void;
+  onToggleComplete?: (task: Task) => void;
+  task: Task | null | undefined;
+  canDelete: boolean;
+  onGoToCourse: () => void;
+  onRequestDelete: () => void;
+}
+
+function TaskDetailHotkeys({
+  onClose,
+  onEdit,
+  onToggleComplete,
+  task,
+  canDelete,
+  onGoToCourse,
+  onRequestDelete,
+}: TaskDetailHotkeysProps) {
+  useModalHotkeys('escape', (e) => {
+    e.preventDefault();
+    onClose();
+  });
+  useModalHotkeys('e', (e) => {
+    if (onEdit) {
+      e.preventDefault();
+      onEdit();
+    }
+  });
+  useModalHotkeys('g', (e) => {
+    e.preventDefault();
+    onGoToCourse();
+  });
+  useModalHotkeys('x', (e) => {
+    if (task && onToggleComplete) {
+      e.preventDefault();
+      onToggleComplete(task);
+    }
+  });
+  useModalHotkeys('delete, backspace', (e) => {
+    if (canDelete) {
+      e.preventDefault();
+      onRequestDelete();
+    }
+  });
+  return null;
 }
 
 const styles: Record<string, React.CSSProperties> = {
