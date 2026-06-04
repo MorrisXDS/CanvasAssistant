@@ -29,6 +29,15 @@ export interface UseFocusedItemOptions {
    * Left/J = prev, Right/K = next.
    */
   verticalNav?: boolean;
+  /**
+   * When true, bind BOTH the horizontal pair (Left/J, Right/K) AND the vertical
+   * pair (Up/W, Down/S) for prev/next. Additive alias mode — use when a page
+   * historically used J/K and should ALSO accept the app-wide W/S + arrows
+   * without breaking the original J/K muscle memory. Default: false.
+   * If `bindBothNavAxes` is true it wins and binds all four families regardless
+   * of `verticalNav`.
+   */
+  bindBothNavAxes?: boolean;
 }
 
 export interface UseFocusedItemResult<T> {
@@ -146,8 +155,10 @@ export function useFocusedItem<T>(
   }, [setFocusedIndex, persistKey]);
 
   // Bind prev/next keys. verticalNav swaps Left/Right/J/K for Up/Down/W/S.
-  const prevKeys = verticalNav ? 'up, w' : 'left, j';
-  const nextKeys = verticalNav ? 'down, s' : 'right, k';
+  // bindBothNavAxes binds all four families at once (additive alias mode).
+  const bindBoth = options?.bindBothNavAxes ?? false;
+  const prevKeys = bindBoth ? 'up, w, left, j' : verticalNav ? 'up, w' : 'left, j';
+  const nextKeys = bindBoth ? 'down, s, right, k' : verticalNav ? 'down, s' : 'right, k';
 
   useStackAwareHotkeys(
     prevKeys,
