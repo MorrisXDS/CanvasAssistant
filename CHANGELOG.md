@@ -12,6 +12,14 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ### Added
 
+- `2026-06-04 18:39 UTC` — **Standing CI guard against new raw `useHotkeys` (ADR-0006 step 3).**
+  Added `tests/integration/no-raw-usehotkeys.test.ts`, a fitness function that fails the suite
+  if any `src/layers/l6-ui/**` file imports `useHotkeys` as a VALUE from `react-hotkeys-hook`
+  outside a tiny `why:`-justified allowlist (the sanctioned wrapper + the intentional-global
+  `Mod+1..5` page-nav) — permanently closing the document-level keystroke-leak class by forcing
+  every new page/modal consumer through the stack-aware wrappers. Test-only; no production
+  behavior change. Type-only imports are correctly not flagged.
+
 - `2026-06-04 03:48 UTC` — **Updates page row-navigation now also accepts `W`/`S` and `↑`/`↓` as
   aliases for the existing `J`/`K` (and `←`/`→`), aligning it with the app-wide row-nav
   convention.** `J`/`K` still work — this is additive, so there is zero muscle-memory break.
