@@ -39,5 +39,4 @@ export {
   formatFieldValue,
   getUrgencyLevel,
   getBadgeUrgency,
-  getUrgencyColor,
 } from './formatters/fieldFormatters';

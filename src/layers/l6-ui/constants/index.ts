@@ -52,7 +52,6 @@ export {
   formatFieldValue,
   // Urgency
   getUrgencyLevel,
-  getUrgencyColor,
   getBadgeUrgency,
   // Course names
   getCleanCourseName,

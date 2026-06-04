@@ -5,27 +5,6 @@
  * They operate on data structures and return calculated results.
  */
 
-// Centralized constants (single source of truth)
-export {
-  HOURS,
-  MS,
-  DAY_NAMES,
-  DEFAULT_EFFORT_MINUTES,
-  MINUTES_PER_POINT,
-  EFFORT_THRESHOLDS,
-  WORKLOAD_THRESHOLDS,
-  WEIGHT_THRESHOLDS,
-  INSIGHT_THRESHOLDS,
-  INSIGHT_EXPIRATION,
-  RECOMMENDATION_THRESHOLDS,
-  RECOMMENDATION_VALIDITY,
-  BEHAVIOR_THRESHOLDS,
-  HIGH_VALUE_TASK_TYPES,
-  HIGH_PRIORITY_TASK_TYPES,
-  ORCHESTRATOR_DEFAULTS,
-  GRADE_THRESHOLDS,
-} from './Constants';
-
 // Grade Calculation
 export { GradeCalculationService } from './grades';
 export type {
