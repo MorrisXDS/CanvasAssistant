@@ -1225,4 +1225,24 @@ export const migrationsV81toV102: Migration[] = [
         WHERE key IN ('exportSchedule', 'backupEncryptionPassword');
     `,
   },
+
+  // Migration 113: Remove the dead `canvasTimezone` row from `user_preferences`.
+  // It was write-only: the writer (`settings:syncCanvasTimezone` IPC handler) is
+  // removed in this PR, and its read route (`settings:getCanvasTimezone`) was
+  // removed in migration 112's PR. The live Canvas timezone is mirrored to
+  // localStorage by the L5 syncSlice and read from there by `useSettings`, so the
+  // SQL row fed nothing. Delete it if present; idempotent.
+  {
+    version: 113,
+    description: 'Remove dead write-only canvasTimezone row from user_preferences',
+    up: (db) => {
+      db.executeWrite(
+        'DELETE FROM user_preferences WHERE key = ?',
+        ['canvasTimezone'],
+        'user_preferences'
+      );
+    },
+    // No-op: the row was dead write-only data with no reader; nothing to restore.
+    down: '-- irreversible: canvasTimezone was dead data; no restore.',
+  },
 ];

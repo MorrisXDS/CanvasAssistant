@@ -187,10 +187,12 @@ export const createSyncSlice: SliceCreator = (set, get) => ({
       if (profileResult.success && profileResult.data?.time_zone) {
         const timezone = profileResult.data.time_zone;
 
-        // Store in database via IPC
-        await api.syncCanvasTimezone(timezone);
-
-        // Update localStorage for renderer access
+        // Persist for renderer access. The synced Canvas timezone lives ONLY in
+        // localStorage (read by useSettings' timezone cascade). The former SQL
+        // mirror in user_preferences was write-only dead data — its writer
+        // (settings:syncCanvasTimezone) and read route (settings:getCanvasTimezone,
+        // removed in migration 112's PR) are both gone; the stale row is dropped
+        // by migration 113.
         const currentSettings = JSON.parse(
           localStorage.getItem(STORAGE_KEYS.TIMEZONE) || '{}'
         );

@@ -365,38 +365,4 @@ export function registerSettingsHandlers(ctx: IpcContext): void {
       return { success: false, error: String(error) };
     }
   });
-
-  // ============ Timezone Settings ============
-
-  /**
-   * Sync Canvas timezone from user profile
-   * Called during sync to update the Canvas timezone in settings
-   */
-  ipcMain.handle(
-    'settings:syncCanvasTimezone',
-    async (_event, params: { timezone: string }) => {
-      const { timezone } = params;
-
-      if (!timezone) {
-        return { success: false, error: 'No timezone provided' };
-      }
-
-      try {
-        // Store in user_preferences for persistence
-        const result = await new SetUserPreferenceCommand().execute(runContext(), {
-          key: 'canvasTimezone',
-          value: JSON.stringify({ timezone, syncedAt: new Date().toISOString() }),
-        });
-        if (!result.success) {
-          return { success: false, error: result.error };
-        }
-
-        logger.info(`Canvas timezone synced: ${timezone}`);
-        return { success: true, data: { timezone } };
-      } catch (error) {
-        logger.error('Failed to sync Canvas timezone:', error as Error);
-        return { success: false, error: String(error) };
-      }
-    }
-  );
 }

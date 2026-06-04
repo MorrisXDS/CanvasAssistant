@@ -95,6 +95,17 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
   row-nav, Updates J/K→W/S) are parked for review.
 - `2026-06-03 05:33 UTC` — **Centralized straggler storage keys and color maps into existing modules** — the final safe chunk of the hardcoded-values audit. Three groups of literals that pre-dated or were missed when the centralized modules were first built are now routed through their single source of truth: (1) `syncSlice.ts` `'timezoneSettings'` → `STORAGE_KEYS.TIMEZONE`; (2) inline hex color maps in `NotificationDot.tsx` and `FileListItem.tsx` relocated to named exports (`UPDATE_TYPE_COLORS`, `UPDATE_TYPE_FALLBACK_COLOR`, `CONTENT_CATEGORY_COLORS`, `DEFAULT_COURSE_COLOR`) in `src/layers/l6-ui/constants/colors.ts`; (3) eight drag-drop/files `localStorage` key constants spread across five hooks and two utils files added to `STORAGE_KEYS` with byte-identical string values (no persisted-state reset). The `SettingsTypeMap` was extended for the new keys — reviewed and confirmed runtime-inert (read-only cache load, no schema, no default, no write). Zero behavior change throughout; all string values are verbatim copies of the literals they replace. Closes the user-approved scope of the hardcoded-values audit (Cat 5 hex→theme-vars + Cat 6 date formatters remain descoped).
 
+### Removed
+
+- `2026-06-04 02:11 UTC` — **Dead write-only `canvasTimezone` SQL path.** The
+  `settings:syncCanvasTimezone` IPC handler wrote a `canvasTimezone` row into `user_preferences` on
+  every full sync, but nothing read it — its read route (`settings:getCanvasTimezone`) was removed in
+  migration 112's PR, and the live Canvas timezone is mirrored to `localStorage` (read by
+  `useSettings`' timezone cascade). Removed the handler, the `preload` binding, and the now-orphaned
+  `api.syncCanvasTimezone(...)` call in the L5 syncSlice; the localStorage mirror (the live path) is
+  untouched. Migration 113 deletes the stale row. No user-facing behaviour change — the timezone
+  cascade (userOverride → canvasTimezone → local) is unaffected.
+
 ### Fixed
 
 - `2026-06-04 02:11 UTC` — **Invisible UI accents that referenced the nonexistent `--color-primary`

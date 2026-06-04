@@ -2,8 +2,8 @@
  * settingsHandlers — IPC handler behavior tests (ADR-0007).
  *
  * Covers the SQL-touching handlers migrated to readers/commands:
- * local-HTML-paths, default-target-grade, course settings, and Canvas
- * timezone. Confirms renderer-facing response shapes are unchanged.
+ * local-HTML-paths, default-target-grade, and course settings.
+ * Confirms renderer-facing response shapes are unchanged.
  */
 
 jest.mock('electron', () => {
@@ -174,33 +174,6 @@ describe('settingsHandlers (ADR-0007)', () => {
       db.close();
       const res = (await invoke('course:updateSettings', 1, {
         autoAssignDueDate: 1,
-      })) as { success: boolean };
-      expect(res.success).toBe(false);
-    });
-  });
-
-  describe('settings:syncCanvasTimezone', () => {
-    test('persists the timezone', async () => {
-      const res = (await invoke('settings:syncCanvasTimezone', {
-        timezone: 'America/Toronto',
-      })) as { success: boolean; data: { timezone: string } };
-      expect(res.success).toBe(true);
-      expect(res.data.timezone).toBe('America/Toronto');
-    });
-
-    test('rejects a missing timezone', async () => {
-      const res = (await invoke('settings:syncCanvasTimezone', { timezone: '' })) as {
-        success: boolean;
-        error: string;
-      };
-      expect(res.success).toBe(false);
-      expect(res.error).toContain('No timezone');
-    });
-
-    test('returns failure when the write fails', async () => {
-      db.close();
-      const res = (await invoke('settings:syncCanvasTimezone', {
-        timezone: 'UTC',
       })) as { success: boolean };
       expect(res.success).toBe(false);
     });

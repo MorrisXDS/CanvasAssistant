@@ -905,14 +905,6 @@ const api = {
       data?: { settings: Record<string, unknown>; filePath: string };
     }>,
 
-  // Sync Canvas timezone from user profile
-  syncCanvasTimezone: (timezone: string) =>
-    ipcRenderer.invoke('settings:syncCanvasTimezone', { timezone }) as Promise<{
-      success: boolean;
-      error?: string;
-      data?: { timezone: string };
-    }>,
-
   // ============ Shell ============
 
   openExternal: (url: string) => ipcRenderer.send('shell:openExternal', url),

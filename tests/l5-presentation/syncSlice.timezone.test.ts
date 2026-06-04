@@ -30,7 +30,6 @@ describe('syncSlice.syncCanvasTimezone — persists under "timezoneSettings" (ch
       getUserProfile: jest
         .fn()
         .mockResolvedValue({ success: true, data: { time_zone: TIMEZONE } }),
-      syncCanvasTimezone: jest.fn().mockResolvedValue(undefined),
       log: { info: jest.fn() },
     };
   });
