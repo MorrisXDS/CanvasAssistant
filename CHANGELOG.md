@@ -12,6 +12,13 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ### Added
 
+- `2026-06-04 03:48 UTC` — **Updates page row-navigation now also accepts `W`/`S` and `↑`/`↓` as
+  aliases for the existing `J`/`K` (and `←`/`→`), aligning it with the app-wide row-nav
+  convention.** `J`/`K` still work — this is additive, so there is zero muscle-memory break.
+  Implemented via a new opt-in `bindBothNavAxes` flag on the shared `useFocusedItem` hook
+  (default off); all 11 other consumers are byte-for-byte unchanged. The `?` help registry now
+  honestly lists every alias for both directions.
+
 - `2026-06-03 22:02 UTC` — **Section-navigation foundation (no-op infra, ADR-0010 Phase 0).**
   Added a reusable `useSectionScope` hook (`Q`/`E` cycle + uniform `Alt+1..N` direct-jump to the
   Nth available section + re-scope-on-unavailable + broadcast to `KeyboardScopeContext`), a

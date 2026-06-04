@@ -169,6 +169,7 @@ export function UpdatesPage() {
     getFocusProps: getActionFocusProps,
   } = useFocusedItem(flatActionTasks, {
     persistKey: 'updates-page',
+    bindBothNavAxes: true, // keep J/K, add app-wide W/S + ↑/↓ (FOLLOWUPS 5.4)
   });
 
   // All keyboard shortcuts in one place

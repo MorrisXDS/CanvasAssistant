@@ -140,6 +140,55 @@ describe('keyboardShortcuts registry', () => {
     });
   });
 
+  // 5.4 — the Updates 'Updates'-scope row-nav entries now list ALL aliases:
+  // J/K (legacy, kept) + W/S + ↑/↓ + ←/→. The hook (`useFocusedItem` with
+  // `bindBothNavAxes: true`) binds all four families; the registry must list them
+  // honestly (§2 registry-vs-binding honesty rule). The separate 'Duplicate
+  // warning' updates-scope category MUST stay untouched (its own S = Keep separate).
+  describe('5.4 — Updates row-nav lists J/K + W/S + arrow aliases', () => {
+    function updatesNavCategory(): ShortcutCategory {
+      // There are TWO updates-scope categories (Updates + Duplicate warning);
+      // disambiguate by title, exactly as the Fix-1/Fix-2 tests do.
+      const cat = KEYBOARD_SHORTCUTS.find(
+        (c) => c.scope === 'updates' && c.title === 'Updates'
+      );
+      expect(cat).toBeDefined();
+      return cat!;
+    }
+
+    it("'Focus previous item' lists all of ↑, W, ←, J", () => {
+      const prev = updatesNavCategory().shortcuts.find(
+        (s) => s.label === 'Focus previous item'
+      );
+      expect(prev).toBeDefined();
+      for (const token of ['↑', 'W', '←', 'J']) {
+        expect(hasKey(prev!, token)).toBe(true);
+      }
+    });
+
+    it("'Focus next item' lists all of ↓, S, →, K", () => {
+      const next = updatesNavCategory().shortcuts.find(
+        (s) => s.label === 'Focus next item'
+      );
+      expect(next).toBeDefined();
+      for (const token of ['↓', 'S', '→', 'K']) {
+        expect(hasKey(next!, token)).toBe(true);
+      }
+    });
+
+    it('did NOT bleed edits into the Duplicate warning category (its S = Keep separate survives)', () => {
+      const dup = KEYBOARD_SHORTCUTS.find(
+        (c) => c.scope === 'updates' && c.title === 'Duplicate warning'
+      );
+      expect(dup).toBeDefined();
+      const keepSeparate = dup!.shortcuts.find(
+        (s) => s.keys.length === 1 && s.keys[0] === 'S'
+      );
+      expect(keepSeparate).toBeDefined();
+      expect(keepSeparate!.label).toBe('Keep separate');
+    });
+  });
+
   describe('getScopeForPath — branch coverage', () => {
     it('resolves a matching prefix to its scope (exact + sub-path)', () => {
       // Exact-prefix match.

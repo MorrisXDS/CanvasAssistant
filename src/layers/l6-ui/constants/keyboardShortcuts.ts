@@ -353,8 +353,8 @@ export const KEYBOARD_SHORTCUTS: ShortcutCategory[] = [
     title: 'Updates',
     scope: 'updates',
     shortcuts: [
-      { keys: ['←', '/', 'J'], label: 'Focus previous item' },
-      { keys: ['→', '/', 'K'], label: 'Focus next item' },
+      { keys: ['↑', '/', 'W', '/', '←', '/', 'J'], label: 'Focus previous item' },
+      { keys: ['↓', '/', 'S', '/', '→', '/', 'K'], label: 'Focus next item' },
       { keys: ['A'], label: 'Accept queued task' },
       { keys: ['1'], label: 'All updates' },
       { keys: ['2'], label: 'Tasks' },
