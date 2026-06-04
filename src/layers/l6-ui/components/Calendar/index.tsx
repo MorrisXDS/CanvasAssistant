@@ -12,7 +12,8 @@ import React, {
   useRef,
 } from 'react';
 import { useKeymap } from '../../hooks/useKeymap';
-import { useRegisterSubscope } from '../../contexts/KeyboardScopeContext';
+import { useSectionScope } from '../../hooks/useSectionScope';
+import { SectionBar } from '../primitives';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { getEventId, positionEvents } from './calendarHelpers';
 import {
@@ -1267,7 +1268,11 @@ export function CalendarPage() {
     [focusedDate, currentDate, toISODate, getEventsOnDate]
   );
 
-  const { scope: calScope, setScope: setCalScope } = useKeymap<'events' | 'filter'>(
+  // `useKeymap` stays the keymap ROUTER (two intricate per-scope keybinding
+  // sets). Its internal `scope` is now a derived mirror of `useSectionScope`'s
+  // `active` (see the bridge effect below) — so we only need `setScope` here;
+  // `active` is the single source of truth for which scope is live.
+  const { setScope: setCalScope } = useKeymap<'events' | 'filter'>(
     {
       events: {
         // Period navigation
@@ -1322,7 +1327,7 @@ export function CalendarPage() {
         'shift+d': (e) => {
           if (showFilters) {
             e.preventDefault();
-            setCalScope('filter');
+            goTo('filter');
             setFilterSection('filters-deadline');
             setFilterFocusIndex(0);
           }
@@ -1379,7 +1384,7 @@ export function CalendarPage() {
           e.preventDefault();
           setShowFilters((prev) => {
             const next = !prev;
-            if (next) setCalScope('filter');
+            if (next) goTo('filter');
             setFilterFocusIndex(0);
             return next;
           });
@@ -1387,7 +1392,7 @@ export function CalendarPage() {
         c: (e) => {
           if (showFilters) {
             e.preventDefault();
-            setCalScope('filter');
+            goTo('filter');
             setFilterSection('filters-courses');
             setFilterFocusIndex(0);
           }
@@ -1395,7 +1400,7 @@ export function CalendarPage() {
         p: (e) => {
           if (showFilters) {
             e.preventDefault();
-            setCalScope('filter');
+            goTo('filter');
             setFilterSection('filters-priority');
             setFilterFocusIndex(0);
           }
@@ -1491,7 +1496,7 @@ export function CalendarPage() {
         'Escape,f': (e) => {
           e.preventDefault();
           setShowFilters(false);
-          setCalScope('events');
+          goTo('events');
         },
         c: (e) => {
           e.preventDefault();
@@ -1555,10 +1560,63 @@ export function CalendarPage() {
     }
   );
 
-  // Broadcast active scope to help modal
-  useRegisterSubscope(calScope, { events: 'events', filter: 'filter' });
+  // Section navigation — the shared section-nav scheme (ADR-0010 / Phase 2).
+  // `useSectionScope` owns the `active` source of truth, registers Alt+1/Alt+2
+  // direct-jump, the re-scope effect (auto-advance off an unavailable section),
+  // and broadcasts the available sections to the `?` help modal. Calendar keeps
+  // its `useKeymap` router for the two intricate per-scope keybinding sets; the
+  // bridge effect below mirrors `active` into that router so a single source of
+  // truth drives both. `enableCycle: false` because Q/E are already load-bearing
+  // in the events keymap (prev/next day column, edit event) — registering the
+  // hook's Q/E cycle would double-bind on `document` (see ADR-0010 / plan Risk 1).
+  // The `filter` section is a toggle, available only while the panel is open.
+  const { active, goTo, sections } = useSectionScope<'events' | 'filter'>(
+    [
+      { id: 'events', label: 'Calendar' },
+      { id: 'filter', label: 'Filter', available: showFilters },
+    ],
+    { enableDirectJump: true, enableCycle: false }
+  );
 
-  // Cross-scope shortcuts: Alt+Shift+D/P/C and Alt+1-9 fire in both scopes.
+  // Bridge: mirror the hook's `active` (single source of truth) into the
+  // `useKeymap` router's internal scope. One direction only (active → calScope);
+  // the router never writes back to `active`, so no loop (plan Risk 3).
+  useEffect(() => {
+    setCalScope(active);
+  }, [active, setCalScope]);
+
+  // F open-and-focus (plan Q2): the `f` handler flips `showFilters` true, but the
+  // `filter` section's availability — and therefore `goTo('filter')` — only
+  // updates a render later. This effect runs ONCE availability catches up on the
+  // open EDGE, so pressing F both opens the panel AND focuses it (SectionBar
+  // shows `filter`). It must be a ONE-SHOT on the false→true `showFilters`
+  // transition — NOT a continuous "force filter while open" — otherwise Alt+1
+  // (jump back to `events`) and a Calendar-chip click would be instantly
+  // reverted to `filter` while the panel stays open, defeating ADR-0010's
+  // uniform Alt+1/Alt+2 direct-jump (plan case 9). The ref tracks the previous
+  // `showFilters` so focus is applied only as the panel opens; once focused, the
+  // user is free to move off `filter` (via Alt+1 / chip / Q/E) with the panel
+  // still open.
+  // `focusedForThisOpenRef` makes the catch-up one-shot PER open-session, robust
+  // to the one-render availability lag: when the panel closes we re-arm it; when
+  // the panel is open + `filter` is available we apply focus exactly once, then
+  // disarm. So `goTo('filter')` fires on the open edge (even though availability
+  // lands a render after `showFilters` flips) but does NOT re-fire when the user
+  // later moves `active` back to `events` with the panel still open.
+  const filterAvailable = sections.some((s) => s.id === 'filter' && s.isAvailable);
+  const focusedForThisOpenRef = useRef(false);
+  useEffect(() => {
+    if (!showFilters) {
+      focusedForThisOpenRef.current = false; // re-arm for the next open
+      return;
+    }
+    if (filterAvailable && !focusedForThisOpenRef.current) {
+      focusedForThisOpenRef.current = true;
+      if (active !== 'filter') goTo('filter');
+    }
+  }, [showFilters, filterAvailable, active, goTo]);
+
+  // Cross-scope shortcuts: Alt+Shift+D/P/C and Alt+Shift+1-9 fire in both scopes.
   // Kept as a separate small handler since useKeymap scopes them exclusively.
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -1597,8 +1655,14 @@ export function CalendarPage() {
         }
       }
 
-      // Alt+1..9 toggles course filter by index
-      if (e.altKey && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+      // Alt+Shift+1..9 toggles course filter by index. Rebound from the former
+      // Alt+1..9 (ADR-0010 Phase 2) so plain Alt+1..9 is free for section-jump
+      // (handled by useSectionScope). MUST require Shift here so the two are
+      // mutually exclusive: Alt+Shift+digit = course filter, plain Alt+digit =
+      // section jump. macOS composes Option+Shift+digit into a glyph, so
+      // `parseInt(e.key)` returns NaN there and this silently no-ops — preserved
+      // verbatim (we do not narrow the international-layout gap further).
+      if (e.altKey && e.shiftKey && !e.ctrlKey && !e.metaKey) {
         const digit = parseInt(e.key, 10);
         if (digit >= 1 && digit <= 9 && courses[digit - 1]) {
           e.preventDefault();
@@ -1798,6 +1862,18 @@ export function CalendarPage() {
         </div>
       </header>
 
+      {/* Section navigation indicator — only when >1 section is available
+          (i.e. the filter panel is open, adding `filter` to `events`). `goTo`
+          is a no-op for unavailable ids, so the wider `(id: string)` chip-click
+          signature is safe. Mirrors CourseDetail's guard. */}
+      {sections.filter((s) => s.isAvailable).length > 1 && (
+        <SectionBar
+          sections={sections}
+          active={active}
+          onSelect={(id) => goTo(id as typeof active)}
+        />
+      )}
+
       {/* Date Title Row */}
       <div style={styles.dateTitleRow}>
         <div style={styles.dateTitle}>
@@ -1835,7 +1911,7 @@ export function CalendarPage() {
           onPriorityFilterChange={setPriorityFilter}
           onClearFilters={clearFilters}
           keyboardSection={
-            calScope !== 'filter'
+            active !== 'filter'
               ? null
               : filterSection === 'filters-courses'
                 ? 'courses'
