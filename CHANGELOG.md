@@ -108,6 +108,14 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ### Fixed
 
+- `2026-06-04 03:30 UTC` — **TaskDetailModal (Calendar event detail) keystrokes leaked to the page
+  and fired under stacked modals (ADR-0006).** The modal's `Esc`/`E`/`G`/`X`/`Delete`·`Backspace`
+  shortcuts ran off a raw `document` `keydown` listener, so they stayed live whenever any other modal
+  (including the modal's own delete-confirm dialog) was stacked above, and could leak to the page.
+  Migrated to `useModalHotkeys`, which self-gates to the topmost modal on the stack — the keys now
+  fire only when TaskDetailModal is on top, and no longer leak. Behaviour is otherwise unchanged
+  (same five keys, same form-field/modifier-key suppression, same delete-confirm precedence).
+
 - `2026-06-04 02:11 UTC` — **Invisible UI accents that referenced the nonexistent `--color-primary`
   CSS variable.** `--color-primary` (and its `-dark` sibling) is not defined in `theme.css` — the
   project's primary accent is `--color-navy`. Twenty-two bare, fallback-less `var(--color-primary)` /
