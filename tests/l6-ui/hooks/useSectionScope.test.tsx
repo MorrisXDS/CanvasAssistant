@@ -43,13 +43,18 @@ import {
   useModalStack,
 } from '../../../src/layers/l6-ui/contexts/ModalStackContext';
 
-/** Dispatch a real keydown on `document` so useHotkeys' listener sees it. */
-function pressKey(key: string, opts: { altKey?: boolean } = {}) {
+/**
+ * Dispatch a real keydown on `document` so useHotkeys' listener sees it. `code`
+ * is the physical-key code (`Digit1`/`Numpad1`/…) the C4 `e.code` fallback reads
+ * when Option/Alt composes `key` into a typographic glyph (macOS / intl layouts).
+ */
+function pressKey(key: string, opts: { altKey?: boolean; code?: string } = {}) {
   act(() => {
     document.dispatchEvent(
       new KeyboardEvent('keydown', {
         key,
         altKey: opts.altKey ?? false,
+        code: opts.code ?? '',
         bubbles: true,
         cancelable: true,
       })
@@ -246,6 +251,59 @@ describe('useSectionScope — direct jump (Alt+N, B1 available-only)', () => {
     act(() => result.current.cycle(1)); // imperative still works
     expect(result.current.active).toBe('b');
     act(() => result.current.goTo('a'));
+    expect(result.current.active).toBe('a');
+  });
+});
+
+describe('useSectionScope — direct jump: e.code fallback (C4)', () => {
+  // macOS / international layouts compose Option+digit into a typographic glyph,
+  // so `e.key` is e.g. '¡' not '1' → `parseInt(e.key)` is NaN and the old handler
+  // silently no-opped. `digitFromEvent` now falls back to the layout-independent
+  // physical key `e.code` (Digit1 / Numpad1) so the jump still fires.
+
+  test('composed-glyph e.key + e.code=Digit1/Digit2 jumps to the 1st/2nd available section', () => {
+    const { result } = renderScope([{ id: 'a' }, { id: 'b' }, { id: 'c' }]);
+    expect(result.current.active).toBe('a');
+
+    // Glyph e.key (non-digit) + physical Digit2 → 2nd available section.
+    pressKey('™', { altKey: true, code: 'Digit2' });
+    expect(result.current.active).toBe('b');
+
+    // Digit1 → 1st available.
+    pressKey('¡', { altKey: true, code: 'Digit1' });
+    expect(result.current.active).toBe('a');
+
+    // Digit3 → 3rd available.
+    pressKey('£', { altKey: true, code: 'Digit3' });
+    expect(result.current.active).toBe('c');
+  });
+
+  test('e.key fast-path wins even when e.code disagrees (QWERTY byte-for-byte unchanged)', () => {
+    const { result } = renderScope([{ id: 'a' }, { id: 'b' }, { id: 'c' }]);
+    // e.key '2' is a digit → fast path resolves 2 regardless of a mismatched
+    // e.code ('Digit9'). Proves e.key wins the fast path (ordering matters).
+    pressKey('2', { altKey: true, code: 'Digit9' });
+    expect(result.current.active).toBe('b');
+  });
+
+  test('Numpad code (NumLock-off glyph) resolves the physical digit', () => {
+    const { result } = renderScope([{ id: 'a' }, { id: 'b' }, { id: 'c' }]);
+    // A non-digit e.key with code 'Numpad3' → 3rd available section.
+    pressKey('?', { altKey: true, code: 'Numpad3' });
+    expect(result.current.active).toBe('c');
+  });
+
+  test('non-digit e.key AND non-Digit/Numpad e.code is a no-op (guards the regex)', () => {
+    const { result } = renderScope([{ id: 'a' }, { id: 'b' }, { id: 'c' }]);
+    // Glyph e.key + an alphabetic physical key → neither path matches → no jump.
+    pressKey('¡', { altKey: true, code: 'KeyA' });
+    expect(result.current.active).toBe('a'); // unchanged
+  });
+
+  test('a code-resolved digit beyond the available count is still a no-op (bounds preserved)', () => {
+    const { result } = renderScope([{ id: 'a' }, { id: 'b' }]);
+    // Only 2 available; Digit5 resolves to 5 → out of range → no-op.
+    pressKey('∞', { altKey: true, code: 'Digit5' });
     expect(result.current.active).toBe('a');
   });
 });

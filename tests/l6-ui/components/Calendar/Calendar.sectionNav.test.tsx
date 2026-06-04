@@ -248,14 +248,24 @@ async function renderCalendarWithModal(env: TestEnv, courseCount = 3, modalOpen 
   };
 }
 
-/** Dispatch a real keydown on `document` (every listener's target). */
-async function press(key: string, opts: { altKey?: boolean; shiftKey?: boolean } = {}) {
+/**
+ * Dispatch a real keydown on `document` (every listener's target). `code` is the
+ * physical-key code (`Digit1`/`Numpad1`/…) the C4 `e.code` fallback reads when
+ * Option+Shift composes `key` into a typographic glyph on macOS / intl layouts.
+ * Defaults to '' (no code) — so the existing glyph-NO-code no-op test keeps its
+ * exact semantics ("glyph with no recoverable physical key → still no-op").
+ */
+async function press(
+  key: string,
+  opts: { altKey?: boolean; shiftKey?: boolean; code?: string } = {}
+) {
   await act(async () => {
     document.dispatchEvent(
       new KeyboardEvent('keydown', {
         key,
         altKey: opts.altKey ?? false,
         shiftKey: opts.shiftKey ?? false,
+        code: opts.code ?? '',
         bubbles: true,
         cancelable: true,
       })
@@ -415,6 +425,45 @@ describe('Calendar — section navigation + course-filter rebind (Phase 2)', () 
 
     await press('›', { altKey: true, shiftKey: true });
     expect(selectedCourses()).toBe('all'); // NaN path → no toggle, no crash
+  });
+
+  it('Alt+Shift+<composed glyph> WITH e.code=Digit2 toggles the 2nd course filter (C4 macOS/intl fix)', async () => {
+    // The C4 fix: when Option+Shift+digit composes a glyph (e.key='›'), the
+    // handler falls back to the physical key via e.code='Digit2' → resolves
+    // digit 2 → toggleCourseFilter(courses[1]). This is the macOS bug fixed.
+    await renderCalendar(env, 3);
+    await openFilterPanel();
+    expect(selectedCourses()).toBe('all');
+
+    await press('›', { altKey: true, shiftKey: true, code: 'Digit2' });
+    expect(selectedCourses()).toEqual([1, 3]); // course 2 dropped via e.code path
+
+    // Round-trip: same glyph+code re-adds course 2 → back to 'all'.
+    await press('›', { altKey: true, shiftKey: true, code: 'Digit2' });
+    expect(selectedCourses()).toBe('all');
+  });
+
+  it('Alt+Shift+1 fast-path still toggles the 1st course filter on QWERTY (key=1, code=Digit1)', async () => {
+    // The e.key digit fast path is unchanged for standard QWERTY, where e.key='1'
+    // pairs with the consistent physical e.code='Digit1'. digitFromEvent takes the
+    // fast path off e.key; the toggle still resolves course 1.
+    await renderCalendar(env, 3);
+    await openFilterPanel();
+    expect(selectedCourses()).toBe('all');
+
+    await press('1', { altKey: true, shiftKey: true, code: 'Digit1' });
+    expect(selectedCourses()).toEqual([2, 3]); // course 1 dropped via e.key fast path
+  });
+
+  it('Alt+Shift+<composed glyph> with a non-Digit/Numpad e.code (e.g. KeyA) is still a no-op', async () => {
+    // Guards the regex: a glyph e.key + an alphabetic physical key matches neither
+    // path → digitFromEvent returns null → no toggle.
+    await renderCalendar(env, 3);
+    await openFilterPanel();
+    expect(selectedCourses()).toBe('all');
+
+    await press('›', { altKey: true, shiftKey: true, code: 'KeyA' });
+    expect(selectedCourses()).toBe('all');
   });
 
   it('Alt+Shift+C (clear) still works and is not shadowed by the digit branch', async () => {

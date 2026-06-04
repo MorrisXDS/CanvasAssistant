@@ -152,12 +152,6 @@ export const KEYBOARD_SHORTCUTS: ShortcutCategory[] = [
         label: 'Delete focused event (confirms first)',
       },
       { keys: ['F'], label: 'Open / close & focus filter panel' },
-      // Section navigation (ADR-0010 / Phase 2). Alt+1 = Calendar grid, Alt+2 =
-      // Filter panel (only while the panel is open). Q/E cycle is intentionally
-      // NOT bound here — those keys are owned by the grid (prev/next day column,
-      // edit event).
-      { keys: ['Alt', '1'], label: 'Section: Calendar grid' },
-      { keys: ['Alt', '2'], label: 'Section: Filter panel (when open)' },
       { keys: ['Alt', 'Shift', 'D'], label: 'Cycle deadline filter' },
       { keys: ['Alt', 'Shift', 'P'], label: 'Cycle priority filter' },
       { keys: ['Alt', 'Shift', 'C'], label: 'Clear all filters' },
@@ -217,8 +211,6 @@ export const KEYBOARD_SHORTCUTS: ShortcutCategory[] = [
     scope: 'courses',
     subscope: 'courses',
     shortcuts: [
-      { keys: ['Alt', '1'], label: 'Jump to Courses section' },
-      { keys: ['Alt', '2'], label: 'Jump to Filter panel (when open)' },
       { keys: ['V'], label: 'Toggle grid/list view' },
       { keys: ['A', '/', '←'], label: 'Focus previous card (grid: left)' },
       { keys: ['D', '/', '→'], label: 'Focus next card (grid: right)' },
@@ -286,10 +278,6 @@ export const KEYBOARD_SHORTCUTS: ShortcutCategory[] = [
         keys: ['Q', '/', 'E'],
         label:
           'Cycle sections (Tasks → Queue → Announcements → Preferences) — except in Tasks, where E = edit task',
-      },
-      {
-        keys: ['Alt', '1', '–', 'N'],
-        label: 'Jump directly to section N (available sections only)',
       },
       { keys: ['G'], label: 'Go back to previous page' },
       { keys: ['T'], label: 'Start editing Target grade in header' },

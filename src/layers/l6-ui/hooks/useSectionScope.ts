@@ -36,6 +36,19 @@ import {
   type ActiveSectionInfo,
 } from '../contexts/KeyboardScopeContext';
 
+/**
+ * Resolve the pressed digit 1..9. Fast-path `e.key` (covers standard QWERTY).
+ * Fall back to the PHYSICAL key via `e.code` when Option/Alt composed a glyph
+ * (macOS / international layouts make `e.key` a glyph → `parseInt` → NaN). `e.code`
+ * is layout-independent: `Digit1` / `Numpad1` fire regardless of the composed glyph.
+ */
+function digitFromEvent(e: KeyboardEvent): number | null {
+  const k = parseInt(e.key, 10);
+  if (k >= 1 && k <= 9) return k; // fast path — e.key is a digit
+  const m = /^(?:Digit|Numpad)([1-9])$/.exec(e.code); // fallback — physical key
+  return m ? Number(m[1]) : null;
+}
+
 /** A page-declared section. `available` defaults to `true` when omitted. */
 export interface SectionDef<Id extends string = string> {
   id: Id;
@@ -189,8 +202,8 @@ export function useSectionScope<Id extends string = string>(
   // digit at fire time → jump to the Nth AVAILABLE section; no-op out of range.
   const onDirectJump = useCallback<HotkeyCallback>(
     (e) => {
-      const digit = parseInt(e.key, 10);
-      if (Number.isNaN(digit) || digit < 1) return;
+      const digit = digitFromEvent(e);
+      if (digit === null) return;
       const target = availableIds[digit - 1];
       if (target === undefined) return; // out of range → no-op
       e.preventDefault();

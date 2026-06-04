@@ -65,6 +65,19 @@ import { createLogger } from '../../utils/rendererLogger';
 
 const log = createLogger('Calendar');
 
+/**
+ * Resolve the pressed digit 1..9. Fast-path `e.key` (covers standard QWERTY).
+ * Fall back to the PHYSICAL key via `e.code` when Option/Alt composed a glyph
+ * (macOS / international layouts make `e.key` a glyph → `parseInt` → NaN). `e.code`
+ * is layout-independent: `Digit1` / `Numpad1` fire regardless of the composed glyph.
+ */
+function digitFromEvent(e: KeyboardEvent): number | null {
+  const k = parseInt(e.key, 10);
+  if (k >= 1 && k <= 9) return k; // fast path — e.key is a digit
+  const m = /^(?:Digit|Numpad)([1-9])$/.exec(e.code); // fallback — physical key
+  return m ? Number(m[1]) : null;
+}
+
 export function CalendarPage() {
   const {
     tasks,
@@ -1646,12 +1659,13 @@ export function CalendarPage() {
         clearFilters();
         return;
       }
-      // Alt+Shift+1..9 toggles course filter by index. macOS composes
-      // Option+Shift+digit into a glyph, so `parseInt(e.key)` returns NaN there
-      // and this silently no-ops — preserved verbatim (we do not narrow the
-      // international-layout gap further).
-      const digit = parseInt(e.key, 10);
-      if (digit >= 1 && digit <= 9 && courses[digit - 1]) {
+      // Alt+Shift+1..9 toggles course filter by index. macOS / international
+      // layouts compose Option+Shift+digit into a typographic glyph, so
+      // `parseInt(e.key)` returns NaN; `digitFromEvent` falls back to the
+      // layout-independent physical key (`e.code` = `Digit1`/`Numpad1`) so the
+      // shortcut still fires. A glyph with NO recoverable `e.code` stays a no-op.
+      const digit = digitFromEvent(e);
+      if (digit !== null && courses[digit - 1]) {
         e.preventDefault();
         toggleCourseFilter(courses[digit - 1].id);
       }
