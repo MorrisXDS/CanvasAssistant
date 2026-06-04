@@ -315,9 +315,9 @@ const styles: Record<string, React.CSSProperties> = {
     transition: 'all 0.15s',
   },
   tabActive: {
-    backgroundColor: 'var(--color-primary)',
+    backgroundColor: 'var(--color-navy)',
     color: 'white',
-    borderColor: 'var(--color-primary)',
+    borderColor: 'var(--color-navy)',
   },
   categoryTitle: {
     fontSize: '11px',

@@ -1554,7 +1554,7 @@
   font-size: var(--text-xs);
   font-weight: var(--font-medium);
   color: white;
-  background-color: var(--color-primary);
+  background-color: var(--color-navy);
   border: none;
   border-radius: var(--radius-sm);
   cursor: pointer;
@@ -1562,7 +1562,7 @@
 }
 
 .contentChangedWarningButton:hover {
-  background-color: var(--color-primary-dark);
+  background-color: var(--color-navy-dark);
 }
 
 .contentChangedWarningDismiss {

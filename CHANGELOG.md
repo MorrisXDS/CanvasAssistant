@@ -95,6 +95,19 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
   row-nav, Updates J/K→W/S) are parked for review.
 - `2026-06-03 05:33 UTC` — **Centralized straggler storage keys and color maps into existing modules** — the final safe chunk of the hardcoded-values audit. Three groups of literals that pre-dated or were missed when the centralized modules were first built are now routed through their single source of truth: (1) `syncSlice.ts` `'timezoneSettings'` → `STORAGE_KEYS.TIMEZONE`; (2) inline hex color maps in `NotificationDot.tsx` and `FileListItem.tsx` relocated to named exports (`UPDATE_TYPE_COLORS`, `UPDATE_TYPE_FALLBACK_COLOR`, `CONTENT_CATEGORY_COLORS`, `DEFAULT_COURSE_COLOR`) in `src/layers/l6-ui/constants/colors.ts`; (3) eight drag-drop/files `localStorage` key constants spread across five hooks and two utils files added to `STORAGE_KEYS` with byte-identical string values (no persisted-state reset). The `SettingsTypeMap` was extended for the new keys — reviewed and confirmed runtime-inert (read-only cache load, no schema, no default, no write). Zero behavior change throughout; all string values are verbatim copies of the literals they replace. Closes the user-approved scope of the hardcoded-values audit (Cat 5 hex→theme-vars + Cat 6 date formatters remain descoped).
 
+### Fixed
+
+- `2026-06-04 02:11 UTC` — **Invisible UI accents that referenced the nonexistent `--color-primary`
+  CSS variable.** `--color-primary` (and its `-dark` sibling) is not defined in `theme.css` — the
+  project's primary accent is `--color-navy`. Twenty-two bare, fallback-less `var(--color-primary)` /
+  `var(--color-primary-dark)` references across 14 L6 files were therefore invalid at runtime and
+  rendered with no accent: the `KeyboardShortcutsModal` active tab had no highlight, the FilesPage
+  "content changed" warning button was white-on-transparent (effectively invisible), and Updates /
+  Settings / Sidebar / Layout accents silently dropped. All bare forms are now `--color-navy`
+  (`-dark` → `--color-navy-dark`); the `var(--color-primary*, <fallback>)` form is left untouched
+  (it renders its fallback). A hard-zero CI guard (`tests/integration/no-undefined-color-primary.test.ts`)
+  fails the suite if any bare `var(--color-primary*)` is reintroduced under `src/layers/l6-ui/**`.
+
 ### Added
 
 - `2026-06-03 04:12 UTC` — **Centralized `Z_INDEX` stacking scale + a CI guard against stray high

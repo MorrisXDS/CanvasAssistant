@@ -479,7 +479,7 @@ export function UpdatesPage() {
         {/* Right Column - Informational */}
         <div style={styles.column}>
           <div style={styles.columnHeader}>
-            <Bell size={18} style={{ color: 'var(--color-primary)' }} />
+            <Bell size={18} style={{ color: 'var(--color-navy)' }} />
             <span style={styles.columnTitle}>Updates</span>
             <span style={styles.columnCount}>({informationalUpdates.length})</span>
             {informationalUpdates.length > 0 && (

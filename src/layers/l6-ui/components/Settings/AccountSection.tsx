@@ -92,7 +92,7 @@ export function AccountSection({ sectionRef }: AccountSectionProps) {
               {/* Connection Header with Status Badge */}
               <div style={styles.connectionHeader}>
                 <div style={styles.connectionTitleRow}>
-                  <Link size={18} style={{ color: 'var(--color-primary)' }} />
+                  <Link size={18} style={{ color: 'var(--color-navy)' }} />
                   <span style={styles.connectionTitle}>
                     {SETTINGS_LABELS.sections.canvasConnection}
                   </span>

@@ -559,7 +559,7 @@ function FabSettings({
               padding: 'var(--space-2) var(--space-3)',
               fontSize: 'var(--text-sm)',
               backgroundColor: isPositionModified
-                ? 'var(--color-primary)'
+                ? 'var(--color-navy)'
                 : 'var(--bg-tertiary)',
               color: isPositionModified ? 'white' : 'var(--text-secondary)',
               border: 'none',

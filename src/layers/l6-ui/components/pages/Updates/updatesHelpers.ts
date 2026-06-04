@@ -79,7 +79,7 @@ export function getIconStyle(entityType: string): React.CSSProperties {
     case 'task':
       return {
         backgroundColor: 'var(--color-primary-bg, #dbeafe)',
-        color: 'var(--color-primary)',
+        color: 'var(--color-navy)',
       };
     case 'grade':
       return {
