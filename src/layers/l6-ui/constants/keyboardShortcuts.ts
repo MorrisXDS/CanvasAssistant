@@ -211,6 +211,8 @@ export const KEYBOARD_SHORTCUTS: ShortcutCategory[] = [
     scope: 'courses',
     subscope: 'courses',
     shortcuts: [
+      { keys: ['Alt', '1'], label: 'Jump to Courses section' },
+      { keys: ['Alt', '2'], label: 'Jump to Filter panel (when open)' },
       { keys: ['V'], label: 'Toggle grid/list view' },
       { keys: ['A', '/', '←'], label: 'Focus previous card (grid: left)' },
       { keys: ['D', '/', '→'], label: 'Focus next card (grid: right)' },

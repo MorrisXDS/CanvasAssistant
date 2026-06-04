@@ -24,6 +24,21 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ### Changed
 
+- `2026-06-04 01:01 UTC` — **CoursesPage now uses the shared section-nav scheme — completes the
+  ADR-0010 rollout (Phase 3 + codification).** CoursesPage joins the uniform in-page section-nav
+  scheme: `Alt+1` jumps to the Courses grid, `Alt+2` to the Filter panel (while it is open), and a
+  `SectionBar` indicator appears below the header once the filter panel is open (click a chip to
+  jump). Pressing `F` now both opens AND focuses the filter panel. No rebind was needed here — only
+  `Alt+Shift+*` quick-filters exist on this page, so plain `Alt+1`/`Alt+2` were already free
+  (unlike Calendar, which had to move its course-filter toggle). `Q`/`E` stay owned by the filter
+  panel's in-panel section walk (`enableCycle: false`). Internally CoursesPage keeps its two
+  per-scope `useKeymap` keymaps but now mirrors the shared `useSectionScope` `active` state as the
+  single source of truth (one-directional bridge); the keymaps are otherwise unchanged. This is the
+  **third and final** sectioned-page migration: the pattern is now codified as a CLAUDE.md §2
+  invariant ("Section navigation for multi-section pages") and **ADR-0010 is flipped
+  `Proposed → Accepted`** (the target scheme is now the realized scheme across CourseDetail,
+  Calendar, and CoursesPage). See `docs/adr/0010-section-nav-direct-jump-modifier.md`.
+
 - `2026-06-04 00:27 UTC` — **Calendar now uses the shared section-nav scheme + course-filter
   shortcut rebind (ADR-0010 Phase 2).** Calendar joins the uniform in-page section-nav scheme:
   `Alt+1` jumps to the Calendar grid, `Alt+2` to the Filter panel (while it is open), and a

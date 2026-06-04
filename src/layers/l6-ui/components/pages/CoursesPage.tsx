@@ -29,7 +29,8 @@ import { useCourseDragDrop } from './useCourseDragDrop';
 import { useMultiSelect } from '../../hooks/useMultiSelect';
 import { useFocusedItem } from '../../hooks/useFocusedItem';
 import { useKeymap } from '../../hooks/useKeymap';
-import { useRegisterSubscope } from '../../contexts/KeyboardScopeContext';
+import { useSectionScope } from '../../hooks/useSectionScope';
+import { SectionBar } from '../primitives';
 import { useUpdatesByCourse } from '../../hooks';
 import { settingsManager, STORAGE_KEYS } from '../../../l5-presentation/settings';
 import { getCourseColor, formatGrade } from '../../constants';
@@ -558,7 +559,7 @@ export function CoursesPage() {
   // since they fire regardless of scope.
   // ---------------------------------------------------------------------------
 
-  const { scope, setScope } = useKeymap<'courses' | 'filter'>(
+  const { setScope } = useKeymap<'courses' | 'filter'>(
     {
       courses: {
         // View toggle
@@ -570,7 +571,11 @@ export function CoursesPage() {
         f: (e) => {
           e.preventDefault();
           setShowFilters(true);
-          setScope('filter');
+          // Drive the section-nav `active` (single source of truth); the bridge
+          // effect mirrors it into the useKeymap router's scope. The one-render
+          // availability lag (`filter` only becomes available once `showFilters`
+          // flips) is bridged by the `focusedForThisOpenRef` one-shot effect.
+          goTo('filter');
           setFilterSection('filters-prefix');
           setFilterFocusIndex(0);
         },
@@ -713,7 +718,7 @@ export function CoursesPage() {
         f: (e) => {
           e.preventDefault();
           setShowFilters(false);
-          setScope('courses');
+          goTo('courses');
         },
         // Select / deselect all courses (courses section)
         'mod+a': (e) => {
@@ -727,10 +732,57 @@ export function CoursesPage() {
     { initialScope: 'courses' }
   );
 
-  const gridNavActive = scope === 'courses';
+  // Section navigation — the shared section-nav scheme (ADR-0010 / Phase 3).
+  // `useSectionScope` owns the `active` source of truth, registers Alt+1/Alt+2
+  // direct-jump, the re-scope effect (auto-advance off an unavailable section),
+  // and broadcasts the available sections to the `?` help modal (replacing the
+  // former `useRegisterSubscope` call). CoursesPage keeps its `useKeymap` router
+  // for the two intricate per-scope keybinding sets; the bridge effect below
+  // mirrors `active` into that router so a single source of truth drives both.
+  // `enableCycle: false` because Q/E are already load-bearing in the `filter`
+  // scope (prev/next filter SECTION) — registering the hook's Q/E cycle would
+  // double-bind on `document`. `enableDirectJump: true` with NO rebind: only
+  // `alt+shift+*` quick-filters exist here, so plain `Alt+1/Alt+2` is free.
+  // The `filter` section is a toggle, available only while the panel is open.
+  const { active, goTo, sections } = useSectionScope<'courses' | 'filter'>(
+    [
+      { id: 'courses', label: 'Courses' },
+      { id: 'filter', label: 'Filter', available: showFilters },
+    ],
+    { enableDirectJump: true, enableCycle: false }
+  );
 
-  // Broadcast active scope to help modal
-  useRegisterSubscope(scope, { courses: 'courses', filter: 'filter' });
+  // Bridge: mirror the hook's `active` (single source of truth) into the
+  // `useKeymap` router's internal scope. One direction only (active → scope);
+  // the router never writes back to `active`, so no loop.
+  useEffect(() => {
+    setScope(active);
+  }, [active, setScope]);
+
+  // F open-and-focus: the `f` handler flips `showFilters` true, but the `filter`
+  // section's availability — and therefore `goTo('filter')` — only updates a
+  // render later. This effect runs ONCE availability catches up on the open
+  // EDGE, so pressing F both opens the panel AND focuses it (SectionBar shows
+  // `filter`). It must be a ONE-SHOT on the false→true `showFilters` transition
+  // — NOT a continuous "force filter while open" — otherwise Alt+1 (jump back to
+  // `courses`) and a Courses-chip click would be instantly reverted to `filter`
+  // while the panel stays open, defeating ADR-0010's uniform Alt+1/Alt+2
+  // direct-jump. `focusedForThisOpenRef` re-arms when the panel closes and
+  // applies focus exactly once per open-session, then disarms.
+  const filterAvailable = sections.some((s) => s.id === 'filter' && s.isAvailable);
+  const focusedForThisOpenRef = useRef(false);
+  useEffect(() => {
+    if (!showFilters) {
+      focusedForThisOpenRef.current = false; // re-arm for the next open
+      return;
+    }
+    if (filterAvailable && !focusedForThisOpenRef.current) {
+      focusedForThisOpenRef.current = true;
+      if (active !== 'filter') goTo('filter');
+    }
+  }, [showFilters, filterAvailable, active, goTo]);
+
+  const gridNavActive = active === 'courses';
 
   // Filter section helpers used by the filter scope above
   const filterSectionRef = useRef(filterSection);
@@ -929,9 +981,9 @@ export function CoursesPage() {
   useStackAwareHotkeys(
     'esc',
     (e) => {
-      if (scope !== 'courses') {
+      if (active !== 'courses') {
         e.preventDefault();
-        setScope('courses');
+        goTo('courses');
         return;
       }
       if (showFilters) {
@@ -950,7 +1002,15 @@ export function CoursesPage() {
       }
     },
     {},
-    [scope, showFilters, selectMode, focusedIndex, resetCourseSelection, clearFocus]
+    [
+      active,
+      goTo,
+      showFilters,
+      selectMode,
+      focusedIndex,
+      resetCourseSelection,
+      clearFocus,
+    ]
   );
 
   return (
@@ -1105,6 +1165,18 @@ export function CoursesPage() {
           </div>
         </div>
       </header>
+
+      {/* Section navigation indicator — only when >1 section is available
+          (i.e. the filter panel is open, adding `filter` to `courses`). `goTo`
+          is a no-op for unavailable ids, so the wider `(id: string)` chip-click
+          signature is safe. Mirrors Calendar/CourseDetail's guard. */}
+      {sections.filter((s) => s.isAvailable).length > 1 && (
+        <SectionBar
+          sections={sections}
+          active={active}
+          onSelect={(id) => goTo(id as typeof active)}
+        />
+      )}
 
       {/* Selection Bar */}
       {selectMode && (
