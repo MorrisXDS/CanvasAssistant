@@ -13,6 +13,7 @@ import React, {
 } from 'react';
 import { useKeymap } from '../../hooks/useKeymap';
 import { useSectionScope } from '../../hooks/useSectionScope';
+import { useStackAwareHotkeys } from '../../hooks/useStackAwareHotkeys';
 import { SectionBar } from '../primitives';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { getEventId, positionEvents } from './calendarHelpers';
@@ -650,9 +651,6 @@ export function CalendarPage() {
     setView(order[(idx + 1) % order.length]);
   }, [view]);
 
-  // Track modal open state for hotkey gating
-  const isAnyModalOpenRef = useRef(false);
-
   // When the view mode changes, snap the focused date to the current period.
   // (We don't run this on every visibleRange change because shiftDay advances the
   // period itself when needed, and a naive snap-back would fight that.)
@@ -1029,17 +1027,6 @@ export function CalendarPage() {
       if (linkedEvent) handleOpenEditEvent(linkedEvent);
     }
   };
-
-  // Update modal-open ref for hotkey gating
-  useEffect(() => {
-    isAnyModalOpenRef.current =
-      !!selectedEvent ||
-      showEventFormModal ||
-      !!alertDialog ||
-      showImportModal ||
-      showDuplicateModal ||
-      !!eventPendingDelete;
-  });
 
   // Keyboard shortcuts (document-level so focus target doesn't matter)
   // ---------------------------------------------------------------------------
@@ -1553,10 +1540,9 @@ export function CalendarPage() {
     {
       initialScope: 'events',
       // No `when` needed — useKeymap auto-gates against the modal stack by
-      // default (ADR-0006). The manual `isAnyModalOpenRef` still serves the
-      // raw document-level Alt+Shift+D/P filter handler below; that handler
-      // is a candidate for migration to useStackAwareHotkeys (deferred to
-      // Phase 5 of the modal-stack rollout).
+      // default (ADR-0006). The cross-scope Alt+Shift+D/P/C/1-9 filter handler
+      // below is likewise stack-aware (it runs through useStackAwareHotkeys),
+      // so the whole keyboard surface is uniformly modal-gated.
     }
   );
 
@@ -1617,63 +1603,62 @@ export function CalendarPage() {
   }, [showFilters, filterAvailable, active, goTo]);
 
   // Cross-scope shortcuts: Alt+Shift+D/P/C and Alt+Shift+1-9 fire in both scopes.
-  // Kept as a separate small handler since useKeymap scopes them exclusively.
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement | null;
-      const tag = target?.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-      if (target?.isContentEditable) return;
-      if (isAnyModalOpenRef.current) return;
-
-      if (e.altKey && e.shiftKey && !e.ctrlKey && !e.metaKey) {
-        const key = e.key.toLowerCase();
-        if (key === 'd') {
-          e.preventDefault();
-          const order: DeadlineFilter[] = [
-            'all',
-            'overdue',
-            'today',
-            'this-week',
-            'this-month',
-          ];
-          const idx = order.indexOf(deadlineFilter);
-          setDeadlineFilter(order[(idx + 1) % order.length]);
-          return;
-        }
-        if (key === 'p') {
-          e.preventDefault();
-          const order: PriorityFilter[] = ['all', 'high', 'medium', 'low'];
-          const idx = order.indexOf(priorityFilter);
-          setPriorityFilter(order[(idx + 1) % order.length]);
-          return;
-        }
-        if (key === 'c') {
-          e.preventDefault();
-          clearFilters();
-          return;
-        }
+  // Routed through useStackAwareHotkeys (ADR-0006) rather than useKeymap because
+  // these must fire regardless of the current events/filter scope; useKeymap is
+  // scope-exclusive. The hook self-gates on the modal stack (replacing the former
+  // manual `isAnyModalOpenRef` check) and inherits react-hotkeys-hook's default
+  // form-tag/contentEditable suppression (enableOnFormTags:false,
+  // enableOnContentEditable:false — do NOT pass enableOnFormTags:true), which
+  // replaces the old INPUT/TEXTAREA/SELECT/isContentEditable early-returns. The
+  // Shift requirement is encoded in every combo string, keeping these mutually
+  // exclusive with useSectionScope's plain Alt+1..9 section-jump (ADR-0010); an
+  // extra Ctrl/Meta makes a different combo that won't match, subsuming the old
+  // !ctrlKey && !metaKey guard. Each Alt+Shift digit is enumerated because
+  // react-hotkeys-hook has no range syntax (mirrors useSectionScope's ALT_DIGIT_KEYS).
+  useStackAwareHotkeys(
+    'alt+shift+d, alt+shift+p, alt+shift+c, ' +
+      'alt+shift+1, alt+shift+2, alt+shift+3, alt+shift+4, alt+shift+5, ' +
+      'alt+shift+6, alt+shift+7, alt+shift+8, alt+shift+9',
+    (e) => {
+      const key = e.key.toLowerCase();
+      if (key === 'd') {
+        e.preventDefault();
+        const order: DeadlineFilter[] = [
+          'all',
+          'overdue',
+          'today',
+          'this-week',
+          'this-month',
+        ];
+        const idx = order.indexOf(deadlineFilter);
+        setDeadlineFilter(order[(idx + 1) % order.length]);
+        return;
       }
-
-      // Alt+Shift+1..9 toggles course filter by index. Rebound from the former
-      // Alt+1..9 (ADR-0010 Phase 2) so plain Alt+1..9 is free for section-jump
-      // (handled by useSectionScope). MUST require Shift here so the two are
-      // mutually exclusive: Alt+Shift+digit = course filter, plain Alt+digit =
-      // section jump. macOS composes Option+Shift+digit into a glyph, so
-      // `parseInt(e.key)` returns NaN there and this silently no-ops — preserved
-      // verbatim (we do not narrow the international-layout gap further).
-      if (e.altKey && e.shiftKey && !e.ctrlKey && !e.metaKey) {
-        const digit = parseInt(e.key, 10);
-        if (digit >= 1 && digit <= 9 && courses[digit - 1]) {
-          e.preventDefault();
-          toggleCourseFilter(courses[digit - 1].id);
-          return;
-        }
+      if (key === 'p') {
+        e.preventDefault();
+        const order: PriorityFilter[] = ['all', 'high', 'medium', 'low'];
+        const idx = order.indexOf(priorityFilter);
+        setPriorityFilter(order[(idx + 1) % order.length]);
+        return;
       }
-    };
-    document.addEventListener('keydown', handler);
-    return () => document.removeEventListener('keydown', handler);
-  }, [deadlineFilter, priorityFilter, courses, clearFilters, toggleCourseFilter]);
+      if (key === 'c') {
+        e.preventDefault();
+        clearFilters();
+        return;
+      }
+      // Alt+Shift+1..9 toggles course filter by index. macOS composes
+      // Option+Shift+digit into a glyph, so `parseInt(e.key)` returns NaN there
+      // and this silently no-ops — preserved verbatim (we do not narrow the
+      // international-layout gap further).
+      const digit = parseInt(e.key, 10);
+      if (digit >= 1 && digit <= 9 && courses[digit - 1]) {
+        e.preventDefault();
+        toggleCourseFilter(courses[digit - 1].id);
+      }
+    },
+    {},
+    [deadlineFilter, priorityFilter, courses, clearFilters, toggleCourseFilter]
+  );
 
   return (
     <div

@@ -108,6 +108,14 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ### Fixed
 
+- `2026-06-04 03:31 UTC` — **Calendar's `Alt+Shift` cross-scope shortcuts fired over open modals (ADR-0006).**
+  Calendar's `Alt+Shift+D`/`Alt+Shift+P` filter cycles, `Alt+Shift+C` clear, and `Alt+Shift+1-9`
+  course-filter toggles ran off a raw `document` `keydown` listener gated by a hand-maintained
+  `isAnyModalOpenRef`. Migrated them to `useStackAwareHotkeys`, which natively self-gates to the
+  modal stack — the shortcuts no longer fire while any modal is open, replacing the brittle manual
+  ref aggregation. Behaviour is otherwise unchanged (same cycle orders, same `Alt+1-9` vs
+  `Alt+Shift+1-9` separation from section direct-jump, same form-field/modifier suppression).
+
 - `2026-06-04 03:30 UTC` — **TaskDetailModal (Calendar event detail) keystrokes leaked to the page
   and fired under stacked modals (ADR-0006).** The modal's `Esc`/`E`/`G`/`X`/`Delete`·`Backspace`
   shortcuts ran off a raw `document` `keydown` listener, so they stayed live whenever any other modal

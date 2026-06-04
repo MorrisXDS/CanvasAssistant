@@ -81,13 +81,22 @@ jest.mock('../../../../src/layers/l6-ui/components/Calendar/CalendarFilterPanel'
   CalendarFilterPanel: ({
     keyboardSection,
     selectedCourses,
+    deadlineFilter,
+    priorityFilter,
   }: {
     keyboardSection?: string | null;
     selectedCourses?: Set<number> | null;
+    deadlineFilter?: string;
+    priorityFilter?: string;
   }) => (
     <div
       data-testid="filter-panel"
       data-kbd-section={String(keyboardSection)}
+      // The page's `deadlineFilter`/`priorityFilter` state, echoed so the
+      // Alt+Shift+D / Alt+Shift+P cycle tests can read the current value
+      // directly off the panel (the migration touches those exact branches).
+      data-deadline-filter={String(deadlineFilter)}
+      data-priority-filter={String(priorityFilter)}
       // `selectedCourses` is the page's course-filter state (null === "all"
       // selected). Serialize it so the rebind tests can assert exactly which
       // course toggleCourseFilter touched, sorted for determinism.
@@ -101,7 +110,10 @@ jest.mock('../../../../src/layers/l6-ui/components/Calendar/CalendarFilterPanel'
 }));
 
 // Import AFTER the mocks so the page picks up the stubbed children.
-import { ModalStackProvider } from '../../../../src/layers/l6-ui/contexts/ModalStackContext';
+import {
+  ModalStackProvider,
+  useModalStack,
+} from '../../../../src/layers/l6-ui/contexts/ModalStackContext';
 import { KeyboardScopeProvider } from '../../../../src/layers/l6-ui/contexts/KeyboardScopeContext';
 import { CalendarPage } from '../../../../src/layers/l6-ui/components/Calendar';
 import { useStore } from '../../../../src/layers/l5-presentation/store';
@@ -191,6 +203,51 @@ async function renderCalendar(env: TestEnv, courseCount = 3) {
   return { ...result, courses };
 }
 
+/**
+ * Like `renderCalendar`, but renders a controllable `ModalStackPusher` SIBLING
+ * inside the SAME ModalStackProvider so the modal-stack gate can be toggled.
+ * `modalOpen=true` pushes a modal entry (page shortcuts suppressed); rerender
+ * with `modalOpen=false` pops it (shortcuts re-enabled). Returns `rerender` so
+ * the gate test can pop the modal in-place.
+ */
+async function renderCalendarWithModal(env: TestEnv, courseCount = 3, modalOpen = true) {
+  const courses = Array.from({ length: courseCount }, (_, i) => makeCourse(i + 1));
+
+  seedApi(env);
+
+  useStore.setState({
+    courses,
+    tasks: [],
+    calendarEvents: [],
+    importedCalendars: [],
+  });
+
+  const tree = (open: boolean) => (
+    <ModalStackProvider>
+      <KeyboardScopeProvider>
+        <MemoryRouter initialEntries={['/calendar']}>
+          <CalendarPage />
+        </MemoryRouter>
+        <ModalStackPusher open={open} />
+      </KeyboardScopeProvider>
+    </ModalStackProvider>
+  );
+
+  const result = render(tree(modalOpen));
+  await act(async () => {});
+  await act(async () => {});
+  return {
+    ...result,
+    courses,
+    setModalOpen: async (open: boolean) => {
+      await act(async () => {
+        result.rerender(tree(open));
+      });
+      await act(async () => {});
+    },
+  };
+}
+
 /** Dispatch a real keydown on `document` (every listener's target). */
 async function press(key: string, opts: { altKey?: boolean; shiftKey?: boolean } = {}) {
   await act(async () => {
@@ -230,10 +287,49 @@ function selectedCourses(): 'all' | number[] | undefined {
   return raw ? (JSON.parse(raw) as number[]) : undefined;
 }
 
+/**
+ * The page's `deadlineFilter` state, echoed by the filter-panel stub. Only
+ * readable while the panel is OPEN. Returns the filter string, or undefined
+ * when the panel is closed.
+ */
+function deadlineFilterValue(): string | undefined {
+  const panel = screen.queryByTestId('filter-panel');
+  return panel ? (panel.getAttribute('data-deadline-filter') ?? undefined) : undefined;
+}
+
+/**
+ * The page's `priorityFilter` state, echoed by the filter-panel stub. Only
+ * readable while the panel is OPEN. Returns the filter string, or undefined
+ * when the panel is closed.
+ */
+function priorityFilterValue(): string | undefined {
+  const panel = screen.queryByTestId('filter-panel');
+  return panel ? (panel.getAttribute('data-priority-filter') ?? undefined) : undefined;
+}
+
 /** Open the filter panel via the events-scope `f` handler and settle. */
 async function openFilterPanel() {
   await press('f');
   await act(async () => {});
+}
+
+/**
+ * Pushes a modal entry onto the ModalStackContext on mount and pops it on
+ * unmount — the same harness AnnouncementDetail's gate test uses to drive
+ * `useIsAnyModalOpen()` true. Rendered as a SIBLING of CalendarPage inside the
+ * SAME ModalStackProvider, so the page's `useStackAwareHotkeys` sees the open
+ * modal and self-suppresses. Toggling the `open` prop pops the entry, which
+ * re-enables the page's cross-scope shortcuts (proves it's the modal gate, not
+ * a teardown).
+ */
+function ModalStackPusher({ open }: { open: boolean }) {
+  const { push, pop } = useModalStack();
+  React.useEffect(() => {
+    if (!open) return;
+    push({ id: 'test-modal' });
+    return () => pop('test-modal');
+  }, [open, push, pop]);
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -487,5 +583,106 @@ describe('Calendar — section navigation + course-filter rebind (Phase 2)', () 
     expect(Array.isArray(sections)).toBe(true);
     expect(sections!.map((s) => s.id)).toEqual(['events', 'filter']);
     expect(sections!.find((s) => s.id === 'filter')?.index1).toBe(2);
+  });
+
+  // -------------------------------------------------------------------------
+  // C. ADR-0006 migration — the cross-scope Alt+Shift handler now self-gates on
+  //    the modal stack via useStackAwareHotkeys (replacing the deleted manual
+  //    `isAnyModalOpenRef` check). These are the NEW cases the migration adds.
+  // -------------------------------------------------------------------------
+
+  it('★ modal open → Alt+Shift+D/P/C and Alt+Shift+1 ALL no-op (replaces the manual isAnyModalOpenRef gate)', async () => {
+    // THE ADR-0006 win. A modal is pushed onto the stack, so the page's
+    // useStackAwareHotkeys is `enabled:false`. None of the four cross-scope
+    // combos may mutate any filter while the modal is open.
+    // Render with NO modal first, open the panel (the `f` keymap is itself
+    // modal-gated, so it must open before the modal is pushed) and capture the
+    // all/all/all baseline, THEN push the modal.
+    const { setModalOpen } = await renderCalendarWithModal(env, 3, false);
+    await openFilterPanel(); // open the panel so the filter state is observable
+    // Sanity: the panel echoes the initial all/all/all baseline.
+    expect(selectedCourses()).toBe('all');
+    expect(deadlineFilterValue()).toBe('all');
+    expect(priorityFilterValue()).toBe('all');
+
+    // Push the modal onto the stack → the page's useStackAwareHotkeys disables.
+    await setModalOpen(true);
+
+    // With the modal on the stack, every combo is swallowed by the hook's gate.
+    await press('d', { altKey: true, shiftKey: true });
+    await press('p', { altKey: true, shiftKey: true });
+    await press('c', { altKey: true, shiftKey: true });
+    await press('1', { altKey: true, shiftKey: true });
+
+    // Filters are UNCHANGED — the modal gate suppressed all four.
+    expect(deadlineFilterValue()).toBe('all');
+    expect(priorityFilterValue()).toBe('all');
+    expect(selectedCourses()).toBe('all');
+
+    // Pop the modal → the same combos fire again (proves it was the modal gate,
+    // not a teardown of the listener).
+    await setModalOpen(false);
+    await press('d', { altKey: true, shiftKey: true });
+    expect(deadlineFilterValue()).toBe('overdue');
+    await press('1', { altKey: true, shiftKey: true });
+    expect(selectedCourses()).toEqual([2, 3]);
+  });
+
+  it('Alt+Shift+D cycles the deadline filter through its 5-element order and wraps', async () => {
+    // The migration copied the deadline order verbatim:
+    // ['all','overdue','today','this-week','this-month'] rotated (idx+1)%len.
+    await renderCalendar(env, 3);
+    await openFilterPanel();
+    expect(deadlineFilterValue()).toBe('all');
+
+    await press('d', { altKey: true, shiftKey: true });
+    expect(deadlineFilterValue()).toBe('overdue');
+    await press('d', { altKey: true, shiftKey: true });
+    expect(deadlineFilterValue()).toBe('today');
+    await press('d', { altKey: true, shiftKey: true });
+    expect(deadlineFilterValue()).toBe('this-week');
+    await press('d', { altKey: true, shiftKey: true });
+    expect(deadlineFilterValue()).toBe('this-month');
+    // Wrap-around: this-month → all.
+    await press('d', { altKey: true, shiftKey: true });
+    expect(deadlineFilterValue()).toBe('all');
+  });
+
+  it('Alt+Shift+P cycles the priority filter through all→high→medium→low→all', async () => {
+    // The migration copied the priority order verbatim: ['all','high','medium','low'].
+    await renderCalendar(env, 3);
+    await openFilterPanel();
+    expect(priorityFilterValue()).toBe('all');
+
+    await press('p', { altKey: true, shiftKey: true });
+    expect(priorityFilterValue()).toBe('high');
+    await press('p', { altKey: true, shiftKey: true });
+    expect(priorityFilterValue()).toBe('medium');
+    await press('p', { altKey: true, shiftKey: true });
+    expect(priorityFilterValue()).toBe('low');
+    // Wrap-around: low → all.
+    await press('p', { altKey: true, shiftKey: true });
+    expect(priorityFilterValue()).toBe('all');
+  });
+
+  it('Alt+Shift+1 does NOT move the active SECTION — the other direction of mutual exclusivity', async () => {
+    // The plain-Alt+1 → filter-toggle no-op guard already pins one direction.
+    // This pins the other: Alt+SHIFT+1 is the course-filter toggle and must NOT
+    // be picked up by useSectionScope's plain-Alt+1 section direct-jump.
+    await renderCalendar(env, 3);
+    await press('f'); // open panel → both sections available, active = filter
+    await act(async () => {});
+    expect(activeChipLabel()).toBe('Filter');
+
+    // Jump to events first so we have a definite section to watch.
+    await press('1', { altKey: true }); // plain Alt+1 → events
+    expect(activeChipLabel()).toBe('Calendar');
+
+    // Alt+Shift+1 toggles the course filter — it must leave `active` on events
+    // (NOT jump as if it were the section direct-jump).
+    await press('1', { altKey: true, shiftKey: true });
+    expect(activeChipLabel()).toBe('Calendar'); // section unchanged
+    // And it DID toggle the course filter (course 1 dropped → {2,3}).
+    expect(selectedCourses()).toEqual([2, 3]);
   });
 });
