@@ -2,15 +2,22 @@
  * seedDuplicateWarning.js — shared duplicate-warning seed matrix (plain CJS).
  *
  * Single source of truth for the deterministic DuplicateWarningModal scenario,
- * consumed by BOTH:
- *   1. scripts/manual-test-duplicate-warning.js (the manual-test CLI), and
- *   2. e2e/fixtures/seed.ts (the opt-in `seedDuplicates` Playwright fixture).
+ * consumed by:
+ *   1. scripts/manual-test-duplicate-warning.js (the manual-test CLI — discovers
+ *      its own first-2-visible courses in a copied/real DB), and
+ *   2. e2e/fixtures/seedDatabase.js (the unified deterministic e2e seed, which
+ *      imports `seedDuplicateMatrix(db, aId, bId)` and applies it to the fixed
+ *      deterministic courses A/B it just inserted — ONE seed path, no DB copy).
  *
- * It can be used two ways:
- *   - require()'d:  const { seedDuplicateWarning } = require('./seedDuplicateWarning');
- *                   seedDuplicateWarning(dbPath) -> { courseA, courseB }
- *   - spawned:      <runner> seedDuplicateWarning.js <dbPath>
- *                   -> seeds + prints COURSE_A=id:code / COURSE_B=id:code to stdout.
+ * It can be used three ways:
+ *   - require the matrix builder (the e2e path, against explicit course ids):
+ *        const { seedDuplicateMatrix } = require('./seedDuplicateWarning');
+ *        seedDuplicateMatrix(db, aId, bId)   // db = an open better-sqlite3 handle
+ *   - require the standalone wrapper (the CLI path, discovers visible courses):
+ *        const { seedDuplicateWarning } = require('./seedDuplicateWarning');
+ *        seedDuplicateWarning(dbPath) -> { courseA, courseB }
+ *   - spawned:  <runner> seedDuplicateWarning.js <dbPath>
+ *        -> seeds + prints COURSE_A=id:code / COURSE_B=id:code to stdout.
  *
  * ── NATIVE ABI REQUIREMENT (the load-bearing gotcha) ─────────────────────────
  * This module `require('better-sqlite3')`, whose compiled `.node` addon is built
@@ -70,37 +77,38 @@ function buildCanvasBlob(o) {
 }
 
 /**
- * Seed the deterministic duplicate-warning matrix into the SQLite DB at `dbPath`.
+ * Apply the deterministic duplicate-warning matrix to an ALREADY-OPEN database
+ * handle, against EXPLICIT course ids. This is the single source of truth for the
+ * matrix; both the standalone wrapper (below) and the unified e2e seed
+ * (`seedDatabase.js`) funnel through it.
  *
- * Course A: comprehensive matrix — 6 duplicate pairs + 1 no-match control. Each
- *           pair exercises a distinct branch of detection / conflict logic; the
- *           whole set is also bulk-testable via "Accept all".
- * Course B: one clean single-mode fuzzy case, separate from the noise in Course A.
+ * Course A (`courseAId`): comprehensive matrix — 6 duplicate pairs + 1 no-match
+ *           control. Each pair exercises a distinct branch of detection / conflict
+ *           logic; the whole set is also bulk-testable via "Accept all".
+ * Course B (`courseBId`): one clean single-mode fuzzy case, separate from the
+ *           noise in Course A.
  *
- * Idempotent: every insert is `INSERT OR IGNORE` keyed on the `DUP_WARN_TEST_*` tag,
- * so re-running against the same copy is a no-op.
+ * Idempotent: every insert is `INSERT OR IGNORE` keyed on the `DUP_WARN_TEST_*`
+ * tag, so re-running against the same DB is a no-op. Does NOT open/close the DB —
+ * the caller owns the handle (so it can compose this with other seed inserts in
+ * one connection).
  *
- * @param {string} dbPath absolute path to the (copied/disposable) canvas.db
- * @returns {{ courseA: {id:number, code:string}, courseB: {id:number, code:string} }}
- * @throws if the DB has no visible courses (caller should treat as skip)
+ * NOTE: the matrix uses FIXED absolute dates. That is intentional and safe — the
+ * specs that consume the matrix (`modal-stack-duplicate.spec.ts`) assert on modal
+ * presence / section focus / scroll suppression, NOT on relative-date text or
+ * filter buckets, so a stale absolute date never flips an assertion here. (The
+ * status-deriving `tasks` rows in `seedDatabase.js` use RELATIVE dates — see that
+ * file's date rationale.)
+ *
+ * @param {import('better-sqlite3').Database} db an open better-sqlite3 handle
+ * @param {number} courseAId id of the comprehensive-matrix course
+ * @param {number} courseBId id of the single-fuzzy course
  */
-function seedDuplicateWarning(dbPath) {
-  const db = new Database(dbPath);
-  db.pragma('journal_mode = WAL');
+function seedDuplicateMatrix(db, courseAId, courseBId) {
+  const cA = { id: courseAId };
+  const cB = { id: courseBId };
 
-  try {
-    const courses = db
-      .prepare(
-        'SELECT id, code FROM courses WHERE archived_at IS NULL AND deleted_at IS NULL AND is_hidden=0 LIMIT 2'
-      )
-      .all();
-    if (!courses.length) {
-      throw new Error('No visible courses');
-    }
-    const cA = courses[0];
-    const cB = courses[1] || courses[0];
-
-    const insertUser = db.prepare(
+  const insertUser = db.prepare(
       "INSERT OR IGNORE INTO tasks (course_id, title, source_type, weight, due_at, task_type) VALUES (?, ?, 'user', ?, ?, ?)"
     );
     const insertQueue = db.prepare(
@@ -217,6 +225,34 @@ function seedDuplicateWarning(dbPath) {
       queue_task_type: 'assignment',
     });
 
+}
+
+/**
+ * Standalone wrapper (the manual-test CLI / subprocess path): open the DB at
+ * `dbPath`, discover the first 2 visible courses, apply the matrix to them, close.
+ *
+ * @param {string} dbPath absolute path to the (copied/disposable) canvas.db
+ * @returns {{ courseA: {id:number, code:string}, courseB: {id:number, code:string} }}
+ * @throws if the DB has no visible courses (caller should treat as skip)
+ */
+function seedDuplicateWarning(dbPath) {
+  const db = new Database(dbPath);
+  db.pragma('journal_mode = WAL');
+
+  try {
+    const courses = db
+      .prepare(
+        'SELECT id, code FROM courses WHERE archived_at IS NULL AND deleted_at IS NULL AND is_hidden=0 LIMIT 2'
+      )
+      .all();
+    if (!courses.length) {
+      throw new Error('No visible courses');
+    }
+    const cA = courses[0];
+    const cB = courses[1] || courses[0];
+
+    seedDuplicateMatrix(db, cA.id, cB.id);
+
     return {
       courseA: { id: cA.id, code: cA.code },
       courseB: { id: cB.id, code: cB.code },
@@ -226,7 +262,7 @@ function seedDuplicateWarning(dbPath) {
   }
 }
 
-module.exports = { seedDuplicateWarning, TEST_TAG };
+module.exports = { seedDuplicateWarning, seedDuplicateMatrix, buildCanvasBlob, TEST_TAG };
 
 // ── Subprocess entrypoint ───────────────────────────────────────────────────
 // `<runner> seedDuplicateWarning.js <dbPath>` — seeds + prints the course markers.

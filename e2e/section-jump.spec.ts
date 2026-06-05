@@ -33,10 +33,8 @@ async function findCourseWithSections(page: Page): Promise<number | null> {
 test.describe('Section direct-jump (Alt+1..N)', () => {
   test('CourseDetail: Alt+1/Alt+2 move the active section chip', async ({ page }) => {
     const courseId = await findCourseWithSections(page);
-    test.skip(
-      courseId === null,
-      'No course with ≥2 available sections in the seed (SectionBar absent)'
-    );
+    // Course A has Tasks + Queue + Announcements → SectionBar (>=2) guaranteed (ADR-0011).
+    expect(courseId).not.toBeNull();
 
     await gotoCourse(page, courseId as number);
     const bar = sectionBar(page);

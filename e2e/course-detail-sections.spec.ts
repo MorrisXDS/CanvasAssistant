@@ -51,7 +51,9 @@ async function focusQueueSection(page: Page): Promise<void> {
 test.describe('Course Detail — Queue section keyboard (item 3)', () => {
   test('Q focuses Queue (auto-expands); W/S walk queued cards', async ({ page }) => {
     const courseId = await findCourseWithQueue(page);
-    test.skip(courseId === null, 'No course with queued tasks in the seeded DB');
+    // The deterministic seed always puts the duplicate-warning matrix on Course A,
+    // so a course with queued tasks is guaranteed (ADR-0011).
+    expect(courseId).not.toBeNull();
 
     await gotoCourse(page, courseId as number);
     await focusQueueSection(page);
@@ -105,7 +107,8 @@ test.describe('Course Detail — Announcements section keyboard (item 4)', () =>
     page,
   }) => {
     const id = await findCourseWithAnnouncements(page);
-    test.skip(id === null, 'No course with announcements in the seeded DB');
+    // The deterministic seed always puts >=2 announcements on Course A (ADR-0011).
+    expect(id).not.toBeNull();
     const courseId = id as number;
 
     await focusSectionByKey(page, announceKey(courseId));
@@ -137,7 +140,8 @@ test.describe('Course Detail — Announcements section keyboard (item 4)', () =>
 test.describe('Course Detail — Q/E section cycling', () => {
   test('Q/E move keyboard control across ≥2 sections', async ({ page }) => {
     const id = await findCourseWithAnnouncements(page);
-    test.skip(id === null, 'Needs a course with at least one section beyond Tasks');
+    // Course A has Tasks + Queue + Announcements → >=2 sections guaranteed (ADR-0011).
+    expect(id).not.toBeNull();
     const courseId = id as number;
 
     const scopeKeys = [

@@ -1,8 +1,8 @@
 /**
  * AnnouncementDetail route-gap coverage (`#/announcement/:id`). Discovers a
  * notification id by walking visible courses, navigates directly, and asserts
- * the `<h1>` matches the notification's title. Skips when the seed has no
- * announcements across any visible course.
+ * the `<h1>` matches the notification's title. The deterministic seed guarantees
+ * >=2 announcements on Course A, so this is a hard precondition (ADR-0011).
  */
 import { test, expect } from './fixtures/app';
 import { getCourses } from './helpers';
@@ -32,10 +32,8 @@ test.describe('AnnouncementDetail route', () => {
       }
     }
 
-    test.skip(
-      found === null,
-      'No announcements found across visible courses in the seed'
-    );
+    // The deterministic seed always puts >=2 announcements on Course A (ADR-0011).
+    expect(found).not.toBeNull();
     const notification = found as { id: number; title: string };
 
     await page.evaluate((id) => {

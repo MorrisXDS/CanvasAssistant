@@ -4,7 +4,8 @@ import type { Page } from '@playwright/test';
 /**
  * Keyboard focus-navigation coverage for the list pages. Asserts BEHAVIOR via the
  * deterministic `focus:<persistKey>` sessionStorage signal + data-focus-scope rows —
- * never data/counts (which depend on the copied real DB). Skips a page that has no items.
+ * never data/counts. The deterministic seed (ADR-0011) guarantees focusable rows on
+ * every list page, so the row-count check is a hard precondition (no skipping).
  */
 
 interface PageCfg {
@@ -75,7 +76,9 @@ for (const [name, cfg] of Object.entries(PAGES)) {
   test.describe(`${name} page — keyboard`, () => {
     test('focus navigation walks rows (persisted index)', async ({ page }) => {
       const count = await gotoPage(page, cfg);
-      test.skip(count === 0, `${name} has no focusable rows in the seeded DB`);
+      // The deterministic seed guarantees focusable rows on every list page
+      // (>=2 courses, >=5 tasks, >=2 announcements, queued updates) — ADR-0011.
+      expect(count).toBeGreaterThan(0);
 
       // Nav style varies per page (vertical list vs 2D grid), so assert the
       // invariant — focus engages, moves on next, returns on prev — not exact indices.
@@ -98,7 +101,8 @@ for (const [name, cfg] of Object.entries(PAGES)) {
     if (cfg.enterHash) {
       test('Enter on a focused row navigates to its detail', async ({ page }) => {
         const count = await gotoPage(page, cfg);
-        test.skip(count === 0, `${name} has no focusable rows in the seeded DB`);
+        // The deterministic seed guarantees focusable rows on every list page (ADR-0011).
+        expect(count).toBeGreaterThan(0);
 
         await page.keyboard.press(cfg.nextKey); // focus row 0
         await page.keyboard.press('Enter');

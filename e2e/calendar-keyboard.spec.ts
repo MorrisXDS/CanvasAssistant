@@ -52,7 +52,8 @@ test.describe('Calendar — quick-filter shortcuts', () => {
           ).api.getCourses()
         ).length
     );
-    test.skip(courseCount === 0, 'No courses in the seeded DB');
+    // The deterministic seed always inserts 2 visible courses (ADR-0011).
+    expect(courseCount).toBeGreaterThan(0);
 
     await gotoCalendar(page);
     await expect(badge(page)).toHaveCount(0);

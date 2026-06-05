@@ -10,6 +10,22 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ## [Unreleased]
 
+### Changed
+
+- `2026-06-05 02:45 UTC` — **e2e suite now runs against a deterministic generated seed —
+  portable and skip-free.** The suite no longer copies the dev machine's real `canvas.db`
+  (which made it non-portable to a fresh clone and let data drift silently erode coverage via
+  data-tolerant `test.skip`). Instead a Playwright `globalSetup` builds the schema once from an
+  empty DB via the app's own migrations + runtime self-heal (launching the built app against an
+  empty cwd, polling `schema_version` to the final migration), then each test copies that schema
+  template and INSERT-seeds a fixed known dataset through an Electron-as-Node subprocess (one
+  unified seed lib, sharing the duplicate-warning matrix). Every data-tolerant `test.skip`
+  became a hard precondition assertion, enforced going forward by a custom skip-guard reporter
+  that fails the run on any unexpected skip. Verified locally: 33/33 specs pass, 0 skipped,
+  deterministic across 4 runs; portability proven by renaming the real `canvas.db` aside and
+  running the full suite green (real DB restored intact by checksum). Test-infra only; no
+  `src/**`, schema, or IPC impact; e2e stays local-only (off CI). See ADR-0011.
+
 ### Added
 
 - `2026-06-05 01:58 UTC` — **e2e harness now captures failure diagnostics and runs an HTML

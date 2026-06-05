@@ -14,7 +14,8 @@ test.describe('Mutation — add task', () => {
     page,
   }) => {
     const courses = await getCourses(page);
-    test.skip(courses.length === 0, 'No visible course in the seed to add a task to');
+    // The deterministic seed always inserts 2 visible courses (ADR-0011).
+    expect(courses.length).toBeGreaterThan(0);
     const courseId = courses[0].id;
 
     const title = `e2e-add-${Date.now()}`;
