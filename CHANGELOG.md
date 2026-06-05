@@ -12,6 +12,10 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ### Docs
 
+- `2026-06-05 20:46 UTC` — **README: added a "Build for production" section** (compile + `npm run package`
+  per-platform + the `v*`-tag release flow) and **removed the Project status and Author
+  sections.**
+
 - `2026-06-05 20:37 UTC` — **Added `docs/ARCHITECTURE.md` + `CONTRIBUTING.md`.** ARCHITECTURE
   is a holistic tour (7-layer stack, process/IPC model, sync data flow, persistence, the
   course-visibility invariant, and the fitness-function tests that enforce the rules) that
