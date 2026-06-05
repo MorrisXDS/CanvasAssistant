@@ -79,11 +79,14 @@ test.describe('Modal stack — ADR-0006', () => {
     // Help modal's Tab 1 should be labeled with the topmost-OTHER modal's
     // category title — "Confirm dialog" from CONFIRM_DIALOG_SHORTCUTS.
     // The tab is a role="tab" button inside the help dialog.
-    const tabLabel = await page
-      .locator('[role="tab"][aria-selected="true"]')
-      .first()
-      .textContent();
-    expect(tabLabel?.trim()).toBe('Confirm dialog');
+    //
+    // Use a retrying assertion (not a one-shot textContent): the Help modal's
+    // first render can momentarily show the page scope ("Course Detail") before
+    // it re-renders with the resolved modal-stack category. A one-shot read can
+    // catch that pre-settle frame; `toHaveText` polls until it settles.
+    await expect(page.locator('[role="tab"][aria-selected="true"]').first()).toHaveText(
+      'Confirm dialog'
+    );
   });
 
   test('Arrow-key browser scroll is preventDefault()-ed while a modal is open', async ({
