@@ -52,6 +52,17 @@ const COURSE_B = { id: 90002, external_id: 'E2E_COURSE_B', code: 'E2E202', name:
 // it never interferes with the A/B-scoped specs.
 const COURSE_C = { id: 90003, external_id: 'E2E_COURSE_C', code: 'E2E303', name: 'E2E Course C' };
 
+// ── Visibility-invariant courses (consumed by visibility.spec.ts) ────────────
+// D is HIDDEN (is_hidden=1) and E is ARCHIVED (archived_at set). Both are
+// non-visible by the VisibilityOracle predicate, so they are absent from
+// getCourses()/visible tasks AND from every existing spec's view (those specs
+// count visible entities with `>0`/`toContain`, never an exact total — see the
+// architect plan's seed-isolation analysis). E (archived, not hidden, not
+// deleted) is the one that appears in getArchivedCourses(); D (hidden) appears
+// in NEITHER set. Each carries one task to prove visibility filters TASKS too.
+const COURSE_D = { id: 90004, external_id: 'E2E_COURSE_D', code: 'E2E404', name: 'E2E Hidden Course' };
+const COURSE_E = { id: 90005, external_id: 'E2E_COURSE_E', code: 'E2E505', name: 'E2E Archived Course' };
+
 /** ISO string for `now + days` (days may be negative for the past). */
 function isoOffsetDays(now, days) {
   return new Date(now.getTime() + days * 24 * 60 * 60 * 1000).toISOString();
@@ -95,6 +106,36 @@ function seedDatabase(dbPath) {
       for (const c of [COURSE_A, COURSE_B, COURSE_C]) {
         insertCourse.run(c.id, c.external_id, c.code, c.name);
       }
+
+      // ── Non-visible courses D (hidden) + E (archived) ───────────────────────
+      // A DISTINCT prepared insert that sets is_hidden / archived_at EXPLICITLY.
+      // The insertCourse above hardcodes is_hidden=0 and omits archived_at, so a
+      // hidden/archived course MUST go through this path or the flag silently
+      // defaults and the visibility spec would false-pass (course stays visible).
+      // visibility.spec.ts reads getCourses()/getArchivedCourses() back to PROVE
+      // the flags actually landed.
+      const insertCourseHiddenArchived = db.prepare(
+        `INSERT OR IGNORE INTO courses (id, external_id, code, name, is_hidden, archived_at)
+         VALUES (?, ?, ?, ?, ?, ?)`
+      );
+      // D: hidden (is_hidden=1), not archived.
+      insertCourseHiddenArchived.run(
+        COURSE_D.id,
+        COURSE_D.external_id,
+        COURSE_D.code,
+        COURSE_D.name,
+        1,
+        null
+      );
+      // E: archived (archived_at set), not hidden.
+      insertCourseHiddenArchived.run(
+        COURSE_E.id,
+        COURSE_E.external_id,
+        COURSE_E.code,
+        COURSE_E.name,
+        0,
+        isoOffsetDays(now, -1)
+      );
 
       // ── Course A filter-status tasks (one per derived bucket) ───────────────
       // Derivation (CourseDetail.tsx, evaluated top-down per task):
@@ -171,6 +212,34 @@ function seedDatabase(dbPath) {
         title: 'E2E Non-Graded Task',
         due_at: dueFuture,
         task_type: 'info',
+        grade: null,
+        is_completed: 0,
+        submission_status: null,
+        is_optional: 0,
+      });
+
+      // ── Tasks on the non-visible courses D (hidden) + E (archived) ──────────
+      // These prove the visibility filter excludes TASKS belonging to hidden /
+      // archived courses, not just the course rows themselves. They must NOT
+      // appear in getTasks({courseIds:'all'}) (which still filters to visible
+      // courses). External ids are distinct so the spec can target them.
+      insertTask.run({
+        external_id: 'E2E_TASK_HIDDEN_D',
+        course_id: COURSE_D.id,
+        title: 'E2E Hidden-Course Task',
+        due_at: dueFuture,
+        task_type: 'assignment',
+        grade: null,
+        is_completed: 0,
+        submission_status: null,
+        is_optional: 0,
+      });
+      insertTask.run({
+        external_id: 'E2E_TASK_ARCHIVED_E',
+        course_id: COURSE_E.id,
+        title: 'E2E Archived-Course Task',
+        due_at: dueFuture,
+        task_type: 'assignment',
         grade: null,
         is_completed: 0,
         submission_status: null,
@@ -274,6 +343,40 @@ function seedDatabase(dbPath) {
         subtitle: 'A second new Canvas task is ready to accept.',
       });
 
+      // ── ONE conflict update on Course A (consumed by updates-conflict.spec) ─
+      // The Updates page groups conflicts (entity_type='conflict', resolved_at
+      // IS NULL) into the "needs review" conflicts[] array and renders a
+      // ConflictItem (local vs Canvas values + Keep Local / Use Canvas). This
+      // is the ONLY observable conflict UI — SyncConflictModal is disabled
+      // (Layout.tsx). Conflicts do NOT enter the `updates-page` keyboard focus
+      // scope (that's built only from non-conflict action tasks — see
+      // UpdatesPage.flatActionTasks), so this row does not change the focusable
+      // row count page-keyboard.spec.ts relies on.
+      //
+      // Schema (migration v99): entity_type/change_type CHECKs both allow
+      // 'conflict'; entity_id is INTEGER NOT NULL; conflict_field/old_value/
+      // new_value/external_id feed ConflictItem (external_id = the resolve id).
+      // Reuses E2E_SESSION_1 (the TEXT FK target inserted above).
+      db.prepare(
+        `INSERT OR IGNORE INTO sync_updates
+           (sync_session_id, course_id, entity_type, entity_id, external_id,
+            change_type, title, subtitle, conflict_field, old_value, new_value,
+            is_action_required, seen_at, resolved_at)
+         VALUES (@session, @course_id, 'conflict', @entity_id, @external_id,
+            'conflict', @title, @subtitle, @conflict_field, @old_value,
+            @new_value, 1, NULL, NULL)`
+      ).run({
+        session: sessionId,
+        course_id: COURSE_A.id,
+        entity_id: 77001,
+        external_id: 'E2E_CONFLICT_1',
+        title: 'E2E Conflicted Task',
+        subtitle: 'Local and Canvas disagree on the due date.',
+        conflict_field: 'dueAt',
+        old_value: JSON.stringify('2026-06-10T23:59:00Z'),
+        new_value: JSON.stringify('2026-06-12T23:59:00Z'),
+      });
+
       // ── Duplicate-warning matrix (ONE source, on the deterministic courses) ──
       seedDuplicateMatrix(db, COURSE_A.id, COURSE_B.id);
     })();
@@ -282,12 +385,16 @@ function seedDatabase(dbPath) {
       courseA: { id: COURSE_A.id, code: COURSE_A.code },
       courseB: { id: COURSE_B.id, code: COURSE_B.code },
     };
+    // Note: D/E ids/codes are exported as module constants (COURSE_D/COURSE_E)
+    // for the visibility spec; they are intentionally NOT in the runtime marker
+    // contract (which the fixture parses) — the spec imports the constants
+    // directly.
   } finally {
     db.close();
   }
 }
 
-module.exports = { seedDatabase, COURSE_A, COURSE_B };
+module.exports = { seedDatabase, COURSE_A, COURSE_B, COURSE_C, COURSE_D, COURSE_E };
 
 // ── Subprocess entrypoint ───────────────────────────────────────────────────
 // `<runner> seedDatabase.js <dbPath>` — seeds + prints the deterministic course
