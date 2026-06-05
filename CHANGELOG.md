@@ -28,6 +28,24 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ### Added
 
+- `2026-06-05 16:14 UTC` — **e2e coverage breadth — visibility invariant, the two remaining
+  ADR-0006 deep modal-stack specs, calendar CRUD, and conflict rendering.** Five new specs on the
+  deterministic seed (ADR-0011): an end-to-end **course-visibility invariant** check (a hidden
+  course D and an archived course E are absent from `getCourses()` and the Courses grid but E
+  surfaces in `getArchivedCourses()`, and tasks on D/E are filtered out of the visible task set —
+  the `courseDataHandlers` hidden/archived/term-filter bug class CLAUDE.md §2/§8 names by name);
+  the **two deferred ADR-0006 modal-stack specs** — nested Customize-child key-leak (a child-owned
+  key is handled by the child with both modals still stacked and the page two layers down
+  un-cycled) and `useModalHotkeys` AND-composition (a `when`-gated + stack-gated parent key fires
+  only when its predicate is true AND it is topmost); a **calendar event create→read-back→delete**
+  round-trip via the stable calendar IPC (+ `n` opens/Escape closes the EventFormModal); and an
+  **updates-conflict** render spec asserting a seeded `sync_updates` conflict row renders a
+  `ConflictItem`. Adds one isolated conflict row + the D/E courses/tasks to the seed (named-column
+  inserts, isolated to non-visible courses so the pre-existing suite is unperturbed). Suite 33→40
+  tests across 21 spec files, still **0 skips** (skip-guard enforced); deterministic across two
+  full local runs. Test-infra only; no `src/**`, schema, or IPC impact; e2e stays local-only (off
+  CI). Under the already-Accepted ADR-0011 strategy.
+
 - `2026-06-05 01:58 UTC` — **e2e harness now captures failure diagnostics and runs an HTML
   report.** On a failing spec the Electron fixture stops + saves a Playwright trace
   (`trace.zip`) and a screenshot, both attached to the run and written under `test-results/`

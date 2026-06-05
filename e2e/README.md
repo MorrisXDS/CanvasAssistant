@@ -71,7 +71,7 @@ files, calendar events, sync updates, the duplicate-warning matrix) is **guarant
 so there are **no data-tolerant `test.skip` guards** — the suite runs skip-free (enforced by
 the skip-guard reporter).
 
-16 spec files (33 tests):
+21 spec files (40 tests):
 
 - **`smoke.spec.ts`** — boots to the main UI and confirms `getCourses()` returns the
   seeded courses through IPC (the fixture wiring sanity check).
@@ -105,13 +105,37 @@ the skip-guard reporter).
   (not the page's); arrow-key browser scroll is `preventDefault()`-ed while a modal is open.
 - **`modal-stack-duplicate.spec.ts`** (ADR-0006, deep) — DuplicateWarningModal page-leak /
   nested-stack regressions, driven off the always-present duplicate-warning matrix.
+- **`visibility.spec.ts`** — the **course-visibility invariant end-to-end** (CLAUDE.md §2/§8).
+  A hidden course (D) and an archived course (E) are absent from `getCourses()` and the Courses
+  grid; archived E surfaces in `getArchivedCourses()` (flags read back to prove they took); and
+  `getTasks({courseIds:'all'})` excludes the tasks seeded on D/E.
+- **`modal-stack-nested.spec.ts`** (ADR-0006 deep, spec 2) — nested Customize-child key-leak:
+  with the bulk DuplicateWarningModal + its per-item Customize child both open, a child-owned key
+  (`E` → `pickAll('user')`) is handled by the child (parent row gains the `(customized)` badge),
+  the child stays topmost, both dialogs remain stacked, and the CourseDetail section-focus keys
+  two layers below do not cycle.
+- **`modal-stack-keymap.spec.ts`** (ADR-0006 deep, spec 5) — `useModalHotkeys` AND-composition:
+  the parent's `C` key (both `when`-gated on `conflictingFields` and stack-gated) fires only when
+  its predicate is true AND the parent is topmost — predicate-false row → no-op, predicate-true +
+  topmost → child opens, child-topmost → parent `C` suppressed.
+- **`calendar-event-crud.spec.ts`** — `n` opens the EventFormModal (Escape closes), plus a
+  create→read-back→delete→read-back-gone round-trip through the stable calendar IPC
+  (`createCalendarEvent`/`getCalendarEventsForRange`/`deleteCalendarEvent`); self-cleaning and
+  order-independent.
+- **`updates-conflict.spec.ts`** — a seeded `sync_updates` conflict row (Course A) renders a
+  `ConflictItem` on the Updates page (unique title + Local/Canvas value labels + Keep Local / Use
+  Canvas resolve buttons). The `SyncConflictModal` is disabled — conflicts surface on the Updates
+  page, not as a modal.
 
 ### Not yet covered
 
 - The full multi-layer Escape cascade beyond the Settings branch.
-- Remaining deeper ADR-0006 surfaces beyond the page-leak / scroll-suppression specs already
-  landed (e.g. full Customize-child nested-leak coverage on every host modal) — tracked in
-  `docs/FOLLOWUPS.md` if/when prioritized.
+- The onboarding / first-run welcome flow — the default fixture presets `onboardingCompleted`;
+  covering it needs a variant fixture in a separate Playwright project (tracked in
+  `docs/FOLLOWUPS.md`).
+- `AnnouncementDetail` keyboard — not e2e-coverable without a forbidden production test hook
+  (keymap is `w/s` scroll on a short body + `v` external-open with no in-renderer observable);
+  covered by jest (tracked in `docs/FOLLOWUPS.md`).
 
 ## Limitations
 
