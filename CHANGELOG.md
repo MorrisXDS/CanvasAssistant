@@ -12,6 +12,12 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ### Docs
 
+- `2026-06-05 20:10 UTC` — **Regenerated the README screenshots from synthetic demo data**
+  (no real Canvas account / personal info). Added a realistic demo seed
+  (`e2e/fixtures/seedDatabaseDemo.js`) + a `screenshots` Playwright project + a
+  `capture:screens` script that launches the seeded app and captures all five page
+  screenshots into `assets/screenshots/`. Replaces the previously-masked real-data images.
+
 - `2026-06-05 19:50 UTC` — **Rewrote the root `README.md`** (product + portfolio framing:
   hero, features, keyboard-first section, tech stack, 7-layer architecture, testing) and
   **published the ADRs + testing guide** to the repo. `docs/` was a nested local-only git

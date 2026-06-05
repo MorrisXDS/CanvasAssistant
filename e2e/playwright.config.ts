@@ -29,17 +29,27 @@ export default defineConfig({
   // Uses env vars CID_E2E_SEED=current-term + CID_E2E_MOCK_CANVAS=current-term-sync
   // (set by the spec itself via test.use, not by the caller). Separated so the
   // default suite stays green and skip-free without Canvas mock endpoints.
+  //
+  // Screenshots project: captures the README screenshots from a realistic
+  // SYNTHETIC demo seed (no real Canvas data). Runs ONLY when requested:
+  //   npm run capture:screens   (= playwright test ... --project screenshots)
+  // The spec sets CID_E2E_SEED=demo itself. Excluded from the default suite.
   projects: [
     {
       name: 'default',
       testDir: '.',
       testMatch: '**/*.spec.ts',
-      testIgnore: '**/sync-*.spec.ts',
+      testIgnore: ['**/sync-*.spec.ts', '**/capture-*.spec.ts'],
     },
     {
       name: 'sync',
       testDir: '.',
       testMatch: '**/sync-*.spec.ts',
+    },
+    {
+      name: 'screenshots',
+      testDir: '.',
+      testMatch: '**/capture-*.spec.ts',
     },
   ],
 });

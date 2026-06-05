@@ -130,6 +130,9 @@ fails CI if a new component registers a hotkey the unsafe way.
 
 ## Screenshots
 
+> _All screenshots use synthetic demo data — no real Canvas account or personal
+> information. They're regenerated from a fixed seed via `npm run capture:screens`._
+
 <p align="center">
   <img src="assets/screenshots/calendar.png" alt="Calendar" width="410" />
   <img src="assets/screenshots/courses.png" alt="Courses" width="410" />

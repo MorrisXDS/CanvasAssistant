@@ -34,6 +34,7 @@
     "test:e2e": "npm run build && playwright test --config e2e/playwright.config.ts --project default",
     "test:e2e:sync": "npm run build && playwright test --config e2e/playwright.config.ts --project sync",
     "test:e2e:all": "npm run build && playwright test --config e2e/playwright.config.ts",
+    "capture:screens": "npm run build && playwright test --config e2e/playwright.config.ts --project screenshots",
     "typecheck:e2e": "tsc -p tsconfig.e2e.json",
     "pretest": "node scripts/ensure-native-modules.js",
     "test": "jest",
