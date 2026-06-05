@@ -187,9 +187,11 @@ A few invariants the project takes seriously (and enforces with tests):
 - **Thin IPC adapters** — IPC handlers carry no SQL; reads go through named readers, writes
   through command objects.
 
-Design decisions are recorded as [Architecture Decision Records](docs/adr/) in `docs/adr/` —
-eleven of them, covering the layering, the SQLite/Electron ABI handling, the keyboard system,
-and the deterministic test seed.
+See **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** for the full tour — the process model,
+data flow, persistence, the course-visibility invariant, and the fitness-function tests that
+enforce all of the above. Individual decisions are recorded as
+[Architecture Decision Records](docs/adr/) (eleven of them), and contributors should start
+with **[CONTRIBUTING.md](CONTRIBUTING.md)**.
 
 ---
 

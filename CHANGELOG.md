@@ -12,6 +12,13 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ### Docs
 
+- `2026-06-05 20:37 UTC` — **Added `docs/ARCHITECTURE.md` + `CONTRIBUTING.md`.** ARCHITECTURE
+  is a holistic tour (7-layer stack, process/IPC model, sync data flow, persistence, the
+  course-visibility invariant, and the fitness-function tests that enforce the rules) that
+  ties the published ADRs together; published via `.gitignore` like the ADRs/TESTING guide.
+  CONTRIBUTING covers setup, the native-ABI footgun, the PR gates, conventions, and the
+  light-maintenance status. README now links both.
+
 - `2026-06-05 20:10 UTC` — **Regenerated the README screenshots from synthetic demo data**
   (no real Canvas account / personal info). Added a realistic demo seed
   (`e2e/fixtures/seedDatabaseDemo.js`) + a `screenshots` Playwright project + a

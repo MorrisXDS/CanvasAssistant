@@ -48,6 +48,7 @@ DevDocs/
 docs/*
 !docs/adr/
 !docs/TESTING.md
+!docs/ARCHITECTURE.md
 ARCHITECTURE_ANALYSIS.md
 
 # Environment
