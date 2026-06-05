@@ -32,6 +32,7 @@ import {
   SETTINGS_DEFAULTS,
 } from '../../l5-presentation/settings';
 import { formatTimeAgo, Z_INDEX } from '../constants';
+import { resolveLastSync } from './sidebarSyncDisplay';
 import { layoutStyles as styles, TITLE_BAR_HEIGHT } from './layoutStyles';
 import { NotificationDotGroup } from './shared';
 import { useSidebarDots, useFileUpdateDots } from '../hooks';
@@ -286,32 +287,17 @@ export function Sidebar({ onToggle }: SidebarProps) {
         text: 'Sync Error',
       };
     }
-    // Check if we have any synced data
-    const syncedCourses = courses.filter((c) => c.lastSyncedAt);
-    if (syncedCourses.length === 0) {
+    // Most recent of the store-level lastSyncedAt and any visible course's
+    // lastSyncedAt. null ONLY if nothing has ever synced. A successful sync can
+    // leave 0 VISIBLE courses (all hidden/archived — e.g. after graduating) yet
+    // still set the store-level time, so we must not show "Not Synced" then.
+    const effectiveLastSync = resolveLastSync(courses, lastSyncedAt);
+    if (!effectiveLastSync) {
       return {
         icon: <AlertCircle size={14} color="var(--color-warning)" />,
         text: 'Not Synced',
       };
     }
-    // Use whichever is most recent: store-level lastSyncedAt or the newest
-    // course-level lastSyncedAt. The store value can go stale (e.g. initialize
-    // re-reads a cached value from DB after a partial sync), so per-course
-    // times act as a floor so the UI reflects actual observed sync activity.
-    const latestCourseSync = syncedCourses.reduce(
-      (latest, c) => {
-        if (!c.lastSyncedAt) return latest;
-        if (!latest) return c.lastSyncedAt;
-        return c.lastSyncedAt > latest ? c.lastSyncedAt : latest;
-      },
-      null as string | null
-    );
-    const effectiveLastSync =
-      lastSyncedAt && latestCourseSync
-        ? lastSyncedAt > latestCourseSync
-          ? lastSyncedAt
-          : latestCourseSync
-        : (lastSyncedAt ?? latestCourseSync);
 
     return {
       icon: <CheckCircle size={14} color="var(--color-success)" />,
