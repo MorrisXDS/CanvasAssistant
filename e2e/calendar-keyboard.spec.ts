@@ -41,12 +41,14 @@ test.describe('Calendar — quick-filter shortcuts', () => {
     await expect(badge(page)).toHaveCount(0);
   });
 
-  test('Alt+1 toggles a course filter on and off', async ({ page }) => {
+  // Course-filter toggle is Alt+Shift+1..9 (ADR-0010 / #114). Plain Alt+1..N is
+  // reserved for useSectionScope section direct-jump, so it must NOT set a filter.
+  test('Alt+Shift+1 toggles a course filter on and off', async ({ page }) => {
     const courseCount = await page.evaluate(
       async () =>
         (
           await (
-            window as { api: { getCourses: () => Promise<unknown[]> } }
+            window as unknown as { api: { getCourses: () => Promise<unknown[]> } }
           ).api.getCourses()
         ).length
     );
@@ -55,10 +57,19 @@ test.describe('Calendar — quick-filter shortcuts', () => {
     await gotoCalendar(page);
     await expect(badge(page)).toHaveCount(0);
 
-    await page.keyboard.press('Alt+1'); // select first course
+    await page.keyboard.press('Alt+Shift+1'); // select first course
     await expect(badge(page)).toHaveCount(1);
 
-    await page.keyboard.press('Alt+1'); // deselect → no active filter
+    await page.keyboard.press('Alt+Shift+1'); // deselect → no active filter
+    await expect(badge(page)).toHaveCount(0);
+  });
+
+  test('plain Alt+1 is section direct-jump, not a course filter', async ({ page }) => {
+    await gotoCalendar(page);
+    await expect(badge(page)).toHaveCount(0);
+
+    // Alt+1 jumps to the (already-active) Calendar section — no filter side effect.
+    await page.keyboard.press('Alt+1');
     await expect(badge(page)).toHaveCount(0);
   });
 });
