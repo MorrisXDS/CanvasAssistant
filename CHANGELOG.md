@@ -12,6 +12,17 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ### Added
 
+- `2026-06-05 01:58 UTC` — **e2e harness now captures failure diagnostics and runs an HTML
+  report.** On a failing spec the Electron fixture stops + saves a Playwright trace
+  (`trace.zip`) and a screenshot, both attached to the run and written under `test-results/`
+  (gitignored) — making local e2e failures debuggable without a re-run. Green runs leave no
+  artifacts (tracing stops without saving), so there's no disk bloat. Also adds the `html`
+  reporter (`open: 'never'` → `playwright-report/index.html`) and `forbidOnly: !!process.env.CI`
+  as a stray-`.only` guard, and removes a dead `duplicateSeed` fixture key from the default
+  (un-seeded) fixture path. Test-tooling only; no `src/**`, schema, or IPC impact; e2e stays
+  local-only (off CI). Verified: 33/33 e2e green twice locally and failure-artifact capture
+  confirmed on a forced failure.
+
 - `2026-06-05 01:29 UTC` — **Expanded the local e2e suite from 20 to 33 specs — route-coverage gaps,
   mutation round-trips, and deep ADR-0006 modal-stack regressions.** Three batches: (1) **route-gap
   specs** for previously-uncovered pages — Dashboard, Files, Settings, Announcement Detail — plus
