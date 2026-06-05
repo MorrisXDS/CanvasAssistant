@@ -54,6 +54,9 @@ It's **offline-first** (a local database is the source of truth, Canvas is the u
 
 ## Features
 
+> For a page-by-page walkthrough with workflows and the less-obvious behaviors, see the
+> **[User Guide](docs/USER-GUIDE.md)**.
+
 ### Dashboard — what needs your attention
 
 A four-stat overview — active courses, pending tasks, overdue tasks, and your weighted

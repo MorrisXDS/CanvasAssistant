@@ -22,6 +22,11 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ### Docs
 
+- `2026-06-05 21:38 UTC` — **Added `docs/USER-GUIDE.md`** — a page-by-page user walkthrough (Dashboard,
+  Calendar, Courses, Course Detail, Files, Tasks, Announcements, Updates, Settings) focused
+  on workflows + non-obvious behaviors, deferring exact shortcuts to the in-app `?` help so
+  it can't drift. Published like the other docs; linked from the README Features section.
+
 - `2026-06-05 20:46 UTC` — **README: added a "Build for production" section** (compile + `npm run package`
   per-platform + the `v*`-tag release flow) and **removed the Project status and Author
   sections.**
