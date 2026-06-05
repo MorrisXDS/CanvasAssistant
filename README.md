@@ -1,84 +1,214 @@
-# Canvas Integration Dashboard
+<div align="center">
 
-**Offline-first academic command center for Canvas LMS**
+# Canvas Assistant
 
-![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)
-![License](https://img.shields.io/badge/license-PolyForm%20Noncommercial-green)
-![Electron](https://img.shields.io/badge/electron-40-teal)
-![Node](https://img.shields.io/badge/node-20%2B-brightgreen)
+**An offline-first desktop command center for Canvas LMS**
 
-<p align="center">
-  <img src="assets/screenshots/dashboard.png" alt="Dashboard" width="800" />
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)](#installation)
+[![License](https://img.shields.io/badge/license-PolyForm%20Noncommercial-green)](LICENSE)
+[![Electron](https://img.shields.io/badge/Electron-40-47848F?logo=electron&logoColor=white)](https://www.electronjs.org/)
+[![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)](https://react.dev/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![SQLite](https://img.shields.io/badge/SQLite-WAL-003B57?logo=sqlite&logoColor=white)](https://www.sqlite.org/)
+
+<p>
+  Pull every course, assignment, grade, file, and announcement out of Canvas into one
+  desktop window that <strong>works fully offline</strong> — and is built to be driven
+  entirely from the keyboard.
 </p>
 
-Canvas Integration Dashboard (CID) pulls all your Canvas LMS data into a single desktop app that works offline. Instead of jumping between browser tabs for assignments, grades, files, and announcements, you open one window and everything is there — synced from Canvas and stored locally on your machine.
+<img src="assets/screenshots/dashboard.png" alt="Canvas Assistant dashboard" width="820" />
+
+</div>
+
+---
 
 ## Table of Contents
 
+- [Why Canvas Assistant](#why-canvas-assistant)
 - [Features](#features)
-  - [Dashboard](#dashboard--see-what-needs-your-attention)
-  - [Calendar](#calendar--plan-your-week-or-month)
-  - [Courses](#courses--manage-all-your-courses-in-one-place)
-  - [Files](#files--browse-and-download-course-materials)
-  - [Settings](#settings--configure-the-app-to-your-preferences)
+- [Keyboard-first by design](#keyboard-first-by-design)
+- [Screenshots](#screenshots)
+- [Tech stack](#tech-stack)
+- [Architecture](#architecture)
+- [Testing](#testing)
 - [Installation](#installation)
-  - [Download a release](#download-a-release-recommended)
-  - [Build from source](#build-from-source)
-- [Getting Started](#getting-started)
-  - [First launch](#1-first-launch--onboarding-wizard)
-  - [Navigating the app](#2-navigating-the-app)
-  - [Typical workflows](#3-typical-workflows)
+- [Getting started](#getting-started)
+- [Project status](#project-status)
 - [License](#license)
+- [Author](#author)
+
+---
+
+## Why Canvas Assistant
+
+Canvas's web UI scatters your academic life across a dozen tabs — one for assignments,
+another for grades, another for files, another for each course's announcements. Canvas
+Assistant pulls all of it into a single desktop app, stores it locally in SQLite, and
+keeps it usable when you're offline. Sync runs in the background; everything you've already
+pulled stays readable on a plane, in a basement lecture hall, or with the Wi-Fi off.
+
+It's **offline-first** (a local database is the source of truth, Canvas is the upstream),
+**keyboard-first** (almost everything has a shortcut, discoverable with `?`), and
+**privacy-respecting** (your data and Canvas token never leave your machine).
 
 ---
 
 ## Features
 
-### Dashboard — See what needs your attention
+### Dashboard — what needs your attention
 
-When you open the app, the dashboard shows four key numbers: active courses, pending tasks, overdue tasks, and your average grade. Below that, a priority queue ranks your most urgent work, alongside recent announcements and today's schedule. Click any stat card to jump to the full list. Right-click a task to mark it complete, duplicate it, or view it on the calendar.
+A four-stat overview — active courses, pending tasks, overdue tasks, and your weighted
+average grade — over a keyboard-navigable grid: a queue of tasks Canvas has pulled in for
+you to triage, a recent-announcements feed, today's schedule, and your weighted
+assignments. Click the average-grade stat for a per-course breakdown, or run a **grade
+simulation** ("what if I get 95% on the final?") and watch the average update live.
+
+### Calendar — plan your week or month
+
+Month / week / day views of every deadline and Canvas event, color-coded by course. Filter
+by course, task type, priority, or deadline status; create and edit your own events; and
+export deadlines to an `.ics` file for any external calendar app.
+
+### Courses — all your courses in one place
+
+Grid or list view of your courses with current grade and progress. Search, filter by grade
+range, pin the important ones, and **hide** or **archive** the rest (archived courses move
+to their own collapsible section and stop appearing everywhere else). Open any course for a
+detail page with its tasks, **grade history**, announcements, settings, and syllabus.
+
+### Files — browse and download offline
+
+A file browser that mirrors your Canvas folder structure: expand a course, walk its folders,
+download what you need. Course **pages are cached locally** with their links rewritten to
+local paths, so they stay readable with no network. Notification dots flag folders with
+freshly-synced files.
+
+### Updates — review everything that changed
+
+Since your last sync: new grades, files, pages, and announcements on one side; tasks Canvas
+queued for you on the other. **Resolve sync conflicts** (when a local edit clashes with a
+Canvas change) and merge or link **duplicate tasks** — with "remember my choice" so the same
+decision auto-applies next time.
+
+### And the rest
+
+- **Tasks** — every assignment across every course in one filterable, sortable list.
+- **Announcements** — a searchable feed, filterable by course / type / read status.
+- **Settings** — theme, academic target grade, sync cadence, notification triggers,
+  download filters, **scheduled (optionally encrypted) backups**, and data retention.
+
+> A note on honesty: an earlier version of this app had an "intelligence layer" that
+> ranked tasks by a computed priority/ROI score. That subsystem was **removed** (it wasn't
+> realistic for the target hardware — see
+> [ADR-0003](docs/adr/0003-removal-of-l3-intelligence-layer.md)). The Dashboard queue today
+> is the list of tasks awaiting your triage, not an algorithmic ranking.
+
+---
+
+## Keyboard-first by design
+
+Canvas Assistant is built to be operated without a mouse. Press <kbd>?</kbd> on any page for
+a context-aware shortcut sheet (it even shows the shortcuts of whatever modal is open on top).
+
+- **Global navigation** — <kbd>Ctrl/⌘</kbd>+<kbd>1…5</kbd> jump straight to Dashboard,
+  Calendar, Courses, Files, Settings.
+- **In-page sections** — <kbd>Alt</kbd>+<kbd>1…N</kbd> jumps directly to a page's section
+  (and <kbd>Q</kbd>/<kbd>E</kbd> cycles them), with a visual `SectionBar` showing where you
+  are. Uniform across Course Detail, Calendar, and Courses.
+- **List navigation** — <kbd>↑</kbd>/<kbd>↓</kbd> (or <kbd>W</kbd>/<kbd>S</kbd>, or
+  <kbd>J</kbd>/<kbd>K</kbd>) walk rows; <kbd>Enter</kbd> opens; per-list action keys (accept,
+  complete, edit, open-on-Canvas).
+- **Modal-stack aware** — shortcuts never "leak" from an open dialog to the page beneath it.
+
+The shortcut system is documented in two architecture decision records
+([ADR-0006](docs/adr/0006-modal-stack-aware-hotkey-suppression.md),
+[ADR-0010](docs/adr/0010-section-nav-direct-jump-modifier.md)) and guarded by a test that
+fails CI if a new component registers a hotkey the unsafe way.
+
+---
+
+## Screenshots
 
 <p align="center">
-  <img src="assets/screenshots/dashboard.png" alt="Dashboard view" width="800" />
+  <img src="assets/screenshots/calendar.png" alt="Calendar" width="410" />
+  <img src="assets/screenshots/courses.png" alt="Courses" width="410" />
 </p>
-
-### Calendar — Plan your week or month
-
-View all your deadlines on a month or week calendar, color-coded by course. Click a date to see what's due that day. Filter by course, task type, priority, or deadline status. Import external calendar events from ICS files, or export your Canvas deadlines to Google Calendar or other apps.
-
 <p align="center">
-  <img src="assets/screenshots/calendar.png" alt="Calendar view" width="800" />
+  <img src="assets/screenshots/files.png" alt="Files" width="410" />
+  <img src="assets/screenshots/settings.png" alt="Settings" width="410" />
 </p>
 
-### Courses — Manage all your courses in one place
+---
 
-The courses page lists every course you're enrolled in, with your current grade and progress. Switch between grid and list view, search by name, or filter by grade range. Pin important courses to the top. Click into any course for its detail page: tasks organized by type, grade history, announcements, and syllabus.
+## Tech stack
 
-<p align="center">
-  <img src="assets/screenshots/courses.png" alt="Courses view" width="800" />
-</p>
+| Layer       | Choice                                                                       |
+| ----------- | ---------------------------------------------------------------------------- |
+| Shell       | **Electron 40** (Node 20.x), `contextIsolation` on, IPC via a preload bridge |
+| UI          | **React 18** + **Vite**, functional components, `react-window` for big lists |
+| Language    | **TypeScript 5.7**, `strict: true` (no implicit `any`)                       |
+| State       | **Zustand** (single store, selector-based reads)                             |
+| Persistence | **better-sqlite3** (synchronous, WAL mode) with programmatic migrations      |
+| Validation  | **Zod** schemas at the IPC boundary                                          |
+| HTTP        | **axios** with a rate limiter (3 concurrent) + circuit breaker               |
+| E2E         | **Playwright** driving the built Electron app                                |
+| Unit/integ. | **Jest** (`node` + `jsdom` projects)                                         |
 
-### Files — Browse and download course materials
+---
 
-The files page mirrors your Canvas folder structure: expand a course to see its folders, then browse or download files. Switch between list and grid view, search by filename, or filter by source type, download status, or file size. Notification dots highlight folders with recently updated files.
+## Architecture
 
-<p align="center">
-  <img src="assets/screenshots/files.png" alt="Files view" width="800" />
-</p>
+The codebase is organized as a strict **7-layer** stack with unidirectional dependencies —
+no layer imports from a layer above it, and the renderer talks to the main process only
+through a typed IPC contract.
 
-### Settings — Configure the app to your preferences
+```
+L6  UI            React components, pages, modals, keyboard hooks
+L5  Presentation  Zustand store, selectors, view models
+L4  Controller    CommandDispatcher + command objects (all writes)
+L3  Intelligence  Grade calculation, simulation, content/data-quality analysis
+L2  Daemon        CanvasClient, SyncEngine, RateLimiter, CircuitBreaker, exporters
+L1  Persistence   SQLite, MigrationRunner, the course-visibility oracle, readers
+L0  Utilities     Logger (PII-redacting), config, credential manager, health checks
 
-Adjust theme and appearance, set your academic target grade, configure auto-sync frequency, choose notification triggers, manage download filters, and control data retention. Advanced options include debug mode, cache clearing, and window reset.
+         renderer (L5–L6)  ──  IPC bridge  ──  main (L0–L4)
+```
 
-<p align="center">
-  <img src="assets/screenshots/settings.png" alt="Settings view" width="800" />
-</p>
+A few invariants the project takes seriously (and enforces with tests):
 
-### And more
+- **Single source of truth** — UI reads domain data from the store via selectors, never a
+  local `useState` copy that can drift.
+- **Course visibility** — every course-scoped query filters through one visibility oracle,
+  so hidden / archived / out-of-term courses can't leak into any view.
+- **Thin IPC adapters** — IPC handlers carry no SQL; reads go through named readers, writes
+  through command objects.
 
-- **Tasks** — Track assignments across all courses in one list. Filter by status, sort by deadline, right-click for quick actions.
-- **Announcements** — Searchable feed of all course announcements. Filter by type, read status, or course.
-- **Updates** — Review everything that changed since your last sync. Resolve conflicts and accept queued tasks.
+Design decisions are recorded as [Architecture Decision Records](docs/adr/) in `docs/adr/` —
+eleven of them, covering the layering, the SQLite/Electron ABI handling, the keyboard system,
+and the deterministic test seed.
+
+---
+
+## Testing
+
+Three test surfaces, documented in **[`docs/TESTING.md`](docs/TESTING.md)**:
+
+- **Jest** — unit + integration across all layers (`node` and `jsdom` projects), with a
+  per-PR diff-coverage gate in CI.
+- **Playwright e2e** — drives the _built_ Electron app with real keystrokes. The suite is
+  **deterministic and portable**: instead of depending on a developer's real Canvas data, it
+  generates its own schema (by running the app's own migrations against an empty DB) and
+  seeds a fixed dataset — so it runs the same on any machine with **zero skips**, enforced by
+  a skip-guard reporter. A separate project even exercises a full sync against a mock Canvas,
+  so the sync pipeline is testable without a live account. (See
+  [ADR-0011](docs/adr/0011-deterministic-e2e-seed.md) for the seed strategy.)
+
+```bash
+npm test               # Jest (unit + integration)
+npm run test:e2e       # Playwright e2e (deterministic seed)
+npm run test:e2e:sync  # e2e sync-pull against a mock Canvas
+```
 
 ---
 
@@ -86,17 +216,18 @@ Adjust theme and appearance, set your academic target grade, configure auto-sync
 
 ### Download a release (recommended)
 
-Go to [Releases](https://github.com/MorrisXDS/CanvasAssistant/releases) and download the installer for your platform:
+Grab the installer for your platform from
+[**Releases**](https://github.com/MorrisXDS/CanvasAssistant/releases):
 
 | Platform | File                               | Notes                                                   |
 | -------- | ---------------------------------- | ------------------------------------------------------- |
-| Windows  | `Canvas Assistant Setup x.x.x.exe` | Installer with optional per-user or system-wide install |
-| macOS    | `Canvas Assistant-x.x.x.dmg`       | Drag to Applications. A `.zip` is also available        |
-| Linux    | `Canvas Assistant-x.x.x.AppImage`  | Run directly. A `.deb` package is also available        |
+| Windows  | `Canvas Assistant Setup x.x.x.exe` | NSIS installer (per-user or system-wide)                |
+| macOS    | `Canvas Assistant-x.x.x.dmg`       | Drag to Applications (`.zip` also available)            |
+| Linux    | `Canvas Assistant-x.x.x.AppImage`  | Run directly (`.deb` also available; needs `libsecret`) |
 
 ### Build from source
 
-**Prerequisites:** Node.js 20+ (22+ recommended)
+**Prerequisites:** Node.js 20+ (22+ recommended).
 
 ```bash
 git clone https://github.com/MorrisXDS/CanvasAssistant.git
@@ -105,51 +236,58 @@ npm install
 npm run dev
 ```
 
-| Command           | Description                   |
-| ----------------- | ----------------------------- |
-| `npm run dev`     | Run in development mode       |
-| `npm run build`   | Compile TypeScript + Vite     |
-| `npm run lint`    | Lint source files             |
-| `npm run package` | Package with electron-builder |
+| Command           | Description                           |
+| ----------------- | ------------------------------------- |
+| `npm run dev`     | Run in development (main + renderer)  |
+| `npm run build`   | Compile TypeScript + bundle with Vite |
+| `npm run lint`    | Lint source                           |
+| `npm run package` | Build installers via electron-builder |
 
 ---
 
-## Getting Started
+## Getting started
 
-### 1. First launch — onboarding wizard
+On first launch, an **onboarding wizard** walks you through:
 
-When you open the app for the first time, the onboarding wizard walks you through setup:
+1. **Canvas URL** — your institution's Canvas instance (e.g. `https://canvas.your-school.edu`)
+2. **API token** — a personal access token from Canvas
+   ([how to generate one](https://community.canvaslms.com/t5/Student-Guide/How-do-I-manage-API-access-tokens-as-a-student/ta-p/273))
+3. **Theme**, **download location**, **target grade**
+4. **Courses** — pick which to show
 
-1. **Canvas URL** — Enter your Canvas instance URL (e.g., `https://canvas.youruniversity.edu`)
-2. **API token** — Paste your Canvas API token ([how to generate one](https://community.canvaslms.com/t5/Student-Guide/How-do-I-manage-API-access-tokens-as-a-student/ta-p/273))
-3. **Theme** — Pick light, dark, or match your system
-4. **Downloads** — Choose where to save downloaded files
-5. **Target grade** — Set your academic goal
-6. **Courses** — Select which courses to show in the app
+The app syncs your selection and drops you on the dashboard. Your token is stored in the OS
+keychain; your data lives in a local SQLite database. From there:
 
-The app syncs your selected courses and you're ready to go.
+- **Daily:** open the dashboard, scan overdue / due-soon, jump into work from the queue.
+- **Weekly:** use the calendar week view; export to `.ics` for your phone.
+- **After class:** check Updates for new files / announcements; download slides from Files.
+- **Before an exam:** open the course's detail page for the grade breakdown and target check.
+- **End of term:** archive finished courses to tidy everything else.
 
-### 2. Navigating the app
+---
 
-- The **sidebar** on the left is your main navigation. Drag items to reorder them. Collapse it for more screen space.
-- **Notification dots** appear on sidebar items and course cards when new content arrives.
-- The app **syncs with Canvas** in the background on a schedule you set (or click "Sync Now" on the dashboard).
-- Everything **works offline**. Changes sync back when you reconnect.
+## Project status
 
-### 3. Typical workflows
+Built solo over the course of my degree as a real tool I used daily, and developed with an
+emphasis on architecture and test rigor (strict layering, ADRs, a deterministic e2e suite).
+It is **feature-complete for personal use** and now in **portfolio / light-maintenance
+mode** — issues and PRs are welcome, but active feature development has wound down.
 
-**Start of the day:** Open the dashboard, check what's overdue and what's due soon. Click into urgent tasks directly from the priority queue.
-
-**Planning your week:** Go to the calendar week view. See all deadlines laid out. Export to ICS if you want them in your phone calendar.
-
-**After class:** Check the updates page to see new files and announcements from today's courses. Download lecture slides from the files page.
-
-**Before an exam:** Open the course detail page for that course. Review your grade breakdown by assignment type, check if you're meeting your target grade, and read through any recent announcements from the instructor.
-
-**End of term:** Archive courses you've finished. They move to a collapsible "Archived" section on the courses page and stop appearing elsewhere.
+> Because Canvas access ends with enrollment, the app and its test suite are designed to run
+> **without a live Canvas account** — the e2e suite seeds its own data and can drive a full
+> sync against a mock Canvas server.
 
 ---
 
 ## License
 
-[PolyForm Noncommercial 1.0.0](LICENSE) — free to use, modify, and share for non-commercial purposes.
+[PolyForm Noncommercial 1.0.0](LICENSE) — free to use, modify, and share for
+**non-commercial** purposes.
+
+---
+
+## Author
+
+**Morris Sun** · [GitHub @MorrisXDS](https://github.com/MorrisXDS) · mcl211204@gmail.com
+
+<div align="right"><a href="#canvas-assistant">↑ back to top</a></div>

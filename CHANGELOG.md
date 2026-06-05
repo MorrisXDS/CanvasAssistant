@@ -10,6 +10,17 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ## [Unreleased]
 
+### Docs
+
+- `2026-06-05 19:50 UTC` — **Rewrote the root `README.md`** (product + portfolio framing:
+  hero, features, keyboard-first section, tech stack, 7-layer architecture, testing) and
+  **published the ADRs + testing guide** to the repo. `docs/` was a nested local-only git
+  repo; un-nested it so `docs/adr/` (11 ADRs) and `docs/TESTING.md` are now tracked and
+  linkable from the README, while `CLAUDE.md` and the internal docs (FOLLOWUPS, handoffs,
+  agent notes) stay gitignored/private. Corrected stale feature claims against the code
+  (notably: the Dashboard queue is a triage queue, not a priority-ranked list — the
+  intelligence layer was removed in ADR-0003).
+
 ### Added
 
 - `2026-06-05 19:23 UTC` — **e2e sync-pull spec (`--project sync`) + mock Canvas endpoint.**

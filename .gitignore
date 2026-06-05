@@ -41,10 +41,13 @@ Thumbs.db
 .claude/*
 !.claude/skills/
 
-# Internal docs
+# Internal docs — docs/ is local-only EXCEPT the published ADRs + testing guide,
+# which the public README links to.
 CLAUDE.md
 DevDocs/
-docs/
+docs/*
+!docs/adr/
+!docs/TESTING.md
 ARCHITECTURE_ANALYSIS.md
 
 # Environment
