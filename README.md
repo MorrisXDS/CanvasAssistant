@@ -132,12 +132,23 @@ fails CI if a new component registers a hotkey the unsafe way.
 > information. They're regenerated from a fixed seed via `npm run capture:screens`._
 
 <p align="center">
-  <img src="assets/screenshots/calendar.png" alt="Calendar" width="410" />
-  <img src="assets/screenshots/courses.png" alt="Courses" width="410" />
+  <img src="assets/screenshots/calendar.png" alt="Calendar" width="900" /><br/>
+  <em>Calendar — every deadline and event on a month / week / day view, color-coded by course.</em>
 </p>
+
 <p align="center">
-  <img src="assets/screenshots/files.png" alt="Files" width="410" />
-  <img src="assets/screenshots/settings.png" alt="Settings" width="410" />
+  <img src="assets/screenshots/courses.png" alt="Courses" width="900" /><br/>
+  <em>Courses — all your courses with grades and progress; pin, hide, or archive.</em>
+</p>
+
+<p align="center">
+  <img src="assets/screenshots/files.png" alt="Files" width="900" /><br/>
+  <em>Files — browse and download course materials, cached locally for offline reading.</em>
+</p>
+
+<p align="center">
+  <img src="assets/screenshots/settings.png" alt="Settings" width="900" /><br/>
+  <em>Settings — theme, sync cadence, notifications, scheduled backups, and more.</em>
 </p>
 
 ---
