@@ -10,6 +10,16 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ## [Unreleased]
 
+### Removed
+
+- `2026-06-05 21:03 UTC` — **Repo cleanup: dropped redundant tracked files.** `SETUP.md` (superseded by the
+  README "Build from source" + `CONTRIBUTING.md`, and stale on Node version);
+  `scripts/seed-duplicate-test.js` (superseded by the shared `e2e/fixtures/seedDuplicateWarning.js`);
+  three unreferenced one-off dev probes (`scripts/test-canvas-api.ts`,
+  `scripts/test-canvas-timezone.ps1`, `scripts/test-notification-dots.ts`); and four unused
+  image assets (`assets/image copy.png`, `day.png`, `icon.png`, `icon.ico` — the build uses
+  `app.ico` + `app.iconset/*`).
+
 ### Docs
 
 - `2026-06-05 20:46 UTC` — **README: added a "Build for production" section** (compile + `npm run package`
