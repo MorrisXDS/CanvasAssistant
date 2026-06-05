@@ -280,6 +280,12 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ### Fixed
 
+- `2026-06-05 22:53 UTC` — **Sidebar no longer shows "Not Synced" after a successful sync when all courses are
+  hidden/archived.** The status was derived only from VISIBLE courses, so an account with
+  every course hidden or archived (e.g. after graduating) read 0 synced courses → "Not Synced"
+  despite a real sync. Now it also honors the store-level `lastSyncedAt` (logic extracted to a
+  unit-tested `resolveLastSync` helper).
+
 - `2026-06-05 00:04 UTC` — **e2e suite: corrected a stale Calendar keyboard spec + closed the
   type-check blind spot that let it rot.** `e2e/calendar-keyboard.spec.ts` still asserted that
   plain `Alt+1` toggles a course filter, but ADR-0010 / #114 moved that to `Alt+Shift+1` and
