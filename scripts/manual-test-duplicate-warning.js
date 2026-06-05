@@ -33,7 +33,9 @@ const ELECTRON_BIN = (() => {
   return path.join(PROJECT_ROOT, 'node_modules', '.bin', 'electron');
 })();
 const MAIN_JS = path.join(PROJECT_ROOT, 'dist', 'main.js');
-const TEST_TAG = 'DUP_WARN_TEST';
+// The duplicate-warning seed matrix now lives in a shared CJS lib so the e2e
+// fixture (e2e/fixtures/seed.ts) and this manual-test CLI seed identically.
+const SEED_SCRIPT = path.join(PROJECT_ROOT, 'e2e', 'fixtures', 'seedDuplicateWarning.js');
 
 const args = process.argv.slice(2);
 const mode = args[0]; // '--seed', '--launch', '--launch-fresh'
@@ -51,158 +53,18 @@ function seedToDir(tmpDir) {
     if (fs.existsSync(src)) fs.copyFileSync(src, path.join(dbDir, 'canvas.db' + suffix));
   }
 
-  // Seed in a subprocess to avoid locking the .node file in the parent.
+  // Seed in a subprocess (the shared seed lib) to avoid locking the .node file
+  // in the parent. The matrix itself now lives in e2e/fixtures/seedDuplicateWarning.js
+  // so this CLI and the e2e fixture seed identically. The lib's `require.main`
+  // guard makes it runnable as `<runner> seedDuplicateWarning.js <dbPath>`,
+  // printing COURSE_A=id:code / COURSE_B=id:code.
   //
-  // Course A (cA): comprehensive duplicate matrix — 6 duplicate pairs + 1
-  //                no-match control. Each pair exercises a distinct branch
-  //                of the detection / conflict logic. The whole set is also
-  //                bulk-testable via "Accept all".
-  // Course B (cB): one clean single-mode fuzzy case, separate from the noise
-  //                in Course A.
-  const seedEval = `
-    const Database = require('better-sqlite3');
-    const db = new Database(${JSON.stringify(path.join(dbDir, 'canvas.db'))});
-    db.pragma('journal_mode = WAL');
-    const courses = db.prepare("SELECT id, code FROM courses WHERE archived_at IS NULL AND deleted_at IS NULL AND is_hidden=0 LIMIT 2").all();
-    if (!courses.length) { process.stderr.write('No visible courses\\n'); process.exit(1); }
-    const cA = courses[0], cB = courses[1] || courses[0];
-
-    const insertUser = db.prepare(
-      "INSERT OR IGNORE INTO tasks (course_id, title, source_type, weight, due_at, task_type) VALUES (?, ?, 'user', ?, ?, ?)"
-    );
-    const insertQueue = db.prepare(
-      "INSERT OR IGNORE INTO canvas_task_queue (external_id, canvas_data, course_id, title, description, due_at, points_possible, task_type, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')"
-    );
-
-    // ── canvas_data blob builder ──────────────────────────────────────────
-    // MergeQueuedTaskCommand parses canvas_data via mapAssignment(), which
-    // reads description / due_at / unlock_at / lock_at / points_possible /
-    // submission_types out of the blob. If the blob omits a field, the
-    // merged task gets null — even if the queue's *column* has a real
-    // value (the column is for modal display only; the merge reads the
-    // blob). The blob must mirror a real Canvas Assignment payload, not a
-    // stub. \`submission\` is omitted: queue entries are pre-acceptance,
-    // so no submission state exists yet (mapAssignment handles absent).
-    function buildCanvasBlob(o) {
-      return JSON.stringify({
-        id: o.id,
-        name: o.name,
-        description: o.description ?? null,
-        due_at: o.due_at ?? null,
-        unlock_at: o.unlock_at ?? null,
-        lock_at: o.lock_at ?? null,
-        points_possible: o.points_possible ?? 100,
-        submission_types: o.submission_types ?? ['online_text_entry'],
-      });
-    }
-    function insertScenario(tag, courseId, o) {
-      insertQueue.run(
-        tag,
-        buildCanvasBlob(o),
-        courseId,
-        o.name,
-        o.description ?? null,
-        o.due_at ?? null,
-        o.points_possible ?? 100,
-        o.queue_task_type ?? 'assignment'
-      );
-    }
-
-    // ── Course A — comprehensive matrix ────────────────────────────────────
-    // Case 1 — EXACT match, NO field conflicts (identical title + dueAt; both task_type=assignment)
-    insertUser.run(cA.id, 'Problem Set 1', 15, '2026-06-15T23:59:00Z', 'assignment');
-    insertScenario('${TEST_TAG}_EXACT_CLEAN', cA.id, {
-      id: 88001, name: 'Problem Set 1',
-      description: '<p>Standard PSet.</p>',
-      due_at: '2026-06-15T23:59:00Z',
-      points_possible: 100,
-      submission_types: ['online_upload'],
-      queue_task_type: 'assignment',
-    });
-
-    // Case 2 — EXACT title, due-date CONFLICT (Jun 10 user vs Jun 12 canvas; same task_type)
-    insertUser.run(cA.id, 'Quiz 1', 5, '2026-06-10T23:59:00Z', 'quiz');
-    insertScenario('${TEST_TAG}_EXACT_DUE_CONFLICT', cA.id, {
-      id: 88002, name: 'Quiz 1',
-      description: '<p>In-class quiz, rescheduled.</p>',
-      due_at: '2026-06-12T23:59:00Z',
-      points_possible: 20,
-      submission_types: ['none'],
-      queue_task_type: 'quiz',
-    });
-
-    // Case 3 — EXACT title, MULTI-field conflict (dueAt + taskType BOTH differ)
-    insertUser.run(cA.id, 'Midterm', 25, '2026-06-05T23:59:00Z', 'quiz');
-    insertScenario('${TEST_TAG}_EXACT_MULTI_CONFLICT', cA.id, {
-      id: 88003, name: 'Midterm',
-      description: '<p>Closed-book midterm.</p>',
-      due_at: '2026-06-07T23:59:00Z',
-      points_possible: 100,
-      submission_types: ['on_paper'],
-      queue_task_type: 'exam',
-    });
-
-    // Case 4 — FUZZY: abbreviation expansion (hw → homework). User has no dueAt.
-    insertUser.run(cA.id, 'Homework 3', 8, null, 'assignment');
-    insertScenario('${TEST_TAG}_FUZZY_ABBREV', cA.id, {
-      id: 88004, name: 'HW 3',
-      description: '<p>Weekly assignment #3.</p>',
-      due_at: '2026-06-18T23:59:00Z',
-      points_possible: 30,
-      submission_types: ['online_upload'],
-      queue_task_type: 'assignment',
-    });
-
-    // Case 5 — FUZZY: punctuation difference only ("Lab #2" vs "Lab 2", same dueAt)
-    insertUser.run(cA.id, 'Lab 2', 5, '2026-06-20T23:59:00Z', 'assignment');
-    insertScenario('${TEST_TAG}_FUZZY_PUNCT', cA.id, {
-      id: 88005, name: 'Lab #2',
-      description: '<p>Hands-on lab.</p>',
-      due_at: '2026-06-20T23:59:00Z',
-      points_possible: 40,
-      submission_types: ['online_upload'],
-      queue_task_type: 'assignment',
-    });
-
-    // Case 6 — FUZZY: combined abbreviation + punctuation ("PS #4" vs "Problem Set 4")
-    insertUser.run(cA.id, 'Problem Set 4', 12, '2026-06-25T23:59:00Z', 'assignment');
-    insertScenario('${TEST_TAG}_FUZZY_COMBO', cA.id, {
-      id: 88006, name: 'PS #4',
-      description: '<p>Final problem set.</p>',
-      due_at: '2026-06-25T23:59:00Z',
-      points_possible: 100,
-      submission_types: ['online_upload'],
-      queue_task_type: 'assignment',
-    });
-
-    // Case 7 — NO match control: queued task with no similar user task.
-    // Should auto-accept (no modal) when individually accepted.
-    insertScenario('${TEST_TAG}_NO_MATCH', cA.id, {
-      id: 88007, name: 'Lecture Reflection 1',
-      description: '<p>One-page reflection.</p>',
-      due_at: '2026-06-30T23:59:00Z',
-      points_possible: 10,
-      submission_types: ['online_text_entry'],
-      queue_task_type: 'assignment',
-    });
-
-    // ── Course B — clean single-mode fuzzy demo ───────────────────────────
-    insertUser.run(cB.id, 'Homework Assignment', 10, null, 'assignment');
-    insertScenario('${TEST_TAG}_FUZZY', cB.id, {
-      id: 88008, name: 'HW Assignment',
-      description: '<p>Weekly submission.</p>',
-      due_at: '2026-06-20T23:59:00Z',
-      points_possible: 50,
-      submission_types: ['online_upload'],
-      queue_task_type: 'assignment',
-    });
-
-    process.stdout.write('COURSE_A=' + cA.id + ':' + cA.code + '\\n');
-    process.stdout.write('COURSE_B=' + cB.id + ':' + cB.code + '\\n');
-    db.close();
-  `;
-
-  const r = spawnSync(process.execPath, ['--eval', seedEval], {
+  // This step keeps the historical Node-ABI contract: `--seed` is documented to
+  // run after `npm test` (Node ABI), then the user `npm run rebuild`s and
+  // `--launch`es separately under Electron ABI. So we spawn with process.execPath
+  // (plain Node), exactly as before. (The e2e fixture instead spawns under
+  // Electron-as-Node because it launches the app back-to-back — see seed.ts.)
+  const r = spawnSync(process.execPath, [SEED_SCRIPT, path.join(dbDir, 'canvas.db')], {
     cwd: PROJECT_ROOT, encoding: 'utf8',
   });
   if (r.status !== 0) {

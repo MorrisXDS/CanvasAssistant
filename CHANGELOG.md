@@ -12,6 +12,22 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ### Added
 
+- `2026-06-05 01:29 UTC` — **Expanded the local e2e suite from 20 to 33 specs — route-coverage gaps,
+  mutation round-trips, and deep ADR-0006 modal-stack regressions.** Three batches: (1) **route-gap
+  specs** for previously-uncovered pages — Dashboard, Files, Settings, Announcement Detail — plus
+  **global page-navigation** (`Mod+1..5`) and **uniform `Alt+1..N` section-jump** coverage; (2)
+  **mutation flows with IPC read-back** — add-task, archive-course, and change-a-setting all assert
+  the write actually persisted via a follow-up read, not just an optimistic UI flip; (3) the
+  **deep modal-stack page-leak / scroll-suppression specs (ADR-0006 specs 1 & 3)** that the bug-class
+  needed but couldn't have without a deterministic seed — landed on a new shared
+  `e2e/fixtures/seedDuplicateWarning.js` Electron-as-Node seed library (the duplicate-warning matrix
+  extracted from `scripts/manual-test-duplicate-warning.js`, which now consumes the same lib so the
+  manual-test path and the e2e fixture share one source of truth). Also hardens a pre-existing flaky
+  one-shot `textContent()` assertion in `e2e/modal-stack.spec.ts` to a retrying `toHaveText(...)`.
+  Verified green locally — **33/33 passed, 0 skipped, deterministic across two real runs** on this
+  Windows machine; e2e stays local-only (off CI per repo convention), so the green is from the local
+  run, not CI. Test-only change; no `src/**`, schema, or IPC impact.
+
 - `2026-06-04 18:39 UTC` — **Standing CI guard against new raw `useHotkeys` (ADR-0006 step 3).**
   Added `tests/integration/no-raw-usehotkeys.test.ts`, a fitness function that fails the suite
   if any `src/layers/l6-ui/**` file imports `useHotkeys` as a VALUE from `react-hotkeys-hook`
