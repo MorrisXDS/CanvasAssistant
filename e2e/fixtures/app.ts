@@ -52,7 +52,9 @@ type Fixtures = {
 export const test = base.extend<Fixtures>({
   // eslint-disable-next-line no-empty-pattern -- Playwright parses the fixtures arg and requires an object-destructuring pattern here
   electronApp: async ({}, use) => {
-    const mock: MockCanvas = await startMockCanvas();
+    const mock: MockCanvas = await startMockCanvas({
+      serveCurrentTermSync: process.env.CID_E2E_MOCK_CANVAS === 'current-term-sync',
+    });
     const fixture: Fixture = createFixture(mock.url);
 
     const app = await electron.launch({

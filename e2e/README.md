@@ -3,6 +3,11 @@
 Drives the **built** Electron app with real keystrokes against an **isolated, offline**
 fixture profile, to verify Course-Detail keyboard navigation end-to-end.
 
+> For the full picture across **all** test surfaces (Jest unit/integration, this e2e
+> suite, and launching the real app against an isolated DB) plus the native-ABI flip,
+> coverage gates, and a cheat sheet, see **[`docs/TESTING.md`](../docs/TESTING.md)**.
+> This file is the e2e-specific deep dive.
+
 ## Run
 
 ```bash

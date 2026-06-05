@@ -15,7 +15,20 @@ export interface MockCanvas {
   close: () => Promise<void>;
 }
 
-export async function startMockCanvas(): Promise<MockCanvas> {
+export interface MockCanvasOptions {
+  /** Test-only mode: serve enough Canvas endpoints for a manual sync pull. */
+  serveCurrentTermSync?: boolean;
+}
+
+const CURRENT_TERM_ID = 990001;
+
+function isoOffsetDays(now: Date, days: number): string {
+  return new Date(now.getTime() + days * 24 * 60 * 60 * 1000).toISOString();
+}
+
+export async function startMockCanvas(
+  options: MockCanvasOptions = {}
+): Promise<MockCanvas> {
   const server = http.createServer((req, res) => {
     const url = req.url ?? '';
     res.setHeader('Content-Type', 'application/json');
@@ -31,6 +44,49 @@ export async function startMockCanvas(): Promise<MockCanvas> {
         })
       );
       return;
+    }
+
+    if (options.serveCurrentTermSync && req.method === 'GET') {
+      const now = new Date();
+      const currentTerm = {
+        id: CURRENT_TERM_ID,
+        name: 'E2E Extended Current Term',
+        start_at: isoOffsetDays(now, -90),
+        end_at: isoOffsetDays(now, 180),
+      };
+
+      if (url.startsWith('/api/v1/courses?') || url === '/api/v1/courses') {
+        res.statusCode = 200;
+        res.end(
+          JSON.stringify([
+            {
+              id: 91001,
+              name: 'E2E Sync Pull Course',
+              course_code: 'E2ESYNC',
+              enrollment_term_id: CURRENT_TERM_ID,
+              default_view: 'modules',
+              syllabus_body: '<p>E2E sync pull syllabus.</p>',
+              term: currentTerm,
+              enrollments: [{ type: 'student', computed_current_score: null }],
+            },
+          ])
+        );
+        return;
+      }
+
+      if (
+        url.includes('/assignments') ||
+        url.includes('/discussion_topics') ||
+        url.includes('/modules') ||
+        url.includes('/pages') ||
+        url.includes('/folders') ||
+        url.includes('/files') ||
+        url.includes('/assignment_groups')
+      ) {
+        res.statusCode = 200;
+        res.end(JSON.stringify([]));
+        return;
+      }
     }
 
     res.statusCode = 503;

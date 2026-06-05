@@ -104,7 +104,10 @@ function runSeed(
   projectRoot: string,
   dbPath: string
 ): { courseA: SeededCourse; courseB: SeededCourse } {
-  const seedScript = path.join(projectRoot, 'e2e', 'fixtures', 'seedDatabase.js');
+  const seedScript =
+    process.env.CID_E2E_SEED === 'current-term'
+      ? path.join(projectRoot, 'e2e', 'fixtures', 'seedDatabaseCurrentTerm.js')
+      : path.join(projectRoot, 'e2e', 'fixtures', 'seedDatabase.js');
   const r = spawnSync(electronBin(projectRoot), [seedScript, dbPath], {
     cwd: projectRoot,
     encoding: 'utf8',
