@@ -82,6 +82,11 @@ _workspace_*.md
 .codegraph/
 skills-lock.json
 
+# Other agent tooling
+.codex/
+AGENTS.md
+.jest-cache/
+
 # Miscellaneous artifacts
 \${match}
 nul

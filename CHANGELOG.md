@@ -10,6 +10,15 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ## [Unreleased]
 
+### Added
+
+- `2026-06-05 19:23 UTC` — **e2e sync-pull spec (`--project sync`) + mock Canvas endpoint.**
+  A new `sync-current-term.spec.ts` exercises the real `syncCourses()` IPC against a mock
+  Canvas that serves one course with a current enrollment term — proving the sync→visibility
+  pipeline works end-to-end without a real Canvas account. Runs under a separate Playwright
+  project (`npm run test:e2e:sync`) so the default 40-spec deterministic-seed suite stays
+  clean. Also added `.codex/`, `AGENTS.md`, `.jest-cache/` to `.gitignore`.
+
 ### Changed
 
 - `2026-06-05 02:45 UTC` — **e2e suite now runs against a deterministic generated seed —
