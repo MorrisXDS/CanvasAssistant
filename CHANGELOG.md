@@ -157,6 +157,18 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ### Fixed
 
+- `2026-06-05 00:04 UTC` — **e2e suite: corrected a stale Calendar keyboard spec + closed the
+  type-check blind spot that let it rot.** `e2e/calendar-keyboard.spec.ts` still asserted that
+  plain `Alt+1` toggles a course filter, but ADR-0010 / #114 moved that to `Alt+Shift+1` and
+  reserved `Alt+1..N` for `useSectionScope` section direct-jump — so the spec would have failed on
+  next run. Fixed the binding and added a companion spec asserting plain `Alt+1` has no filter side
+  effect. Root cause: `e2e/**` is excluded from both tsconfigs, so no `tsc` ever checked it — added
+  `tsconfig.e2e.json` + a `typecheck:e2e` npm script (local-only; deliberately not wired into CI,
+  since the rest of `test:e2e` needs Electron + a populated DB). The new gate immediately caught two
+  pre-existing unsafe `window as {…}` casts (`smoke`/`calendar` specs) — fixed to the safe
+  `as unknown as` form the other specs already use. Also refreshed `e2e/README.md` Coverage to list
+  all 8 specs. e2e is local-only; no CI/runtime behavior change.
+
 - `2026-06-04 19:42 UTC` — **`Alt+digit` / `Alt+Shift+digit` shortcuts now fire on macOS and
   international glyph-composing keyboard layouts.** Both the `useSectionScope` section direct-jump
   (`Alt+1..N`) and the Calendar course-filter toggle (`Alt+Shift+1..9`) read the pressed digit

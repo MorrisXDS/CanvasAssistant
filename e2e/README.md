@@ -39,20 +39,38 @@ real `userData` are never modified.
 
 ## Coverage
 
-`course-detail-keyboard.spec.ts` (deterministic signals — `sessionStorage` focus index,
-field `id` focus, chip count badges):
+All specs assert via deterministic signals — `sessionStorage` focus index, field `id`
+focus, chip count badges, `data-testid` markers, URL hash — never subjective feel. Specs
+`test.skip()` when the copied DB lacks the entity they need (queue, announcements, courses).
 
-- **Item 1** — `Ctrl+E` opens Settings, `Alt+U` → Credits, `Escape` closes the panel.
-- **Item 2** — `W`/`S` walk the focused task; `E` opens edit; overloaded `Alt+G`→Score /
-  `Alt+T`→Title resolve correctly; `Ctrl+Enter` saves; digit keys `1–5` switch filters
-  (visible rows match the chip count).
+- **`smoke.spec.ts`** — boots to the main UI and confirms `getCourses()` returns the
+  seeded courses through IPC (the fixture wiring sanity check).
+- **`course-detail-keyboard.spec.ts`** (Items 1 & 2):
+  - **Item 1** — `Ctrl+E` opens Settings, `Alt+U` → Credits, `Escape` closes the panel.
+  - **Item 2** — `W`/`S` walk the focused task; `E` opens edit; overloaded `Alt+G`→Score /
+    `Alt+T`→Title resolve correctly; `Ctrl+Enter` saves; digit keys `1–5` switch filters
+    (visible rows match the chip count).
+- **`course-detail-sections.spec.ts`** (Items 3 & 4 + section cycling):
+  - **Item 3 (Queue)** — `Q` cycles to the Queue section (auto-expands); `W`/`S` walk cards.
+  - **Item 4 (Announcements)** — cycle to Announcements; `W`/`S` walk; `Enter` opens the
+    announcement (URL hash → `#/announcement/…`).
+  - **`Q`/`E` section cycling** — exposes ≥2 distinct keyboard-active sections.
+- **`page-keyboard.spec.ts`** — list-page focus navigation for Courses / Tasks /
+  Announcements / Updates (focus engages → moves on next → returns on prev; `Enter` →
+  detail route where applicable).
+- **`calendar-keyboard.spec.ts`** — `Alt+Shift+D`/`Alt+Shift+P` activate a quick filter,
+  `Alt+Shift+C` clears; `Alt+Shift+1` toggles a course filter; plain `Alt+1` is section
+  direct-jump (no filter side effect — ADR-0010).
+- **`modal-stack.spec.ts`** (ADR-0006) — Help shows the topmost modal's `ShortcutCategory`
+  (not the page's); arrow-key browser scroll is `preventDefault()`-ed while a modal is open.
 
 ### Not yet covered
 
-- **Item 3 (Queue)** and **Item 4 (Announcements)** keyboard nav — these need a seeded
-  course that has queued tasks / announcements. The fixture supports them; the specs are
-  a follow-up.
-- `Q/E` section cycling and the full multi-layer Escape cascade beyond the Settings branch.
+- The full multi-layer Escape cascade beyond the Settings branch.
+- The deeper ADR-0006 bug-class specs (DuplicateWarningModal page-leak, Customize-child
+  nested-leak, full scroll-suppression on a populated Tasks Section) — **deferred** in
+  `docs/FOLLOWUPS.md`; they need shared seed infrastructure + a real dev machine (native-ABI
+  seed trap).
 
 ## Limitations
 

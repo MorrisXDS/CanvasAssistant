@@ -1,0 +1,16 @@
+{
+  // Type-checks the Playwright e2e suite, which is excluded from both tsconfig.json
+  // (src only) and tsconfig.test.json (src + tests). Without this, selector / preload-API
+  // / keybinding drift in e2e/** is invisible to tsc — exactly how the stale Alt+1
+  // calendar test rotted (ADR-0010 rebind). Run via `npm run typecheck:e2e`.
+  // `types: ["node"]` only — Playwright's `test`/`expect` are imported, not globals, so
+  // pulling in jest's global types here would shadow them.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "noEmit": true,
+    "types": ["node"]
+  },
+  "include": ["e2e/**/*"],
+  "exclude": ["node_modules", "dist"]
+}
