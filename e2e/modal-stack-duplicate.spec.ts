@@ -3,9 +3,9 @@
  * "Deeper e2e coverage for modal-stack-aware hotkeys").
  *
  * These upgrade the synthetic anchors in `modal-stack.spec.ts` to real,
- * populated-state behavioral assertions by seeding the deterministic
- * duplicate-warning matrix (the only consumers of the fixture's opt-in
- * `seedDuplicates` flag — see e2e/fixtures/seed.ts).
+ * populated-state behavioral assertions using the deterministic duplicate-warning
+ * matrix, which the unified seed always applies to Course A (ADR-0011) and exposes
+ * via the always-present `duplicateSeed` fixture — see e2e/fixtures/seed.ts.
  *
  *   Spec 1 — page-leak: with the bulk DuplicateWarningModal open, a page-level
  *     `Q` (CourseDetail section cycle, owned by useSectionScope) is gated off by
@@ -107,11 +107,8 @@ test.describe('Modal stack — deep (ADR-0006 specs 1 + 3)', () => {
     page,
     duplicateSeed,
   }) => {
-    test.skip(
-      duplicateSeed === null,
-      'Seed reported no visible courses in the copied DB'
-    );
-    const courseId = duplicateSeed!.courseA.id;
+    // The deterministic seed always applies the duplicate matrix to Course A (ADR-0011).
+    const courseId = duplicateSeed.courseA.id;
 
     await gotoCourse(page, courseId);
     await openBulkDuplicateModal(page);
@@ -136,11 +133,8 @@ test.describe('Modal stack — deep (ADR-0006 specs 1 + 3)', () => {
     page,
     duplicateSeed,
   }) => {
-    test.skip(
-      duplicateSeed === null,
-      'Seed reported no visible courses in the copied DB'
-    );
-    const courseId = duplicateSeed!.courseA.id;
+    // The deterministic seed always applies the duplicate matrix to Course A (ADR-0011).
+    const courseId = duplicateSeed.courseA.id;
 
     await gotoCourse(page, courseId);
     await openBulkDuplicateModal(page);

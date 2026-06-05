@@ -17,7 +17,8 @@ test.describe('Mutation — archive course', () => {
   }) => {
     const courses = await getCourses(page);
     const active = courses.find((c) => !c.archivedAt);
-    test.skip(active === undefined, 'No non-archived visible course in the seed');
+    // The deterministic seed always inserts 2 non-archived visible courses (ADR-0011).
+    expect(active).not.toBeUndefined();
     const courseId = (active as { id: number }).id;
 
     await gotoCourse(page, courseId);
