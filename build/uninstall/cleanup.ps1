@@ -48,11 +48,29 @@ if ($DeleteAppData) {
 }
 
 # --- Downloaded Course Files ---
-if ($DeleteDownloads -and $InstallDir) {
-    $downloadsDir = Join-Path $InstallDir "Downloads"
+# In a packaged build the app writes downloads to Documents\CanvasAssistant\Downloads
+# (see appPaths.ts FILES_DIR), NOT the install dir. Use the real Documents folder
+# (respects a redirected/OneDrive Documents). The legacy $InstallDir\Downloads path
+# is also cleared for older installs, though the install dir is removed wholesale anyway.
+if ($DeleteDownloads) {
+    $docs = [Environment]::GetFolderPath('MyDocuments')
+    $appDocs = Join-Path $docs 'CanvasAssistant'
+    $downloadsDir = Join-Path $appDocs 'Downloads'
+
     if (Test-Path $downloadsDir) {
         Remove-Item -Path $downloadsDir -Recurse -Force
         if (Test-Path $downloadsDir) { $exitCode = 1 }
+    }
+
+    # Remove the Documents\CanvasAssistant parent if it's now empty.
+    if ((Test-Path $appDocs) -and -not (Get-ChildItem -Path $appDocs -Force)) {
+        Remove-Item -Path $appDocs -Recurse -Force
+    }
+
+    # Legacy location (older installs put Downloads under the install dir).
+    if ($InstallDir) {
+        $legacy = Join-Path $InstallDir 'Downloads'
+        if (Test-Path $legacy) { Remove-Item -Path $legacy -Recurse -Force }
     }
 }
 

@@ -10,6 +10,16 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ## [Unreleased]
 
+### Changed
+
+- `2026-06-05 22:23 UTC` — **Windows uninstaller now asks two separate keep/delete choices** instead of one
+  all-or-nothing prompt: (1) keep your **downloaded course files** and (2) keep your
+  **settings & data** (app settings + local database + saved Canvas sign-in). Each is
+  independent; default is keep. Also **fixed** the downloads cleanup path — it targeted the
+  install dir but packaged builds store downloads under `Documents\CanvasAssistant\Downloads`
+  (via `MyDocuments`, so it respects a redirected/OneDrive Documents), so the real files were
+  never removed before.
+
 ### Removed
 
 - `2026-06-05 21:03 UTC` — **Repo cleanup: dropped redundant tracked files.** `SETUP.md` (superseded by the
