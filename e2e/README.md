@@ -9,7 +9,9 @@ fixture profile, to verify Course-Detail keyboard navigation end-to-end.
 npm run test:e2e
 ```
 
-This builds (`tsc && vite build`) then launches Playwright against `dist/`.
+This builds (`tsc && vite build`) then launches Playwright against `dist/`. A failing spec
+writes a Playwright `trace.zip` + a screenshot under `test-results/` (both gitignored, and
+attached to the `html` report at `playwright-report/index.html`); green runs leave nothing.
 
 ## Prerequisites
 

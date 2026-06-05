@@ -10,6 +10,15 @@
  *  - welcome guide: the fresh profile has empty localStorage, so we set the
  *    onboardingCompleted flag and reload to land directly on the main app.
  *
+ * Failure artifacts:
+ *  - Playwright's `use: { trace, screenshot }` config does NOT apply to apps
+ *    launched via `_electron.launch()` — that context is created manually, not the
+ *    managed `page` fixture. So tracing is wired in by hand here: we start tracing
+ *    on the Electron app's context right after launch, and on the `page` fixture's
+ *    teardown we save+attach a trace.zip + a screenshot ONLY when the test failed
+ *    (via `testInfo`). On success we stop tracing WITHOUT saving, to avoid disk
+ *    bloat. Net: failures are debuggable, green runs leave no artifacts.
+ *
  * Two exports:
  *  - `test` / `expect` — the default un-seeded fixture used by every existing spec.
  *  - `seededTest` — a variant that requests `seedDuplicates: true` and exposes the
@@ -38,14 +47,7 @@ type Fixtures = {
  * duplicate-seeded variants share one launch path.
  */
 function makeTest(seedDuplicates: boolean) {
-  return base.extend<Fixtures & { duplicateSeed: Fixture['duplicateSeed'] }>({
-    // eslint-disable-next-line no-empty-pattern -- Playwright parses the fixtures arg and requires an object-destructuring pattern here
-    duplicateSeed: async ({}, use) => {
-      // Replaced per-app below via the electronApp fixture; this default is only
-      // used if a spec reads duplicateSeed without launching (it never does).
-      await use(null);
-    },
-
+  return base.extend<Fixtures>({
     // eslint-disable-next-line no-empty-pattern -- Playwright parses the fixtures arg and requires an object-destructuring pattern here
     electronApp: async ({}, use) => {
       const mock: MockCanvas = await startMockCanvas();
@@ -60,8 +62,16 @@ function makeTest(seedDuplicates: boolean) {
         env: { ...process.env, NODE_ENV: 'production' },
       });
 
-      // Stash the seed markers on the app so the duplicateSeed fixture (overridden
-      // below in seededTest) can read them. Plain property — no Playwright option.
+      // Start tracing on the manually-created Electron context. `use:{trace}` in
+      // the config only governs the managed `page` fixture, not `_electron.launch`.
+      await app.context().tracing.start({
+        screenshots: true,
+        snapshots: true,
+        sources: true,
+      });
+
+      // Stash the seed markers on the app so the duplicateSeed fixture (defined
+      // only in seededTest) can read them. Plain property — no Playwright option.
       (app as unknown as { __duplicateSeed: Fixture['duplicateSeed'] }).__duplicateSeed =
         fixture.duplicateSeed;
 
@@ -72,7 +82,7 @@ function makeTest(seedDuplicates: boolean) {
       fixture.cleanup();
     },
 
-    page: async ({ electronApp }, use) => {
+    page: async ({ electronApp }, use, testInfo) => {
       const page = await electronApp.firstWindow();
       await page.waitForLoadState('domcontentloaded');
 
@@ -83,6 +93,32 @@ function makeTest(seedDuplicates: boolean) {
       await page.waitForLoadState('domcontentloaded');
 
       await use(page);
+
+      // Failure artifacts: only save+attach a trace + screenshot when the test
+      // failed. On success, stop tracing without writing anything to disk.
+      const failed =
+        testInfo.status !== undefined && testInfo.status !== testInfo.expectedStatus;
+      if (failed) {
+        const tracePath = testInfo.outputPath('trace.zip');
+        await electronApp
+          .context()
+          .tracing.stop({ path: tracePath })
+          .catch(() => {});
+        await testInfo
+          .attach('trace', { path: tracePath, contentType: 'application/zip' })
+          .catch(() => {});
+        await page
+          .screenshot()
+          .then((buf) =>
+            testInfo.attach('screenshot', { body: buf, contentType: 'image/png' })
+          )
+          .catch(() => {});
+      } else {
+        await electronApp
+          .context()
+          .tracing.stop()
+          .catch(() => {});
+      }
     },
   });
 }
