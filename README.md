@@ -34,9 +34,7 @@
 - [Testing](#testing)
 - [Installation](#installation)
 - [Getting started](#getting-started)
-- [Project status](#project-status)
 - [License](#license)
-- [Author](#author)
 
 ---
 
@@ -134,12 +132,23 @@ fails CI if a new component registers a hotkey the unsafe way.
 > information. They're regenerated from a fixed seed via `npm run capture:screens`._
 
 <p align="center">
-  <img src="assets/screenshots/calendar.png" alt="Calendar" width="410" />
-  <img src="assets/screenshots/courses.png" alt="Courses" width="410" />
+  <img src="assets/screenshots/calendar.png" alt="Calendar" width="900" /><br/>
+  <em>Calendar — every deadline and event on a month / week / day view, color-coded by course.</em>
 </p>
+
 <p align="center">
-  <img src="assets/screenshots/files.png" alt="Files" width="410" />
-  <img src="assets/screenshots/settings.png" alt="Settings" width="410" />
+  <img src="assets/screenshots/courses.png" alt="Courses" width="900" /><br/>
+  <em>Courses — all your courses with grades and progress; pin, hide, or archive.</em>
+</p>
+
+<p align="center">
+  <img src="assets/screenshots/files.png" alt="Files" width="900" /><br/>
+  <em>Files — browse and download course materials, cached locally for offline reading.</em>
+</p>
+
+<p align="center">
+  <img src="assets/screenshots/settings.png" alt="Settings" width="900" /><br/>
+  <em>Settings — theme, sync cadence, notifications, scheduled backups, and more.</em>
 </p>
 
 ---
@@ -248,6 +257,28 @@ npm run dev
 | `npm run lint`    | Lint source                           |
 | `npm run package` | Build installers via electron-builder |
 
+### Build for production
+
+```bash
+npm run build      # 1. compile main + renderer (production) → dist/
+npm run package    # 2. package an installer for your OS → release/
+```
+
+Target a specific platform instead of the current OS:
+
+| Command                 | Output                          |
+| ----------------------- | ------------------------------- |
+| `npm run package:win`   | Windows — NSIS `.exe` installer |
+| `npm run package:mac`   | macOS — `.dmg` + `.zip`         |
+| `npm run package:linux` | Linux — `AppImage` + `.deb`     |
+
+electron-builder rebuilds the native modules (`better-sqlite3`, `keytar`) for Electron
+during packaging; the finished installers land in `release/`.
+
+> **Releases.** Pushing a `v*` tag (`git tag v1.1.1 && git push --tags`) runs the release
+> workflow, which builds installers for Windows, macOS, and Linux in CI and publishes them
+> to [GitHub Releases](https://github.com/MorrisXDS/CanvasAssistant/releases).
+
 ---
 
 ## Getting started
@@ -271,28 +302,9 @@ keychain; your data lives in a local SQLite database. From there:
 
 ---
 
-## Project status
-
-Built solo over the course of my degree as a real tool I used daily, and developed with an
-emphasis on architecture and test rigor (strict layering, ADRs, a deterministic e2e suite).
-It is **feature-complete for personal use** and now in **portfolio / light-maintenance
-mode** — issues and PRs are welcome, but active feature development has wound down.
-
-> Because Canvas access ends with enrollment, the app and its test suite are designed to run
-> **without a live Canvas account** — the e2e suite seeds its own data and can drive a full
-> sync against a mock Canvas server.
-
----
-
 ## License
 
 [PolyForm Noncommercial 1.0.0](LICENSE) — free to use, modify, and share for
 **non-commercial** purposes.
-
----
-
-## Author
-
-**Morris Sun** · [GitHub @MorrisXDS](https://github.com/MorrisXDS) · mcl211204@gmail.com
 
 <div align="right"><a href="#canvas-assistant">↑ back to top</a></div>
