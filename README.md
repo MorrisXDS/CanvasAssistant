@@ -238,9 +238,9 @@ Grab the installer for your platform from
 
 | Platform | File                               | Notes                                                                   |
 | -------- | ---------------------------------- | ----------------------------------------------------------------------- |
-| Windows  | `Canvas Assistant Setup x.x.x.exe` | NSIS installer (per-user or system-wide)                                |
-| macOS    | `Canvas Assistant-x.x.x.dmg`       | Apple Silicon (arm64); **unsigned** — see below (`.zip` also available) |
-| Linux    | `Canvas Assistant-x.x.x.AppImage`  | Run directly (`.deb` also available)                                    |
+| Windows  | `Canvas.Assistant.Setup.x.x.x.exe` | NSIS installer (per-user or system-wide)                                |
+| macOS    | `Canvas.Assistant-x.x.x-arm64.dmg` | Apple Silicon (arm64); **unsigned** — see below (`.zip` also available) |
+| Linux    | `Canvas.Assistant-x.x.x.AppImage`  | Run directly (`.deb` also available)                                    |
 
 > The builds are **not code-signed** (this is a free, solo-maintained project), so macOS and
 > some Linux setups need one extra step the first time. Windows: run the installer and click
@@ -273,17 +273,17 @@ Two artifacts are published — pick one:
 - **AppImage** — portable, no install:
 
   ```bash
-  chmod +x "Canvas Assistant-x.x.x.AppImage"
-  ./"Canvas Assistant-x.x.x.AppImage"
+  chmod +x Canvas.Assistant-*.AppImage
+  ./Canvas.Assistant-*.AppImage
   ```
 
   AppImage needs **FUSE**. On distros without it (e.g. Ubuntu 24.04) either install
-  `libfuse2`, or run extracted: `./"Canvas Assistant-x.x.x.AppImage" --appimage-extract-and-run`.
+  `libfuse2`, or run extracted: `./Canvas.Assistant-*.AppImage --appimage-extract-and-run`.
 
 - **`.deb`** (Debian/Ubuntu) — installs system-wide and pulls its dependency (`libsecret-1-0`):
 
   ```bash
-  sudo apt install "./Canvas Assistant-x.x.x.deb"
+  sudo apt install ./canvas-integration-dashboard_*_amd64.deb
   ```
 
 **Credential storage / keychain.** Your Canvas token is stored in the OS secret service
