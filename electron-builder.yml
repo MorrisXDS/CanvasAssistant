@@ -68,6 +68,8 @@ linux:
   target:
     - AppImage
     - deb
+    - rpm
+    - pacman
   icon: assets/app.iconset/icon_512x512.png
   category: Education
   maintainer: Canvas Assistant
@@ -86,6 +88,21 @@ deb:
     - "--replaces=canvas-integration-dashboard"
     - "--conflicts=canvas-integration-dashboard"
     - "--provides=canvas-integration-dashboard"
+
+# RPM (Fedora / RHEL / openSUSE family). The runtime keychain dep is the shared
+# libsecret library; on the RPM family that package is `libsecret` (vs the deb's
+# `libsecret-1-0`). NO replaces/conflicts/provides: there was never a prior RPM
+# package to supersede (the only historical package was the .deb under the old
+# canvas-integration-dashboard name) — see electron-builder.yml deb block above.
+rpm:
+  depends:
+    - libsecret
+
+# pacman (Arch / Manjaro). Arch's keychain shared-library package is also
+# `libsecret`. Same no-supersede rationale as rpm — brand-new package format.
+pacman:
+  depends:
+    - libsecret
 
 # Native module rebuild
 electronDownload:

@@ -48,7 +48,9 @@ export function UninstallModal({ isOpen, onClose }: UninstallModalProps) {
   // Platform state
   const [platform, setPlatform] = useState<string>('');
   const [linuxCommand, setLinuxCommand] = useState<string>('');
-  const [linuxType, setLinuxType] = useState<'appimage' | 'deb'>('appimage');
+  const [linuxType, setLinuxType] = useState<
+    'appimage' | 'deb' | 'rpm' | 'pacman' | 'unknown'
+  >('appimage');
   const [copied, setCopied] = useState(false);
 
   // Error state
