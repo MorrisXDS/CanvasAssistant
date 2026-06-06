@@ -365,6 +365,37 @@ export const CourseSummarySchema = z.object({
 });
 export type CourseSummary = z.infer<typeof CourseSummarySchema>;
 
+// Past-terms grade history (grade modal "Past terms" section). Computed
+// entirely main-side; archived tasks never cross IPC (ADR-0015 Decision 3).
+export const PastTermCourseSchema = z.object({
+  code: z.string(),
+  name: z.string(),
+  color: z.string().nullable(),
+  /** Task-derived course average (percent), null if not assessable. */
+  grade: z.number().nullable(),
+  /** Course credits (default 1.0). */
+  credits: z.number(),
+});
+export type PastTermCourse = z.infer<typeof PastTermCourseSchema>;
+
+export const PastTermGroupSchema = z.object({
+  termName: z.string(),
+  termEndAt: z.string().nullable(),
+  courses: z.array(PastTermCourseSchema),
+  /** Credit-weighted average within the term. */
+  termAverage: z.number().nullable(),
+});
+export type PastTermGroup = z.infer<typeof PastTermGroupSchema>;
+
+export const PastTermGradesSchema = z.object({
+  terms: z.array(PastTermGroupSchema),
+  /** Credit-weighted average across all past-term courses (flattened). */
+  cumulative: z.number().nullable(),
+  /** Total past-term courses (for the "N courses" subtitle). */
+  courseCount: z.number(),
+});
+export type PastTermGrades = z.infer<typeof PastTermGradesSchema>;
+
 export const GradeHistoryEntrySchema = z.object({
   id: z.number(),
   courseId: z.number(),
@@ -826,6 +857,10 @@ export const IpcContract = {
   'data:getGradeHistory': {
     params: z.number(),
     result: z.array(GradeHistoryEntrySchema),
+  },
+  'data:getPastTermGrades': {
+    params: z.void(),
+    result: PastTermGradesSchema,
   },
   'data:getFiles': {
     params: z.void(),

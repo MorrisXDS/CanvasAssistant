@@ -20,6 +20,7 @@
 
 import { EventEmitter } from 'events';
 import { Database } from './Database';
+import { TERM_END_BUFFER_DAYS } from './constants/termLinger';
 
 /**
  * Term selection options:
@@ -64,7 +65,9 @@ export interface VisibilityOracleConfig {
 }
 
 const DEFAULT_CONFIG: Required<VisibilityOracleConfig> = {
-  termEndBufferDays: 30,
+  // Single source of truth shared with auto-archive (see ADR-0015). No behavior
+  // change here — the value is still 30 — it just stops being a magic number.
+  termEndBufferDays: TERM_END_BUFFER_DAYS,
 };
 
 /**

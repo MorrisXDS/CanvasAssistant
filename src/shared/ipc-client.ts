@@ -93,6 +93,7 @@ export interface TypedApi {
     notificationId: number
   ) => Promise<IpcResult<'data:getFileReferences'>>;
   getGradeHistory: (courseId: number) => Promise<IpcResult<'data:getGradeHistory'>>;
+  getPastTermGrades: () => Promise<IpcResult<'data:getPastTermGrades'>>;
   getFiles: () => Promise<IpcResult<'data:getFiles'>>;
 
   // Attachments

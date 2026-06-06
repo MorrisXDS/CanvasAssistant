@@ -37,6 +37,7 @@ import {
 import { VisibilityOracle } from '../../src/layers/l1-persistence/VisibilityOracle';
 import { registerCourseDataHandlers } from '../../src/lifecycle/ipc-handlers/courseDataHandlers';
 import type { IpcContext } from '../../src/lifecycle/ipc-handlers/IpcContext';
+import { PastTermGradesSchema } from '../../src/shared/ipc-contract';
 
 interface IpcMainMock {
   __getHandler: (channel: string) => ((...args: unknown[]) => unknown) | undefined;
@@ -171,6 +172,54 @@ describe('courseDataHandlers (ADR-0007 PR-B)', () => {
 
       expect(result.map((c) => c.name)).toEqual(['Recent', 'Old']);
       expect(result.every((c) => c.archivedAt !== null)).toBe(true);
+    });
+  });
+
+  describe('data:getPastTermGrades', () => {
+    test('delegates to the reader and returns the term-grouped breakdown', async () => {
+      const term = seedEnrollmentTerm(db, {
+        external_id: '100',
+        name: 'Fall 2024',
+        end_at: '2024-12-15T00:00:00Z',
+      });
+      seedCourse(db, {
+        id: 1,
+        name: 'Archived',
+        archived_at: '2025-01-01',
+        enrollment_term_id: term,
+      });
+      seedTask(db, { course_id: 1, weight: 100, grade: 88 });
+
+      const result = (await invoke('data:getPastTermGrades')) as {
+        terms: Array<{ termName: string; termAverage: number | null }>;
+        cumulative: number | null;
+        courseCount: number;
+      };
+
+      expect(result.courseCount).toBe(1);
+      expect(result.terms).toHaveLength(1);
+      expect(result.terms[0].termName).toBe('Fall 2024');
+      expect(result.terms[0].termAverage).toBeCloseTo(88, 5);
+      expect(result.cumulative).toBeCloseTo(88, 5);
+    });
+
+    test('parses against the IPC contract schema', async () => {
+      const term = seedEnrollmentTerm(db, {
+        external_id: '100',
+        name: 'Fall 2024',
+        end_at: '2024-12-15T00:00:00Z',
+      });
+      seedCourse(db, {
+        id: 1,
+        name: 'Archived',
+        archived_at: '2025-01-01',
+        enrollment_term_id: term,
+      });
+      seedTask(db, { course_id: 1, weight: 100, grade: 88 });
+
+      const result = await invoke('data:getPastTermGrades');
+
+      expect(() => PastTermGradesSchema.parse(result)).not.toThrow();
     });
   });
 
@@ -323,13 +372,34 @@ function seedCourse(
   );
 }
 
+/**
+ * Seeds an enrollment term and returns the Canvas term id (= external_id as an
+ * integer) — the value a course stores in `enrollment_term_id`. The archived
+ * term-end JOIN matches `CAST(et.external_id AS INTEGER)` (ADR-0015), NOT the
+ * autoincrement PK. Term tests that key on ordering must pass a numeric
+ * `external_id`.
+ */
+let taskSeq = 0;
+function seedTask(
+  database: Database,
+  data: { course_id: number; weight: number | null; grade: number | null }
+): void {
+  taskSeq += 1;
+  database.executeWrite(
+    `INSERT INTO tasks (external_id, course_id, title, weight, grade, priority_score)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [`task_${taskSeq}`, data.course_id, `Task ${taskSeq}`, data.weight, data.grade, 0]
+  );
+}
+
 function seedEnrollmentTerm(
   database: Database,
   data: { external_id: string; name: string; end_at?: string; start_at?: string }
 ): number {
-  const result = database.executeWrite(
+  database.executeWrite(
     `INSERT INTO enrollment_terms (external_id, name, end_at, start_at) VALUES (?, ?, ?, ?)`,
     [data.external_id, data.name, data.end_at ?? null, data.start_at ?? null]
   );
-  return Number(result.lastInsertRowid);
+  const parsed = Number(data.external_id);
+  return Number.isNaN(parsed) ? 0 : parsed;
 }

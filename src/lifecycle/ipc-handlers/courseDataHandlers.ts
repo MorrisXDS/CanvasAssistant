@@ -19,6 +19,7 @@ import { ipcMain } from 'electron';
 import type { IpcContext } from './IpcContext';
 import { CourseReader } from '../../layers/l1-persistence/readers/CourseReader';
 import { EnrollmentTermReader } from '../../layers/l1-persistence/readers/EnrollmentTermReader';
+import { PastTermGradesReader } from '../../layers/l1-persistence/readers/PastTermGradesReader';
 import { mapCourseRowToListDto, mapCourseRowToDetailDto } from './mappers/courseMapper';
 
 /**
@@ -29,6 +30,7 @@ export function registerCourseDataHandlers(ctx: IpcContext): void {
   const logger = ctx.getLogger();
   const courseReader = new CourseReader(database);
   const enrollmentTermReader = new EnrollmentTermReader(database);
+  const pastTermGradesReader = new PastTermGradesReader(database);
 
   // ============ Enrollment Terms ============
 
@@ -97,6 +99,21 @@ export function registerCourseDataHandlers(ctx: IpcContext): void {
       return courseReader.getArchivedSortedByTermEnd().map(mapCourseRowToListDto);
     } catch (error) {
       logger.error(`Failed to get archived courses: ${error}`);
+      throw error;
+    }
+  });
+
+  /**
+   * data:getPastTermGrades — credit-weighted grade history for archived
+   * courses, grouped by term (grade modal "Past terms" section). Computed
+   * entirely main-side by the reader; archived tasks never cross IPC, so this
+   * data stays isolated from `state.courses` / `state.tasks` (ADR-0015).
+   */
+  ipcMain.handle('data:getPastTermGrades', () => {
+    try {
+      return pastTermGradesReader.getPastTermGrades();
+    } catch (error) {
+      logger.error(`Failed to get past term grades: ${error}`);
       throw error;
     }
   });

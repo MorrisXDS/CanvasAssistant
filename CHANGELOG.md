@@ -10,7 +10,22 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ## [Unreleased]
 
+### Added
+
+- `2026-06-06 07:57 UTC` — **Grade history across past terms (backend).** A new main-side
+  reader (`data:getPastTermGrades`) computes per-term and credit-weighted cumulative averages
+  for archived courses, grouped by enrollment term. Grades are task-derived (not the unused
+  `current_grade`), and the breakdown is computed entirely main-side so archived tasks never
+  cross IPC into the visible store (ADR-0015). UI to follow.
+
 ### Changed
+
+- `2026-06-06 07:57 UTC` — **Just-finished courses no longer vanish from your average early.**
+  Auto-archive and the "auto" term filter now share one 30-day linger buffer (`TERM_END_BUFFER_DAYS`),
+  so a course stays visible until ~30 days after its term ends — enough for final grades to
+  post — then archives, instead of being yanked out of the dashboard average the moment the
+  term ended (ADR-0015). Also fixes a latent term-JOIN bug that could mis-group the archived
+  course list.
 
 - `2026-06-06 05:33 UTC` — **Course cards on the Courses page are now sensibly sized.** Cards
   scale at a 4:3 aspect-ratio of their (responsive) width and rows pack to the top, instead of

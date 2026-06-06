@@ -36,6 +36,10 @@ const api = {
 
   getArchivedCourses: () => ipcRenderer.invoke('data:getArchivedCourses'),
 
+  // Past-terms grade history (grade modal). Computed main-side; archived tasks
+  // never cross IPC — see ADR-0015.
+  getPastTermGrades: () => ipcRenderer.invoke('data:getPastTermGrades'),
+
   // Get tasks for an archived course (bypasses visibility filtering)
   // Archived courses are local-only sandboxes
   getTasksForArchivedCourse: (courseId: number) =>

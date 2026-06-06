@@ -183,6 +183,102 @@ describe('CourseReader', () => {
 
       expect(reader.getArchivedSortedByTermEnd()).toEqual([]);
     });
+
+    test('joins on Canvas term id (external_id), not the autoincrement PK', () => {
+      // Decoy term inserted first → its PK (1) differs from the Canvas id (777).
+      // A PK-based join would mis-order; the external_id join must group the
+      // course under its real term.
+      seedEnrollmentTerm(db, {
+        external_id: '1',
+        name: 'Decoy',
+        end_at: '2030-12-15T00:00:00Z',
+      });
+      const realTerm = seedEnrollmentTerm(db, {
+        external_id: '777',
+        name: 'Fall 2024',
+        end_at: '2024-12-15T00:00:00Z',
+      });
+      seedCourse(db, {
+        id: 1,
+        name: 'Real',
+        archived_at: '2025-01-01',
+        enrollment_term_id: realTerm,
+      });
+
+      const rows = reader.getArchivedSortedByTermEnd();
+
+      expect(rows.map((r) => r.id)).toEqual([1]);
+    });
+  });
+
+  describe('getArchivedWithTerm', () => {
+    test('projects course display fields + joined term name/end date', () => {
+      const term = seedEnrollmentTerm(db, {
+        external_id: '200',
+        name: 'Fall 2024',
+        end_at: '2024-12-15T00:00:00Z',
+      });
+      seedCourse(db, {
+        id: 1,
+        name: 'Archived',
+        archived_at: '2025-01-01',
+        enrollment_term_id: term,
+      });
+
+      const rows = reader.getArchivedWithTerm();
+
+      expect(rows).toHaveLength(1);
+      expect(rows[0].id).toBe(1);
+      expect(rows[0].term_name).toBe('Fall 2024');
+      expect(rows[0].term_end_at).toBe('2024-12-15T00:00:00Z');
+    });
+
+    test('excludes active and soft-deleted courses; orders newest term first', () => {
+      const t1 = seedEnrollmentTerm(db, {
+        external_id: '100',
+        name: 'Fall 2023',
+        end_at: '2023-12-15T00:00:00Z',
+      });
+      const t2 = seedEnrollmentTerm(db, {
+        external_id: '200',
+        name: 'Fall 2024',
+        end_at: '2024-12-15T00:00:00Z',
+      });
+      seedCourse(db, {
+        id: 1,
+        name: 'Old',
+        archived_at: '2024-01-01',
+        enrollment_term_id: t1,
+      });
+      seedCourse(db, {
+        id: 2,
+        name: 'Recent',
+        archived_at: '2025-01-01',
+        enrollment_term_id: t2,
+      });
+      seedCourse(db, { id: 3, name: 'Active', enrollment_term_id: t2 });
+      seedCourse(db, {
+        id: 4,
+        name: 'Deleted',
+        archived_at: '2025-01-01',
+        deleted_at: '2025-02-01',
+        enrollment_term_id: t2,
+      });
+
+      const rows = reader.getArchivedWithTerm();
+
+      expect(rows.map((r) => r.name)).toEqual(['Recent', 'Old']);
+    });
+
+    test('returns null term fields when no matching term', () => {
+      seedCourse(db, { id: 1, name: 'NoTerm', archived_at: '2025-01-01' });
+
+      const rows = reader.getArchivedWithTerm();
+
+      expect(rows).toHaveLength(1);
+      expect(rows[0].term_name).toBeNull();
+      expect(rows[0].term_end_at).toBeNull();
+    });
   });
 
   describe('getSettingsById', () => {
@@ -279,6 +375,12 @@ function seedCourse(
   );
 }
 
+/**
+ * Seeds an enrollment term and returns the Canvas term id (= external_id as an
+ * integer) — the value a course stores in `enrollment_term_id`. The
+ * term-end JOIN matches on `CAST(et.external_id AS INTEGER)` (ADR-0015), NOT
+ * the autoincrement PK, so tests must wire `enrollment_term_id` to this.
+ */
 function seedEnrollmentTerm(
   db: Database,
   data: {
@@ -287,9 +389,9 @@ function seedEnrollmentTerm(
     end_at: string;
   }
 ): number {
-  const result = db.executeWrite(
+  db.executeWrite(
     `INSERT INTO enrollment_terms (external_id, name, end_at) VALUES (?, ?, ?)`,
     [data.external_id, data.name, data.end_at]
   );
-  return Number(result.lastInsertRowid);
+  return Number(data.external_id);
 }

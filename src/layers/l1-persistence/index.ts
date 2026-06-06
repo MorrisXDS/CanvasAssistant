@@ -31,8 +31,18 @@ export {
   VisibleTaskRow,
 } from './VisibilityOracle';
 
+// Shared term-linger buffer constant (see ADR-0015)
+export { TERM_END_BUFFER_DAYS } from './constants/termLinger';
+
 // L1 Readers — see docs/adr/0007 (ADR-0007)
 export { CourseReader } from './readers/CourseReader';
+export type { ArchivedCourseWithTermRow } from './readers/CourseReader';
+export { PastTermGradesReader } from './readers/PastTermGradesReader';
+export type {
+  PastTermGrades,
+  PastTermGroup,
+  PastTermCourse,
+} from './readers/PastTermGradesReader';
 export { CanvasFileReader } from './readers/CanvasFileReader';
 export { AnnouncementAttachmentReader } from './readers/AnnouncementAttachmentReader';
 export type { AttachmentWithContextRow } from './readers/AnnouncementAttachmentReader';

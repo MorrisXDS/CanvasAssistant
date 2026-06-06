@@ -19,6 +19,22 @@
 import type { Database } from '../Database';
 import type { CourseRow } from '../DatabaseRowTypes';
 
+/**
+ * Archived course joined to its enrollment term. Narrow projection backing the
+ * past-terms grade grouping (`PastTermGradesReader`). `term_name` / `term_end_at`
+ * are null when the course has no matching term row.
+ */
+export interface ArchivedCourseWithTermRow {
+  id: number;
+  code: string;
+  name: string;
+  color: string | null;
+  credits: number | null;
+  enrollment_term_id: number | null;
+  term_name: string | null;
+  term_end_at: string | null;
+}
+
 export class CourseReader {
   constructor(private readonly db: Database) {}
 
@@ -58,16 +74,35 @@ export class CourseReader {
    * Get archived courses sorted by their enrollment term's end date (most
    * recent first), then alphabetically by name. Excludes soft-deleted rows.
    *
-   * The JOIN uses `enrollment_terms.id` (numeric PK) — courses store the
-   * numeric term id in `enrollment_term_id`. (Pre-rename Oracle had a
-   * `CAST(et.external_id AS INTEGER)` variant of this JOIN; that disagrees
-   * with the IPC handler's existing JOIN and would warrant its own ticket.)
+   * JOIN affinity (fixed per ADR-0015): `courses.enrollment_term_id` stores
+   * Canvas's term id, which sync writes into `enrollment_terms.external_id`
+   * (TEXT) — NOT the numeric PK `et.id`. The CAST matches the proven-correct
+   * join used by `VisibilityOracle` and the auto-archive query. (Previously
+   * joined on `et.id`, which only happened to work when the autoincrement PK
+   * coincided with the Canvas term id.)
    */
   getArchivedSortedByTermEnd(): CourseRow[] {
     return this.db.executeRead<CourseRow>(
       `SELECT c.*
        FROM courses c
-       LEFT JOIN enrollment_terms et ON c.enrollment_term_id = et.id
+       LEFT JOIN enrollment_terms et ON c.enrollment_term_id = CAST(et.external_id AS INTEGER)
+       WHERE c.archived_at IS NOT NULL AND c.deleted_at IS NULL
+       ORDER BY et.end_at DESC NULLS LAST, c.name ASC`
+    );
+  }
+
+  /**
+   * Archived courses joined to their enrollment term, projecting the fields the
+   * past-terms grade grouping needs: course display fields + credits plus the
+   * term name / end date. Same JOIN affinity + ordering as
+   * `getArchivedSortedByTermEnd`. Excludes soft-deleted rows.
+   */
+  getArchivedWithTerm(): ArchivedCourseWithTermRow[] {
+    return this.db.executeRead<ArchivedCourseWithTermRow>(
+      `SELECT c.id, c.code, c.name, c.color, c.credits, c.enrollment_term_id,
+              et.name AS term_name, et.end_at AS term_end_at
+       FROM courses c
+       LEFT JOIN enrollment_terms et ON c.enrollment_term_id = CAST(et.external_id AS INTEGER)
        WHERE c.archived_at IS NOT NULL AND c.deleted_at IS NULL
        ORDER BY et.end_at DESC NULLS LAST, c.name ASC`
     );
