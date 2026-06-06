@@ -331,7 +331,12 @@ export const styles: Record<string, React.CSSProperties> = {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fill, minmax(clamp(280px, 20vw, 400px), 1fr))',
     gap: 'clamp(16px, 2vw, 24px)',
-    alignItems: 'stretch',
+    // Cards size themselves by aspect-ratio (see gridCard), so don't stretch them
+    // to the row height, and pack rows to the top — otherwise a sparse grid
+    // (e.g. a single course) balloons to fill the page (the old "one giant card"
+    // bug, since CSS-grid align-content defaults to `stretch`).
+    alignItems: 'start',
+    alignContent: 'start',
     flex: 1,
   },
 
@@ -344,8 +349,11 @@ export const styles: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
     display: 'grid',
     gridTemplateRows: 'auto auto 1fr auto auto',
-    height: '100%',
-    minHeight: 'clamp(200px, 18vw, 280px)',
+    // Height scales with the card's (responsive) width at 4:3 instead of
+    // stretching to fill the row. min-height is intentionally left at `auto`
+    // (the grid item's content floor) so a long course name on a narrow column
+    // grows the card rather than clipping it under overflow:hidden.
+    aspectRatio: '4 / 3',
   },
 
   colorBar: {
