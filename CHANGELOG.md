@@ -25,6 +25,14 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ### Added
 
+- `2026-06-06 04:13 UTC` — **Added Linux `.rpm` (Fedora/RHEL/openSUSE) and `pacman`
+  (`.pkg.tar.zst`, Arch/Manjaro) install targets** alongside the existing `.deb` + AppImage
+  (targets v1.1.4). The in-app uninstall dialog now detects how the app was installed (by
+  asking `dpkg`/`rpm`/`pacman` which one owns the running binary) and shows the matching
+  removal command (`sudo apt remove` / `sudo dnf remove` / `sudo pacman -R`), falling back to
+  a safe default when no package manager claims it. README gains install instructions for both
+  new formats.
+
 - `2026-06-06 03:30 UTC` — **Deferrable re-auth with app-wide sync gating** (ADR-0013, frontend):
   the Canvas "token expired" prompt now has a **Later** button — defer reconnecting and keep
   using the app with your imported data. While re-auth is deferred, **every Sync button is greyed
