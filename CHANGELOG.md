@@ -12,11 +12,15 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ### Added
 
-- `2026-06-06 07:57 UTC` — **Grade history across past terms (backend).** A new main-side
-  reader (`data:getPastTermGrades`) computes per-term and credit-weighted cumulative averages
-  for archived courses, grouped by enrollment term. Grades are task-derived (not the unused
-  `current_grade`), and the breakdown is computed entirely main-side so archived tasks never
-  cross IPC into the visible store (ADR-0015). UI to follow.
+- `2026-06-06 07:57 UTC` — **Grade history across past terms.** The dashboard Grade Breakdown
+  modal now groups your current courses by term (overlap-safe: two concurrently-running terms
+  stay separate) and adds a collapsible **Past terms** section — archived courses grouped by
+  term (newest first, per-term average) plus a **credit-weighted cumulative** across all past
+  terms. The Courses-page Archived drawer is likewise grouped into collapsible per-term
+  subgroups (term name + per-term average + count; Restore preserved). Grades are task-derived
+  (not the unused `current_grade`), and the past-terms breakdown is computed entirely main-side
+  (`data:getPastTermGrades`) so archived tasks never cross IPC into the visible store
+  (ADR-0015).
 
 ### Changed
 

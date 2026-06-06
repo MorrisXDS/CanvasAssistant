@@ -784,6 +784,52 @@ export const styles: Record<string, React.CSSProperties> = {
     borderRadius: 'var(--radius-sm)',
     marginLeft: 'var(--space-2)',
   },
+
+  // Archived-by-term subgroups (ADR-0015).
+  archivedTermGroup: {
+    borderTop: '1px solid var(--border-light)',
+  },
+
+  archivedTermHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-2)',
+    width: '100%',
+    padding: 'var(--space-3) var(--space-4)',
+    backgroundColor: 'transparent',
+    border: 'none',
+    cursor: 'pointer',
+    textAlign: 'left' as const,
+  },
+
+  archivedTermCaret: {
+    flexShrink: 0,
+    transition: 'transform var(--transition-fast)',
+  },
+
+  archivedTermName: {
+    flex: 1,
+    fontSize: 'var(--text-sm)',
+    fontWeight: 'var(--font-semibold)',
+    color: 'var(--text-secondary)',
+  },
+
+  archivedTermAvg: {
+    fontSize: 'var(--text-xs)',
+    color: 'var(--text-muted)',
+    marginRight: 'var(--space-2)',
+  },
+
+  archivedTermCount: {
+    fontSize: 'var(--text-xs)',
+    fontWeight: 'var(--font-medium)',
+    color: 'var(--text-muted)',
+    backgroundColor: 'var(--bg-app)',
+    borderRadius: 'var(--radius-full)',
+    padding: '0 var(--space-2)',
+    minWidth: '22px',
+    textAlign: 'center' as const,
+  },
 };
 
 // Inject hover styles for drag handle visibility

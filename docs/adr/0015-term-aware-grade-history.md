@@ -1,6 +1,6 @@
 # 0015 — Term-aware grade history (unified term-linger buffer + past-terms grade breakdown)
 
-Status: Proposed
+Status: Accepted
 
 ## Context
 
