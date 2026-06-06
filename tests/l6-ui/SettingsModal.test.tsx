@@ -177,6 +177,7 @@ import * as AccountSectionModule from '../../src/layers/l6-ui/components/Setting
 import * as AppBehaviorSectionModule from '../../src/layers/l6-ui/components/Settings/AppBehaviorSection';
 import * as NotificationsSectionModule from '../../src/layers/l6-ui/components/Settings/NotificationsSection';
 import * as DataSectionModule from '../../src/layers/l6-ui/components/Settings/DataSection';
+import * as UpdatesSectionModule from '../../src/layers/l6-ui/components/Settings/UpdatesSection';
 import * as ConfirmDialogModule from '../../src/layers/l6-ui/components/shared/ConfirmDialog';
 import * as ExportDialogModule from '../../src/layers/l6-ui/components/shared/ExportDialog';
 import * as PrimitivesModule from '../../src/layers/l6-ui/components/primitives';
@@ -558,6 +559,7 @@ describe('SettingsModal', () => {
         behavior: { current: null },
         notifications: { current: null },
         data: { current: null },
+        updates: { current: null },
       };
       const noop = jest.fn();
       const base = {
@@ -572,7 +574,24 @@ describe('SettingsModal', () => {
         openSections: [],
         setOpenSections: jest.fn(),
         dockAutoHide: false,
-        sectionOrder: [],
+        sectionOrder: [
+          'display',
+          'academic',
+          'files',
+          'sync',
+          'account',
+          'behavior',
+          'notifications',
+          'data',
+          'updates',
+        ],
+        getDragWrapperStyle: jest.fn().mockReturnValue({}),
+        handleMouseDown: jest.fn(),
+        handleDragStart: jest.fn(),
+        handleDragEnd: jest.fn(),
+        handleDragOver: jest.fn(),
+        handleDragLeave: jest.fn(),
+        handleDrop: jest.fn(),
         sectionRefs: refs,
         filteredSettings: null,
         // Token replacement (defaults: closed)
@@ -653,6 +672,9 @@ describe('SettingsModal', () => {
       jest
         .spyOn(DataSectionModule, 'DataSection')
         .mockImplementation(stubSection('data'));
+      jest
+        .spyOn(UpdatesSectionModule, 'UpdatesSection')
+        .mockImplementation(stubSection('updates'));
       jest
         .spyOn(ConfirmDialogModule, 'ConfirmDialog')
         .mockImplementation(() => React.createElement(React.Fragment));

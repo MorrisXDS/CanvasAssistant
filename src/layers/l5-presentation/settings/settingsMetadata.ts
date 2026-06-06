@@ -17,7 +17,8 @@ export type SettingsCategory =
   | 'account'
   | 'behavior'
   | 'notifications'
-  | 'data';
+  | 'data'
+  | 'updates';
 
 export type SettingComponentType =
   | 'toggle'
@@ -419,6 +420,26 @@ export const SETTINGS_METADATA: SettingMetadata[] = [
     component: 'custom',
     keywords: ['clear', 'delete', 'remove', 'wipe'],
   },
+
+  // =================================
+  // UPDATES
+  // =================================
+  {
+    key: 'updatePreferences.enabled',
+    label: 'Check for updates automatically',
+    description: 'Periodically check GitHub Releases for a newer version',
+    category: 'updates',
+    component: 'toggle',
+    keywords: ['auto', 'notify', 'channel', 'release', 'new version'],
+  },
+  {
+    key: 'updatePreferences.intervalHours',
+    label: 'Check interval',
+    description: 'How often to poll for a newer version when automatic checks are on',
+    category: 'updates',
+    component: 'select',
+    keywords: ['frequency', 'daily', 'weekly', 'schedule'],
+  },
 ];
 
 // =============================================================================
@@ -463,6 +484,10 @@ export const SETTINGS_CATEGORIES: Record<
   data: {
     label: 'Data Management',
     description: 'Backup, restore, export, and reset options',
+  },
+  updates: {
+    label: 'Updates',
+    description: 'Check for new versions of the app',
   },
 };
 

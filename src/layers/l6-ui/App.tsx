@@ -18,6 +18,7 @@ import {
 } from '../l5-presentation/settings';
 import { Layout } from './components/Layout';
 import { ReAuthModal } from './components/shared/ReAuthModal';
+import { UpdateAvailableModal } from './components/Updates/UpdateAvailableModal';
 import { createLogger } from './utils/rendererLogger';
 
 const logger = createLogger('App');
@@ -304,6 +305,9 @@ function AppContent() {
           onDisconnect={handleReauthDisconnect}
         />
       )}
+
+      {/* Update available notification modal (ADR-0012) — isOpen derived from store */}
+      <UpdateAvailableModal />
 
       {/* Recovery banner at top */}
       {recoveryStatus && (

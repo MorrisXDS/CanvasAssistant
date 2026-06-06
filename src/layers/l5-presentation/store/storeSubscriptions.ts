@@ -3,7 +3,12 @@
  * IPC event subscriptions for the Zustand store
  */
 
-import type { SimulationChangeEvent, DbCommitEvent, SyncConflictItem } from '../types';
+import type {
+  SimulationChangeEvent,
+  DbCommitEvent,
+  SyncConflictItem,
+  UpdateAvailablePayload,
+} from '../types';
 import { useStore } from './store';
 import { createLogger } from '../../l6-ui/utils/rendererLogger';
 
@@ -54,7 +59,10 @@ export function subscribeToIpcEvents(): () => void {
         try {
           await useStore.getState().refreshAll();
         } catch (err) {
-          log.error('[Store] refreshAll failed after sync:status idle:', err instanceof Error ? err : undefined);
+          log.error(
+            '[Store] refreshAll failed after sync:status idle:',
+            err instanceof Error ? err : undefined
+          );
         }
       }
     }
@@ -136,6 +144,13 @@ export function subscribeToIpcEvents(): () => void {
       }
     ) || (() => {});
 
+  // Listen for update:available push events (ADR-0012)
+  const unsubUpdateAvailable =
+    api.onUpdateAvailable?.((payload: UpdateAvailablePayload) => {
+      log.info(`[storeSubscriptions] Received update:available for v${payload.version}`);
+      useStore.getState().setUpdateAvailable(payload);
+    }) || (() => {});
+
   return () => {
     unsubSimulation();
     unsubDbCommit();
@@ -147,5 +162,6 @@ export function subscribeToIpcEvents(): () => void {
     unsubSyncPhase();
     unsubSyncProgress();
     unsubSyncUpdates();
+    unsubUpdateAvailable();
   };
 }

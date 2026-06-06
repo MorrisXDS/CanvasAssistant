@@ -16,6 +16,7 @@ import type {
   CanvasClient,
   OperationCoordinator,
 } from '../../layers/l2-daemon';
+import type { UpdateChecker } from '../../layers/l2-daemon/update/UpdateChecker';
 import type { CommandDispatcher } from '../../layers/l4-controller';
 import type { VisibilityOracle, FileEntityProvider } from '../../layers/l1-persistence';
 import type { CrashProtectionManager } from '../CrashProtectionManager';
@@ -45,6 +46,8 @@ export interface IpcContext {
   getCanvasClient: () => CanvasClient | null;
   getSyncEngine: () => SyncEngine | null;
   getOperationCoordinator: () => OperationCoordinator | null;
+  /** Optional — only set when the update checker is wired in AppLifecycle. */
+  getUpdateChecker?: () => UpdateChecker | null;
 
   // State modifiers (for credential/canvas handlers)
   clearCanvasClient: () => void;

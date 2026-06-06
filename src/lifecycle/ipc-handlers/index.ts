@@ -30,3 +30,4 @@ export { registerHtmlDependencyHandlers } from './htmlDependencyHandlers';
 export { registerCommandHandlers } from './commandHandlers';
 export { registerSyncUpdatesHandlers } from './syncUpdatesHandlers';
 export { registerBackupScheduleHandlers } from './backupScheduleHandlers';
+export { registerUpdateHandlers } from './updateHandlers';

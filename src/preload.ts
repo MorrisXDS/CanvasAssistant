@@ -13,6 +13,8 @@ import type {
   SimulationChangeEvent,
   DbCommitEvent,
   SyncStatus,
+  UpdatePreferences,
+  UpdateAvailablePayload,
 } from './shared/ipc-contract';
 
 /**
@@ -1190,6 +1192,44 @@ const api = {
     };
     ipcRenderer.on('file-dropped', handler);
     return () => ipcRenderer.removeListener('file-dropped', handler);
+  },
+
+  // ============ Update Channel (ADR-0012) ============
+
+  /** Retrieve current update preferences from user_preferences (SQL). */
+  getUpdatePrefs: () =>
+    ipcRenderer.invoke('updates:getPrefs') as Promise<{
+      success: boolean;
+      error?: string;
+      data?: UpdatePreferences;
+    }>,
+
+  /** Persist update preferences to user_preferences (SQL). */
+  setUpdatePrefs: (prefs: UpdatePreferences) =>
+    ipcRenderer.invoke('updates:setPrefs', prefs) as Promise<{
+      success: boolean;
+      error?: string;
+    }>,
+
+  /** Trigger an immediate update check (respects debounce). */
+  checkForUpdatesNow: () =>
+    ipcRenderer.invoke('updates:checkNow') as Promise<{
+      success: boolean;
+      error?: string;
+    }>,
+
+  /**
+   * Subscribe to the `update:available` push event from the main process.
+   * Returns an unsubscribe function.
+   */
+  onUpdateAvailable: (
+    callback: (payload: UpdateAvailablePayload) => void
+  ): (() => void) => {
+    const handler = (_event: IpcRendererEvent, data: UpdateAvailablePayload) => {
+      callback(data);
+    };
+    ipcRenderer.on('update:available', handler);
+    return () => ipcRenderer.removeListener('update:available', handler);
   },
 };
 

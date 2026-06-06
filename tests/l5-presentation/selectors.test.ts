@@ -48,6 +48,7 @@ function createBaseState(overrides: Partial<StoreState> = {}): StoreState {
       updates: [],
       lastFetchedAt: null,
     },
+    updateAvailable: null,
     ...overrides,
   };
 }

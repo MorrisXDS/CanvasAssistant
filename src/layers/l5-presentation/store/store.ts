@@ -22,6 +22,7 @@ import {
   createSyncSlice,
   createEventHandlerSlice,
   createSyncUpdatesSlice,
+  createUpdateSlice,
 } from './slices';
 import type { StoreSet, StoreGet } from './storeUtils';
 
@@ -61,6 +62,8 @@ const initialState: StoreState = {
     updates: [],
     lastFetchedAt: null,
   },
+  // Update channel (ADR-0012)
+  updateAvailable: null,
 };
 
 /**
@@ -94,6 +97,7 @@ export function createStore() {
           ...createSyncSlice(set, get),
           ...createEventHandlerSlice(set, get),
           ...createSyncUpdatesSlice(set, get),
+          ...createUpdateSlice(set, get),
         } as Store;
       }),
       { name: 'canvas-store' }
