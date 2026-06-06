@@ -735,6 +735,35 @@ export const SyncResultSummarySchema = z.object({
 });
 export type SyncResultSummary = z.infer<typeof SyncResultSummarySchema>;
 
+// ============ Update Channel Schemas (ADR-0012) ============
+
+export const UpdateLevelSchema = z.enum(['safe', 'caution', 'breaking']);
+export type UpdateLevel = z.infer<typeof UpdateLevelSchema>;
+
+export const UpdatePreferencesSchema = z.object({
+  enabled: z.boolean(),
+  // 0 = "on launch only" (no periodic timer); 1–168 = hourly interval.
+  intervalHours: z.number().int().min(0).max(168),
+  lastCheckedAt: z.string().nullable(),
+  skippedVersion: z.string().nullable(),
+});
+export type UpdatePreferences = z.infer<typeof UpdatePreferencesSchema>;
+
+export const DEFAULT_UPDATE_PREFERENCES: UpdatePreferences = {
+  enabled: false,
+  intervalHours: 24,
+  lastCheckedAt: null,
+  skippedVersion: null,
+};
+
+export const UpdateAvailablePayloadSchema = z.object({
+  version: z.string(),
+  htmlUrl: z.string(),
+  level: UpdateLevelSchema,
+  reason: z.string(),
+});
+export type UpdateAvailablePayload = z.infer<typeof UpdateAvailablePayloadSchema>;
+
 // ============ API Result Wrapper ============
 
 export const ApiResultSchema = <T extends z.ZodType>(dataSchema: T) =>
@@ -1430,6 +1459,20 @@ export const IpcContract = {
     }),
     result: ApiResultSchema(z.object({ deleted: z.number() })),
   },
+
+  // ============ Update Channel (ADR-0012) ============
+  'updates:getPrefs': {
+    params: z.void(),
+    result: ApiResultSchema(UpdatePreferencesSchema),
+  },
+  'updates:setPrefs': {
+    params: UpdatePreferencesSchema,
+    result: ApiResultSchema(z.void()),
+  },
+  'updates:checkNow': {
+    params: z.void(),
+    result: ApiResultSchema(z.void()),
+  },
 } as const;
 
 // ============ Type Utilities ============
@@ -1446,6 +1489,7 @@ export const PushEventContract = {
   'db:commit': DbCommitEventSchema,
   'sync:status': SyncStatusSchema,
   'sync:updates': SyncUpdatesPushEventSchema,
+  'update:available': UpdateAvailablePayloadSchema,
 } as const;
 
 export type PushEventChannel = keyof typeof PushEventContract;

@@ -10,3 +10,4 @@ export { createTaskActionsSlice } from './taskActionsSlice';
 export { createSyncSlice } from './syncSlice';
 export { createEventHandlerSlice } from './eventHandlerSlice';
 export { createSyncUpdatesSlice } from './syncUpdatesSlice';
+export { createUpdateSlice } from './updateSlice';

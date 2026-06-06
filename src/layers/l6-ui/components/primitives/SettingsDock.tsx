@@ -18,6 +18,7 @@ import {
   FolderOpen,
   RefreshCw,
   AppWindow,
+  Download,
 } from 'lucide-react';
 
 // =============================================================================
@@ -68,6 +69,7 @@ const SECTION_ITEMS: DockItem[] = [
   { id: 'behavior', label: 'Behavior', icon: <AppWindow size={18} /> },
   { id: 'notifications', label: 'Notifications', icon: <Bell size={18} /> },
   { id: 'data', label: 'Data', icon: <HardDrive size={18} /> },
+  { id: 'updates', label: 'Updates', icon: <Download size={18} /> },
 ];
 
 // =============================================================================

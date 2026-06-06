@@ -143,6 +143,10 @@ Tune the app to your workflow. Sections include:
 - **Notifications** — which changes trigger a notification.
 - **Data** — **scheduled, optionally encrypted backups** with rotation, exports, data
   retention, and a full reset.
+- **Updates** — enable automatic checks for new versions (daily / weekly / on launch only).
+  When an update is available a notice appears with a compatibility warning if the new
+  version is a major release; a "Check Now" button triggers an immediate check. Off by
+  default.
 
 ---
 

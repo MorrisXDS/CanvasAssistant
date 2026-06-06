@@ -159,3 +159,7 @@ export {
   type ActiveOperation,
   type OperationCoordinatorConfig,
 } from './sync-engine/OperationCoordinator';
+
+// Update channel (ADR-0012)
+export { UpdateChecker, assessUpdate } from './update';
+export type { UpdateCheckerConfig, UpdateLevel, UpdateCompatVerdict } from './update';

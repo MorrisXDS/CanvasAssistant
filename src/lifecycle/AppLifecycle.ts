@@ -39,9 +39,12 @@ import {
   OperationCoordinator,
 } from '../layers/l2-daemon';
 import { HtmlLocalPathManager } from '../layers/l2-daemon/html/HtmlLocalPathManager';
+import { UpdateChecker } from '../layers/l2-daemon/update/UpdateChecker';
 
 // L4 - Controller
 import { CommandDispatcher } from '../layers/l4-controller';
+import { SetUserPreferenceCommand } from '../layers/l4-controller/commands/settings/SetUserPreferenceCommand';
+import { UserPreferencesReader } from '../layers/l1-persistence';
 
 // Crash Protection
 import type { CrashProtectionManager } from './CrashProtectionManager';
@@ -79,6 +82,7 @@ import {
   registerHtmlDependencyHandlers,
   registerCommandHandlers,
   registerBackupScheduleHandlers,
+  registerUpdateHandlers,
 } from './ipc-handlers';
 import type { IpcContext } from './ipc-handlers';
 
@@ -150,6 +154,7 @@ export class AppLifecycle {
   private canvasClientManager: CanvasClientManager | null = null;
   private autoSyncManager: AutoSyncManager | null = null;
   private backupManager: BackupManager | null = null;
+  private updateChecker: UpdateChecker | null = null;
   private idleStateManager: IdleStateManager | null = null;
 
   // Mutable flags
@@ -582,6 +587,17 @@ export class AppLifecycle {
       getMainWindow: () => this.getMainWindow(),
     });
 
+    // Initialize UpdateChecker (ADR-0012). Depends on database being available
+    // (same dependency chain as BackupManager). Self-gates on enabled flag.
+    this.updateChecker = new UpdateChecker({
+      getMainWindow: () => this.getMainWindow(),
+      userPreferencesReader: new UserPreferencesReader(this.database),
+      setUserPreferenceCommand: new SetUserPreferenceCommand(),
+      database: this.database,
+      currentVersion: app.getVersion(),
+      logger: this.logger.child('UpdateChecker'),
+    });
+
     // Build IPC context and register handlers
     this.registerAllIpcHandlers();
 
@@ -595,6 +611,9 @@ export class AppLifecycle {
 
     // Start backup scheduler
     this.backupManager?.start();
+
+    // Start update checker (ADR-0012) — self-gates on `enabled` preference.
+    this.updateChecker?.start();
 
     // Restore pending downloads
     try {
@@ -733,6 +752,7 @@ export class AppLifecycle {
     // Stop managers
     this.autoSyncManager?.stop();
     this.backupManager?.stop();
+    this.updateChecker?.stop();
     this.idleStateManager?.stop();
 
     // Abort any in-flight sync operations
@@ -938,6 +958,7 @@ export class AppLifecycle {
           },
           options
         ),
+      getUpdateChecker: () => this.updateChecker,
     };
 
     registerIntelligenceHandlers(ipcContext);
@@ -964,6 +985,7 @@ export class AppLifecycle {
     registerHtmlDependencyHandlers(ipcContext);
     registerCommandHandlers(ipcContext);
     registerBackupScheduleHandlers(ipcContext);
+    registerUpdateHandlers(ipcContext);
   }
 
   private async initializeCanvasClientFromCredentials(): Promise<void> {

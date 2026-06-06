@@ -140,6 +140,7 @@ export function SettingsProvider({
     behavior: useRef<HTMLDivElement>(null),
     notifications: useRef<HTMLDivElement>(null),
     data: useRef<HTMLDivElement>(null),
+    updates: useRef<HTMLDivElement>(null),
   };
 
   // =========================================================================

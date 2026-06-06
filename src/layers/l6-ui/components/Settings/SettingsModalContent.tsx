@@ -33,6 +33,7 @@ import { AccountSection } from './AccountSection';
 import { AppBehaviorSection } from './AppBehaviorSection';
 import { NotificationsSection } from './NotificationsSection';
 import { DataSection } from './DataSection';
+import { UpdatesSection } from './UpdatesSection';
 import { ConfirmDialog } from '../shared/ConfirmDialog';
 import { ExportDialog } from '../shared/ExportDialog';
 import { Accordion, SearchInput, SettingsDock } from '../primitives';
@@ -201,6 +202,9 @@ export function SettingsModalContent() {
             <NotificationsSection sectionRef={sectionRefs.notifications} />
           )}
           {shouldShowSection('data') && <DataSection sectionRef={sectionRefs.data} />}
+          {shouldShowSection('updates') && (
+            <UpdatesSection sectionRef={sectionRefs.updates} />
+          )}
         </Accordion>
 
         {/* No search results message */}

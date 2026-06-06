@@ -24,7 +24,13 @@ export function useSectionDrag() {
         if (!hasNewSections) {
           return DEFAULT_SETTINGS_SECTION_ORDER;
         }
-        return parsed;
+        // Append any sections added since the user last saved their order
+        // (e.g. 'updates' added in v1.1.3). This preserves the user's
+        // custom ordering while making new sections appear at the end.
+        const missingSections = DEFAULT_SETTINGS_SECTION_ORDER.filter(
+          (s) => !parsed.includes(s)
+        );
+        return missingSections.length > 0 ? [...parsed, ...missingSections] : parsed;
       } catch {
         return DEFAULT_SETTINGS_SECTION_ORDER;
       }

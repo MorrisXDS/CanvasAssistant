@@ -608,6 +608,7 @@ export const DEFAULT_SETTINGS_SECTION_ORDER = [
   'behavior',
   'notifications',
   'data',
+  'updates',
 ];
 
 export const SETTINGS_DEFAULTS: Partial<SettingsTypeMap> = {

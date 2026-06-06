@@ -65,6 +65,7 @@ export interface SectionRefs {
   behavior: RefObject<HTMLDivElement>;
   notifications: RefObject<HTMLDivElement>;
   data: RefObject<HTMLDivElement>;
+  updates: RefObject<HTMLDivElement>;
 }
 
 // =============================================================================

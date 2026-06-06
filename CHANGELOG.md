@@ -10,6 +10,16 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ## [Unreleased]
 
+### Added
+
+- `2026-06-06 00:36 UTC` — **Opt-in update channel** (ADR-0012): a new Settings → Updates
+  section lets you enable automatic background checks against GitHub Releases on a chosen
+  interval (daily / weekly / on launch only). When a newer version is found, a notice
+  appears with a **compatibility verdict** — a major-version bump is flagged as potentially
+  breaking (forward-only DB migrations mean there is no rollback after updating). Notify-
+  first only; no silent install (builds are unsigned). Off by default — no outbound network
+  until you opt in.
+
 ### Changed
 
 - `2026-06-05 22:23 UTC` — **Windows uninstaller now asks two separate keep/delete choices** instead of one

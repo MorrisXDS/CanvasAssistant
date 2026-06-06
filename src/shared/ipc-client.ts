@@ -14,6 +14,8 @@ import type {
   PushEventPayload,
   OneWayChannel,
   OneWayParams,
+  UpdatePreferences,
+  UpdateAvailablePayload,
 } from './ipc-contract';
 
 /**
@@ -199,4 +201,16 @@ export interface TypedApi {
   onSyncStatus: (
     callback: (status: PushEventPayload<'sync:status'>) => void
   ) => () => void;
+
+  // Update Channel (ADR-0012)
+  getUpdatePrefs: () => Promise<{
+    success: boolean;
+    error?: string;
+    data?: UpdatePreferences;
+  }>;
+  setUpdatePrefs: (
+    prefs: UpdatePreferences
+  ) => Promise<{ success: boolean; error?: string }>;
+  checkForUpdatesNow: () => Promise<{ success: boolean; error?: string }>;
+  onUpdateAvailable?: (callback: (payload: UpdateAvailablePayload) => void) => () => void;
 }

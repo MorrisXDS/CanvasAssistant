@@ -41,6 +41,9 @@ export type {
   SyncUpdatesCount,
   SyncUpdateEntityType,
   SyncUpdateChangeType,
+  UpdatePreferences,
+  UpdateAvailablePayload,
+  UpdateLevel,
 } from '../../shared/ipc-contract';
 
 // Re-export schemas for runtime validation if needed
@@ -128,6 +131,9 @@ export interface StoreState {
     updates: import('../../shared/ipc-contract').SyncUpdate[];
     lastFetchedAt: string | null;
   };
+
+  // Update channel (ADR-0012)
+  updateAvailable: import('../../shared/ipc-contract').UpdateAvailablePayload | null;
 }
 
 export interface SyncConflictItem {
@@ -321,6 +327,13 @@ export interface StoreActions {
     totalUnseen: number;
     conflictCount: number;
   }) => void;
+
+  // Update channel (ADR-0012)
+  setUpdateAvailable: (
+    payload: import('../../shared/ipc-contract').UpdateAvailablePayload | null
+  ) => void;
+  dismissUpdateAvailable: () => void;
+  skipUpdateVersion: (version: string) => Promise<void>;
 }
 
 export type Store = StoreState & StoreActions;

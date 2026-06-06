@@ -127,4 +127,11 @@ export const selectors = {
     }
     return grades;
   },
+
+  /**
+   * The pending update notification payload, or null when no update is
+   * available / has been dismissed. Batch B renders the UpdateAvailableModal
+   * by reading this selector (SSOT — no local isOpen state).
+   */
+  pendingUpdate: (state: StoreState) => state.updateAvailable,
 };
