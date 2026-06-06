@@ -1,6 +1,6 @@
 {
-  "name": "canvas-integration-dashboard",
-  "version": "1.1.2",
+  "name": "canvas-assistant",
+  "version": "1.1.4",
   "description": "Offline-first academic command center for Canvas LMS",
   "main": "dist/main.js",
   "engines": {

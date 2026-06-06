@@ -1,4 +1,21 @@
 import { app, protocol } from 'electron';
+import { migrateUserDataDirIfNeeded } from './lifecycle/migrateUserDataDir';
+
+// ============================================================================
+// USER-DATA-DIR MIGRATION — MUST be the FIRST side effect, above EVERY
+// appPaths / lifecycle / L0 / L1 import.
+//
+// Ordering proof (ADR-0014): appPaths.ts freezes CONFIG_DIR/DB_PATH/etc. from
+// app.getPath('userData') at MODULE-EVAL time. Under CommonJS (tsconfig
+// "module":"commonjs"), tsc emits each `import` as a require() executed
+// top-to-bottom; this call expression is emitted after the two requires above
+// it but BEFORE the require('./lifecycle/appPaths') below it. The npm `name`
+// rename (canvas-integration-dashboard -> canvas-assistant) moved userData to a
+// new empty dir; this relocates the old per-user data ONCE before any path is
+// read. migrateUserDataDir imports only fs/path (+ the app param) so it never
+// triggers the appPaths eval we must precede. Verify dist/main.js emit order.
+// ============================================================================
+migrateUserDataDirIfNeeded(app);
 
 // L0 - Utilities
 import { Logger } from './layers/l0-utilities/Logger';
