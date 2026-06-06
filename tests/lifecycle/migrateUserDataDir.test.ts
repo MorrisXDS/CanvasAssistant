@@ -240,6 +240,120 @@ describe('migrateUserDataDir (pure core)', () => {
       'CANVAS-DB-CONTENT'
     );
   });
+
+  it('8c. failure path (parent mkdirSync needed) — parent created, then rename fails, old intact', () => {
+    // Place newDir inside a sub-path that doesn't exist yet so the parent needs mkdir.
+    const nestedNewDir = path.join(
+      tmpRoot,
+      'subdir-that-does-not-exist',
+      'canvas-assistant'
+    );
+    seedFullOldDir(oldDir);
+
+    // renameSync throws so we fall through to copy, which also throws (for simplicity),
+    // triggering the outer catch.  Verify the mkdirSync branch (line 97) ran: tmpRoot/subdir-
+    // that-does-not-exist must exist (or be created) before rename is attempted.
+    let mkdirCalled = false;
+    const fsImpl = {
+      ...fs,
+      mkdirSync: jest.fn((p: fs.PathLike, opts?: fs.MakeDirectoryOptions) => {
+        mkdirCalled = true;
+        return fs.mkdirSync(p, opts);
+      }),
+      renameSync: jest.fn(() => {
+        throw Object.assign(new Error('xdev'), { code: 'EXDEV' });
+      }),
+      cpSync: jest.fn(() => {
+        throw new Error('copy failed too');
+      }),
+    } as unknown as typeof fs;
+
+    const result = migrateUserDataDir({
+      oldDir,
+      newDir: nestedNewDir,
+      isPackaged: true,
+      fsImpl,
+    });
+
+    expect(mkdirCalled).toBe(true);
+    expect(result.reason).toBe('failed');
+    // oldDir untouched — data loss guard
+    expect(fs.existsSync(path.join(oldDir, 'database', 'canvas.db'))).toBe(true);
+  });
+
+  it('8d. failure path (size mismatch verify) leaves old intact + cleans partial newDir', () => {
+    // Seed oldDir with a non-empty canvas.db; cpSync produces a TRUNCATED copy (size mismatch).
+    seedFullOldDir(oldDir, 'ORIGINAL-DB-BYTES-12345');
+
+    const fsImpl = {
+      ...fs,
+      renameSync: jest.fn(() => {
+        throw Object.assign(new Error('xdev'), { code: 'EXDEV' });
+      }),
+      cpSync: jest.fn((_src: string, dest: string) => {
+        // Copy directory structure but write a different-size db file.
+        fs.mkdirSync(path.join(dest, 'database'), { recursive: true });
+        fs.writeFileSync(path.join(dest, 'database', 'canvas.db'), 'TRUNCATED');
+      }),
+    } as unknown as typeof fs;
+
+    const result = migrateUserDataDir({ oldDir, newDir, isPackaged: true, fsImpl });
+
+    expect(result.reason).toBe('failed');
+    expect(result.error).toBeInstanceOf(Error);
+    expect(result.error?.message).toMatch(/size mismatch/);
+    // Partial newDir cleaned up
+    expect(fs.existsSync(newDir)).toBe(false);
+    // Old data fully intact
+    expect(fs.existsSync(path.join(oldDir, 'database', 'canvas.db'))).toBe(true);
+    expect(fs.readFileSync(path.join(oldDir, 'database', 'canvas.db'), 'utf8')).toBe(
+      'ORIGINAL-DB-BYTES-12345'
+    );
+  });
+
+  it('8e. failure path (cleanup of partial newDir itself throws) — still returns failed, old intact', () => {
+    // renameSync throws EXDEV; cpSync creates a partial newDir but then throws; rmSync of the
+    // partial newDir also throws. Verifies line 159: the cleanup-failure log branch is
+    // exercised and does not propagate the cleanup error (migration still returns 'failed').
+    seedFullOldDir(oldDir);
+
+    // cpSync creates a partial dir in newDir, then throws so we fall to the outer catch.
+    // At that point existsSync(newDir) returns true, and rmSync throws.
+    // We need existsSync to use real fs for the pre-migration checks (old/new) but also
+    // correctly reflect the partial newDir that cpSync created.
+    const fsImpl = {
+      ...fs,
+      renameSync: jest.fn(() => {
+        throw Object.assign(new Error('xdev'), { code: 'EXDEV' });
+      }),
+      cpSync: jest.fn((_src: string, dest: string) => {
+        // Create the partial newDir via real fs so existsSync sees it later.
+        fs.mkdirSync(path.join(dest, '.config'), { recursive: true });
+        fs.writeFileSync(path.join(dest, '.config', 'partial'), 'partial');
+        throw new Error('copy failed mid-way');
+      }),
+      rmSync: jest.fn(() => {
+        throw new Error('cannot remove partial newDir');
+      }),
+    } as unknown as typeof fs;
+
+    const logs: string[] = [];
+    const result = migrateUserDataDir({
+      oldDir,
+      newDir,
+      isPackaged: true,
+      fsImpl,
+      log: (msg) => logs.push(msg),
+    });
+
+    // cleanup failure is logged but non-fatal — migration still reports failed
+    expect(result.reason).toBe('failed');
+    expect(result.error).toBeInstanceOf(Error);
+    // The cleanup-failure log line (L159) must have fired
+    expect(logs.some((m) => m.includes('failed to clean up partial newDir'))).toBe(true);
+    // oldDir intact (data safety)
+    expect(fs.existsSync(path.join(oldDir, 'database', 'canvas.db'))).toBe(true);
+  });
 });
 
 describe('migrateUserDataDirIfNeeded (Electron wrapper)', () => {
