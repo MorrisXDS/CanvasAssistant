@@ -17,6 +17,18 @@ if (typeof globalThis.TextDecoder === 'undefined') {
   globalThis.TextDecoder = TextDecoder as unknown as typeof globalThis.TextDecoder;
 }
 
+// jsdom doesn't implement ResizeObserver. Components that observe content size
+// (e.g. Accordion.Content re-measures so async-grown content isn't clipped) need
+// it to exist. A no-op mock is enough for jsdom (layout sizes are 0 here anyway);
+// real resize behavior is exercised in the running app.
+if (typeof globalThis.ResizeObserver === 'undefined') {
+  globalThis.ResizeObserver = class {
+    observe(): void {}
+    unobserve(): void {}
+    disconnect(): void {}
+  } as unknown as typeof globalThis.ResizeObserver;
+}
+
 // ----------------------------------------------------------------------------
 // Fail tests on React "not wrapped in act(...)" warnings.
 //

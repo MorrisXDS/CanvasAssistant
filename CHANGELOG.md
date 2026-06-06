@@ -69,6 +69,13 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ### Fixed
 
+- `2026-06-06 05:09 UTC` — **Settings → Updates: the "Check now" button is no longer cut off.**
+  Accordion sections pin their height for the expand animation and measured it only once; the
+  Updates section loads its data asynchronously and grows from a short loading state to its full
+  height after that measurement, so its last control was clipped by the section's `overflow:
+hidden`. The Accordion primitive now re-measures via a `ResizeObserver` when its content
+  resizes, so any async-growing section expands to fit.
+
 - `2026-06-06 02:34 UTC` — **App now exits cleanly on Linux.** On some Linux setups (no/limited GPU
   acceleration or a sandboxed/systemd-managed session) a wedged GPU/utility child process kept the
   main process alive after the window closed, so the app never fully quit and had to be killed with
