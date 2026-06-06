@@ -75,6 +75,17 @@ linux:
 deb:
   depends:
     - libsecret-1-0
+  # ADR-0014: the npm `name` rename canvas-integration-dashboard -> canvas-assistant
+  # changes the derived .deb package name. apt treats the two names as DISTINCT
+  # packages, so installing the new one over an old install would leave TWO packages
+  # / two /opt dirs. Replaces+Conflicts make canvas-assistant cleanly supersede the
+  # old package (old /opt removed by its prerm); Provides lets anything depending on
+  # the old name resolve to the new (defensive). Passed verbatim to fpm
+  # (app-builder-lib fpm.js: `use(options.fpm, it => args.push(...it))`).
+  fpm:
+    - "--replaces=canvas-integration-dashboard"
+    - "--conflicts=canvas-integration-dashboard"
+    - "--provides=canvas-integration-dashboard"
 
 # Native module rebuild
 electronDownload:

@@ -275,7 +275,7 @@ Two artifacts are published — for a normal desktop install the **`.deb` is rec
   and adds a launcher to your app menu:
 
   ```bash
-  sudo apt install ./canvas-integration-dashboard_*_amd64.deb
+  sudo apt install ./canvas-assistant_*_amd64.deb
   ```
 
 - **AppImage** — portable, no install. **Note:** double-clicking it in GNOME Files
@@ -298,7 +298,7 @@ desktop session) for full keychain-backed storage.
 
 **Where files live (Linux):** downloaded course files go to
 `~/Documents/CanvasAssistant/Downloads`; config, logs, and the SQLite database live under
-`~/.config/canvas-integration-dashboard/`.
+`~/.config/canvas-assistant/`.
 
 ### Build from source
 

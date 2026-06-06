@@ -252,7 +252,12 @@ export function registerAppHandlers(ctx: IpcContext): void {
       // electron-builder NSIS names it "Uninstall <Product Name>.exe"
       const exePath = app.getPath('exe');
       const installDir = path.dirname(exePath);
-      const productName = app.getName();
+      // ADR-0014: NSIS names the uninstaller from electron-builder `productName`
+      // ("Uninstall Canvas Assistant.exe"), NOT the npm `name`. Since the rename,
+      // app.getName() returns "canvas-assistant" (the npm name), so it would point
+      // candidate[0] at the wrong "Uninstall canvas-assistant.exe". Use the brand
+      // product name constant so candidate[0] matches the real NSIS filename.
+      const productName = 'Canvas Assistant';
       const candidates = [
         path.join(installDir, `Uninstall ${productName}.exe`),
         path.join(installDir, 'Uninstall Canvas Assistant.exe'),
