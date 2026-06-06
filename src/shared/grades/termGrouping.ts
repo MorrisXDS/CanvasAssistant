@@ -1,0 +1,133 @@
+/**
+ * termGrouping - pure term-grouping + credit-weighted-average helpers.
+ *
+ * Single source of truth for HOW courses are grouped into terms and how
+ * per-term / cumulative averages are credit-weighted. Used on BOTH sides:
+ *  - main: `PastTermGradesReader` builds the `data:getPastTermGrades` response.
+ *  - renderer: the Courses-page Archived section + the grade modal group their
+ *    already-loaded courses the same way.
+ *
+ * Lives in `src/shared/` (alongside `ipc-contract.ts`) so both processes import
+ * one layer-neutral copy - no cross-layer import eyebrow-raise. See ADR-0015.
+ *
+ * NOTE - formula duplication: the per-course weighted-average math
+ * (`sum((grade/100)*weight)/sum(weight)*100`) lives in L5's `courseGradesCache`.
+ * This module does NOT re-implement that - it consumes already-computed course
+ * averages. The credit-weighted aggregation here mirrors `DashboardViewModel`'s
+ * existing `sum(grade*credits)/sum(credits)` shape (intentional: layer boundary,
+ * ~6 lines, pinned by tests on both sides).
+ */
+
+/**
+ * Minimal course shape the grouping math operates on. Reusable by the reader
+ * (main) and the components (renderer).
+ */
+export interface CourseWithGrade {
+  code: string;
+  name: string;
+  color: string | null;
+  /** Task-derived course average (percent), or null if not assessable. */
+  grade: number | null;
+  /** Course credits/units. Falsy -> treated as 1.0 (matches DashboardViewModel). */
+  credits: number | null;
+  termName: string | null;
+  /** ISO term end date, used for newest-first ordering. */
+  termEndAt: string | null;
+}
+
+export interface TermGroup {
+  termName: string | null;
+  termEndAt: string | null;
+  courses: CourseWithGrade[];
+  /** Credit-weighted average within this term, or null if none assessable. */
+  termAverage: number | null;
+}
+
+/** Normalize credits the same way the dashboard does: missing/zero -> 1.0. */
+function effectiveCredits(credits: number | null): number {
+  return credits && credits > 0 ? credits : 1.0;
+}
+
+/**
+ * Credit-weighted average across a flat list of courses, or null if none have a
+ * grade. `sum(grade * credits) / sum(credits)` (credits default 1.0).
+ */
+export function termAverage(courses: CourseWithGrade[]): number | null {
+  let weightedSum = 0;
+  let totalCredits = 0;
+  for (const c of courses) {
+    if (c.grade === null) continue;
+    const credits = effectiveCredits(c.credits);
+    weightedSum += c.grade * credits;
+    totalCredits += credits;
+  }
+  return totalCredits > 0 ? weightedSum / totalCredits : null;
+}
+
+/**
+ * Group courses into terms (keyed by term name), newest term first by
+ * `termEndAt`. Courses with no term name collapse into a single null-named
+ * group, ordered last (NULLS LAST). Empty input -> `[]`.
+ *
+ * Overlap-safe: two concurrently-ongoing terms (e.g. a full-year course and a
+ * single-semester course) stay separate groups - grouping is by term identity,
+ * not by a single "current term".
+ */
+export function groupCoursesByTerm(courses: CourseWithGrade[]): TermGroup[] {
+  const groups = new Map<string, TermGroup>();
+
+  for (const course of courses) {
+    // Key by term name; the null/empty-term bucket gets a sentinel key.
+    const key = course.termName ?? ' __no_term__';
+    let group = groups.get(key);
+    if (!group) {
+      group = {
+        termName: course.termName,
+        termEndAt: course.termEndAt,
+        courses: [],
+        termAverage: null,
+      };
+      groups.set(key, group);
+    }
+    group.courses.push(course);
+    // Keep the latest known end date for the group (defensive - terms share one).
+    if (
+      course.termEndAt !== null &&
+      (group.termEndAt === null || course.termEndAt > group.termEndAt)
+    ) {
+      group.termEndAt = course.termEndAt;
+    }
+  }
+
+  const result = Array.from(groups.values());
+  for (const group of result) {
+    group.termAverage = termAverage(group.courses);
+  }
+
+  // Newest first by term end date; null end dates last; ties broken by name.
+  result.sort((a, b) => {
+    if (a.termEndAt === null && b.termEndAt === null) {
+      // istanbul ignore next -- unreachable: all null-term courses share one
+      // sentinel key, so there can never be two groups both with termEndAt===null.
+      return (a.termName ?? '').localeCompare(b.termName ?? '');
+    }
+    if (a.termEndAt === null) return 1;
+    if (b.termEndAt === null) return -1;
+    if (a.termEndAt > b.termEndAt) return -1;
+    if (a.termEndAt < b.termEndAt) return 1;
+    return (a.termName ?? '').localeCompare(b.termName ?? '');
+  });
+
+  return result;
+}
+
+/**
+ * Credit-weighted cumulative average across ALL courses in the given term
+ * groups, flattened. Flattening (rather than averaging the per-term averages)
+ * avoids double-weighting: a 5-course term shouldn't count the same as a
+ * 1-course term. Null if no course in any group is assessable.
+ */
+export function cumulativeAverage(termGroups: TermGroup[]): number | null {
+  const allCourses = termGroups.flatMap((g) => g.courses);
+  return termAverage(allCourses);
+}

@@ -7,6 +7,7 @@ import type { SyncOperationContext, SyncOperationHelpers } from '../SyncOperatio
 import { createSyncResult } from '../SyncOperationContext';
 import type { SyncResult } from '../SyncEngineTypes';
 import { CanvasCourse, mapCourse } from '../../data/DataMappers';
+import { TERM_END_BUFFER_DAYS } from '../../../l1-persistence/constants/termLinger';
 
 export class SyncCourseOperations {
   constructor(
@@ -249,7 +250,19 @@ export class SyncCourseOperations {
   }
 
   /**
-   * Auto-archive courses whose enrollment term end_at date has passed.
+   * Auto-archive courses whose enrollment term ended more than
+   * `TERM_END_BUFFER_DAYS` ago.
+   *
+   * The threshold (and the `datetime(...)` comparison form) is deliberately
+   * identical to `VisibilityOracle`'s 'auto' term filter so a course is either
+   * visible or archived, never both/neither — no limbo gap while final grades
+   * post. Previously this fired at `et.end_at < now` (0-day buffer) while the
+   * filter hid at term_end + 30d, yanking just-finished courses out of the
+   * dashboard average ~30 days early. See ADR-0015.
+   *
+   * JOIN affinity: `courses.enrollment_term_id` stores Canvas's term id, which
+   * sync writes into `enrollment_terms.external_id` (TEXT). The CAST matches the
+   * Oracle's join exactly (rather than relying on implicit SQLite affinity).
    */
   autoArchiveExpiredCourses(): { archived: number; errors: string[] } {
     const errors: string[] = [];
@@ -261,12 +274,12 @@ export class SyncCourseOperations {
       const expiredCourses = this.ctx.db.executeRead<{ id: number; code: string }>(
         `SELECT c.id, c.code
          FROM courses c
-         INNER JOIN enrollment_terms et ON c.enrollment_term_id = et.external_id
+         INNER JOIN enrollment_terms et ON c.enrollment_term_id = CAST(et.external_id AS INTEGER)
          WHERE c.archived_at IS NULL
            AND c.deleted_at IS NULL
            AND et.end_at IS NOT NULL
-           AND et.end_at < ?`,
-        [now]
+           AND datetime(et.end_at) < datetime('now', '-${TERM_END_BUFFER_DAYS} days')`,
+        []
       );
 
       if (expiredCourses.length === 0) {

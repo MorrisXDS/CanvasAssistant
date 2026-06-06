@@ -377,6 +377,61 @@ function seedDatabase(dbPath) {
         new_value: JSON.stringify('2026-06-12T23:59:00Z'),
       });
 
+      // ── Past-term archived courses (ADR-0015 grade-history) ─────────────────
+      // Archived courses across TWO enrollment terms, each with graded tasks +
+      // credits, so the grade modal's "Past terms" section and the Courses-page
+      // archived-by-term drawer have deterministic content (term groups +
+      // per-term + credit-weighted cumulative). All are archived (excluded from
+      // the visible set) so they don't perturb the visible-course specs;
+      // visibility.spec uses toContain/not.toContain (never exact totals).
+      // course.enrollment_term_id (INTEGER, Canvas id) matches
+      // enrollment_terms.external_id (TEXT) via CAST — the join the feature uses.
+      const insertTerm = db.prepare(
+        `INSERT OR IGNORE INTO enrollment_terms (external_id, name, start_at, end_at)
+         VALUES (@external_id, @name, @start_at, @end_at)`
+      );
+      insertTerm.run({
+        external_id: '7001',
+        name: 'E2E 2024 Fall',
+        start_at: isoOffsetDays(now, -320),
+        end_at: isoOffsetDays(now, -200),
+      });
+      insertTerm.run({
+        external_id: '7002',
+        name: 'E2E 2024 Winter',
+        start_at: isoOffsetDays(now, -220),
+        end_at: isoOffsetDays(now, -100),
+      });
+
+      const insertArchivedTermCourse = db.prepare(
+        `INSERT OR IGNORE INTO courses
+           (id, external_id, code, name, is_hidden, archived_at, enrollment_term_id, credits)
+         VALUES (?, ?, ?, ?, 0, ?, ?, ?)`
+      );
+      // Term 7001 ("E2E 2024 Fall"): two courses → per-term average across >1 course.
+      insertArchivedTermCourse.run(90006, 'E2E_COURSE_PA', 'E2E606', 'E2E Past Course A', isoOffsetDays(now, -195), 7001, 1.0);
+      insertArchivedTermCourse.run(90007, 'E2E_COURSE_PB', 'E2E707', 'E2E Past Course B', isoOffsetDays(now, -195), 7001, 0.5);
+      // Term 7002 ("E2E 2024 Winter"): one course → ensures >=2 term groups.
+      insertArchivedTermCourse.run(90008, 'E2E_COURSE_PC', 'E2E808', 'E2E Past Course C', isoOffsetDays(now, -95), 7002, 1.0);
+
+      // Graded tasks so each past course has a computable (non-null) average.
+      const pastGraded = (extId, courseId, title, grade) =>
+        insertTask.run({
+          external_id: extId,
+          course_id: courseId,
+          title,
+          due_at: duePast,
+          task_type: 'assignment',
+          grade,
+          is_completed: 1,
+          submission_status: 'graded',
+          is_optional: 0,
+        });
+      pastGraded('E2E_PTASK_A1', 90006, 'PA Midterm', 80);
+      pastGraded('E2E_PTASK_A2', 90006, 'PA Final', 90);
+      pastGraded('E2E_PTASK_B1', 90007, 'PB Final', 70);
+      pastGraded('E2E_PTASK_C1', 90008, 'PC Final', 95);
+
       // ── Duplicate-warning matrix (ONE source, on the deterministic courses) ──
       seedDuplicateMatrix(db, COURSE_A.id, COURSE_B.id);
     })();

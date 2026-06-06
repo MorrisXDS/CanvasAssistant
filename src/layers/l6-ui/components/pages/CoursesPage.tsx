@@ -35,6 +35,7 @@ import { useUpdatesByCourse } from '../../hooks';
 import { settingsManager, STORAGE_KEYS } from '../../../l5-presentation/settings';
 import { getCourseColor, formatGrade } from '../../constants';
 import type { Course } from '../../../l5-presentation/types';
+import type { EnrollmentTerm, PastTermGrades } from '../../../../shared/ipc-contract';
 import { createLogger } from '../../utils/rendererLogger';
 
 const logger = createLogger('CoursesPage');
@@ -160,6 +161,11 @@ export function CoursesPage() {
   const [archivedCourses, setArchivedCourses] = useState<Course[]>([]);
   const [showArchived, setShowArchived] = useState(false);
   const [loadingArchived, setLoadingArchived] = useState(false);
+  // Term grouping inputs for the archived drawer (ADR-0015). Page-local —
+  // these are display metadata + main-side aggregates, NOT global domain data,
+  // so they stay out of the Zustand store (archived tasks never cross IPC).
+  const [enrollmentTerms, setEnrollmentTerms] = useState<EnrollmentTerm[]>([]);
+  const [pastTermGrades, setPastTermGrades] = useState<PastTermGrades | null>(null);
 
   // Archive dropdown state
   const [showArchiveDropdown, setShowArchiveDropdown] = useState(false);
@@ -221,9 +227,21 @@ export function CoursesPage() {
       if (!showArchived) return;
       setLoadingArchived(true);
       try {
-        const result = await window.api?.getArchivedCourses?.();
+        // Fetch archived courses + the term-grouping inputs together. Terms +
+        // past-term grades are page-local metadata (ADR-0015), never the store.
+        const [result, terms, past] = await Promise.all([
+          window.api?.getArchivedCourses?.(),
+          window.api?.getEnrollmentTerms?.(),
+          window.api?.getPastTermGrades?.(),
+        ]);
         if (result) {
           setArchivedCourses(result);
+        }
+        if (terms) {
+          setEnrollmentTerms(terms);
+        }
+        if (past) {
+          setPastTermGrades(past);
         }
       } catch (error) {
         logger.error(
@@ -1471,6 +1489,8 @@ export function CoursesPage() {
         loadingArchived={loadingArchived}
         onToggleShow={() => setShowArchived(!showArchived)}
         onUnarchive={handleUnarchiveCourse}
+        enrollmentTerms={enrollmentTerms}
+        pastTermGrades={pastTermGrades}
       />
     </div>
   );
