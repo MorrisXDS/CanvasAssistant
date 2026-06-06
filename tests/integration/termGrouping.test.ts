@@ -130,6 +130,37 @@ describe('groupCoursesByTerm', () => {
     ]);
     expect(groups[0].termAverage).toBeCloseTo(80, 5);
   });
+
+  test('updates group termEndAt when a later course in the same term has a newer date', () => {
+    // The first course for the term seeds termEndAt = null; the second course has
+    // a real date. The defensive "keep latest end date" branch (line 98) must
+    // update the group's termEndAt from null to the real date.
+    const groups = groupCoursesByTerm([
+      course({ code: 'A', termName: 'T1', termEndAt: null }),
+      course({ code: 'B', termName: 'T1', termEndAt: '2024-12-15T00:00:00Z' }),
+    ]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].termEndAt).toBe('2024-12-15T00:00:00Z');
+  });
+
+  test('null-term group sorts after multiple non-null groups (exercises null-a sort branch)', () => {
+    // Three non-null-term groups + one null-term group. With 4 elements, V8
+    // TimSort calls comparator on various pairs, including (null-term, non-null-term),
+    // exercising the `a.termEndAt === null -> return 1` branch.
+    const groups = groupCoursesByTerm([
+      course({ termName: null, termEndAt: null }),
+      course({ termName: '2022 Fall', termEndAt: '2022-12-15T00:00:00Z' }),
+      course({ termName: '2023 Fall', termEndAt: '2023-12-15T00:00:00Z' }),
+      course({ termName: '2024 Fall', termEndAt: '2024-12-15T00:00:00Z' }),
+    ]);
+    expect(groups).toHaveLength(4);
+    // Null-term group must be last regardless of position.
+    expect(groups[groups.length - 1].termName).toBeNull();
+    // Non-null groups newest first.
+    expect(groups[0].termName).toBe('2024 Fall');
+    expect(groups[1].termName).toBe('2023 Fall');
+    expect(groups[2].termName).toBe('2022 Fall');
+  });
 });
 
 describe('cumulativeAverage', () => {
