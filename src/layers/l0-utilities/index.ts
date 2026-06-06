@@ -32,17 +32,17 @@ export {
   type CredentialStatus,
 } from './CredentialManager';
 export {
+  classifyValidationResult,
+  type TokenValidity,
+  type ValidationInput,
+} from './tokenValidation';
+export {
   CryptoManager,
   type CryptoManagerOptions,
   type EncryptedData,
   type PasswordStrength,
 } from './CryptoManager';
-export {
-  CRYPTO_CONSTANTS,
-  deriveKey,
-  encryptBuffer,
-  decryptBuffer,
-} from './CryptoCore';
+export { CRYPTO_CONSTANTS, deriveKey, encryptBuffer, decryptBuffer } from './CryptoCore';
 export {
   encryptBackup,
   decryptBackup,

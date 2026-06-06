@@ -14,6 +14,7 @@ import { CredentialManagerConfig } from './AppConfig';
 import { ComponentLogger, Logger } from './Logger';
 import { DEFAULT_PATHS, ensureDirectory } from './DefaultPaths';
 import { CRYPTO_CONSTANTS, deriveKey, encryptBuffer, decryptBuffer } from './CryptoCore';
+import { classifyValidationResult, type TokenValidity } from './tokenValidation';
 
 // Storage backend types
 type StorageBackend = 'keychain' | 'file' | 'none';
@@ -35,9 +36,15 @@ export interface CredentialStatus {
   hasCredential: boolean;
   storageBackend: StorageBackend;
   lastValidated: Date | null;
+  /**
+   * Back-compat boolean view of the verdict: true iff `validity === 'valid'`,
+   * false iff `validity === 'invalid'`, null when never validated OR `unknown`
+   * (offline). Prefer `validity` for the tri-state contract.
+   */
   isValid: boolean | null;
+  /** Tri-state verdict of the last validation (ADR-0013). */
+  validity: TokenValidity | null;
 }
-
 
 /**
  * Credential Manager for secure token storage
@@ -61,6 +68,8 @@ export class CredentialManager extends EventEmitter {
   private storageBackend: StorageBackend = 'none';
   private lastValidated: Date | null = null;
   private lastValidationResult: boolean | null = null;
+  /** Tri-state verdict of the last validation (ADR-0013). null = never run. */
+  private lastValidationVerdict: TokenValidity | null = null;
   private keytar: typeof import('keytar') | null = null;
   private keytarAvailable: boolean = false;
   private encryptionKey: Buffer | null = null;
@@ -91,8 +100,7 @@ export class CredentialManager extends EventEmitter {
     this.enableFileFallback = config?.enableFileFallback ?? true;
     this.fallbackFilePath = config?.fallbackFilePath ?? DEFAULT_PATHS.credentials;
     this.validateOnRetrieve = config?.validateOnRetrieve ?? true;
-    this.baseUrl =
-      (config && 'baseUrl' in config ? config.baseUrl : undefined) ?? '';
+    this.baseUrl = (config && 'baseUrl' in config ? config.baseUrl : undefined) ?? '';
 
     // Check for options-specific properties
     if (config && 'tokenValidator' in config) {
@@ -286,14 +294,22 @@ export class CredentialManager extends EventEmitter {
         return null;
       }
 
-      // Validate token if configured
+      // Validate token if configured. Tri-state (ADR-0013): only a definitive
+      // `invalid` verdict (401/403) discards the token and fires token-invalid.
+      // An `unknown` verdict (offline / timeout / 5xx) must NOT invalidate a
+      // good stored token — we keep it so the offline user stays logged in.
       if (this.validateOnRetrieve) {
-        const isValid = await this.validateToken(token);
-        if (!isValid) {
-          this.log.warn('Stored token failed validation (may be revoked)');
+        await this.validateToken(token);
+        if (this.lastValidationVerdict === 'invalid') {
+          this.log.warn('Stored token is invalid (revoked / no access)');
           this.emit('token-invalid', { reason: 'validation-failed' });
-          // Return null since token is invalid
+          // Return null since token is definitively invalid
           return null;
+        }
+        if (this.lastValidationVerdict === 'unknown') {
+          this.log.warn(
+            'Could not verify stored token (offline / transient) — keeping it'
+          );
         }
       }
 
@@ -394,6 +410,7 @@ export class CredentialManager extends EventEmitter {
       storageBackend: this.storageBackend,
       lastValidated: this.lastValidated,
       isValid: this.lastValidationResult,
+      validity: this.lastValidationVerdict,
     };
   }
 
@@ -419,16 +436,22 @@ export class CredentialManager extends EventEmitter {
   }
 
   /**
-   * Validate a token by making a test API call with retry logic
+   * Validate a token by making a test API call with retry logic.
+   *
+   * Records a tri-state verdict (ADR-0013) on `lastValidationVerdict` via
+   * `recordVerdict`, while still returning the legacy boolean (true iff the
+   * verdict is `valid`). Callers that need the offline-vs-revoked distinction
+   * read `lastValidationVerdict` / `getStatus().validity` rather than the
+   * boolean — an `unknown` (offline / transient) verdict returns `false` here
+   * but must NOT be treated as "revoked".
    */
   private async validateToken(token: string): Promise<boolean> {
     try {
-      // Use custom validator if provided
+      // Use custom validator if provided (test/custom path: boolean only ->
+      // map true=valid, false=invalid).
       if (this.tokenValidator) {
         const isValid = await this.tokenValidator(token);
-        this.lastValidated = new Date();
-        this.lastValidationResult = isValid;
-        return isValid;
+        return this.recordVerdict(isValid ? 'valid' : 'invalid');
       }
 
       // Default validation: make a test API call to Canvas using axios
@@ -451,14 +474,16 @@ export class CredentialManager extends EventEmitter {
             validateStatus: () => true, // Don't throw on non-2xx
           });
 
-          this.lastValidated = new Date();
-          this.lastValidationResult = response.status >= 200 && response.status < 300;
+          const verdict = classifyValidationResult({
+            kind: 'status',
+            status: response.status,
+          });
 
-          if (!this.lastValidationResult) {
-            this.log.warn(`Token validation failed with status ${response.status}`);
+          if (verdict !== 'valid') {
+            this.log.warn(`Token validation got status ${response.status} -> ${verdict}`);
           }
 
-          return this.lastValidationResult;
+          return this.recordVerdict(verdict);
         } catch (error) {
           lastError = error instanceof Error ? error : new Error(String(error));
 
@@ -471,24 +496,43 @@ export class CredentialManager extends EventEmitter {
             continue;
           }
 
-          // Non-retryable error or max retries reached
-          break;
+          // Non-retryable error or max retries reached — classify the throw.
+          // A network error (no response) classifies to `unknown`, which must
+          // NOT invalidate the stored token (offline-≠-revoked).
+          const verdict = classifyValidationResult({ kind: 'error', error });
+          if (verdict === 'unknown') {
+            this.log.warn(
+              'Token validation could not reach Canvas (offline / transient) -> unknown'
+            );
+          }
+          return this.recordVerdict(verdict);
         }
       }
 
+      // Unreachable in practice (loop always returns), but keep a safe default.
       this.log.error('Token validation error after retries', lastError || undefined);
-      this.lastValidated = new Date();
-      this.lastValidationResult = false;
-      return false;
+      return this.recordVerdict('unknown');
     } catch (error) {
       this.log.error(
         'Token validation error',
         error instanceof Error ? error : undefined
       );
-      this.lastValidated = new Date();
-      this.lastValidationResult = false;
-      return false;
+      return this.recordVerdict('unknown');
     }
+  }
+
+  /**
+   * Record a tri-state validation verdict and derive the legacy boolean view.
+   * `unknown` (offline / transient) maps the back-compat `isValid` to null so a
+   * good stored token isn't reported as failed after a network blip.
+   * Returns the legacy boolean (true iff verdict === 'valid').
+   */
+  private recordVerdict(verdict: TokenValidity): boolean {
+    this.lastValidated = new Date();
+    this.lastValidationVerdict = verdict;
+    this.lastValidationResult =
+      verdict === 'valid' ? true : verdict === 'invalid' ? false : null;
+    return verdict === 'valid';
   }
 
   /**
@@ -525,7 +569,10 @@ export class CredentialManager extends EventEmitter {
     const salt = crypto.randomBytes(CRYPTO_CONSTANTS.SALT_LENGTH);
 
     // Encrypt token
-    const { iv, authTag, ciphertext } = encryptBuffer(this.encryptionKey, Buffer.from(token, 'utf8'));
+    const { iv, authTag, ciphertext } = encryptBuffer(
+      this.encryptionKey,
+      Buffer.from(token, 'utf8')
+    );
 
     // Combine all parts: salt + iv + authTag + encrypted
     const data = Buffer.concat([salt, iv, authTag, ciphertext]);
@@ -571,7 +618,11 @@ export class CredentialManager extends EventEmitter {
       const data = fs.readFileSync(this.fallbackFilePath);
 
       // Verify minimum file size (salt + iv + authTag + at least 1 byte encrypted)
-      const minSize = CRYPTO_CONSTANTS.SALT_LENGTH + CRYPTO_CONSTANTS.IV_LENGTH + CRYPTO_CONSTANTS.AUTH_TAG_LENGTH + 1;
+      const minSize =
+        CRYPTO_CONSTANTS.SALT_LENGTH +
+        CRYPTO_CONSTANTS.IV_LENGTH +
+        CRYPTO_CONSTANTS.AUTH_TAG_LENGTH +
+        1;
       if (data.length < minSize) {
         this.log.error('Credential file corrupted: too small');
         return null;
@@ -579,12 +630,21 @@ export class CredentialManager extends EventEmitter {
 
       // Extract parts
       const _salt = data.subarray(0, CRYPTO_CONSTANTS.SALT_LENGTH);
-      const iv = data.subarray(CRYPTO_CONSTANTS.SALT_LENGTH, CRYPTO_CONSTANTS.SALT_LENGTH + CRYPTO_CONSTANTS.IV_LENGTH);
+      const iv = data.subarray(
+        CRYPTO_CONSTANTS.SALT_LENGTH,
+        CRYPTO_CONSTANTS.SALT_LENGTH + CRYPTO_CONSTANTS.IV_LENGTH
+      );
       const authTag = data.subarray(
         CRYPTO_CONSTANTS.SALT_LENGTH + CRYPTO_CONSTANTS.IV_LENGTH,
-        CRYPTO_CONSTANTS.SALT_LENGTH + CRYPTO_CONSTANTS.IV_LENGTH + CRYPTO_CONSTANTS.AUTH_TAG_LENGTH
+        CRYPTO_CONSTANTS.SALT_LENGTH +
+          CRYPTO_CONSTANTS.IV_LENGTH +
+          CRYPTO_CONSTANTS.AUTH_TAG_LENGTH
       );
-      const encrypted = data.subarray(CRYPTO_CONSTANTS.SALT_LENGTH + CRYPTO_CONSTANTS.IV_LENGTH + CRYPTO_CONSTANTS.AUTH_TAG_LENGTH);
+      const encrypted = data.subarray(
+        CRYPTO_CONSTANTS.SALT_LENGTH +
+          CRYPTO_CONSTANTS.IV_LENGTH +
+          CRYPTO_CONSTANTS.AUTH_TAG_LENGTH
+      );
 
       // Decrypt (GCM mode provides authentication - will throw on tampered data)
       const decrypted = decryptBuffer(this.encryptionKey, iv, authTag, encrypted);
@@ -633,7 +693,10 @@ export class CredentialManager extends EventEmitter {
     }, CredentialManager.BACKGROUND_VALIDATION_INTERVAL_MS);
 
     // Also run immediately on start (with small delay to avoid startup congestion)
-    this.startupValidationTimer = setTimeout(() => this.performBackgroundValidation(), 5000);
+    this.startupValidationTimer = setTimeout(
+      () => this.performBackgroundValidation(),
+      5000
+    );
   }
 
   /**
@@ -669,15 +732,21 @@ export class CredentialManager extends EventEmitter {
         return; // No token stored, nothing to validate
       }
 
-      // Validate the token
-      const isValid = await this.validateToken(token);
+      // Validate the token. Tri-state (ADR-0013): only a definitive `invalid`
+      // verdict fires token-invalid. `unknown` (offline / transient) is left
+      // alone so a background blip never prompts re-auth for a good token.
+      await this.validateToken(token);
 
-      if (!isValid) {
+      if (this.lastValidationVerdict === 'invalid') {
         this.log.warn('Background validation: stored token is no longer valid');
         this.emit('token-invalid', {
           reason: 'background-validation-failed',
           timestamp: new Date().toISOString(),
         });
+      } else if (this.lastValidationVerdict === 'unknown') {
+        this.log.debug(
+          'Background validation: could not verify token (offline / transient)'
+        );
       } else {
         this.log.debug('Background validation: token is valid');
       }

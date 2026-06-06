@@ -159,6 +159,15 @@ export class AppLifecycle {
 
   // Mutable flags
   private isQuitting = false;
+  /**
+   * Startup token-validity verdict captured during
+   * `initializeCanvasClientFromCredentials` (ADR-0013). When the boot-time
+   * `token-invalid -> auth:expired` push fires before the renderer window
+   * exists it is lost; this lets us replay it once the window is ready
+   * (belt-and-suspenders to the renderer's primary `auth:getStatus` pull).
+   * Only `invalid` triggers a replay — `unknown` (offline) must NOT prompt.
+   */
+  private startupAuthInvalid = false;
   private databaseCorruptionDetected: DatabaseCorruptionInfo | null = null;
   private gracefulShutdownInProgress = false;
   private shutdownAcknowledged = false;
@@ -624,6 +633,9 @@ export class AppLifecycle {
 
     this.windowManager?.createWindow();
 
+    // Replay startup auth:expired once the renderer is ready (ADR-0013 secondary)
+    this.wireStartupAuthReplay();
+
     // Create system tray icon if enabled (Windows only — macOS uses Dock, Linux tray is unreliable)
     if (process.platform === 'win32' && this.boundGetWindowBehavior().showTrayIcon) {
       this.windowManager?.createTray();
@@ -1036,7 +1048,46 @@ export class AppLifecycle {
           );
         }
       }
+
+      // Capture the tri-state startup verdict (ADR-0013). `retrieve()` returns
+      // null on a definitive `invalid` verdict; an `unknown` (offline) verdict
+      // keeps the token, so we read the verdict explicitly rather than
+      // inferring "token === null" means "revoked".
+      this.startupAuthInvalid = this.credentialManager.getStatus().validity === 'invalid';
+      if (this.startupAuthInvalid) {
+        this.logger.warn(
+          'Startup: stored Canvas token is invalid — will prompt re-auth once renderer is ready'
+        );
+      }
     }
+  }
+
+  /**
+   * Replay the boot-time `auth:expired` push once the renderer window has
+   * finished loading, iff the startup validation concluded `invalid`
+   * (ADR-0013 secondary fix). The renderer's `auth:getStatus` pull is the
+   * primary, race-free fix; this is cheap insurance against any residual
+   * ordering assumption. Reuses the existing `auth:expired` channel + store
+   * subscription — no new renderer surface.
+   *
+   * Note: main-process auto-sync (`AutoSyncManager`) is gated separately — it
+   * never started because an invalid verdict means the Canvas client was never
+   * built (see ADR-0013). The renderer `authReauthDeferred` flag does NOT gate
+   * main-process sync.
+   */
+  private wireStartupAuthReplay(): void {
+    const mainWindow = this.getMainWindow();
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    mainWindow.webContents.on('did-finish-load', () => {
+      if (!this.startupAuthInvalid) return;
+      const win = this.getMainWindow();
+      if (win && !win.isDestroyed()) {
+        this.logger.info('Replaying auth:expired to renderer (startup token invalid)');
+        win.webContents.send('auth:expired', {
+          reason: 'Stored Canvas token is invalid',
+        });
+      }
+    });
   }
 
   private wireFileWatcherEvents(): void {

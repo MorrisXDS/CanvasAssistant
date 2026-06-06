@@ -12,6 +12,14 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ### Added
 
+- `2026-06-06 02:10 UTC` — **Offline-safe Canvas auth + deferrable re-auth** (ADR-0013, backend):
+  Canvas token validity is now **tri-state** (valid / invalid / unknown). Being **offline no
+  longer invalidates a good token** — only a real 401/403 (revoked / no access) does; a network
+  failure, timeout, or server error keeps you signed in. The renderer also learns token validity
+  at startup via a new race-free `auth:getStatus` pull (plus a window-ready replay), so a revoked
+  token correctly prompts re-auth instead of landing on a dead dashboard. (Frontend gating + the
+  "Later" re-auth flow land in the next entry.)
+
 - `2026-06-06 00:36 UTC` — **Opt-in update channel** (ADR-0012): a new Settings → Updates
   section lets you enable automatic background checks against GitHub Releases on a chosen
   interval (daily / weekly / on launch only). When a newer version is found, a notice

@@ -169,6 +169,8 @@ export interface TypedApi {
   hasCredential: () => Promise<boolean>;
   storeCredential: (token: string) => Promise<IpcResult<'credentials:store'>>;
   deleteCredential: () => Promise<IpcResult<'credentials:delete'>>;
+  /** Tri-state auth status pull (ADR-0013). */
+  getAuthStatus: () => Promise<IpcResult<'auth:getStatus'>>;
 
   // Canvas
   connectCanvas: (baseUrl: string) => Promise<IpcResult<'canvas:connect'>>;

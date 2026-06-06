@@ -7,8 +7,26 @@
 
 import fs from 'fs';
 import path from 'path';
+import axios, { AxiosError } from 'axios';
 import { CredentialManager } from '../../src/layers/l0-utilities/CredentialManager';
 import { Logger } from '../../src/layers/l0-utilities/Logger';
+
+// Spy on axios.get (not a full module mock) so the real `AxiosError` class is
+// preserved for the classifier's `instanceof` checks.
+function axiosErrorNoResponse(): AxiosError {
+  return new AxiosError('Network Error');
+}
+function axiosErrorWithStatus(status: number): AxiosError {
+  const err = new AxiosError('Request failed');
+  err.response = {
+    status,
+    statusText: '',
+    headers: {},
+    config: {} as never,
+    data: undefined,
+  };
+  return err;
+}
 
 // Test directory for credential files
 const TEST_DIR = path.join(__dirname, '../temp-credentials');
@@ -386,6 +404,156 @@ describe('CredentialManager', () => {
       await manager.retrieve();
 
       expect(eventHandler).toHaveBeenCalled();
+    });
+  });
+
+  describe('tri-state validity (ADR-0013)', () => {
+    let getSpy: jest.SpyInstance;
+
+    const makeAxiosManager = async () =>
+      createManager({
+        enableFileFallback: true,
+        fallbackFilePath: TEST_CREDENTIAL_FILE,
+        validateOnRetrieve: true,
+        baseUrl: 'https://canvas.example.com',
+        logger,
+      } as ConstructorParameters<typeof CredentialManager>[0]);
+
+    beforeEach(() => {
+      getSpy = jest.spyOn(axios, 'get');
+    });
+
+    afterEach(() => {
+      getSpy.mockRestore();
+    });
+
+    it('200 -> valid, no token-invalid, retrieve returns token', async () => {
+      getSpy.mockResolvedValue({ status: 200, data: {} } as never);
+      manager = await makeAxiosManager();
+      const invalidHandler = jest.fn();
+      manager.on('token-invalid', invalidHandler);
+
+      await manager.store('good-token');
+      const retrieved = await manager.retrieve();
+
+      expect(retrieved).toBe('good-token');
+      expect(invalidHandler).not.toHaveBeenCalled();
+      const status = manager.getStatus();
+      expect(status.validity).toBe('valid');
+      expect(status.isValid).toBe(true);
+    });
+
+    it('401 -> invalid, token-invalid emitted once, retrieve returns null', async () => {
+      getSpy.mockResolvedValue({ status: 401, data: {} } as never);
+      manager = await makeAxiosManager();
+      const invalidHandler = jest.fn();
+      manager.on('token-invalid', invalidHandler);
+
+      await manager.store('revoked-token');
+      const retrieved = await manager.retrieve();
+
+      expect(retrieved).toBeNull();
+      expect(invalidHandler).toHaveBeenCalledTimes(1);
+      expect(manager.getStatus().validity).toBe('invalid');
+      expect(manager.getStatus().isValid).toBe(false);
+    });
+
+    it('403 -> invalid (same as 401)', async () => {
+      getSpy.mockResolvedValue({ status: 403, data: {} } as never);
+      manager = await makeAxiosManager();
+      const invalidHandler = jest.fn();
+      manager.on('token-invalid', invalidHandler);
+
+      await manager.store('forbidden-token');
+      const retrieved = await manager.retrieve();
+
+      expect(retrieved).toBeNull();
+      expect(invalidHandler).toHaveBeenCalledTimes(1);
+      expect(manager.getStatus().validity).toBe('invalid');
+    });
+
+    it('network error (offline, retries exhausted) -> unknown; token RETAINED; no token-invalid', async () => {
+      // The offline-≠-revoked regression test for the reported bug class.
+      getSpy.mockRejectedValue(axiosErrorNoResponse());
+      manager = await makeAxiosManager();
+      const invalidHandler = jest.fn();
+      manager.on('token-invalid', invalidHandler);
+
+      await manager.store('good-but-offline-token');
+      const retrieved = await manager.retrieve();
+
+      expect(retrieved).toBe('good-but-offline-token');
+      expect(invalidHandler).not.toHaveBeenCalled();
+      const status = manager.getStatus();
+      expect(status.validity).toBe('unknown');
+      // Back-compat boolean must NOT be clobbered to false on a network blip.
+      expect(status.isValid).toBeNull();
+    });
+
+    it('transient network throw then 200 (retry) -> ends valid', async () => {
+      // Retries fire on THROWN retryable errors (network/timeout/5xx-throw),
+      // not on a non-2xx *response* (validateStatus:()=>true never throws).
+      getSpy
+        .mockRejectedValueOnce(axiosErrorNoResponse())
+        .mockResolvedValue({ status: 200, data: {} } as never);
+      manager = await makeAxiosManager();
+
+      await manager.store('flaky-token');
+      const retrieved = await manager.retrieve();
+
+      expect(retrieved).toBe('flaky-token');
+      expect(manager.getStatus().validity).toBe('valid');
+    });
+
+    it('axios error carrying a 401 response -> invalid', async () => {
+      getSpy.mockRejectedValue(axiosErrorWithStatus(401));
+      manager = await makeAxiosManager();
+      const invalidHandler = jest.fn();
+      manager.on('token-invalid', invalidHandler);
+
+      await manager.store('token');
+      const retrieved = await manager.retrieve();
+
+      expect(retrieved).toBeNull();
+      expect(invalidHandler).toHaveBeenCalledTimes(1);
+      expect(manager.getStatus().validity).toBe('invalid');
+    });
+
+    it('background validation: 401 emits token-invalid', async () => {
+      getSpy.mockResolvedValue({ status: 401, data: {} } as never);
+      manager = await makeAxiosManager();
+      const invalidHandler = jest.fn();
+      manager.on('token-invalid', invalidHandler);
+
+      // Store WITHOUT validation interfering, then drive background pass.
+      await manager.store('revoked');
+      // performBackgroundValidation is private; exercise via the public timer
+      // entry point indirectly by casting to access it (test-only).
+      await (
+        manager as unknown as {
+          performBackgroundValidation: () => Promise<void>;
+        }
+      ).performBackgroundValidation();
+
+      expect(invalidHandler).toHaveBeenCalledTimes(1);
+      expect(manager.getStatus().validity).toBe('invalid');
+    });
+
+    it('background validation: network error emits nothing', async () => {
+      getSpy.mockRejectedValue(axiosErrorNoResponse());
+      manager = await makeAxiosManager();
+      const invalidHandler = jest.fn();
+      manager.on('token-invalid', invalidHandler);
+
+      await manager.store('good-offline');
+      await (
+        manager as unknown as {
+          performBackgroundValidation: () => Promise<void>;
+        }
+      ).performBackgroundValidation();
+
+      expect(invalidHandler).not.toHaveBeenCalled();
+      expect(manager.getStatus().validity).toBe('unknown');
     });
   });
 

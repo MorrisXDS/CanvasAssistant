@@ -461,6 +461,12 @@ const api = {
 
   deleteCredential: () => ipcRenderer.invoke('credentials:delete'),
 
+  /**
+   * Tri-state auth status pull (ADR-0013): { hasCredential, validity, lastCheckedAt }.
+   * Race-free way for the renderer to learn token validity at startup.
+   */
+  getAuthStatus: () => ipcRenderer.invoke('auth:getStatus'),
+
   // ============ Data Management ============
 
   clearAllData: (options?: { deleteToken?: boolean }) =>
