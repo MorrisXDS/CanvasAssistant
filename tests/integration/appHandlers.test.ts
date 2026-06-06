@@ -52,7 +52,13 @@ interface IpcMainMock {
 }
 
 const mockIpc = ipcMain as unknown as IpcMainMock;
-const INSTALL_DIR = 'C:\\Program Files\\Canvas Assistant';
+// Mirror the exact exe path the electron mock's getPath('exe') returns, then derive
+// INSTALL_DIR with the SAME path.dirname the handler uses. Keeps expected paths
+// consistent with the handler's candidates on BOTH win32 (dev) and POSIX (CI): a
+// hardcoded backslash literal makes POSIX path.dirname return '.', so candidate[0]
+// would not match a hardcoded brandPath and the test would fail only on Linux CI.
+const EXE_PATH = 'C:\\Program Files\\Canvas Assistant\\Canvas Assistant.exe';
+const INSTALL_DIR = path.dirname(EXE_PATH);
 
 /** Minimal IpcContext stub — app:launchUninstaller only needs logger getters. */
 function buildCtx(): IpcContext {
