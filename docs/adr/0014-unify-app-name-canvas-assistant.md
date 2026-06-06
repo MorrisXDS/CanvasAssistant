@@ -1,6 +1,6 @@
 # 0014 — Unify app name to `canvas-assistant` with a first-run user-data migration
 
-Status: Proposed
+Status: Accepted
 
 ## Context
 
