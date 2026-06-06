@@ -861,7 +861,7 @@ const api = {
    */
   getLinuxUninstallCommand: () =>
     ipcRenderer.invoke('app:getLinuxUninstallCommand') as Promise<{
-      type: 'appimage' | 'deb';
+      type: 'appimage' | 'deb' | 'rpm' | 'pacman' | 'unknown';
       command: string;
       path: string;
     }>,

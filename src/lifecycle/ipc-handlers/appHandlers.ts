@@ -12,6 +12,7 @@ import { spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import type { IpcContext } from './IpcContext';
+import { getLinuxUninstall } from './linuxUninstall';
 
 /**
  * Register all app-related IPC handlers
@@ -324,26 +325,25 @@ export function registerAppHandlers(ctx: IpcContext): void {
   });
 
   /**
-   * Get the uninstall command for Linux
+   * Get the uninstall command for Linux.
+   *
+   * Delegates to the pure, injectable detector in `linuxUninstall.ts`, which probes
+   * dpkg/rpm/pacman to find which package manager owns the running binary and returns
+   * the matching removal command (apt/dnf/pacman) — or a safe deb default tagged
+   * `unknown`. Synchronous (execFileSync). Wrapped in try/catch so any unexpected
+   * error still returns a usable command rather than throwing to the renderer.
    */
   ipcMain.handle('app:getLinuxUninstallCommand', () => {
-    const exePath = app.getPath('exe');
-
-    // Check if it's an AppImage
-    if (exePath.endsWith('.AppImage') || process.env.APPIMAGE) {
-      const appImagePath = process.env.APPIMAGE || exePath;
+    try {
+      return getLinuxUninstall();
+    } catch (error) {
+      logger.error('Failed to detect Linux uninstall command:', error as Error);
+      const exePath = app.getPath('exe');
       return {
-        type: 'appimage',
-        command: `rm "${appImagePath}"`,
-        path: appImagePath,
+        type: 'unknown' as const,
+        command: 'sudo apt remove canvas-assistant',
+        path: exePath,
       };
     }
-
-    // Check for deb installation
-    return {
-      type: 'deb',
-      command: 'sudo apt remove canvas-assistant',
-      path: exePath,
-    };
   });
 }
