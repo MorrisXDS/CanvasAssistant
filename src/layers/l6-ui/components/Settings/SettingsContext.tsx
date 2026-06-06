@@ -238,6 +238,8 @@ export function SettingsProvider({
     isConnected: canvasConnection.isConnected,
     isConnecting: canvasConnection.isConnecting,
     connectionError: canvasConnection.connectionError,
+    tokenValidity: canvasConnection.tokenValidity,
+    lastCheckedAt: canvasConnection.lastCheckedAt,
     checkCanvasConnection: canvasConnection.checkCanvasConnection,
     handleReconnect: canvasConnection.handleReconnect,
     handleDisconnect: canvasConnection.handleDisconnect,

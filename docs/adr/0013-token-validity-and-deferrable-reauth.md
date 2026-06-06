@@ -1,6 +1,6 @@
 # ADR-0013: Token validity (tri-state) + deferrable re-auth with app-wide sync gating
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-06-05
 - **Supersedes:** —
 

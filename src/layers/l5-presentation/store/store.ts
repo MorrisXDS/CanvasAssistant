@@ -52,6 +52,7 @@ const initialState: StoreState = {
   isAuthenticated: false,
   isInitialized: false,
   authError: null,
+  authReauthDeferred: false,
   lastError: null,
   syncConflicts: [],
   syncUpdates: {

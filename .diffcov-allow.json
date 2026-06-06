@@ -14,6 +14,7 @@
   "_why_ipc_handlers_index_update": "Line 33 is the export { registerUpdateHandlers } barrel re-export in ipc-handlers/index.ts. Pure re-export lines cannot be instrumented or called in a Jest environment without importing the entire handler tree (which requires mocking Electron ipcMain). The handler delegation itself is tested in tests/integration/updateHandlers.test.ts.",
   "_why_src_lifecycle_appPaths_ts": "Electron lifecycle path module: every export is a module-load-time path computed from app.getPath()/app.isPackaged/process.platform. The changed FILES_DIR line is a packaged?Documents:installDir ternary — exercising it requires mocking the Electron app object's packaged state + getPath at import time, which is more brittle than the one-line bug it would guard (a wrong path surfaces immediately at app launch in /verify). Same carve-out class as AppLifecycle.ts / preload.ts. The downstream behavior (FileDownloadManager tolerating an unwritable base dir) IS unit-tested in tests/l0-utilities/FileDownloadManager.startup.test.ts.",
   "_why_src_layers_l0_utilities_index_ts": "ADR-0013: lines 34-35 are the `export { classifyValidationResult, type TokenValidity }` barrel re-export of tokenValidation.ts. Pure re-export lines — the L0 barrel can't be imported in Jest because it transitively pulls in FileWatcher -> chokidar (ESM-only, unparseable by ts-jest); tests deep-import the symbol directly (tests/l0-utilities/tokenValidation.test.ts) per the documented 'deep-import to avoid ESM transitives' gotcha. The actual function is fully covered there.",
+  "_why_src_layers_l5_presentation_index_ts": "ADR-0013: the flagged lines are the `export { useStore, ..., selectSyncDisabled, selectSyncDisabledReason, ... } from './store'` barrel re-export block (a 1-line statement expanded to multi-line to add the two new selector re-exports). Pure re-export lines — tests import the selectors from the deeper './store' barrel directly (tests/l5-presentation/authReauthGating.test.ts) where they are fully covered. Instrumenting the top-level L5 barrel would require importing the entire presentation tree.",
   "paths": [
     "src/layers/l6-ui/components/Layout.tsx",
     "src/layers/l6-ui/components/pages/Updates/updatesHelpers.ts",
@@ -53,6 +54,7 @@
     "src/layers/l6-ui/App.tsx",
     "src/lifecycle/ipc-handlers/index.ts",
     "src/lifecycle/appPaths.ts",
-    "src/layers/l0-utilities/index.ts"
+    "src/layers/l0-utilities/index.ts",
+    "src/layers/l5-presentation/index.ts"
   ]
 }

@@ -12,6 +12,14 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ### Added
 
+- `2026-06-06 03:30 UTC` — **Deferrable re-auth with app-wide sync gating** (ADR-0013, frontend):
+  the Canvas "token expired" prompt now has a **Later** button — defer reconnecting and keep
+  using the app with your imported data. While re-auth is deferred, **every Sync button is greyed
+  out app-wide** (Dashboard, Files) with a tooltip pointing back to reconnect, and the Dashboard
+  sync button re-opens the prompt. The Settings → Account badge is now three-state: **Connected**,
+  **Token Expired** (with a Reconnect button), or **Offline** ("last checked …"). A successful
+  reconnect re-enables sync automatically.
+
 - `2026-06-06 02:10 UTC` — **Offline-safe Canvas auth + deferrable re-auth** (ADR-0013, backend):
   Canvas token validity is now **tri-state** (valid / invalid / unknown). Being **offline no
   longer invalidates a good token** — only a real 401/403 (revoked / no access) does; a network

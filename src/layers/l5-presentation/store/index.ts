@@ -5,6 +5,10 @@
 
 export { useStore } from './store';
 export { subscribeToIpcEvents } from './storeSubscriptions';
-export { selectors } from './storeSelectors';
+export {
+  selectors,
+  selectSyncDisabled,
+  selectSyncDisabledReason,
+} from './storeSelectors';
 export { getCachedCourseGrades, clearCourseGradesCache } from './courseGradesCache';
 export { getCurrentTermIds } from './storeHelpers';

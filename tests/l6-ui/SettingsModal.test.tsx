@@ -71,6 +71,10 @@ jest.mock('../../src/layers/l5-presentation/store', () => ({
 // Mock window.api
 const mockApi = {
   hasCredential: jest.fn().mockResolvedValue(false),
+  getAuthStatus: jest.fn().mockResolvedValue({
+    success: true,
+    data: { hasCredential: false, validity: 'unknown', lastCheckedAt: null },
+  }),
   getEnrollmentTerms: jest.fn().mockResolvedValue([]),
   getFilesDirectory: jest.fn().mockResolvedValue({ path: '/downloads' }),
   getCourseSettings: jest.fn().mockResolvedValue({

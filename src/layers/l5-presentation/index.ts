@@ -32,7 +32,14 @@ export type {
 } from './types';
 
 // Store
-export { useStore, subscribeToIpcEvents, selectors, getCurrentTermIds } from './store';
+export {
+  useStore,
+  subscribeToIpcEvents,
+  selectors,
+  selectSyncDisabled,
+  selectSyncDisabledReason,
+  getCurrentTermIds,
+} from './store';
 
 // View models
 export {
