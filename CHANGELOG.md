@@ -26,7 +26,7 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 ### Added
 
 - `2026-06-06 04:13 UTC` — **Added Linux `.rpm` (Fedora/RHEL/openSUSE) and `pacman`
-  (`.pkg.tar.zst`, Arch/Manjaro) install targets** alongside the existing `.deb` + AppImage
+  (`.pacman`, Arch/Manjaro) install targets** alongside the existing `.deb` + AppImage
   (targets v1.1.4). The in-app uninstall dialog now detects how the app was installed (by
   asking `dpkg`/`rpm`/`pacman` which one owns the running binary) and shows the matching
   removal command (`sudo apt remove` / `sudo dnf remove` / `sudo pacman -R`), falling back to

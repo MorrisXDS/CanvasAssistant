@@ -240,7 +240,7 @@ Grab the installer for your platform from
 | -------- | ---------------------------------- | ----------------------------------------------------------------------- |
 | Windows  | `Canvas.Assistant.Setup.x.x.x.exe` | NSIS installer (per-user or system-wide)                                |
 | macOS    | `Canvas.Assistant-x.x.x-arm64.dmg` | Apple Silicon (arm64); **unsigned** — see below (`.zip` also available) |
-| Linux    | `Canvas.Assistant-x.x.x.AppImage`  | Run directly (`.deb`, `.rpm`, and pacman `.pkg.tar.zst` also available) |
+| Linux    | `Canvas.Assistant-x.x.x.AppImage`  | Run directly (`.deb`, `.rpm`, and pacman `.pacman` also available)      |
 
 > The builds are **not code-signed** (this is a free, solo-maintained project), so macOS and
 > some Linux setups need one extra step the first time. Windows: run the installer and click
@@ -286,10 +286,10 @@ distro family is **recommended** (it integrates into your applications menu and 
   # openSUSE: sudo zypper install ./canvas-assistant-*.rpm
   ```
 
-- **pacman `.pkg.tar.zst`** (Arch / Manjaro) — pulls `libsecret`:
+- **pacman `.pacman`** (Arch / Manjaro) — pulls `libsecret`:
 
   ```bash
-  sudo pacman -U ./canvas-assistant-*.pkg.tar.zst
+  sudo pacman -U ./canvas-assistant-*.pacman
   ```
 
 - **AppImage** — portable, no install. **Note:** double-clicking it in GNOME Files
@@ -341,11 +341,11 @@ npm run package    # 2. package an installer for your OS → release/
 
 Target a specific platform instead of the current OS:
 
-| Command                 | Output                                                    |
-| ----------------------- | --------------------------------------------------------- |
-| `npm run package:win`   | Windows — NSIS `.exe` installer                           |
-| `npm run package:mac`   | macOS — `.dmg` + `.zip`                                   |
-| `npm run package:linux` | Linux — `AppImage`, `.deb`, `.rpm`, pacman `.pkg.tar.zst` |
+| Command                 | Output                                               |
+| ----------------------- | ---------------------------------------------------- |
+| `npm run package:win`   | Windows — NSIS `.exe` installer                      |
+| `npm run package:mac`   | macOS — `.dmg` + `.zip`                              |
+| `npm run package:linux` | Linux — `AppImage`, `.deb`, `.rpm`, pacman `.pacman` |
 
 electron-builder rebuilds the native modules (`better-sqlite3`, `keytar`) for Electron
 during packaging; the finished installers land in `release/`.

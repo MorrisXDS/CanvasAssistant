@@ -54,7 +54,8 @@ jobs:
         if: matrix.platform == 'linux'
         # libsecret-1-dev: keytar build dep. rpm: provides rpmbuild for the .rpm
         # target. fakeroot + libarchive-tools (bsdtar) + zstd: fpm needs these to
-        # assemble the pacman .pkg.tar.zst on Ubuntu (Arch tooling is absent there).
+        # assemble the pacman package (electron-builder emits *.pacman) on Ubuntu
+        # (Arch tooling is absent there).
         run: sudo apt-get update && sudo apt-get install -y libsecret-1-dev rpm fakeroot libarchive-tools zstd
 
       - name: Install dependencies
@@ -79,7 +80,7 @@ jobs:
             release/*.AppImage
             release/*.deb
             release/*.rpm
-            release/*.pkg.tar.zst
+            release/*.pacman
             release/*.yml
             release/*.blockmap
           if-no-files-found: error
