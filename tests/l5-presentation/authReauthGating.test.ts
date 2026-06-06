@@ -49,6 +49,19 @@ function makeHarness(initial: Partial<StoreState> = {}) {
 }
 
 describe('syncSlice — deferReauth / reopenReauth / clearAuthError (ADR-0013)', () => {
+  // Risk #1 (plan): the live auth:expired push (storeSubscriptions.ts:76) calls
+  // setAuthError. Assert the action itself sets authError correctly so a
+  // regression in this load-bearing path is caught here, not silently at
+  // runtime when the subscription callback fires.
+  it('setAuthError sets authError (live auth:expired runtime path regression)', () => {
+    const { state, get, set } = makeHarness();
+    const slice = createSyncSlice(set, get);
+    slice.setAuthError!({ type: 'expired', reason: 'Token revoked' });
+    expect(state.authError).toEqual({ type: 'expired', reason: 'Token revoked' });
+    // Does not clobber authReauthDeferred.
+    expect(state.authReauthDeferred).toBe(false);
+  });
+
   it('deferReauth sets authReauthDeferred:true and clears authError', () => {
     const { state, get, set } = makeHarness({
       authError: { type: 'expired' },
