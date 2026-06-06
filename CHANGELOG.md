@@ -12,6 +12,11 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ### Changed
 
+- `2026-06-06 05:33 UTC` — **Course cards on the Courses page are now sensibly sized.** Cards
+  scale at a 4:3 aspect-ratio of their (responsive) width and rows pack to the top, instead of
+  a sparse grid (e.g. a single course) stretching one card to fill the entire page. Long course
+  names still grow the card rather than clipping.
+
 - `2026-06-06 03:35 UTC` — **Unified the app name to `canvas-assistant` with a fail-safe
   first-run data migration** (ADR-0014, targets v1.1.4): the internal npm `name` is now
   `canvas-assistant` (brand `Canvas Assistant` and bundle id `com.canvasassistant.app`
