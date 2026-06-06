@@ -85,7 +85,18 @@ export class FileDownloadManager extends EventEmitter {
     this.baseDir = config.baseDir;
     this.maxConcurrent = config.maxConcurrent ?? 2;
     this.logger = config.logger;
-    this.ensureBaseDirExists();
+    // Creating the downloads dir must NOT crash app startup: if it isn't writable,
+    // log and continue. The dir is re-attempted lazily before each download, so an
+    // unusable location degrades downloads (a per-download error surfaced to the
+    // user) instead of bricking the whole app at launch.
+    try {
+      this.ensureBaseDirExists();
+    } catch (error) {
+      this.logger?.warn?.(
+        `Downloads directory not ready at startup (${this.baseDir}); will retry on first download`,
+        { error: error instanceof Error ? error.message : String(error) }
+      );
+    }
   }
 
   /**

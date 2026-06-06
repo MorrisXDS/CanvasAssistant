@@ -290,6 +290,14 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ### Fixed
 
+- `2026-06-06 00:55 UTC` — **Fixed a Linux startup crash: downloaded files now go to a user-writable
+  location on every packaged platform.** `FILES_DIR` resolved to the install dir on
+  Linux/Windows (only macOS used Documents); on a Linux `.deb` that's `/opt/<App>` (root-owned)
+  → `mkdir` EACCES in the `FileDownloadManager` constructor → the app crashed at launch.
+  Packaged builds now write to `~/Documents/CanvasAssistant/Downloads` on all OSes (dev keeps
+  Downloads next to the app). Also hardened: a non-writable downloads dir no longer crashes
+  startup — it's logged and retried lazily per download.
+
 - `2026-06-05 22:53 UTC` — **Sidebar no longer shows "Not Synced" after a successful sync when all courses are
   hidden/archived.** The status was derived only from VISIBLE courses, so an account with
   every course hidden or archived (e.g. after graduating) read 0 synced courses → "Not Synced"
