@@ -236,11 +236,69 @@ npm run test:e2e:sync  # e2e sync-pull against a mock Canvas
 Grab the installer for your platform from
 [**Releases**](https://github.com/MorrisXDS/CanvasAssistant/releases):
 
-| Platform | File                               | Notes                                                   |
-| -------- | ---------------------------------- | ------------------------------------------------------- |
-| Windows  | `Canvas Assistant Setup x.x.x.exe` | NSIS installer (per-user or system-wide)                |
-| macOS    | `Canvas Assistant-x.x.x.dmg`       | Drag to Applications (`.zip` also available)            |
-| Linux    | `Canvas Assistant-x.x.x.AppImage`  | Run directly (`.deb` also available; needs `libsecret`) |
+| Platform | File                               | Notes                                                                   |
+| -------- | ---------------------------------- | ----------------------------------------------------------------------- |
+| Windows  | `Canvas.Assistant.Setup.x.x.x.exe` | NSIS installer (per-user or system-wide)                                |
+| macOS    | `Canvas.Assistant-x.x.x-arm64.dmg` | Apple Silicon (arm64); **unsigned** — see below (`.zip` also available) |
+| Linux    | `Canvas.Assistant-x.x.x.AppImage`  | Run directly (`.deb` also available)                                    |
+
+> The builds are **not code-signed** (this is a free, solo-maintained project), so macOS and
+> some Linux setups need one extra step the first time. Windows: run the installer and click
+> through SmartScreen ("More info" → "Run anyway").
+
+#### macOS
+
+The build is **unsigned and notarized by no one**, so Gatekeeper will refuse it on first
+launch ("Canvas Assistant is damaged and can't be opened", or "unidentified developer"). It is
+**Apple Silicon only** (arm64 — M1 or newer); there is no Intel build.
+
+1. Open the `.dmg` and drag **Canvas Assistant** to **Applications**.
+2. Clear the quarantine flag (one time), then open it:
+
+   ```bash
+   xattr -dr com.apple.quarantine "/Applications/Canvas Assistant.app"
+   open "/Applications/Canvas Assistant.app"
+   ```
+
+   Or, without the terminal: **right-click the app → Open → Open** in the dialog.
+
+Because the build is unsigned, there is **no automatic update** — check
+[Releases](https://github.com/MorrisXDS/CanvasAssistant/releases) (or enable the in-app update
+channel in **Settings → Updates**, which notifies you but doesn't auto-install).
+
+#### Linux
+
+Two artifacts are published — for a normal desktop install the **`.deb` is recommended**
+(it integrates into your applications menu); the AppImage is portable but does not.
+
+- **`.deb`** (Debian/Ubuntu) — installs system-wide, pulls its dependency (`libsecret-1-0`),
+  and adds a launcher to your app menu:
+
+  ```bash
+  sudo apt install ./canvas-integration-dashboard_*_amd64.deb
+  ```
+
+- **AppImage** — portable, no install. **Note:** double-clicking it in GNOME Files
+  (Nautilus) shows _"No apps available / Open With…"_ — Nautilus won't run an AppImage. Make
+  it executable and launch it from a terminal instead:
+
+  ```bash
+  chmod +x Canvas.Assistant-*.AppImage
+  ./Canvas.Assistant-*.AppImage
+  ```
+
+  AppImage also needs **FUSE**. On distros without it (e.g. Ubuntu 24.04) either install
+  `libfuse2`, or run extracted: `./Canvas.Assistant-*.AppImage --appimage-extract-and-run`.
+
+**Credential storage / keychain.** Your Canvas token is stored in the OS secret service
+(GNOME Keyring / KDE Wallet) via `libsecret`. On a minimal or headless session with no secret
+service running, you'll see a `Keychain unavailable` warning in the logs — the app then falls
+back to an **encrypted file**, so it still works; install/start `gnome-keyring` (or run inside a
+desktop session) for full keychain-backed storage.
+
+**Where files live (Linux):** downloaded course files go to
+`~/Documents/CanvasAssistant/Downloads`; config, logs, and the SQLite database live under
+`~/.config/canvas-integration-dashboard/`.
 
 ### Build from source
 
