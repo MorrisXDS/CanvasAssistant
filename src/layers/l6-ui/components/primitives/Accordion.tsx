@@ -217,19 +217,32 @@ function AccordionTrigger({ children, icon, badge, style }: AccordionTriggerProp
 
 function AccordionContent({ children, style }: AccordionContentProps) {
   const { isOpen } = useAccordionItemContext();
-  const contentRef = useRef<HTMLDivElement>(null);
+  // innerRef wraps the natural-height content; the outer div's height is the
+  // animated value we control. We measure the INNER (its size is not driven by
+  // our height style), so re-measuring can't feed back into a ResizeObserver loop.
+  const innerRef = useRef<HTMLDivElement>(null);
   const [height, setHeight] = useState<number | undefined>(undefined);
 
   useEffect(() => {
-    if (contentRef.current) {
-      const scrollHeight = contentRef.current.scrollHeight;
-      setHeight(isOpen ? scrollHeight : 0);
-    }
+    const inner = innerRef.current;
+    if (!inner) return;
+
+    const measure = () => setHeight(isOpen ? inner.scrollHeight : 0);
+    measure();
+
+    // Re-measure when the content's own size changes AFTER mount — e.g. a
+    // section that loads data asynchronously (UpdatesSection) and grows from a
+    // short loading state to its full height. Without this the pinned pixel
+    // height stays at the first measurement and `overflow: hidden` clips the
+    // grown content (the cut-off "Check now" button bug).
+    if (!isOpen || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(inner);
+    return () => observer.disconnect();
   }, [isOpen, children]);
 
   return (
     <div
-      ref={contentRef}
       style={{
         ...styles.content,
         height: height !== undefined ? height : isOpen ? 'auto' : 0,
@@ -238,7 +251,9 @@ function AccordionContent({ children, style }: AccordionContentProps) {
       }}
       aria-hidden={!isOpen}
     >
-      <div style={styles.contentInner}>{children}</div>
+      <div ref={innerRef} style={styles.contentInner}>
+        {children}
+      </div>
     </div>
   );
 }
