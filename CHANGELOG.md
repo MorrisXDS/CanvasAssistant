@@ -10,6 +10,19 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ## [Unreleased]
 
+### Changed
+
+- `2026-06-06 03:35 UTC` — **Unified the app name to `canvas-assistant` with a fail-safe
+  first-run data migration** (ADR-0014, targets v1.1.4): the internal npm `name` is now
+  `canvas-assistant` (brand `Canvas Assistant` and bundle id `com.canvasassistant.app`
+  unchanged). Because the name drives the per-user data directory, a one-time, fail-safe
+  migration relocates your existing data dir on first launch after upgrade so **no install
+  loses its database, settings, or saved credentials** (atomic move with a cross-device
+  copy-then-verify fallback; never merges into or clobbers an existing dir; leaves the old
+  dir intact if anything fails). Also fixes the Linux `apt remove` package name and the
+  Windows uninstaller-filename lookup, and makes `.deb` upgrades cleanly supersede the old
+  `canvas-integration-dashboard` package.
+
 ### Added
 
 - `2026-06-06 03:30 UTC` — **Deferrable re-auth with app-wide sync gating** (ADR-0013, frontend):
