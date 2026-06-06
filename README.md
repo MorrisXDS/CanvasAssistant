@@ -268,23 +268,27 @@ channel in **Settings → Updates**, which notifies you but doesn't auto-install
 
 #### Linux
 
-Two artifacts are published — pick one:
+Two artifacts are published — for a normal desktop install the **`.deb` is recommended**
+(it integrates into your applications menu); the AppImage is portable but does not.
 
-- **AppImage** — portable, no install:
+- **`.deb`** (Debian/Ubuntu) — installs system-wide, pulls its dependency (`libsecret-1-0`),
+  and adds a launcher to your app menu:
+
+  ```bash
+  sudo apt install ./canvas-integration-dashboard_*_amd64.deb
+  ```
+
+- **AppImage** — portable, no install. **Note:** double-clicking it in GNOME Files
+  (Nautilus) shows _"No apps available / Open With…"_ — Nautilus won't run an AppImage. Make
+  it executable and launch it from a terminal instead:
 
   ```bash
   chmod +x Canvas.Assistant-*.AppImage
   ./Canvas.Assistant-*.AppImage
   ```
 
-  AppImage needs **FUSE**. On distros without it (e.g. Ubuntu 24.04) either install
+  AppImage also needs **FUSE**. On distros without it (e.g. Ubuntu 24.04) either install
   `libfuse2`, or run extracted: `./Canvas.Assistant-*.AppImage --appimage-extract-and-run`.
-
-- **`.deb`** (Debian/Ubuntu) — installs system-wide and pulls its dependency (`libsecret-1-0`):
-
-  ```bash
-  sudo apt install ./canvas-integration-dashboard_*_amd64.deb
-  ```
 
 **Credential storage / keychain.** Your Canvas token is stored in the OS secret service
 (GNOME Keyring / KDE Wallet) via `libsecret`. On a minimal or headless session with no secret
