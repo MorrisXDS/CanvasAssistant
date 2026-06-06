@@ -46,6 +46,14 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
   (via `MyDocuments`, so it respects a redirected/OneDrive Documents), so the real files were
   never removed before.
 
+### Fixed
+
+- `2026-06-06 02:34 UTC` — **App now exits cleanly on Linux.** On some Linux setups (no/limited GPU
+  acceleration or a sandboxed/systemd-managed session) a wedged GPU/utility child process kept the
+  main process alive after the window closed, so the app never fully quit and had to be killed with
+  Ctrl+C. Shutdown now force-terminates after all cleanup has completed (background services stopped,
+  pending downloads saved, database closed, logs flushed), making exit deterministic across platforms.
+
 ### Removed
 
 - `2026-06-05 21:03 UTC` — **Repo cleanup: dropped redundant tracked files.** `SETUP.md` (superseded by the

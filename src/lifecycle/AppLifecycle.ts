@@ -814,6 +814,15 @@ export class AppLifecycle {
     }
 
     this.logger.close();
+
+    // Force-terminate the process. On some Linux environments (e.g. no/limited
+    // GPU acceleration or a sandboxed/systemd-managed session) a wedged GPU or
+    // utility child process keeps the main process alive after `quit`, so the
+    // app never exits on its own and the user has to send SIGINT (Ctrl+C). All
+    // synchronous cleanup above has already completed (services stopped, pending
+    // downloads saved, database closed, logger flushed), so a hard exit here is
+    // safe and makes shutdown deterministic across platforms.
+    app.exit(0);
   }
 
   // ---- Private helpers ----
