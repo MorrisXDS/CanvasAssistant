@@ -25,12 +25,14 @@ export const CONFIG_DIR = path.join(APP_ROOT, '.config'); // Hidden - internal c
 export const LOG_DIR = path.join(APP_ROOT, '.logs'); // Hidden - application logs
 export const PROJECT_DB_DIR = path.join(APP_ROOT, 'database'); // Internal - database
 export const BACKUP_DIR = path.join(APP_ROOT, 'backups'); // Internal - backups
-// On macOS, use ~/Documents/CanvasAssistant/Downloads for user-visible download location
-// (INSTALL_DIR is inside /Applications which is not a natural place for user files)
-export const FILES_DIR =
-  process.platform === 'darwin'
-    ? path.join(app.getPath('documents'), 'CanvasAssistant', 'Downloads')
-    : path.join(INSTALL_DIR, 'Downloads'); // Visible - next to app
+// Packaged builds MUST write downloads to a user-writable location, not the install dir:
+// on Linux the install dir is /opt/<App> (root-owned → mkdir EACCES → startup crash), and
+// on macOS it's inside /Applications. So when packaged, use ~/Documents/CanvasAssistant/
+// Downloads on EVERY platform. In dev (not packaged) keep Downloads next to the app (cwd)
+// for a self-contained, portable working tree.
+export const FILES_DIR = app.isPackaged
+  ? path.join(app.getPath('documents'), 'CanvasAssistant', 'Downloads')
+  : path.join(INSTALL_DIR, 'Downloads');
 
 export const DB_PATH = path.join(PROJECT_DB_DIR, 'canvas.db');
 export const METRICS_DB_PATH = path.join(PROJECT_DB_DIR, 'metrics.db');

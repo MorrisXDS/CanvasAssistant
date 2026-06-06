@@ -12,6 +12,7 @@
   "_why_storeSubscriptions_update": "Lines 141-144 and 157 are the onUpdateAvailable push-event subscription — identical in structure to the other push-event subscriptions on the lines immediately above them (unsubSyncUpdates, unsubSyncPhase, etc.), all of which are also unexercised in Jest for the same reason: the subscription callback requires a live IPC round-trip from the main process. The store action setUpdateAvailable (called on line 143) is unit-tested in updateSlice.test.ts.",
   "_why_App_tsx_update_modal": "Lines 21 and 309-311 are the import of UpdateAvailableModal and its unconditional <UpdateAvailableModal /> mount in AppContent. App.tsx is the Electron app-shell root; the render codepath requires the full Electron + React + Router + store stack. Same rationale as existing App.tsx carve-outs (e.g. ReAuthModal render). The modal itself and its store bindings are covered by unit tests.",
   "_why_ipc_handlers_index_update": "Line 33 is the export { registerUpdateHandlers } barrel re-export in ipc-handlers/index.ts. Pure re-export lines cannot be instrumented or called in a Jest environment without importing the entire handler tree (which requires mocking Electron ipcMain). The handler delegation itself is tested in tests/integration/updateHandlers.test.ts.",
+  "_why_src_lifecycle_appPaths_ts": "Electron lifecycle path module: every export is a module-load-time path computed from app.getPath()/app.isPackaged/process.platform. The changed FILES_DIR line is a packaged?Documents:installDir ternary — exercising it requires mocking the Electron app object's packaged state + getPath at import time, which is more brittle than the one-line bug it would guard (a wrong path surfaces immediately at app launch in /verify). Same carve-out class as AppLifecycle.ts / preload.ts. The downstream behavior (FileDownloadManager tolerating an unwritable base dir) IS unit-tested in tests/l0-utilities/FileDownloadManager.startup.test.ts.",
   "paths": [
     "src/layers/l6-ui/components/Layout.tsx",
     "src/layers/l6-ui/components/pages/Updates/updatesHelpers.ts",
@@ -49,6 +50,7 @@
     "src/layers/l6-ui/components/Settings/UpdatesSection.tsx",
     "src/layers/l5-presentation/store/storeSubscriptions.ts",
     "src/layers/l6-ui/App.tsx",
-    "src/lifecycle/ipc-handlers/index.ts"
+    "src/lifecycle/ipc-handlers/index.ts",
+    "src/lifecycle/appPaths.ts"
   ]
 }
