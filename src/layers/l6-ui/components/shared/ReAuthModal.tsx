@@ -19,7 +19,7 @@
  */
 
 import React, { useState } from 'react';
-import { AlertTriangle, Key, Loader2, Check, XCircle, LogOut } from 'lucide-react';
+import { AlertTriangle, Key, Loader2, Check, XCircle, LogOut, Clock } from 'lucide-react';
 import { STORAGE_KEYS } from '../../../l5-presentation/settings';
 import { createLogger } from '../../utils/rendererLogger';
 import { Modal } from '../primitives/Modal';
@@ -31,9 +31,20 @@ interface ReAuthModalProps {
   reason?: string;
   onReauthSuccess: () => void;
   onDisconnect: () => void;
+  /**
+   * ADR-0013: non-blocking "Later" exit. Defers re-auth (stays in the app with
+   * imported data) and disables sync app-wide until reconnect. Does NOT
+   * de-authenticate. When omitted, the Later button is hidden.
+   */
+  onLater?: () => void;
 }
 
-export function ReAuthModal({ reason, onReauthSuccess, onDisconnect }: ReAuthModalProps) {
+export function ReAuthModal({
+  reason,
+  onReauthSuccess,
+  onDisconnect,
+  onLater,
+}: ReAuthModalProps) {
   const [token, setToken] = useState('');
   const [isValidating, setIsValidating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -171,49 +182,64 @@ export function ReAuthModal({ reason, onReauthSuccess, onDisconnect }: ReAuthMod
           Disconnect from Canvas
         </button>
 
-        {!validationResult?.valid ? (
-          <button
-            style={{
-              ...styles.primaryButton,
-              opacity: isValidating || !token ? 0.6 : 1,
-            }}
-            onClick={handleValidateToken}
-            disabled={isValidating || !token}
-          >
-            {isValidating ? (
-              <>
-                <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} />
-                Validating...
-              </>
-            ) : (
-              <>
-                <Key size={16} />
-                Validate Token
-              </>
-            )}
-          </button>
-        ) : (
-          <button
-            style={{
-              ...styles.primaryButton,
-              opacity: isReconnecting ? 0.6 : 1,
-            }}
-            onClick={handleReconnect}
-            disabled={isReconnecting}
-          >
-            {isReconnecting ? (
-              <>
-                <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} />
-                Reconnecting...
-              </>
-            ) : (
-              <>
-                <Check size={16} />
-                Reconnect
-              </>
-            )}
-          </button>
-        )}
+        {/* Right cluster: Later (non-blocking exit) + primary action. Grouped in
+            a div so the Footer's flexWrap keeps them together as one unit. */}
+        <div style={styles.rightCluster}>
+          {onLater && (
+            <button
+              style={styles.laterButton}
+              onClick={onLater}
+              title="Continue without reconnecting — sync stays disabled until you reconnect"
+            >
+              <Clock size={14} />
+              Later
+            </button>
+          )}
+
+          {!validationResult?.valid ? (
+            <button
+              style={{
+                ...styles.primaryButton,
+                opacity: isValidating || !token ? 0.6 : 1,
+              }}
+              onClick={handleValidateToken}
+              disabled={isValidating || !token}
+            >
+              {isValidating ? (
+                <>
+                  <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} />
+                  Validating...
+                </>
+              ) : (
+                <>
+                  <Key size={16} />
+                  Validate Token
+                </>
+              )}
+            </button>
+          ) : (
+            <button
+              style={{
+                ...styles.primaryButton,
+                opacity: isReconnecting ? 0.6 : 1,
+              }}
+              onClick={handleReconnect}
+              disabled={isReconnecting}
+            >
+              {isReconnecting ? (
+                <>
+                  <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} />
+                  Reconnecting...
+                </>
+              ) : (
+                <>
+                  <Check size={16} />
+                  Reconnect
+                </>
+              )}
+            </button>
+          )}
+        </div>
       </Modal.Footer>
     </Modal>
   );
@@ -302,6 +328,27 @@ const styles: Record<string, React.CSSProperties> = {
     color: 'var(--text-muted)',
     cursor: 'pointer',
     transition: 'color var(--transition-fast)',
+  },
+
+  rightCluster: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-2)',
+  },
+
+  laterButton: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-2)',
+    padding: 'var(--space-3) var(--space-4)',
+    backgroundColor: 'transparent',
+    border: '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-md)',
+    fontSize: 'var(--text-sm)',
+    fontWeight: 'var(--font-medium)',
+    color: 'var(--text-secondary)',
+    cursor: 'pointer',
+    transition: 'background-color var(--transition-fast)',
   },
 };
 

@@ -137,6 +137,7 @@ function AppContent() {
     initialize,
     setAuthenticated,
     clearAuthError,
+    deferReauth,
     refreshAll,
   } = useStore();
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
@@ -218,6 +219,13 @@ function AppContent() {
   const handleReauthDisconnect = () => {
     clearAuthError();
     setAuthenticated(false);
+  };
+
+  // Handle "Later" — defer re-auth (ADR-0013). Stays in the app with imported
+  // data; sync is disabled app-wide until the user reconnects. Does NOT
+  // de-authenticate.
+  const handleReauthLater = () => {
+    deferReauth();
   };
 
   // Handle recovery banner dismissal
@@ -303,6 +311,7 @@ function AppContent() {
           reason={authError.reason}
           onReauthSuccess={handleReauthSuccess}
           onDisconnect={handleReauthDisconnect}
+          onLater={handleReauthLater}
         />
       )}
 

@@ -25,6 +25,26 @@ export const createCoreDataSlice: SliceCreator = (set, get) => ({
       const hasCredential = await api.hasCredential();
       set({ isAuthenticated: hasCredential });
 
+      // ADR-0013: learn token validity at startup via a race-free pull. Only a
+      // definitive `invalid` verdict prompts re-auth — `unknown` (offline) must
+      // NOT, so a good token on an offline launch keeps the user signed in.
+      if (hasCredential) {
+        try {
+          const statusResult = await api.getAuthStatus();
+          if (statusResult.success && statusResult.data?.validity === 'invalid') {
+            get().setAuthError({
+              type: 'expired',
+              reason: 'Stored Canvas token is invalid',
+            });
+          }
+        } catch (statusError) {
+          log.error(
+            'Failed to fetch auth status',
+            statusError instanceof Error ? statusError : undefined
+          );
+        }
+      }
+
       if (hasCredential) {
         // Load initial data
         await get().refreshAll();

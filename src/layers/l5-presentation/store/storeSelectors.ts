@@ -135,3 +135,19 @@ export const selectors = {
    */
   pendingUpdate: (state: StoreState) => state.updateAvailable,
 };
+
+/**
+ * ADR-0013: whether sync is currently disabled app-wide because Canvas re-auth
+ * is required (token invalid + either deferred or modal pending). Single source
+ * of truth — every sync-trigger UI site reads THIS, never a local copy
+ * (CLAUDE.md §2).
+ */
+export const selectSyncDisabled = (state: StoreState): boolean =>
+  state.authReauthDeferred || state.authError !== null;
+
+/**
+ * Human-readable reason for the disabled sync state, for button tooltips.
+ * `null` when sync is not disabled.
+ */
+export const selectSyncDisabledReason = (state: StoreState): string | null =>
+  selectSyncDisabled(state) ? 'Canvas token expired — reconnect to sync' : null;

@@ -81,6 +81,22 @@ export function registerCredentialHandlers(ctx: IpcContext): void {
     return { success };
   });
 
+  // Tri-state auth status pull (ADR-0013). Lets the renderer learn token
+  // validity at startup race-free, rather than relying only on the lost
+  // boot-time `token-invalid -> auth:expired` push. No DB access — credentials
+  // live in keychain / encrypted file (ADR-0007 satisfied trivially).
+  ipcMain.handle('auth:getStatus', async () => {
+    const hasCredential = await credentialManager.exists();
+    const status = credentialManager.getStatus();
+    return {
+      hasCredential,
+      // `null` (never validated) maps to `unknown` — we simply don't know yet,
+      // which must NOT prompt re-auth (only `invalid` does).
+      validity: status.validity ?? 'unknown',
+      lastCheckedAt: status.lastValidated ? status.lastValidated.toISOString() : null,
+    };
+  });
+
   // ============ Canvas Client Initialization ============
 
   ipcMain.handle('canvas:connect', async (_event, baseUrl: string) => {

@@ -1089,6 +1089,14 @@ export const IpcContract = {
     params: z.void(),
     result: ApiResultSchema(z.void()),
   },
+  'auth:getStatus': {
+    params: z.void(),
+    result: z.object({
+      hasCredential: z.boolean(),
+      validity: z.enum(['valid', 'invalid', 'unknown']),
+      lastCheckedAt: z.string().nullable(),
+    }),
+  },
 
   // ============ Canvas ============
   'canvas:connect': {

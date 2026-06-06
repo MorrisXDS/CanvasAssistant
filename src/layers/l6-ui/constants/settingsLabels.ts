@@ -24,6 +24,7 @@ export const SETTINGS_LABELS = {
     connecting: 'Connecting...',
     connectToCanvas: 'Connect to Canvas',
     updateToken: 'Update Token',
+    reconnect: 'Reconnect',
     removeConnection: 'Remove Connection',
     change: 'Change',
     backupDatabase: 'Create Backup',
@@ -108,6 +109,9 @@ export const SETTINGS_LABELS = {
   status: {
     connected: 'Connected',
     notConnected: 'Not Connected',
+    // ADR-0013: tri-state token validity badges.
+    tokenExpired: 'Token Expired',
+    offline: 'Offline',
     modified: 'modified',
   },
 

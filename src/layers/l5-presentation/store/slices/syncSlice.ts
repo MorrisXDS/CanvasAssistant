@@ -30,6 +30,14 @@ export const createSyncSlice: SliceCreator = (set, get) => ({
     const api = getApi();
     if (!api) return { success: false };
 
+    // ADR-0013: while re-auth is deferred OR an auth error is pending, every
+    // programmatic sync caller (Dashboard, FilesPage, auto-sync via this path)
+    // no-ops cleanly with a clear reason rather than failing silently.
+    if (get().authReauthDeferred || get().authError) {
+      log.warn('Sync blocked: Canvas re-auth required');
+      return { success: false, error: 'Canvas token expired — reconnect to sync' };
+    }
+
     const isAutoSync = options?.isAutoSync ?? false;
 
     // Set initial sync state with message
@@ -167,10 +175,30 @@ export const createSyncSlice: SliceCreator = (set, get) => ({
   },
 
   /**
-   * Clear auth error
+   * Clear auth error. Also clears the deferred flag (ADR-0013) — a successful
+   * reconnect (handleReauthSuccess) calls this, which re-enables sync app-wide.
    */
   clearAuthError: () => {
-    set({ authError: null });
+    set({ authError: null, authReauthDeferred: false });
+  },
+
+  /**
+   * Defer re-auth ("Later" on ReAuthModal): dismiss the modal but remember that
+   * the token is invalid, so sync stays disabled app-wide until reconnect.
+   * Does NOT de-authenticate — the user stays in the app with imported data.
+   */
+  deferReauth: () => {
+    log.warn('Re-auth deferred by user; sync disabled until reconnect');
+    set({ authReauthDeferred: true, authError: null });
+  },
+
+  /**
+   * Re-open the ReAuthModal after a deferral. Sets `authError` so the single
+   * `<ReAuthModal>` renders again; `authReauthDeferred` stays true until a
+   * successful reconnect clears both via `clearAuthError`.
+   */
+  reopenReauth: () => {
+    set({ authError: { type: 'expired', reason: 'Reconnect to resume sync' } });
   },
 
   /**

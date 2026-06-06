@@ -40,6 +40,7 @@ function createBaseState(overrides: Partial<StoreState> = {}): StoreState {
     calendarEvents: [],
     syncConflicts: [],
     authError: null,
+    authReauthDeferred: false,
     syncUpdates: {
       totalUnseen: 0,
       conflictCount: 0,

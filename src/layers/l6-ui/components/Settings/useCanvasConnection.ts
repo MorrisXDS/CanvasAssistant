@@ -28,6 +28,15 @@ export function useCanvasConnection() {
   const [isConnecting, setIsConnecting] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
 
+  // ADR-0013: tri-state token validity for the AccountSection badge. This is
+  // connection-UI-ephemeral state (not domain data duplicated from the store),
+  // sourced read-only from auth:getStatus — it does NOT piggyback on
+  // handleValidateToken's reconnect side-effect.
+  const [tokenValidity, setTokenValidity] = useState<
+    'valid' | 'invalid' | 'unknown' | null
+  >(null);
+  const [lastCheckedAt, setLastCheckedAt] = useState<string | null>(null);
+
   // Token validation
   const [isValidatingToken, setIsValidatingToken] = useState(false);
   const [tokenValidationResult, setTokenValidationResult] =
@@ -60,6 +69,20 @@ export function useCanvasConnection() {
         canvasUrlInitializedRef.current = true;
       }
       setIsConnected(hasCredential && !!savedUrl);
+
+      // ADR-0013: read tri-state validity (read-only) for the three-state badge.
+      try {
+        const statusResult = await window.api.getAuthStatus();
+        if (statusResult.success && statusResult.data) {
+          setTokenValidity(statusResult.data.validity);
+          setLastCheckedAt(statusResult.data.lastCheckedAt);
+        }
+      } catch (statusError) {
+        logger.error(
+          'Failed to fetch auth status',
+          statusError instanceof Error ? statusError : undefined
+        );
+      }
     } catch {
       setIsConnected(false);
     }
@@ -216,6 +239,8 @@ export function useCanvasConnection() {
     isConnected,
     isConnecting,
     connectionError,
+    tokenValidity,
+    lastCheckedAt,
     checkCanvasConnection,
     handleReconnect,
     handleDisconnect,

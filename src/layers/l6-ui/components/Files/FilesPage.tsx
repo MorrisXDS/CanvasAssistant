@@ -248,12 +248,17 @@ export function FilesPage() {
             />
           </Dropdown>
 
-          {/* Sync Button */}
+          {/* Sync Button — ADR-0013: disabled app-wide while re-auth required */}
           <button
             className={styles.syncButton}
             onClick={state.handleSync}
-            disabled={state.syncStatus === 'syncing'}
-            title="Sync with Canvas"
+            disabled={state.syncStatus === 'syncing' || state.syncDisabled}
+            style={state.syncDisabled ? { opacity: 0.7 } : undefined}
+            title={
+              state.syncDisabled
+                ? (state.syncDisabledReason ?? 'Sync with Canvas')
+                : 'Sync with Canvas'
+            }
           >
             <RefreshCw
               size={16}
@@ -414,7 +419,15 @@ export function FilesPage() {
             <p className={styles.emptyText}>
               Files from Canvas and announcements will appear here after syncing.
             </p>
-            <button className={styles.syncButtonLarge} onClick={state.handleSync}>
+            <button
+              className={styles.syncButtonLarge}
+              onClick={state.handleSync}
+              disabled={state.syncStatus === 'syncing' || state.syncDisabled}
+              style={state.syncDisabled ? { opacity: 0.7 } : undefined}
+              title={
+                state.syncDisabled ? (state.syncDisabledReason ?? undefined) : undefined
+              }
+            >
               <RefreshCw size={18} />
               Sync Now
             </button>

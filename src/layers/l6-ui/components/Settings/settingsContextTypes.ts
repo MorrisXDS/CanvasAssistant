@@ -103,6 +103,10 @@ export interface SettingsContextType {
   isConnected: boolean;
   isConnecting: boolean;
   connectionError: string | null;
+  /** ADR-0013: tri-state token validity for the three-state account badge. */
+  tokenValidity: 'valid' | 'invalid' | 'unknown' | null;
+  /** ISO timestamp of the last validity check, for the Offline "last checked" label. */
+  lastCheckedAt: string | null;
   checkCanvasConnection: () => Promise<void>;
   handleReconnect: () => Promise<void>;
   handleDisconnect: () => Promise<void>;

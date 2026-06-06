@@ -6,12 +6,22 @@
  */
 
 import React from 'react';
-import { Link, Check, AlertCircle, Loader2, ShieldCheck, Key } from 'lucide-react';
+import {
+  Link,
+  Check,
+  AlertCircle,
+  Loader2,
+  ShieldCheck,
+  Key,
+  WifiOff,
+  RefreshCw,
+} from 'lucide-react';
 import { useSettings } from './SettingsContext';
 import { Accordion } from '../primitives';
 import { styles } from '../SettingsModalStyles';
-import { SETTINGS_LABELS } from '../../constants';
+import { SETTINGS_LABELS, formatTimeAgo } from '../../constants';
 import { SETTINGS_CATEGORIES } from '../../../l5-presentation/settings';
+import { useStore } from '../../../l5-presentation/store';
 
 // Category icon for account
 const ACCOUNT_ICON = <Link size={18} />;
@@ -41,6 +51,8 @@ export function AccountSection({ sectionRef }: AccountSectionProps) {
     isConnected,
     isConnecting,
     connectionError,
+    tokenValidity,
+    lastCheckedAt,
     handleReconnect,
 
     // Token validation
@@ -56,8 +68,18 @@ export function AccountSection({ sectionRef }: AccountSectionProps) {
     accountModifiedCount,
   } = useSettings();
 
+  // ADR-0013: re-open the ReAuthModal from the "Token Expired" CTA.
+  const reopenReauth = useStore((s) => s.reopenReauth);
+
   const ModifiedBadge = ({ count }: { count: number }) =>
     count > 0 ? <span style={styles.modifiedBadge}>{count} modified</span> : null;
+
+  // Three-state connection badge (ADR-0013):
+  //   token expired (401/403) -> error badge + Reconnect CTA
+  //   offline (unknown)        -> muted badge with last-checked
+  //   valid / unverified       -> green Connected
+  const showTokenExpired = isConnected && tokenValidity === 'invalid';
+  const showOffline = isConnected && tokenValidity === 'unknown';
 
   return (
     <div
@@ -97,7 +119,16 @@ export function AccountSection({ sectionRef }: AccountSectionProps) {
                     {SETTINGS_LABELS.sections.canvasConnection}
                   </span>
                 </div>
-                {isConnected ? (
+                {showTokenExpired ? (
+                  <span style={styles.statusBadgeDisconnected}>
+                    <AlertCircle size={12} /> {SETTINGS_LABELS.status.tokenExpired}
+                  </span>
+                ) : showOffline ? (
+                  <span style={accountBadgeStyles.offline}>
+                    <WifiOff size={12} /> {SETTINGS_LABELS.status.offline}
+                    {lastCheckedAt && ` · ${formatTimeAgo(lastCheckedAt)}`}
+                  </span>
+                ) : isConnected ? (
                   <span style={styles.statusBadgeConnected}>
                     <Check size={12} /> {SETTINGS_LABELS.status.connected}
                   </span>
@@ -155,6 +186,18 @@ export function AccountSection({ sectionRef }: AccountSectionProps) {
                   )}
                   {tokenValidationResult.message}
                 </div>
+              )}
+
+              {/* ADR-0013: Token-expired Reconnect CTA — re-opens ReAuthModal */}
+              {showTokenExpired && (
+                <button
+                  style={accountBadgeStyles.reconnectCta}
+                  onClick={reopenReauth}
+                  title={SETTINGS_LABELS.status.tokenExpired}
+                >
+                  <RefreshCw size={14} />
+                  {SETTINGS_LABELS.buttons.reconnect}
+                </button>
               )}
 
               {/* Action Buttons */}
@@ -230,3 +273,33 @@ export function AccountSection({ sectionRef }: AccountSectionProps) {
     </div>
   );
 }
+
+// ADR-0013: local badge/CTA styles for the three-state account status. Uses
+// existing theme tokens only (var(--color-primary) does NOT exist — never use it).
+const accountBadgeStyles: Record<string, React.CSSProperties> = {
+  offline: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 'var(--space-1)',
+    padding: 'var(--space-1) var(--space-2)',
+    backgroundColor: 'var(--color-warning-bg)',
+    color: 'var(--color-warning)',
+    borderRadius: 'var(--radius-full)',
+    fontSize: 'var(--text-xs)',
+    fontWeight: 'var(--font-medium)',
+  },
+  reconnectCta: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 'var(--space-2)',
+    marginBottom: 'var(--space-3)',
+    padding: 'var(--space-2) var(--space-4)',
+    backgroundColor: 'var(--color-navy)',
+    color: 'white',
+    border: 'none',
+    borderRadius: 'var(--radius-md)',
+    fontSize: 'var(--text-sm)',
+    fontWeight: 'var(--font-medium)',
+    cursor: 'pointer',
+  },
+};

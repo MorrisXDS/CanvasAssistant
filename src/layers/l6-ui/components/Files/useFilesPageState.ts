@@ -4,7 +4,11 @@
  */
 
 import { useEffect, useState, useMemo, useCallback } from 'react';
-import { useStore } from '../../../l5-presentation/store';
+import {
+  useStore,
+  selectSyncDisabled,
+  selectSyncDisabledReason,
+} from '../../../l5-presentation/store';
 import { useFileUpdates } from '../../hooks';
 import type { UpdateType } from '../shared';
 import { getFileName, isFileDownloaded, getModuleItemFolderPath } from './FileListItem';
@@ -45,6 +49,9 @@ export function setBulkDownloadInProgress(value: boolean): void {
 export function useFilesPageState() {
   const { courses, syncStatus, triggerSync, syncUpdates, markAllSyncUpdatesSeen } =
     useStore();
+  // ADR-0013: app-wide sync gate state (single source of truth via selector).
+  const syncDisabled = useStore(selectSyncDisabled);
+  const syncDisabledReason = useStore(selectSyncDisabledReason);
 
   // Notification dots for files
   const { byId: fileUpdatesById, byExternalId: fileUpdatesByExternalId } =
@@ -739,6 +746,12 @@ export function useFilesPageState() {
   };
 
   const handleSync = async () => {
+    // ADR-0013 defense in depth: no-op if sync is gated on re-auth (triggerSync
+    // also guards, but this avoids the post-sync fetchFiles round-trip).
+    if (syncDisabled) {
+      logger.warn('Files sync blocked: Canvas re-auth required');
+      return;
+    }
     let termSelection: 'all' | 'auto' | string = 'auto';
     try {
       const academicSettings = localStorage.getItem(STORAGE_KEYS.ACADEMIC);
@@ -793,6 +806,8 @@ export function useFilesPageState() {
     // Store data
     courses,
     syncStatus,
+    syncDisabled,
+    syncDisabledReason,
     syncUpdates,
 
     // File data

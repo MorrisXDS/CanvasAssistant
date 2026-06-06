@@ -6,7 +6,12 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { RefreshCw, FlaskConical, X } from 'lucide-react';
-import { useStore, selectors } from '../../../l5-presentation/store';
+import {
+  useStore,
+  selectors,
+  selectSyncDisabled,
+  selectSyncDisabledReason,
+} from '../../../l5-presentation/store';
 import { useDashboardViewModel } from '../../../l5-presentation/viewModels/DashboardViewModel';
 import { QuickStats, StatItem } from './QuickStats';
 import { TaskListModal, TaskWithCourse } from './TaskListModal';
@@ -100,6 +105,11 @@ export function Dashboard() {
   }, []);
   const navigate = useNavigate();
   const state = useStore();
+  // ADR-0013: sync disabled state — single source of truth via selector, no
+  // local copy. reopenReauth re-opens the ReAuthModal after a "Later" deferral.
+  const syncDisabled = useStore(selectSyncDisabled);
+  const syncDisabledReason = useStore(selectSyncDisabledReason);
+  const reopenReauth = useStore((s) => s.reopenReauth);
 
   const viewModel = useDashboardViewModel(state);
 
@@ -526,9 +536,16 @@ export function Dashboard() {
         <button
           style={{
             ...styles.syncButton,
-            opacity: state.syncStatus === 'syncing' ? 0.7 : 1,
+            opacity: state.syncStatus === 'syncing' || syncDisabled ? 0.7 : 1,
+            cursor: syncDisabled ? 'pointer' : undefined,
           }}
           onClick={() => {
+            // ADR-0013: when sync is gated on re-auth, the button instead
+            // re-opens the ReAuthModal so the user can reconnect.
+            if (syncDisabled) {
+              reopenReauth();
+              return;
+            }
             // Read term selection from academic settings
             let termSelection: 'all' | 'auto' | string = 'auto';
             try {
@@ -545,7 +562,10 @@ export function Dashboard() {
             }
             state.triggerSync('full', { termSelection });
           }}
+          // Disabled only while actively syncing; when re-auth is required the
+          // button stays clickable (it re-opens re-auth) but shows the reason.
           disabled={state.syncStatus === 'syncing'}
+          title={syncDisabled ? (syncDisabledReason ?? undefined) : undefined}
         >
           <RefreshCw
             size={16}
@@ -555,7 +575,7 @@ export function Dashboard() {
                 state.syncStatus === 'syncing' ? 'spin 1s linear infinite' : 'none',
             }}
           />
-          {syncButtonText}
+          {syncDisabled ? 'Reconnect to sync' : syncButtonText}
         </button>
       </header>
 

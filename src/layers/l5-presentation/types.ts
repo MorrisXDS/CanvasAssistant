@@ -115,6 +115,13 @@ export interface StoreState {
   isAuthenticated: boolean;
   isInitialized: boolean;
   authError: { type: 'expired' | 'invalid'; reason?: string } | null;
+  /**
+   * User clicked "Later" on the ReAuthModal (ADR-0013): token is invalid but
+   * re-auth is deferred. While true (or while `authError` is set), ALL sync
+   * triggers are disabled app-wide. Lives ONLY here (single source of truth);
+   * cleared by `clearAuthError` on a successful reconnect.
+   */
+  authReauthDeferred: boolean;
 
   // Error handling
   lastError: string | null;
@@ -288,6 +295,10 @@ export interface StoreActions {
   setAuthenticated: (authenticated: boolean) => void;
   setAuthError: (error: { type: 'expired' | 'invalid'; reason?: string } | null) => void;
   clearAuthError: () => void;
+  /** Defer re-auth ("Later" on ReAuthModal): dismiss modal, disable sync app-wide (ADR-0013). */
+  deferReauth: () => void;
+  /** Re-open the ReAuthModal after deferral (e.g. from a disabled sync button / AccountSection). */
+  reopenReauth: () => void;
 
   // Timezone
   syncCanvasTimezone: () => Promise<void>;
