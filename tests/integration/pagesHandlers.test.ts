@@ -58,6 +58,10 @@ describe('pagesHandlers (ADR-0007)', () => {
   let db: Database;
   let canvasClient: CanvasClientStub;
   let htmlEnabled: boolean;
+  // Drives getLocalHtmlPathsSettings().promptForMissing — defaults false to
+  // preserve the pre-existing tests' behavior (dep-walk skipped). The A1 fork
+  // tests flip this to true to exercise the missing-dependency-prompt branch.
+  let promptForMissing: boolean;
 
   beforeEach(() => {
     mockIpc.__reset();
@@ -81,13 +85,15 @@ describe('pagesHandlers (ADR-0007)', () => {
       getBaseUrl: () => 'https://canvas.example.com',
     };
     htmlEnabled = true;
+    promptForMissing = false;
 
     registerPagesHandlers(
       buildCtx(
         db,
         () => canvasClient,
         () => htmlEnabled,
-        tmpDir
+        tmpDir,
+        { getPromptForMissing: () => promptForMissing }
       )
     );
   });
@@ -148,6 +154,7 @@ describe('pagesHandlers (ADR-0007)', () => {
         {
           token: 'tok',
           fileDownloadManager: dlm,
+          getPromptForMissing: () => promptForMissing,
         }
       )
     );
@@ -478,6 +485,112 @@ describe('pagesHandlers (ADR-0007)', () => {
       expect(mockShell.openPath).not.toHaveBeenCalled();
       expect(mockShell.openExternal).not.toHaveBeenCalled();
     });
+
+    // A1 — promptForMissing fork (pagesHandlers.ts:502).
+    // When promptForMissing && !skipDependencyCheck, the handler reads the local
+    // HTML, regex-matches `<safeTitle>_files/...` references, and short-circuits
+    // with `hasMissingDependencies` (no open) for any referenced file absent on
+    // disk. When false (or all deps present) it falls through to shell.openPath.
+    // The seeded title is 'My Page' → sanitizeTitle is identity → the regex
+    // pattern is `My Page_files/...`. Paths derived via PathBuilder (never
+    // hardcoded separators — Windows-dev/Linux-CI gotcha #146).
+    describe('promptForMissing dependency fork (A1)', () => {
+      /** Write the page HTML at the handler's computed path. Returns the deps folder. */
+      function seedLocalPageHtml(body: string): string {
+        const builder = createPathBuilder(tmpDir);
+        const localPath = builder.getPageHtmlPath('CS101', 'Week 1', 'My Page');
+        fs.mkdirSync(nodePath.dirname(localPath), { recursive: true });
+        fs.writeFileSync(localPath, body);
+        return builder.getPageDependenciesPath('CS101', 'Week 1', 'My Page');
+      }
+
+      test('promptForMissing:true + a referenced dep absent on disk → hasMissingDependencies, file NOT opened', async () => {
+        seedCourse();
+        seedModule();
+        seedModuleItem();
+        htmlEnabled = true;
+        promptForMissing = true;
+
+        // HTML references My Page_files/missing.png; the deps folder exists but
+        // the referenced file does not → missing dependency.
+        const depsFolder = seedLocalPageHtml(
+          '<html><body><img src="My Page_files/missing.png"></body></html>'
+        );
+        fs.mkdirSync(depsFolder, { recursive: true });
+
+        const result = (await invoke('pages:openFile', 10)) as {
+          success: boolean;
+          hasMissingDependencies?: boolean;
+          missingDependencies?: Array<{ filename: string }>;
+        };
+
+        expect(result.success).toBe(false);
+        expect(result.hasMissingDependencies).toBe(true);
+        expect(result.missingDependencies?.map((d) => d.filename)).toContain(
+          'missing.png'
+        );
+        // Behavior fork: the prompt short-circuits the open (backwards-wiring guard).
+        expect(mockShell.openPath).not.toHaveBeenCalled();
+        expect(mockShell.openExternal).not.toHaveBeenCalled();
+      });
+
+      test('promptForMissing:true + all referenced deps present → falls through, file opened', async () => {
+        seedCourse();
+        seedModule();
+        seedModuleItem();
+        htmlEnabled = true;
+        promptForMissing = true;
+
+        const builder = createPathBuilder(tmpDir);
+        const localPath = builder.getPageHtmlPath('CS101', 'Week 1', 'My Page');
+        const depsFolder = seedLocalPageHtml(
+          '<html><body><img src="My Page_files/present.png"></body></html>'
+        );
+        // The referenced dependency IS on disk now → no missing deps.
+        fs.mkdirSync(depsFolder, { recursive: true });
+        fs.writeFileSync(nodePath.join(depsFolder, 'present.png'), 'png-bytes');
+
+        const result = (await invoke('pages:openFile', 10)) as {
+          success: boolean;
+          hasMissingDependencies?: boolean;
+        };
+
+        expect(result.success).toBe(true);
+        expect(result.hasMissingDependencies).toBeFalsy();
+        // Behavior fork: dep check passed → local file opened.
+        expect(mockShell.openPath).toHaveBeenCalledTimes(1);
+        expect(mockShell.openPath).toHaveBeenCalledWith(localPath);
+        expect(mockShell.openExternal).not.toHaveBeenCalled();
+      });
+
+      test('promptForMissing:false + a referenced dep absent → dep check skipped, file opened (no hasMissingDependencies)', async () => {
+        seedCourse();
+        seedModule();
+        seedModuleItem();
+        htmlEnabled = true;
+        promptForMissing = false; // the skip branch
+
+        const builder = createPathBuilder(tmpDir);
+        const localPath = builder.getPageHtmlPath('CS101', 'Week 1', 'My Page');
+        const depsFolder = seedLocalPageHtml(
+          '<html><body><img src="My Page_files/missing.png"></body></html>'
+        );
+        fs.mkdirSync(depsFolder, { recursive: true });
+        // missing.png is deliberately absent — but promptForMissing:false means
+        // the dep check never runs, so the file opens regardless.
+
+        const result = (await invoke('pages:openFile', 10)) as {
+          success: boolean;
+          hasMissingDependencies?: boolean;
+        };
+
+        expect(result.success).toBe(true);
+        // Backwards-wiring guard: the prompt branch must NOT fire when off.
+        expect(result.hasMissingDependencies).toBeUndefined();
+        expect(mockShell.openPath).toHaveBeenCalledTimes(1);
+        expect(mockShell.openPath).toHaveBeenCalledWith(localPath);
+      });
+    });
   });
 });
 
@@ -492,7 +605,11 @@ function buildCtx(
   getCanvasClient: () => CanvasClientStub,
   getHtmlEnabled: () => boolean,
   filesDir: string,
-  opts: { token?: string | null; fileDownloadManager?: EventEmitter } = {}
+  opts: {
+    token?: string | null;
+    fileDownloadManager?: EventEmitter;
+    getPromptForMissing?: () => boolean;
+  } = {}
 ): IpcContext {
   const unused = (name: string) => () => {
     throw new Error(`IpcContext.${name} should not be called by pages handlers`);
@@ -524,7 +641,7 @@ function buildCtx(
     getLocalHtmlPathsSettings: () => ({
       enabled: getHtmlEnabled(),
       autoRegenerate: false,
-      promptForMissing: false,
+      promptForMissing: opts.getPromptForMissing ? opts.getPromptForMissing() : false,
     }),
     getVisibilityOracle: unused(
       'getVisibilityOracle'
