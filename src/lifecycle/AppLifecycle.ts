@@ -52,6 +52,7 @@ import type { CrashProtectionManager } from './CrashProtectionManager';
 // Managers
 import { BackupManager } from './BackupManager';
 import { AutoSyncManager } from './AutoSyncManager';
+import { DueDateReminderManager } from './DueDateReminderManager';
 import { WindowManager } from './WindowManager';
 import { CanvasClientManager } from './CanvasClientManager';
 import { registerCanvasFileProtocol } from './canvasFileProtocol';
@@ -153,6 +154,7 @@ export class AppLifecycle {
   private windowManager: WindowManager | null = null;
   private canvasClientManager: CanvasClientManager | null = null;
   private autoSyncManager: AutoSyncManager | null = null;
+  private dueDateReminderManager: DueDateReminderManager | null = null;
   private backupManager: BackupManager | null = null;
   private updateChecker: UpdateChecker | null = null;
   private idleStateManager: IdleStateManager | null = null;
@@ -587,6 +589,17 @@ export class AppLifecycle {
       getMainWindow: () => this.getMainWindow(),
     });
 
+    // Due-date reminder scheduler (ADR-0016) — emits through the single show
+    // seam in CanvasClientManager so the per-kind gate + suppression apply.
+    this.dueDateReminderManager = new DueDateReminderManager({
+      database: this.database,
+      logger: this.logger.child('DueDateReminderManager'),
+      getVisibilityOracle: () => this.visibilityOracle,
+      showNotification: (title, body) =>
+        this.canvasClientManager?.showDesktopNotification(title, body, 'dueDate') ??
+        false,
+    });
+
     this.backupManager = new BackupManager({
       database: this.database,
       dbPath: DB_PATH,
@@ -614,6 +627,7 @@ export class AppLifecycle {
     this.healthCheck.start();
     this.metricsCollector.start();
     this.housekeepingManager.start();
+    this.dueDateReminderManager?.start();
 
     // Read persisted Canvas base URL and initialize client
     await this.initializeCanvasClientFromCredentials();
@@ -651,6 +665,7 @@ export class AppLifecycle {
       onSuspend: async () => {
         this.logger.info('[AppLifecycle] Suspend: pausing sync and file watcher');
         this.autoSyncManager?.stop();
+        this.dueDateReminderManager?.stop();
         this.fileWatcher.pause();
         const syncEngine = this.getSyncEngine();
         if (syncEngine) {
@@ -673,6 +688,8 @@ export class AppLifecycle {
         if (this.systemMonitor.getState().canSync) {
           this.autoSyncManager?.start();
         }
+        // Reminder scanner is independent of sync safety — resume it always.
+        this.dueDateReminderManager?.start();
       },
       onCheckpoint: () => {
         this.database.checkpoint();
@@ -763,6 +780,7 @@ export class AppLifecycle {
 
     // Stop managers
     this.autoSyncManager?.stop();
+    this.dueDateReminderManager?.stop();
     this.backupManager?.stop();
     this.updateChecker?.stop();
     this.idleStateManager?.stop();
