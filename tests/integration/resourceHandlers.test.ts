@@ -426,6 +426,35 @@ describe('resourceHandlers (ADR-0007)', () => {
       expect(mockShell.openExternal).toHaveBeenCalledWith(
         'https://canvas.example.com/courses/4242/pages/week-1'
       );
+      // Backwards-wiring guard: the local file was NOT opened on the Canvas branch.
+      expect(mockShell.openPath).not.toHaveBeenCalled();
+    });
+
+    test('HTML with localHtmlPaths.enabled=false (saveHtmlContent still true) → opens in Canvas', async () => {
+      // Isolates the SECOND operand of `useStoredHtml = !saveHtmlContent ||
+      // !htmlSettings.enabled` — the existing test above flips saveHtmlContent;
+      // this proves the htmlSettings.enabled half of the same fork on its own.
+      const p = writeTmpHtml('page2.html', '<html></html>');
+      seedResource({ id: 26, externalId: 'html-page-week-2', localPath: p });
+      db.executeWrite(
+        `INSERT INTO course_pages (id, external_id, course_id, page_type, title, url_slug, body_html)
+         VALUES (51, 'pg-2', 1, 'content', 'Week 2', 'week-2', '<p>x</p>')`,
+        [],
+        'course_pages'
+      );
+      saveHtmlContent = true; // keep the first operand FALSE…
+      htmlEnabled = false; // …so only !htmlSettings.enabled drives useStoredHtml.
+      register();
+
+      const res = (await invoke('resource:open', 26)) as {
+        success: boolean;
+        openedInCanvas?: boolean;
+      };
+      expect(res).toEqual({ success: true, openedInCanvas: true });
+      expect(mockShell.openExternal).toHaveBeenCalledWith(
+        'https://canvas.example.com/courses/4242/pages/week-2'
+      );
+      expect(mockShell.openPath).not.toHaveBeenCalled();
     });
 
     test('HTML with recorded deps → reports missing file + page dependencies', async () => {

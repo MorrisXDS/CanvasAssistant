@@ -25,7 +25,7 @@ jest.mock('electron', () => {
   };
 });
 
-import { ipcMain } from 'electron';
+import { ipcMain, shell } from 'electron';
 import { EventEmitter } from 'events';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -44,6 +44,7 @@ interface IpcMainMock {
   __reset: () => void;
 }
 const mockIpc = ipcMain as unknown as IpcMainMock;
+const mockShell = shell as unknown as { openPath: jest.Mock; openExternal: jest.Mock };
 
 type CanvasClientStub = { get: jest.Mock; getBaseUrl: () => string } | null;
 type DownloadManagerStub = EventEmitter & {
@@ -60,6 +61,11 @@ describe('pagesHandlers (ADR-0007)', () => {
 
   beforeEach(() => {
     mockIpc.__reset();
+    // Clear the shell spies so per-test fork assertions (which side effect
+    // fired) are isolated — the openFile fork tests assert openExternal vs
+    // openPath was/was-NOT called, which only holds with a clean slate.
+    mockShell.openExternal.mockClear();
+    mockShell.openPath.mockClear();
     db = new Database({ dbPath: ':memory:', verbose: false });
     db.initialize();
     const runner = new MigrationRunner(db);
@@ -385,7 +391,11 @@ describe('pagesHandlers (ADR-0007)', () => {
       });
     });
 
-    test('offline HTML disabled → opens in Canvas', async () => {
+    // The localHtmlPaths.enabled fork is the proven landmine: the previous
+    // version of this test asserted ONLY result.success, so a backwards-wired
+    // fork would still pass. These tests pin WHICH file gets opened on each
+    // branch, plus the negative (the other branch's side effect did NOT fire).
+    test('offline HTML disabled → opens the Canvas page URL (not the local file)', async () => {
       seedCourse();
       seedModule();
       seedModuleItem();
@@ -393,9 +403,66 @@ describe('pagesHandlers (ADR-0007)', () => {
 
       const result = (await invoke('pages:openFile', 10)) as { success: boolean };
       expect(result.success).toBe(true);
+
+      // Behavior fork: the Canvas page URL is opened externally…
+      expect(mockShell.openExternal).toHaveBeenCalledTimes(1);
+      expect(mockShell.openExternal).toHaveBeenCalledWith(
+        'https://canvas.example.com/courses/4242/pages/my-page'
+      );
+      // …and the local-open path was NOT taken (backwards-wiring guard).
+      expect(mockShell.openPath).not.toHaveBeenCalled();
     });
 
-    test('offline HTML enabled but file missing → needsDownload', async () => {
+    test('offline HTML disabled + no canvas client → opens the stored module_item.url fallback', async () => {
+      seedCourse();
+      seedModule();
+      seedModuleItem();
+      htmlEnabled = false;
+      canvasClient = null; // forces the stored-url fallback branch (line 475)
+
+      const result = (await invoke('pages:openFile', 10)) as { success: boolean };
+      expect(result.success).toBe(true);
+
+      expect(mockShell.openExternal).toHaveBeenCalledTimes(1);
+      expect(mockShell.openExternal).toHaveBeenCalledWith(
+        'https://canvas.example.com/courses/4242/pages/my-page'
+      );
+      expect(mockShell.openPath).not.toHaveBeenCalled();
+    });
+
+    test('offline HTML enabled + local file present → opens the local file (not Canvas)', async () => {
+      seedCourse();
+      seedModule();
+      seedModuleItem();
+      htmlEnabled = true;
+
+      // Pre-create the file at the EXACT path the handler computes, derived via
+      // PathBuilder (never hardcoded separators — Windows-dev/Linux-CI gotcha).
+      // buildCtx hardcodes promptForMissing:false, so the dep-walk is skipped
+      // and the handler opens the file directly.
+      const localPath = createPathBuilder(tmpDir).getPageHtmlPath(
+        'CS101',
+        'Week 1',
+        'My Page'
+      );
+      fs.mkdirSync(nodePath.dirname(localPath), { recursive: true });
+      fs.writeFileSync(localPath, '<html><body>offline</body></html>');
+
+      const result = (await invoke('pages:openFile', 10)) as {
+        success: boolean;
+        needsDownload?: boolean;
+      };
+      expect(result.success).toBe(true);
+      expect(result.needsDownload).toBeFalsy();
+
+      // Behavior fork: the LOCAL file is opened…
+      expect(mockShell.openPath).toHaveBeenCalledTimes(1);
+      expect(mockShell.openPath).toHaveBeenCalledWith(localPath);
+      // …and Canvas was NOT opened externally (backwards-wiring guard).
+      expect(mockShell.openExternal).not.toHaveBeenCalled();
+    });
+
+    test('offline HTML enabled but file missing → needsDownload (no file opened either way)', async () => {
       seedCourse();
       seedModule();
       seedModuleItem();
@@ -407,6 +474,9 @@ describe('pagesHandlers (ADR-0007)', () => {
       };
       expect(result.success).toBe(false);
       expect(result.needsDownload).toBe(true);
+      // Neither branch's open side effect fired on the short-circuit.
+      expect(mockShell.openPath).not.toHaveBeenCalled();
+      expect(mockShell.openExternal).not.toHaveBeenCalled();
     });
   });
 });
