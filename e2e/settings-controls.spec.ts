@@ -199,4 +199,132 @@ test.describe('Settings controls — UI actuation', () => {
     await openSettings(page);
     expect(await readViewMode()).toBe('list');
   });
+
+  // ---- B-cal: Calendar view-mode (DisplaySection) — persists across reload --
+  // The "Calendar view" SettingButtonGroup (Month/Week) writes calendarSettings
+  // .defaultViewMode to localStorage (JSON). Default is 'month' → click Week.
+  test('calendar view-mode: Week button persists to localStorage and survives reload', async ({
+    page,
+  }) => {
+    await openSettings(page);
+    await expandSection(page, 'Display & Layout');
+
+    const calendarRow = page
+      .locator('div')
+      .filter({ hasText: 'Calendar view' })
+      .filter({ has: page.getByRole('button', { name: 'Week', exact: true }) })
+      .last();
+    await calendarRow.getByRole('button', { name: 'Week', exact: true }).click();
+
+    const readCalView = () =>
+      page.evaluate(() => {
+        const raw = localStorage.getItem('calendarSettings');
+        return raw
+          ? (JSON.parse(raw) as { defaultViewMode?: string }).defaultViewMode
+          : undefined;
+      });
+
+    await expect.poll(readCalView, { timeout: 5000 }).toBe('week');
+
+    await page.reload();
+    await openSettings(page);
+    expect(await readCalView()).toBe('week');
+  });
+
+  // ---- B-landing: Landing page (DisplaySection) — persists across reload ----
+  // The "Landing page" SettingButtonGroup writes landingPage to localStorage as
+  // a RAW string (not JSON — SettingsManager stores string primitives verbatim).
+  // Default is '/' (Dashboard) → click Courses ('/courses').
+  test('landing page: Courses button persists landingPage to localStorage and survives reload', async ({
+    page,
+  }) => {
+    await openSettings(page);
+    await expandSection(page, 'Display & Layout');
+
+    const landingRow = page
+      .locator('div')
+      .filter({ hasText: 'Landing page' })
+      .filter({ has: page.getByRole('button', { name: 'Courses', exact: true }) })
+      .last();
+    await landingRow.getByRole('button', { name: 'Courses', exact: true }).click();
+
+    // landingPage is a string primitive → stored raw, not JSON-encoded.
+    const readLanding = () => page.evaluate(() => localStorage.getItem('landingPage'));
+
+    await expect.poll(readLanding, { timeout: 5000 }).toBe('/courses');
+
+    await page.reload();
+    await openSettings(page);
+    expect(await readLanding()).toBe('/courses');
+  });
+
+  // ---- B-content: Link click behavior (FilesContentSection) — <select> ------
+  // The "Link click behavior" SettingSelect writes contentSettings.linkBehavior
+  // to localStorage (JSON). Default is 'always-external' → select 'prefer-local'.
+  // (The actual link-open behavior is shell-mediated and not asserted in e2e;
+  // we assert PERSISTENCE only — the load-bearing, portable effect.)
+  test('link behavior: selecting Prefer-local persists contentSettings.linkBehavior across reload', async ({
+    page,
+  }) => {
+    await openSettings(page);
+    await expandSection(page, 'Files & Content');
+
+    // Scope to the linkBehavior <select> via its unique 'prefer-local' option
+    // (no other select on the page offers it).
+    const linkSelect = page
+      .getByRole('combobox')
+      .filter({ has: page.locator('option[value="prefer-local"]') })
+      .first();
+    await linkSelect.selectOption('prefer-local');
+
+    const readLinkBehavior = () =>
+      page.evaluate(() => {
+        const raw = localStorage.getItem('contentSettings');
+        return raw
+          ? (JSON.parse(raw) as { linkBehavior?: string }).linkBehavior
+          : undefined;
+      });
+
+    await expect.poll(readLinkBehavior, { timeout: 5000 }).toBe('prefer-local');
+
+    await page.reload();
+    await openSettings(page);
+    expect(await readLinkBehavior()).toBe('prefer-local');
+  });
+
+  // ---- B-sync: Sync files toggle (SyncSection) — role="switch" -------------
+  // syncPrefs.syncFiles is behaviorally unwired (FOLLOWUPS: the persisted setting
+  // never reaches the sync path), but the SWITCH → persist path is real and worth
+  // a thin actuation: toggling writes syncPreferences.syncFiles to localStorage.
+  // Default is true → toggle once → false.
+  test('sync files toggle: persists syncPreferences.syncFiles across reload', async ({
+    page,
+  }) => {
+    await openSettings(page);
+    await expandSection(page, 'Sync');
+
+    const toggle = page
+      .locator('div')
+      .filter({ hasText: 'Sync files' })
+      .filter({ has: page.getByRole('switch') })
+      .last()
+      .getByRole('switch');
+    // Default DEFAULT_SYNC_PREFERENCES.syncFiles is true.
+    await expect(toggle).toHaveAttribute('aria-checked', 'true');
+
+    await toggle.click();
+
+    const readSyncFiles = () =>
+      page.evaluate(() => {
+        const raw = localStorage.getItem('syncPreferences');
+        return raw ? (JSON.parse(raw) as { syncFiles?: boolean }).syncFiles : undefined;
+      });
+
+    await expect.poll(readSyncFiles, { timeout: 5000 }).toBe(false);
+    await expect(toggle).toHaveAttribute('aria-checked', 'false');
+
+    await page.reload();
+    await openSettings(page);
+    expect(await readSyncFiles()).toBe(false);
+  });
 });
