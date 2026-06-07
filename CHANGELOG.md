@@ -12,6 +12,28 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ### Added
 
+- `2026-06-07 19:21 UTC` — **Due-date reminders and grade alerts are now real.** When "Due date
+  reminders" is on, an hourly background scan sends a desktop notification for any incomplete
+  assignment in a visible course that is due within 24 hours (deduped — you won't be re-pinged
+  for the same due date). When "Grade alerts" is on, a single batched notification ("N new grades
+  posted") fires after a sync posts new grades. Both honor the battery-power quiet setting and
+  flow through the same suppression seam (ADR-0016).
+
+- `2026-06-07 19:21 UTC` — **Notification settings groundwork: a single suppression seam.**
+  Every desktop notification now funnels through one show seam in `CanvasClientManager`
+  gated by a pure, unit-tested `shouldSuppressNotification` predicate. "Pause notifications
+  on battery power" is now real — when the toggle is on and you're unplugged, notifications
+  are suppressed (ADR-0016).
+
+### Removed
+
+- `2026-06-07 19:21 UTC` — **Dropped two un-implementable notification toggles + a dead
+  setting.** Removed `quietWhenFullscreen` (Electron can only detect our own window, not a
+  foreign fullscreen app) and `quietWhenBusy` (no portable Do-Not-Disturb API) from the
+  Notifications settings — they were dead toggles. Also removed the vestigial `aiConfig`
+  setting end-to-end (leftover from the removed L3 AI layer, ADR-0003). All localStorage-only,
+  so no migration — old saved values are simply ignored.
+
 - `2026-06-06 07:57 UTC` — **Grade history across past terms.** The dashboard Grade Breakdown
   modal now groups your current courses by term (overlap-safe: two concurrently-running terms
   stay separate) and adds a collapsible **Past terms** section — archived courses grouped by

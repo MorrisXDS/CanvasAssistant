@@ -194,31 +194,6 @@ export function NotificationsSection({ sectionRef }: NotificationsSectionProps) 
                   </>
                 )}
 
-                {shouldShowSetting('notifications.quietWhenFullscreen') && (
-                  <SettingRow
-                    settingKey="notifications.quietWhenFullscreen"
-                    label="Fullscreen mode"
-                    description="Pause during presentations or focus sessions"
-                    isModified={
-                      notifications.quietWhenFullscreen !==
-                      DEFAULT_NOTIFICATION_SETTINGS.quietWhenFullscreen
-                    }
-                    onReset={() =>
-                      updateNotifications({
-                        quietWhenFullscreen:
-                          DEFAULT_NOTIFICATION_SETTINGS.quietWhenFullscreen,
-                      })
-                    }
-                  >
-                    <ToggleSwitch
-                      checked={notifications.quietWhenFullscreen}
-                      onChange={(checked) =>
-                        updateNotifications({ quietWhenFullscreen: checked })
-                      }
-                    />
-                  </SettingRow>
-                )}
-
                 {shouldShowSetting('notifications.quietWhenUnplugged') && (
                   <SettingRow
                     settingKey="notifications.quietWhenUnplugged"

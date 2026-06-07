@@ -15,6 +15,10 @@ import type {
 } from './FileListItem';
 import type { MissingDependency } from './MissingDependenciesDialog';
 import { STORAGE_KEYS } from '../../../l5-presentation/settings';
+import {
+  shouldSkipExternalLinkWarning,
+  withSkipExternalLinkWarning,
+} from './externalLinkWarning';
 import { createLogger } from '../../utils/rendererLogger';
 import type {
   MissingDepsDialogState,
@@ -168,16 +172,9 @@ export function useFileDialogs(
           return;
         }
 
-        let skipWarning = false;
-        try {
-          const storedSettings = localStorage.getItem(STORAGE_KEYS.FILE_EXPLORER);
-          if (storedSettings) {
-            const settings = JSON.parse(storedSettings);
-            skipWarning = settings.skipExternalLinkWarning === true;
-          }
-        } catch (e) {
-          logger.error('Failed to read file explorer settings', e instanceof Error ? e : undefined);
-        }
+        const skipWarning = shouldSkipExternalLinkWarning(
+          localStorage.getItem(STORAGE_KEYS.FILE_EXPLORER)
+        );
 
         if (skipWarning) {
           api.openExternal(externalLink);
@@ -214,7 +211,9 @@ export function useFileDialogs(
             totalMissingSize?: number;
           };
           if (typedResult?.hasMissingDependencies && typedResult.missingDependencies) {
-            logger.debug(`Page has missing dependencies: ${typedResult.missingDependencies.length} items`);
+            logger.debug(
+              `Page has missing dependencies: ${typedResult.missingDependencies.length} items`
+            );
             setMissingDepsDialog({
               isOpen: true,
               file: moduleItem,
@@ -257,7 +256,9 @@ export function useFileDialogs(
         const result = await api.openResource(file.id);
 
         if (result?.hasMissingDependencies && result.missingDependencies) {
-          logger.debug(`HTML has missing dependencies: ${result.missingDependencies.length} items`);
+          logger.debug(
+            `HTML has missing dependencies: ${result.missingDependencies.length} items`
+          );
           setMissingDepsDialog({
             isOpen: true,
             file,
@@ -352,7 +353,10 @@ export function useFileDialogs(
         throw new Error(result.error || 'Download failed');
       }
     } catch (error) {
-      logger.error('Failed to download dependencies', error instanceof Error ? error : undefined);
+      logger.error(
+        'Failed to download dependencies',
+        error instanceof Error ? error : undefined
+      );
       setMissingDepsDialog((prev) => ({ ...prev, isDownloading: false }));
       throw error;
     }
@@ -429,12 +433,15 @@ export function useFileDialogs(
 
     if (dontShowAgain) {
       try {
-        const storedSettings = localStorage.getItem(STORAGE_KEYS.FILE_EXPLORER);
-        const settings = storedSettings ? JSON.parse(storedSettings) : {};
-        settings.skipExternalLinkWarning = true;
-        localStorage.setItem(STORAGE_KEYS.FILE_EXPLORER, JSON.stringify(settings));
+        localStorage.setItem(
+          STORAGE_KEYS.FILE_EXPLORER,
+          withSkipExternalLinkWarning(localStorage.getItem(STORAGE_KEYS.FILE_EXPLORER))
+        );
       } catch (e) {
-        logger.error('Failed to save file explorer settings', e instanceof Error ? e : undefined);
+        logger.error(
+          'Failed to save file explorer settings',
+          e instanceof Error ? e : undefined
+        );
       }
     }
 
@@ -519,18 +526,27 @@ export function useFileDialogs(
 
     if (file.source === 'attachment') {
       api.showAttachmentInFolder(file.id).catch((error) => {
-        logger.error('Failed to show in folder', error instanceof Error ? error : undefined);
+        logger.error(
+          'Failed to show in folder',
+          error instanceof Error ? error : undefined
+        );
       });
     } else if (file.source === 'module') {
       const moduleItem = file as FileModuleItem;
       if (moduleItem.contentId) {
         api.showResourceInFolderByExternalId(moduleItem.contentId).catch((error) => {
-          logger.error('Failed to show module file in folder', error instanceof Error ? error : undefined);
+          logger.error(
+            'Failed to show module file in folder',
+            error instanceof Error ? error : undefined
+          );
         });
       }
     } else {
       api.showResourceInFolder(file.id).catch((error) => {
-        logger.error('Failed to show in folder', error instanceof Error ? error : undefined);
+        logger.error(
+          'Failed to show in folder',
+          error instanceof Error ? error : undefined
+        );
       });
     }
   };
@@ -599,7 +615,10 @@ export function useFileDialogs(
         logger.error(`Delete failed: ${result.error}`);
       }
     } catch (error) {
-      logger.error('Failed to delete local copy', error instanceof Error ? error : undefined);
+      logger.error(
+        'Failed to delete local copy',
+        error instanceof Error ? error : undefined
+      );
     }
   };
 

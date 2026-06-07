@@ -315,14 +315,6 @@ export const SETTINGS_METADATA: SettingMetadata[] = [
     keywords: ['score', 'marks', 'results'],
   },
   {
-    key: 'notifications.quietWhenFullscreen',
-    label: 'Fullscreen mode',
-    description: 'Pause notifications during presentations or focus sessions',
-    category: 'notifications',
-    component: 'toggle',
-    keywords: ['dnd', 'do not disturb', 'focus'],
-  },
-  {
     key: 'notifications.quietWhenUnplugged',
     label: 'On battery power',
     description: 'Pause notifications when running on battery power',

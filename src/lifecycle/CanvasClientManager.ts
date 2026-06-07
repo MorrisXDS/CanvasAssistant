@@ -3,7 +3,8 @@
  * Handles Canvas API client and sync engine initialization and event forwarding
  */
 
-import { Notification, type BrowserWindow } from 'electron';
+import { Notification, powerMonitor, type BrowserWindow } from 'electron';
+import { shouldSuppressNotification } from './notifications/shouldSuppressNotification';
 import type { Database } from '../layers/l1-persistence';
 import type { VisibilityOracle } from '../layers/l1-persistence';
 import type { Logger } from '../layers/l0-utilities/Logger';
@@ -21,11 +22,22 @@ import {
 interface NotificationSettings {
   enabled: boolean;
   syncStatus: boolean;
-  // other fields exist but not needed for sync notifications
+  dueDateReminders: boolean;
+  gradeAlerts: boolean;
+  quietWhenUnplugged: boolean;
 }
 
+/** Notification "kind" → the per-kind enable flag that gates it. */
+type NotificationKind = 'sync' | 'dueDate' | 'grade';
+
 /**
- * Get notification settings from user_preferences in the database
+ * Get notification settings from user_preferences in the database.
+ *
+ * Raw read is allowed here: this is lifecycle code, NOT under
+ * `src/lifecycle/ipc-handlers/` (ADR-0007 applies to the handler folder only).
+ * Fields default to the safe value when a key is absent so old/partial rows
+ * (e.g. pre-ADR-0016 rows still carrying quietWhenFullscreen/quietWhenBusy)
+ * read cleanly.
  */
 function getNotificationSettings(db: Database): NotificationSettings | null {
   try {
@@ -33,7 +45,14 @@ function getNotificationSettings(db: Database): NotificationSettings | null {
       "SELECT value FROM user_preferences WHERE key = 'notificationSettings'"
     );
     if (prefs?.value) {
-      return JSON.parse(prefs.value);
+      const raw = JSON.parse(prefs.value) as Partial<NotificationSettings>;
+      return {
+        enabled: raw.enabled ?? false,
+        syncStatus: raw.syncStatus ?? false,
+        dueDateReminders: raw.dueDateReminders ?? false,
+        gradeAlerts: raw.gradeAlerts ?? false,
+        quietWhenUnplugged: raw.quietWhenUnplugged ?? false,
+      };
     }
   } catch {
     // Fall through
@@ -90,6 +109,46 @@ export class CanvasClientManager {
   clear(): void {
     this.canvasClient = null;
     this.syncEngine = null;
+  }
+
+  /**
+   * Single show seam for ALL desktop notifications (sync status, due-date
+   * reminders, grade alerts). Every notification passes through here so the
+   * per-kind enable gate AND the pure suppression predicate apply uniformly
+   * (ADR-0016). Do NOT construct `new Notification(...).show()` anywhere else.
+   *
+   * Returns true if the notification was shown, false if gated/suppressed
+   * (mainly to make the seam observable to tests + callers).
+   */
+  showDesktopNotification(title: string, body: string, kind: NotificationKind): boolean {
+    const settings = getNotificationSettings(this.config.database);
+    if (!settings?.enabled) return false;
+
+    // Per-kind enable gate.
+    const kindEnabled =
+      kind === 'sync'
+        ? settings.syncStatus
+        : kind === 'dueDate'
+          ? settings.dueDateReminders
+          : settings.gradeAlerts;
+    if (!kindEnabled) return false;
+
+    // Pure suppression predicate fed by live system state.
+    const onBatteryPower = (() => {
+      try {
+        return powerMonitor.isOnBatteryPower();
+      } catch {
+        // powerMonitor can be unavailable in headless/test contexts — treat as
+        // plugged in so notifications are NOT suppressed by a read failure.
+        return false;
+      }
+    })();
+    if (shouldSuppressNotification(settings, { onBatteryPower })) {
+      return false;
+    }
+
+    new Notification({ title, body }).show();
+    return true;
   }
 
   /**
@@ -223,16 +282,14 @@ export class CanvasClientManager {
         logger.debug('VisibilityOracle cache invalidated after sync');
       }
 
-      // Desktop notification for sync complete
-      const notifSettings = getNotificationSettings(this.config.database);
-      if (notifSettings?.enabled && notifSettings?.syncStatus) {
-        const coursesCount = result.courses?.count ?? 0;
-        const tasksCount = result.tasks?.count ?? 0;
-        new Notification({
-          title: 'Sync Complete',
-          body: `Updated ${coursesCount} courses, ${tasksCount} tasks`,
-        }).show();
-      }
+      // Desktop notification for sync complete (routed through the single seam).
+      const coursesCount = result.courses?.count ?? 0;
+      const tasksCount = result.tasks?.count ?? 0;
+      this.showDesktopNotification(
+        'Sync Complete',
+        `Updated ${coursesCount} courses, ${tasksCount} tasks`,
+        'sync'
+      );
     });
 
     this.syncEngine.on('sync-error', ({ type, error }) => {
@@ -243,16 +300,14 @@ export class CanvasClientManager {
         mainWindow.webContents.send('sync:error', { type, error });
       }
 
-      // Desktop notification for sync error
-      const notifSettings = getNotificationSettings(this.config.database);
-      if (notifSettings?.enabled && notifSettings?.syncStatus) {
-        const errorMessage =
-          typeof error === 'string' ? error : (error?.message ?? 'Unknown error');
-        new Notification({
-          title: 'Sync Failed',
-          body: `Error during ${type}: ${errorMessage}`,
-        }).show();
-      }
+      // Desktop notification for sync error (routed through the single seam).
+      const errorMessage =
+        typeof error === 'string' ? error : (error?.message ?? 'Unknown error');
+      this.showDesktopNotification(
+        'Sync Failed',
+        `Error during ${type}: ${errorMessage}`,
+        'sync'
+      );
     });
 
     this.syncEngine.on(
@@ -313,6 +368,19 @@ export class CanvasClientManager {
       logger.info(
         `[CanvasClientManager] Received sync-updates event: ${JSON.stringify(updates)}`
       );
+
+      // Grade alerts (ADR-0016): the commit-phase sync-updates payload carries a
+      // `gradeChanges` count (resource-update emits do not — hence `?? 0`). Fire
+      // ONE batched notification through the single show seam, which applies the
+      // `enabled && gradeAlerts` gate + suppression. Batched (not per-grade) =
+      // zero new query, no toast spam.
+      const gradeChanges = (updates as { gradeChanges?: number }).gradeChanges ?? 0;
+      if (gradeChanges > 0) {
+        const body =
+          gradeChanges === 1 ? '1 new grade posted' : `${gradeChanges} new grades posted`;
+        this.showDesktopNotification('New grades', body, 'grade');
+      }
+
       const mainWindow = getMainWindow();
       if (mainWindow && !mainWindow.isDestroyed() && updates.total > 0) {
         logger.info(
