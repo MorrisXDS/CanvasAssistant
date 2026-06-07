@@ -1,6 +1,6 @@
 # 0016 — Notification generation + a single suppression seam
 
-Status: Proposed
+Status: Accepted
 
 ## Context
 

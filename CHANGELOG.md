@@ -12,11 +12,18 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ### Added
 
+- `2026-06-07 19:21 UTC` — **Due-date reminders and grade alerts are now real.** When "Due date
+  reminders" is on, an hourly background scan sends a desktop notification for any incomplete
+  assignment in a visible course that is due within 24 hours (deduped — you won't be re-pinged
+  for the same due date). When "Grade alerts" is on, a single batched notification ("N new grades
+  posted") fires after a sync posts new grades. Both honor the battery-power quiet setting and
+  flow through the same suppression seam (ADR-0016).
+
 - `2026-06-07 19:21 UTC` — **Notification settings groundwork: a single suppression seam.**
   Every desktop notification now funnels through one show seam in `CanvasClientManager`
   gated by a pure, unit-tested `shouldSuppressNotification` predicate. "Pause notifications
   on battery power" is now real — when the toggle is on and you're unplugged, notifications
-  are suppressed (ADR-0016). Due-date reminders and grade alerts follow in subsequent batches.
+  are suppressed (ADR-0016).
 
 ### Removed
 

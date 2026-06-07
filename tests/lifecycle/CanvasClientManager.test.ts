@@ -298,6 +298,63 @@ describe('CanvasClientManager — desktop notification fork', () => {
     });
   });
 
+  describe('grade alerts on sync-updates', () => {
+    test('gradeChanges>0 + enabled + gradeAlerts → batched notification fires', () => {
+      seedNotificationSettings({ enabled: true, gradeAlerts: true });
+      wireHandlers();
+
+      fakeSyncEngine.emit('sync-updates', { total: 3, gradeChanges: 3 });
+
+      expect(NotificationMock).toHaveBeenCalledTimes(1);
+      const arg = NotificationMock.mock.calls[0][0] as { title: string; body: string };
+      expect(arg.title).toBe('New grades');
+      expect(arg.body).toBe('3 new grades posted');
+      expect(showSpy).toHaveBeenCalledTimes(1);
+    });
+
+    test('single grade → singular body', () => {
+      seedNotificationSettings({ enabled: true, gradeAlerts: true });
+      wireHandlers();
+
+      fakeSyncEngine.emit('sync-updates', { total: 1, gradeChanges: 1 });
+
+      const arg = NotificationMock.mock.calls[0][0] as { body: string };
+      expect(arg.body).toBe('1 new grade posted');
+    });
+
+    test('gradeAlerts off → no grade notification (per-kind gate)', () => {
+      seedNotificationSettings({ enabled: true, gradeAlerts: false });
+      wireHandlers();
+
+      fakeSyncEngine.emit('sync-updates', { total: 3, gradeChanges: 3 });
+
+      expect(NotificationMock).not.toHaveBeenCalled();
+    });
+
+    test('gradeChanges=0 → no notification even when gradeAlerts on', () => {
+      seedNotificationSettings({ enabled: true, gradeAlerts: true });
+      wireHandlers();
+
+      fakeSyncEngine.emit('sync-updates', { total: 2, newFiles: 2 });
+
+      expect(NotificationMock).not.toHaveBeenCalled();
+    });
+
+    test('quietWhenUnplugged + on battery → grade alert suppressed', () => {
+      seedNotificationSettings({
+        enabled: true,
+        gradeAlerts: true,
+        quietWhenUnplugged: true,
+      });
+      isOnBatteryPowerMock.mockReturnValue(true);
+      wireHandlers();
+
+      fakeSyncEngine.emit('sync-updates', { total: 3, gradeChanges: 3 });
+
+      expect(NotificationMock).not.toHaveBeenCalled();
+    });
+  });
+
   describe('showDesktopNotification per-kind gate', () => {
     test('dueDate kind fires only when dueDateReminders is on', () => {
       seedNotificationSettings({

@@ -368,6 +368,19 @@ export class CanvasClientManager {
       logger.info(
         `[CanvasClientManager] Received sync-updates event: ${JSON.stringify(updates)}`
       );
+
+      // Grade alerts (ADR-0016): the commit-phase sync-updates payload carries a
+      // `gradeChanges` count (resource-update emits do not — hence `?? 0`). Fire
+      // ONE batched notification through the single show seam, which applies the
+      // `enabled && gradeAlerts` gate + suppression. Batched (not per-grade) =
+      // zero new query, no toast spam.
+      const gradeChanges = (updates as { gradeChanges?: number }).gradeChanges ?? 0;
+      if (gradeChanges > 0) {
+        const body =
+          gradeChanges === 1 ? '1 new grade posted' : `${gradeChanges} new grades posted`;
+        this.showDesktopNotification('New grades', body, 'grade');
+      }
+
       const mainWindow = getMainWindow();
       if (mainWindow && !mainWindow.isDestroyed() && updates.total > 0) {
         logger.info(
