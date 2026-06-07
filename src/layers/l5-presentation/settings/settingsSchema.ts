@@ -94,9 +94,6 @@ export const STORAGE_KEYS = {
   ARCHIVED_COURSE_WARNING_DISMISSED: 'archivedCourseWarningDismissed',
   ARCHIVED_COURSE_WARNING_DISMISSED_IDS: 'archivedCourseWarningDismissedIds',
 
-  // AI/Intelligence settings
-  AI_CONFIG: 'aiConfig',
-
   // Dashboard settings
   DASHBOARD: 'dashboardSettings',
 
@@ -176,8 +173,10 @@ export const NotificationSettingsSchema = z.object({
   dueDateReminders: z.boolean(),
   gradeAlerts: z.boolean(),
   quietWhenUnplugged: z.boolean(),
-  quietWhenFullscreen: z.boolean(),
-  quietWhenBusy: z.boolean(),
+  // NOTE: `quietWhenFullscreen` and `quietWhenBusy` were dropped (ADR-0016) —
+  // fullscreen detection is limited to our own window and busy/DND has no
+  // portable Electron API. Zod objects are non-strict, so old persisted rows
+  // carrying those keys parse cleanly (the extra keys are stripped).
 });
 
 export const AcademicSettingsSchema = z.object({
@@ -211,25 +210,6 @@ export type LinkBehavior = (typeof LINK_BEHAVIOR)[keyof typeof LINK_BEHAVIOR];
 
 export const ContentSettingsSchema = z.object({
   linkBehavior: z.enum([LINK_BEHAVIOR.ALWAYS_EXTERNAL, LINK_BEHAVIOR.PREFER_LOCAL]),
-});
-
-export const AIConfigSchema = z.object({
-  // Local ML (Transformers.js) settings
-  enableLocalML: z.boolean(),
-
-  // LLM provider settings
-  provider: z.enum(['none', 'ollama', 'openai', 'anthropic']),
-  ollamaUrl: z.string(),
-  ollamaModel: z.string(),
-  openaiModel: z.string(),
-  anthropicModel: z.string(),
-  // API keys are stored in keychain, not localStorage - these are just flags
-  hasOpenAIKey: z.boolean(),
-  hasAnthropicKey: z.boolean(),
-
-  // Content analysis settings
-  autoAnalyzeContent: z.boolean(),
-  generateEmbeddings: z.boolean(),
 });
 
 export const WindowBehaviorSettingsSchema = z.object({
@@ -361,7 +341,6 @@ export type FileExplorerSettings = z.infer<typeof FileExplorerSettingsSchema>;
 export type CourseSettings = z.infer<typeof CourseSettingsSchema>;
 export type CalendarSettings = z.infer<typeof CalendarSettingsSchema>;
 export type ContentSettings = z.infer<typeof ContentSettingsSchema>;
-export type AIConfig = z.infer<typeof AIConfigSchema>;
 export type WindowBehaviorSettings = z.infer<typeof WindowBehaviorSettingsSchema>;
 export type DashboardSettings = z.infer<typeof DashboardSettingsSchema>;
 export type LocalHtmlPathsSettings = z.infer<typeof LocalHtmlPathsSettingsSchema>;
@@ -380,7 +359,6 @@ export type SettingsValue =
   | CourseSettings
   | CalendarSettings
   | ContentSettings
-  | AIConfig
   | WindowBehaviorSettings
   | DashboardSettings
   | LocalHtmlPathsSettings
@@ -419,8 +397,6 @@ export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
   dueDateReminders: true,
   gradeAlerts: true,
   quietWhenUnplugged: false,
-  quietWhenFullscreen: true,
-  quietWhenBusy: false,
 };
 
 export const DEFAULT_ACADEMIC_SETTINGS: AcademicSettings = {
@@ -447,24 +423,6 @@ export const DEFAULT_CALENDAR_SETTINGS: CalendarSettings = {
 
 export const DEFAULT_CONTENT_SETTINGS: ContentSettings = {
   linkBehavior: 'always-external',
-};
-
-export const DEFAULT_AI_CONFIG: AIConfig = {
-  // Local ML disabled by default (needs optional dependency)
-  enableLocalML: false,
-
-  // No LLM provider by default
-  provider: 'none',
-  ollamaUrl: 'http://localhost:11434',
-  ollamaModel: 'llama3.2',
-  openaiModel: 'gpt-4o-mini',
-  anthropicModel: 'claude-3-haiku-20240307',
-  hasOpenAIKey: false,
-  hasAnthropicKey: false,
-
-  // Content analysis features
-  autoAnalyzeContent: true, // Auto-analyze syllabus/course pages
-  generateEmbeddings: false, // Disabled by default (requires local ML)
 };
 
 export const DEFAULT_WINDOW_BEHAVIOR_SETTINGS: WindowBehaviorSettings = {
@@ -546,7 +504,6 @@ export interface SettingsTypeMap {
   [STORAGE_KEYS.COURSES]: CourseSettings;
   [STORAGE_KEYS.CALENDAR]: CalendarSettings;
   [STORAGE_KEYS.CONTENT]: ContentSettings;
-  [STORAGE_KEYS.AI_CONFIG]: AIConfig;
   [STORAGE_KEYS.WINDOW_BEHAVIOR]: WindowBehaviorSettings;
   [STORAGE_KEYS.DASHBOARD]: DashboardSettings;
   [STORAGE_KEYS.LOCAL_HTML_PATHS]: LocalHtmlPathsSettings;
@@ -620,7 +577,6 @@ export const SETTINGS_DEFAULTS: Partial<SettingsTypeMap> = {
   [STORAGE_KEYS.COURSES]: DEFAULT_COURSE_SETTINGS,
   [STORAGE_KEYS.CALENDAR]: DEFAULT_CALENDAR_SETTINGS,
   [STORAGE_KEYS.CONTENT]: DEFAULT_CONTENT_SETTINGS,
-  [STORAGE_KEYS.AI_CONFIG]: DEFAULT_AI_CONFIG,
   [STORAGE_KEYS.WINDOW_BEHAVIOR]: DEFAULT_WINDOW_BEHAVIOR_SETTINGS,
   [STORAGE_KEYS.DASHBOARD]: DEFAULT_DASHBOARD_SETTINGS,
   [STORAGE_KEYS.LOCAL_HTML_PATHS]: DEFAULT_LOCAL_HTML_PATHS_SETTINGS,
@@ -651,7 +607,6 @@ export const SETTINGS_SCHEMAS: Partial<Record<string, z.ZodType>> = {
   [STORAGE_KEYS.COURSES]: CourseSettingsSchema,
   [STORAGE_KEYS.CALENDAR]: CalendarSettingsSchema,
   [STORAGE_KEYS.CONTENT]: ContentSettingsSchema,
-  [STORAGE_KEYS.AI_CONFIG]: AIConfigSchema,
   [STORAGE_KEYS.WINDOW_BEHAVIOR]: WindowBehaviorSettingsSchema,
   [STORAGE_KEYS.DASHBOARD]: DashboardSettingsSchema,
   [STORAGE_KEYS.LOCAL_HTML_PATHS]: LocalHtmlPathsSettingsSchema,

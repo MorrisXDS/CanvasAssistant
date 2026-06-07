@@ -23,9 +23,16 @@
 
 const showSpy = jest.fn();
 const NotificationMock = jest.fn().mockImplementation(() => ({ show: showSpy }));
+// Default plugged-in so the suppression predicate never suppresses unless a
+// test opts a battery state in. Stubbed (never the real platform) for CI
+// portability (dev=Windows, CI=Linux).
+const isOnBatteryPowerMock = jest.fn(() => false);
 
 jest.mock('electron', () => ({
   Notification: NotificationMock,
+  powerMonitor: {
+    isOnBatteryPower: () => isOnBatteryPowerMock(),
+  },
 }));
 
 import { EventEmitter } from 'events';
@@ -71,7 +78,10 @@ describe('CanvasClientManager — desktop notification fork', () => {
   /** Seed the notificationSettings row (or omit to test the null-settings branch). */
   function seedNotificationSettings(value: {
     enabled: boolean;
-    syncStatus: boolean;
+    syncStatus?: boolean;
+    dueDateReminders?: boolean;
+    gradeAlerts?: boolean;
+    quietWhenUnplugged?: boolean;
   }): void {
     db.executeWrite(
       "INSERT INTO user_preferences (key, value) VALUES ('notificationSettings', ?)",
@@ -105,6 +115,8 @@ describe('CanvasClientManager — desktop notification fork', () => {
   beforeEach(() => {
     NotificationMock.mockClear();
     showSpy.mockClear();
+    isOnBatteryPowerMock.mockReset();
+    isOnBatteryPowerMock.mockReturnValue(false);
     metricsCollector.increment.mockClear();
     metricsCollector.recordTiming.mockClear();
 
@@ -203,6 +215,119 @@ describe('CanvasClientManager — desktop notification fork', () => {
 
       expect(NotificationMock).not.toHaveBeenCalled();
       expect(showSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('quiet-when-unplugged suppression on the show seam', () => {
+    test('quietWhenUnplugged + on battery → sync toast SUPPRESSED', () => {
+      seedNotificationSettings({
+        enabled: true,
+        syncStatus: true,
+        quietWhenUnplugged: true,
+      });
+      isOnBatteryPowerMock.mockReturnValue(true);
+      wireHandlers();
+
+      fakeSyncEngine.emit('sync-complete', {
+        courses: { count: 1 },
+        tasks: { count: 2 },
+        totalDuration: 5,
+      });
+
+      expect(NotificationMock).not.toHaveBeenCalled();
+      expect(showSpy).not.toHaveBeenCalled();
+    });
+
+    test('quietWhenUnplugged + plugged in → sync toast still fires', () => {
+      seedNotificationSettings({
+        enabled: true,
+        syncStatus: true,
+        quietWhenUnplugged: true,
+      });
+      isOnBatteryPowerMock.mockReturnValue(false);
+      wireHandlers();
+
+      fakeSyncEngine.emit('sync-complete', {
+        courses: { count: 1 },
+        tasks: { count: 2 },
+        totalDuration: 5,
+      });
+
+      expect(NotificationMock).toHaveBeenCalledTimes(1);
+      expect(showSpy).toHaveBeenCalledTimes(1);
+    });
+
+    test('on battery but quietWhenUnplugged off → sync toast still fires', () => {
+      seedNotificationSettings({
+        enabled: true,
+        syncStatus: true,
+        quietWhenUnplugged: false,
+      });
+      isOnBatteryPowerMock.mockReturnValue(true);
+      wireHandlers();
+
+      fakeSyncEngine.emit('sync-complete', {
+        courses: { count: 1 },
+        tasks: { count: 2 },
+        totalDuration: 5,
+      });
+
+      expect(NotificationMock).toHaveBeenCalledTimes(1);
+      expect(showSpy).toHaveBeenCalledTimes(1);
+    });
+
+    test('powerMonitor.isOnBatteryPower throwing → treated as plugged in (fires)', () => {
+      seedNotificationSettings({
+        enabled: true,
+        syncStatus: true,
+        quietWhenUnplugged: true,
+      });
+      isOnBatteryPowerMock.mockImplementation(() => {
+        throw new Error('headless');
+      });
+      wireHandlers();
+
+      fakeSyncEngine.emit('sync-complete', {
+        courses: { count: 1 },
+        tasks: { count: 2 },
+        totalDuration: 5,
+      });
+
+      expect(NotificationMock).toHaveBeenCalledTimes(1);
+      expect(showSpy).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('showDesktopNotification per-kind gate', () => {
+    test('dueDate kind fires only when dueDateReminders is on', () => {
+      seedNotificationSettings({
+        enabled: true,
+        dueDateReminders: false,
+      });
+      wireHandlers();
+
+      const shownOff = manager.showDesktopNotification('T', 'B', 'dueDate');
+      expect(shownOff).toBe(false);
+      expect(NotificationMock).not.toHaveBeenCalled();
+
+      // Re-seed with dueDateReminders on.
+      db.executeWrite(
+        "UPDATE user_preferences SET value = ? WHERE key = 'notificationSettings'",
+        [JSON.stringify({ enabled: true, dueDateReminders: true })],
+        'user_preferences'
+      );
+      const shownOn = manager.showDesktopNotification('T', 'B', 'dueDate');
+      expect(shownOn).toBe(true);
+      expect(NotificationMock).toHaveBeenCalledTimes(1);
+    });
+
+    test('grade kind fires only when gradeAlerts is on', () => {
+      seedNotificationSettings({ enabled: true, gradeAlerts: true });
+      wireHandlers();
+
+      const shown = manager.showDesktopNotification('T', 'B', 'grade');
+      expect(shown).toBe(true);
+      expect(NotificationMock).toHaveBeenCalledTimes(1);
     });
   });
 });

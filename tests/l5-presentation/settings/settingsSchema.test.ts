@@ -22,6 +22,7 @@ import {
   DEFAULT_CALENDAR_SETTINGS,
   DEFAULT_CONTENT_SETTINGS,
   SETTINGS_DEFAULTS,
+  SETTINGS_SCHEMAS,
 } from '../../../src/layers/l5-presentation/settings/settingsSchema';
 
 describe('settingsSchema', () => {
@@ -126,6 +127,62 @@ describe('settingsSchema', () => {
     it('should validate correct notification settings', () => {
       const result = NotificationSettingsSchema.safeParse(DEFAULT_NOTIFICATION_SETTINGS);
       expect(result.success).toBe(true);
+    });
+
+    // ADR-0016: quietWhenFullscreen + quietWhenBusy were dropped. The schema is a
+    // plain z.object (non-strict), so a previously-persisted row carrying those
+    // keys must parse cleanly with the keys STRIPPED — never throw. No migration.
+    it('strips dropped quietWhenFullscreen / quietWhenBusy from old persisted rows', () => {
+      const oldRow = {
+        enabled: true,
+        syncStatus: true,
+        dueDateReminders: true,
+        gradeAlerts: true,
+        quietWhenUnplugged: false,
+        // Dropped keys — must be ignored, not rejected.
+        quietWhenFullscreen: true,
+        quietWhenBusy: false,
+      };
+      const parsed = NotificationSettingsSchema.parse(oldRow);
+      expect(parsed).not.toHaveProperty('quietWhenFullscreen');
+      expect(parsed).not.toHaveProperty('quietWhenBusy');
+      expect(parsed).toEqual({
+        enabled: true,
+        syncStatus: true,
+        dueDateReminders: true,
+        gradeAlerts: true,
+        quietWhenUnplugged: false,
+      });
+    });
+
+    it('default notification settings no longer carry the dropped keys', () => {
+      expect(DEFAULT_NOTIFICATION_SETTINGS).not.toHaveProperty('quietWhenFullscreen');
+      expect(DEFAULT_NOTIFICATION_SETTINGS).not.toHaveProperty('quietWhenBusy');
+    });
+  });
+
+  describe('aiConfig removal (regression)', () => {
+    // aiConfig was a vestige of the removed L3 AI layer (ADR-0003). It was
+    // schema-only with NO UI and NO consumer. These guard that settings load /
+    // validate cleanly without it, and that a stale persisted aiConfig value is
+    // simply not part of the settings surface (harmlessly ignored).
+    it('removes the AI_CONFIG storage key', () => {
+      expect((STORAGE_KEYS as Record<string, unknown>).AI_CONFIG).toBeUndefined();
+      expect(Object.values(STORAGE_KEYS)).not.toContain('aiConfig');
+    });
+
+    it('does not register aiConfig in SETTINGS_DEFAULTS / SETTINGS_SCHEMAS', () => {
+      expect((SETTINGS_DEFAULTS as Record<string, unknown>)['aiConfig']).toBeUndefined();
+      expect(SETTINGS_SCHEMAS['aiConfig']).toBeUndefined();
+    });
+
+    it('every SETTINGS_DEFAULTS entry validates against its schema (load is clean without aiConfig)', () => {
+      for (const [key, schema] of Object.entries(SETTINGS_SCHEMAS)) {
+        const def = SETTINGS_DEFAULTS[key as keyof typeof SETTINGS_DEFAULTS];
+        if (def === undefined || !schema) continue;
+        const result = schema.safeParse(def);
+        expect(result.success).toBe(true);
+      }
     });
   });
 

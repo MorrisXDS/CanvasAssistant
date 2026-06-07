@@ -8,6 +8,7 @@ import { Star, Inbox, Calendar } from 'lucide-react';
 import { useStackAwareHotkeys } from '../../hooks/useStackAwareHotkeys';
 import { Card, NotificationDot } from '../shared';
 import { ImportantWorksFilter } from './ImportantWorksFilter';
+import { taskPassesImportantWorksFilter } from './importantWorksFilterPredicate';
 import { useStore } from '../../../l5-presentation/store';
 import { useTaskUpdates } from '../../hooks';
 import { useFocusedItem } from '../../hooks/useFocusedItem';
@@ -93,30 +94,7 @@ export function ImportantWorksCard({
 
   // Filter and sort important tasks
   const importantTasks = useMemo(() => {
-    const filtered = tasks.filter((task) => {
-      // Must not be completed
-      if (task.isCompleted) return false;
-
-      // Must have a task type
-      const taskType = task.taskType;
-      if (!taskType) return false;
-
-      // Check if type is enabled (if no types enabled, show all)
-      if (filter.enabledTypes.length > 0 && !filter.enabledTypes.includes(taskType)) {
-        return false;
-      }
-
-      // Get applicable threshold
-      const threshold =
-        filter.perTypeEnabled && filter.perTypeThresholds[taskType] !== undefined
-          ? filter.perTypeThresholds[taskType]
-          : filter.globalThreshold;
-
-      // Must have weight above threshold
-      if (!task.weight || task.weight < threshold) return false;
-
-      return true;
-    });
+    const filtered = tasks.filter((task) => taskPassesImportantWorksFilter(task, filter));
 
     // Sort by due date ascending (null at end), then by weight descending
     return filtered
