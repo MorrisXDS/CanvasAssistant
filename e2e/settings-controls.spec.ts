@@ -18,9 +18,15 @@ import { test, expect } from './fixtures/app';
 import { gotoHash } from './helpers';
 import type { Page } from '@playwright/test';
 
-/** Expand a settings Accordion section by its category label if collapsed. */
+/** Expand a settings Accordion section by its category label if collapsed.
+ * Scope to accordion triggers only (`button[aria-expanded]`) + match by visible
+ * text — short labels like "Academic"/"Updates" otherwise collide with other
+ * buttons via getByRole's case-insensitive substring name match. */
 async function expandSection(page: Page, label: string): Promise<void> {
-  const trigger = page.getByRole('button', { name: label });
+  const trigger = page
+    .locator('button[aria-expanded]')
+    .filter({ hasText: label })
+    .first();
   await trigger.waitFor({ state: 'visible' });
   const expanded = await trigger.getAttribute('aria-expanded');
   if (expanded !== 'true') {
@@ -48,16 +54,23 @@ test.describe('Settings controls — UI actuation', () => {
     await openSettings(page);
     await expandSection(page, 'Academic');
 
+    // The IPC getter returns { termSelection: value }, not a bare value.
     const getTerm = () =>
-      page.evaluate(() =>
-        (
+      page.evaluate(async () => {
+        const res = await (
           window as unknown as {
-            api: { getTermSelection: () => Promise<unknown> };
+            api: { getTermSelection: () => Promise<{ termSelection: unknown }> };
           }
-        ).api.getTermSelection()
-      );
+        ).api.getTermSelection();
+        return res.termSelection;
+      });
 
-    const select = page.getByRole('combobox').first();
+    // Scope to the term <select> specifically — its 'auto' option is unique to
+    // it (other Display-section selects render earlier on the page).
+    const select = page
+      .getByRole('combobox')
+      .filter({ has: page.locator('option[value="auto"]') })
+      .first();
     await select.selectOption('auto');
     await expect.poll(getTerm, { timeout: 5000 }).toBe('auto');
 
@@ -84,9 +97,14 @@ test.describe('Settings controls — UI actuation', () => {
         return res?.data?.enabled ?? false;
       });
 
-    const toggle = page.getByRole('switch', {
-      name: 'Check for updates automatically',
-    });
+    // ToggleSwitch is <button role="switch"> with NO accessible name, so target
+    // it via its SettingRow (the row containing the label + the switch).
+    const toggle = page
+      .locator('div')
+      .filter({ hasText: 'Check for updates automatically' })
+      .filter({ has: page.getByRole('switch') })
+      .last()
+      .getByRole('switch');
     // DEFAULT_PREFS.enabled is false → starts off; the interval Select is absent.
     await expect(toggle).toHaveAttribute('aria-checked', 'false');
 
@@ -94,9 +112,12 @@ test.describe('Settings controls — UI actuation', () => {
 
     // (a) persisted enabled === true
     await expect.poll(getEnabled, { timeout: 5000 }).toBe(true);
-    // (b) visible behavior change — the interval combobox now renders.
+    // (b) visible behavior change — the interval combobox now renders. Scope to
+    // it via its unique '168' (Weekly) option (other selects exist on the page).
     await expect(toggle).toHaveAttribute('aria-checked', 'true');
-    await expect(page.getByRole('combobox')).toBeVisible();
+    await expect(
+      page.getByRole('combobox').filter({ has: page.locator('option[value="168"]') })
+    ).toBeVisible();
   });
 
   // ---- B3 (rescoped): a portable <select>-actuation case ------------------
