@@ -93,6 +93,11 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ### Fixed
 
+- `2026-06-07 00:00 UTC` — **Sync now honors the Sync-files / Sync-announcements toggles (were
+  persisted but ignored).** The two Settings switches were saved to `syncPreferences` but never
+  read back, so turning either off had no effect. `SyncEngine.syncAll` now folds the persisted
+  setting into the fetch options (explicit per-call option wins; the setting fills unset keys;
+  default stays on), so both manual and auto-sync skip files/announcements when toggled off.
 - `2026-06-06 05:09 UTC` — **Settings → Updates: the "Check now" button is no longer cut off.**
   Accordion sections pin their height for the expand animation and measured it only once; the
   Updates section loads its data asynchronously and grows from a short loading state to its full

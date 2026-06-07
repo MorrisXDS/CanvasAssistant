@@ -101,6 +101,29 @@ async function syncAllWithCourse(assignments: Record<string, unknown>[]): Promis
 }
 
 /**
+ * Run syncAll with one Canvas course + given assignments, forwarding explicit
+ * SyncOptions to syncAll (for precedence/override tests). Mirrors syncAllWithCourse.
+ */
+async function syncAllWithCourseOpts(
+  assignments: Record<string, unknown>[],
+  opts: Record<string, unknown>
+): Promise<void> {
+  const course = mockCanvasCourse({ id: CANVAS_COURSE_ID });
+  mockGetAll.mockImplementation((endpoint: string) => {
+    if (endpoint === '/courses') return Promise.resolve([course]);
+    if (endpoint.includes(`/${CANVAS_COURSE_ID}/assignments`))
+      return Promise.resolve(assignments);
+    return Promise.resolve([]);
+  });
+  await syncEngine.syncAll(opts);
+}
+
+/** True if any mockGetAll call's first arg (endpoint) matches the given regexp. */
+function endpointFetched(re: RegExp): boolean {
+  return mockGetAll.mock.calls.some((call) => re.test(String(call[0])));
+}
+
+/**
  * Run syncTasks for the pre-seeded local course (id=1) against given assignments.
  */
 async function syncTasksForCourse(assignments: Record<string, unknown>[]): Promise<void> {
@@ -904,5 +927,96 @@ describe('H: autoAssignDueDate fork (syncTasks / SyncTaskOperations path)', () =
     // The user's due date is preserved; the fork must NOT clobber it with today.
     expect(task!.due_at).toBe(userDueDate);
     expect(task!.due_at).not.toBe(expectedTodayEndTime());
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Category F1 — syncFiles / syncAnnouncements settings gate fetching (syncAll path)
+// ---------------------------------------------------------------------------
+//
+// Regression for the bug where syncPreferences.syncFiles / syncAnnouncements were
+// persisted by the Settings UI but never read back — so toggling them off did nothing.
+// SyncEngine.syncAll now folds the persisted setting into the effective options
+// (filling only keys the caller left undefined), gating SyncFetchPhase's per-course
+// /folders, /files, /discussion_topics fetches. Precedence: an explicit per-call
+// option wins over the setting; the setting fills undefined; the default stays true.
+describe('F1: syncFiles / syncAnnouncements settings gate fetching (syncAll path)', () => {
+  const FILES = /\/files$/;
+  const FOLDERS = /\/folders$/;
+  const DISCUSSIONS = /\/discussion_topics/;
+  const ASSIGNMENTS = /\/assignments/;
+
+  it('F1.1: setting syncFiles:false → files+folders NOT fetched, announcements/assignments still fetched', async () => {
+    seedCourse(db, { externalId: String(CANVAS_COURSE_ID) });
+    seedSyncPreferences({ syncFiles: false });
+
+    await syncAllWithCourse([mockCanvasAssignment({ id: 901, name: 'Quiz' })]);
+
+    // Entity-scoped: only files/folders are gated off, not the whole sync.
+    expect(endpointFetched(FILES)).toBe(false);
+    expect(endpointFetched(FOLDERS)).toBe(false);
+    expect(endpointFetched(DISCUSSIONS)).toBe(true);
+    expect(endpointFetched(ASSIGNMENTS)).toBe(true);
+  });
+
+  it('F1.2: setting syncAnnouncements:false → announcements NOT fetched, files still fetched', async () => {
+    seedCourse(db, { externalId: String(CANVAS_COURSE_ID) });
+    seedSyncPreferences({ syncAnnouncements: false });
+
+    await syncAllWithCourse([mockCanvasAssignment({ id: 902, name: 'Quiz' })]);
+
+    expect(endpointFetched(DISCUSSIONS)).toBe(false);
+    expect(endpointFetched(FILES)).toBe(true);
+    expect(endpointFetched(FOLDERS)).toBe(true);
+    expect(endpointFetched(ASSIGNMENTS)).toBe(true);
+  });
+
+  it('F1.3: no pref row → BOTH files and announcements fetched (default-true baseline)', async () => {
+    seedCourse(db, { externalId: String(CANVAS_COURSE_ID) });
+    // No seedSyncPreferences → getSyncPreferences returns its default (?? true).
+
+    await syncAllWithCourse([mockCanvasAssignment({ id: 903, name: 'Quiz' })]);
+
+    expect(endpointFetched(FILES)).toBe(true);
+    expect(endpointFetched(FOLDERS)).toBe(true);
+    expect(endpointFetched(DISCUSSIONS)).toBe(true);
+  });
+
+  it('F1.3b: pref row present but omits the keys → BOTH fetched (per-key ?? true default)', async () => {
+    seedCourse(db, { externalId: String(CANVAS_COURSE_ID) });
+    seedSyncPreferences({ autoAssignDueDate: true });
+
+    await syncAllWithCourse([mockCanvasAssignment({ id: 904, name: 'Quiz' })]);
+
+    expect(endpointFetched(FILES)).toBe(true);
+    expect(endpointFetched(DISCUSSIONS)).toBe(true);
+  });
+
+  it('F1.4: explicit per-call syncCanvasFiles:true OVERRIDES setting syncFiles:false (explicit wins)', async () => {
+    seedCourse(db, { externalId: String(CANVAS_COURSE_ID) });
+    seedSyncPreferences({ syncFiles: false });
+
+    await syncAllWithCourseOpts([mockCanvasAssignment({ id: 905, name: 'Quiz' })], {
+      syncCanvasFiles: true,
+    });
+
+    // The explicit option must win over the off setting (FileSyncConfig force-include).
+    expect(endpointFetched(FILES)).toBe(true);
+    expect(endpointFetched(FOLDERS)).toBe(true);
+  });
+
+  it('F1.5: both OFF → neither fetched, sync still completes (assignment still queued)', async () => {
+    seedCourse(db, { externalId: String(CANVAS_COURSE_ID) });
+    seedSyncPreferences({ syncFiles: false, syncAnnouncements: false });
+
+    await syncAllWithCourse([mockCanvasAssignment({ id: 906, name: 'Quiz' })]);
+
+    expect(endpointFetched(FILES)).toBe(false);
+    expect(endpointFetched(FOLDERS)).toBe(false);
+    expect(endpointFetched(DISCUSSIONS)).toBe(false);
+    // The fetch fold must NOT short-circuit the whole sync.
+    const queue = readQueue(db);
+    expect(queue).toHaveLength(1);
+    expect(queue[0].external_id).toBe('906');
   });
 });
