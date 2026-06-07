@@ -603,7 +603,11 @@ export class SyncEngine extends EventEmitter {
   /**
    * Get sync preferences from user_preferences table
    */
-  private getSyncPreferences(): { autoAssignDueDate: boolean } {
+  private getSyncPreferences(): {
+    autoAssignDueDate: boolean;
+    syncFiles: boolean;
+    syncAnnouncements: boolean;
+  } {
     try {
       const prefs = this.db.executeReadOne<{ value: string }>(
         "SELECT value FROM user_preferences WHERE key = 'syncPreferences'"
@@ -614,6 +618,10 @@ export class SyncEngine extends EventEmitter {
         this.log?.debug(`[getSyncPreferences] Parsed: ${JSON.stringify(parsed)}`);
         return {
           autoAssignDueDate: parsed.autoAssignDueDate ?? false,
+          // Default to true to mirror settingsSchema.ts defaults — a user who never
+          // opened Settings must still sync files/announcements, not silently stop.
+          syncFiles: parsed.syncFiles ?? true,
+          syncAnnouncements: parsed.syncAnnouncements ?? true,
         };
       }
       this.log?.debug('[getSyncPreferences] No prefs found, using defaults');
@@ -621,7 +629,7 @@ export class SyncEngine extends EventEmitter {
       this.log?.debug(`[getSyncPreferences] Error: ${e}`);
       // Use defaults
     }
-    return { autoAssignDueDate: false };
+    return { autoAssignDueDate: false, syncFiles: true, syncAnnouncements: true };
   }
 
   /**
@@ -836,9 +844,22 @@ export class SyncEngine extends EventEmitter {
       >;
     };
 
+    // Fold persisted syncFiles/syncAnnouncements settings into the effective options.
+    // why: precedence is explicit-per-call-option-wins — an explicit option (e.g. a
+    // "force include files" full pull) overrides the setting; the persisted setting only
+    // fills keys the caller left undefined; the SyncFetchPhase default stays true.
+    // This makes BOTH callers (manual IPC trigger + AutoSyncManager) honor the toggles
+    // without touching either caller — the single seam for this behavior.
+    const prefs = this.getSyncPreferences();
+    const effectiveOptions: SyncOptions = {
+      ...options,
+      syncCanvasFiles: options?.syncCanvasFiles ?? prefs.syncFiles,
+      syncAnnouncements: options?.syncAnnouncements ?? prefs.syncAnnouncements,
+    };
+
     try {
       const fetchResult = await this.syncOrchestrator.executeFetchPhase(
-        options || {},
+        effectiveOptions,
         syncId,
         checkpoint
       );
