@@ -190,6 +190,65 @@ describe('AutoSyncManager', () => {
     });
   });
 
+  describe('sync-preferences gate the scheduler (behavior change)', () => {
+    // The disabled-return branch (AutoSyncManager.ts:79-82) and the interval
+    // VALUE driving setInterval (line 138) were previously untested — the
+    // settings only affect behavior here, and "flip the setting → it actually
+    // behaves differently" was the gap.
+    it('does NOT schedule when autoSyncEnabled=false (the disabled-by-flag branch)', async () => {
+      const syncAll = jest.fn().mockResolvedValue(undefined);
+      const { manager, logger } = makeManager({ syncAll, autoSyncEnabled: false });
+
+      manager.start();
+      await jest.advanceTimersByTimeAsync(INTERVAL_MS * 3);
+      await flushMicrotasks();
+
+      expect(syncAll).not.toHaveBeenCalled();
+      expect(logger.info).toHaveBeenCalledWith(
+        'Auto-sync is disabled (manual sync only)'
+      );
+
+      manager.stop();
+    });
+
+    it('does NOT schedule when intervalMinutes=0 (the autoSyncIntervalMs<=0 operand)', async () => {
+      const syncAll = jest.fn().mockResolvedValue(undefined);
+      const { manager, logger } = makeManager({ syncAll, intervalMinutes: 0 });
+
+      manager.start();
+      await jest.advanceTimersByTimeAsync(INTERVAL_MS * 3);
+      await flushMicrotasks();
+
+      expect(syncAll).not.toHaveBeenCalled();
+      expect(logger.info).toHaveBeenCalledWith(
+        'Auto-sync is disabled (manual sync only)'
+      );
+
+      manager.stop();
+    });
+
+    it('uses the configured interval VALUE for setInterval (30 min, not the 15-min default)', async () => {
+      const syncAll = jest.fn().mockResolvedValue(undefined);
+      const { manager, syncAll: sa } = makeManager({ syncAll, intervalMinutes: 30 });
+      const THIRTY_MIN_MS = 30 * 60 * 1000;
+
+      manager.start();
+
+      // At 29 minutes the 30-minute interval has NOT yet fired.
+      await jest.advanceTimersByTimeAsync(29 * 60 * 1000);
+      await flushMicrotasks();
+      expect(sa).not.toHaveBeenCalled();
+
+      // One more minute (to 30) fires it exactly once — proving the interval
+      // value (30, the pref) drove scheduling, not the 15-min default.
+      await jest.advanceTimersByTimeAsync(THIRTY_MIN_MS - 29 * 60 * 1000);
+      await flushMicrotasks();
+      expect(sa).toHaveBeenCalledTimes(1);
+
+      manager.stop();
+    });
+  });
+
   describe('safe mode', () => {
     it('does not start the interval when safe mode is enabled', async () => {
       const syncAll = jest.fn().mockResolvedValue(undefined);
