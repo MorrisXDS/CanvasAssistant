@@ -69,6 +69,17 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
   Windows uninstaller-filename lookup, and makes `.deb` upgrades cleanly supersede the old
   `canvas-integration-dashboard` package.
 
+### Fixed
+
+- `2026-06-07 23:43 UTC` — **New Canvas announcements now appear in the Updates feed and
+  notification badge.** The sync commit phase checked whether an announcement was already stored
+  using `source_type='announcement'`, an impossible value — the `notifications` table CHECK
+  constraint only allows `'canvas'` or `'system'`, and `mapAnnouncement` stores them as `'canvas'`.
+  So the existence check always returned null, the "new announcement" branch was never entered, and
+  `recordSyncUpdate` never fired — new announcements were silently dropped from the Updates feed,
+  unseen-updates dot, and badge count. Fixed both predicates in `SyncCommitPhase` to `'canvas'`;
+  re-syncing the same announcement remains idempotent (no duplicate updates recorded).
+
 ### Added
 
 - `2026-06-06 04:13 UTC` — **Added Linux `.rpm` (Fedora/RHEL/openSUSE) and `pacman`

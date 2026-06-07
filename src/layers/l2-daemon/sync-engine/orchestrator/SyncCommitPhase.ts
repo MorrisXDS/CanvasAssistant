@@ -389,8 +389,10 @@ export function executeCommitPhase(
 
       for (const announcement of announcements) {
         try {
+          // Announcements are stored with source_type='canvas' (see mapAnnouncement in contentMappers.ts);
+          // the notifications CHECK only allows ('canvas','system') — 'announcement' never matches.
           const existingAnn = ctx.db.executeReadOne<{ id: number }>(
-            `SELECT id FROM notifications WHERE source_type = 'announcement' AND source_id = ?`,
+            `SELECT id FROM notifications WHERE source_type = 'canvas' AND source_id = ?`,
             [String(announcement.id)]
           );
 
@@ -409,7 +411,7 @@ export function executeCommitPhase(
 
           if (!existingAnn) {
             const insertedAnn = ctx.db.executeReadOne<{ id: number }>(
-              `SELECT id FROM notifications WHERE source_type = 'announcement' AND source_id = ?`,
+              `SELECT id FROM notifications WHERE source_type = 'canvas' AND source_id = ?`,
               [String(announcement.id)]
             );
             if (insertedAnn) {
