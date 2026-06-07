@@ -108,6 +108,25 @@ async function syncTasksForCourse(assignments: Record<string, unknown>[]): Promi
   await syncEngine.syncTasks(CANVAS_COURSE_ID, 1);
 }
 
+/** Seed user_preferences.syncPreferences so SyncEngine.getSyncPreferences picks it up. */
+function seedSyncPreferences(prefs: Record<string, unknown>): void {
+  db.executeWrite(
+    `INSERT INTO user_preferences (key, value) VALUES ('syncPreferences', ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+    [JSON.stringify(prefs)],
+    'user_preferences'
+  );
+}
+
+/** Today's end-of-day in the exact format SyncEngine.getTodayEndTime() produces. */
+function expectedTodayEndTime(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}T23:59:00`;
+}
+
 // ---------------------------------------------------------------------------
 // Category A — New task routing (syncAll → D4: new task queued)
 // ---------------------------------------------------------------------------
@@ -815,5 +834,75 @@ describe('G: Multi-step flows', () => {
     const aTask = readTasks(db).find((t) => t.course_id === courseAId);
     expect(aTask?.external_id).toBe('901');
     expect(aTask?.source_type).toBe('canvas');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Category H — syncPrefs.autoAssignDueDate fork (SyncTaskOperations:187)
+// ---------------------------------------------------------------------------
+//
+// The fork is in the no-title-match `else` branch of syncTasks: when
+// `courseSettings.autoAssignDueDate && !finalData.due_at`, a Canvas assignment
+// arriving with NO due date gets `due_at` auto-filled to today's end-of-day —
+// UNLESS the user already set the due date (field_sources.due_at==='user' or
+// local_modified_fields includes 'due_at'), in which case it is respected.
+// courseSettings inherits the app default from user_preferences.syncPreferences
+// (per-course auto_assign_due_date is NULL → inherit).
+describe('H: autoAssignDueDate fork (syncTasks / SyncTaskOperations path)', () => {
+  it('H1: setting ON + Canvas assignment with null due_at → due_at auto-filled to today end-of-day', async () => {
+    seedCourse(db, { externalId: String(CANVAS_COURSE_ID) });
+    seedSyncPreferences({ autoAssignDueDate: true });
+
+    await syncTasksForCourse([
+      mockCanvasAssignment({ id: 850, name: 'No Due Date Task', dueAt: null }),
+    ]);
+
+    const task = readTasks(db).find((t) => t.external_id === '850');
+    expect(task).toBeDefined();
+    expect(task!.due_at).toBe(expectedTodayEndTime());
+  });
+
+  it('H2: setting OFF + Canvas assignment with null due_at → due_at stays null (fork not taken)', async () => {
+    seedCourse(db, { externalId: String(CANVAS_COURSE_ID) });
+    seedSyncPreferences({ autoAssignDueDate: false });
+
+    await syncTasksForCourse([
+      mockCanvasAssignment({ id: 851, name: 'No Due Date Task', dueAt: null }),
+    ]);
+
+    const task = readTasks(db).find((t) => t.external_id === '851');
+    expect(task).toBeDefined();
+    // Backwards-wiring guard: with the setting off, the due date is NOT synthesized.
+    expect(task!.due_at).toBeNull();
+  });
+
+  it('H3: setting ON but user already set the due date → user value respected, NOT overwritten with today', async () => {
+    const courseId = seedCourse(db, { externalId: String(CANVAS_COURSE_ID) });
+    seedSyncPreferences({ autoAssignDueDate: true });
+
+    // Existing canvas task linked by external_id, with a user-set due date.
+    // Goes through the `else` (external_id lookup) branch — NOT the user-title
+    // merge — so the autoAssignDueDate guard at :195-203 is reached.
+    const userDueDate = '2099-01-15T23:59:00Z';
+    seedTask(db, {
+      courseId,
+      title: 'User-Dated Task',
+      externalId: '852',
+      sourceType: 'canvas',
+      acceptanceMethod: 'manual',
+      dueAt: userDueDate,
+      fieldSources: { due_at: 'user' },
+    });
+
+    // Canvas resends the same assignment with NO due date.
+    await syncTasksForCourse([
+      mockCanvasAssignment({ id: 852, name: 'User-Dated Task', dueAt: null }),
+    ]);
+
+    const task = readTasks(db).find((t) => t.external_id === '852');
+    expect(task).toBeDefined();
+    // The user's due date is preserved; the fork must NOT clobber it with today.
+    expect(task!.due_at).toBe(userDueDate);
+    expect(task!.due_at).not.toBe(expectedTodayEndTime());
   });
 });

@@ -501,6 +501,53 @@ describe('resourceHandlers (ADR-0007)', () => {
       const ids = (res.missingDependencies ?? []).map((d) => d.sourceId).sort();
       expect(ids).toEqual(['777', 'sub-page']);
     });
+
+    // A2 — promptForMissing skip fork (resourceHandlers.ts:412).
+    // The test above (`HTML with recorded deps`) already pins the `else` branch
+    // (promptForMissing:true → recursive dep-walk → hasMissingDependencies). This
+    // pins the `!promptForMissing` skip branch: the SAME missing-dependency seed,
+    // but with promptForMissing:false, must skip the dep check and open the file
+    // directly (no hasMissingDependencies in the result).
+    test('promptForMissing:false → dep check skipped, HTML opened directly (no hasMissingDependencies)', async () => {
+      const p = writeTmpHtml('skip.html', '<html><body>main</body></html>');
+      seedResource({ id: 30, externalId: 'html-page-skip', localPath: p });
+
+      // Seed a recorded missing file dependency — identical shape to the dep-walk
+      // test — so the ONLY difference driving the result is promptForMissing.
+      db.executeWrite(
+        `INSERT INTO html_dependencies (parent_source_type, parent_source_id, child_source_type, child_source_id)
+         VALUES ('page', 'skip', 'file', '888')`,
+        [],
+        'html_dependencies'
+      );
+      seedResource({
+        id: 31,
+        externalId: '888',
+        localPath: null,
+        sizeBytes: 1234,
+        url: 'https://x/888',
+      });
+
+      // saveHtmlContent:true + htmlEnabled:true → useStoredHtml false → reaches
+      // the promptForMissing fork. Flip the skip branch on.
+      saveHtmlContent = true;
+      htmlEnabled = true;
+      promptForMissing = false;
+      register();
+
+      const res = (await invoke('resource:open', 30)) as {
+        success: boolean;
+        hasMissingDependencies?: boolean;
+        openedInCanvas?: boolean;
+      };
+      expect(res.success).toBe(true);
+      // Backwards-wiring guard: the dep-walk did NOT run despite a missing dep.
+      expect(res.hasMissingDependencies).toBeUndefined();
+      expect(res.openedInCanvas).toBeFalsy();
+      // The local file is opened directly.
+      expect(mockShell.openPath).toHaveBeenCalledWith(p);
+      expect(mockShell.openExternal).not.toHaveBeenCalled();
+    });
   });
 });
 

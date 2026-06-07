@@ -895,14 +895,17 @@ describe('HtmlContentSync', () => {
       expect(mockDownloadManager.queueDownloads).not.toHaveBeenCalled();
     });
 
-    it('should apply URL rewriting when configured', async () => {
-      const syncWithRewriting = new HtmlContentSync({
-        db: mockDb as any,
-        downloadManager: mockDownloadManager as any,
-        config: { ...defaultConfig, urlRewriting: 'local' },
-        baseUrl: 'https://canvas.example.com',
-      });
+    // A4 — syncPrefs.htmlUrlRewriting fork (HtmlContentSync.ts:556).
+    // `urlRewriting: 'local'` rewrites Canvas file URLs to local paths before
+    // saving; `'original'` saves the HTML verbatim. The body references
+    // `/courses/1/files/100/preview` so the assertion has a concrete URL to
+    // check for presence/absence. Both assertions are UNCONDITIONAL — capturing
+    // the written content and failing if nothing was written — closing the
+    // `if (writtenContent)` no-op hole the prior version had.
+    const URL_REWRITE_BODY = '<p><img src="/courses/1/files/100/preview"></p>';
+    const ORIGINAL_FILE_URL = '/courses/1/files/100/preview';
 
+    function mockDbForRewrite(): void {
       mockDb.executeReadOne.mockImplementation((query: string) => {
         if (query.includes('FROM resources')) {
           return { course_id: 1, title: 'Test', folder_path: 'Pages' };
@@ -911,21 +914,49 @@ describe('HtmlContentSync', () => {
           return { code: 'CS101' };
         }
         if (query.includes('FROM course_pages')) {
-          return {
-            body_html: '<p><img src="/courses/1/files/100/preview"></p>',
-            title: 'Test',
-          };
+          return { body_html: URL_REWRITE_BODY, title: 'Test' };
         }
         return null;
       });
+    }
 
-      await syncWithRewriting.downloadHtmlItem('html-page-123', '/base');
+    /** The HTML actually persisted to disk (2nd arg of the first writeFileSync). */
+    function writtenHtml(): string {
+      const calls = (fs.writeFileSync as jest.Mock).mock.calls;
+      expect(calls.length).toBeGreaterThan(0); // a file MUST have been written
+      return calls[0][1] as string;
+    }
 
-      const writtenContent = (fs.writeFileSync as jest.Mock).mock.calls[0]?.[1];
-      if (writtenContent) {
-        // URL should be rewritten (no longer contain original Canvas URL)
-        expect(writtenContent).not.toContain('/courses/1/files/100/preview');
-      }
+    it("urlRewriting:'local' → original Canvas file URL is rewritten away", async () => {
+      const syncWithRewriting = new HtmlContentSync({
+        db: mockDb as any,
+        downloadManager: mockDownloadManager as any,
+        config: { ...defaultConfig, urlRewriting: 'local' },
+        baseUrl: 'https://canvas.example.com',
+      });
+      mockDbForRewrite();
+
+      const result = await syncWithRewriting.downloadHtmlItem('html-page-123', '/base');
+      expect(result.success).toBe(true);
+
+      // Unconditional: the persisted HTML no longer carries the original URL.
+      expect(writtenHtml()).not.toContain(ORIGINAL_FILE_URL);
+    });
+
+    it("urlRewriting:'original' → HTML saved verbatim, original Canvas file URL preserved (negative)", async () => {
+      const syncOriginal = new HtmlContentSync({
+        db: mockDb as any,
+        downloadManager: mockDownloadManager as any,
+        config: { ...defaultConfig, urlRewriting: 'original' },
+        baseUrl: 'https://canvas.example.com',
+      });
+      mockDbForRewrite();
+
+      const result = await syncOriginal.downloadHtmlItem('html-page-123', '/base');
+      expect(result.success).toBe(true);
+
+      // Backwards-wiring guard: with rewriting OFF, the original URL survives.
+      expect(writtenHtml()).toContain(ORIGINAL_FILE_URL);
     });
   });
 
