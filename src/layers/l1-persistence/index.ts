@@ -108,6 +108,7 @@ export { CourseExportReader } from './readers/CourseExportReader';
 export type { CourseExportRow, CourseExportBundle } from './readers/CourseExportReader';
 export { SyncMetadataReader } from './readers/SyncMetadataReader';
 export { SyncUpdateReader } from './readers/SyncUpdateReader';
+export { NotifiedReminderReader } from './readers/NotifiedReminderReader';
 export type {
   SyncUpdateCounts,
   SyncUpdateStatus,

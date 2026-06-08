@@ -29,6 +29,7 @@ import {
   AnnouncementAttachmentReader,
   FileEntityProvider,
   runPostImportRepairs,
+  NotifiedReminderReader,
 } from '../layers/l1-persistence';
 
 // L2 - Daemon
@@ -45,6 +46,7 @@ import { UpdateChecker } from '../layers/l2-daemon/update/UpdateChecker';
 import { CommandDispatcher } from '../layers/l4-controller';
 import { SetUserPreferenceCommand } from '../layers/l4-controller/commands/settings/SetUserPreferenceCommand';
 import { UserPreferencesReader } from '../layers/l1-persistence';
+import { RecordNotifiedReminderCommand } from '../layers/l4-controller/commands/notifiedReminder/RecordNotifiedReminderCommand';
 
 // Crash Protection
 import type { CrashProtectionManager } from './CrashProtectionManager';
@@ -591,6 +593,8 @@ export class AppLifecycle {
 
     // Due-date reminder scheduler (ADR-0016) — emits through the single show
     // seam in CanvasClientManager so the per-kind gate + suppression apply.
+    // notifiedReminderReader + recordNotifiedReminderCommand persist dedup across
+    // restarts (ADR-0016 follow-up, migration 114).
     this.dueDateReminderManager = new DueDateReminderManager({
       database: this.database,
       logger: this.logger.child('DueDateReminderManager'),
@@ -598,6 +602,8 @@ export class AppLifecycle {
       showNotification: (title, body) =>
         this.canvasClientManager?.showDesktopNotification(title, body, 'dueDate') ??
         false,
+      notifiedReminderReader: new NotifiedReminderReader(this.database),
+      recordNotifiedReminderCommand: new RecordNotifiedReminderCommand(this.database),
     });
 
     this.backupManager = new BackupManager({

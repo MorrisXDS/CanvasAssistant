@@ -102,6 +102,9 @@ export async function resetAppState(
     database.executeWrite('DELETE FROM sync_metadata', [], 'sync_metadata');
     database.executeWrite('DELETE FROM endpoint_backoff', [], 'endpoint_backoff');
     database.executeWrite('DELETE FROM sync_preferences', [], 'sync_preferences');
+    // notified_reminders: migration-defined (always exists post-migration 114),
+    // so no sqlite_master existence guard needed (unlike pending_sync_conflicts).
+    database.executeWrite('DELETE FROM notified_reminders', [], 'notified_reminders');
     // pending_sync_conflicts is created at runtime by SyncConflictResolver, not via migrations
     const hasConflictsTable = database.executeRead<{ name: string }>(
       "SELECT name FROM sqlite_master WHERE type='table' AND name='pending_sync_conflicts'"

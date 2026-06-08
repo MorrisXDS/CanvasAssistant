@@ -1245,4 +1245,31 @@ export const migrationsV81toV102: Migration[] = [
     // No-op: the row was dead write-only data with no reader; nothing to restore.
     down: '-- irreversible: canvasTimezone was dead data; no restore.',
   },
+
+  // Migration 114: Persist due-date reminder dedup across app restarts (ADR-0016 follow-up).
+  //
+  // ADR-0016 anticipated this table in its consequences section: "A future
+  // `notified_reminders` table could persist dedup across restarts — out of scope for v1."
+  // This migration implements that follow-up.
+  //
+  // Design notes:
+  //   - dedup_key is `${taskId}|${due_at}` — the same key the in-memory Set uses.
+  //   - NO FOREIGN KEY to `tasks(id)`: dedup must survive task churn (delete/re-sync).
+  //     A task row that disappears and reappears with a new due_at gets a new key anyway.
+  //   - due_at index supports the prune's `WHERE due_at < ?` scan.
+  //   - IF NOT EXISTS is belt-and-suspenders idempotency, matching surrounding patterns.
+  {
+    version: 114,
+    description: 'Add notified_reminders table for durable due-date reminder dedup',
+    up: `
+      CREATE TABLE IF NOT EXISTS notified_reminders (
+        dedup_key   TEXT PRIMARY KEY,
+        task_id     INTEGER NOT NULL,
+        due_at      TEXT NOT NULL,
+        notified_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_notified_reminders_due_at ON notified_reminders(due_at);
+    `,
+    down: 'DROP TABLE IF EXISTS notified_reminders;',
+  },
 ];
