@@ -111,7 +111,8 @@ export class PastTermGradesReader {
 
     const terms: PastTermGroup[] = groups.map((group) => ({
       // Archived courses always have a real term in practice; fall back to a
-      // readable label for the rare null-term bucket.
+      // readable label for the rare null-term bucket. Keep this string in sync
+      // with ArchivedCoursesSection.tsx's no-term bucket (canonical here).
       termName: group.termName ?? 'Unknown term',
       termEndAt: group.termEndAt,
       courses: group.courses.map((c) => ({
