@@ -468,45 +468,29 @@ describe('SyncEngine', () => {
       expect(result.totalDuration).toBeGreaterThan(0);
     });
 
-    // TODO: This test is flaky due to async timing issues
-    // The sync engine sets isSyncing=true but completes so fast that
-    // the second sync call doesn't see it as in progress.
-    // This behavior is verified by the isBusy() status test instead.
-    it.skip('should prevent concurrent syncs', async () => {
-      // Insert a course so sync actually has something to do
-      db.executeWrite(
-        `INSERT INTO courses (external_id, code, name, target_grade) VALUES (?, ?, ?, ?)`,
-        ['canvas-999', 'TEST', 'Test Course', 85],
-        'courses'
-      );
+    // The concurrency guard is deterministic, so no fake timers / API blocker
+    // are needed: syncAll() flips `isSyncing = true` SYNCHRONOUSLY (before its
+    // first `await` on the sync mutex — see SyncEngine.ts). A second syncAll()
+    // invoked in the SAME synchronous tick — before the first call's
+    // continuation can run — therefore observes the latched flag and rejects.
+    //
+    // (The original test used `await setTimeout(50)` to "let the sync start",
+    // which yielded the event loop and let an unblocked first sync run to
+    // completion and clear the flag before the second call — hence the flake.
+    // Calling the second sync in the same tick removes the race entirely.)
+    it('should prevent concurrent syncs', async () => {
+      mockGetAll.mockResolvedValue([]);
 
-      // Create a deferred promise to control when the API returns
-      let resolveApiCall!: () => void;
-      const apiBlocker = new Promise<void>((resolve) => {
-        resolveApiCall = resolve;
-      });
-
-      // Make the API call wait on our blocker
-      mockGetAll.mockImplementation(async (endpoint: string) => {
-        if (endpoint.includes('/courses')) {
-          await apiBlocker;
-          return [];
-        }
-        return [];
-      });
-
-      // Start first sync (will block on API call)
+      // First call runs synchronously up to its first await, latching isSyncing.
       const firstSync = syncEngine.syncAll();
 
-      // Give the sync a moment to start
-      await new Promise((r) => setTimeout(r, 50));
-
-      // Try to start second sync - should reject
+      // Second call in the same tick → the guard throws before any await yields.
       await expect(syncEngine.syncAll()).rejects.toThrow('Sync already in progress');
 
-      // Now let the first sync complete
-      resolveApiCall();
+      // First sync still completes cleanly and clears the flag (no state leak
+      // into following tests).
       await firstSync;
+      expect(syncEngine.isBusy()).toBe(false);
     });
 
     it('should emit sync events', async () => {
