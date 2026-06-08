@@ -12,6 +12,8 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ### Fixed
 
+- `2026-06-08 09:41 UTC` — **Downloading an announcement attachment no longer re-downloads a file you already have.** If the same Canvas file was already saved as a course resource, downloading it as an announcement attachment now reuses the existing on-disk copy instead of fetching a second one — mirroring the dedup the course-content download path already did. (Falls back to a normal download if the existing copy is missing.)
+
 - `2026-06-08 09:02 UTC` — **Due-date reminders no longer re-notify after an app restart.** The "due soon" dedup is now persisted to a `notified_reminders` table, so reopening the app while a task is still inside its 24h reminder window won't re-fire a reminder you already saw (previously the dedup lived only in memory and reset on every launch). A due-date change still re-arms the reminder, and stale entries are pruned automatically.
 
 - `2026-06-08 08:22 UTC` — **Archived courses with no recognizable term now show one consistent label.** A graduated/archived course whose term can't be resolved is now labelled "Unknown term" everywhere — the Courses page archived drawer previously called the same bucket "Other" while the dashboard grade breakdown called it "Unknown term".

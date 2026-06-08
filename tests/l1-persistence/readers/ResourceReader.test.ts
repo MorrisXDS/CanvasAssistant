@@ -128,4 +128,38 @@ describe('ResourceReader', () => {
       expect(reader.getLocalPathByExternalId('nope')).toBeNull();
     });
   });
+
+  describe('getDownloadedFileByExternalId', () => {
+    // (u1) Hit: type='file' resource with matching external_id → returns the row.
+    test('(u1) returns the row for a type=file resource with matching external_id', () => {
+      // The beforeEach seeds resource id=10, external_id='file-555', type='file',
+      // local_path='/disk/lecture.pdf'
+      expect(reader.getDownloadedFileByExternalId('file-555')).toEqual({
+        id: 10,
+        local_path: '/disk/lecture.pdf',
+        type: 'file',
+      });
+    });
+
+    // (u2) Miss: unknown external_id → returns null.
+    test('(u2) returns null when no resource has that external_id', () => {
+      expect(reader.getDownloadedFileByExternalId('nonexistent')).toBeNull();
+    });
+
+    // (u3) Type filter: a type='page' resource with the same external_id →
+    //      the type='file' predicate in the SQL must exclude it.
+    test('(u3) returns null for a type=page resource with the same external_id', () => {
+      // Seed a page resource that shares external_id with no existing row
+      // (external_id is UNIQUE, so we use a fresh id)
+      db.executeWrite(
+        `INSERT INTO resources
+           (id, external_id, course_id, type, title, url, local_path, folder_path)
+         VALUES
+           (20, 'page-ext-1', 1, 'page', 'week1.html', null, '/disk/week1.html', 'Week 1')`,
+        [],
+        'resources'
+      );
+      expect(reader.getDownloadedFileByExternalId('page-ext-1')).toBeNull();
+    });
+  });
 });
