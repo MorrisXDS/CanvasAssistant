@@ -408,31 +408,32 @@ describe('CoursesPage — section navigation (Phase 3)', () => {
     // Panel closed → active === 'courses' → gridNavActive true. No card focused yet.
     expect(focusedGridIndex(ids)).toBe(-1);
 
-    // D (next card, grid view) → moveFocus(1). From focusedIndex -1, `current`
-    // clamps to 0 and `next = current + 1 = 1`, so the first D lands index 1.
+    // D (next card, grid view) → moveFocus(1). From focusedIndex -1 (unset),
+    // the fixed first-press semantics select index 0 directly (forward → first item).
+    await press('d');
+    await act(async () => {});
+    expect(focusedGridIndex(ids)).toBe(0);
+
+    // Another D → moveFocus(1): current 0 → next 1.
     await press('d');
     await act(async () => {});
     expect(focusedGridIndex(ids)).toBe(1);
 
-    // Another D → moveFocus(1): current 1 → next 2.
-    await press('d');
-    await act(async () => {});
-    expect(focusedGridIndex(ids)).toBe(2);
-
-    // A (prev card) → moveFocus(-1): current 2 → next 1.
+    // A (prev card) → moveFocus(-1): current 1 → next 0.
     await press('a');
     await act(async () => {});
-    expect(focusedGridIndex(ids)).toBe(1);
+    expect(focusedGridIndex(ids)).toBe(0);
   });
 
   it('grid-nav hotkeys (A/D/W/S) are SUPPRESSED when active === filter (gridNavActive false)', async () => {
     const { courses } = await renderCourses(env, 3);
     const ids = courses.map((c) => c.id);
 
-    // Establish a known grid focus while in `courses` (first D → index 1).
+    // Establish a known grid focus while in `courses`. With the fix, the first D
+    // from unset focus (focusedIndex -1) selects index 0 (forward → first item).
     await press('d');
     await act(async () => {});
-    expect(focusedGridIndex(ids)).toBe(1);
+    expect(focusedGridIndex(ids)).toBe(0);
 
     // Open the filter panel → active === 'filter' → gridNavActive false.
     await openFilterPanel();
@@ -440,18 +441,18 @@ describe('CoursesPage — section navigation (Phase 3)', () => {
 
     // D in grid view must NOT move grid focus now (the filter scope owns D as
     // walkFilterOption, and gridNavActive is false so the grid bindings are off).
-    // Grid focus index is unchanged from before (still 1).
+    // Grid focus index is unchanged from before (still 0).
     await press('d');
     await act(async () => {});
-    expect(focusedGridIndex(ids)).toBe(1); // grid nav suppressed
+    expect(focusedGridIndex(ids)).toBe(0); // grid nav suppressed
 
     // Jump back to courses → gridNavActive true again → D moves the grid
-    // (moveFocus(1): current 1 → next 2).
+    // (moveFocus(1): current 0 → next 1).
     await press('1', { altKey: true });
     await act(async () => {});
     await press('d');
     await act(async () => {});
-    expect(focusedGridIndex(ids)).toBe(2);
+    expect(focusedGridIndex(ids)).toBe(1);
   });
 
   // -------------------------------------------------------------------------
@@ -495,6 +496,104 @@ describe('CoursesPage — section navigation (Phase 3)', () => {
     // active stays `filter` throughout — E did not cycle the section scope
     // (cycle is disabled), it only walked the filter section.
     expect(activeChipLabel()).toBe('Filter');
+  });
+
+  // -------------------------------------------------------------------------
+  // moveFocus first-press from unset focus — regression block (§7 bug fix)
+  // Decision table: focusedIndex < 0 + forward → index 0; backward → last index.
+  // Already-focused step + clamp both ends → no wrap. (ADR ref: architect plan.)
+  // -------------------------------------------------------------------------
+
+  describe('moveFocus first-press from unset focus', () => {
+    it('(a) unset focus + forward (D) → selects index 0', async () => {
+      const { courses } = await renderCourses(env, 3);
+      const ids = courses.map((c) => c.id);
+
+      // Start with no grid focus.
+      expect(focusedGridIndex(ids)).toBe(-1);
+
+      // First forward press from unset → first item (index 0).
+      await press('d');
+      await act(async () => {});
+      expect(focusedGridIndex(ids)).toBe(0);
+    });
+
+    it('(b) unset focus + backward (A) → selects last index (length - 1)', async () => {
+      // 3 courses seeded → last index = 2.
+      const { courses } = await renderCourses(env, 3);
+      const ids = courses.map((c) => c.id);
+
+      expect(focusedGridIndex(ids)).toBe(-1);
+
+      // First backward press from unset → last item.
+      await press('a');
+      await act(async () => {});
+      expect(focusedGridIndex(ids)).toBe(2);
+    });
+
+    it('(c) already-focused step + clamp at both ends — no wrap', async () => {
+      const { courses } = await renderCourses(env, 3);
+      const ids = courses.map((c) => c.id);
+
+      // Seed focus at index 0 via first forward press.
+      await press('d');
+      await act(async () => {});
+      expect(focusedGridIndex(ids)).toBe(0);
+
+      // Step forward to last index (0 → 1 → 2).
+      await press('d');
+      await act(async () => {});
+      expect(focusedGridIndex(ids)).toBe(1);
+      await press('d');
+      await act(async () => {});
+      expect(focusedGridIndex(ids)).toBe(2);
+
+      // One more D at last index — must clamp, no wrap.
+      await press('d');
+      await act(async () => {});
+      expect(focusedGridIndex(ids)).toBe(2);
+
+      // Step backward to index 0 (2 → 1 → 0).
+      await press('a');
+      await act(async () => {});
+      expect(focusedGridIndex(ids)).toBe(1);
+      await press('a');
+      await act(async () => {});
+      expect(focusedGridIndex(ids)).toBe(0);
+
+      // One more A at index 0 — must clamp, no wrap.
+      await press('a');
+      await act(async () => {});
+      expect(focusedGridIndex(ids)).toBe(0);
+    });
+
+    it('(d) unset focus + vertical forward (S) → index 0', async () => {
+      // ResizeObserver stub keeps columnCount at 1, so the vertical delta = +1
+      // (grid mode: moveFocus(columnCount) = moveFocus(1)). S goes through the
+      // same moveFocus first-press path as D.
+      const { courses } = await renderCourses(env, 3);
+      const ids = courses.map((c) => c.id);
+
+      expect(focusedGridIndex(ids)).toBe(-1);
+
+      // S from unset → first item (index 0).
+      await press('s');
+      await act(async () => {});
+      expect(focusedGridIndex(ids)).toBe(0);
+    });
+
+    it('(d-backward) unset focus + vertical backward (W) → selects last index', async () => {
+      // Separate render so focusedIndex starts at -1 (unset).
+      const { courses } = await renderCourses(env, 3);
+      const ids = courses.map((c) => c.id);
+
+      expect(focusedGridIndex(ids)).toBe(-1);
+
+      // W = prev row (delta -columnCount = -1 in 1-col jsdom) from unset → last index (2).
+      await press('w');
+      await act(async () => {});
+      expect(focusedGridIndex(ids)).toBe(2);
+    });
   });
 
   // -------------------------------------------------------------------------
