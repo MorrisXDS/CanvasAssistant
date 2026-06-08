@@ -18,6 +18,12 @@
  *      entity_type='announcement' and change_type='new' is recorded.
  *   3. Post-fix re-sync idempotency: a second commit of the same announcement
  *      records 0 additional sync_updates rows.
+ *
+ * Plus edited-announcement surfacing (announcements edited on Canvas re-appear
+ * in the Updates feed as change_type='updated'):
+ *   4. Title-changed re-sync records 1 additional change_type='updated' row.
+ *   5. Message-changed re-sync also records 'updated' (the OR's second arm).
+ *   6. Byte-identical re-sync records NO 'updated' row (spam guard).
  */
 
 import { EventEmitter } from 'events';
@@ -132,13 +138,17 @@ const minimalCanvasCourse: CanvasCourse = {
 };
 
 /** A minimal CanvasAnnouncement that mapAnnouncement can process. */
-function makeAnnouncement(id: number): CanvasAnnouncement {
+function makeAnnouncement(
+  id: number,
+  overrides: Partial<Pick<CanvasAnnouncement, 'title' | 'message'>> = {}
+): CanvasAnnouncement {
   return {
     id,
     title: `Announcement ${id}`,
     message: '<p>Test announcement content</p>',
     posted_at: '2024-06-01T10:00:00Z',
     context_code: `course_${CANVAS_COURSE_ID}`,
+    ...overrides,
   };
 }
 
@@ -282,5 +292,86 @@ describe('SyncCommitPhase — announcement source_type bug (regression guard)', 
     );
     // Still 1 — no duplicate recorded on re-sync.
     expect(afterSecond).toHaveLength(1);
+  });
+
+  // ---------------------------------------------------------------------------
+  // 4. Post-fix: an edited announcement (title changed) re-surfaces as 'updated'
+  // ---------------------------------------------------------------------------
+
+  test('4. edited announcement (title changed) records 1 additional change_type="updated"', () => {
+    const ctx = makeCtx(db);
+
+    // First commit: new announcement → change_type='new'.
+    executeCommitPhase(ctx, makeFetched([makeAnnouncement(303)]), SYNC_ID);
+
+    // Second commit: SAME id, edited title → existingAnn matches, title differs
+    // from the stored value → the else-if branch fires change_type='updated'.
+    const syncId2 = 'test-sync-session-002';
+    executeCommitPhase(
+      ctx,
+      makeFetched([makeAnnouncement(303, { title: 'Announcement 303 (EDITED)' })]),
+      syncId2
+    );
+
+    const updates = db.executeRead<{ change_type: string; external_id: string | null }>(
+      `SELECT change_type, external_id FROM sync_updates
+       WHERE entity_type = 'announcement' ORDER BY id ASC`
+    );
+    expect(updates).toHaveLength(2);
+    expect(updates[0].change_type).toBe('new');
+    expect(updates[1].change_type).toBe('updated');
+    expect(updates[1].external_id).toBe('303');
+
+    // The edit is counted in the second session's announcement total.
+    const session2 = db.executeReadOne<{ total_new_announcements: number }>(
+      `SELECT total_new_announcements FROM sync_sessions WHERE id = ?`,
+      [syncId2]
+    );
+    expect(session2!.total_new_announcements).toBe(1);
+  });
+
+  // ---------------------------------------------------------------------------
+  // 5. Post-fix: a message-only edit also re-surfaces (covers the OR's 2nd arm)
+  // ---------------------------------------------------------------------------
+
+  test('5. edited announcement (message changed) records change_type="updated"', () => {
+    const ctx = makeCtx(db);
+
+    executeCommitPhase(ctx, makeFetched([makeAnnouncement(404)]), SYNC_ID);
+    executeCommitPhase(
+      ctx,
+      makeFetched([makeAnnouncement(404, { message: '<p>Different body text</p>' })]),
+      'test-sync-session-002'
+    );
+
+    const updates = db.executeRead<{ change_type: string }>(
+      `SELECT change_type FROM sync_updates
+       WHERE entity_type = 'announcement' ORDER BY id ASC`
+    );
+    expect(updates.map((u) => u.change_type)).toEqual(['new', 'updated']);
+  });
+
+  // ---------------------------------------------------------------------------
+  // 6. Post-fix: re-sync with byte-identical content records NO 'updated' row
+  //    (spam guard — the else-if comparison must be false for unchanged content)
+  // ---------------------------------------------------------------------------
+
+  test('6. unchanged re-sync records no "updated" row (spam guard)', () => {
+    const ctx = makeCtx(db);
+
+    executeCommitPhase(ctx, makeFetched([makeAnnouncement(505)]), SYNC_ID);
+    // Identical announcement, second session — title and message both unchanged.
+    executeCommitPhase(
+      ctx,
+      makeFetched([makeAnnouncement(505)]),
+      'test-sync-session-002'
+    );
+
+    const updates = db.executeRead<{ change_type: string }>(
+      `SELECT change_type FROM sync_updates WHERE entity_type = 'announcement'`
+    );
+    // Only the original 'new' — no 'updated' for an unchanged re-sync.
+    expect(updates).toHaveLength(1);
+    expect(updates[0].change_type).toBe('new');
   });
 });

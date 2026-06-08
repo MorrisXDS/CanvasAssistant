@@ -12,6 +12,8 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ### Fixed
 
+- `2026-06-08 10:23 UTC` — **Announcements edited on Canvas now re-appear in the Updates feed.** Previously only brand-new announcements surfaced; if an instructor edited an existing announcement's title or body, the change synced silently. An edit now records an "updated" entry in the feed (and counts toward the badge total). The comparison is on visible text, so re-syncing unchanged content never re-nags.
+
 - `2026-06-08 09:41 UTC` — **Downloading an announcement attachment no longer re-downloads a file you already have.** If the same Canvas file was already saved as a course resource, downloading it as an announcement attachment now reuses the existing on-disk copy instead of fetching a second one — mirroring the dedup the course-content download path already did. (Falls back to a normal download if the existing copy is missing.)
 
 - `2026-06-08 09:02 UTC` — **Due-date reminders no longer re-notify after an app restart.** The "due soon" dedup is now persisted to a `notified_reminders` table, so reopening the app while a task is still inside its 24h reminder window won't re-fire a reminder you already saw (previously the dedup lived only in memory and reset on every launch). A due-date change still re-arms the reminder, and stale entries are pruned automatically.
