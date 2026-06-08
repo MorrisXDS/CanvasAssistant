@@ -277,6 +277,27 @@ export class ResourceReader {
   }
 
   /**
+   * Returns the minimal fields needed to reuse an already-downloaded Canvas
+   * file resource in the `attachment:download` dedup guard.
+   *
+   * Constrained to `type = 'file'` so that a coincidental `external_id` match
+   * on a `'page'` resource is never returned. `external_id` is `TEXT UNIQUE`
+   * (ADR-0008), so at most one row is returned. Point lookup — bypasses
+   * visibility filtering per ADR-0007 sub-decision α (user is acting on a
+   * specific file, not listing).
+   */
+  getDownloadedFileByExternalId(
+    externalId: string
+  ): { id: number; local_path: string | null; type: string } | null {
+    return (
+      this.db.executeReadOne<{ id: number; local_path: string | null; type: string }>(
+        `SELECT id, local_path, type FROM resources WHERE external_id = ? AND type = 'file'`,
+        [externalId]
+      ) ?? null
+    );
+  }
+
+  /**
    * A folder resource (`type = 'folder'`) by course + folder_path, or null.
    * Used by `sync:folderByPath` to resolve a folder's Canvas id.
    */

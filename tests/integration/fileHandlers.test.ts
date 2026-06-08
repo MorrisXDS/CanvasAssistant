@@ -241,6 +241,29 @@ describe('fileHandlers (ADR-0007)', () => {
 
   // --- attachment:download --------------------------------------------------
 
+  /** Seed a resource with an explicit type (for type-filter tests). */
+  function seedResourceOfType(opts: {
+    id: number;
+    externalId: string;
+    type: string;
+    localPath?: string | null;
+    url?: string | null;
+  }): void {
+    db.executeWrite(
+      `INSERT INTO resources (id, external_id, course_id, type, title, url, local_path, folder_path)
+       VALUES (?, ?, 1, ?, ?, ?, ?, 'Wk1')`,
+      [
+        opts.id,
+        opts.externalId,
+        opts.type,
+        `title-${opts.id}`,
+        opts.url ?? null,
+        opts.localPath ?? null,
+      ],
+      'resources'
+    );
+  }
+
   describe('attachment:download', () => {
     test('attachment not found', async () => {
       expect(await invoke('attachment:download', 999)).toEqual({
@@ -290,6 +313,148 @@ describe('fileHandlers (ADR-0007)', () => {
       const res = (await invoke('attachment:download', 10)) as { success: boolean };
       expect(res.success).toBe(false);
       expect(attachmentStatus(10)).toBe('failed');
+    });
+
+    // --- dedup-reuse guard (cases a–e) ---
+
+    // (a) Reuse: matching type='file' resource with a real on-disk file →
+    //     markDownloaded, return success, queueDownload NOT called.
+    test('(a) reuse: existing downloaded resource → skips network fetch', async () => {
+      const realPath = writeFile('real.pdf');
+      seedAttachment({ id: 10 });
+      // externalId must match attachment's external_id = 'att-10'
+      seedResource({ id: 50, externalId: 'att-10', localPath: realPath });
+
+      let queueCalled = false;
+      downloadManager.queueDownload = () => {
+        queueCalled = true;
+      };
+      register();
+
+      const res = (await invoke('attachment:download', 10)) as {
+        success: boolean;
+        localPath?: string;
+      };
+
+      expect(res).toEqual({ success: true, localPath: realPath });
+      expect(attachmentStatus(10)).toBe('completed');
+      // attachment's local_path must point at the resource file
+      const row = db.executeReadOne<{ local_path: string | null }>(
+        'SELECT local_path FROM notification_attachments WHERE id = 10',
+        []
+      );
+      expect(row?.local_path).toBe(realPath);
+      expect(queueCalled).toBe(false);
+    });
+
+    // (b) No match → normal download: regression guard ensuring existing
+    //     behavior is preserved when no resource shares the external_id.
+    test('(b) no match → queueDownload IS called (regression guard)', async () => {
+      seedAttachment({ id: 10 });
+      // resource has a DIFFERENT externalId → no match
+      seedResource({
+        id: 51,
+        externalId: 'other-ext',
+        localPath: writeFile('other.pdf'),
+      });
+
+      let queueCalled = false;
+      downloadManager.queueDownload = (job) => {
+        queueCalled = true;
+        setImmediate(() =>
+          downloadManager.emit('download-complete', {
+            id: job.id,
+            success: true,
+            localPath: '/d/att.pdf',
+          })
+        );
+      };
+      register();
+
+      const res = (await invoke('attachment:download', 10)) as { success: boolean };
+      expect(res.success).toBe(true);
+      expect(queueCalled).toBe(true);
+    });
+
+    // (c) Stale file → falls through: resource row exists but local_path
+    //     does NOT exist on disk → existsSync returns false → queueDownload called.
+    test('(c) stale file → falls through to normal download', async () => {
+      seedAttachment({ id: 10 });
+      const stalePath = nodePath.join(tmpDir, 'gone-file.pdf'); // never written to disk
+      seedResource({ id: 52, externalId: 'att-10', localPath: stalePath });
+
+      let queueCalled = false;
+      downloadManager.queueDownload = (job) => {
+        queueCalled = true;
+        setImmediate(() =>
+          downloadManager.emit('download-complete', {
+            id: job.id,
+            success: true,
+            localPath: '/d/att.pdf',
+          })
+        );
+      };
+      register();
+
+      await invoke('attachment:download', 10);
+      expect(queueCalled).toBe(true);
+    });
+
+    // (d) URL-shaped local_path → falls through: resource local_path is an
+    //     https:// URL → guard rejects it → queueDownload called.
+    test('(d) URL-shaped local_path → falls through to normal download', async () => {
+      seedAttachment({ id: 10 });
+      seedResource({
+        id: 53,
+        externalId: 'att-10',
+        localPath: 'https://canvas.example.com/files/123/download',
+      });
+
+      let queueCalled = false;
+      downloadManager.queueDownload = (job) => {
+        queueCalled = true;
+        setImmediate(() =>
+          downloadManager.emit('download-complete', {
+            id: job.id,
+            success: true,
+            localPath: '/d/att.pdf',
+          })
+        );
+      };
+      register();
+
+      await invoke('attachment:download', 10);
+      expect(queueCalled).toBe(true);
+    });
+
+    // (e) Page resource ignored: type='page' resource shares the external_id
+    //     but the guard's type='file' predicate in the reader excludes it.
+    test('(e) page resource with same external_id → not reused, queueDownload called', async () => {
+      seedAttachment({ id: 10 });
+      const realPath = writeFile('page.html');
+      // type='page', same externalId as the attachment → must NOT be reused
+      seedResourceOfType({
+        id: 54,
+        externalId: 'att-10',
+        type: 'page',
+        localPath: realPath,
+      });
+
+      let queueCalled = false;
+      downloadManager.queueDownload = (job) => {
+        queueCalled = true;
+        setImmediate(() =>
+          downloadManager.emit('download-complete', {
+            id: job.id,
+            success: true,
+            localPath: '/d/att.pdf',
+          })
+        );
+      };
+      register();
+
+      await invoke('attachment:download', 10);
+      expect(queueCalled).toBe(true);
     });
   });
 

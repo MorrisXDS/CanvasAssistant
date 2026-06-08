@@ -64,6 +64,27 @@ export function registerFileHandlers(ctx: IpcContext): void {
       return { success: false, error: 'No credentials available' };
     }
 
+    // Dedup guard: reuse an already-downloaded course resource with the same
+    // Canvas external_id rather than fetching a duplicate copy to disk.
+    // Mirrors the symmetric guard in downloadCoordinator.ts:58-79.
+    const existingResource = resourceReader.getDownloadedFileByExternalId(
+      attachment.external_id
+    );
+    if (
+      existingResource?.local_path &&
+      !existingResource.local_path.startsWith('http://') &&
+      !existingResource.local_path.startsWith('https://') &&
+      fs.existsSync(existingResource.local_path)
+    ) {
+      updateAttachmentDownloadCommand.markDownloaded(
+        attachmentId,
+        existingResource.local_path,
+        new Date().toISOString()
+      );
+      metricsCollector.increment('attachment.download.dedup_reuse');
+      return { success: true, localPath: existingResource.local_path };
+    }
+
     // Update status to downloading
     updateAttachmentDownloadCommand.setStatus(attachmentId, 'downloading');
 
