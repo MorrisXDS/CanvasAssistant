@@ -881,11 +881,15 @@ export function CoursesPage() {
   const moveFocus = useCallback(
     (delta: number) => {
       if (filteredCourses.length === 0) return;
-      const current = focusedIndex < 0 ? 0 : focusedIndex;
-      const next = current + delta;
+      // First press from an unset focus: forward selects the first item, backward
+      // selects the last item. (No wrap once focus is set — see the clamp below.)
+      if (focusedIndex < 0) {
+        focusAndScroll(delta > 0 ? 0 : filteredCourses.length - 1);
+        return;
+      }
+      const next = focusedIndex + delta;
       if (next < 0 || next >= filteredCourses.length) {
         // Clamp — no wrap.
-        if (focusedIndex < 0) focusAndScroll(0);
         return;
       }
       focusAndScroll(next);

@@ -10,6 +10,10 @@ shipping versioned releases, so changes accrue under **Unreleased** until a rele
 
 ## [Unreleased]
 
+### Fixed
+
+- `2026-06-08 00:10 UTC` — **Courses grid keyboard nav now selects the first course on the first arrow/D press instead of skipping it.** Pressing D or → with no card focused now selects index 0; pressing A or ← with no card focused selects the last card. (Previously the off-by-one treated unset focus as index 0 before adding delta, silently skipping the first card.)
+
 ### Added
 
 - `2026-06-07 19:21 UTC` — **Due-date reminders and grade alerts are now real.** When "Due date
