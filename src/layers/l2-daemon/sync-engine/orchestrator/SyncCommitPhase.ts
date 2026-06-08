@@ -391,8 +391,14 @@ export function executeCommitPhase(
         try {
           // Announcements are stored with source_type='canvas' (see mapAnnouncement in contentMappers.ts);
           // the notifications CHECK only allows ('canvas','system') — 'announcement' never matches.
-          const existingAnn = ctx.db.executeReadOne<{ id: number }>(
-            `SELECT id FROM notifications WHERE source_type = 'canvas' AND source_id = ?`,
+          // Read the stored title/message BEFORE the upsert so we can detect an
+          // edit-on-Canvas (the upsert overwrites the row in place).
+          const existingAnn = ctx.db.executeReadOne<{
+            id: number;
+            title: string;
+            message: string | null;
+          }>(
+            `SELECT id, title, message FROM notifications WHERE source_type = 'canvas' AND source_id = ?`,
             [String(announcement.id)]
           );
 
@@ -429,6 +435,28 @@ export function executeCommitPhase(
               });
               updateCounts.newAnnouncements++;
             }
+          } else if (
+            existingAnn.title !== mapped.notification.title ||
+            (existingAnn.message ?? null) !== (mapped.notification.message ?? null)
+          ) {
+            // Announcement was edited on Canvas since we last stored it — re-surface
+            // it in the Updates feed. Compare on plain-text title/message only, so an
+            // HTML-only change with identical visible text does not re-nag. Counted in
+            // the newAnnouncements bucket (it feeds the badge total; "announcement
+            // activity this sync" is the honest meaning — no separate session column).
+            recordSyncUpdate(ctx, {
+              syncSessionId: syncId,
+              courseId: localCourseId,
+              entityType: 'announcement',
+              entityId: existingAnn.id,
+              externalId: String(announcement.id),
+              changeType: 'updated',
+              title: announcement.title || 'Updated Announcement',
+              subtitle: announcement.posted_at
+                ? `Posted: ${new Date(announcement.posted_at).toLocaleDateString()}`
+                : undefined,
+            });
+            updateCounts.newAnnouncements++;
           }
 
           counts.announcements++;
