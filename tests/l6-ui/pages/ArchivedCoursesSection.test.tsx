@@ -165,8 +165,8 @@ describe('ArchivedCoursesSection', () => {
     expect(screen.getByText('No archived courses')).toBeInTheDocument();
   });
 
-  it('groups courses with no matching term under "Other"', () => {
+  it('groups courses with no matching term under "Unknown term"', () => {
     renderSection([makeCourse({ id: 1, code: 'ECE999', enrollmentTermId: 9999 })]);
-    expect(screen.getByText('Other')).toBeInTheDocument();
+    expect(screen.getByText('Unknown term')).toBeInTheDocument();
   });
 });

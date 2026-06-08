@@ -102,7 +102,7 @@ export function ArchivedCoursesSection({
       if (!group) {
         group = {
           key,
-          termName: termName ?? 'Other',
+          termName: termName ?? 'Unknown term',
           termEndAt: termInfo?.endAt ?? null,
           termAverage: termName !== null ? (avgByTermName.get(termName) ?? null) : null,
           courses: [],
