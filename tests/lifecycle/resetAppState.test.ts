@@ -123,4 +123,24 @@ describe('resetAppState', () => {
       ).length > 0;
     expect(exists).toBe(false);
   });
+
+  it('clears notified_reminders on reset so persisted dedup keys do not outlive a full reset (migration 114)', async () => {
+    // Seed two dedup rows that simulate previously-fired reminders.
+    db.executeWrite(
+      "INSERT INTO notified_reminders (dedup_key, task_id, due_at) VALUES ('1|2026-06-07T12:00:00.000Z', 1, '2026-06-07T12:00:00.000Z')",
+      [],
+      'notified_reminders'
+    );
+    db.executeWrite(
+      "INSERT INTO notified_reminders (dedup_key, task_id, due_at) VALUES ('2|2026-06-08T10:00:00.000Z', 2, '2026-06-08T10:00:00.000Z')",
+      [],
+      'notified_reminders'
+    );
+    expect(countRows(db, 'notified_reminders')).toBe(2);
+
+    await resetAppState(deps, { deleteToken: false });
+
+    // After reset the table must be empty so a fresh run can re-fire reminders.
+    expect(countRows(db, 'notified_reminders')).toBe(0);
+  });
 });

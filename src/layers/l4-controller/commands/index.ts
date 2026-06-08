@@ -17,3 +17,4 @@ export * from './syncUpdate';
 export * from './htmlDependency';
 export * from './file';
 export * from './syncConflict';
+export * from './notifiedReminder';
