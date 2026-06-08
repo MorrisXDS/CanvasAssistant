@@ -28,6 +28,42 @@ describe('SyncCourseOperations.autoArchiveExpiredCourses', () => {
   let ops: SyncCourseOperations;
 
   beforeEach(() => {
+    // Freeze JS Date at the REAL current instant captured at test start — NOT a
+    // hardcoded calendar literal. We freeze for two reasons:
+    //   (a) eliminate intra-test midnight/DST/leap-day straddle, so every
+    //       daysFromNow() call within a single test resolves against ONE fixed
+    //       instant (F2's actual determinism goal); and
+    //   (b) stay within sub-seconds of SQLite's datetime('now') (see below).
+    //
+    // IMPORTANT: jest.useFakeTimers() freezes the JS Date clock only. SQLite's
+    // datetime('now') reads the real OS wall clock and is NOT affected by Jest
+    // fake timers. The production boundary
+    // (`datetime(et.end_at) < datetime('now','-30 days')`,
+    // SyncCourseOperations.ts:281) therefore still uses real wall time, and
+    // there is no clean seam to fake the SQLite clock — do not try.
+    //
+    // Why capture real-now-at-start (not a fixed date): freezing JS at a literal
+    // like '2026-06-07' would drift one day further from SQLite's ever-advancing
+    // real 'now' every calendar day. The near-boundary fixtures are only ±1 day
+    // off the 30-day line, so ~30 days later the "does NOT archive" assertions
+    // would flip with NO code change — a CI time-bomb. Capturing the real
+    // instant at test start keeps the frozen JS clock and SQLite's real 'now'
+    // within the sub-second test runtime forever; a sub-second JS/SQL gap can
+    // never flip a whole-day-granularity assertion. Immune to calendar drift.
+    const realNow = Date.now();
+    jest
+      .useFakeTimers({
+        doNotFake: [
+          'setTimeout',
+          'setInterval',
+          'clearTimeout',
+          'clearInterval',
+          'queueMicrotask',
+          'nextTick',
+        ],
+      })
+      .setSystemTime(realNow);
+
     db = new Database({ dbPath: ':memory:', verbose: false });
     db.initialize();
     const migrationRunner = new MigrationRunner(db);
@@ -47,10 +83,13 @@ describe('SyncCourseOperations.autoArchiveExpiredCourses', () => {
   });
 
   afterEach(() => {
+    jest.useRealTimers();
     db.close();
   });
 
-  /** ISO timestamp N days from now (negative = in the past). */
+  /** ISO timestamp N days from the frozen real-now-at-start (negative = past).
+   *  Deterministic within a test because Date.now() is frozen via
+   *  jest.useFakeTimers() in beforeEach (see the comment there). */
   function daysFromNow(n: number): string {
     return new Date(Date.now() + n * 24 * 60 * 60 * 1000).toISOString();
   }
