@@ -102,6 +102,8 @@ export function ArchivedCoursesSection({
       if (!group) {
         group = {
           key,
+          // No-term bucket label — must match PastTermGradesReader.ts (the
+          // canonical main-side source) so the drawer and reader never diverge.
           termName: termName ?? 'Unknown term',
           termEndAt: termInfo?.endAt ?? null,
           termAverage: termName !== null ? (avgByTermName.get(termName) ?? null) : null,
